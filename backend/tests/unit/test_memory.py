@@ -1,11 +1,15 @@
-"""M0.2 记忆系统单元测试
+"""M0.2+ 记忆系统单元测试
 
 测试：
- 9. MemoryState 创建
-10. memory_version 基本规则
-11. failed 状态不可作为 committed
-12. 模型切换清理策略
-13. request_id 字段与幂等契约
+1. MemoryState 创建与状态转换
+2. memory_version 规则（仅 commit 递增持久化版本）
+3. failed 状态不可作为 committed
+4. 模型切换清理策略
+5. request_id 字段与幂等契约
+6. Commit eligibility 含 Mock 空间规则
+7. Mock 成功可提交到 Mock 空间
+8. Correction 记录审计
+9. MemoryCommitEvidence
 """
 
 import pytest
@@ -68,24 +72,26 @@ class TestMemoryState:
 
 
 class TestMemoryVersion:
-    """memory_version 乐观锁规则测试"""
+    """memory_version 语义测试 — 仅成功 Commit 后递增"""
 
     def test_initial_version_is_one(self):
         memory = StructuredWorkMemory()
         assert memory.memory_version == 1
 
-    def test_bump_increments(self):
-        memory = StructuredWorkMemory()
-        memory.bump_version()
-        assert memory.memory_version == 2
-        memory.bump_version()
-        assert memory.memory_version == 3
-
     def test_commit_increments_version(self):
+        """成功 Commit 后版本从 N 变为 N+1"""
         memory = StructuredWorkMemory(current_intent="data_question")
         v_before = memory.memory_version
         memory.commit()
         assert memory.memory_version == v_before + 1
+
+    def test_version_not_incremented_on_fail(self):
+        """失败不应递增持久化版本"""
+        memory = StructuredWorkMemory(current_intent="data_question")
+        v_before = memory.memory_version
+        memory.fail()
+        # fail 不 bump version
+        assert memory.memory_version == v_before
 
     def test_version_conflict_detection(self):
         """乐观锁版本冲突检测"""
@@ -142,7 +148,6 @@ class TestModelSwitch:
         assert result.time_range is None
         assert result.last_dax is None
         assert result.last_query_result_id is None
-        assert result.memory_version == 2  # bump occurred
 
     def test_on_template_switch_preserves_analysis(self):
         memory = StructuredWorkMemory(
@@ -154,12 +159,9 @@ class TestModelSwitch:
         result = MemoryPolicies.on_template_switch(memory, "template_new")
 
         assert result.report_template_key == "template_new"
-        # 分析条件保留
         assert result.measures == ["销售额"]
         assert result.dimensions == ["区域"]
-        # 旧 ReportSpec 清理
         assert result.last_report_id is None
-        assert result.memory_version == 2
 
     def test_on_reset_clears_work_memory(self):
         memory = StructuredWorkMemory(
@@ -179,18 +181,44 @@ class TestModelSwitch:
         assert result.clarification_pending is False
         assert result.clarification_question is None
         assert result.state_status == MemoryStatus.PENDING
-        assert result.memory_version == 2
 
-    def test_on_correction_records_change(self):
+
+class TestCorrection:
+    """Correction 审计记录测试"""
+
+    def test_on_correction_updates_field(self):
         memory = StructuredWorkMemory(
             current_intent="data_question",
             measures=["销售额"],
             memory_version=1,
         )
-        result = MemoryPolicies.on_correction(memory, "measures", ["销售额"], ["利润"])
-
+        result = MemoryPolicies.on_correction(
+            memory, "measures", ["销售额"], ["利润"],
+            request_id="req-corr-001",
+        )
         assert result.measures == ["利润"]
-        assert result.memory_version == 2
+
+    def test_correction_internal_fields_blocked(self):
+        """禁止通过纠正接口修改内部字段"""
+        memory = StructuredWorkMemory(
+            conversation_id="conv-001",
+            memory_version=1,
+        )
+        # conversation_id 在白名单外，不应被修改
+        result = MemoryPolicies.on_correction(
+            memory, "conversation_id", "conv-001", "conv-002",
+            request_id="req-001",
+        )
+        # conversation_id 不应被修改
+        assert result.conversation_id == "conv-001"
+
+    def test_correction_blank_field_ignored(self):
+        """空字段名忽略"""
+        memory = StructuredWorkMemory(measures=["销售额"])
+        result = MemoryPolicies.on_correction(
+            memory, "", None, None, request_id="req-001",
+        )
+        assert result.measures == ["销售额"]
 
 
 class TestCommitEligibility:
@@ -220,17 +248,28 @@ class TestCommitEligibility:
         with pytest.raises(MemoryCommitDeniedError, match="failed"):
             MemoryPolicies.check_commit_eligibility(memory)
 
-    def test_mock_denied(self):
+    def test_mock_in_real_context_denied(self):
+        """Mock 结果在 Real 空间不允许提交"""
         memory = StructuredWorkMemory(
             current_intent="data_question",
             is_mock=True,
+            runtime_mode="real",
         )
-        with pytest.raises(MemoryCommitDeniedError, match="Mock"):
+        with pytest.raises(MemoryCommitDeniedError):
             MemoryPolicies.check_commit_eligibility(memory)
 
-    def test_valid_memory_passes(self):
+    def test_mock_in_mock_context_allowed(self):
+        """Mock 成功轮次在 Mock 空间允许提交"""
+        memory = StructuredWorkMemory(
+            current_intent="data_question",
+            is_mock=True,
+            runtime_mode="mock",
+        )
+        # 不应抛出异常
+        MemoryPolicies.check_commit_eligibility(memory)
+
+    def test_valid_real_memory_passes(self):
         memory = StructuredWorkMemory(current_intent="data_question")
-        # 不应 raise
         MemoryPolicies.check_commit_eligibility(memory)
 
 

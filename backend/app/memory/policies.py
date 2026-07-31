@@ -1,11 +1,43 @@
 """记忆系统策略规则
 
 固化的记忆提交准入条件和一致性规则。
-本轮不实现查询工具，但准入条件必须固化为策略接口。
+M0.2 固化为策略接口，M0.3 Harness 在 TurnController 中强制执行。
 """
 
-from backend.app.memory.models import MemoryStatus, StructuredWorkMemory
+from datetime import datetime
+from typing import Optional
+
+from backend.app.memory.models import (
+    MemoryCommitEvidence,
+    MemoryCorrectionRecord,
+    MemoryStatus,
+    RuntimeDataMode,
+    StructuredWorkMemory,
+)
 from backend.app.memory.repository import MemoryCommitDeniedError
+
+
+# 允许通过纠正接口修改的字段白名单
+CORRECTION_ALLOWED_FIELDS = frozenset({
+    "measures",
+    "dimensions",
+    "filters",
+    "time_range",
+    "sort",
+    "top_n",
+    "comparison_mode",
+    "analysis_goal",
+})
+
+# 禁止通过纠正接口修改的内部字段
+CORRECTION_BLOCKED_FIELDS = frozenset({
+    "conversation_id",
+    "request_id",
+    "memory_version",
+    "state_status",
+    "created_at",
+    "runtime_mode",
+})
 
 
 class MemoryPolicies:
@@ -15,14 +47,14 @@ class MemoryPolicies:
     """
 
     # -----------------------------------------------------------------
-    # 10.3 — 提交准入
+    # 提交准入
     # -----------------------------------------------------------------
 
     @staticmethod
     def check_commit_eligibility(memory: StructuredWorkMemory) -> None:
         """检查记忆是否满足完整成功边界
 
-        完整成功边界至少要求：
+        完整成功边界要求：
         1. 意图有效
         2. 请求未被拒绝（非 unsupported）
         3. 查询计划有效
@@ -32,7 +64,10 @@ class MemoryPolicies:
         7. 最终回答或 ReportSpec 成功
         8. memory_version 未冲突
 
-        本轮 (M0.2) 固化为策略接口。M0.3 Harness 在 TurnController 中强制执行。
+        Mock 空间规则：
+        - Mock 成功轮次在 Mock 空间允许提交
+        - Mock 结果在 Real 空间不允许提交
+        - Production/Real 不得加载 Mock committed memory
 
         Raises:
             MemoryCommitDeniedError: 不满足提交条件
@@ -55,27 +90,45 @@ class MemoryPolicies:
         elif memory.state_status == MemoryStatus.COMMITTED:
             failures.append("记忆已提交，不可重复提交")
 
-        # Mock 检查
-        if memory.is_mock:
-            failures.append("Mock 结果不可标记为真实业务结果")
+        # Mock 空间规则
+        if memory.is_mock and memory.runtime_mode == "real":
+            failures.append("Mock 结果不可在 Real 空间提交")
+        if not memory.is_mock and memory.runtime_mode == "mock":
+            # Real 结果在 Mock 空间也允许（测试场景），但不推荐
+            pass
 
-        # 后续 M0.3 将增加：查询计划有效、DAX 校验、工具执行成功等
+        # 证据检查（如果存在）
+        if memory.commit_evidence is not None:
+            if not memory.commit_evidence.all_satisfied:
+                failures.append(
+                    f"提交证据不完整: {memory.commit_evidence.failure_reason or '部分条件未满足'}"
+                )
 
         if failures:
             raise MemoryCommitDeniedError(f"记忆提交被拒绝: {'; '.join(failures)}")
 
+    @staticmethod
+    def check_evidence_required(memory: StructuredWorkMemory) -> None:
+        """检查是否具备完整提交证据
+
+        M0.3 要求结构化证据，不再只依赖几个字段猜测轮次是否成功。
+        """
+        if memory.commit_evidence is None:
+            raise MemoryCommitDeniedError("缺少 MemoryCommitEvidence，不允许提交")
+        if not memory.commit_evidence.all_satisfied:
+            raise MemoryCommitDeniedError(
+                f"MemoryCommitEvidence 不完整: {memory.commit_evidence.failure_reason or '未知原因'}"
+            )
+
     # -----------------------------------------------------------------
-    # 10.4 — 一致性规则
+    # 一致性规则
     # -----------------------------------------------------------------
 
     @staticmethod
     def check_request_id_idempotent(
-        existing: StructuredWorkMemory | None, new_request_id: str
+        existing: Optional[StructuredWorkMemory], new_request_id: str
     ) -> bool:
-        """request_id 幂等检查
-
-        相同 request_id 的请求不应重复处理。
-        """
+        """request_id 幂等检查"""
         if existing is not None and existing.request_id == new_request_id:
             return True
         return False
@@ -84,10 +137,7 @@ class MemoryPolicies:
     def check_version_conflict(
         current_version: int, expected_version: int
     ) -> bool:
-        """memory_version 乐观锁检查
-
-        期望版本与当前版本不一致时拒绝写入。
-        """
+        """memory_version 乐观锁检查 — 期望版本与当前版本不一致时拒绝写入"""
         return current_version != expected_version
 
     # -----------------------------------------------------------------
@@ -96,13 +146,7 @@ class MemoryPolicies:
 
     @staticmethod
     def on_model_switch(memory: StructuredWorkMemory, new_model_key: str) -> StructuredWorkMemory:
-        """切换语义模型时的清理策略
-
-        - 清理旧模型的分析状态（measures, dimensions, filters, time_range 等）
-        - 清理 last_query_plan, last_dax, last_query_result_id
-        - 保留 conversation_id 和审计信息
-        - 递增 memory_version
-        """
+        """切换语义模型时的清理策略"""
         memory.semantic_model_key = new_model_key
         memory.measures = []
         memory.dimensions = []
@@ -115,31 +159,20 @@ class MemoryPolicies:
         memory.last_dax = None
         memory.last_query_result_id = None
         memory.last_result_summary = None
-        memory.bump_version()
+        memory.updated_at = datetime.utcnow()
         return memory
 
     @staticmethod
     def on_template_switch(memory: StructuredWorkMemory, new_template_key: str) -> StructuredWorkMemory:
-        """切换报表模板时的策略
-
-        - 保留分析条件（measures, dimensions, filters）
-        - 清理旧 ReportSpec
-        - 更新模板 Key
-        """
+        """切换报表模板时的策略 — 保留分析条件，清理旧 ReportSpec"""
         memory.report_template_key = new_template_key
         memory.last_report_id = None
-        memory.bump_version()
+        memory.updated_at = datetime.utcnow()
         return memory
 
     @staticmethod
     def on_reset(memory: StructuredWorkMemory) -> StructuredWorkMemory:
-        """"重新开始" 策略
-
-        - 清空工作记忆（分析要素、查询结果）
-        - 保留 conversation_id
-        - 保留审计记录（不删除历史 committed 记录）
-        - 重置为 pending 状态
-        """
+        """"重新开始" 策略"""
         memory.current_intent = None
         memory.analysis_goal = None
         memory.measures = []
@@ -157,7 +190,7 @@ class MemoryPolicies:
         memory.clarification_pending = False
         memory.clarification_question = None
         memory.state_status = MemoryStatus.PENDING
-        memory.bump_version()
+        memory.updated_at = datetime.utcnow()
         return memory
 
     @staticmethod
@@ -166,16 +199,43 @@ class MemoryPolicies:
         field: str,
         old_value: object,
         new_value: object,
+        reason: str = "",
+        request_id: str = "",
     ) -> StructuredWorkMemory:
-        """用户纠正口径
+        """用户纠正 — 记录审计信息
 
-        - 记录旧值和新值
-        - 更新对应字段
-        - 递增 memory_version
+        规则：
+        - 纠正字段必须使用白名单
+        - 禁止通过纠正接口修改内部字段
+        - 记录完整的 MemoryCorrectionRecord
         """
+        # 空字段名忽略
+        if not field:
+            return memory
+
+        # 禁止修改内部字段
+        if field in CORRECTION_BLOCKED_FIELDS:
+            return memory
+
+        # 仅允许白名单字段
+        if field not in CORRECTION_ALLOWED_FIELDS:
+            return memory
+
+        # 记录审计
+        record = MemoryCorrectionRecord(
+            field=field,
+            old_value=old_value,
+            new_value=new_value,
+            reason=reason,
+            corrected_at=datetime.utcnow(),
+            request_id=request_id or memory.request_id,
+        )
+        memory.add_correction_record(record)
+
+        # 更新字段
         if hasattr(memory, field):
             setattr(memory, field, new_value)
-        memory.bump_version()
+
         return memory
 
     # -----------------------------------------------------------------
@@ -184,26 +244,7 @@ class MemoryPolicies:
 
     @staticmethod
     def allowed_context_keys() -> set[str]:
-        """Context Assembly 允许包含的上下文类型
-
-        只允许：
-        - 系统规则
-        - 当前用户输入
-        - committed structured memory
-        - 最近 5 轮消息
-        - 滚动摘要
-        - 相关 Schema 子集
-        - 当前模型与模板
-        - Mock/真实标识
-
-        禁止：
-        - 全部历史对话
-        - 完整 Schema
-        - 大量原始查询结果
-        - Secret
-        - failed/pending 状态
-        - 与当前模型无关的数据
-        """
+        """Context Assembly 允许包含的上下文类型"""
         return {
             "system_rules",
             "current_input",

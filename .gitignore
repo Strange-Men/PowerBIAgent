@@ -39,6 +39,7 @@ business_data/
 # Generated Reports & Outputs
 # ============================================================
 reports/
+!harness/reports/.gitkeep
 generated_reports/
 output/
 *.html.report

@@ -1,0 +1,213 @@
+{
+  "intent": {
+    "data_question": {
+      "intent": "data_question",
+      "confidence": 0.95,
+      "normalized_question": "本月销售额是多少？",
+      "needs_clarification": false,
+      "clarification_question": null,
+      "inherited_context": null,
+      "detected_measures": ["销售额"],
+      "detected_dimensions": [],
+      "detected_filters": [],
+      "detected_time_range": "本月",
+      "requested_template": null,
+      "unsupported_reason": null
+    },
+    "data_question_multiround": {
+      "intent": "data_question",
+      "confidence": 0.92,
+      "normalized_question": "只看华南",
+      "needs_clarification": false,
+      "clarification_question": null,
+      "inherited_context": "继承已提交记忆：指标=[销售额]，时间范围=本月",
+      "detected_measures": ["销售额"],
+      "detected_dimensions": ["区域"],
+      "detected_filters": [{"field": "区域", "operator": "eq", "value": "华南"}],
+      "detected_time_range": "本月",
+      "requested_template": null,
+      "unsupported_reason": null
+    },
+    "report_generation": {
+      "intent": "report_generation",
+      "confidence": 0.90,
+      "normalized_question": "生成销售周报",
+      "needs_clarification": false,
+      "clarification_question": null,
+      "inherited_context": null,
+      "detected_measures": ["销售额"],
+      "detected_dimensions": ["区域"],
+      "detected_filters": [],
+      "detected_time_range": "本周",
+      "requested_template": "sales_weekly",
+      "unsupported_reason": null
+    },
+    "clarification": {
+      "intent": "clarification",
+      "confidence": 0.60,
+      "normalized_question": "帮我看看数据",
+      "needs_clarification": true,
+      "clarification_question": "请问您想查看哪个指标？比如销售额、利润或订单数？",
+      "inherited_context": null,
+      "detected_measures": [],
+      "detected_dimensions": [],
+      "detected_filters": [],
+      "detected_time_range": null,
+      "requested_template": null,
+      "unsupported_reason": null
+    },
+    "unsupported": {
+      "intent": "unsupported",
+      "confidence": 0.98,
+      "normalized_question": "删除所有数据",
+      "needs_clarification": false,
+      "clarification_question": null,
+      "inherited_context": null,
+      "detected_measures": [],
+      "detected_dimensions": [],
+      "detected_filters": [],
+      "detected_time_range": null,
+      "requested_template": null,
+      "unsupported_reason": "该操作不在允许范围内，PowerBIAgent 仅支持数据查询和报表生成"
+    }
+  },
+  "query_plan": {
+    "report_generation": {
+      "normalized_question": "生成销售周报",
+      "semantic_model_key": "mock_sales_model",
+      "measures": ["SalesAmount"],
+      "dimensions": ["Region"],
+      "filters": [],
+      "time_range": "本周",
+      "sort": null,
+      "top_n": null,
+      "comparison_mode": null,
+      "requested_template": "sales_weekly",
+      "inherited_context": null,
+      "is_mock": true
+    },
+    "data_question": {
+      "normalized_question": "本月销售额是多少？",
+      "semantic_model_key": "mock_sales_model",
+      "measures": ["SalesAmount"],
+      "dimensions": [],
+      "filters": [],
+      "time_range": "本月",
+      "sort": null,
+      "top_n": null,
+      "comparison_mode": null,
+      "requested_template": null,
+      "inherited_context": null,
+      "is_mock": true
+    },
+    "data_question_multiround": {
+      "normalized_question": "只看华南",
+      "semantic_model_key": "mock_sales_model",
+      "measures": ["SalesAmount"],
+      "dimensions": ["Region"],
+      "filters": [{"field": "Region", "operator": "eq", "value": "华南"}],
+      "time_range": "本月",
+      "sort": null,
+      "top_n": null,
+      "comparison_mode": null,
+      "requested_template": null,
+      "inherited_context": "继承已提交记忆：指标=[SalesAmount]，时间范围=本月",
+      "is_mock": true
+    }
+  },
+  "dax": {
+    "data_question": {
+      "semantic_model_key": "mock_sales_model",
+      "dax": "EVALUATE SUMMARIZECOLUMNS('Sales'[Date], \"Total Sales\", SUM('Sales'[SalesAmount]))",
+      "max_rows": 1000,
+      "timeout_seconds": 30,
+      "is_mock": true
+    },
+    "data_question_multiround": {
+      "semantic_model_key": "mock_sales_model",
+      "dax": "EVALUATE FILTER(SUMMARIZECOLUMNS('Sales'[Region], \"Total Sales\", SUM('Sales'[SalesAmount])), 'Sales'[Region] = \"华南\")",
+      "max_rows": 1000,
+      "timeout_seconds": 30,
+      "is_mock": true
+    },
+    "report_generation": {
+      "semantic_model_key": "mock_sales_model",
+      "dax": "EVALUATE SUMMARIZECOLUMNS('Sales'[Region], 'Sales'[Date], \"Total Sales\", SUM('Sales'[SalesAmount]))",
+      "max_rows": 1000,
+      "timeout_seconds": 30,
+      "is_mock": true
+    }
+  },
+  "answer": {
+    "report_generation": {
+      "answer": "销售周报已生成",
+      "summary": "本周销售概览",
+      "metrics": {"总销售额": 1234567},
+      "evidence": {"row_count": 3, "source": "mock_sales_model"},
+      "filters": [],
+      "semantic_model_key": "mock_sales_model",
+      "source_mode": "mock",
+      "generated_at": "2026-07-31T12:00:00"
+    },
+    "data_question": {
+      "answer": "本月销售额为 1,234,567 元。",
+      "summary": "本月销售额总计约123.5万元",
+      "metrics": {"总销售额": 1234567},
+      "evidence": {"row_count": 1, "source": "mock_sales_model"},
+      "filters": [],
+      "semantic_model_key": "mock_sales_model",
+      "source_mode": "mock",
+      "generated_at": "2026-07-31T12:00:00"
+    },
+    "data_question_multiround": {
+      "answer": "华南区域本月销售额为 456,789 元。",
+      "summary": "华南区域本月销售额约45.7万元",
+      "metrics": {"总销售额": 456789},
+      "evidence": {"row_count": 1, "source": "mock_sales_model"},
+      "filters": [{"field": "Region", "operator": "eq", "value": "华南"}],
+      "semantic_model_key": "mock_sales_model",
+      "source_mode": "mock",
+      "generated_at": "2026-07-31T12:00:00"
+    }
+  },
+  "report": {
+    "report_generation": {
+      "title": "销售周报",
+      "template_key": "sales_weekly",
+      "summary": "本周销售情况概览",
+      "kpis": [
+        {"name": "总销售额", "value": 1234567, "format": "currency", "field": "TotalSales"}
+      ],
+      "charts": [
+        {"type": "bar", "title": "各区域销售额", "x_field": "Region", "y_field": "TotalSales"}
+      ],
+      "tables": [
+        {"title": "销售明细", "columns": ["Region", "TotalSales"], "rows": [["华南", 456789], ["华北", 389012]]}
+      ],
+      "insights": ["华南区销售额环比增长 5%", "华北区保持稳定"],
+      "data_source": "mock_sales_model",
+      "filters": [],
+      "generated_at": "2026-07-31T12:00:00",
+      "source_mode": "mock"
+    },
+    "sales_weekly": {
+      "title": "销售周报",
+      "template_key": "sales_weekly",
+      "summary": "本周销售情况概览",
+      "kpis": [
+        {"name": "总销售额", "value": 1234567, "format": "currency", "field": "SalesAmount"}
+      ],
+      "charts": [
+        {"type": "bar", "title": "各区域销售额", "x_field": "Region", "y_field": "SalesAmount"}
+      ],
+      "tables": [
+        {"title": "销售明细", "columns": ["Region", "SalesAmount"], "rows": [["华南", 456789], ["华北", 389012]]}
+      ],
+      "insights": ["华南区销售额环比增长 5%", "华北区保持稳定"],
+      "data_source": "mock_sales_model",
+      "filters": [],
+      "generated_at": "2026-07-31T12:00:00",
+      "source_mode": "mock"
+    }
+  }
+}

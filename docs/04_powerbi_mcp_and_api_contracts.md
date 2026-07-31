@@ -1,100 +1,92 @@
 # 04 — Power BI MCP 与 API 契约
 
-> **状态：** M0.1 骨架已建立
-> **下一轮实质性填充：** M0.3（Power BI MCP 连接验证）
-> **警告：** 本文当前仅为骨架，尚未完成的技术决策不得用于指导开发
+> **状态：** M0.3 实质性完成
+> **关联 ADR：** ADR-003
 
 ---
 
-## 一、Power BI MCP Adapter
+## 一、PowerBIAdapter 设计
 
-### 1.1 职责
+### 1.1 接口（`backend/app/powerbi/base.py`）
 
-- 连接 Power BI MCP Server
-- 获取可用语义模型列表
-- 获取语义模型结构（表、字段、度量值、关系）
-- 执行 DAX 查询
-- 统一处理 MCP 返回结果
-- 处理连接异常和查询错误
-
-### 1.2 MVP 配置
-
-- 使用项目负责人的 Microsoft 账号登录
-- 访问负责人的个人 Power BI 数据
-- 不处理多用户权限和 RLS
-
-### 1.3 待设计内容 (M0.3)
-
-- MCP Client 实现方案
-- Microsoft 认证流程
-- 连接健康检查
-- DAX 模板和生成策略
-- 查询结果标准化
-- 错误处理和重试策略
-- 数据量限制
-
-## 二、API 契约概要
-
-### 2.1 接口列表
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/health` | 健康检查 |
-| GET | `/api/semantic-models` | 语义模型列表 |
-| GET | `/api/report-templates` | 报表模板列表 |
-| POST | `/api/chat` | 对话请求 |
-| GET | `/api/reports/{report_id}` | 获取报表 |
-
-### 2.2 待设计内容 (M0.3-M0.4)
-
-- 完整 Request/Response Schema
-- 错误码体系
-- SSE 流式响应设计
-- 分页和限流策略
-
-## 三、报表生成
-
-### 3.1 ReportSpec 概要
-
-LLM 输出 ReportSpec，由后端校验后渲染：
-
-| 字段 | 说明 |
+| 方法 | 说明 |
 |------|------|
-| title | 报表标题 |
-| summary | 摘要分析 |
-| kpis | KPI 列表 |
-| charts | 图表配置（类型、字段） |
-| tables | 表格配置（列、数据） |
-| conclusions | 分析结论 |
+| `health_check()` | 连接健康检查 |
+| `get_semantic_model_schema(key)` | 获取语义模型结构 |
+| `execute_dax(DAXRequest)` | 执行 DAX 查询 |
+| `normalize_result(raw)` | 标准化原始响应 |
+| `normalize_error(raw)` | 标准化原始错误 |
 
-### 3.2 固定模板
+### 1.2 MockPowerBIAdapter（`backend/app/powerbi/mock.py`）
 
-- 销售周报模板
-- 满意度报告模板
-- 经营分析模板
+- 从 `harness/fixtures/` 加载 Mock Schema 和 QueryResult
+- 不依赖网络和 Microsoft 账号
+- 严格匹配 scenario_key，未知场景明确失败
+- 支持模拟：正常数据、空数据、超时、无权限、DAX 错误、超大结果
 
-### 3.3 待设计内容 (M3)
+### 1.3 RemoteMCPPowerBIAdapter（`backend/app/powerbi/remote_mcp.py`）
 
-- ReportSpec 完整 Schema
-- Jinja2 模板结构
-- HTML 渲染管线
-- 模板注册和发现机制
+- M0.3 仅骨架，所有真实调用标记 `NotImplementedError("TODO: M2")`
+- 配置边界完整：Server URL、Tenant ID、Client ID、超时、重试
 
-## 四、模块边界
+## 二、OAuth 认证风险（ADR-003）
 
-### 本轮 (M0.1) 边界
+### 关键发现
 
-- 仅建立骨架
-- 不实现任何 MCP 连接
-- 不定义具体 API Schema
-- 不设计报表模板
+1. **VS Code 能访问 ≠ 自定义客户端能访问** — VS Code 有微软预注册的 Client ID
+2. **必须手动注册 Entra Application** — 需要 Azure 管理员权限
+3. **需要 Power BI 管理员启用 Tenant 设置**
+4. **早期 2026 年有 Remote MCP 端点中断报告**
 
-### M0.3 边界
+### 授权流程
 
-- 完成 Power BI MCP 连接和验证
-- 完成 API 契约详细定义
-- 不实现报表生成（M3）
+- M2: MSAL device code flow + 本地 token 缓存
+- Token 获取、刷新和存储由 Adapter 内部管理
+- 不暴露 Token 到 Agent 或业务层
+
+## 三、核心数据契约（`backend/app/schemas/data_contracts.py`）
+
+### QueryPlan
+normalized_question, semantic_model_key, measures, dimensions, filters (StructuredFilter), time_range, sort, top_n, comparison_mode, requested_template, inherited_context, is_mock
+
+### DAXRequest
+semantic_model_key, dax, max_rows, timeout_seconds, request_id, is_mock
+
+### QueryResult
+semantic_model_key, columns, rows, row_count, execution_time_ms, source_mode, request_id, error (PowerBIError), truncated
+
+内置一致性校验：row_count vs rows 长度、每行字段 vs columns 数量
+
+### AnswerSpec
+answer, summary, metrics, evidence, filters, semantic_model_key, source_mode, generated_at
+
+### ReportSpec
+title, template_key, summary, kpis (KPISpec), charts (ChartSpec), tables (TableSpec), insights, data_source, filters, generated_at, source_mode
+
+禁止任意 HTML、JavaScript、外部脚本、未登记模板、不存在字段
+
+### UserContext
+user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
+
+## 四、只读 DAX 安全
+
+- 仅允许：EVALUATE、DEFINE + EVALUATE
+- 禁止：SQL、写操作、跨模型引用、Python/Shell/PowerShell/JavaScript
+- 安全边界来自：ToolGateway、ValidationService、semantic_model_key 白名单、Schema 字段验证、最大行数、超时、最大重试
+
+## 五、M0.3/M2/M3 边界
+
+| 项目 | M0.3 | M2 | M3 |
+|------|------|----|----|
+| PowerBIAdapter 接口 | ✅ | — | — |
+| MockPowerBIAdapter | ✅ 可运行 | — | — |
+| Remote Adapter | ✅ 骨架 | ✅ 真实连接 | — |
+| API 数据契约 | ✅ 全部 Pydantic | — | — |
+| OAuth/Token | ✅ 设计文档 | ✅ 实现 | — |
+| 真实 DAX 查询 | ❌ | ✅ | — |
+| ReportSpec Schema | ✅ 完整 | — | — |
+| 生产报表模板/HTML | ❌ | ❌ | ✅ |
 
 ---
 
-*创建日期：2026-07-31 | M0.1 仓库初始化与文档基线*
+*最后更新：2026-07-31 | M0.3 数据接入与验证闭环*

@@ -25,17 +25,27 @@
 |------|------|------|------|
 | ADR-001 | Agent 框架选择 — PydanticAI | accepted | 2026-07-31 |
 | ADR-002 | 记忆系统与存储方案 | accepted | 2026-07-31 |
+| ADR-003 | Power BI MCP 认证与接入方案 | accepted | 2026-07-31 |
+| ADR-004 | Harness 方案：轻量 ETCLOVG 控制面 | accepted | 2026-07-31 |
 
 ## ADR 详情
 
 ### ADR-001 — Agent 框架选择
 
-选择 PydanticAI 作为单 Agent 框架。比较了 PydanticAI、Microsoft Semantic Kernel 和手写 Agent Loop。PydanticAI 在 Python 原生性、Pydantic 集成、DeepSeek 兼容、Mock 友好性和轻量程度上占优。
+选择 PydanticAI 作为单 Agent 框架。结构化输出参数名为 `output_type`（非 `result_type`）。通过 AgentRuntime Adapter 隔离框架依赖。
 
 ### ADR-002 — 记忆系统与存储方案
 
-选择 Pydantic 数据契约 + Repository 抽象接口，M0.2 不实现 SQLite 持久化。四层记忆设计（原始对话、结构化工作记忆、滚动摘要、查询产物）。三态机制（pending/committed/failed）。request_id 幂等 + memory_version 乐观锁。
+Pydantic 数据契约 + Repository 抽象接口。四层记忆设计、三态机制、MemoryCommitEvidence 结构化证据、InMemoryMemoryRepository。Mock 与 Real 空间隔离。
+
+### ADR-003 — Power BI MCP 认证与接入方案
+
+使用 Remote MCP Server + MSAL device code flow。OAuth 风险、Entra App Registration、VS Code 与自定义客户端差异已明确。M0.3 仅设计、接口、Mock 和 Remote 骨架。
+
+### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面
+
+Execution、Tooling、Context、Lifecycle、Observability、Verification、Governance 七层职责。无 Docker/LangGraph/OpenTelemetry。
 
 ---
 
-*最后更新：2026-07-31 | M0.2 智能体架构与记忆设计*
+*最后更新：2026-07-31 | M0.3 数据接入与验证闭环*

@@ -1,14 +1,24 @@
 """LLM Provider 抽象基类
 
 所有 LLM Provider 必须实现此接口。
-Provider 支持未来的多种 task：意图识别、QueryPlan、DAX、AnswerSpec、ReportSpec。
+Provider 支持多种 task：意图识别、QueryPlan、DAX、AnswerSpec、ReportSpec。
 """
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel
+
+
+class LLMTask(str, Enum):
+    """LLM 任务类型枚举 — 避免任意字符串拼写错误"""
+    INTENT_RECOGNITION = "intent_recognition"
+    QUERY_PLAN = "query_plan"
+    DAX = "dax"
+    ANSWER = "answer"
+    REPORT = "report"
 
 
 @dataclass
@@ -16,7 +26,7 @@ class LLMRequest:
     """统一的 LLM 请求结构"""
 
     messages: list[dict[str, str]] = field(default_factory=list)
-    task: str = "intent_recognition"  # intent_recognition | query_plan | dax | answer | report
+    task: LLMTask = LLMTask.INTENT_RECOGNITION
     scenario_key: Optional[str] = None  # Mock 场景选择键
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -85,3 +95,16 @@ class LLMTimeoutError(LLMProviderError):
 class LLMValidationError(LLMProviderError):
     """LLM 输出校验失败"""
     pass
+
+
+class LLMScenarioNotFoundError(LLMProviderError):
+    """Mock 场景未找到 — 未知 scenario_key 时抛出"""
+
+    def __init__(self, scenario_key: str, available_keys: list[str], provider: str = ""):
+        self.scenario_key = scenario_key
+        self.available_keys = available_keys
+        msg = (
+            f"Mock scenario '{scenario_key}' not found. "
+            f"Available keys: {available_keys}"
+        )
+        super().__init__(msg, provider=provider, retryable=False)

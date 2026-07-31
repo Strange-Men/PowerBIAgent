@@ -1,5 +1,50 @@
 # CHANGELOG
 
+## [M0.3] — 2026-07-31
+
+### 数据接入与验证闭环
+
+**M0.2 审计修复：**
+- AgentRuntime 从三引号字符串修复为 runtime.py 真实抽象类
+- PydanticAI API 准确性修正：`output_type`（非 `result_type`）
+- Mock Fixture 统一到 `harness/fixtures/`
+- Mock LLM 异步修复（time.sleep → asyncio.sleep）
+- 未知 scenario 严格失败（LLMScenarioNotFoundError）
+- IntentSpec 跨字段规则（7 条）+ FilterSpec 结构化筛选
+- DeepSeek SecretStr 安全（repr 不泄露 Key）
+- 核心依赖锁定（pydantic-ai==2.21.0, pydantic==2.13.4, pytest==9.1.1, pytest-asyncio==1.4.0）
+- 记忆系统 Mock 空间规则 + MemoryCommitEvidence + Correction 审计 + InMemoryMemoryRepository
+- 状态文档修正（M0.2 Commit `d03ac6c`、自引用 SHA 规则、ADR 编号）
+
+**Power BI 与数据契约：**
+- ADR-003：Power BI MCP 认证与接入（Remote MCP + MSAL + Entra App）
+- PowerBIAdapter 接口 + MockPowerBIAdapter（可运行 8 种场景）+ RemoteMCP 骨架
+- 核心数据契约：QueryPlan、DAXRequest、QueryResult、AnswerSpec、ReportSpec（KPISpec/ChartSpec/TableSpec）、UserContext、FilterSpec
+
+**Harness ETCLOVG：**
+- ADR-004：轻量控制面设计
+- ToolGateway（工具注册、Intent 权限矩阵、async timeout、有限重试）
+- ContextBuilder（最近 5 轮、Secret 排除、输入截断）
+- TurnController（19 状态完整状态机、资源限制、MemoryCommitEvidence）
+- ValidationService（Intent/QueryPlan/DAX/QueryResult/Report/Memory 六类验证）
+- TraceRecorder（JSON Trace + Secret 脱敏）
+
+**Application 与 Golden Cases：**
+- MockAgentRuntime + MockReportRenderer + MockTurnService
+- Golden Cases 10 条（8 mock_ready）+ GoldenCaseRunner
+- 166 个测试全部通过
+
+**Commit SHA：** 由下一轮 Git 解析
+**Push 状态：** 待推送
+**本轮 Tag：** 无（本轮不创建 Tag）
+
+**已锁定依赖：**
+- pydantic-ai 2.21.0, pydantic 2.13.4
+- pytest 9.1.1, pytest-asyncio 1.4.0
+- pyyaml 6.0.3
+
+---
+
 ## [M0.2] — 2026-07-31
 
 ### 智能体架构与记忆设计
@@ -59,8 +104,8 @@
 - pytest 9.1.1
 - pytest-asyncio 1.4.0
 
-**Commit SHA：** 待提交
-**Push 状态：** 待推送
+**Commit SHA：** `d03ac6c`（完整：`d03ac6c...`）
+**Push 状态：** ✅ 已推送至 origin/main
 **本轮 Tag：** 无（本轮不创建 Tag）
 
 ---

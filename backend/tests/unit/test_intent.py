@@ -1,15 +1,22 @@
-"""M0.2 意图识别单元测试
+"""M0.2+ 意图识别单元测试
 
 测试：
-1. IntentSpec 合法模型
+1. IntentSpec 合法模型（含 FilterSpec）
 2. 四类 Intent 枚举
-3. IntentSpec 非法 confidence
+3. IntentSpec 跨字段一致性规则
+4. IntentSpec 非法 confidence
+5. FilterSpec 结构化筛选
 """
 
 import pytest
 from pydantic import ValidationError
 
-from backend.app.intent.models import IntentType, IntentSpec
+from backend.app.intent.models import (
+    FilterOperator,
+    FilterSpec,
+    IntentType,
+    IntentSpec,
+)
 
 
 class TestIntentType:
@@ -30,6 +37,37 @@ class TestIntentType:
     def test_all_four_intents_present(self):
         values = {e.value for e in IntentType}
         assert values == {"data_question", "report_generation", "clarification", "unsupported"}
+
+
+class TestFilterSpec:
+    """FilterSpec 结构化筛选模型测试"""
+
+    def test_filter_spec_string_value(self):
+        f = FilterSpec(field="Region", operator=FilterOperator.EQ, value="华南")
+        assert f.field == "Region"
+        assert f.operator == FilterOperator.EQ
+        assert f.value == "华南"
+
+    def test_filter_spec_numeric_value(self):
+        f = FilterSpec(field="SalesAmount", operator=FilterOperator.GT, value=10000)
+        assert f.value == 10000
+
+    def test_filter_spec_bool_value(self):
+        f = FilterSpec(field="IsActive", operator=FilterOperator.EQ, value=True)
+        assert f.value is True
+
+    def test_filter_spec_default_operator(self):
+        f = FilterSpec(field="Region", value="华北")
+        assert f.operator == FilterOperator.EQ
+
+    def test_filter_spec_to_legacy_dict(self):
+        f = FilterSpec(field="Region", operator=FilterOperator.EQ, value="华南")
+        d = f.to_legacy_dict()
+        assert d == {"field": "Region", "operator": "eq", "value": "华南"}
+
+    def test_filter_spec_empty_field_raises(self):
+        with pytest.raises(ValidationError):
+            FilterSpec(field="", value="华南")
 
 
 class TestIntentSpecValid:
@@ -53,11 +91,11 @@ class TestIntentSpecValid:
             normalized_question="华南区域本月销售额",
             detected_measures=["销售额"],
             detected_dimensions=["区域"],
-            detected_filters=[{"field": "区域", "op": "eq", "value": "华南"}],
+            detected_filters=[FilterSpec(field="区域", value="华南")],
             detected_time_range="本月",
         )
         assert spec.detected_measures == ["销售额"]
-        assert spec.detected_filters[0]["value"] == "华南"
+        assert spec.detected_filters[0].value == "华南"
 
     def test_clarification_intent(self):
         spec = IntentSpec(
@@ -87,10 +125,10 @@ class TestIntentSpecValid:
             confidence=0.90,
             normalized_question="生成销售周报",
             detected_measures=["销售额"],
-            requested_template="销售周报模板",
+            requested_template="sales_weekly",
         )
         assert spec.intent == IntentType.REPORT_GENERATION
-        assert spec.requested_template == "销售周报模板"
+        assert spec.requested_template == "sales_weekly"
 
     def test_multi_round_inheritance(self):
         """多轮追问：继承已有指标和时间，只替换区域筛选"""
@@ -100,11 +138,86 @@ class TestIntentSpecValid:
             normalized_question="只看华南",
             inherited_context="继承已提交记忆：指标=[销售额]，时间范围=本月",
             detected_measures=["销售额"],
-            detected_filters=[{"field": "区域", "op": "eq", "value": "华南"}],
+            detected_filters=[FilterSpec(field="区域", value="华南")],
             detected_time_range="本月",
         )
         assert spec.inherited_context is not None
         assert "销售额" in spec.inherited_context
+
+
+class TestIntentSpecCrossField:
+    """跨字段一致性规则测试"""
+
+    def test_clarification_must_have_needs_clarification(self):
+        """clarification 必须有 needs_clarification=True"""
+        with pytest.raises(ValidationError):
+            IntentSpec(
+                intent=IntentType.CLARIFICATION,
+                confidence=0.60,
+                normalized_question="帮我看看数据",
+                needs_clarification=False,
+            )
+
+    def test_clarification_must_have_question(self):
+        """clarification 必须有非空 clarification_question"""
+        with pytest.raises(ValidationError):
+            IntentSpec(
+                intent=IntentType.CLARIFICATION,
+                confidence=0.60,
+                normalized_question="帮我看看数据",
+                needs_clarification=True,
+                clarification_question=None,
+            )
+
+    def test_clarification_question_not_blank(self):
+        """clarification_question 不能为空字符串"""
+        with pytest.raises(ValidationError):
+            IntentSpec(
+                intent=IntentType.CLARIFICATION,
+                confidence=0.60,
+                normalized_question="帮我看看数据",
+                needs_clarification=True,
+                clarification_question="   ",
+            )
+
+    def test_non_clarification_no_needs_clarification(self):
+        """非 clarification 不应携带 needs_clarification=True"""
+        with pytest.raises(ValidationError):
+            IntentSpec(
+                intent=IntentType.DATA_QUESTION,
+                confidence=0.80,
+                normalized_question="销售额",
+                needs_clarification=True,
+            )
+
+    def test_unsupported_must_have_reason(self):
+        """unsupported 必须有 unsupported_reason"""
+        with pytest.raises(ValidationError):
+            IntentSpec(
+                intent=IntentType.UNSUPPORTED,
+                confidence=0.90,
+                normalized_question="bad request",
+                unsupported_reason=None,
+            )
+
+    def test_non_unsupported_no_reason(self):
+        """非 unsupported 不应携带拒绝原因"""
+        with pytest.raises(ValidationError):
+            IntentSpec(
+                intent=IntentType.DATA_QUESTION,
+                confidence=0.80,
+                normalized_question="销售额",
+                unsupported_reason="不应该有原因",
+            )
+
+    def test_normalized_question_not_blank(self):
+        """normalized_question 去除纯空格后不能为空"""
+        with pytest.raises(ValidationError):
+            IntentSpec(
+                intent=IntentType.DATA_QUESTION,
+                confidence=0.50,
+                normalized_question="   ",
+            )
 
 
 class TestIntentSpecInvalid:
@@ -132,15 +245,6 @@ class TestIntentSpecInvalid:
                 intent=IntentType.DATA_QUESTION,
                 confidence=0.5,
                 normalized_question="",
-            )
-
-    def test_unsupported_without_reason(self):
-        with pytest.raises(ValidationError):
-            IntentSpec(
-                intent=IntentType.UNSUPPORTED,
-                confidence=0.9,
-                normalized_question="bad request",
-                unsupported_reason=None,
             )
 
     def test_unsupported_with_reason_is_valid(self):

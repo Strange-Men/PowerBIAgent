@@ -1,0 +1,90 @@
+{
+  "data_question": {
+    "semantic_model_key": "mock_sales_model",
+    "columns": ["TotalSales"],
+    "rows": [[1234567]],
+    "row_count": 1,
+    "execution_time_ms": 45,
+    "source_mode": "mock",
+    "request_id": null,
+    "error": null,
+    "truncated": false
+  },
+  "data_question_multiround": {
+    "semantic_model_key": "mock_sales_model",
+    "columns": ["Region", "TotalSales"],
+    "rows": [["华南", 456789]],
+    "row_count": 1,
+    "execution_time_ms": 52,
+    "source_mode": "mock",
+    "request_id": null,
+    "error": null,
+    "truncated": false
+  },
+  "report_generation": {
+    "semantic_model_key": "mock_sales_model",
+    "columns": ["Region", "TotalSales"],
+    "rows": [["华南", 456789], ["华北", 389012], ["华东", 298765]],
+    "row_count": 3,
+    "execution_time_ms": 67,
+    "source_mode": "mock",
+    "request_id": null,
+    "error": null,
+    "truncated": false
+  },
+  "empty_data": {
+    "semantic_model_key": "mock_sales_model",
+    "columns": ["Region", "TotalSales"],
+    "rows": [],
+    "row_count": 0,
+    "execution_time_ms": 12,
+    "source_mode": "mock",
+    "request_id": null,
+    "error": null,
+    "truncated": false
+  },
+  "timeout": {
+    "semantic_model_key": "mock_sales_model",
+    "columns": [],
+    "rows": [],
+    "row_count": 0,
+    "execution_time_ms": null,
+    "source_mode": "mock",
+    "request_id": null,
+    "error": {"type": "timeout", "message": "查询超时 (30s)", "retryable": true},
+    "truncated": false
+  },
+  "permission_denied": {
+    "semantic_model_key": "mock_sales_model",
+    "columns": [],
+    "rows": [],
+    "row_count": 0,
+    "execution_time_ms": null,
+    "source_mode": "mock",
+    "request_id": null,
+    "error": {"type": "permission_denied", "message": "无权访问语义模型", "retryable": false},
+    "truncated": false
+  },
+  "dax_error": {
+    "semantic_model_key": "mock_sales_model",
+    "columns": [],
+    "rows": [],
+    "row_count": 0,
+    "execution_time_ms": 8,
+    "source_mode": "mock",
+    "request_id": null,
+    "error": {"type": "dax_error", "message": "DAX 语法错误: 无法解析 'EVALUATE BAD_DAX'", "retryable": false},
+    "truncated": false
+  },
+  "oversized_result": {
+    "semantic_model_key": "mock_sales_model",
+    "columns": ["ID", "Value"],
+    "rows": [["R001", 100], ["R002", 200]],
+    "row_count": 2,
+    "execution_time_ms": 120,
+    "source_mode": "mock",
+    "request_id": null,
+    "error": {"type": "oversized", "message": "结果超过最大行数限制 (1000)", "retryable": false},
+    "truncated": true
+  }
+}

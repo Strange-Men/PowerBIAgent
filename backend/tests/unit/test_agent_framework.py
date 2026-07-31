@@ -1,10 +1,55 @@
-"""M0.2 Agent 框架 Smoke Test
+"""M0.2+ Agent 框架测试
 
-证明当前 Python 环境可使用 PydanticAI。
-不实现完整 Agent Runtime。
+测试：
+1. AgentRuntime 真实可导入（非字符串）
+2. AgentRuntime 是抽象类
+3. 缺少抽象方法时不能实例化
+4. MockAgentRuntime 可实现接口
+5. PydanticAI 最小导入与 Smoke Test
+6. PydanticAI API 准确性验证
 """
 
 import pytest
+
+
+class TestAgentRuntime:
+    """AgentRuntime 真实类测试"""
+
+    def test_agent_runtime_importable(self):
+        """AgentRuntime 可以真实导入（不是字符串）"""
+        from backend.app.agent import AgentRuntime, AgentRunResult
+        assert AgentRuntime is not None
+        assert AgentRunResult is not None
+        # 确认是类，不是字符串
+        assert isinstance(AgentRuntime, type)
+        assert isinstance(AgentRunResult, type)
+
+    def test_agent_runtime_is_abstract(self):
+        """AgentRuntime 是抽象类"""
+        from backend.app.agent import AgentRuntime
+        import inspect
+        assert inspect.isabstract(AgentRuntime)
+
+    def test_agent_runtime_has_required_methods(self):
+        """AgentRuntime 定义了至少 run、register_tool、registered_tools、is_mock"""
+        from backend.app.agent import AgentRuntime
+        assert hasattr(AgentRuntime, 'run')
+        assert hasattr(AgentRuntime, 'register_tool')
+        assert hasattr(AgentRuntime, 'registered_tools')
+        assert hasattr(AgentRuntime, 'is_mock')
+
+    def test_agent_runtime_cannot_instantiate(self):
+        """缺少抽象方法时不能实例化"""
+        from backend.app.agent import AgentRuntime
+        with pytest.raises(TypeError):
+            AgentRuntime()
+
+    def test_agent_run_result_create(self):
+        """AgentRunResult 可以创建"""
+        from backend.app.agent import AgentRunResult
+        result = AgentRunResult(content="test", finish_reason="stop")
+        assert result.content == "test"
+        assert result.usage == {}
 
 
 class TestPydanticAISmoke:
@@ -21,7 +66,7 @@ class TestPydanticAISmoke:
         assert Agent is not None
 
     def test_import_openai_chat_model(self):
-        """验证 OpenAIChatModel 可导入（PydanticAI v2.21 API）"""
+        """验证 OpenAIChatModel 可导入"""
         from pydantic_ai.models.openai import OpenAIChatModel
         assert OpenAIChatModel is not None
 
@@ -37,6 +82,15 @@ class TestPydanticAISmoke:
         assert agent is not None
         assert agent.model is not None
 
+    def test_structured_output_param_name(self):
+        """验证结构化输出参数名为 output_type（非 result_type）"""
+        from pydantic_ai import Agent
+        import inspect
+        sig = inspect.signature(Agent.__init__)
+        params = list(sig.parameters.keys())
+        assert "output_type" in params
+        # 注意：PydanticAI v2.21 使用 output_type，不是 result_type
+
     @pytest.mark.asyncio
     async def test_structural_output_with_pydantic(self):
         """验证 Agent 支持 Pydantic 结构化输出"""
@@ -47,6 +101,5 @@ class TestPydanticAISmoke:
             answer: str
             confidence: float
 
-        # 仅验证类型系统，不实际运行
         assert SimpleResult.model_fields["answer"].annotation is str
         assert SimpleResult.model_fields["confidence"].annotation is float

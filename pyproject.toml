@@ -22,12 +22,15 @@ classifiers = [
 # 核心依赖 — M0.2 已安装并验证
 # ----------------------------------------------------------
 dependencies = [
-    # LLM / Agent Framework
-    "pydantic-ai>=2.21.0",         # PydanticAI Agent 框架（ADR-001）
-    "pydantic>=2.0.0",             # 数据校验
+    # LLM / Agent Framework — M0.2 已验证，M0.3 锁定
+    "pydantic-ai==2.21.0",         # PydanticAI Agent 框架（ADR-001）
+    "pydantic==2.13.4",            # 数据校验
 
     # Data Validation
     # (pydantic 已覆盖)
+
+    # M0.3 新增 — YAML Golden Cases
+    "pyyaml==6.0.3",
 
     # Utilities
     # "python-dotenv>=1.0.0",     # M1 启用
@@ -43,8 +46,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=9.1.0",
-    "pytest-asyncio>=1.4.0",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
 ]
 
 [tool.setuptools.packages.find]

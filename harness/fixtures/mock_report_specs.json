@@ -1,0 +1,40 @@
+{
+  "sales_weekly": {
+    "title": "销售周报",
+    "template_key": "sales_weekly",
+    "summary": "本周销售情况概览",
+    "kpis": [
+      {"name": "总销售额", "value": 1234567, "format": "currency", "field": "TotalSales"}
+    ],
+    "charts": [
+      {"type": "bar", "title": "各区域销售额", "x_field": "Region", "y_field": "TotalSales"}
+    ],
+    "tables": [
+      {"title": "销售明细", "columns": ["Region", "TotalSales"], "rows": [["华南", 456789], ["华北", 389012]]}
+    ],
+    "insights": ["华南区销售额环比增长 5%", "华北区保持稳定"],
+    "data_source": "mock_sales_model",
+    "filters": [],
+    "generated_at": "2026-07-31T12:00:00",
+    "source_mode": "mock"
+  },
+  "satisfaction": {
+    "title": "客户满意度报告",
+    "template_key": "satisfaction",
+    "summary": "客户满意度评分概览",
+    "kpis": [
+      {"name": "平均满意度", "value": 4.2, "format": "rating", "field": "AvgScore"}
+    ],
+    "charts": [
+      {"type": "line", "title": "满意度趋势", "x_field": "Date", "y_field": "AvgScore"}
+    ],
+    "tables": [
+      {"title": "各区域满意度", "columns": ["Region", "AvgScore"], "rows": [["华南", 4.3], ["华北", 4.1]]}
+    ],
+    "insights": ["整体满意度稳定", "华南区评分最高"],
+    "data_source": "mock_satisfaction_model",
+    "filters": [],
+    "generated_at": "2026-07-31T12:00:00",
+    "source_mode": "mock"
+  }
+}

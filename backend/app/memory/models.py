@@ -3,15 +3,7 @@
 固定三态：pending、committed、failed
 
 只有满足完整成功边界时，才能提交 committed memory。
-完整成功边界至少要求：
-- 意图有效
-- 请求未被拒绝
-- 查询计划有效
-- DAX 校验成功
-- 工具执行成功
-- 查询结果校验成功
-- 最终回答或 ReportSpec 成功
-- memory_version 未冲突
+完整成功边界由 MemoryCommitEvidence 结构化表达。
 """
 
 from datetime import datetime
@@ -19,7 +11,7 @@ from enum import Enum
 from typing import Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class MemoryStatus(str, Enum):
@@ -28,6 +20,54 @@ class MemoryStatus(str, Enum):
     PENDING = "pending"      # 轮次进行中，尚未达到完整成功边界
     COMMITTED = "committed"  # 轮次已完整成功，记忆已可靠提交
     FAILED = "failed"        # 轮次失败，记忆不提交
+
+
+class RuntimeDataMode(str, Enum):
+    """运行数据模式 — Mock 与 Real 空间隔离"""
+    MOCK = "mock"
+    REAL = "real"
+
+
+class MemoryCommitEvidence(BaseModel):
+    """结构化提交证据
+
+    提交只有在全部必需证据满足时允许。
+    """
+
+    intent_valid: bool = False
+    request_allowed: bool = False
+    query_plan_valid: bool = False
+    dax_valid: bool = False
+    tool_execution_succeeded: bool = False
+    query_result_valid: bool = False
+    response_valid: bool = False
+    version_matches: bool = False
+    runtime_mode: RuntimeDataMode = RuntimeDataMode.MOCK
+    failure_reason: Optional[str] = None
+
+    @property
+    def all_satisfied(self) -> bool:
+        """所有必需证据满足"""
+        return all([
+            self.intent_valid,
+            self.request_allowed,
+            self.query_plan_valid,
+            self.dax_valid,
+            self.tool_execution_succeeded,
+            self.query_result_valid,
+            self.response_valid,
+            self.version_matches,
+        ])
+
+
+class MemoryCorrectionRecord(BaseModel):
+    """结构化纠正记录"""
+    field: str
+    old_value: Optional[object] = None
+    new_value: Optional[object] = None
+    reason: Optional[str] = None
+    corrected_at: datetime = Field(default_factory=datetime.utcnow)
+    request_id: Optional[str] = None
 
 
 class StructuredWorkMemory(BaseModel):
@@ -52,7 +92,7 @@ class StructuredWorkMemory(BaseModel):
     # 分析要素
     measures: list[str] = Field(default_factory=list, description="指标列表")
     dimensions: list[str] = Field(default_factory=list, description="维度列表")
-    filters: list[dict[str, str]] = Field(default_factory=list, description="筛选条件")
+    filters: list[dict] = Field(default_factory=list, description="筛选条件")
     time_range: Optional[str] = Field(default=None, description="时间范围")
     sort: Optional[str] = Field(default=None, description="排序方式")
     top_n: Optional[int] = Field(default=None, ge=1, description="Top N 限制")
@@ -70,44 +110,63 @@ class StructuredWorkMemory(BaseModel):
     clarification_question: Optional[str] = Field(default=None, description="待澄清问题文本")
 
     # 版本和状态
-    memory_version: int = Field(default=1, ge=1, description="乐观锁版本号")
+    memory_version: int = Field(default=1, ge=1, description="乐观锁版本号 — 仅成功 Commit 后递增")
     state_status: MemoryStatus = Field(default=MemoryStatus.PENDING, description="记忆状态")
+
+    # 来源标记
+    is_mock: bool = Field(default=False, description="是否由 Mock LLM 生成")
+    runtime_mode: str = Field(default="mock", description="运行模式: mock | real")
+    llm_provider: Optional[str] = Field(default=None, description="LLM Provider 名称")
+    powerbi_provider: Optional[str] = Field(default=None, description="Power BI Provider 名称")
 
     # 时间戳
     created_at: datetime = Field(default_factory=datetime.utcnow, description="创建时间")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="最后更新时间")
 
-    # Mock 标记
-    is_mock: bool = Field(default=False, description="是否由 Mock LLM 生成（不可标记为真实业务结果）")
-
-    @field_validator("state_status")
-    @classmethod
-    def failed_status_cannot_be_committed(cls, v: MemoryStatus, info) -> MemoryStatus:
-        """failed 状态不可作为 committed 状态"""
-        return v
+    # 审计
+    correction_history: list[MemoryCorrectionRecord] = Field(
+        default_factory=list, description="纠正记录历史"
+    )
+    commit_evidence: Optional[MemoryCommitEvidence] = Field(
+        default=None, description="最近一次提交证据"
+    )
 
     def bump_version(self) -> None:
-        """递增 memory_version"""
+        """递增 memory_version（仅内部使用）"""
         self.memory_version += 1
         self.updated_at = datetime.utcnow()
 
-    def commit(self) -> None:
-        """标记为已提交（仅当满足完整成功边界时调用）"""
+    def commit(self, evidence: Optional[MemoryCommitEvidence] = None) -> None:
+        """标记为已提交
+
+        Args:
+            evidence: 提交证据，记录时附带
+
+        Raises:
+            ValueError: 状态为 failed 时不可提交
+        """
         if self.state_status == MemoryStatus.FAILED:
             raise ValueError("failed 状态的记忆不可标记为 committed")
         self.state_status = MemoryStatus.COMMITTED
+        if evidence is not None:
+            self.commit_evidence = evidence
         self.bump_version()
 
     def fail(self) -> None:
-        """标记为失败"""
+        """标记为失败 — 不递增版本"""
         self.state_status = MemoryStatus.FAILED
         self.updated_at = datetime.utcnow()
 
     def is_committable(self) -> bool:
-        """检查是否满足提交条件"""
+        """检查是否满足基本提交条件"""
         return (
             self.state_status == MemoryStatus.PENDING
             and self.current_intent is not None
             and self.current_intent != "unsupported"
             and not self.clarification_pending
         )
+
+    def add_correction_record(self, record: MemoryCorrectionRecord) -> None:
+        """添加纠正审计记录"""
+        self.correction_history.append(record)
+        self.updated_at = datetime.utcnow()

@@ -1,104 +1,104 @@
 # 02 — 技术选型与系统架构
 
-> **状态：** M0.2 已更新实质性内容
-> **下一轮：** M0.3（Power BI MCP Adapter、Harness）
-> **关联 ADR：** ADR-001（Agent 框架）、ADR-002（记忆系统）
+> **状态：** M0.3 已更新
+> **当前轮次：** M0.3 数据接入与验证闭环
+> **关联 ADR：** ADR-001、ADR-002、ADR-003、ADR-004
 
 ---
 
 ## 一、技术选型概览
 
-| 层级 | 候选技术 | 状态 | 决策轮次 |
-|------|---------|------|---------|
-| 前端框架 | React + Vite | ✅ 已确定 | PRD |
-| 后端框架 | FastAPI | ✅ 已确定 | PRD |
-| Agent 框架 | PydanticAI 2.21.0 | ✅ 已确定 | M0.2 (ADR-001) |
-| LLM Provider | DeepSeek + Mock | ✅ Mock 可运行，DeepSeek 骨架 | M0.2 |
-| LLM SDK | PydanticAI + OpenAI-compatible | ✅ 已确定 | M0.2 |
-| Power BI MCP | MCP Client | ⏳ 待定 | M0.3 |
-| 数据校验 | Pydantic v2 | ✅ 方向已定 | PRD |
-| 记忆存储 | Repository 接口 + 内存实现（MVP） | ✅ 契约已定，持久化延后 | M0.2 (ADR-002) |
-| 报表渲染 | Jinja2 固定模板 | ⏳ 待确认 | M3 |
-| 测试框架 | pytest + pytest-asyncio | ✅ 已确认（65 单测通过） | M0.2 |
+| 层级 | 技术 | 版本 | 状态 |
+|------|------|------|------|
+| 前端框架 | React + Vite | — | 已确定，M5 开发 |
+| 后端框架 | FastAPI | — | 已确定，M0.4 最小骨架 |
+| Agent 框架 | PydanticAI | 2.21.0 | ✅ M0.2 选定，Adapter 隔离 |
+| LLM Provider | DeepSeek + Mock | — | ✅ Mock 可运行，DeepSeek M1 |
+| Power BI | Remote MCP Server | — | M2 真实连接，M0.3 Mock |
+| 数据校验 | Pydantic v2 | 2.13.4 | ✅ 已锁定 |
+| 记忆存储 | Repository + 内存 | — | ✅ M0.3 InMemory 实现 |
+| 报表渲染 | Mock HTML | — | M0.3 最小实现，M3 正式 |
+| Harness | ETCLOVG 轻量 | — | ✅ M0.3 完整实现 |
+| 测试框架 | pytest + pytest-asyncio | 9.1.1 / 1.4.0 | ✅ 已锁定 |
+| Golden Cases | YAML + Runner | — | ✅ M0.3 10 条 Cases |
+| 依赖锁定 | PyYAML | 6.0.3 | ✅ M0.3 新增 |
 
-## 二、系统架构概要
+## 二、系统架构
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                      前端 (React + Vite)                   │
-│                   极简白色对话页面                           │
 │              前端开发延后至后端核心链路跑通                    │
 └──────────────────────┬───────────────────────────────────┘
                        │ HTTP/SSE
                        ▼
 ┌──────────────────────────────────────────────────────────┐
 │                    API 层 (FastAPI)                        │
-│  GET /api/health                                           │
-│  GET /api/semantic-models                                  │
-│  GET /api/report-templates                                 │
-│  POST /api/chat                                            │
-│  GET /api/reports/{report_id}                              │
+│  M0.4: GET /api/health                                    │
 └──────────────────────┬───────────────────────────────────┘
                        │
                        ▼
 ┌──────────────────────────────────────────────────────────┐
-│                  Agent 编排层 (单Agent)                     │
-│                                                           │
-│  ┌─────────────┐  ┌──────────┐  ┌────────────────────┐   │
-│  │ 意图识别      │  │ 工具调度  │  │ 输出验证           │   │
-│  │ IntentSpec   │  │ ToolGateway│  │ AnswerSpec/ReportSpec│ │
-│  └─────────────┘  └──────────┘  └────────────────────┘   │
-└──────┬──────────────┬──────────────┬─────────────────────┘
-       │              │              │
-       ▼              ▼              ▼
-┌──────────┐  ┌────────────┐  ┌──────────────┐
-│ LLM      │  │ Power BI   │  │ Memory       │
-│ Provider │  │ MCP Adapter│  │ Repository   │
-│          │  │            │  │              │
-│ DeepSeek │  │ MCP Client │  │ SQLite       │
-│ Mock LLM │  │ DAX Exec   │  │ Session Store│
-└──────────┘  └────────────┘  └──────────────┘
-       │              │              │
-       ▼              ▼              ▼
-┌──────────┐  ┌────────────┐  ┌──────────────┐
-│ Harness  │  │ 报表引擎    │  │ Trace        │
-│          │  │            │  │              │
-│ 工具白名单 │  │ 固定模板    │  │ 请求全链路    │
-│ 超时/行数 │  │ Jinja2     │  │ 耗时记录     │
-│ Golden   │  │ HTML Render│  │ 错误记录     │
-│ Cases    │  │            │  │              │
-└──────────┘  └────────────┘  └──────────────┘
+│                Application 层                              │
+│  MockTurnService (M0.3) → FastAPI Service (M0.4)          │
+└──────────────────────┬───────────────────────────────────┘
+                       │
+         ┌─────────────┼─────────────┐
+         ▼             ▼             ▼
+┌────────────┐ ┌───────────┐ ┌──────────────┐
+│ Harness    │ │ Agent     │ │ Power BI     │
+│ ETCLOVG    │ │ Runtime   │ │ Adapter      │
+│            │ │           │ │              │
+│ ToolGateway│ │ Mock (M0.3)│ │ Mock (M0.3) │
+│ ContextBld │ │ DeepSeek   │ │ Remote (M2) │
+│ TurnCtrl   │ │ (M1)      │ │              │
+│ Validation │ │           │ │              │
+│ Trace      │ │           │ │              │
+└────────────┘ └───────────┘ └──────────────┘
+         │             │             │
+         ▼             ▼             ▼
+┌────────────┐ ┌───────────┐ ┌──────────────┐
+│ Memory     │ │ Report    │ │ Schemas      │
+│ Repository │ │ Renderer  │ │ Contracts    │
+│            │ │           │ │              │
+│ InMemory   │ │ Mock (0.3)│ │ QueryPlan    │
+│ (M0.3)     │ │ Jinja2(M3)│ │ DAXRequest   │
+│            │ │           │ │ QueryResult  │
+│            │ │           │ │ AnswerSpec   │
+│            │ │           │ │ ReportSpec   │
+└────────────┘ └───────────┘ └──────────────┘
 ```
 
-## 三、待完成的 ADR
+## 三、ADR 编号（已修正）
 
-以下架构决策需要在对应轮次通过 ADR 正式确定：
-
-| ADR | 决策内容 | 计划轮次 |
-|-----|---------|---------|
-| ADR-0001 | Agent 框架选择 | M0.2 |
-| ADR-0002 | LLM Provider 接口设计 | M0.2 |
-| ADR-0003 | Mock LLM 策略 | M0.2 |
-| ADR-0004 | 意图识别方案 | M0.2 |
-| ADR-0005 | 记忆系统设计 | M0.2 |
-| ADR-0006 | Power BI MCP Client 实现方案 | M0.3 |
-| ADR-0007 | Harness 架构 | M0.3/M0.4 |
+| ADR | 标题 | 状态 |
+|-----|------|------|
+| ADR-001 | Agent 框架选择 — PydanticAI | accepted |
+| ADR-002 | 记忆系统与存储方案 | accepted |
+| ADR-003 | Power BI MCP 认证与接入方案 | accepted |
+| ADR-004 | Harness 方案：轻量 ETCLOVG 控制面 | accepted |
 
 ## 四、模块边界
 
-### 本轮 (M0.1) 边界
+### M0.1 完成
+- 仓库初始化、文档基线、环境搭建
 
-- 仅建立架构概要骨架
-- 不选择具体 Agent 框架
-- 不实现任何模块代码
-- 不编写 ADR
+### M0.2 完成
+- Agent 框架 ADR、LLM Provider、IntentSpec、记忆系统设计、65 测试
 
-### 后续轮次边界
+### M0.3 完成
+- M0.2 审计修复（AgentRuntime、PydanticAI API、Fixture、Mock LLM、IntentSpec、记忆规则）
+- PowerBIAdapter（Mock + Remote 骨架）
+- 核心数据契约（QueryPlan、DAXRequest、QueryResult、AnswerSpec、ReportSpec、UserContext）
+- Harness ETCLOVG 完整实现（ToolGateway、ContextBuilder、TurnController、ValidationService、TraceRecorder）
+- InMemoryMemoryRepository
+- MockAgentRuntime、MockReportRenderer、MockTurnService
+- Golden Cases（10 条）+ GoldenCaseRunner
+- 166 个测试全部通过
 
-- M0.2：完成 Agent 框架 ADR、LLM Provider 设计、意图识别设计、记忆系统设计
-- M0.3：完成 Power BI MCP Adapter、Mock 适配器、Harness 完整闭环（ETCLOVG）、Golden Cases
-- M0.4：FastAPI 最小骨架、`/health`、全量测试、文档代码一致性、M0 总验收
+### M0.4 允许
+- FastAPI 最小骨架、`/health`、Pydantic Settings、全量审查与封板
 
 ---
 
-*创建日期：2026-07-31 | M0.1 仓库初始化与文档基线*
+*最后更新：2026-07-31 | M0.3 数据接入与验证闭环*

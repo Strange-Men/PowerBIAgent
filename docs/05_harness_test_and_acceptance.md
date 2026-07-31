@@ -1,126 +1,109 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M0.1 骨架已建立
-> **下一轮实质性填充：** M0.3（Harness 设计）、M0.4（测试框架和 Golden Cases）
-> **警告：** 本文当前仅为骨架，尚未完成的技术决策不得用于指导开发
+> **状态：** M0.3 实质性完成（轻量 ETCLOVG 设计）
+> **关联 ADR：** ADR-004
 
 ---
 
-## 一、Harness 设计
+## 一、Harness ETCLOVG 设计
 
-### 1.1 目标
+### E: Execution — HarnessConfig
 
-MVP Harness 用于限制 Agent 行为、防止开发偏移，并持续验证数据结果。
+- APP_ENV、LLM_MODE、POWERBI_MODE、HARNESS_MODE
+- 超时、最大行数、工具调用限制、重试限制
+- 默认 Mock 执行模式，Production 必须 strict
 
-采用适合 MVP 的轻量控制面，不引入复杂编排框架。
+### T: Tooling — ToolGateway
 
-### 1.2 控制面组成
+- 工具注册、重复注册拒绝、未注册工具拒绝
+- Intent 权限检查、UserContext 权限检查
+- 输入/输出 Pydantic 校验
+- async timeout、有限重试
+- 工具策略矩阵（Intent → 允许的工具）
 
-#### 结构化输出约束
+### C: Context — ContextBuilder
 
-LLM 的关键输出必须符合固定 Pydantic 结构：
-- IntentSpec
-- QueryPlan
-- DAX
-- AnswerSpec
-- ReportSpec
+- 注入：系统规则、当前输入、committed memory、最近5轮、Schema子集、Mock标记
+- 禁止：全部历史、完整Schema、Secret、failed/pending memory
+- 输入长度限制、Secret字段递归排除
 
-#### 工具白名单
+### L: Lifecycle — TurnController
 
-Agent 只能调用以下工具：
-- `get_semantic_model_schema`
-- `execute_dax`
-- `render_report`
+- 12 个正常状态 + 7 个终止状态
+- 合法状态转换表，非法跳转拒绝
+- 工具调用次数/DAX修复/LLM格式重试/PowerBI查询重试限制
+- MemoryCommitEvidence 生成
+- can_continue()、can_commit_memory() 判断
 
-#### 查询限制
+### O: Observability — TraceRecorder
 
-- 查询超时时间
-- 最大返回行数
-- 最大重试次数
-- 禁止危险或无关查询
-- 禁止访问未选择的语义模型
+- 15 种 Trace 事件类型
+- JSON 结构化 logging + 内存事件列表
+- 递归 Secret 过滤
+- M0.3 内存实现，不实现 SQLite/OpenTelemetry
 
-#### Trace
+### V: Verification — ValidationService
 
-每次请求记录完整链路：
-- 用户问题
-- 语义模型 / 模板
-- 意图识别结果
-- 查询计划
-- 生成的 DAX
-- MCP 返回数据摘要
-- 最终答案 / ReportSpec
-- 错误信息
-- 各阶段耗时
+- Intent、QueryPlan、DAX、QueryResult、Report、Memory 六类验证
+- 结构化 ValidationResult（valid + errors + warnings）
 
-### 1.3 待设计内容 (M0.3-M0.4)
+### G: Governance — Policies
 
-- Harness Runner 实现方案
-- 工具白名单注册机制
-- TurnController 设计
-- Trace 存储和查询
-- 生命周期管理
+- LLM Provider 白名单、Power BI Adapter 白名单
+- 语义模型白名单、报表模板白名单
+- 工具白名单、只读查询、禁止跨模型
+- Secret 过滤、Mock/Real 隔离、UserContext 权限
 
 ## 二、Golden Cases
 
-### 2.1 设计目标
+### 位置
+`harness/cases/golden_cases.yaml`
 
-建立约 20-30 个固定测试问题，每次修改 Prompt、Agent、MCP Adapter 或报表模块后执行回归测试。
+### M0.3 首批 10 条
 
-### 2.2 覆盖场景
+| ID | 类别 | 状态 |
+|----|------|------|
+| gc_001 | 普通数据问答成功 | mock_ready |
+| gc_002 | 多轮筛选继承 | mock_ready |
+| gc_003 | 报表生成成功 | mock_ready |
+| gc_004 | clarification 不调用工具 | mock_ready |
+| gc_005 | unsupported 不调用工具 | mock_ready |
+| gc_006 | 工具失败不提交 Memory | mock_ready |
+| gc_007 | 虚假字段被拒绝 | mock_ready |
+| gc_008 | Memory 版本冲突 | mock_ready |
+| gc_009 | 未注册工具被拒绝 | pending_real_baseline |
+| gc_010 | 超大结果被截断 | mock_ready |
 
-| 场景类别 | 示例 | 数量 |
-|---------|------|------|
-| 单指标查询 | "本月销售额是多少？" | ~3 |
-| 区域排名 | "各区域销售额排名" | ~3 |
-| 时间趋势 | "最近六个月趋势" | ~3 |
-| 多条件筛选 | "华南区本月利润率" | ~3 |
-| 连续追问 | 多轮对话场景 | ~3 |
-| 空数据 | 查询无结果 | ~2 |
-| 错误字段 | 输入不存在的指标 | ~2 |
-| DAX 失败 | MCP 返回错误 | ~2 |
-| 报表生成 | 销售周报/满意度报告 | ~4 |
+### GoldenCaseRunner（`backend/app/harness/cases/case_runner.py`）
 
-### 2.3 待设计内容 (M0.4)
-
-- Golden Cases 具体问题和预期结果
-- Golden Cases Runner
-- 回归测试流程
-- 结果比对策略
+- 加载 YAML、校验结构
+- 注入 initial_memory、运行 MockTurnService
+- 收集 Trace、比较 expected
+- 输出单条和全量结果
+- 重点比较：Intent、Tool 序列、状态流转、Memory 提交、Error Type、Response Type
+- 不逐字比较自然语言答案
 
 ## 三、测试策略
 
-### 3.1 测试层级
+| 层级 | 覆盖 | 数量 |
+|------|------|------|
+| 单元测试（unit/） | 独立函数和类 | 6 文件 |
+| 集成测试（integration/） | Mock 完整链路 | 1 文件 |
+| Golden Cases | 端到端场景 | 10 条 YAML |
 
-| 层级 | 覆盖范围 | 框架 |
-|------|---------|------|
-| 单元测试 | 独立函数和类 | pytest |
-| 集成测试 | 模块间交互 | pytest + Mock MCP |
-| Golden Cases | 端到端业务场景 | 自定义 Runner |
+## 四、166 测试覆盖
 
-### 3.2 待设计内容 (M0.4)
-
-- 测试目录结构
-- Mock 策略（Mock LLM、Mock Power BI MCP）
-- CI 可行性评估
-- 测试覆盖率目标
-
-## 四、模块边界
-
-### 本轮 (M0.1) 边界
-
-- 仅建立骨架
-- 不定义具体 Golden Cases
-- 不实现 Harness Runner
-- 不创建测试文件
-
-### M0.3-M0.4 边界
-
-- 完成 Harness 核心设计
-- 创建 Golden Cases 定义
-- 搭建测试框架骨架
-- 实现 Mock LLM 和 Mock Power BI MCP
+| 测试文件 | 内容 |
+|---------|------|
+| test_intent.py | IntentSpec + FilterSpec + 跨字段规则 |
+| test_llm.py | Mock LLM + Fixture + 注册表 + DeepSeek 安全 |
+| test_memory.py | 状态 + 版本 + 幂等 + 准入 + Mock 空间 + Correction |
+| test_agent_framework.py | AgentRuntime + PydanticAI Smoke |
+| test_powerbi.py | Mock Adapter 全部场景 |
+| test_harness.py | ToolGateway + ContextBuilder + TurnController + Trace + Validation |
+| test_memory_repository.py | InMemoryMemoryRepository 全功能 |
+| test_mock_pipeline.py | 问答/报表/多轮/冲突/幂等集成 |
 
 ---
 
-*创建日期：2026-07-31 | M0.1 仓库初始化与文档基线*
+*最后更新：2026-07-31 | M0.3 数据接入与验证闭环*

@@ -1,0 +1,53 @@
+{
+  "mock_sales_model": {
+    "name": "Mock Sales Model",
+    "key": "mock_sales_model",
+    "tables": [
+      {
+        "name": "Sales",
+        "columns": [
+          {"name": "SalesKey", "data_type": "int64", "is_hidden": true},
+          {"name": "Date", "data_type": "dateTime", "is_hidden": false},
+          {"name": "Region", "data_type": "string", "is_hidden": false},
+          {"name": "ProductCategory", "data_type": "string", "is_hidden": false},
+          {"name": "SalesAmount", "data_type": "decimal", "is_hidden": false},
+          {"name": "CostAmount", "data_type": "decimal", "is_hidden": false},
+          {"name": "OrderQuantity", "data_type": "int64", "is_hidden": false}
+        ],
+        "measures": [
+          {"name": "TotalSales", "expression": "SUM('Sales'[SalesAmount])", "data_type": "decimal"},
+          {"name": "TotalCost", "expression": "SUM('Sales'[CostAmount])", "data_type": "decimal"},
+          {"name": "Profit", "expression": "[TotalSales] - [TotalCost]", "data_type": "decimal"},
+          {"name": "ProfitMargin", "expression": "DIVIDE([Profit], [TotalSales])", "data_type": "decimal"},
+          {"name": "OrderCount", "expression": "SUM('Sales'[OrderQuantity])", "data_type": "int64"}
+        ],
+        "hierarchies": [
+          {"name": "DateHierarchy", "levels": ["Year", "Quarter", "Month", "Date"]}
+        ]
+      }
+    ],
+    "relationships": []
+  },
+  "mock_satisfaction_model": {
+    "name": "Mock Satisfaction Model",
+    "key": "mock_satisfaction_model",
+    "tables": [
+      {
+        "name": "Survey",
+        "columns": [
+          {"name": "SurveyKey", "data_type": "int64", "is_hidden": true},
+          {"name": "Date", "data_type": "dateTime", "is_hidden": false},
+          {"name": "Region", "data_type": "string", "is_hidden": false},
+          {"name": "Score", "data_type": "decimal", "is_hidden": false},
+          {"name": "Category", "data_type": "string", "is_hidden": false}
+        ],
+        "measures": [
+          {"name": "AvgScore", "expression": "AVERAGE('Survey'[Score])", "data_type": "decimal"},
+          {"name": "ResponseCount", "expression": "COUNTROWS('Survey')", "data_type": "int64"}
+        ],
+        "hierarchies": []
+      }
+    ],
+    "relationships": []
+  }
+}

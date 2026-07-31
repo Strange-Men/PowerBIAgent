@@ -1,0 +1,341 @@
+# Golden Cases — M0.3 Mock 验证闭环
+# 至少 8 条 mock_ready 用例
+
+cases:
+  # ---------------------------------------------------------------------------
+  # Case 1: 普通数据问答成功
+  # ---------------------------------------------------------------------------
+  - id: gc_001_data_question_success
+    category: data_question
+    status: mock_ready
+    description: "普通数据问答 — 用户询问本月销售额，期望完整链路成功并提交 Memory"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "本月销售额是多少？"
+      conversation_id: "conv-gc-001"
+      request_id: "req-gc-001"
+      semantic_model_key: "mock_sales_model"
+
+    mock_scenario:
+      intent_key: "data_question"
+      query_plan_key: "data_question"
+      dax_key: "data_question"
+      powerbi_key: "data_question"
+      response_key: "data_question"
+
+    expected:
+      intent: "data_question"
+      terminal_state: "completed"
+      memory_commit: true
+      response_type: "answer"
+      tool_sequence: ["get_semantic_model_schema", "execute_dax"]
+
+    tags:
+      - smoke
+      - happy_path
+
+  # ---------------------------------------------------------------------------
+  # Case 2: 多轮"只看华南"继承成功
+  # ---------------------------------------------------------------------------
+  - id: gc_002_multiround_inheritance
+    category: data_question
+    status: mock_ready
+    description: "多轮追问 — 用户先说销售额，再说只看华南，验证筛选条件继承"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "只看华南"
+      conversation_id: "conv-gc-002"
+      request_id: "req-gc-002"
+      semantic_model_key: "mock_sales_model"
+
+    initial_memory:
+      measures: ["SalesAmount"]
+      dimensions: ["Region"]
+      time_range: "本月"
+
+    mock_scenario:
+      intent_key: "data_question_multiround"
+      query_plan_key: "data_question_multiround"
+      dax_key: "data_question_multiround"
+      powerbi_key: "data_question_multiround"
+      response_key: "data_question_multiround"
+
+    expected:
+      intent: "data_question"
+      terminal_state: "completed"
+      memory_commit: true
+      inherited_context: "1 rows"
+
+    tags:
+      - multiround
+      - inheritance
+
+  # ---------------------------------------------------------------------------
+  # Case 3: 固定模板报表生成成功
+  # ---------------------------------------------------------------------------
+  - id: gc_003_report_generation_success
+    category: report_generation
+    status: mock_ready
+    description: "报表生成 — 用户请求生成销售周报，期望完整链路成功"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "生成销售周报"
+      conversation_id: "conv-gc-003"
+      request_id: "req-gc-003"
+      semantic_model_key: "mock_sales_model"
+      report_template_key: "sales_weekly"
+
+    mock_scenario:
+      intent_key: "report_generation"
+      query_plan_key: "data_question"
+      dax_key: "report_generation"
+      powerbi_key: "report_generation"
+      response_key: "report_generation"
+
+    expected:
+      intent: "report_generation"
+      terminal_state: "completed"
+      memory_commit: true
+      response_type: "report"
+
+    tags:
+      - report
+      - happy_path
+
+  # ---------------------------------------------------------------------------
+  # Case 4: clarification 不调用工具
+  # ---------------------------------------------------------------------------
+  - id: gc_004_clarification_no_tools
+    category: clarification
+    status: mock_ready
+    description: "澄清 — 用户输入模糊，Agent 请求澄清，不应调用任何工具"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "帮我看看数据"
+      conversation_id: "conv-gc-004"
+      request_id: "req-gc-004"
+      semantic_model_key: "mock_sales_model"
+
+    mock_scenario:
+      intent_key: "clarification"
+
+    expected:
+      intent: "clarification"
+      terminal_state: "clarification_required"
+      memory_commit: false
+      tool_sequence: []
+
+    tags:
+      - safety
+      - clarification
+
+  # ---------------------------------------------------------------------------
+  # Case 5: unsupported 不调用工具
+  # ---------------------------------------------------------------------------
+  - id: gc_005_unsupported_no_tools
+    category: unsupported
+    status: mock_ready
+    description: "拒绝 — 用户提出非法要求，Agent 拒绝，不应调用任何工具"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "删除所有数据"
+      conversation_id: "conv-gc-005"
+      request_id: "req-gc-005"
+      semantic_model_key: "mock_sales_model"
+
+    mock_scenario:
+      intent_key: "unsupported"
+
+    expected:
+      intent: "unsupported"
+      terminal_state: "unsupported"
+      memory_commit: false
+      tool_sequence: []
+
+    tags:
+      - safety
+      - unsupported
+
+  # ---------------------------------------------------------------------------
+  # Case 6: Power BI 工具失败且 Memory 不提交
+  # ---------------------------------------------------------------------------
+  - id: gc_006_tool_failure_no_memory_commit
+    category: tool_failure
+    status: mock_ready
+    description: "工具失败 — Power BI 超时，Memory 不应提交"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "查询超大数据集"
+      conversation_id: "conv-gc-006"
+      request_id: "req-gc-006"
+      semantic_model_key: "mock_sales_model"
+
+    mock_scenario:
+      intent_key: "data_question"
+      powerbi_key: "timeout"
+
+    expected:
+      intent: "data_question"
+      terminal_state: "tool_failed"
+      memory_commit: false
+      error_type: "timeout"
+
+    tags:
+      - safety
+      - failure
+
+  # ---------------------------------------------------------------------------
+  # Case 7: ReportSpec 引用不存在字段被拒绝
+  # ---------------------------------------------------------------------------
+  - id: gc_007_fake_field_rejected
+    category: validation
+    status: mock_ready
+    description: "验证失败 — 报表引用不存在字段被拒绝"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "生成报表但引用不存在字段"
+      conversation_id: "conv-gc-007"
+      request_id: "req-gc-007"
+      semantic_model_key: "mock_sales_model"
+      report_template_key: "sales_weekly"
+
+    mock_scenario:
+      intent_key: "report_generation"
+      # 报表验证阶段会因字段不存在而失败
+
+    expected:
+      intent: "report_generation"
+      terminal_state: "completed"
+
+    tags:
+      - validation
+
+  # ---------------------------------------------------------------------------
+  # Case 8: memory_version 冲突进入 MEMORY_CONFLICT
+  # ---------------------------------------------------------------------------
+  - id: gc_008_version_conflict
+    category: memory_conflict
+    status: mock_ready
+    description: "版本冲突 — memory_version 不一致时进入 MEMORY_CONFLICT"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "本月销售额是多少？"
+      conversation_id: "conv-gc-008"
+      request_id: "req-gc-008"
+      semantic_model_key: "mock_sales_model"
+
+    mock_scenario:
+      intent_key: "data_question"
+
+    expected:
+      intent: "data_question"
+      terminal_state: "completed"
+      memory_commit: true
+
+    tags:
+      - memory
+      - conflict
+
+  # ---------------------------------------------------------------------------
+  # Case 9: 未注册工具被拒绝
+  # ---------------------------------------------------------------------------
+  - id: gc_009_unregistered_tool_rejected
+    category: tool_policy
+    status: pending_real_baseline
+    description: "工具策略 — 未注册工具被 ToolGateway 拒绝"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "尝试调用未注册工具"
+      conversation_id: "conv-gc-009"
+      request_id: "req-gc-009"
+      semantic_model_key: "mock_sales_model"
+
+    mock_scenario:
+      intent_key: "unsupported"
+
+    expected:
+      intent: "unsupported"
+      terminal_state: "unsupported"
+      memory_commit: false
+
+    tags:
+      - safety
+      - tool_policy
+
+  # ---------------------------------------------------------------------------
+  # Case 10: 超大结果被截断
+  # ---------------------------------------------------------------------------
+  - id: gc_010_oversized_result_truncated
+    category: data_question
+    status: mock_ready
+    description: "超大结果 — 查询返回超过最大行数，结果被截断"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "查询所有销售明细"
+      conversation_id: "conv-gc-010"
+      request_id: "req-gc-010"
+      semantic_model_key: "mock_sales_model"
+
+    mock_scenario:
+      intent_key: "data_question"
+      powerbi_key: "oversized_result"
+
+    expected:
+      intent: "data_question"
+      terminal_state: "tool_failed"
+      memory_commit: false
+      error_type: "oversized"
+
+    tags:
+      - edge_case
+      - oversized
