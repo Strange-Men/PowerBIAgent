@@ -1,6 +1,6 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M0.3 实质性完成（轻量 ETCLOVG 设计）
+> **状态：** M0.3.1 加固完成（轻量 ETCLOVG 设计）
 > **关联 ADR：** ADR-004
 
 ---
@@ -59,28 +59,38 @@
 ### 位置
 `harness/cases/golden_cases.yaml`
 
-### M0.3 首批 10 条
+### M0.3.1 12 条
 
 | ID | 类别 | 状态 |
 |----|------|------|
 | gc_001 | 普通数据问答成功 | mock_ready |
-| gc_002 | 多轮筛选继承 | mock_ready |
-| gc_003 | 报表生成成功 | mock_ready |
-| gc_004 | clarification 不调用工具 | mock_ready |
-| gc_005 | unsupported 不调用工具 | mock_ready |
-| gc_006 | 工具失败不提交 Memory | mock_ready |
-| gc_007 | 虚假字段被拒绝 | mock_ready |
-| gc_008 | Memory 版本冲突 | mock_ready |
-| gc_009 | 未注册工具被拒绝 | pending_real_baseline |
-| gc_010 | 超大结果被截断 | mock_ready |
+| gc_002 | 多轮筛选继承（setup_turns） | mock_ready |
+| gc_003 | 报表生成成功（含 render_report） | mock_ready |
+| gc_004 | clarification 不创建 pending | mock_ready |
+| gc_005 | unsupported 不创建 pending | mock_ready |
+| gc_006 | 工具超时不提交 Memory | mock_ready |
+| gc_007 | 虚假字段回应 response_failed | mock_ready |
+| gc_008 | 权限拒绝被 Gateway 拒绝 | mock_ready |
+| gc_009 | 超大结果被截断 | mock_ready |
+| gc_010 | DAX 错误 | mock_ready |
+| gc_011 | request_id 幂等 | mock_ready |
+| gc_012 | 真实 Power BI 基线 | pending_real_baseline |
+
+### 运行命令
+
+```powershell
+D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
+```
 
 ### GoldenCaseRunner（`backend/app/harness/cases/case_runner.py`）
 
-- 加载 YAML、校验结构
-- 注入 initial_memory、运行 MockTurnService
-- 收集 Trace、比较 expected
-- 输出单条和全量结果
-- 重点比较：Intent、Tool 序列、状态流转、Memory 提交、Error Type、Response Type
+- Async-first：`run_one_async()` / `run_all_async()`
+- 传入全部五类 Scenario Key
+- Pydantic 强校验 Case 结构
+- Runtime 配置真实生效
+- 读取 Repository 验证 Memory
+- pending_real_baseline 计为 skipped
+- actual=None 时不假通过
 - 不逐字比较自然语言答案
 
 ## 三、测试策略
@@ -91,18 +101,18 @@
 | 集成测试（integration/） | Mock 完整链路 | 1 文件 |
 | Golden Cases | 端到端场景 | 10 条 YAML |
 
-## 四、166 测试覆盖
+## 四、191 测试覆盖（M0.3.1）
 
 | 测试文件 | 内容 |
 |---------|------|
 | test_intent.py | IntentSpec + FilterSpec + 跨字段规则 |
 | test_llm.py | Mock LLM + Fixture + 注册表 + DeepSeek 安全 |
-| test_memory.py | 状态 + 版本 + 幂等 + 准入 + Mock 空间 + Correction |
+| test_memory.py | 状态 + 版本语义 + 幂等 + 准入 + Mock 空间 + Correction（重构）|
 | test_agent_framework.py | AgentRuntime + PydanticAI Smoke |
 | test_powerbi.py | Mock Adapter 全部场景 |
 | test_harness.py | ToolGateway + ContextBuilder + TurnController + Trace + Validation |
-| test_memory_repository.py | InMemoryMemoryRepository 全功能 |
-| test_mock_pipeline.py | 问答/报表/多轮/冲突/幂等集成 |
+| test_memory_repository.py | 版本 0→1→2 + 证据验证 + 隔离 + 原子性 + 失败审计（重写）|
+| test_mock_pipeline.py | 问答/报表/多轮继承/Gateway链路/冲突/幂等/失败清理（重写）|
 
 ---
 

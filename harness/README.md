@@ -28,7 +28,7 @@ Fixture 不存在时明确失败，不静默使用隐藏默认数据。
 ### 运行
 
 ```powershell
-D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases.case_runner
+D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 ```
 
 或通过 GoldenCaseRunner 编程调用。
@@ -45,15 +45,18 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases.case_runner
 Golden Cases 不逐字比较自然语言答案。
 重点比较：Intent、Tool 序列、状态流转、字段继承、Memory 提交、最终版本、Terminal State、Error Type、Response Type、Mock/Real 标记。
 
-## M0.3 范围
+## M0.3.1 范围
 
-- ✅ 8+ 可运行 Mock Golden Cases
+- ✅ 11/11 可运行 Mock Golden Cases 通过
+- ✅ Memory 事务和版本语义加固
+- ✅ ToolGateway 真实接入（三个工具全链路）
+- ✅ ContextBuilder/TraceRecorder/ValidationService 加固
 - ✅ 完整 Harness 核心组件（ETCLOVG）
-- ✅ JSON Trace
+- ✅ JSON Trace 含唯一 trace_id
 - ✅ Mock 问答链路
-- ✅ Mock 报表链路
-- ✅ 失败保护链路
+- ✅ Mock 报表链路（含 render_report）
+- ✅ 失败保护链路（失败不提交，pending 标记 failed）
 
 ---
 
-*创建日期：2026-07-31 | M0.3 数据接入与验证闭环*
+*最后更新：2026-07-31 | M0.3.1 验证闭环加固修复*

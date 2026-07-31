@@ -16,6 +16,21 @@ class ToolPolicyDeniedError(HarnessError):
     pass
 
 
+class ToolTimeoutError(HarnessError):
+    """工具超时"""
+    pass
+
+
+class ToolExecutionError(HarnessError):
+    """工具执行失败"""
+    pass
+
+
+class ToolOutputValidationError(HarnessError):
+    """工具输出校验失败"""
+    pass
+
+
 class TurnStateError(HarnessError):
     """Turn 状态非法转换"""
     pass

@@ -1,19 +1,28 @@
 """ContextBuilder — 安全组装 LLM 上下文
 
 只注入允许的内容类型，严格排除 Secret 和敏感数据。
+ContextBuilder 自身检查 Memory 状态、模式和模型边界。
 """
 
 import copy
+import re
 from typing import Any, Optional
 
 from backend.app.harness.models import HarnessConfig
-from backend.app.memory.models import StructuredWorkMemory
+from backend.app.memory.models import MemoryStatus, RuntimeDataMode, StructuredWorkMemory
 
 
-# 禁止注入上下文的敏感字段模式
+# 禁止注入上下文的敏感字段模式（字段名匹配）
 SECRET_FIELD_PATTERNS = [
     "api_key", "token", "secret", "password", "credential",
     "client_secret", "access_token", "refresh_token", "auth",
+]
+
+# 敏感字符串值模式
+SECRET_VALUE_PATTERNS = [
+    re.compile(r'sk-[a-zA-Z0-9]{10,}'),           # sk- API Key
+    re.compile(r'Bearer\s+[a-zA-Z0-9_\-\.]+'),     # Bearer token
+    re.compile(r'eyJ[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+'),  # JWT
 ]
 
 
@@ -26,17 +35,32 @@ def _is_secret_key(key: str) -> bool:
     return False
 
 
-def _filter_secrets(data: Any, depth: int = 0) -> Any:
-    """递归过滤 Secret 字段"""
-    if depth > 10:
-        return data
+def _is_secret_value(value: str) -> bool:
+    """判断字符串值是否为敏感值"""
+    for pattern in SECRET_VALUE_PATTERNS:
+        if pattern.search(value):
+            return True
+    return False
+
+
+def _filter_secrets(data: Any, depth: int = 0, max_depth: int = 15) -> Any:
+    """递归过滤 Secret 字段和值"""
+    if depth > max_depth:
+        return "[MAX_DEPTH_REACHED]"
     if isinstance(data, dict):
-        return {
-            k: "[REDACTED]" if _is_secret_key(str(k)) else _filter_secrets(v, depth + 1)
-            for k, v in data.items()
-        }
+        result = {}
+        for k, v in data.items():
+            if _is_secret_key(str(k)):
+                result[k] = "[REDACTED]"
+            else:
+                result[k] = _filter_secrets(v, depth + 1, max_depth)
+        return result
     elif isinstance(data, list):
-        return [_filter_secrets(item, depth + 1) for item in data]
+        return [_filter_secrets(item, depth + 1, max_depth) for item in data]
+    elif isinstance(data, str):
+        if _is_secret_value(data):
+            return "[REDACTED]"
+        return data
     return data
 
 
@@ -45,7 +69,7 @@ class ContextBuilder:
 
     输入：
     - 当前用户消息
-    - committed structured memory
+    - committed structured memory（必须已 committed，模式匹配）
     - 最近消息
     - 滚动摘要
     - Schema 子集
@@ -59,6 +83,7 @@ class ContextBuilder:
               滚动摘要、Schema子集、Mock/Real标记、工具限制
     禁止注入：全部历史、完整Schema、大量原始QueryResult、Secret、
               failed/pending memory、与当前模型无关的Schema
+    ContextBuilder 自身检查 committed 状态、runtime_mode、semantic_model_key。
     """
 
     def __init__(self, config: HarnessConfig):
@@ -79,8 +104,11 @@ class ContextBuilder:
     ) -> dict[str, Any]:
         """构建安全上下文字典
 
-        Returns:
-            结构化上下文，可直接注入 LLM 或 Agent
+        ContextBuilder 自身检查：
+        - Memory 状态必须为 committed
+        - runtime_mode 与当前配置一致
+        - semantic_model_key 与当前选择一致
+        - failed/pending 不能注入
         """
         context: dict[str, Any] = {
             "system_rules": system_rules or {},
@@ -97,22 +125,40 @@ class ContextBuilder:
             },
         }
 
-        # committed memory（过滤后）
+        # committed memory（严格检查后注入）
         if committed_memory is not None:
-            memory_dict = committed_memory.model_dump()
-            context["committed_memory"] = _filter_secrets(memory_dict)
+            # 状态检查：只注入 committed
+            if committed_memory.state_status != MemoryStatus.COMMITTED:
+                # 不注入非 committed 记忆
+                context["committed_memory"] = None
+            else:
+                # 模式检查：只注入与当前模式一致的记忆
+                current_mode = RuntimeDataMode.MOCK if self.config.is_mock else RuntimeDataMode.REAL
+                if committed_memory.runtime_mode != current_mode:
+                    context["committed_memory"] = None
+                elif (semantic_model_key is not None
+                      and committed_memory.semantic_model_key is not None
+                      and committed_memory.semantic_model_key != semantic_model_key):
+                    # 不相关模型 Memory 不注入
+                    context["committed_memory"] = None
+                else:
+                    memory_dict = committed_memory.model_dump()
+                    context["committed_memory"] = _filter_secrets(memory_dict)
+        else:
+            context["committed_memory"] = None
 
-        # 最近消息（最多5轮）
+        # 最近消息（最多5轮，递归 Secret 过滤）
         if recent_messages:
-            context["recent_messages"] = recent_messages[-self.max_recent_messages:]
+            filtered_messages = _filter_secrets(recent_messages[-self.max_recent_messages:])
+            context["recent_messages"] = filtered_messages
         else:
             context["recent_messages"] = []
 
         # 滚动摘要
         if rolling_summary:
-            context["rolling_summary"] = rolling_summary
+            context["rolling_summary"] = _filter_secrets(rolling_summary)
 
-        # Schema 子集（过滤 Secret）
+        # Schema 子集（Secret 过滤）
         if schema_subset:
             context["schema_subset"] = _filter_secrets(schema_subset)
 

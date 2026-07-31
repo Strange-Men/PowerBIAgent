@@ -4,6 +4,14 @@
 
 只有满足完整成功边界时，才能提交 committed memory。
 完整成功边界由 MemoryCommitEvidence 结构化表达。
+
+版本语义：
+- 没有任何 committed memory 时，当前版本为 0
+- 第一轮成功提交后版本为 1
+- 第二轮基于版本 1 提交后版本为 2
+- pending memory 必须记录其基准版本（base_memory_version）
+- 每次提交必须比较"该轮读取到的基准版本"与"当前会话最新 committed 版本"
+- 版本冲突不得覆盖现有 committed memory
 """
 
 from datetime import datetime
@@ -32,6 +40,8 @@ class MemoryCommitEvidence(BaseModel):
     """结构化提交证据
 
     提交只有在全部必需证据满足时允许。
+    版本匹配由 Repository 在原子提交阶段检查和记录，
+    调用方不得提前伪造 version_matches=True。
     """
 
     intent_valid: bool = False
@@ -41,13 +51,13 @@ class MemoryCommitEvidence(BaseModel):
     tool_execution_succeeded: bool = False
     query_result_valid: bool = False
     response_valid: bool = False
-    version_matches: bool = False
+    version_matches: bool = False  # 由 Repository 在原子提交时设置
     runtime_mode: RuntimeDataMode = RuntimeDataMode.MOCK
     failure_reason: Optional[str] = None
 
     @property
-    def all_satisfied(self) -> bool:
-        """所有必需证据满足"""
+    def business_satisfied(self) -> bool:
+        """业务条件全部满足（不含版本匹配）"""
         return all([
             self.intent_valid,
             self.request_allowed,
@@ -56,8 +66,12 @@ class MemoryCommitEvidence(BaseModel):
             self.tool_execution_succeeded,
             self.query_result_valid,
             self.response_valid,
-            self.version_matches,
         ])
+
+    @property
+    def all_satisfied(self) -> bool:
+        """所有必需证据满足（含版本匹配）"""
+        return self.business_satisfied and self.version_matches
 
 
 class MemoryCorrectionRecord(BaseModel):
@@ -75,6 +89,11 @@ class StructuredWorkMemory(BaseModel):
 
     当前轮次的分析上下文，包含指标、维度、时间、筛选等要素。
     只有 status == committed 的记忆才会在 Context Assembly 中加载。
+
+    版本语义：
+    - base_memory_version: 开始本轮时读取到的 committed 版本（0 表示无历史）
+    - memory_version: 提交成功后递增为 base + 1
+    - 状态和版本只能由 Repository 成功提交时改变
     """
 
     # 会话标识
@@ -110,12 +129,17 @@ class StructuredWorkMemory(BaseModel):
     clarification_question: Optional[str] = Field(default=None, description="待澄清问题文本")
 
     # 版本和状态
-    memory_version: int = Field(default=1, ge=1, description="乐观锁版本号 — 仅成功 Commit 后递增")
+    base_memory_version: int = Field(default=0, ge=0, description="本轮开始时读取到的 committed 版本")
+    memory_version: int = Field(default=0, ge=0, description="当前版本号 — 成功 Commit 后递增为 base+1")
     state_status: MemoryStatus = Field(default=MemoryStatus.PENDING, description="记忆状态")
+
+    # 失败信息
+    failure_reason: Optional[str] = Field(default=None, description="失败原因")
+    failure_stage: Optional[str] = Field(default=None, description="失败阶段")
 
     # 来源标记
     is_mock: bool = Field(default=False, description="是否由 Mock LLM 生成")
-    runtime_mode: str = Field(default="mock", description="运行模式: mock | real")
+    runtime_mode: RuntimeDataMode = Field(default=RuntimeDataMode.MOCK, description="运行模式")
     llm_provider: Optional[str] = Field(default=None, description="LLM Provider 名称")
     powerbi_provider: Optional[str] = Field(default=None, description="Power BI Provider 名称")
 
@@ -131,16 +155,13 @@ class StructuredWorkMemory(BaseModel):
         default=None, description="最近一次提交证据"
     )
 
-    def bump_version(self) -> None:
-        """递增 memory_version（仅内部使用）"""
-        self.memory_version += 1
+    def _bump_version(self) -> None:
+        """递增 memory_version（仅 Repository 内部使用）"""
+        self.memory_version = self.base_memory_version + 1
         self.updated_at = datetime.utcnow()
 
-    def commit(self, evidence: Optional[MemoryCommitEvidence] = None) -> None:
-        """标记为已提交
-
-        Args:
-            evidence: 提交证据，记录时附带
+    def _mark_committed(self, evidence: MemoryCommitEvidence) -> None:
+        """标记为已提交（仅 Repository 内部使用）
 
         Raises:
             ValueError: 状态为 failed 时不可提交
@@ -148,21 +169,27 @@ class StructuredWorkMemory(BaseModel):
         if self.state_status == MemoryStatus.FAILED:
             raise ValueError("failed 状态的记忆不可标记为 committed")
         self.state_status = MemoryStatus.COMMITTED
-        if evidence is not None:
-            self.commit_evidence = evidence
-        self.bump_version()
+        self.commit_evidence = evidence
+        self._bump_version()
 
-    def fail(self) -> None:
-        """标记为失败 — 不递增版本"""
+    def _mark_failed(self, reason: Optional[str] = None, stage: Optional[str] = None) -> None:
+        """标记为失败（仅 Repository 内部使用）
+
+        Args:
+            reason: 失败原因
+            stage: 失败阶段
+        """
         self.state_status = MemoryStatus.FAILED
+        self.failure_reason = reason
+        self.failure_stage = stage
         self.updated_at = datetime.utcnow()
 
     def is_committable(self) -> bool:
-        """检查是否满足基本提交条件"""
+        """检查是否满足基本提交条件（不检查版本/证据，由 Repository 负责）"""
         return (
             self.state_status == MemoryStatus.PENDING
             and self.current_intent is not None
-            and self.current_intent != "unsupported"
+            and self.current_intent not in ("unsupported", "clarification")
             and not self.clarification_pending
         )
 

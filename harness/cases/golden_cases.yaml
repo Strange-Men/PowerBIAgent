@@ -1,5 +1,5 @@
-# Golden Cases — M0.3 Mock 验证闭环
-# 至少 8 条 mock_ready 用例
+# Golden Cases — M0.3.1 验证闭环加固
+# 至少 10 条 mock_ready 用例
 
 cases:
   # ---------------------------------------------------------------------------
@@ -40,28 +40,33 @@ cases:
       - happy_path
 
   # ---------------------------------------------------------------------------
-  # Case 2: 多轮"只看华南"继承成功
+  # Case 2: 多轮"只看华南"继承成功（通过 setup_turns 建立真实 Memory）
   # ---------------------------------------------------------------------------
   - id: gc_002_multiround_inheritance
-    category: data_question
+    category: multiround
     status: mock_ready
-    description: "多轮追问 — 用户先说销售额，再说只看华南，验证筛选条件继承"
+    description: "多轮追问 — 先问销售额，再只看华南，验证通过 setup_turns 真实建立第一轮 committed memory"
 
     runtime:
       llm_mode: mock
       powerbi_mode: mock
       harness_mode: strict
 
+    setup_turns:
+      - message: "本月销售额是多少？"
+        request_id: "req-gc-002-setup"
+        semantic_model_key: "mock_sales_model"
+        intent_key: "data_question"
+        query_plan_key: "data_question"
+        dax_key: "data_question"
+        powerbi_key: "data_question"
+        response_key: "data_question"
+
     input:
       message: "只看华南"
       conversation_id: "conv-gc-002"
       request_id: "req-gc-002"
       semantic_model_key: "mock_sales_model"
-
-    initial_memory:
-      measures: ["SalesAmount"]
-      dimensions: ["Region"]
-      time_range: "本月"
 
     mock_scenario:
       intent_key: "data_question_multiround"
@@ -86,7 +91,7 @@ cases:
   - id: gc_003_report_generation_success
     category: report_generation
     status: mock_ready
-    description: "报表生成 — 用户请求生成销售周报，期望完整链路成功"
+    description: "报表生成 — 用户请求生成销售周报，期望完整链路成功（含 render_report）"
 
     runtime:
       llm_mode: mock
@@ -112,18 +117,19 @@ cases:
       terminal_state: "completed"
       memory_commit: true
       response_type: "report"
+      tool_sequence: ["get_semantic_model_schema", "execute_dax", "render_report"]
 
     tags:
       - report
       - happy_path
 
   # ---------------------------------------------------------------------------
-  # Case 4: clarification 不调用工具
+  # Case 4: clarification 不调用工具、不创建 pending
   # ---------------------------------------------------------------------------
   - id: gc_004_clarification_no_tools
     category: clarification
     status: mock_ready
-    description: "澄清 — 用户输入模糊，Agent 请求澄清，不应调用任何工具"
+    description: "澄清 — 用户输入模糊，Agent 请求澄清，不应调用任何工具，不创建 pending memory"
 
     runtime:
       llm_mode: mock
@@ -150,12 +156,12 @@ cases:
       - clarification
 
   # ---------------------------------------------------------------------------
-  # Case 5: unsupported 不调用工具
+  # Case 5: unsupported 不调用工具、不创建 pending
   # ---------------------------------------------------------------------------
   - id: gc_005_unsupported_no_tools
     category: unsupported
     status: mock_ready
-    description: "拒绝 — 用户提出非法要求，Agent 拒绝，不应调用任何工具"
+    description: "拒绝 — 用户提出非法要求，Agent 拒绝，不应调用任何工具，不创建 pending"
 
     runtime:
       llm_mode: mock
@@ -182,7 +188,7 @@ cases:
       - unsupported
 
   # ---------------------------------------------------------------------------
-  # Case 6: Power BI 工具失败且 Memory 不提交
+  # Case 6: Power BI timeout 经过 ToolGateway 且不提交 Memory
   # ---------------------------------------------------------------------------
   - id: gc_006_tool_failure_no_memory_commit
     category: tool_failure
@@ -202,7 +208,10 @@ cases:
 
     mock_scenario:
       intent_key: "data_question"
+      query_plan_key: "data_question"
+      dax_key: "data_question"
       powerbi_key: "timeout"
+      response_key: "data_question"
 
     expected:
       intent: "data_question"
@@ -215,12 +224,12 @@ cases:
       - failure
 
   # ---------------------------------------------------------------------------
-  # Case 7: ReportSpec 引用不存在字段被拒绝
+  # Case 7: 虚假 Report 字段真实被拒绝
   # ---------------------------------------------------------------------------
   - id: gc_007_fake_field_rejected
     category: validation
     status: mock_ready
-    description: "验证失败 — 报表引用不存在字段被拒绝"
+    description: "验证失败 — 报表引用不存在字段被拒绝，terminal_state 为 response_failed"
 
     runtime:
       llm_mode: mock
@@ -236,22 +245,27 @@ cases:
 
     mock_scenario:
       intent_key: "report_generation"
-      # 报表验证阶段会因字段不存在而失败
+      query_plan_key: "data_question"
+      dax_key: "report_generation"
+      powerbi_key: "report_generation"
+      response_key: "fake_field_report"
 
     expected:
       intent: "report_generation"
-      terminal_state: "completed"
+      terminal_state: "response_failed"
+      memory_commit: false
+      error_type: "report_validation_failed"
 
     tags:
       - validation
 
   # ---------------------------------------------------------------------------
-  # Case 8: memory_version 冲突进入 MEMORY_CONFLICT
+  # Case 8: 无权限语义模型被 Gateway 拒绝
   # ---------------------------------------------------------------------------
-  - id: gc_008_version_conflict
-    category: memory_conflict
+  - id: gc_008_permission_denied
+    category: tool_policy
     status: mock_ready
-    description: "版本冲突 — memory_version 不一致时进入 MEMORY_CONFLICT"
+    description: "权限拒绝 — 语义模型权限不足，被 Gateway 或 Adapter 拒绝"
 
     runtime:
       llm_mode: mock
@@ -259,61 +273,35 @@ cases:
       harness_mode: strict
 
     input:
-      message: "本月销售额是多少？"
+      message: "查询无权限模型的数据"
       conversation_id: "conv-gc-008"
       request_id: "req-gc-008"
       semantic_model_key: "mock_sales_model"
 
     mock_scenario:
       intent_key: "data_question"
+      query_plan_key: "data_question"
+      dax_key: "data_question"
+      powerbi_key: "permission_denied"
+      response_key: "data_question"
 
     expected:
       intent: "data_question"
-      terminal_state: "completed"
-      memory_commit: true
-
-    tags:
-      - memory
-      - conflict
-
-  # ---------------------------------------------------------------------------
-  # Case 9: 未注册工具被拒绝
-  # ---------------------------------------------------------------------------
-  - id: gc_009_unregistered_tool_rejected
-    category: tool_policy
-    status: pending_real_baseline
-    description: "工具策略 — 未注册工具被 ToolGateway 拒绝"
-
-    runtime:
-      llm_mode: mock
-      powerbi_mode: mock
-      harness_mode: strict
-
-    input:
-      message: "尝试调用未注册工具"
-      conversation_id: "conv-gc-009"
-      request_id: "req-gc-009"
-      semantic_model_key: "mock_sales_model"
-
-    mock_scenario:
-      intent_key: "unsupported"
-
-    expected:
-      intent: "unsupported"
-      terminal_state: "unsupported"
+      terminal_state: "tool_failed"
       memory_commit: false
+      error_type: "permission_denied"
 
     tags:
       - safety
       - tool_policy
 
   # ---------------------------------------------------------------------------
-  # Case 10: 超大结果被截断
+  # Case 9: 超大结果失败
   # ---------------------------------------------------------------------------
-  - id: gc_010_oversized_result_truncated
-    category: data_question
+  - id: gc_009_oversized_result
+    category: edge_case
     status: mock_ready
-    description: "超大结果 — 查询返回超过最大行数，结果被截断"
+    description: "超大结果 — 查询返回超大结果集，被截断，不提交错误 Memory"
 
     runtime:
       llm_mode: mock
@@ -322,13 +310,16 @@ cases:
 
     input:
       message: "查询所有销售明细"
-      conversation_id: "conv-gc-010"
-      request_id: "req-gc-010"
+      conversation_id: "conv-gc-009"
+      request_id: "req-gc-009"
       semantic_model_key: "mock_sales_model"
 
     mock_scenario:
       intent_key: "data_question"
+      query_plan_key: "data_question"
+      dax_key: "data_question"
       powerbi_key: "oversized_result"
+      response_key: "data_question"
 
     expected:
       intent: "data_question"
@@ -339,3 +330,102 @@ cases:
     tags:
       - edge_case
       - oversized
+
+  # ---------------------------------------------------------------------------
+  # Case 10: DAX 错误
+  # ---------------------------------------------------------------------------
+  - id: gc_010_dax_error
+    category: edge_case
+    status: mock_ready
+    description: "DAX 错误 — Power BI 返回 DAX 语法错误，不提交 Memory"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "执行错误的 DAX 查询"
+      conversation_id: "conv-gc-010"
+      request_id: "req-gc-010"
+      semantic_model_key: "mock_sales_model"
+
+    mock_scenario:
+      intent_key: "data_question"
+      query_plan_key: "data_question"
+      dax_key: "data_question"
+      powerbi_key: "dax_error"
+      response_key: "data_question"
+
+    expected:
+      intent: "data_question"
+      terminal_state: "tool_failed"
+      memory_commit: false
+      error_type: "dax_error"
+
+    tags:
+      - edge_case
+      - dax_error
+
+  # ---------------------------------------------------------------------------
+  # Case 11: request_id 幂等
+  # ---------------------------------------------------------------------------
+  - id: gc_011_request_id_idempotent
+    category: edge_case
+    status: mock_ready
+    description: "重复 request_id 不重新执行、不增加版本"
+
+    runtime:
+      llm_mode: mock
+      powerbi_mode: mock
+      harness_mode: strict
+
+    input:
+      message: "本月销售额是多少？"
+      conversation_id: "conv-gc-011"
+      request_id: "req-gc-011"
+      semantic_model_key: "mock_sales_model"
+
+    mock_scenario:
+      intent_key: "data_question"
+      query_plan_key: "data_question"
+      dax_key: "data_question"
+      powerbi_key: "data_question"
+      response_key: "data_question"
+
+    expected:
+      intent: "data_question"
+      terminal_state: "completed"
+      memory_commit: true
+
+    tags:
+      - smoke
+      - idempotent
+
+  # ---------------------------------------------------------------------------
+  # Case 12: 待真实 Power BI 基线
+  # ---------------------------------------------------------------------------
+  - id: gc_012_real_baseline
+    category: data_question
+    status: pending_real_baseline
+    description: "真实 Power BI 基线 — 等待 M2 实现后验证"
+
+    runtime:
+      llm_mode: deepseek
+      powerbi_mode: remote_mcp
+      harness_mode: strict
+
+    input:
+      message: "真实数据查询"
+      conversation_id: "conv-real"
+      request_id: "req-real"
+
+    mock_scenario:
+      intent_key: "data_question"
+
+    expected:
+      terminal_state: "completed"
+      memory_commit: true
+
+    tags:
+      - real_data

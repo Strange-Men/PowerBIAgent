@@ -33,6 +33,7 @@ CORRECTION_ALLOWED_FIELDS = frozenset({
 CORRECTION_BLOCKED_FIELDS = frozenset({
     "conversation_id",
     "request_id",
+    "base_memory_version",
     "memory_version",
     "state_status",
     "created_at",
@@ -77,8 +78,8 @@ class MemoryPolicies:
         # 意图有效
         if not memory.current_intent:
             failures.append("无有效意图")
-        elif memory.current_intent == "unsupported":
-            failures.append("意图被拒绝 (unsupported)")
+        elif memory.current_intent in ("unsupported", "clarification"):
+            failures.append(f"意图不允许提交: {memory.current_intent}")
 
         # 非暂停状态
         if memory.clarification_pending:
@@ -89,13 +90,12 @@ class MemoryPolicies:
             failures.append("记忆已标记为 failed")
         elif memory.state_status == MemoryStatus.COMMITTED:
             failures.append("记忆已提交，不可重复提交")
+        elif memory.state_status != MemoryStatus.PENDING:
+            failures.append(f"仅有 pending 状态可提交，当前: {memory.state_status.value}")
 
         # Mock 空间规则
-        if memory.is_mock and memory.runtime_mode == "real":
+        if memory.is_mock and memory.runtime_mode == RuntimeDataMode.REAL:
             failures.append("Mock 结果不可在 Real 空间提交")
-        if not memory.is_mock and memory.runtime_mode == "mock":
-            # Real 结果在 Mock 空间也允许（测试场景），但不推荐
-            pass
 
         # 证据检查（如果存在）
         if memory.commit_evidence is not None:
@@ -135,10 +135,10 @@ class MemoryPolicies:
 
     @staticmethod
     def check_version_conflict(
-        current_version: int, expected_version: int
+        base_version: int, current_committed_version: int
     ) -> bool:
-        """memory_version 乐观锁检查 — 期望版本与当前版本不一致时拒绝写入"""
-        return current_version != expected_version
+        """memory_version 乐观锁检查 — base 版本与当前最新 committed 版本不一致时拒绝写入"""
+        return base_version != current_committed_version
 
     # -----------------------------------------------------------------
     # 上下文切换规则

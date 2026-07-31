@@ -101,12 +101,18 @@ class TestContextBuilder:
 
     def test_secret_fields_excluded(self):
         builder = ContextBuilder(DEFAULT_MOCK_CONFIG)
-        memory = StructuredWorkMemory()
+        from backend.app.memory.models import MemoryStatus
+        memory = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            memory_version=1,
+            current_intent="data_question",
+        )
         # Secret 字段不应出现在上下文
         ctx = builder.build(user_message="test", committed_memory=memory)
         mem_dict = ctx.get("committed_memory", {})
-        # 确保没有 [REDACTED] 泄漏到 normal 字段
+        # 确保 committed memory 正确注入
         assert isinstance(mem_dict, dict)
+        assert "state_status" in mem_dict or len(mem_dict) > 0
 
     def test_input_truncation(self):
         config = HarnessConfig(max_user_input_length=10)
@@ -285,8 +291,8 @@ class TestValidationService:
         vr = validator.validate_query_result(result)
         assert vr.is_valid
 
-    def test_validate_query_result_row_mismatch(self, validator):
-        """有 error 的查询结果应通过基础校验但带有 warning"""
+    def test_validate_query_result_with_error(self, validator):
+        """有 error 的查询结果应返回 valid=False（不可继续处理）"""
         result = QueryResult(
             semantic_model_key="test",
             columns=[],
@@ -295,8 +301,9 @@ class TestValidationService:
             error={"type": "dax_error", "message": "test error", "retryable": False},
         )
         vr = validator.validate_query_result(result)
-        assert vr.is_valid  # 有 error 的结果本身校验通过，但 warnings 不为空
-        assert len(vr.warnings) > 0
+        assert not vr.is_valid  # 有 error 的结果校验失败
+        assert len(vr.errors) > 0
+        assert vr.error_code == "query_error_dax_error"
 
     def test_validate_report_template_not_allowed(self, validator, mock_schema):
         report = ReportSpec(

@@ -234,6 +234,19 @@ class ReportSpec(BaseModel):
 
 
 # =============================================================================
+# RenderedReport
+# =============================================================================
+
+class RenderedReport(BaseModel):
+    """结构化渲染结果"""
+    report_id: str = Field(default_factory=lambda: str(__import__("uuid").uuid4()))
+    template_key: str = ""
+    html: str = ""
+    source_mode: str = "mock"
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# =============================================================================
 # UserContext
 # =============================================================================
 

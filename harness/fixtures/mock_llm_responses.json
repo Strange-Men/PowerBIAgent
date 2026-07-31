@@ -190,6 +190,25 @@
       "generated_at": "2026-07-31T12:00:00",
       "source_mode": "mock"
     },
+    "fake_field_report": {
+      "title": "虚假报表",
+      "template_key": "sales_weekly",
+      "summary": "包含不存在字段的报表",
+      "kpis": [
+        {"name": "虚假KPI", "value": 999, "format": "number", "field": "NonExistentField"}
+      ],
+      "charts": [
+        {"type": "bar", "title": "虚假图表", "x_field": "FakeColumn", "y_field": "AlsoFake"}
+      ],
+      "tables": [
+        {"title": "虚假表格", "columns": ["FakeCol"], "rows": [["bad_data"]]}
+      ],
+      "insights": ["虚假洞察"],
+      "data_source": "wrong_model",
+      "filters": [],
+      "generated_at": "2026-07-31T12:00:00",
+      "source_mode": "mock"
+    },
     "sales_weekly": {
       "title": "销售周报",
       "template_key": "sales_weekly",

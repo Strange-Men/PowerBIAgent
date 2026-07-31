@@ -1,5 +1,105 @@
 # CHANGELOG
 
+## [M0.3.1] — 2026-07-31
+
+### 验证闭环加固修复
+
+**来源：** M0.3 专项代码审计发现 16 项闭环真实性问题。
+
+**Memory 模型修复：**
+- `runtime_mode` 统一为 `RuntimeDataMode` 枚举（不再使用任意字符串）
+- 版本语义固化：首次提交 0→1，第二轮 1→2，base_memory_version 驱动
+- 移除公共 `commit()`、`bump_version()`、`fail()` 方法 — 只能通过 Repository 改变状态
+- 新增 `base_memory_version` 字段 — pending 记录读取时的基准版本
+- `MemoryCommitEvidence.business_satisfied` 区分业务条件和版本匹配
+- `version_matches` 由 Repository 原子提交时设置，调用方不可伪造
+
+**Repository 加固：**
+- `asyncio.Lock` 保护 create_pending/commit/mark_failed 原子性
+- 版本检查和递增在同一临界区完成
+- `get_latest_committed()` 强制 runtime_mode 过滤
+- `list_by_conversation()` 支持 runtime_mode 过滤
+- `commit()` 拒绝：不完整 Evidence、failure_reason 非空、非 PENDING 状态、failed/committed、版本冲突、模式不一致
+- `mark_failed()` 记录 failure_reason 和 failure_stage
+- 保存完整 Memory 快照（全部分析字段）
+- Mock 与 Real 完全隔离（相同 conversation_id 不同模式互不可见）
+
+**ToolGateway 真实接入：**
+- 三个工具真实注册：get_semantic_model_schema、execute_dax、render_report
+- 所有 Adapter 调用统一经过 `gateway.execute()`
+- 主链路不再直接调用 `self.powerbi.*` 或 `self.report_renderer.*`
+- ToolSpec 权限、UserContext 模型/模板/工具白名单全部生效
+- 工具序列来自真实 Gateway 执行，不再硬编码
+- 新增异常类型：ToolTimeoutError、ToolExecutionError、ToolOutputValidationError
+
+**MockTurnService 重构：**
+- 结构化 `MockScenarioSelection`（五类 Key 全部生效）
+- clarification/unsupported 不创建 pending memory
+- 移除 `initial_memory` 任意 dict setattr
+- 提交前填充完整 Memory 字段（再调用 commit）
+- 多轮通过正常第一轮建立真实 committed memory
+- 所有失败分支统一标记 failed（含 reason 和 stage）
+- `RenderedReport` 结构化返回结果
+
+**ContextBuilder 加固：**
+- 检查 Memory 必须为 committed 状态才注入
+- runtime_mode 与当前模式一致才注入
+- semantic_model_key 与当前选择一致才注入
+- failed/pending 不注入
+- recent_messages 和 schema_subset 递归 Secret 过滤
+- Secret 值模式匹配（sk-、Bearer、JWT）
+
+**TraceRecorder 加固：**
+- 每个 Turn 生成唯一 trace_id
+- 每条事件自动携带 trace_id/request_id/conversation_id
+- 事件索引支持精确更新（不再只更新最后一条）
+- Secret 脱敏覆盖：api_key、apiKey、clientSecret、Authorization、Bearer token、嵌套列表
+- `get_tool_sequence()` 从 Trace 提取真实工具序列
+
+**ValidationService 加固：**
+- `validate_query_result()` 对 error 结果返回 valid=False
+- `validate_report()` 绑定当前 QueryResult 字段（KPI/Chart/Table）
+- 新增 `validate_answer()` — 语义模型、source_mode、evidence 一致性
+- data_source 与当前模型一致检查
+- source_mode 与当前运行模式一致检查
+- 每行长度与 columns 一致性检查
+
+**GoldenCaseRunner 重构：**
+- Async-first：`run_one_async()` / `run_all_async()`
+- 安全处理已存在事件循环
+- 传入全部五类 Scenario Key（不再只传 intent_key）
+- Pydantic 强校验 Case 结构（未知字段/状态/类别拒绝）
+- Runtime 配置真实生效（llm_mode/powerbi_mode/harness_mode）
+- pending_real_baseline 计为 skipped（不计 error）
+- Runner 读取 Repository 验证 Memory 状态
+- actual=None 时不假通过
+- 稳定命令行入口：`python -m backend.app.harness.cases`
+
+**Golden Cases 重做（12 条）：**
+- 11 条 mock_ready + 1 条 pending_real_baseline
+- gc_007 虚假字段 → response_failed（不再假通过为 completed）
+- gc_002 多轮继承 → setup_turns 真实建立第一轮
+- 新增：permission_denied、dax_error、oversized、幂等
+- 报表链路期望包含 render_report
+
+**集成测试重做：**
+- 所有失败场景检查无 committed、pending 已 failed、版本未递增
+- 新增真实版本冲突测试（两个 pending 同 base → 第二个冲突）
+- 新增 Gateway 链路测试（工具注册、未注册拒绝、工具序列来源）
+- 新增多轮 Repository 字段验证（version、measures、filters、dax）
+- 删除名称与断言矛盾的假测试
+
+**测试结果：**
+- 191 个 pytest 全部通过（原 166 + 25 新增/重写）
+- Golden Cases：11/11 mock_ready 通过，1 skipped
+- compileall 通过
+
+**Commit SHA：** 由下一轮 Git 解析
+**Push 状态：** 待推送
+**本轮 Tag：** 无（本轮不创建 Tag）
+
+---
+
 ## [M0.3] — 2026-07-31
 
 ### 数据接入与验证闭环
@@ -34,8 +134,8 @@
 - Golden Cases 10 条（8 mock_ready）+ GoldenCaseRunner
 - 166 个测试全部通过
 
-**Commit SHA：** 由下一轮 Git 解析
-**Push 状态：** 待推送
+**Commit SHA：** `c3510f2`
+**Push 状态：** ✅ 已推送至 origin/main
 **本轮 Tag：** 无（本轮不创建 Tag）
 
 **已锁定依赖：**

@@ -121,10 +121,14 @@
 - 每个请求生成唯一 `request_id`
 - 相同 `request_id` 的重复请求返回已有结果，不重复执行
 
-### memory_version 乐观锁
+### memory_version 乐观锁（M0.3.1 固化）
 
-- 每次成功提交递增 `memory_version`
-- 写入前检查版本号，冲突则拒绝
+- `base_memory_version`：开始本轮时读取到的 committed 版本（0 = 无历史）
+- 提交时 Repository 原子检查 base 与当前会话最新 committed 版本
+- 匹配成功则 `memory_version = base + 1`
+- 版本检查和递增在同一临界区完成
+- `version_matches` 由 Repository 原子提交时设置（调用方不可伪造）
+- 冲突不得覆盖现有 committed memory
 
 ## 八、一致性规则
 
