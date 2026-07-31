@@ -1,6 +1,12 @@
-"""API 请求/响应 Pydantic 模型 — M0.4"""
+"""API 请求/响应 Pydantic 模型 — M0.4.1
 
-from typing import Any, Optional
+M0.4.1 修复：
+- ChatResponse 增加结构化 report 字段（真实 RenderedReport）
+- HealthResponse 增加 ready/reasons 字段
+- 不使用 dict[str, Any] 逃避校验
+"""
+
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -35,15 +41,38 @@ class ChatRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class ReportResponse(BaseModel):
+    """报表结构化响应 — M0.4.1 新增"""
+
+    report_id: str = Field(description="报表唯一 ID，与 Memory.last_report_id 一致")
+    template_key: str = Field(description="报表模板标识")
+    html: str = Field(default="", description="渲染后的 HTML（Mock 模式返回）")
+
+
 class ChatResponse(BaseModel):
-    """POST /api/v1/chat 响应"""
+    """POST /api/v1/chat 响应 — M0.4.1"""
 
     request_id: str
     conversation_id: str
     terminal_state: str
     intent: str
     response_type: str
-    answer: Optional[str] = Field(default=None)
+    answer: Optional[str] = Field(
+        default=None,
+        description="数据问答场景的真实 AnswerSpec.answer，非查询摘要",
+    )
+    report: Optional[ReportResponse] = Field(
+        default=None,
+        description="报表场景的结构化报表数据",
+    )
+    clarification_question: Optional[str] = Field(
+        default=None,
+        description="clarification 场景的追问问题",
+    )
+    unsupported_reason: Optional[str] = Field(
+        default=None,
+        description="unsupported 场景的拒绝原因",
+    )
     error_type: Optional[str] = None
     tool_sequence: list[str] = Field(default_factory=list)
     memory_commit: bool = False
@@ -53,9 +82,14 @@ class ChatResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """GET /health 响应"""
+    """GET /health 响应 — M0.4.1"""
 
     status: str
+    ready: bool = Field(description="当前配置下系统是否完整可用")
+    reasons: list[str] = Field(
+        default_factory=list,
+        description="不可用原因列表（ready=false 时填充）",
+    )
     app_name: str
     app_env: str
     version: str

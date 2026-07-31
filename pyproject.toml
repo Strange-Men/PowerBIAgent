@@ -19,35 +19,32 @@ classifiers = [
 ]
 
 # ----------------------------------------------------------
-# 核心依赖 — M0.2 已安装并验证
+# 核心依赖 — M0.4.1 已验证并锁定版本
 # ----------------------------------------------------------
 dependencies = [
-    # LLM / Agent Framework — M0.2 已验证，M0.3 锁定
+    # LLM / Agent Framework — M0.2 已验证
     "pydantic-ai==2.21.0",         # PydanticAI Agent 框架（ADR-001）
     "pydantic==2.13.4",            # 数据校验
 
-    # Data Validation
-    # (pydantic 已覆盖)
+    # Config
+    "pydantic-settings==2.14.2",   # Pydantic Settings（环境变量/配置管理）
+
+    # Web Framework — M0.4 启用，M0.4.1 锁定版本
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.52.0",
 
     # M0.3 新增 — YAML Golden Cases
     "pyyaml==6.0.3",
 
     # Utilities
     # "python-dotenv>=1.0.0",     # M1 启用
-
-    # Web Framework — M0.4 启用
-    # "fastapi>=0.110.0",
-    # "uvicorn[standard]>=0.27.0",
-
-    # Power BI — M0.3 确定
-    # Memory — M0.3/M1 启用
-    # "sqlalchemy>=2.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
+    "httpx==0.28.1",
 ]
 
 [tool.setuptools.packages.find]

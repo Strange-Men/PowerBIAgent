@@ -1,5 +1,63 @@
 # CHANGELOG
 
+## [M0.4.1] — 2026-07-31
+
+### API骨架真实性修复
+
+**来源：** M0.4 审计发现 5 项 API 骨架真实性问题。
+
+**修复1：依赖可复现**
+- `pyproject.toml`：新增 fastapi==0.141.1、uvicorn[standard]==0.52.0、pydantic-settings==2.14.2 为运行时依赖；新增 httpx==0.28.1 为测试依赖
+- `environment.yml`：启用 `-e .` 安装，移除"尚未验证"标注
+- `README.md`：标注版本已锁定
+- `pip install -e .` + `pip check` 验证通过
+
+**修复2：公开API真实意图流**
+- 新增 `backend/app/application/mock_scenario_resolver.py` — MockScenarioResolver
+- 根据用户 message + report_template_key 推断 Mock 场景（支持 data_question/report_generation/clarification/unsupported）
+- API 路由不再构造 MockScenarioSelection
+- 路由只负责校验请求、生成 ID、调用 Service、转换响应
+- 客户端不可传 Scenario Key（extra="forbid" 仍然生效）
+- Golden Cases 仍可显式传 Scenario
+
+**修复3：返回真实Answer和Report**
+- `MockTurnService._build_result()` 保存实际 AnswerSpec.answer 和 RenderedReport 数据
+- `last_result_summary` 仅作为 Memory 摘要保留，不再替代 API 响应
+- ChatResponse 新增结构化 ReportResponse（report_id/template_key/html）
+- clarification 返回 clarification_question；unsupported 返回 unsupported_reason
+
+**修复4：Health真实性**
+- HealthResponse 新增 `ready`（bool）和 `reasons`（list[str]）
+- Mock 模式：200、status="ok"、ready=true
+- DeepSeek 模式：503、status="not_ready"、ready=false、reason="deepseek_not_implemented"
+- Remote MCP 模式：503、status="not_ready"、ready=false、reason="powerbi_remote_mcp_not_implemented"
+- 使用 `response.status_code` 正确设置 HTTP 状态码
+- Health 不调用 LLM 或 Power BI 网络
+- Health 响应不含 Secret
+
+**修复5：app.state与真实lifespan**
+- 删除模块级全局 `_mock_turn_service` 和 `set_mock_turn_service()`
+- `app.state.settings` 和 `app.state.mock_turn_service` 在 lifespan 中初始化
+- `get_mock_turn_service(request)` 从 `request.app.state` 读取
+- `get_settings_dep(request)` 从 `request.app.state` 读取（不使用全局缓存）
+- `create_app(settings=...)` 支持测试注入自定义 Settings
+- 多个 app 实例互不覆盖 state
+- lifespan 退出后 state 清理
+- 测试通过真实 lifespan 初始化（`app.router.lifespan_context(app)` + `ASGITransport`）
+
+**测试结果：**
+- 285 个 pytest 全部通过（原 265 + 20 新增/重写）
+- Golden Cases：11/11 mock_ready 通过，1 skipped
+- compileall 通过
+- pip check 通过
+- Uvicorn 启动验证：Health Mock 200、数据问答返回真实 answer、报表返回 HTML、unsupported 真实可达
+
+**Commit SHA：** 由 Git 解析
+**Push 状态：** 将在 Git 收尾完成推送
+**本轮 Tag：** `m0.4.1-foundation-release`（M0.4.1 封板）
+
+---
+
 ## [M0.4] — 2026-07-31
 
 ### 项目骨架与阶段收尾

@@ -43,7 +43,7 @@ D:\Conda\envs\PBIAgent\python.exe --version
 D:\Conda\envs\PBIAgent\python.exe -m pip install -e .
 ```
 
-核心依赖：FastAPI、Uvicorn、pydantic-settings、pydantic-ai、httpx。
+核心依赖：FastAPI、Uvicorn、pydantic-settings、pydantic-ai、httpx（版本已锁定，见 pyproject.toml）。
 
 ### 环境变量
 

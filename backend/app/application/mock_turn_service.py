@@ -178,16 +178,31 @@ class MockTurnService:
         intent_key: Optional[str] = None,
         powerbi_key: Optional[str] = None,
     ) -> dict[str, Any]:
-        """执行完整 Turn 流程"""
-        # 构建 Scenario
+        """执行完整 Turn 流程
+
+        scenario=None 时使用 MockScenarioResolver 自动推断（API 路径）。
+        显式传入 scenario 仅用于 Golden Cases 和内部测试。
+        intent_key/powerbi_key 为向后兼容保留，scenario 为 None 且未传入时由 Resolver 接管。
+        """
+        # 构建 Scenario — API 路径由 MockScenarioResolver 接管
         if scenario is None:
-            scenario = MockScenarioSelection(
-                intent_key=intent_key or "data_question",
-                query_plan_key=intent_key or "data_question",
-                dax_key=intent_key or "data_question",
-                powerbi_key=powerbi_key or intent_key or "data_question",
-                response_key=intent_key or "data_question",
+            from backend.app.application.mock_scenario_resolver import (
+                MockScenarioResolver,
             )
+            if intent_key is not None or powerbi_key is not None:
+                # 向后兼容：旧式调用仍可用（仅限内部测试）
+                scenario = MockScenarioSelection(
+                    intent_key=intent_key or "data_question",
+                    query_plan_key=intent_key or "data_question",
+                    dax_key=intent_key or "data_question",
+                    powerbi_key=powerbi_key or intent_key or "data_question",
+                    response_key=intent_key or "data_question",
+                )
+            else:
+                scenario = MockScenarioResolver.resolve(
+                    message=message,
+                    report_template_key=report_template_key,
+                )
 
         req_id = request_id or str(uuid.uuid4())
         trace_id = str(uuid.uuid4())
@@ -241,6 +256,8 @@ class MockTurnService:
                 None, req_id, "clarification_required",
                 intent=intent.intent.value, trace_id=trace_id,
                 trace=trace,
+                response_type="clarification",
+                clarification_question=intent.clarification_question,
             )
 
         if intent.intent == IntentType.UNSUPPORTED:
@@ -251,6 +268,8 @@ class MockTurnService:
                 None, req_id, "unsupported",
                 intent=intent.intent.value, trace_id=trace_id,
                 trace=trace,
+                response_type="unsupported",
+                unsupported_reason=intent.unsupported_reason,
             )
 
         # 6. 创建 pending memory
@@ -441,11 +460,15 @@ class MockTurnService:
         controller.transition(TurnState.RESULT_VALIDATED)
 
         # 14. 生成回答或报表
+        answer_text: Optional[str] = None
+        report_data: Optional[dict[str, Any]] = None
+
         if intent.intent == IntentType.DATA_QUESTION:
             context["mock_scenario_key"] = scenario.response_key
             answer_result = await self.llm.run(message, context, AnswerSpec)
             response_obj: AnswerSpec = answer_result.structured  # type: ignore[assignment]
             response_type = "answer"
+            answer_text = response_obj.answer  # M0.4.1: 保存真实 Answer
 
             # 验证 Answer — source_mode 不一致必须为 error
             answer_validation = self.validator.validate_answer(response_obj, query_result)
@@ -516,6 +539,12 @@ class MockTurnService:
 
             response_obj = report_spec
             response_type = "report"
+            # M0.4.1: 保存真实 Report 数据
+            report_data = {
+                "report_id": rendered.report_id,
+                "template_key": rendered.template_key,
+                "html": rendered.html,
+            }
 
         controller.record_response_valid()
         controller.transition(TurnState.RESPONSE_READY)
@@ -537,8 +566,9 @@ class MockTurnService:
         memory.last_dax = dax_req.dax
         # 使用 QueryResult 唯一 result_id，不用 scenario key
         memory.last_query_result_id = getattr(query_result, 'result_id', None) or str(uuid.uuid4())
+        # M0.4.1: last_result_summary 保留为 Memory 摘要，但 API 响应不再用它冒充答案
         memory.last_result_summary = f"{query_result.row_count} rows"
-        # 报表场景写入 last_report_id
+        # 报表场景写入 last_report_id — 与 report_data 中一致
         if response_type == "report":
             memory.last_report_id = rendered.report_id if rendered else None
         memory.updated_at = datetime.utcnow()
@@ -588,6 +618,8 @@ class MockTurnService:
             trace_id=trace_id,
             state_changes={"memory_version": committed_memory.memory_version},
             trace=trace,
+            answer_text=answer_text,
+            report_data=report_data,
         )
 
     async def _fail_turn(
@@ -663,14 +695,18 @@ class MockTurnService:
         state_changes: Optional[dict[str, Any]] = None,
         trace_id: str = "",
         trace: Optional[TraceRecorder] = None,
+        answer_text: Optional[str] = None,
+        report_data: Optional[dict[str, Any]] = None,
+        clarification_question: Optional[str] = None,
+        unsupported_reason: Optional[str] = None,
     ) -> dict[str, Any]:
-        """构建统一结果字典 — M0.4: trace 显式传入，工具序列来源于当前请求 TraceRecorder"""
+        """构建统一结果字典 — M0.4.1: 保存实际 Answer/Report/clarification/unsupported"""
         tool_sequence: list[str] = []
         if trace is not None:
             tool_sequence = trace.get_tool_sequence()
 
         if memory is not None:
-            return {
+            result: dict[str, Any] = {
                 "request_id": request_id,
                 "conversation_id": memory.conversation_id,
                 "terminal_state": terminal_state,
@@ -693,7 +729,7 @@ class MockTurnService:
                 "last_result_summary": memory.last_result_summary,
             }
         else:
-            return {
+            result = {
                 "request_id": request_id,
                 "conversation_id": "",
                 "terminal_state": terminal_state,
@@ -709,3 +745,15 @@ class MockTurnService:
                 "is_mock": True,
                 "trace_id": trace_id,
             }
+
+        # M0.4.1: 保存真实响应数据（不在 memory 分支内，两个分支都可能有）
+        if answer_text is not None:
+            result["answer"] = answer_text
+        if report_data is not None:
+            result["report"] = report_data
+        if clarification_question is not None:
+            result["clarification_question"] = clarification_question
+        if unsupported_reason is not None:
+            result["unsupported_reason"] = unsupported_reason
+
+        return result

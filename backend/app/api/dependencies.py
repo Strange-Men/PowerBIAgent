@@ -1,34 +1,38 @@
-"""API 依赖注入 — M0.4"""
+"""API 依赖注入 — M0.4.1
 
-from typing import Optional
+M0.4.1 修复：
+- 删除模块级全局 _mock_turn_service 和 set_mock_turn_service()
+- Service 通过 request.app.state 读取（由 lifespan 初始化）
+- 多个 app 实例互不覆盖
+"""
+
+from fastapi import Request
 
 from backend.app.application.mock_turn_service import MockTurnService
 from backend.app.config.settings import Settings, get_settings
 
 
-# 模块级共享 — 在 lifespan 中初始化
-_mock_turn_service: Optional[MockTurnService] = None
+def get_mock_turn_service(request: Request) -> MockTurnService:
+    """从当前 app.state 获取 MockTurnService
 
-
-def get_mock_turn_service() -> MockTurnService:
-    """获取全局共享的 MockTurnService 实例
-
-    在 lifespan 启动时由 create_app() 初始化。
-    MockTurnService 自身无请求级可变状态（M0.4 修复后），可安全并发复用。
+    在 lifespan 启动时由 create_app() 初始化到 app.state.mock_turn_service。
+    不同 app 实例的 state 互不覆盖。
     """
-    if _mock_turn_service is None:
+    service = getattr(request.app.state, "mock_turn_service", None)
+    if service is None:
         raise RuntimeError(
             "MockTurnService not initialized — ensure app lifespan has started"
         )
-    return _mock_turn_service
+    return service
 
 
-def set_mock_turn_service(service: MockTurnService) -> None:
-    """由 lifespan 初始化调用"""
-    global _mock_turn_service
-    _mock_turn_service = service
+def get_settings_dep(request: Request) -> Settings:
+    """从 app.state 读取 Settings — 使用 app 实例绑定的配置，不使用全局缓存
 
-
-def get_settings_dep() -> Settings:
-    """FastAPI Depends 用的 Settings 注入"""
-    return get_settings()
+    这样测试可以通过 create_app(settings=...) 注入自定义 Settings，
+    而不会被全局 get_settings() 缓存干扰。
+    """
+    settings = getattr(request.app.state, "settings", None)
+    if settings is None:
+        return get_settings()
+    return settings

@@ -17,6 +17,6 @@ dependencies:
   - pip
   - pip:
     # 核心依赖在 pyproject.toml 中管理
-    # 注意：-e . 仅当 pyproject.toml 实际可安装时启用
-    # 当前 M0.2 阶段尚未验证包结构，暂不启用
+    # M0.4.1：已锁定所有版本，pip install -e . 已验证通过
+    - -e .
 
