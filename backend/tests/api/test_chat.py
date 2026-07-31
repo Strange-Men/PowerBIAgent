@@ -9,6 +9,7 @@ M0.4.1 修复：
 """
 
 import asyncio
+import uuid
 
 import pytest
 import pytest_asyncio
@@ -613,3 +614,201 @@ class TestChatM10ConcurrentConversationId:
         assert ru["conversation_id"] == "conv-m10-conc-u"
         assert rc["intent"] == "clarification"
         assert ru["intent"] == "unsupported"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# M1.0.1 新增 API 测试
+# ══════════════════════════════════════════════════════════════════════
+
+class TestChatM101Conflict:
+    """M1.0.1: request_id 冲突 → HTTP 409"""
+
+    @pytest.mark.asyncio
+    async def test_same_request_id_different_message_409(self, client):
+        """相同 request_id、不同 message 返回 409"""
+        # First request
+        r1 = await client.post("/api/v1/chat", json={
+            "message": "本月销售额是多少？",
+            "conversation_id": "conv-m101-409-1",
+            "request_id": "req-m101-409-1",
+        })
+        assert r1.status_code == 200
+
+        # Second request with different message, same request_id
+        r2 = await client.post("/api/v1/chat", json={
+            "message": "本月利润是多少？",
+            "conversation_id": "conv-m101-409-1",
+            "request_id": "req-m101-409-1",
+        })
+        assert r2.status_code == 409
+        data = r2.json()
+        assert data["error_type"] == "request_id_conflict"
+        assert data["request_id"] == "req-m101-409-1"
+        assert "detail" in data
+
+    @pytest.mark.asyncio
+    async def test_409_error_structure_flat(self, client):
+        """409 错误结构扁平，不嵌套"""
+        # First request
+        await client.post("/api/v1/chat", json={
+            "message": "销售额查询",
+            "conversation_id": "conv-m101-flat",
+            "request_id": "req-m101-flat",
+        })
+
+        # Conflicting request
+        r2 = await client.post("/api/v1/chat", json={
+            "message": "不同查询",
+            "conversation_id": "conv-m101-flat",
+            "request_id": "req-m101-flat",
+        })
+        assert r2.status_code == 409
+        data = r2.json()
+        # 不应有嵌套的 detail 对象
+        assert isinstance(data.get("detail"), str)
+        assert "error_type" in data
+        assert "request_id" in data
+        # 不应包含旧请求的 answer/report
+        assert "answer" not in data
+        assert "report" not in data
+
+    @pytest.mark.asyncio
+    async def test_conflict_preserves_replay(self, client):
+        """冲突后原始快照仍可重放"""
+        payload = {
+            "message": "销售额查询",
+            "conversation_id": "conv-m101-preserve",
+            "request_id": "req-m101-preserve",
+        }
+        r1 = await client.post("/api/v1/chat", json=payload)
+        assert r1.status_code == 200
+
+        # Try conflict
+        await client.post("/api/v1/chat", json={
+            "message": "不同查询",
+            "conversation_id": "conv-m101-preserve",
+            "request_id": "req-m101-preserve",
+        })
+
+        # Original still replays
+        r3 = await client.post("/api/v1/chat", json=payload)
+        assert r3.status_code == 200
+        d3 = r3.json()
+        assert d3["idempotent_replay"] is True
+        assert d3["answer"] == r1.json()["answer"]
+
+
+class TestChatM101UUID:
+    """M1.0.1: API 自动生成 UUID"""
+
+    @pytest.mark.asyncio
+    async def test_conversation_id_auto_uuid(self, client):
+        """API 未传 conversation_id 时返回有效 UUID"""
+        response = await client.post("/api/v1/chat", json={
+            "message": "销售额查询",
+            "request_id": "req-m101-uuid-conv",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        uuid.UUID(data["conversation_id"])
+
+    @pytest.mark.asyncio
+    async def test_request_id_auto_uuid(self, client):
+        """API 未传 request_id 时返回有效 UUID"""
+        response = await client.post("/api/v1/chat", json={
+            "message": "销售额查询",
+            "conversation_id": "conv-m101-uuid-req",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        uuid.UUID(data["request_id"])
+
+    @pytest.mark.asyncio
+    async def test_replay_returns_original_conversation_id(self, client):
+        """重放返回首次生成的 conversation_id"""
+        # First request without conversation_id
+        r1 = await client.post("/api/v1/chat", json={
+            "message": "销售额查询",
+            "request_id": "req-m101-replay-conv",
+        })
+        d1 = r1.json()
+
+        # Replay without conversation_id (same fingerprint)
+        r2 = await client.post("/api/v1/chat", json={
+            "message": "销售额查询",
+            "request_id": "req-m101-replay-conv",
+        })
+        d2 = r2.json()
+
+        assert d2["conversation_id"] == d1["conversation_id"]
+        assert d2["idempotent_replay"] is True
+
+
+class TestChatM101Concurrent:
+    """M1.0.1: API 并发幂等"""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_same_payload_one_completed_one_duplicate(self, client):
+        """并发相同请求：一个 completed、一个 duplicate"""
+        payload = {
+            "message": "销售额查询",
+            "conversation_id": "conv-m101-conc",
+            "request_id": "req-m101-conc",
+        }
+
+        async def req():
+            r = await client.post("/api/v1/chat", json=payload)
+            return r.json()
+
+        r1, r2 = await asyncio.gather(req(), req())
+
+        states = {r1["terminal_state"], r2["terminal_state"]}
+        assert states == {"completed", "duplicate"}
+
+        duplicate = r1 if r1["terminal_state"] == "duplicate" else r2
+        assert duplicate["tool_sequence"] == []
+        assert duplicate["memory_commit"] is False
+        assert duplicate["idempotent_replay"] is True
+
+    @pytest.mark.asyncio
+    async def test_concurrent_same_payload_content_identical(self, client):
+        """并发相同请求内容一致"""
+        payload = {
+            "message": "本月销售额是多少？",
+            "conversation_id": "conv-m101-conc-content",
+            "request_id": "req-m101-conc-content",
+        }
+
+        async def req():
+            r = await client.post("/api/v1/chat", json=payload)
+            return r.json()
+
+        r1, r2 = await asyncio.gather(req(), req())
+
+        assert r1["answer"] == r2["answer"]
+        assert r1["trace_id"] != r2["trace_id"]
+
+    @pytest.mark.asyncio
+    async def test_concurrent_different_message_one_409(self, client):
+        """并发不同 message 相同 request_id → 一个成功、一个 409"""
+        async def req_a():
+            r = await client.post("/api/v1/chat", json={
+                "message": "销售额查询",
+                "conversation_id": "conv-m101-ccf",
+                "request_id": "req-m101-ccf",
+            })
+            return r
+
+        async def req_b():
+            r = await client.post("/api/v1/chat", json={
+                "message": "利润查询",
+                "conversation_id": "conv-m101-ccf",
+                "request_id": "req-m101-ccf",
+            })
+            return r
+
+        ra, rb = await asyncio.gather(req_a(), req_b())
+
+        statuses = {ra.status_code, rb.status_code}
+        assert 200 in statuses
+        assert 409 in statuses

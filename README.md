@@ -8,9 +8,18 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M1.0 M0遗留收口与M1路线固化** — M0 开发准备阶段已完成。FastAPI 骨架、Health/Chat 接口已上线。Mock 模式完整闭环。
+**M1.0.1 幂等并发与文档收尾修复** — M0 开发准备阶段已完成。FastAPI 骨架、Health/Chat 接口已上线。Mock 模式完整闭环。
 
 > **当前仅支持 Mock 模式。** 真实 DeepSeek 和 Power BI 尚未接入（计划 M1.1/M2）。
+
+### 幂等与并发特性
+
+- **相同 request_id + 相同请求**：幂等重放，不重复执行 LLM/工具/Memory
+- **相同 request_id + 不同请求**：HTTP 409 `request_id_conflict`
+- **并发相同 request_id**：仅一个请求执行（Owner），其余等待重放（Waiter）
+- **并发不同 request_id**：正常独立执行
+
+> **限制：** 当前快照和并发防重仅保证单进程 Service 实例。分布式幂等将在后续基础设施阶段处理。
 
 ## 开发环境准备
 
@@ -157,4 +166,4 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 ---
 
-*最后更新：2026-07-31 | M1.0 M0遗留收口与M1路线固化*
+*最后更新：2026-07-31 | M1.0.1 幂等并发与文档收尾修复*

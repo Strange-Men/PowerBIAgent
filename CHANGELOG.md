@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## [M1.0.1] — 2026-07-31
+
+### 幂等并发与文档收尾修复
+
+**来源：** M1.0 审计发现 5 项问题。
+
+**修复1：请求指纹与冲突检测**
+- 新增 `RequestFingerprint` Pydantic 模型（`backend/app/memory/request_fingerprint.py`）
+- 使用 Canonical JSON + SHA-256 生成稳定指纹 Hash
+- 相同 `request_id` 不同指纹 → `IdempotencyConflictError` → API 返回 HTTP 409
+- message 仅首尾空白清理；client_conversation_id 保留客户端原始值
+- 不将原始 message 或完整请求内容写入日志和 Trace
+
+**修复2：并发 Owner/Waiter 防重**
+- `IdempotencyTracker` 集成到 `ResultSnapshotStore`（claim/complete/abort）
+- 使用 `asyncio.Lock` 保护 in-flight 字典，锁只用于领取执行权
+- 相同指纹并发：一个 Owner 执行，其余 Waiter 等待重放
+- 不同指纹并发：立即返回冲突
+- Owner 异常时清理 in-flight 并唤醒 Waiter
+
+**修复3：Report 快照结构化**
+- 新增 `ReportResultSnapshot` Pydantic 模型（report_id/template_key/html 必填）
+- `TurnResultSnapshot.report` 类型从 `Optional[dict]` 改为 `Optional[ReportResultSnapshot]`
+- 快照保存时 Pydantic 校验，非法 report 不能进入 Store
+- 跨字段校验：response_type 与对应数据一致性
+- 快照包含 `request_fingerprint_hash` 字段
+
+**修复4：Service 统一 UUID 生成**
+- `MockTurnService.execute()` 签名改为 `conversation_id: str | None = None`
+- 未传时 Service 内部生成 UUID，不依赖路由层
+- 指纹使用客户端原始值，不使用服务端生成的 UUID
+
+**修复5：文档状态收尾**
+- `docs/08`：M1.0 → 已完成，新增 M1.0.1 专项修复记录
+- `docs/09`：当前轮次 M1.0.1，下一轮 M1.1
+- README 补充：幂等重放、HTTP 409 冲突、单进程限制说明
+- 不再保留"进行中、待推送、由下一轮获取"等失效状态
+
+**测试结果：**
+- pytest 全部通过
+- Golden Cases：11/11 mock_ready 通过，1 skipped
+- compileall 通过 | pip check 通过
+
+**Commit SHA：** 由 Git 解析
+**Push 状态：** 待推送
+**本轮 Tag：** 无（本轮不创建 Tag）
+
+---
+
 ## [M1.0] — 2026-07-31
 
 ### M0遗留收口与M1路线固化

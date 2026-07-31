@@ -5,16 +5,21 @@ POST /api/v1/chat      — 非流式对话接口
 
 M1.0 新增：
 - 路由透传 idempotent_replay / replayed_request_id 字段
+
+M1.0.1 新增：
+- 捕获 IdempotencyConflictError → HTTP 409
 """
 
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 
 from backend.app.api.dependencies import get_mock_turn_service, get_settings_dep
 from backend.app.api.schemas import ChatRequest, ChatResponse, ErrorResponse, HealthResponse, ReportResponse
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
+from backend.app.memory.request_fingerprint import IdempotencyConflictError
 
 router = APIRouter()
 
@@ -66,6 +71,7 @@ async def chat(
     Real 模式未实现时返回 503。
 
     M1.0: 支持幂等重放 — 重复 request_id 返回完整快照。
+    M1.0.1: 相同 request_id 不同请求内容返回 HTTP 409。
     """
 
     # Real 模式未实现 → 明确拒绝
@@ -80,17 +86,24 @@ async def chat(
 
     service = get_mock_turn_service(request)
 
-    # 生成 ID（如果未提供）
-    conversation_id = body.conversation_id or str(uuid.uuid4())
-    request_id = body.request_id or str(uuid.uuid4())
-
+    # M1.0.1: 传递可选 ID，由 Service 统一生成 UUID
     try:
         result = await service.execute(
             message=body.message,
-            conversation_id=conversation_id,
-            request_id=request_id,
+            conversation_id=body.conversation_id,  # 可能为 None
+            request_id=body.request_id,  # 可能为 None
             semantic_model_key=body.semantic_model_key,
             report_template_key=body.report_template_key,
+        )
+    except IdempotencyConflictError as e:
+        # M1.0.1: request_id 冲突 → HTTP 409
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": e.detail,
+                "error_type": "request_id_conflict",
+                "request_id": e.request_id,
+            },
         )
     except Exception:
         raise HTTPException(
@@ -98,7 +111,7 @@ async def chat(
             detail={
                 "detail": "Internal server error",
                 "error_type": "internal_error",
-                "request_id": request_id,
+                "request_id": body.request_id or "",
             },
         )
 
@@ -113,8 +126,8 @@ async def chat(
         )
 
     return ChatResponse(
-        request_id=result.get("request_id", request_id),
-        conversation_id=result.get("conversation_id", conversation_id),
+        request_id=result.get("request_id", ""),
+        conversation_id=result.get("conversation_id", ""),
         terminal_state=result.get("terminal_state", "completed"),
         intent=result.get("intent", ""),
         response_type=result.get("response_type", ""),
@@ -128,7 +141,6 @@ async def chat(
         trace_id=result.get("trace_id", ""),
         is_mock=True,
         allowed_tools=result.get("allowed_tools", []),
-        # M1.0: 幂等重放字段
         idempotent_replay=result.get("idempotent_replay", False),
         replayed_request_id=result.get("replayed_request_id"),
     )
