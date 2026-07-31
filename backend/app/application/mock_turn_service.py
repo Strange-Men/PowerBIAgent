@@ -225,8 +225,8 @@ class MockTurnService:
         )
         trace.record("context_built", trace_id=trace_id, request_id=req_id)
 
-        # 4. 意图识别 — 通过不可变参数传入 scenario_key，不保存到 Runtime 实例
-        self.llm.set_scenario(scenario.intent_key)
+        # 4. 意图识别 — M0.3.3: scenario_key 通过 context 局部传递，不保存到任何共享状态
+        context["mock_scenario_key"] = scenario.intent_key
         intent_result = await self.llm.run(message, context, IntentSpec)
         intent: IntentSpec = intent_result.structured  # type: ignore[assignment]
         trace.record("intent_classified", trace_id=trace_id, request_id=req_id,
@@ -277,7 +277,7 @@ class MockTurnService:
         controller.record_intent_valid()
 
         # 8. 生成 QueryPlan
-        self.llm.set_scenario(scenario.query_plan_key)
+        context["mock_scenario_key"] = scenario.query_plan_key
         plan_result = await self.llm.run(message, context, QueryPlan)
         query_plan: QueryPlan = plan_result.structured  # type: ignore[assignment]
         trace.record("plan_created", trace_id=trace_id, request_id=req_id)
@@ -333,7 +333,7 @@ class MockTurnService:
         controller.transition(TurnState.QUERY_VALIDATED)
 
         # 11. 生成 DAX
-        self.llm.set_scenario(scenario.dax_key)
+        context["mock_scenario_key"] = scenario.dax_key
         dax_result = await self.llm.run(message, context, DAXRequest)
         dax_req: DAXRequest = dax_result.structured  # type: ignore[assignment]
         dax_req.semantic_model_key = semantic_model_key
@@ -431,7 +431,7 @@ class MockTurnService:
 
         # 14. 生成回答或报表
         if intent.intent == IntentType.DATA_QUESTION:
-            self.llm.set_scenario(scenario.response_key)
+            context["mock_scenario_key"] = scenario.response_key
             answer_result = await self.llm.run(message, context, AnswerSpec)
             response_obj: AnswerSpec = answer_result.structured  # type: ignore[assignment]
             response_type = "answer"
@@ -453,7 +453,7 @@ class MockTurnService:
                     trace_id=trace_id,
                 )
         else:
-            self.llm.set_scenario(scenario.response_key)
+            context["mock_scenario_key"] = scenario.response_key
             report_result = await self.llm.run(message, context, ReportSpec)
             report_spec: ReportSpec = report_result.structured  # type: ignore[assignment]
 

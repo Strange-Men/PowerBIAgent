@@ -606,3 +606,428 @@ class TestAnswerValidation:
         vr = validator.validate_answer(answer, result)
         assert not vr.is_valid
         assert any("source_mode" in e for e in vr.errors)
+
+
+# =============================================================================
+# M0.3.3 真实并发 Scenario 隔离测试
+# =============================================================================
+
+class TestSameRuntimeConcurrent:
+    """测试1：同一个 MockAgentRuntime 并发执行不同 Scenario，验证无串场"""
+
+    @pytest.mark.asyncio
+    async def test_same_runtime_data_question_vs_report_generation(self):
+        """请求A=data_question, 请求B=report_generation，同Runtime并发"""
+        runtime = MockAgentRuntime()
+
+        service_a = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_runtime=runtime,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+        service_b = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_runtime=runtime,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+
+        async def turn_a():
+            return await service_a.execute(
+                message="本月销售额是多少？",
+                conversation_id="conv-rt-conc-a",
+                request_id="req-rt-conc-a",
+                scenario=MockScenarioSelection(
+                    intent_key="data_question",
+                    query_plan_key="data_question",
+                    dax_key="data_question",
+                    powerbi_key="data_question",
+                    response_key="data_question",
+                ),
+            )
+
+        async def turn_b():
+            return await service_b.execute(
+                message="生成销售周报",
+                conversation_id="conv-rt-conc-b",
+                request_id="req-rt-conc-b",
+                scenario=MockScenarioSelection(
+                    intent_key="report_generation",
+                    query_plan_key="report_generation",
+                    dax_key="report_generation",
+                    powerbi_key="report_generation",
+                    response_key="report_generation",
+                ),
+                report_template_key="sales_weekly",
+            )
+
+        r_a, r_b = await asyncio.gather(turn_a(), turn_b())
+
+        # A 始终返回数据问答结果
+        assert r_a["terminal_state"] == "completed"
+        assert r_a["intent"] == "data_question"
+        assert r_a["response_type"] == "answer"
+        assert "execute_dax" in r_a["tool_sequence"]
+        assert "render_report" not in r_a["tool_sequence"]
+
+        # B 始终返回报表结果
+        assert r_b["terminal_state"] == "completed"
+        assert r_b["intent"] == "report_generation"
+        assert r_b["response_type"] == "report"
+        assert "render_report" in r_b["tool_sequence"]
+
+        # 两者 Scenario 不互换
+        assert r_a["intent"] != "report_generation"
+        assert r_b["intent"] != "data_question"
+
+    @pytest.mark.asyncio
+    async def test_same_runtime_repeated_stability(self):
+        """同一Runtime并发重复运行10次，验证稳定性"""
+        runtime = MockAgentRuntime()
+
+        async def run_one_iteration(i: int):
+            sa = MockTurnService(
+                memory_repo=InMemoryMemoryRepository(),
+                llm_runtime=runtime,
+                powerbi_adapter=MockPowerBIAdapter(),
+                report_renderer=MockReportRenderer(),
+            )
+            sb = MockTurnService(
+                memory_repo=InMemoryMemoryRepository(),
+                llm_runtime=runtime,
+                powerbi_adapter=MockPowerBIAdapter(),
+                report_renderer=MockReportRenderer(),
+            )
+
+            async def ta():
+                return await sa.execute(
+                    message="销售额",
+                    conversation_id=f"conv-rt-stab-a-{i}",
+                    request_id=f"req-rt-stab-a-{i}",
+                    scenario=MockScenarioSelection(intent_key="data_question"),
+                )
+
+            async def tb():
+                return await sb.execute(
+                    message="非法请求",
+                    conversation_id=f"conv-rt-stab-b-{i}",
+                    request_id=f"req-rt-stab-b-{i}",
+                    scenario=MockScenarioSelection(intent_key="unsupported"),
+                )
+
+            ra, rb = await asyncio.gather(ta(), tb())
+            return ra, rb
+
+        for i in range(10):
+            ra, rb = await run_one_iteration(i)
+            assert ra["intent"] == "data_question", f"Iteration {i}: A got {ra['intent']}"
+            assert rb["intent"] == "unsupported", f"Iteration {i}: B got {rb['intent']}"
+            assert ra["terminal_state"] == "completed"
+            assert rb["terminal_state"] == "unsupported"
+
+
+class TestSameServiceConcurrent:
+    """测试2：同一个 MockTurnService 并发执行不同 conversation/request，验证隔离"""
+
+    @pytest.mark.asyncio
+    async def test_same_service_data_vs_unsupported(self):
+        """同一Service：一个data_question，一个unsupported并发"""
+        service = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_runtime=MockAgentRuntime(),
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+
+        async def turn_a():
+            return await service.execute(
+                message="本月销售额是多少？",
+                conversation_id="conv-svc-conc-a",
+                request_id="req-svc-conc-a",
+                scenario=MockScenarioSelection(intent_key="data_question"),
+            )
+
+        async def turn_b():
+            return await service.execute(
+                message="删除所有数据",
+                conversation_id="conv-svc-conc-b",
+                request_id="req-svc-conc-b",
+                scenario=MockScenarioSelection(intent_key="unsupported"),
+            )
+
+        r_a, r_b = await asyncio.gather(turn_a(), turn_b())
+
+        # A: 数据问答正常完成
+        assert r_a["terminal_state"] == "completed"
+        assert r_a["intent"] == "data_question"
+        assert r_a["memory_commit"] is True
+        assert "execute_dax" in r_a["tool_sequence"]
+
+        # B: unsupported 正确终止
+        assert r_b["terminal_state"] == "unsupported"
+        assert r_b["intent"] == "unsupported"
+        assert r_b["memory_commit"] is False
+        assert r_b["tool_sequence"] == []
+
+        # Memory 分别写入对应 conversation
+        mem_a = await service.memory_repo.get_by_request_id("req-svc-conc-a", RuntimeDataMode.MOCK)
+        assert mem_a is not None
+        assert mem_a.state_status == MemoryStatus.COMMITTED
+        assert mem_a.conversation_id == "conv-svc-conc-a"
+
+        mem_b = await service.memory_repo.get_by_request_id("req-svc-conc-b", RuntimeDataMode.MOCK)
+        assert mem_b is None  # unsupported 不创建 pending
+
+        # 不发生 Scenario 串场
+        assert r_a["intent"] != "unsupported"
+        assert r_b["intent"] != "data_question"
+
+    @pytest.mark.asyncio
+    async def test_same_service_data_vs_report_shared_runtime(self):
+        """同一Runtime（不同Service）：一个data_question，一个report_generation并发
+
+        两个独立 Service 共享同一个 MockAgentRuntime，验证 LLM 层面的 Scenario 隔离。
+        Service 层面（ToolGateway 内部状态）不共享，避免无关并发问题。
+        """
+        runtime = MockAgentRuntime()
+
+        sa = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_runtime=runtime,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+        sb = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_runtime=runtime,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+
+        async def turn_a():
+            return await sa.execute(
+                message="销售额",
+                conversation_id="conv-svc-dr-a",
+                request_id="req-svc-dr-a",
+                scenario=MockScenarioSelection(intent_key="data_question"),
+            )
+
+        async def turn_b():
+            return await sb.execute(
+                message="生成周报",
+                conversation_id="conv-svc-dr-b",
+                request_id="req-svc-dr-b",
+                scenario=MockScenarioSelection(
+                    intent_key="report_generation",
+                    query_plan_key="report_generation",
+                    dax_key="report_generation",
+                    powerbi_key="report_generation",
+                    response_key="report_generation",
+                ),
+                report_template_key="sales_weekly",
+            )
+
+        r_a, r_b = await asyncio.gather(turn_a(), turn_b())
+
+        assert r_a["terminal_state"] == "completed"
+        assert r_a["intent"] == "data_question"
+        assert r_a["response_type"] == "answer"
+
+        assert r_b["terminal_state"] == "completed"
+        assert r_b["intent"] == "report_generation"
+        assert r_b["response_type"] == "report"
+
+        # Memory 分别正确
+        mem_a = await sa.memory_repo.get_by_request_id("req-svc-dr-a", RuntimeDataMode.MOCK)
+        mem_b = await sb.memory_repo.get_by_request_id("req-svc-dr-b", RuntimeDataMode.MOCK)
+        assert mem_a is not None and mem_a.state_status == MemoryStatus.COMMITTED
+        assert mem_b is not None and mem_b.state_status == MemoryStatus.COMMITTED
+        assert mem_a.conversation_id != mem_b.conversation_id
+
+    @pytest.mark.asyncio
+    async def test_same_service_repeated_stability(self):
+        """同一Service并发重复10次，验证稳定性"""
+        service = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_runtime=MockAgentRuntime(),
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+
+        for i in range(10):
+            async def ta():
+                return await service.execute(
+                    message="查询",
+                    conversation_id=f"conv-svc-stab-a-{i}",
+                    request_id=f"req-svc-stab-a-{i}",
+                    scenario=MockScenarioSelection(intent_key="data_question"),
+                )
+
+            async def tb():
+                return await service.execute(
+                    message="删除",
+                    conversation_id=f"conv-svc-stab-b-{i}",
+                    request_id=f"req-svc-stab-b-{i}",
+                    scenario=MockScenarioSelection(intent_key="unsupported"),
+                )
+
+            ra, rb = await asyncio.gather(ta(), tb())
+            assert ra["intent"] == "data_question", f"Iter {i}: A got intent={ra['intent']}"
+            assert rb["intent"] == "unsupported", f"Iter {i}: B got intent={rb['intent']}"
+            assert ra["terminal_state"] == "completed"
+            assert rb["terminal_state"] == "unsupported"
+
+
+class TestForcedInterleaving:
+    """测试3：强制异步交错 — 使用 scenario_delay 确保真实并发交错执行"""
+
+    @pytest.mark.asyncio
+    async def test_forced_interleave_with_delay(self):
+        """使用 scenario_delay 强制两个请求在执行过程中真实交错"""
+        from backend.app.llm.mock import MockLLMProvider
+
+        # 使用延迟确保真实交错
+        llm = MockLLMProvider(scenario_delay=0.02)
+        runtime = MockAgentRuntime(llm_provider=llm)
+
+        sa = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_runtime=runtime,
+        )
+        sb = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_runtime=runtime,
+        )
+
+        async def turn_a():
+            return await sa.execute(
+                message="销售额查询",
+                conversation_id="conv-interleave-a",
+                request_id="req-interleave-a",
+                scenario=MockScenarioSelection(
+                    intent_key="data_question",
+                    query_plan_key="data_question",
+                    dax_key="data_question",
+                    powerbi_key="data_question",
+                    response_key="data_question",
+                ),
+            )
+
+        async def turn_b():
+            return await sb.execute(
+                message="生成报表",
+                conversation_id="conv-interleave-b",
+                request_id="req-interleave-b",
+                scenario=MockScenarioSelection(
+                    intent_key="report_generation",
+                    query_plan_key="report_generation",
+                    dax_key="report_generation",
+                    powerbi_key="report_generation",
+                    response_key="report_generation",
+                ),
+                report_template_key="sales_weekly",
+            )
+
+        r_a, r_b = await asyncio.gather(turn_a(), turn_b())
+
+        # 即使真实交错，Scenario 也不串场
+        assert r_a["intent"] == "data_question", f"A intent corrupted: {r_a['intent']}"
+        assert r_a["response_type"] == "answer"
+        assert r_b["intent"] == "report_generation", f"B intent corrupted: {r_b['intent']}"
+        assert r_b["response_type"] == "report"
+
+    @pytest.mark.asyncio
+    async def test_forced_interleave_loop_10(self):
+        """强制交错循环10次，提高串场暴露概率"""
+        from backend.app.llm.mock import MockLLMProvider
+
+        for iteration in range(10):
+            llm = MockLLMProvider(scenario_delay=0.01)
+            runtime = MockAgentRuntime(llm_provider=llm)
+
+            sa = MockTurnService(
+                memory_repo=InMemoryMemoryRepository(),
+                llm_runtime=runtime,
+            )
+            sb = MockTurnService(
+                memory_repo=InMemoryMemoryRepository(),
+                llm_runtime=runtime,
+            )
+
+            async def ta():
+                return await sa.execute(
+                    message="销售额",
+                    conversation_id=f"conv-il10-a-{iteration}",
+                    request_id=f"req-il10-a-{iteration}",
+                    scenario=MockScenarioSelection(intent_key="data_question"),
+                )
+
+            async def tb():
+                return await sb.execute(
+                    message="非法操作",
+                    conversation_id=f"conv-il10-b-{iteration}",
+                    request_id=f"req-il10-b-{iteration}",
+                    scenario=MockScenarioSelection(intent_key="unsupported"),
+                )
+
+            ra, rb = await asyncio.gather(ta(), tb())
+            assert ra["intent"] == "data_question", \
+                f"Iter {iteration}: A intent={ra['intent']}, expected data_question"
+            assert ra["terminal_state"] == "completed", \
+                f"Iter {iteration}: A state={ra['terminal_state']}"
+            assert rb["intent"] == "unsupported", \
+                f"Iter {iteration}: B intent={rb['intent']}, expected unsupported"
+            assert rb["terminal_state"] == "unsupported", \
+                f"Iter {iteration}: B state={rb['terminal_state']}"
+
+    @pytest.mark.asyncio
+    async def test_forced_interleave_shared_runtime_report(self):
+        """同一Runtime（不同Service）+ delay：data_question vs report_generation 真实交错
+
+        两个独立 Service 共享同一个带延迟的 MockAgentRuntime。
+        强制异步交错执行，验证 LLM 层面 Scenario 不串场。
+        """
+        from backend.app.llm.mock import MockLLMProvider
+
+        llm = MockLLMProvider(scenario_delay=0.02)
+        runtime = MockAgentRuntime(llm_provider=llm)
+
+        sa = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_runtime=runtime,
+        )
+        sb = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_runtime=runtime,
+        )
+
+        async def turn_a():
+            return await sa.execute(
+                message="销售额",
+                conversation_id="conv-svc-il2-a",
+                request_id="req-svc-il2-a",
+                scenario=MockScenarioSelection(intent_key="data_question"),
+            )
+
+        async def turn_b():
+            return await sb.execute(
+                message="生成报表",
+                conversation_id="conv-svc-il2-b",
+                request_id="req-svc-il2-b",
+                scenario=MockScenarioSelection(
+                    intent_key="report_generation",
+                    query_plan_key="report_generation",
+                    dax_key="report_generation",
+                    powerbi_key="report_generation",
+                    response_key="report_generation",
+                ),
+                report_template_key="sales_weekly",
+            )
+
+        r_a, r_b = await asyncio.gather(turn_a(), turn_b())
+
+        assert r_a["intent"] == "data_question", f"A intent corrupted: {r_a['intent']}"
+        assert r_a["response_type"] == "answer"
+        assert r_b["intent"] == "report_generation", f"B intent corrupted: {r_b['intent']}"
+        assert r_b["response_type"] == "report"

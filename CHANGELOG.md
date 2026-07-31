@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## [M0.3.3] — 2026-07-31
+
+### Mock场景并发隔离修复
+
+**来源：** M0.3.2 审计发现共享 `_active_scenario` 状态在并发请求下可能串场。
+
+**根因：**
+- `MockAgentRuntime.set_scenario()` 将 scenario_key 写入共享的 `MockLLMProvider._active_scenario`
+- 同一 Runtime/Provider 实例并发处理不同 Scenario 时，后到达的请求覆盖先到达请求的 Scenario
+- 虽然 M0.3.2 删除了 Runtime 的 `_scenario_key`，但通过 LLM Provider 的 `_active_scenario` 仍存在共享状态
+- 无 async delay 时请求顺序执行掩盖了问题，但本质上并发不安全
+
+**修复方案：**
+- 删除 `MockLLMProvider._active_scenario` 实例字段
+- 删除 `MockAgentRuntime.set_scenario()` 方法
+- Scenario Key 仅通过 `context["mock_scenario_key"]` 在 `run()` 调用时局部传入
+- `MockAgentRuntime.run()` 从 `context.get("mock_scenario_key")` 读取，不使用任何共享状态
+- `MockTurnService.execute()` 在每次 `run()` 前设置 `context["mock_scenario_key"]`
+
+**删除的共享状态：**
+- `MockLLMProvider._active_scenario: str`（源码第 51 行）
+- `MockAgentRuntime.set_scenario()` 方法（源码第 30-37 行）
+- `MockAgentRuntime.run()` 中的 `getattr(self._llm, "_active_scenario", ...)` 读取
+
+**新增并发测试（8 个）：**
+- `TestSameRuntimeConcurrent`：同一 Runtime + 不同 Service，data_question vs report_generation + 10 次循环
+- `TestSameServiceConcurrent`：同一 Service，data_question vs unsupported + data_question vs report(共享Runtime) + 10 次循环
+- `TestForcedInterleaving`：scenario_delay 强制异步交错 + 10 次循环 + 共享Runtime report交错
+
+**兼容性确认：**
+- 五类 Scenario Key 正常
+- Golden Cases 全部通过（11/11 mock_ready）
+- 多轮 Memory 继承正常
+- ToolGateway 调用链正常
+- request_id 幂等正常
+- Mock Fixture 路径不变
+- 未知 Scenario 仍明确失败
+
+**测试结果：**
+- 213 个 pytest 全部通过（原 205 + 8 新增）
+- Golden Cases：11/11 mock_ready 通过，1 skipped
+- compileall 通过
+
+**Commit SHA：** 由下一轮 Git 解析
+**Push 状态：** 将在 Git 收尾完成推送
+**本轮 Tag：** 无（本轮不创建 Tag）
+
+---
+
 ## [M0.3.1] — 2026-07-31
 
 ### 验证闭环加固修复
