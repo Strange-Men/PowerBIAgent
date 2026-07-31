@@ -1,9 +1,12 @@
-"""API 请求/响应 Pydantic 模型 — M0.4.1
+"""API 请求/响应 Pydantic 模型 — M1.0
 
 M0.4.1 修复：
 - ChatResponse 增加结构化 report 字段（真实 RenderedReport）
 - HealthResponse 增加 ready/reasons 字段
 - 不使用 dict[str, Any] 逃避校验
+
+M1.0 新增：
+- ChatResponse 增加 idempotent_replay / replayed_request_id 字段
 """
 
 from typing import Optional
@@ -50,7 +53,7 @@ class ReportResponse(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """POST /api/v1/chat 响应 — M0.4.1"""
+    """POST /api/v1/chat 响应 — M1.0"""
 
     request_id: str
     conversation_id: str
@@ -79,6 +82,16 @@ class ChatResponse(BaseModel):
     trace_id: str = ""
     is_mock: bool = True
     allowed_tools: list[str] = Field(default_factory=list)
+
+    # M1.0: 幂等重放字段
+    idempotent_replay: bool = Field(
+        default=False,
+        description="true 表示此响应来自幂等重放，未重新执行 LLM/工具/Memory",
+    )
+    replayed_request_id: Optional[str] = Field(
+        default=None,
+        description="幂等重放时指向原始 request_id；首次请求为 null",
+    )
 
 
 class HealthResponse(BaseModel):

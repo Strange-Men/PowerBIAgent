@@ -4,11 +4,32 @@
 仅在 Mock 模式内部使用，不暴露给 API 客户端。
 
 Golden Cases 和内部测试可以通过显式传入 MockScenarioSelection 跳过解析器。
+
+M1.0 修复：
+- 返回 MockScenarioResolution（含 effective_report_template_key）
+- 默认报表模板固定为 sales_weekly
+- 客户端未传模板但消息包含报表关键词时，effective_report_template_key 自动填充
 """
 
 from typing import Optional
 
+from pydantic import BaseModel
+
 from backend.app.application.mock_turn_service import MockScenarioSelection
+
+
+class MockScenarioResolution(BaseModel):
+    """Mock 场景解析结果 — M1.0 新增
+
+    同时返回场景选择和生效后的报表模板 Key，
+    确保 Context、ReportSpec、RenderedReport、Memory 和 API 响应使用同一模板。
+    """
+    scenario: MockScenarioSelection
+    effective_report_template_key: Optional[str] = None
+
+
+# 默认报表模板 — M1.0 固定
+DEFAULT_REPORT_TEMPLATE = "sales_weekly"
 
 
 class MockScenarioResolver:
@@ -48,7 +69,7 @@ class MockScenarioResolver:
         cls,
         message: str,
         report_template_key: Optional[str] = None,
-    ) -> MockScenarioSelection:
+    ) -> MockScenarioResolution:
         """根据用户消息和模板 Key 解析 Mock 场景
 
         Args:
@@ -56,7 +77,7 @@ class MockScenarioResolver:
             report_template_key: 报表模板标识（可选）
 
         Returns:
-            MockScenarioSelection — 不可变的五阶段场景 Key
+            MockScenarioResolution — 场景选择 + 生效后的报表模板 Key
         """
         msg = message.strip()
         msg_lower = msg.lower()
@@ -64,51 +85,66 @@ class MockScenarioResolver:
         # 1. 破坏性操作 → unsupported
         for kw in cls.DESTRUCTIVE_KEYWORDS:
             if kw in msg_lower:
-                return MockScenarioSelection(
-                    intent_key="unsupported",
-                    query_plan_key="data_question",
-                    dax_key="data_question",
-                    powerbi_key="data_question",
-                    response_key="data_question",
+                return MockScenarioResolution(
+                    scenario=MockScenarioSelection(
+                        intent_key="unsupported",
+                        query_plan_key="data_question",
+                        dax_key="data_question",
+                        powerbi_key="data_question",
+                        response_key="data_question",
+                    ),
+                    effective_report_template_key=None,
                 )
 
-        # 2. 提供 report_template_key → report_generation
+        # 2. 提供 report_template_key → report_generation（显式模板优先）
         if report_template_key:
-            return MockScenarioSelection(
-                intent_key="report_generation",
-                query_plan_key="report_generation",
-                dax_key="report_generation",
-                powerbi_key="report_generation",
-                response_key="report_generation",
-            )
-
-        # 3. 包含报表关键词 → report_generation
-        for kw in cls.REPORT_KEYWORDS:
-            if kw in msg_lower:
-                return MockScenarioSelection(
+            return MockScenarioResolution(
+                scenario=MockScenarioSelection(
                     intent_key="report_generation",
                     query_plan_key="report_generation",
                     dax_key="report_generation",
                     powerbi_key="report_generation",
                     response_key="report_generation",
+                ),
+                effective_report_template_key=report_template_key,
+            )
+
+        # 3. 包含报表关键词 → report_generation（默认模板 sales_weekly）
+        for kw in cls.REPORT_KEYWORDS:
+            if kw in msg_lower:
+                return MockScenarioResolution(
+                    scenario=MockScenarioSelection(
+                        intent_key="report_generation",
+                        query_plan_key="report_generation",
+                        dax_key="report_generation",
+                        powerbi_key="report_generation",
+                        response_key="report_generation",
+                    ),
+                    effective_report_template_key=DEFAULT_REPORT_TEMPLATE,
                 )
 
         # 4. 模糊/不明确问题 → clarification
         for kw in cls.VAGUE_KEYWORDS:
             if kw in msg_lower:
-                return MockScenarioSelection(
-                    intent_key="clarification",
-                    query_plan_key="data_question",
-                    dax_key="data_question",
-                    powerbi_key="data_question",
-                    response_key="data_question",
+                return MockScenarioResolution(
+                    scenario=MockScenarioSelection(
+                        intent_key="clarification",
+                        query_plan_key="data_question",
+                        dax_key="data_question",
+                        powerbi_key="data_question",
+                        response_key="data_question",
+                    ),
+                    effective_report_template_key=None,
                 )
 
         # 5. 默认 → data_question
-        return MockScenarioSelection(
-            intent_key="data_question",
-            query_plan_key="data_question",
-            dax_key="data_question",
-            powerbi_key="data_question",
-            response_key="data_question",
+        return MockScenarioResolution(
+            scenario=MockScenarioSelection(
+                intent_key="data_question",
+                query_plan_key="data_question",
+                dax_key="data_question",
+                powerbi_key="data_question",
+                response_key="data_question",
+            ),
+            effective_report_template_key=None,
         )

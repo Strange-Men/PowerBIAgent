@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M0.4.1 已完成
+> **状态：** M1.0 进行中
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -16,10 +16,17 @@ M0 开发准备 (7轮)
   M0.3.2 工具网关与并发闭环修正      ✅ 已完成 (ec1afcc)
   M0.3.3 Mock场景并发隔离修复        ✅ 已完成 (d0d47e3)
   M0.4 项目骨架与阶段收尾           ✅ 已完成 (d5c1634)
-  M0.4.1 API骨架真实性修复          ✅ 已完成 (当前轮)
+  M0.4.1 API骨架真实性修复          ✅ 已完成 (1f967b0)
 
-MVP 功能阶段 (5轮)
-  M1 真实 DeepSeek 接入             ⬜
+M1 真实 DeepSeek 接入 (6轮)
+  M1.0 M0遗留收口与M1路线固化       🔄 进行中
+  M1.1 DeepSeek Provider基础接入    ⬜
+  M1.2 真实意图识别                 ⬜
+  M1.3 真实QueryPlan与DAX生成       ⬜
+  M1.4 真实Answer与ReportSpec生成   ⬜
+  M1.5 全链路验收与封板              ⬜
+
+MVP 功能阶段 (后续)
   M2 真实 Power BI MCP 与数据问答    ⬜
   M3 报表生成闭环                   ⬜
   M4 多轮记忆完善                   ⬜
@@ -31,126 +38,159 @@ MVP 功能阶段 (5轮)
 
 ---
 
-## M0.3.2 — 工具网关与并发闭环修正
+## M1 轮次详细路线
 
-**状态：** ✅ 已完成 | **Commit：** M0.3.2_工具网关与并发闭环修正
-
-### 来源
-- M0.3.1 专项审计后剩余的小范围真实性问题
-- 重点：ToolGateway 策略真正生效、Trace 真实关联、状态机失败路径、并发安全、模式隔离、Golden Cases 严格化
-- 不属于新功能阶段
-- 不创建 Tag
-- 完成后才能进入 M0.4
-
-### 核心交付物
-- ToolGateway 完整策略检查链（read_only/Intent/模式/用户权限）+ 正确异常分类
-- TraceRecorder 深度安全返回值 + 真实耗时
-- 状态机 PLAN_READY 新增合法失败转换 + 统一 _fail_turn
-- MockAgentRuntime 移除共享 scenario 状态 + 并发测试
-- Repository (runtime_mode, request_id) 复合键
-- MemoryPolicies 只检查 business_satisfied
-- QueryResult.result_id / RenderedReport.report_id 唯一 UUID
-- Answer source_mode 不一致 → error
-- Golden Case extra="forbid" + 五类 Key 强校验 + 幂等真实重放 + 多轮 context 验证
-- 205 个测试全部通过 + 11/11 Golden Cases 通过
+> **重要：M1 必须按照 M1.0 → M1.1 → M1.2 → M1.3 → M1.4 → M1.5 顺序执行。**
+> 当前轮未验收不得进入下一轮。不允许跨轮提前实现功能。
+> 调整小轮顺序必须由用户明确批准，调整前必须先更新本文件。
+> **本文件是小轮路线唯一权威来源。** `docs/09_context_handoff.md` 只负责记录实时进度，不重新定义路线。
 
 ---
 
-## M0.3.1 — 验证闭环加固修复
+### M1.0｜M0遗留收口与M1路线固化
+
+**状态：** 🔄 进行中
+
+**完成内容：**
+- clarification/unsupported 保留 conversation_id
+- 固定 request_id 幂等重放规则与实现
+- 实际报表模板同步写入 Memory（默认 sales_weekly）
+- 更新版本号为 M1.0 和开发依赖安装说明
+- 固化 M1.0—M1.5 开发顺序
+
+**本轮不接入 DeepSeek。**
+
+---
+
+### M1.1｜DeepSeek Provider基础接入
+
+**状态：** ⬜ 未开始
+
+**完成内容：**
+- 从 Settings 读取 API Key、Base URL、模型名
+- 实现 DeepSeekLLMProvider
+- 超时、鉴权、限流、网络和服务错误分类
+- 最小真实连通测试
+- Mock 模式保持完整可用
+
+**本轮不接入真实 Intent 业务流程。**
+
+---
+
+### M1.2｜真实意图识别
+
+**状态：** ⬜ 未开始
+
+**完成内容：**
+- DeepSeek 输出严格 IntentSpec
+- 支持 data_question / report_generation / clarification / unsupported
+- JSON 或结构化格式错误自动修复一次
+- 真实模式禁止调用 MockScenarioResolver
+
+---
+
+### M1.3｜真实QueryPlan与DAX生成
+
+**状态：** ⬜ 未开始
+
+**完成内容：**
+- QueryPlan 结构化生成
+- 根据 Semantic Model Schema 生成 DAX
+- DAX 只读安全验证
+- 格式失败、非法字段和超限兜底
+- Power BI 查询仍使用 Mock Adapter
+
+---
+
+### M1.4｜真实Answer与ReportSpec生成
+
+**状态：** ⬜ 未开始
+
+**完成内容：**
+- 根据 Mock 查询结果生成真实自然语言 Answer
+- 生成结构化 ReportSpec
+- Report Renderer 仍使用现有 Mock 实现
+- 校验回答、证据、模型和 source_mode 一致性
+
+---
+
+### M1.5｜全链路验收与封板
+
+**状态：** ⬜ 未开始
+
+**完成内容：**
+- Mock 和 DeepSeek 模式切换
+- API 真实调用验证
+- DeepSeek 失败不得静默回退 Mock
+- 成本、Token、耗时和 Trace 记录
+- Golden Cases 继续全部通过
+- 新增真实 LLM 基线案例
+- 文档收尾
+- M1 封板 Commit 和 Tag
+
+---
+
+## M0 历史轮次
+
+### M0.4.1 — API骨架真实性修复
+
+**状态：** ✅ 已完成 | **Commit：** `1f967b0` M0.4.1_API骨架真实性修复
+
+- 依赖可复现（fastapi/uvicorn/pydantic-settings/httpx 版本锁定）
+- 公开 API 真实意图流（MockScenarioResolver）
+- Answer/Report 真实返回
+- Health 真实性（ready/reasons/503）
+- app.state 与 lifespan
+
+### M0.4 — 项目骨架与阶段收尾
+
+**状态：** ✅ 已完成 | **Commit：** `d5c1634` M0.4_项目骨架与阶段收尾
+
+- 请求级并发上下文收口
+- FastAPI 最小骨架（Settings、Health、Chat 接口）
+- M0 全量验收（265 测试 + Golden Cases）
+
+### M0.3.3 — Mock场景并发隔离修复
+
+**状态：** ✅ 已完成 | **Commit：** `d0d47e3` M0.3.3_Mock场景并发隔离修复
+
+- 删除 MockLLMProvider._active_scenario 共享状态
+- Scenario Key 仅通过 context 局部传递
+
+### M0.3.2 — 工具网关与并发闭环修正
+
+**状态：** ✅ 已完成 | **Commit：** `ec1afcc` M0.3.2_工具网关与并发闭环修正
+
+- ToolGateway 完整策略检查链
+- TraceRecorder 深度安全返回值 + 真实耗时
+- Repository (runtime_mode, request_id) 复合键
+- 205 个测试全部通过 + 11/11 Golden Cases 通过
+
+### M0.3.1 — 验证闭环加固修复
 
 **状态：** ✅ 已完成 | **Commit：** `3c7cc7c` M0.3.1_验证闭环加固修复
 
-### 来源
-- M0.3 专项代码审计发现 16 项闭环真实性问题
-- 目的：修复 Mock 闭环真实性
-- 不属于新功能阶段
-- 完成后才能进入 M0.4
-- 不创建 Tag
-
-### 核心交付物
-- Memory 模型重构（RuntimeDataMode 枚举、base_memory_version、移除公共 commit/fail）
-- Repository 原子化（asyncio.Lock、Mock/Real 隔离、证据验证）
-- ToolGateway 真实接入（三个工具注册、主链路经 Gateway）
-- MockTurnService 重构（Scenario Key、提交前填充、失败统一标记）
-- ContextBuilder/TraceRecorder/ValidationService 加固
-- GoldenCaseRunner 异步重构 + 12 条 Golden Cases
+- Memory 模型重构（RuntimeDataMode 枚举）
+- Repository 原子化、ToolGateway 真实接入
+- MockTurnService 重构、GoldenCaseRunner 异步重构
 - 191 个测试全部通过 + Golden Cases 11/11 通过
 
----
-
-## M0.3 — 数据接入与验证闭环
+### M0.3 — 数据接入与验证闭环
 
 **状态：** ✅ 已完成 | **Commit：** `c3510f2` M0.3_数据接入与验证闭环
 
-### 核心交付物
-
-- M0.2 审计修复（AgentRuntime、PydanticAI API、Fixture、Mock LLM、IntentSpec、记忆规则）
-- Power BI MCP 与 OAuth ADR-003
-- PowerBIAdapter（Mock + Remote 骨架）
-- 核心数据契约（QueryPlan、DAXRequest、QueryResult、AnswerSpec、ReportSpec、UserContext）
+- Power BI MCP ADR-003、PowerBIAdapter、核心数据契约
 - Harness ETCLOVG 完整实现（ADR-004）
-- ToolGateway、ContextBuilder、TurnController、ValidationService、TraceRecorder
-- InMemoryMemoryRepository
-- MockAgentRuntime、MockReportRenderer、MockTurnService
-- Golden Cases（10 条）+ GoldenCaseRunner
-- 166 个测试全部通过
+- Golden Cases（10 条）、166 个测试全部通过
 
-### Tag：否
+### M0.2 — 智能体架构与记忆设计
 
----
+**状态：** ✅ 已完成 | **Commit：** `d03ac6c` M0.2_智能体架构与记忆设计
 
-## M0.4 — 项目骨架与阶段收尾
+### M0.1 — 仓库初始化与文档基线
 
-**Commit：** M0.4_项目骨架与阶段收尾
-
-### 允许
-
-- Pydantic Settings
-- FastAPI 最小骨架
-- `/health`
-- 运行模式展示
-- Application Service 正式接入
-- health 测试
-- README 启动验证
-- 全量审查
-- M0 总验收
-- 是否创建 M0 封板 Tag 由 M0.4 Prompt 决定
-
-### 禁止
-
-- 真实 DeepSeek
-- 真实 Power BI 生产连接
-- React 页面
-- Docker
-- 多租户
-- 正式报表产品
-- M1 开发
+**状态：** ✅ 已完成 | **Commit：** `eb5812d` M0.1_仓库初始化与文档基线
 
 ---
 
-## M0.4.1 — API骨架真实性修复
-
-**Commit：** M0.4.1_API骨架真实性修复
-
-### 允许
-
-- 修复依赖可复现（fastapi/uvicorn/pydantic-settings/httpx版本锁定）
-- 修复公开API意图流（MockScenarioResolver）
-- 修复Answer/Report真实返回
-- 修复Health真实性（ready/reasons/503）
-- 修复app.state与lifespan
-- 补充完整测试覆盖
-
-### 禁止
-
-- 真实 DeepSeek
-- 真实 Power BI 生产连接
-- React 页面
-- Docker
-- 多租户
-- M1 开发
-- 删除或移动 `m0.4-foundation-release` Tag
-
----
-
-*最后更新：2026-07-31 | M0.4.1 API骨架真实性修复*
+*最后更新：2026-07-31 | M1.0 M0遗留收口与M1路线固化*

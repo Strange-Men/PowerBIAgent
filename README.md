@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M0.4 项目骨架与阶段收尾** — M0 开发准备阶段已完成。FastAPI 骨架、Health/Chat 接口已上线。Mock 模式完整闭环。265 个测试全部通过。
+**M1.0 M0遗留收口与M1路线固化** — M0 开发准备阶段已完成。FastAPI 骨架、Health/Chat 接口已上线。Mock 模式完整闭环。
 
-> **当前仅支持 Mock 模式。** 真实 DeepSeek 和 Power BI 尚未接入（计划 M1/M2）。
+> **当前仅支持 Mock 模式。** 真实 DeepSeek 和 Power BI 尚未接入（计划 M1.1/M2）。
 
 ## 开发环境准备
 
@@ -40,10 +40,14 @@ D:\Conda\envs\PBIAgent\python.exe --version
 #### 安装项目依赖
 
 ```powershell
+# 仅安装运行依赖
 D:\Conda\envs\PBIAgent\python.exe -m pip install -e .
+
+# 安装开发和测试依赖
+D:\Conda\envs\PBIAgent\python.exe -m pip install -e ".[dev]"
 ```
 
-核心依赖：FastAPI、Uvicorn、pydantic-settings、pydantic-ai、httpx（版本已锁定，见 pyproject.toml）。
+核心依赖：FastAPI、Uvicorn、pydantic-settings、pydantic-ai（版本已锁定，见 pyproject.toml）。httpx 为开发/测试依赖。
 
 ### 环境变量
 
@@ -74,9 +78,11 @@ curl http://127.0.0.1:8000/health
 ```json
 {
   "status": "ok",
+  "ready": true,
+  "reasons": [],
   "app_name": "PowerBIAgent",
   "app_env": "development",
-  "version": "M0.4",
+  "version": "M1.0",
   "llm_mode": "mock",
   "powerbi_mode": "mock",
   "harness_mode": "strict",
@@ -101,10 +107,13 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
   "terminal_state": "completed",
   "intent": "data_question",
   "response_type": "answer",
+  "answer": "本月销售额约为 1,250 万元，较上月增长 8.3%...",
   "tool_sequence": ["get_semantic_model_schema", "execute_dax"],
   "memory_commit": true,
   "trace_id": "...",
-  "is_mock": true
+  "is_mock": true,
+  "idempotent_replay": false,
+  "replayed_request_id": null
 }
 ```
 
@@ -125,7 +134,7 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 | 前端 | React + Vite | 骨架已确认，开发延后 (M5) |
 | 后端 | FastAPI | ✅ M0.4 最小骨架已完成 |
 | Agent | PydanticAI 单 Agent | ✅ M0.2 已选定 |
-| LLM | DeepSeek + Mock LLM | ✅ Mock 可运行；DeepSeek 延后 (M1) |
+| LLM | DeepSeek + Mock LLM | ✅ Mock 可运行；DeepSeek 延后 (M1.1) |
 | 数据 | Power BI MCP | ✅ Mock 可运行；真实接入延后 (M2) |
 | 记忆 | 结构化工作记忆 | ✅ M0.2-M0.3.2 完整实现 |
 | 报表 | 固定模板 HTML | ✅ Mock 可运行；真实渲染延后 (M3) |
@@ -148,4 +157,4 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 ---
 
-*最后更新：2026-07-31 | M0.4 项目骨架与阶段收尾*
+*最后更新：2026-07-31 | M1.0 M0遗留收口与M1路线固化*

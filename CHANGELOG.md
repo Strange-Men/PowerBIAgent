@@ -1,8 +1,55 @@
 # CHANGELOG
 
-## [M0.4.1] — 2026-07-31
+## [M1.0] — 2026-07-31
 
-### API骨架真实性修复
+### M0遗留收口与M1路线固化
+
+**来源：** M0.4.1 审计遗留问题修复 + M1 路线规划。
+
+**修复1：clarification/unsupported 保留 conversation_id**
+- `_build_result()` 新增显式 `conversation_id` 参数
+- clarification/unsupported 路径传入当前 conversation_id，不再依赖 Memory 是否存在
+- 用户未提供 conversation_id 时服务端自动生成（FastAPI 路由层）
+- Service 直接调用和 FastAPI 调用均成立
+
+**修复2：request_id 幂等重放**
+- 新增 `TurnResultSnapshot` Pydantic 模型 + `ResultSnapshotStore`（`backend/app/memory/result_snapshot.py`）
+- 首次请求保存完整响应快照（Answer/Report/clarification/unsupported/失败）
+- 重复请求返回：terminal_state="duplicate"、tool_sequence=[]、memory_commit=false、新 trace_id
+- `ChatResponse` 新增 `idempotent_replay: bool` 和 `replayed_request_id: Optional[str]`
+- 快照检查优先于 Memory 检查，覆盖无 Memory 的 clarification/unsupported 幂等
+
+**修复3：默认报表模板 sales_weekly**
+- `MockScenarioResolver.resolve()` 返回 `MockScenarioResolution`（含 `effective_report_template_key`）
+- 默认报表模板固定为 `sales_weekly`
+- 客户端显式传入合法模板时优先使用客户端模板
+- `report_template_key` 贯穿：Context → ReportSpec → RenderedReport → Memory → API 响应
+- `memory.report_template_key` 在成功报表请求中不为 None
+
+**修复4：版本号和安装说明**
+- Settings.version → `M1.0`；Health 返回 `version: "M1.0"`
+- README：新增 `pip install -e ".[dev]"` 开发依赖安装说明
+- README Health 示例增加 `ready`/`reasons` 字段
+- README Chat 示例与当前真实响应契约一致
+
+**M1.0—M1.5 路线固化：**
+- `docs/08_development_roadmap.md` 写入完整六轮路线（M1.0→M1.5）
+- 路线执行规则：顺序执行、未验收不进入下一轮、不允许跨轮
+- `docs/08` 是路线唯一权威来源；`CLAUDE.md` 不重复粘贴完整路线
+
+**测试结果：**
+- 327 个 pytest 全部通过（原 285 + 42 新增/重写）
+- Golden Cases：11/11 mock_ready 通过，1 skipped
+- compileall 通过 | pip check 通过
+- 新增 `backend/tests/integration/test_m1_fixes.py`（30 个 M1.0 专项测试）
+
+**Commit SHA：** 由 Git 解析
+**Push 状态：** 将在 Git 收尾完成推送
+**本轮 Tag：** 无（本轮不创建 Tag）
+
+---
+
+## [M0.4.1] — 2026-07-31
 
 **来源：** M0.4 审计发现 5 项 API 骨架真实性问题。
 

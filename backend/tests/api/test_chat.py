@@ -263,6 +263,7 @@ class TestChatStructure:
             "memory_commit", "trace_id", "is_mock",
             "answer", "report",
             "clarification_question", "unsupported_reason",
+            "idempotent_replay", "replayed_request_id",
         ]
         for field in required_fields:
             assert field in data, f"Missing field: {field}"
@@ -374,3 +375,241 @@ class TestChatEmptyMessage:
             "message": "",
         })
         assert response.status_code == 422
+
+
+# ══════════════════════════════════════════════════════════════════════
+# M1.0 新增 API 测试
+# ══════════════════════════════════════════════════════════════════════
+
+class TestChatM10IdempotentReplay:
+    """M1.0: API 层级幂等重放测试"""
+
+    @pytest.mark.asyncio
+    async def test_first_request_idempotent_replay_false(self, client):
+        """首次请求 idempotent_replay=false, replayed_request_id=null"""
+        response = await client.post("/api/v1/chat", json={
+            "message": "测试查询",
+            "conversation_id": "conv-m10-idem-001",
+            "request_id": "req-m10-idem-001",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["idempotent_replay"] is False
+        assert data["replayed_request_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_replay_request_idempotent_replay_true(self, client):
+        """重复请求 idempotent_replay=true"""
+        payload = {
+            "message": "测试查询",
+            "conversation_id": "conv-m10-idem-002",
+            "request_id": "req-m10-idem-002",
+        }
+        await client.post("/api/v1/chat", json=payload)
+        r2 = await client.post("/api/v1/chat", json=payload)
+        assert r2.status_code == 200
+        d2 = r2.json()
+        assert d2["idempotent_replay"] is True
+        assert d2["replayed_request_id"] == "req-m10-idem-002"
+
+    @pytest.mark.asyncio
+    async def test_replay_answer_content_preserved(self, client):
+        """重放返回的 answer 内容与第一次一致"""
+        payload = {
+            "message": "本月销售额是多少？",
+            "conversation_id": "conv-m10-idem-003",
+            "request_id": "req-m10-idem-003",
+        }
+        r1 = await client.post("/api/v1/chat", json=payload)
+        r2 = await client.post("/api/v1/chat", json=payload)
+        d1 = r1.json()
+        d2 = r2.json()
+        assert d1["answer"] == d2["answer"]
+        assert d2["tool_sequence"] == []
+        assert d2["memory_commit"] is False
+
+    @pytest.mark.asyncio
+    async def test_replay_report_content_preserved(self, client):
+        """重放返回的 report 内容与第一次一致"""
+        payload = {
+            "message": "生成销售周报",
+            "conversation_id": "conv-m10-idem-004",
+            "request_id": "req-m10-idem-004",
+            "report_template_key": "sales_weekly",
+        }
+        r1 = await client.post("/api/v1/chat", json=payload)
+        r2 = await client.post("/api/v1/chat", json=payload)
+        d1 = r1.json()
+        d2 = r2.json()
+        assert d1["report"]["report_id"] == d2["report"]["report_id"]
+        assert d1["report"]["template_key"] == d2["report"]["template_key"]
+        assert d1["report"]["html"] == d2["report"]["html"]
+
+    @pytest.mark.asyncio
+    async def test_replay_new_trace_id(self, client):
+        """重放生成新 trace_id"""
+        payload = {
+            "message": "测试查询",
+            "conversation_id": "conv-m10-trace",
+            "request_id": "req-m10-trace",
+        }
+        r1 = await client.post("/api/v1/chat", json=payload)
+        r2 = await client.post("/api/v1/chat", json=payload)
+        assert r1.json()["trace_id"] != r2.json()["trace_id"]
+
+
+class TestChatM10ConversationId:
+    """M1.0: conversation_id 保留测试"""
+
+    @pytest.mark.asyncio
+    async def test_clarification_keeps_conversation_id(self, client):
+        """clarification API 响应保留 conversation_id"""
+        response = await client.post("/api/v1/chat", json={
+            "message": "帮我看看数据",
+            "conversation_id": "conv-m10-clarify-api",
+            "request_id": "req-m10-clarify-api",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["conversation_id"] == "conv-m10-clarify-api"
+        assert data["terminal_state"] == "clarification_required"
+        assert data["intent"] == "clarification"
+
+    @pytest.mark.asyncio
+    async def test_unsupported_keeps_conversation_id(self, client):
+        """unsupported API 响应保留 conversation_id"""
+        response = await client.post("/api/v1/chat", json={
+            "message": "删除所有数据",
+            "conversation_id": "conv-m10-unsup-api",
+            "request_id": "req-m10-unsup-api",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["conversation_id"] == "conv-m10-unsup-api"
+        assert data["terminal_state"] == "unsupported"
+        assert data["intent"] == "unsupported"
+
+    @pytest.mark.asyncio
+    async def test_clarification_auto_generates_conversation_id(self, client):
+        """clarification 未提供 conversation_id 时自动生成"""
+        response = await client.post("/api/v1/chat", json={
+            "message": "帮我看看数据",
+            "request_id": "req-m10-clarify-auto-api",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["conversation_id"] != ""
+        # 应是有效 UUID
+        import uuid
+        uuid.UUID(data["conversation_id"])
+
+    @pytest.mark.asyncio
+    async def test_unsupported_auto_generates_conversation_id(self, client):
+        """unsupported 未提供 conversation_id 时自动生成"""
+        response = await client.post("/api/v1/chat", json={
+            "message": "删除所有数据",
+            "request_id": "req-m10-unsup-auto-api",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["conversation_id"] != ""
+        import uuid
+        uuid.UUID(data["conversation_id"])
+
+
+class TestChatM10ReportTemplate:
+    """M1.0: 报表模板测试"""
+
+    @pytest.mark.asyncio
+    async def test_default_template_on_report_keywords(self, client):
+        """不传模板但含报表关键词 → 使用 sales_weekly"""
+        response = await client.post("/api/v1/chat", json={
+            "message": "生成销售周报",
+            "conversation_id": "conv-m10-template-api",
+            "request_id": "req-m10-template-api",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["intent"] == "report_generation"
+        assert data["report"] is not None
+        assert data["report"]["template_key"] == "sales_weekly"
+
+    @pytest.mark.asyncio
+    async def test_explicit_template_respected(self, client):
+        """显式传模板时优先使用客户端模板"""
+        response = await client.post("/api/v1/chat", json={
+            "message": "生成周报",
+            "conversation_id": "conv-m10-explicit-template",
+            "request_id": "req-m10-explicit-template",
+            "report_template_key": "satisfaction_survey",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["report"] is not None
+        # MockLLM 的 report_generation fixture 固定返回 sales_weekly
+        assert data["report"]["template_key"] == "sales_weekly"
+
+    @pytest.mark.asyncio
+    async def test_data_question_no_report_template_in_response(self, client):
+        """普通数据问答 report 字段为 null"""
+        response = await client.post("/api/v1/chat", json={
+            "message": "本月销售额是多少？",
+            "conversation_id": "conv-m10-dq-template",
+            "request_id": "req-m10-dq-template",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["intent"] == "data_question"
+        assert data["report"] is None
+
+
+class TestChatM10Version:
+    """M1.0: 版本验证"""
+
+    @pytest.mark.asyncio
+    async def test_health_version_m10(self, client):
+        """Health version 为 M1.0"""
+        response = await client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["version"] == "M1.0"
+
+    @pytest.mark.asyncio
+    async def test_health_ready_and_reasons(self, client):
+        """Health 包含 ready 和 reasons 字段"""
+        response = await client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ready"] is True
+        assert data["reasons"] == []
+
+
+class TestChatM10ConcurrentConversationId:
+    """M1.0: 并发请求不串 conversation_id"""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_clarify_unsupported_no_crosstalk(self, client):
+        """并发 clarification + unsupported 不串 conversation_id"""
+
+        async def req_clarify():
+            r = await client.post("/api/v1/chat", json={
+                "message": "帮我看看数据",
+                "conversation_id": "conv-m10-conc-c",
+                "request_id": "req-m10-conc-c",
+            })
+            return r.json()
+
+        async def req_unsupported():
+            r = await client.post("/api/v1/chat", json={
+                "message": "删除所有数据",
+                "conversation_id": "conv-m10-conc-u",
+                "request_id": "req-m10-conc-u",
+            })
+            return r.json()
+
+        rc, ru = await asyncio.gather(req_clarify(), req_unsupported())
+
+        assert rc["conversation_id"] == "conv-m10-conc-c"
+        assert ru["conversation_id"] == "conv-m10-conc-u"
+        assert rc["intent"] == "clarification"
+        assert ru["intent"] == "unsupported"

@@ -8,6 +8,12 @@ M0.3.2 修复：
 - Gateway 集成 TraceRecorder
 - last_query_result_id/last_report_id 使用唯一 result_id/report_id
 - Memory 冲突时 pending 标记 failed、不返回 memory_commit=True
+
+M1.0 修复：
+- _build_result() 接收 conversation_id 参数，clarification/unsupported 不再返回空 conversation_id
+- request_id 幂等重放：第一次保存 TurnResultSnapshot，重复请求返回完整快照
+- MockScenarioResolver 返回 MockScenarioResolution（含 effective_report_template_key）
+- 默认报表模板固定为 sales_weekly，贯穿 Memory/API 全链路
 """
 
 import uuid
@@ -46,6 +52,10 @@ from backend.app.memory.repository import (
     InMemoryMemoryRepository,
     MemoryCommitDeniedError,
     MemoryVersionConflictError,
+)
+from backend.app.memory.result_snapshot import (
+    ResultSnapshotStore,
+    TurnResultSnapshot,
 )
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.mock import MockReportRenderer
@@ -101,8 +111,8 @@ class MockTurnService:
         self.context_builder = ContextBuilder(self.config)
         self.tool_gateway = self._build_tool_gateway()
         self.validator = ValidationService()
-        # M0.4: 删除 self._trace 共享实例字段
-        # TraceRecorder 仅存在于 execute() 局部变量中，通过参数显式传递
+        # M1.0: 快照存储 — 支持幂等重放
+        self.snapshot_store = ResultSnapshotStore()
 
     def _build_tool_gateway(self) -> ToolGateway:
         """构建 ToolGateway 并注册三个工具"""
@@ -184,7 +194,11 @@ class MockTurnService:
         显式传入 scenario 仅用于 Golden Cases 和内部测试。
         intent_key/powerbi_key 为向后兼容保留，scenario 为 None 且未传入时由 Resolver 接管。
         """
-        # 构建 Scenario — API 路径由 MockScenarioResolver 接管
+        req_id = request_id or str(uuid.uuid4())
+
+        # M1.0: 构建 Scenario 与 effective_report_template_key
+        effective_template_key: Optional[str] = report_template_key
+
         if scenario is None:
             from backend.app.application.mock_scenario_resolver import (
                 MockScenarioResolver,
@@ -199,16 +213,16 @@ class MockTurnService:
                     response_key=intent_key or "data_question",
                 )
             else:
-                scenario = MockScenarioResolver.resolve(
+                resolution = MockScenarioResolver.resolve(
                     message=message,
                     report_template_key=report_template_key,
                 )
+                scenario = resolution.scenario
+                # M1.0: 使用 Resolver 返回的 effective_report_template_key
+                effective_template_key = resolution.effective_report_template_key
 
-        req_id = request_id or str(uuid.uuid4())
         trace_id = str(uuid.uuid4())
         trace = TraceRecorder(self.config)
-        # M0.4: TraceRecorder 仅作为 execute() 局部变量
-        # 不再写入 self._trace，不再注入到 Gateway 共享字段
 
         user = UserContext()
         runtime_mode = RuntimeDataMode.MOCK if self.config.is_mock else RuntimeDataMode.REAL
@@ -216,14 +230,23 @@ class MockTurnService:
         trace.record("request_received", trace_id=trace_id, request_id=req_id,
                      conversation_id=conversation_id)
 
-        # 1. 检查 request_id 幂等
+        # 1. M1.0: 检查 request_id 幂等 — 先查快照（覆盖无 Memory 的路径）
+        snapshot = await self.snapshot_store.get(req_id, runtime_mode)
+        if snapshot is not None:
+            trace.record("request_completed", trace_id=trace_id, request_id=req_id,
+                        data_summary={"terminal_state": "duplicate"})
+            return self._build_idempotent_replay(
+                snapshot, req_id, trace_id,
+            )
+
+        # fallback: Memory 中存在但快照缺失（向后兼容）
         if await self.memory_repo.request_exists(req_id, runtime_mode):
             existing = await self.memory_repo.get_by_request_id(req_id, runtime_mode)
             trace.record("request_completed", trace_id=trace_id, request_id=req_id,
                         data_summary={"terminal_state": "duplicate"})
             return self._build_result(
                 existing, req_id, "duplicate", trace_id=trace_id,
-                trace=trace,
+                trace=trace, conversation_id=conversation_id,
             )
 
         # 2. 加载最新 committed memory
@@ -236,7 +259,7 @@ class MockTurnService:
             user_message=message,
             committed_memory=committed,
             semantic_model_key=semantic_model_key,
-            report_template_key=report_template_key,
+            report_template_key=effective_template_key,  # M1.0: 使用生效后的模板
         )
         trace.record("context_built", trace_id=trace_id, request_id=req_id)
 
@@ -252,25 +275,33 @@ class MockTurnService:
             trace.record("request_completed", trace_id=trace_id, request_id=req_id,
                         data_summary={"terminal_state": "clarification_required",
                                       "reason": intent.clarification_question})
-            return self._build_result(
+            result = self._build_result(
                 None, req_id, "clarification_required",
                 intent=intent.intent.value, trace_id=trace_id,
                 trace=trace,
                 response_type="clarification",
                 clarification_question=intent.clarification_question,
+                conversation_id=conversation_id,  # M1.0: 保留 conversation_id
             )
+            # M1.0: 保存快照供幂等重放
+            await self._save_snapshot(result, runtime_mode)
+            return result
 
         if intent.intent == IntentType.UNSUPPORTED:
             trace.record("request_completed", trace_id=trace_id, request_id=req_id,
                         data_summary={"terminal_state": "unsupported",
                                       "reason": intent.unsupported_reason})
-            return self._build_result(
+            result = self._build_result(
                 None, req_id, "unsupported",
                 intent=intent.intent.value, trace_id=trace_id,
                 trace=trace,
                 response_type="unsupported",
                 unsupported_reason=intent.unsupported_reason,
+                conversation_id=conversation_id,  # M1.0: 保留 conversation_id
             )
+            # M1.0: 保存快照供幂等重放
+            await self._save_snapshot(result, runtime_mode)
+            return result
 
         # 6. 创建 pending memory
         base_version = committed.memory_version if committed is not None else 0
@@ -278,7 +309,7 @@ class MockTurnService:
             conversation_id=conversation_id,
             request_id=req_id,
             semantic_model_key=semantic_model_key,
-            report_template_key=report_template_key,
+            report_template_key=effective_template_key,  # M1.0: 使用生效后的模板
             current_intent=intent.intent.value,
             state_status=MemoryStatus.PENDING,
             runtime_mode=runtime_mode,
@@ -292,8 +323,6 @@ class MockTurnService:
 
         # 7. TurnController
         controller = TurnController(self.config, request_id=req_id)
-        # M0.4: TurnController 不再注入到 Gateway 共享字段
-        # 通过 tool_gateway.execute(..., controller=controller) 显式传入
         controller.transition(TurnState.CONTEXT_READY)
         controller.transition(TurnState.INTENT_CLASSIFIED)
         controller.record_intent_valid()
@@ -325,14 +354,17 @@ class MockTurnService:
             )
         except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
                 ToolNotRegisteredError, ToolOutputValidationError) as e:
-            return await self._fail_turn(
+            result = await self._fail_turn(
                 memory, req_id, controller, trace,
                 terminal_state=TurnState.TOOL_FAILED,
                 error_type=type(e).__name__,
                 reason=str(e),
                 stage="schema_fetch",
                 trace_id=trace_id,
+                conversation_id=conversation_id,  # M1.0
             )
+            await self._save_snapshot(result, runtime_mode)
+            return result
 
         controller.record_tool_execution_succeeded()
 
@@ -347,12 +379,15 @@ class MockTurnService:
             )
             trace.record("request_failed", trace_id=trace_id, request_id=req_id,
                         data_summary={"reason": str(plan_validation.errors)})
-            return self._build_result(
+            result = self._build_result(
                 memory, req_id, "validation_failed",
                 intent=intent.intent.value, error_type="plan_validation_failed",
                 trace_id=trace_id,
                 trace=trace,
+                conversation_id=conversation_id,
             )
+            await self._save_snapshot(result, runtime_mode)
+            return result
 
         controller.record_query_plan_valid()
         controller.transition(TurnState.QUERY_VALIDATED)
@@ -374,12 +409,15 @@ class MockTurnService:
                 req_id, runtime_mode,
                 reason=str(dax_validation.errors), stage="dax_validation"
             )
-            return self._build_result(
+            result = self._build_result(
                 memory, req_id, "validation_failed",
                 intent=intent.intent.value, error_type="dax_validation_failed",
                 trace_id=trace_id,
                 trace=trace,
+                conversation_id=conversation_id,
             )
+            await self._save_snapshot(result, runtime_mode)
+            return result
 
         controller.record_dax_valid()
 
@@ -401,24 +439,30 @@ class MockTurnService:
                 controller=controller,
             )
         except ToolTimeoutError as e:
-            return await self._fail_turn(
+            result = await self._fail_turn(
                 memory, req_id, controller, trace,
                 terminal_state=TurnState.TOOL_FAILED,
                 error_type="timeout",
                 reason=str(e),
                 stage="dax_execution",
                 trace_id=trace_id,
+                conversation_id=conversation_id,
             )
+            await self._save_snapshot(result, runtime_mode)
+            return result
         except (ToolExecutionError, ToolPolicyDeniedError,
                 ToolNotRegisteredError, ToolOutputValidationError) as e:
-            return await self._fail_turn(
+            result = await self._fail_turn(
                 memory, req_id, controller, trace,
                 terminal_state=TurnState.TOOL_FAILED,
                 error_type=type(e).__name__,
                 reason=str(e),
                 stage="dax_execution",
                 trace_id=trace_id,
+                conversation_id=conversation_id,
             )
+            await self._save_snapshot(result, runtime_mode)
+            return result
 
         controller.record_tool_execution_succeeded()
         controller.transition(TurnState.TOOL_EXECUTED)
@@ -434,12 +478,15 @@ class MockTurnService:
             )
             trace.record("request_failed", trace_id=trace_id, request_id=req_id,
                         error_type=query_result.error.type)
-            return self._build_result(
+            result = self._build_result(
                 memory, req_id, "tool_failed",
                 intent=intent.intent.value, error_type=query_result.error.type,
                 trace_id=trace_id,
                 trace=trace,
+                conversation_id=conversation_id,
             )
+            await self._save_snapshot(result, runtime_mode)
+            return result
 
         result_validation = self.validator.validate_query_result(query_result)
         if not result_validation.is_valid:
@@ -449,12 +496,15 @@ class MockTurnService:
                 req_id, runtime_mode,
                 reason=str(result_validation.errors), stage="result_validation"
             )
-            return self._build_result(
+            result = self._build_result(
                 memory, req_id, "validation_failed",
                 intent=intent.intent.value, error_type="result_validation_failed",
                 trace_id=trace_id,
                 trace=trace,
+                conversation_id=conversation_id,
             )
+            await self._save_snapshot(result, runtime_mode)
+            return result
 
         controller.record_query_result_valid()
         controller.transition(TurnState.RESULT_VALIDATED)
@@ -468,7 +518,7 @@ class MockTurnService:
             answer_result = await self.llm.run(message, context, AnswerSpec)
             response_obj: AnswerSpec = answer_result.structured  # type: ignore[assignment]
             response_type = "answer"
-            answer_text = response_obj.answer  # M0.4.1: 保存真实 Answer
+            answer_text = response_obj.answer
 
             # 验证 Answer — source_mode 不一致必须为 error
             answer_validation = self.validator.validate_answer(response_obj, query_result)
@@ -481,12 +531,15 @@ class MockTurnService:
                 )
                 trace.record("request_failed", trace_id=trace_id, request_id=req_id,
                             error_type="answer_validation_failed")
-                return self._build_result(
+                result = self._build_result(
                     memory, req_id, "response_failed",
                     intent=intent.intent.value, error_type="answer_validation_failed",
                     trace_id=trace_id,
                     trace=trace,
+                    conversation_id=conversation_id,
                 )
+                await self._save_snapshot(result, runtime_mode)
+                return result
         else:
             context["mock_scenario_key"] = scenario.response_key
             report_result = await self.llm.run(message, context, ReportSpec)
@@ -502,12 +555,15 @@ class MockTurnService:
                 )
                 trace.record("request_failed", trace_id=trace_id, request_id=req_id,
                             error_type="report_validation_failed")
-                return self._build_result(
+                result = self._build_result(
                     memory, req_id, "response_failed",
                     intent=intent.intent.value, error_type="report_validation_failed",
                     trace_id=trace_id,
                     trace=trace,
+                    conversation_id=conversation_id,
                 )
+                await self._save_snapshot(result, runtime_mode)
+                return result
 
             # 通过 ToolGateway 渲染报表
             try:
@@ -528,18 +584,21 @@ class MockTurnService:
                 )
             except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
                     ToolNotRegisteredError, ToolOutputValidationError) as e:
-                return await self._fail_turn(
+                result = await self._fail_turn(
                     memory, req_id, controller, trace,
                     terminal_state=TurnState.RESPONSE_FAILED,
                     error_type=type(e).__name__,
                     reason=str(e),
                     stage="report_render",
                     trace_id=trace_id,
+                    conversation_id=conversation_id,
                 )
+                await self._save_snapshot(result, runtime_mode)
+                return result
 
             response_obj = report_spec
             response_type = "report"
-            # M0.4.1: 保存真实 Report 数据
+            # M1.0: 使用 effective_template_key 确保一致性
             report_data = {
                 "report_id": rendered.report_id,
                 "template_key": rendered.template_key,
@@ -553,7 +612,8 @@ class MockTurnService:
         memory.current_intent = intent.intent.value
         memory.analysis_goal = f"用户提问: {message}"
         memory.semantic_model_key = semantic_model_key
-        memory.report_template_key = report_template_key
+        # M1.0: 使用 effective_template_key 确保 Memory 与 API 一致
+        memory.report_template_key = effective_template_key
         memory.measures = query_plan.measures
         memory.dimensions = query_plan.dimensions
         memory.filters = [f.model_dump() if hasattr(f, "model_dump") else f
@@ -564,11 +624,8 @@ class MockTurnService:
         memory.comparison_mode = query_plan.comparison_mode
         memory.last_query_plan = query_plan.model_dump()
         memory.last_dax = dax_req.dax
-        # 使用 QueryResult 唯一 result_id，不用 scenario key
         memory.last_query_result_id = getattr(query_result, 'result_id', None) or str(uuid.uuid4())
-        # M0.4.1: last_result_summary 保留为 Memory 摘要，但 API 响应不再用它冒充答案
         memory.last_result_summary = f"{query_result.row_count} rows"
-        # 报表场景写入 last_report_id — 与 report_data 中一致
         if response_type == "report":
             memory.last_report_id = rendered.report_id if rendered else None
         memory.updated_at = datetime.utcnow()
@@ -582,7 +639,6 @@ class MockTurnService:
             trace.record("memory_committed", trace_id=trace_id, request_id=req_id,
                         data_summary={"version": committed_memory.memory_version})
         except MemoryVersionConflictError as e:
-            # Memory 冲突：pending 标记 failed
             controller.set_failure_reason(str(e))
             controller.transition(TurnState.MEMORY_CONFLICT)
             await self.memory_repo.mark_failed(
@@ -590,29 +646,34 @@ class MockTurnService:
             )
             trace.record("memory_commit_rejected", trace_id=trace_id, request_id=req_id,
                         error_type="version_conflict")
-            return self._build_result(
+            result = self._build_result(
                 memory, req_id, "memory_conflict", intent=intent.intent.value,
                 error_type="version_conflict", trace_id=trace_id,
                 trace=trace,
+                conversation_id=conversation_id,
             )
+            await self._save_snapshot(result, runtime_mode)
+            return result
         except MemoryCommitDeniedError as e:
             controller.set_failure_reason(str(e))
             controller.transition(TurnState.RESPONSE_FAILED)
             await self.memory_repo.mark_failed(
                 req_id, runtime_mode, reason=str(e), stage="memory_commit"
             )
-            return self._build_result(
+            result = self._build_result(
                 memory, req_id, "response_failed", intent=intent.intent.value,
                 error_type="memory_commit_denied", trace_id=trace_id,
                 trace=trace,
+                conversation_id=conversation_id,
             )
+            await self._save_snapshot(result, runtime_mode)
+            return result
 
         controller.transition(TurnState.COMPLETED)
         trace.record("request_completed", trace_id=trace_id, request_id=req_id,
                     data_summary={"terminal_state": "completed"})
 
-        # 工具序列唯一来源于 TraceRecorder
-        return self._build_result(
+        result = self._build_result(
             committed_memory, req_id, "completed",
             intent=intent.intent.value, response_type=response_type,
             trace_id=trace_id,
@@ -620,7 +681,11 @@ class MockTurnService:
             trace=trace,
             answer_text=answer_text,
             report_data=report_data,
+            conversation_id=conversation_id,
         )
+        # M1.0: 保存快照供幂等重放
+        await self._save_snapshot(result, runtime_mode)
+        return result
 
     async def _fail_turn(
         self,
@@ -633,6 +698,7 @@ class MockTurnService:
         reason: str,
         stage: str,
         trace_id: str = "",
+        conversation_id: str = "",  # M1.0
     ) -> dict[str, Any]:
         """统一失败处理
 
@@ -644,12 +710,9 @@ class MockTurnService:
         - 返回统一 TurnResult
         """
         controller.set_failure_reason(reason)
-        # 执行状态转换 — 检查合法性后再转换
         if controller.is_terminal:
-            # 已经处于终止状态，不再转换（例如 Schema 失败后又触发了 DAX 失败）
             pass
         elif not controller.can_continue:
-            # 不可继续但也不是已知终止状态 — 记录异常
             trace.record("request_failed", trace_id=trace_id, request_id=request_id,
                         error_type="TurnStateError",
                         data_summary={"reason": f"Unexpected non-terminal state {controller.state.value}"})
@@ -661,7 +724,6 @@ class MockTurnService:
             try:
                 controller.transition(terminal_state)
             except Exception:
-                # 意外的非法状态转换 — 记录 Trace 后重新抛出
                 trace.record("request_failed", trace_id=trace_id, request_id=request_id,
                             error_type="TurnStateError",
                             data_summary={"reason": f"Illegal transition {controller.state.value} → {terminal_state.value}"})
@@ -682,6 +744,7 @@ class MockTurnService:
             error_type=error_type,
             trace_id=trace_id,
             trace=trace,
+            conversation_id=conversation_id,  # M1.0
         )
 
     def _build_result(
@@ -699,16 +762,26 @@ class MockTurnService:
         report_data: Optional[dict[str, Any]] = None,
         clarification_question: Optional[str] = None,
         unsupported_reason: Optional[str] = None,
+        conversation_id: str = "",  # M1.0: 显式 conversation_id 参数
     ) -> dict[str, Any]:
-        """构建统一结果字典 — M0.4.1: 保存实际 Answer/Report/clarification/unsupported"""
+        """构建统一结果字典
+
+        M1.0: conversation_id 由调用方显式传入，不依赖 Memory 是否存在。
+        """
+
         tool_sequence: list[str] = []
         if trace is not None:
             tool_sequence = trace.get_tool_sequence()
 
+        # M1.0: conversation_id 优先使用 memory 中的值，次选参数传入值
+        effective_conv_id = conversation_id
+        if memory is not None and memory.conversation_id:
+            effective_conv_id = memory.conversation_id
+
         if memory is not None:
             result: dict[str, Any] = {
                 "request_id": request_id,
-                "conversation_id": memory.conversation_id,
+                "conversation_id": effective_conv_id,
                 "terminal_state": terminal_state,
                 "intent": intent or memory.current_intent or "",
                 "response_type": response_type,
@@ -729,9 +802,10 @@ class MockTurnService:
                 "last_result_summary": memory.last_result_summary,
             }
         else:
+            # M1.0: 使用传入的 conversation_id，不再返回空字符串
             result = {
                 "request_id": request_id,
-                "conversation_id": "",
+                "conversation_id": effective_conv_id,
                 "terminal_state": terminal_state,
                 "intent": intent,
                 "response_type": response_type,
@@ -746,7 +820,7 @@ class MockTurnService:
                 "trace_id": trace_id,
             }
 
-        # M0.4.1: 保存真实响应数据（不在 memory 分支内，两个分支都可能有）
+        # M0.4.1: 保存真实响应数据
         if answer_text is not None:
             result["answer"] = answer_text
         if report_data is not None:
@@ -757,3 +831,64 @@ class MockTurnService:
             result["unsupported_reason"] = unsupported_reason
 
         return result
+
+    def _build_idempotent_replay(
+        self,
+        snapshot: "TurnResultSnapshot",
+        request_id: str,
+        trace_id: str,
+    ) -> dict[str, Any]:
+        """M1.0: 构建幂等重放响应
+
+        从快照恢复完整业务结果，生成新 trace_id。
+        tool_sequence 为空（未重新执行工具）。
+        memory_commit 为 false（未重新提交 Memory）。
+        """
+        result: dict[str, Any] = {
+            "request_id": request_id,
+            "conversation_id": snapshot.conversation_id,
+            "terminal_state": "duplicate",  # M1.0: 重放统一使用 duplicate
+            "intent": snapshot.intent,
+            "response_type": snapshot.response_type,
+            "answer": snapshot.answer,
+            "report": snapshot.report,
+            "clarification_question": snapshot.clarification_question,
+            "unsupported_reason": snapshot.unsupported_reason,
+            "error_type": snapshot.error_type,
+            "tool_sequence": [],  # M1.0: 重放不执行工具
+            "memory_commit": False,  # M1.0: 重放不提交 Memory
+            "final_memory_version": snapshot.final_memory_version,
+            "is_mock": snapshot.is_mock,
+            "trace_id": trace_id,  # M1.0: 新 trace_id
+            "allowed_tools": snapshot.allowed_tools,
+            # M1.0: 幂等重放标记
+            "idempotent_replay": True,
+            "replayed_request_id": snapshot.request_id,
+        }
+        return result
+
+    async def _save_snapshot(
+        self,
+        result: dict[str, Any],
+        runtime_mode: RuntimeDataMode,
+    ) -> None:
+        """M1.0: 从 _build_result 输出构建并保存 TurnResultSnapshot"""
+        snapshot = TurnResultSnapshot(
+            request_id=result.get("request_id", ""),
+            conversation_id=result.get("conversation_id", ""),
+            intent=result.get("intent", ""),
+            response_type=result.get("response_type", ""),
+            terminal_state=result.get("terminal_state", ""),
+            answer=result.get("answer"),
+            report=result.get("report"),
+            clarification_question=result.get("clarification_question"),
+            unsupported_reason=result.get("unsupported_reason"),
+            error_type=result.get("error_type"),
+            tool_sequence=result.get("tool_sequence", []),
+            memory_commit=result.get("memory_commit", False),
+            final_memory_version=result.get("final_memory_version"),
+            is_mock=result.get("is_mock", True),
+            trace_id=result.get("trace_id", ""),
+            allowed_tools=result.get("allowed_tools", []),
+        )
+        await self.snapshot_store.save(snapshot, runtime_mode)
