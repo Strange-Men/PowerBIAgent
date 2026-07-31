@@ -8,7 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M0.2 智能体架构与记忆设计** — Agent 框架选定（PydanticAI）、意图识别、LLM Provider、Mock LLM、记忆系统设计已完成。65 个单元测试全部通过。
+**M0.4 项目骨架与阶段收尾** — M0 开发准备阶段已完成。FastAPI 骨架、Health/Chat 接口已上线。Mock 模式完整闭环。265 个测试全部通过。
+
+> **当前仅支持 Mock 模式。** 真实 DeepSeek 和 Power BI 尚未接入（计划 M1/M2）。
 
 ## 开发环境准备
 
@@ -31,61 +33,103 @@ D:\Conda\Scripts\conda.exe create -n PBIAgent python=3.11 -y
 #### 激活 PBIAgent 环境
 
 ```powershell
-# 方式一：使用 conda run（推荐，无需 conda init）
-D:\Conda\Scripts\conda.exe run -n PBIAgent python --version
-
-# 方式二：直接使用环境中的 Python
+# 推荐：直接使用环境中的 Python
 D:\Conda\envs\PBIAgent\python.exe --version
-
-# 方式三：conda activate（需先执行 conda init powershell）
-# 注意：以下命令尚未在本机验证
-# conda activate PBIAgent
-```
-
-#### 检查 Python 版本
-
-```powershell
-D:\Conda\envs\PBIAgent\python.exe --version
-# 预期输出: Python 3.11.x
 ```
 
 #### 安装项目依赖
 
-M0.2 已安装并验证：pydantic-ai 2.21.0、pydantic 2.13.4、pytest 9.1.1。
+```powershell
+D:\Conda\envs\PBIAgent\python.exe -m pip install -e .
+```
+
+核心依赖：FastAPI、Uvicorn、pydantic-settings、pydantic-ai、httpx。
+
+### 环境变量
+
+项目使用 `.env` 文件和环境变量配置。Mock 模式启动不需要任何 API Key。
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `APP_ENV` | `development` | 运行环境 (development/test/production) |
+| `LLM_MODE` | `mock` | LLM 模式 (mock/deepseek) |
+| `POWERBI_MODE` | `mock` | Power BI 模式 (mock/remote_mcp) |
+| `HOST` | `127.0.0.1` | 监听地址 |
+| `PORT` | `8000` | 监听端口 |
+
+### 启动应用
 
 ```powershell
-# 后续阶段使用:
-D:\Conda\Scripts\conda.exe run -n PBIAgent pip install -e .
-# 或:
-D:\Conda\Scripts\conda.exe run -n PBIAgent conda env update -f environment.yml
+D:\Conda\envs\PBIAgent\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+```
+
+### 健康检查
+
+```powershell
+curl http://127.0.0.1:8000/health
+```
+
+响应示例：
+
+```json
+{
+  "status": "ok",
+  "app_name": "PowerBIAgent",
+  "app_env": "development",
+  "version": "M0.4",
+  "llm_mode": "mock",
+  "powerbi_mode": "mock",
+  "harness_mode": "strict",
+  "timestamp": "2026-07-31T07:03:23Z"
+}
+```
+
+### 对话接口
+
+```powershell
+curl -X POST http://127.0.0.1:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "本月销售额是多少？"}'
+```
+
+响应示例：
+
+```json
+{
+  "request_id": "...",
+  "conversation_id": "...",
+  "terminal_state": "completed",
+  "intent": "data_question",
+  "response_type": "answer",
+  "tool_sequence": ["get_semantic_model_schema", "execute_dax"],
+  "memory_commit": true,
+  "trace_id": "...",
+  "is_mock": true
+}
 ```
 
 ### 运行测试
 
 ```powershell
-D:\Conda\envs\PBIAgent\python.exe -m pytest backend/tests/unit/ -v
+# 全量测试
+D:\Conda\envs\PBIAgent\python.exe -m pytest backend/tests -q
+
+# Golden Cases
+D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 ```
-
-### 注意事项
-
-- 当前 M0.2 尚未提供正式服务启动入口（M0.4 提供 FastAPI `/health`）
-- 不要求在 base 环境安装项目依赖
-- 所有项目依赖仅安装到 `PBIAgent` 环境
-- 不在业务代码中硬编码 `D:\Conda` 或环境绝对路径
-- Mock LLM 可完全离线运行，无需 DeepSeek API Key
 
 ## 技术栈
 
 | 层级 | 技术 | 状态 |
 |------|------|------|
-| 前端 | React + Vite | 骨架已确认，开发延后 |
-| 后端 | FastAPI | 已选定，M0.4 实现 |
+| 前端 | React + Vite | 骨架已确认，开发延后 (M5) |
+| 后端 | FastAPI | ✅ M0.4 最小骨架已完成 |
 | Agent | PydanticAI 单 Agent | ✅ M0.2 已选定 |
-| LLM | DeepSeek + Mock LLM | ✅ M0.2 Mock 可运行；DeepSeek 骨架 |
-| 数据 | Power BI MCP | M0.3 接入 |
-| 记忆 | 结构化工作记忆 | ✅ M0.2 数据契约 + 策略 |
-| 报表 | 固定模板 HTML | M3 实现 |
-| Harness | MVP 轻量控制面 | M0.3 实现 |
+| LLM | DeepSeek + Mock LLM | ✅ Mock 可运行；DeepSeek 延后 (M1) |
+| 数据 | Power BI MCP | ✅ Mock 可运行；真实接入延后 (M2) |
+| 记忆 | 结构化工作记忆 | ✅ M0.2-M0.3.2 完整实现 |
+| 报表 | 固定模板 HTML | ✅ Mock 可运行；真实渲染延后 (M3) |
+| Harness | MVP 轻量控制面 | ✅ M0.3-M0.4 ETCLOVG 完整实现 |
 
 ## 文档导航
 
@@ -104,4 +148,4 @@ D:\Conda\envs\PBIAgent\python.exe -m pytest backend/tests/unit/ -v
 
 ---
 
-*最后更新：2026-07-31*
+*最后更新：2026-07-31 | M0.4 项目骨架与阶段收尾*

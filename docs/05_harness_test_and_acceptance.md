@@ -1,6 +1,6 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M0.3.2 工具网关与并发闭环修正完成
+> **状态：** M0.4 项目骨架与阶段收尾完成
 > **关联 ADR：** ADR-004
 
 ---
@@ -101,7 +101,7 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 | 集成测试（integration/） | Mock 完整链路 | 1 文件 |
 | Golden Cases | 端到端场景 | 10 条 YAML |
 
-## 四、205 测试覆盖（M0.3.2）
+## 四、265 测试覆盖（M0.4）
 
 | 测试文件 | 内容 |
 |---------|------|
@@ -112,8 +112,11 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 | test_powerbi.py | Mock Adapter 全部场景 |
 | test_harness.py | ToolGateway + ContextBuilder + TurnController + Trace + Validation |
 | test_memory_repository.py | 版本 0→1→2 + 证据验证 + 隔离 + 原子性 + 失败审计（重写）|
-| test_mock_pipeline.py | 问答/报表/多轮继承/Gateway链路/冲突/幂等/失败清理（重写）|
+| test_mock_pipeline.py | 问答/报表/多轮继承/Gateway链路/冲突/幂等/失败清理/并发（重写）|
+| test_settings.py | Settings 默认/覆盖/校验/Secret/隔离（M0.4 新增）|
+| test_health.py | Health 200/模式/敏感字段/不调用LLM（M0.4 新增）|
+| test_chat.py | Chat 问答/报表/边界/并发/Real拒绝（M0.4 新增）|
 
 ---
 
-*最后更新：2026-07-31 | M0.3.2 工具网关与并发闭环修正*
+*最后更新：2026-07-31 | M0.4 项目骨架与阶段收尾*

@@ -85,16 +85,8 @@ class ToolGateway:
 
     def __init__(self):
         self._tools: dict[str, ToolSpec] = {}
-        self._trace_recorder: Any = None  # 可选 TraceRecorder
-        self._turn_controller: Any = None  # 可选 TurnController
-
-    def set_trace_recorder(self, trace_recorder: Any) -> None:
-        """注入 TraceRecorder — Gateway 产生的 Trace 事件写入此处"""
-        self._trace_recorder = trace_recorder
-
-    def set_turn_controller(self, turn_controller: Any) -> None:
-        """注入 TurnController — 用于工具调用计数和重试限制"""
-        self._turn_controller = turn_controller
+        # M0.4: 删除 _trace_recorder / _turn_controller 共享实例字段
+        # TraceRecorder 和 TurnController 通过 execute() 参数显式传入
 
     def register(self, tool: ToolSpec) -> None:
         """注册工具 — 重复注册拒绝"""
@@ -187,6 +179,8 @@ class ToolGateway:
         tool_name: str,
         execution_context: ToolExecutionContext,
         input_data: BaseModel,
+        trace: Any = None,
+        controller: Any = None,
     ) -> Any:
         """执行工具 — 完整策略检查、校验、超时和重试
 
@@ -194,6 +188,8 @@ class ToolGateway:
             tool_name: 工具名称
             execution_context: 结构化执行上下文
             input_data: 工具输入
+            trace: 当前请求的 TraceRecorder（M0.4: 显式传入，不保存到实例字段）
+            controller: 当前请求的 TurnController（M0.4: 显式传入，不保存到实例字段）
 
         Returns:
             工具执行结果
@@ -244,7 +240,7 @@ class ToolGateway:
         # === 执行（含超时和正确重试） ===
 
         # Trace: tool_call_started
-        self._record_trace("tool_call_started", execution_context, tool_name,
+        self._record_trace(trace, "tool_call_started", execution_context, tool_name,
                            attempt=1, max_attempts=tool.max_retries + 1,
                            input_summary=self._safe_summary(input_data))
 
@@ -252,8 +248,8 @@ class ToolGateway:
         for attempt in range(tool.max_retries + 1):
             try:
                 # 检查 TurnController 工具调用限制
-                if self._turn_controller is not None:
-                    self._turn_controller.check_tool_call_limit()
+                if controller is not None:
+                    controller.check_tool_call_limit()
 
                 start = time.monotonic()
                 result = await asyncio.wait_for(
@@ -264,7 +260,7 @@ class ToolGateway:
 
                 # 输出校验
                 if tool.output_model is not None and not isinstance(result, tool.output_model):
-                    self._record_trace("tool_call_failed", execution_context, tool_name,
+                    self._record_trace(trace, "tool_call_failed", execution_context, tool_name,
                                        attempt=attempt + 1, max_attempts=tool.max_retries + 1,
                                        error_type="output_validation",
                                        duration_ms=elapsed_ms)
@@ -274,7 +270,7 @@ class ToolGateway:
                     )
 
                 # Trace: tool_call_completed
-                self._record_trace("tool_call_completed", execution_context, tool_name,
+                self._record_trace(trace, "tool_call_completed", execution_context, tool_name,
                                    attempt=attempt + 1, max_attempts=tool.max_retries + 1,
                                    output_summary=self._safe_summary(result),
                                    duration_ms=elapsed_ms)
@@ -285,7 +281,7 @@ class ToolGateway:
                 last_error = ToolTimeoutError(
                     f"Tool '{tool_name}' timed out after {tool.timeout_seconds}s"
                 )
-                self._record_trace("tool_call_failed", execution_context, tool_name,
+                self._record_trace(trace, "tool_call_failed", execution_context, tool_name,
                                    attempt=attempt + 1, max_attempts=tool.max_retries + 1,
                                    error_type="timeout",
                                    duration_ms=elapsed_ms)
@@ -305,7 +301,7 @@ class ToolGateway:
                 if self._is_retryable(e) and attempt < tool.max_retries:
                     await asyncio.sleep(0.5 * (attempt + 1))
                     continue
-                self._record_trace("tool_call_failed", execution_context, tool_name,
+                self._record_trace(trace, "tool_call_failed", execution_context, tool_name,
                                    attempt=attempt + 1, max_attempts=tool.max_retries + 1,
                                    error_type=type(e).__name__)
                 raise last_error
@@ -326,6 +322,7 @@ class ToolGateway:
 
     def _record_trace(
         self,
+        trace: Any,
         event_type: str,
         ctx: ToolExecutionContext,
         tool_name: str,
@@ -336,8 +333,8 @@ class ToolGateway:
         error_type: Optional[str] = None,
         duration_ms: float = 0.0,
     ) -> None:
-        """通过 TraceRecorder 记录工具事件"""
-        if self._trace_recorder is None:
+        """通过 TraceRecorder 记录工具事件 — M0.4: trace 显式传入"""
+        if trace is None:
             return
 
         data = {
@@ -354,7 +351,7 @@ class ToolGateway:
         if duration_ms > 0:
             data["duration_ms"] = duration_ms
 
-        self._trace_recorder.record(
+        trace.record(
             event_type,
             trace_id=ctx.trace_id,
             request_id=ctx.request_id,

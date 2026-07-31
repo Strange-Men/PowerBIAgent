@@ -1031,3 +1031,372 @@ class TestForcedInterleaving:
         assert r_a["response_type"] == "answer"
         assert r_b["intent"] == "report_generation", f"B intent corrupted: {r_b['intent']}"
         assert r_b["response_type"] == "report"
+
+
+# =============================================================================
+# M0.4 请求级并发上下文收口 — 同一 Service 实例并发测试
+# =============================================================================
+
+class TestSameServiceFullToolChainConcurrent:
+    """同一 MockTurnService + ToolGateway + MockAgentRuntime + MemoryRepository
+    并发执行两个完整工具链，验证 Trace/Controller/工具序列/工具计数互不污染。
+    """
+
+    @pytest.mark.asyncio
+    async def test_same_service_data_question_vs_report_generation(self):
+        """同一 Service：请求A=data_question, 请求B=report_generation 并发
+        两个请求都走完整工具链，验证 trace_id、工具序列、Memory 互不污染。
+        """
+        repo = InMemoryMemoryRepository()
+        runtime = MockAgentRuntime()
+        service = MockTurnService(
+            memory_repo=repo,
+            llm_runtime=runtime,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+
+        async def request_a():
+            return await service.execute(
+                message="本月销售额是多少？",
+                conversation_id="conv-m04-full-a",
+                request_id="req-m04-full-a",
+                semantic_model_key="mock_sales_model",
+                scenario=MockScenarioSelection(
+                    intent_key="data_question",
+                    query_plan_key="data_question",
+                    dax_key="data_question",
+                    powerbi_key="data_question",
+                    response_key="data_question",
+                ),
+            )
+
+        async def request_b():
+            return await service.execute(
+                message="生成销售周报",
+                conversation_id="conv-m04-full-b",
+                request_id="req-m04-full-b",
+                semantic_model_key="mock_sales_model",
+                report_template_key="sales_weekly",
+                scenario=MockScenarioSelection(
+                    intent_key="report_generation",
+                    query_plan_key="report_generation",
+                    dax_key="report_generation",
+                    powerbi_key="report_generation",
+                    response_key="report_generation",
+                ),
+            )
+
+        r_a, r_b = await asyncio.gather(request_a(), request_b())
+
+        # 两个请求都成功
+        assert r_a["terminal_state"] == "completed", f"A state: {r_a['terminal_state']}"
+        assert r_b["terminal_state"] == "completed", f"B state: {r_b['terminal_state']}"
+
+        # trace_id 不同且非空
+        assert r_a["trace_id"], "A trace_id is empty"
+        assert r_b["trace_id"], "B trace_id is empty"
+        assert r_a["trace_id"] != r_b["trace_id"], \
+            f"trace_ids should differ: A={r_a['trace_id']}, B={r_b['trace_id']}"
+
+        # A 工具序列只有 Schema 和 DAX，不包含 render_report
+        assert "get_semantic_model_schema" in r_a["tool_sequence"], \
+            f"A tools: {r_a['tool_sequence']}"
+        assert "execute_dax" in r_a["tool_sequence"], \
+            f"A tools: {r_a['tool_sequence']}"
+        assert "render_report" not in r_a["tool_sequence"], \
+            f"A should NOT have render_report: {r_a['tool_sequence']}"
+
+        # B 工具序列包含 Schema、DAX 和 render_report
+        assert "get_semantic_model_schema" in r_b["tool_sequence"], \
+            f"B tools: {r_b['tool_sequence']}"
+        assert "execute_dax" in r_b["tool_sequence"], \
+            f"B tools: {r_b['tool_sequence']}"
+        assert "render_report" in r_b["tool_sequence"], \
+            f"B should have render_report: {r_b['tool_sequence']}"
+
+        # 两个请求的工具事件不会互相出现
+        assert "render_report" not in r_a["tool_sequence"]
+        # A 和 B 的 intent 不污染
+        assert r_a["intent"] == "data_question"
+        assert r_b["intent"] == "report_generation"
+
+        # Memory 写入正确的 conversation
+        mem_a = await repo.get_by_request_id("req-m04-full-a", RuntimeDataMode.MOCK)
+        mem_b = await repo.get_by_request_id("req-m04-full-b", RuntimeDataMode.MOCK)
+        assert mem_a is not None and mem_a.state_status == MemoryStatus.COMMITTED
+        assert mem_b is not None and mem_b.state_status == MemoryStatus.COMMITTED
+        assert mem_a.conversation_id == "conv-m04-full-a", \
+            f"A conv should be conv-m04-full-a, got {mem_a.conversation_id}"
+        assert mem_b.conversation_id == "conv-m04-full-b", \
+            f"B conv should be conv-m04-full-b, got {mem_b.conversation_id}"
+
+    @pytest.mark.asyncio
+    async def test_same_service_repeated_loop_stability(self):
+        """同一 Service 并发 data_question vs report_generation 循环 10 次，验证稳定性"""
+        runtime = MockAgentRuntime()
+        repo = InMemoryMemoryRepository()
+        service = MockTurnService(
+            memory_repo=repo,
+            llm_runtime=runtime,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+
+        for i in range(10):
+            async def req_a(idx=i):
+                return await service.execute(
+                    message="销售额查询",
+                    conversation_id=f"conv-m04-loop-a-{idx}",
+                    request_id=f"req-m04-loop-a-{idx}",
+                    scenario=MockScenarioSelection(
+                        intent_key="data_question",
+                        query_plan_key="data_question",
+                        dax_key="data_question",
+                        powerbi_key="data_question",
+                        response_key="data_question",
+                    ),
+                )
+
+            async def req_b(idx=i):
+                return await service.execute(
+                    message="生成周报",
+                    conversation_id=f"conv-m04-loop-b-{idx}",
+                    request_id=f"req-m04-loop-b-{idx}",
+                    report_template_key="sales_weekly",
+                    scenario=MockScenarioSelection(
+                        intent_key="report_generation",
+                        query_plan_key="report_generation",
+                        dax_key="report_generation",
+                        powerbi_key="report_generation",
+                        response_key="report_generation",
+                    ),
+                )
+
+            ra, rb = await asyncio.gather(req_a(), req_b())
+
+            assert ra["terminal_state"] == "completed", \
+                f"Iter {i}: A state={ra['terminal_state']}"
+            assert ra["intent"] == "data_question", \
+                f"Iter {i}: A intent={ra['intent']}"
+            assert "render_report" not in ra["tool_sequence"], \
+                f"Iter {i}: A has render_report: {ra['tool_sequence']}"
+
+            assert rb["terminal_state"] == "completed", \
+                f"Iter {i}: B state={rb['terminal_state']}"
+            assert rb["intent"] == "report_generation", \
+                f"Iter {i}: B intent={rb['intent']}"
+            assert "render_report" in rb["tool_sequence"], \
+                f"Iter {i}: B missing render_report: {rb['tool_sequence']}"
+
+            # trace_id 每次都不同
+            assert ra["trace_id"], f"Iter {i}: A trace_id empty"
+            assert rb["trace_id"], f"Iter {i}: B trace_id empty"
+            assert ra["trace_id"] != rb["trace_id"], \
+                f"Iter {i}: trace_ids should differ"
+
+    @pytest.mark.asyncio
+    async def test_tool_call_counts_independent(self):
+        """两个请求的工具调用计数独立，不互相影响"""
+        repo = InMemoryMemoryRepository()
+        runtime = MockAgentRuntime()
+        service = MockTurnService(
+            memory_repo=repo,
+            llm_runtime=runtime,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+
+        async def req_a():
+            return await service.execute(
+                message="销售额查询",
+                conversation_id="conv-m04-count-a",
+                request_id="req-m04-count-a",
+                scenario=MockScenarioSelection(intent_key="data_question"),
+            )
+
+        async def req_b():
+            return await service.execute(
+                message="非法请求",
+                conversation_id="conv-m04-count-b",
+                request_id="req-m04-count-b",
+                scenario=MockScenarioSelection(intent_key="unsupported"),
+            )
+
+        ra, rb = await asyncio.gather(req_a(), req_b())
+
+        # A 应完成完整工具链（Schema + DAX）
+        assert ra["terminal_state"] == "completed"
+        assert len(ra["tool_sequence"]) >= 2
+        # B 是 unsupported，没有工具调用
+        assert rb["terminal_state"] == "unsupported"
+        assert rb["tool_sequence"] == []
+
+        # 各自的工具计数不互相影响
+        assert "render_report" not in ra["tool_sequence"]
+
+
+class TestSameServiceFailAndSuccessConcurrent:
+    """同一 Service：一个请求工具失败 + 另一个请求成功并发
+    失败请求不能污染成功请求的 Trace 和 Controller。
+    """
+
+    @pytest.mark.asyncio
+    async def test_failure_does_not_pollute_success_trace(self):
+        """请求A工具超时失败，请求B正常成功 — B 不受 A 失败污染"""
+        repo = InMemoryMemoryRepository()
+        runtime = MockAgentRuntime()
+        service = MockTurnService(
+            memory_repo=repo,
+            llm_runtime=runtime,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+
+        async def req_a_fail():
+            return await service.execute(
+                message="超时查询",
+                conversation_id="conv-m04-fail-a",
+                request_id="req-m04-fail-a",
+                scenario=MockScenarioSelection(
+                    intent_key="data_question",
+                    powerbi_key="timeout",
+                ),
+            )
+
+        async def req_b_success():
+            return await service.execute(
+                message="本月销售额是多少？",
+                conversation_id="conv-m04-fail-b",
+                request_id="req-m04-fail-b",
+                scenario=MockScenarioSelection(intent_key="data_question"),
+            )
+
+        r_fail, r_success = await asyncio.gather(req_a_fail(), req_b_success())
+
+        # A: 失败 — 正确标记 tool_failed
+        assert r_fail["terminal_state"] == "tool_failed", \
+            f"Expected tool_failed, got {r_fail['terminal_state']}"
+        assert r_fail["memory_commit"] is False
+
+        # B: 成功 — 不受 A 污染
+        assert r_success["terminal_state"] == "completed", \
+            f"Expected completed, got {r_success['terminal_state']}"
+        assert r_success["memory_commit"] is True
+        assert r_success["intent"] == "data_question"
+        assert "execute_dax" in r_success["tool_sequence"]
+
+        # trace_id 不同
+        assert r_fail["trace_id"] != r_success["trace_id"]
+
+        # A 失败不提交 Memory，B 成功正常提交
+        mem_a = await repo.get_by_request_id("req-m04-fail-a", RuntimeDataMode.MOCK)
+        assert mem_a is not None
+        assert mem_a.state_status == MemoryStatus.FAILED, \
+            f"A should be FAILED, got {mem_a.state_status}"
+
+        mem_b = await repo.get_by_request_id("req-m04-fail-b", RuntimeDataMode.MOCK)
+        assert mem_b is not None
+        assert mem_b.state_status == MemoryStatus.COMMITTED, \
+            f"B should be COMMITTED, got {mem_b.state_status}"
+
+    @pytest.mark.asyncio
+    async def test_failure_tool_sequence_not_pollute_success(self):
+        """失败请求的工具序列不出现 render_report，成功请求的工具序列完整"""
+        repo = InMemoryMemoryRepository()
+        runtime = MockAgentRuntime()
+        service = MockTurnService(
+            memory_repo=repo,
+            llm_runtime=runtime,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+
+        async def req_a_fail():
+            return await service.execute(
+                message="错误 DAX",
+                conversation_id="conv-m04-seq-a",
+                request_id="req-m04-seq-a",
+                scenario=MockScenarioSelection(
+                    intent_key="data_question",
+                    powerbi_key="dax_error",
+                ),
+            )
+
+        async def req_b_report():
+            return await service.execute(
+                message="生成报表",
+                conversation_id="conv-m04-seq-b",
+                request_id="req-m04-seq-b",
+                report_template_key="sales_weekly",
+                scenario=MockScenarioSelection(
+                    intent_key="report_generation",
+                    query_plan_key="report_generation",
+                    dax_key="report_generation",
+                    powerbi_key="report_generation",
+                    response_key="report_generation",
+                ),
+            )
+
+        r_fail, r_report = await asyncio.gather(req_a_fail(), req_b_report())
+
+        # 失败请求 — DAX 错误，不应有 render_report
+        assert r_fail["terminal_state"] == "tool_failed"
+        assert "render_report" not in r_fail["tool_sequence"]
+
+        # 成功请求 — 完整报表工具链
+        assert r_report["terminal_state"] == "completed"
+        assert "render_report" in r_report["tool_sequence"]
+        assert "execute_dax" in r_report["tool_sequence"]
+        assert "get_semantic_model_schema" in r_report["tool_sequence"]
+
+        # trace_id 不同
+        assert r_fail["trace_id"] != r_report["trace_id"]
+
+    @pytest.mark.asyncio
+    async def test_failure_does_not_block_success_commit(self):
+        """失败请求的 pending 已 failed，成功请求可正常 commit 并递增版本"""
+        repo = InMemoryMemoryRepository()
+        runtime = MockAgentRuntime()
+        service = MockTurnService(
+            memory_repo=repo,
+            llm_runtime=runtime,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+
+        async def req_fail():
+            return await service.execute(
+                message="超时",
+                conversation_id="conv-m04-block",
+                request_id="req-m04-block-fail",
+                scenario=MockScenarioSelection(
+                    intent_key="data_question",
+                    powerbi_key="timeout",
+                ),
+            )
+
+        async def req_ok():
+            return await service.execute(
+                message="销售额",
+                conversation_id="conv-m04-block",
+                request_id="req-m04-block-ok",
+                scenario=MockScenarioSelection(intent_key="data_question"),
+            )
+
+        r_fail, r_ok = await asyncio.gather(req_fail(), req_ok())
+
+        assert r_fail["terminal_state"] == "tool_failed"
+        assert r_ok["terminal_state"] == "completed"
+
+        # 检查 Memory 状态
+        mem_fail = await repo.get_by_request_id("req-m04-block-fail", RuntimeDataMode.MOCK)
+        assert mem_fail.state_status == MemoryStatus.FAILED
+
+        mem_ok = await repo.get_by_request_id("req-m04-block-ok", RuntimeDataMode.MOCK)
+        assert mem_ok.state_status == MemoryStatus.COMMITTED
+
+        # latest committed 应指向成功请求
+        latest = await repo.get_latest_committed("conv-m04-block", RuntimeDataMode.MOCK)
+        assert latest is not None
+        assert latest.request_id == "req-m04-block-ok"

@@ -101,7 +101,8 @@ class MockTurnService:
         self.context_builder = ContextBuilder(self.config)
         self.tool_gateway = self._build_tool_gateway()
         self.validator = ValidationService()
-        self._trace: Optional[TraceRecorder] = None
+        # M0.4: 删除 self._trace 共享实例字段
+        # TraceRecorder 仅存在于 execute() 局部变量中，通过参数显式传递
 
     def _build_tool_gateway(self) -> ToolGateway:
         """构建 ToolGateway 并注册三个工具"""
@@ -191,10 +192,8 @@ class MockTurnService:
         req_id = request_id or str(uuid.uuid4())
         trace_id = str(uuid.uuid4())
         trace = TraceRecorder(self.config)
-        self._trace = trace
-
-        # 注入 TraceRecorder 和 TurnController 到 Gateway
-        self.tool_gateway.set_trace_recorder(trace)
+        # M0.4: TraceRecorder 仅作为 execute() 局部变量
+        # 不再写入 self._trace，不再注入到 Gateway 共享字段
 
         user = UserContext()
         runtime_mode = RuntimeDataMode.MOCK if self.config.is_mock else RuntimeDataMode.REAL
@@ -209,6 +208,7 @@ class MockTurnService:
                         data_summary={"terminal_state": "duplicate"})
             return self._build_result(
                 existing, req_id, "duplicate", trace_id=trace_id,
+                trace=trace,
             )
 
         # 2. 加载最新 committed memory
@@ -240,6 +240,7 @@ class MockTurnService:
             return self._build_result(
                 None, req_id, "clarification_required",
                 intent=intent.intent.value, trace_id=trace_id,
+                trace=trace,
             )
 
         if intent.intent == IntentType.UNSUPPORTED:
@@ -249,6 +250,7 @@ class MockTurnService:
             return self._build_result(
                 None, req_id, "unsupported",
                 intent=intent.intent.value, trace_id=trace_id,
+                trace=trace,
             )
 
         # 6. 创建 pending memory
@@ -271,7 +273,8 @@ class MockTurnService:
 
         # 7. TurnController
         controller = TurnController(self.config, request_id=req_id)
-        self.tool_gateway.set_turn_controller(controller)
+        # M0.4: TurnController 不再注入到 Gateway 共享字段
+        # 通过 tool_gateway.execute(..., controller=controller) 显式传入
         controller.transition(TurnState.CONTEXT_READY)
         controller.transition(TurnState.INTENT_CLASSIFIED)
         controller.record_intent_valid()
@@ -298,6 +301,8 @@ class MockTurnService:
                 "get_semantic_model_schema",
                 exec_ctx,
                 schema_input,
+                trace=trace,
+                controller=controller,
             )
         except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
                 ToolNotRegisteredError, ToolOutputValidationError) as e:
@@ -327,6 +332,7 @@ class MockTurnService:
                 memory, req_id, "validation_failed",
                 intent=intent.intent.value, error_type="plan_validation_failed",
                 trace_id=trace_id,
+                trace=trace,
             )
 
         controller.record_query_plan_valid()
@@ -353,6 +359,7 @@ class MockTurnService:
                 memory, req_id, "validation_failed",
                 intent=intent.intent.value, error_type="dax_validation_failed",
                 trace_id=trace_id,
+                trace=trace,
             )
 
         controller.record_dax_valid()
@@ -371,6 +378,8 @@ class MockTurnService:
                 "execute_dax",
                 exec_ctx,
                 dax_req,
+                trace=trace,
+                controller=controller,
             )
         except ToolTimeoutError as e:
             return await self._fail_turn(
@@ -410,6 +419,7 @@ class MockTurnService:
                 memory, req_id, "tool_failed",
                 intent=intent.intent.value, error_type=query_result.error.type,
                 trace_id=trace_id,
+                trace=trace,
             )
 
         result_validation = self.validator.validate_query_result(query_result)
@@ -424,6 +434,7 @@ class MockTurnService:
                 memory, req_id, "validation_failed",
                 intent=intent.intent.value, error_type="result_validation_failed",
                 trace_id=trace_id,
+                trace=trace,
             )
 
         controller.record_query_result_valid()
@@ -451,6 +462,7 @@ class MockTurnService:
                     memory, req_id, "response_failed",
                     intent=intent.intent.value, error_type="answer_validation_failed",
                     trace_id=trace_id,
+                    trace=trace,
                 )
         else:
             context["mock_scenario_key"] = scenario.response_key
@@ -471,6 +483,7 @@ class MockTurnService:
                     memory, req_id, "response_failed",
                     intent=intent.intent.value, error_type="report_validation_failed",
                     trace_id=trace_id,
+                    trace=trace,
                 )
 
             # 通过 ToolGateway 渲染报表
@@ -487,6 +500,8 @@ class MockTurnService:
                     "render_report",
                     exec_ctx,
                     report_spec,
+                    trace=trace,
+                    controller=controller,
                 )
             except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
                     ToolNotRegisteredError, ToolOutputValidationError) as e:
@@ -548,6 +563,7 @@ class MockTurnService:
             return self._build_result(
                 memory, req_id, "memory_conflict", intent=intent.intent.value,
                 error_type="version_conflict", trace_id=trace_id,
+                trace=trace,
             )
         except MemoryCommitDeniedError as e:
             controller.set_failure_reason(str(e))
@@ -558,6 +574,7 @@ class MockTurnService:
             return self._build_result(
                 memory, req_id, "response_failed", intent=intent.intent.value,
                 error_type="memory_commit_denied", trace_id=trace_id,
+                trace=trace,
             )
 
         controller.transition(TurnState.COMPLETED)
@@ -570,6 +587,7 @@ class MockTurnService:
             intent=intent.intent.value, response_type=response_type,
             trace_id=trace_id,
             state_changes={"memory_version": committed_memory.memory_version},
+            trace=trace,
         )
 
     async def _fail_turn(
@@ -594,11 +612,28 @@ class MockTurnService:
         - 返回统一 TurnResult
         """
         controller.set_failure_reason(reason)
-        # 仅执行合法转换
-        try:
-            controller.transition(terminal_state)
-        except Exception:
-            pass  # 已经是终止状态或非法转换，不再覆盖
+        # 执行状态转换 — 检查合法性后再转换
+        if controller.is_terminal:
+            # 已经处于终止状态，不再转换（例如 Schema 失败后又触发了 DAX 失败）
+            pass
+        elif not controller.can_continue:
+            # 不可继续但也不是已知终止状态 — 记录异常
+            trace.record("request_failed", trace_id=trace_id, request_id=request_id,
+                        error_type="TurnStateError",
+                        data_summary={"reason": f"Unexpected non-terminal state {controller.state.value}"})
+            raise RuntimeError(
+                f"_fail_turn() called but controller in unexpected state "
+                f"'{controller.state.value}' (not terminal, not continuable)"
+            )
+        else:
+            try:
+                controller.transition(terminal_state)
+            except Exception:
+                # 意外的非法状态转换 — 记录 Trace 后重新抛出
+                trace.record("request_failed", trace_id=trace_id, request_id=request_id,
+                            error_type="TurnStateError",
+                            data_summary={"reason": f"Illegal transition {controller.state.value} → {terminal_state.value}"})
+                raise
 
         runtime_mode = memory.runtime_mode
         await self.memory_repo.mark_failed(
@@ -614,6 +649,7 @@ class MockTurnService:
             intent=memory.current_intent or "",
             error_type=error_type,
             trace_id=trace_id,
+            trace=trace,
         )
 
     def _build_result(
@@ -626,11 +662,12 @@ class MockTurnService:
         error_type: Optional[str] = None,
         state_changes: Optional[dict[str, Any]] = None,
         trace_id: str = "",
+        trace: Optional[TraceRecorder] = None,
     ) -> dict[str, Any]:
-        """构建统一结果字典 — 工具序列唯一来源于 TraceRecorder"""
-        tool_sequence = []
-        if self._trace is not None:
-            tool_sequence = self._trace.get_tool_sequence()
+        """构建统一结果字典 — M0.4: trace 显式传入，工具序列来源于当前请求 TraceRecorder"""
+        tool_sequence: list[str] = []
+        if trace is not None:
+            tool_sequence = trace.get_tool_sequence()
 
         if memory is not None:
             return {

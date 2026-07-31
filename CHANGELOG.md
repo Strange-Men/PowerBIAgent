@@ -1,5 +1,52 @@
 # CHANGELOG
 
+## [M0.4] — 2026-07-31
+
+### 项目骨架与阶段收尾
+
+**来源：** M0 开发准备最后一轮 — 请求级并发收口 + FastAPI 骨架 + M0 全量验收。
+
+**阶段A：请求级并发上下文收口**
+
+根因：`MockTurnService._trace`、`ToolGateway._trace_recorder`、`ToolGateway._turn_controller` 为共享实例字段，同一 Service/Gateway 实例并发时后到达请求覆盖前一个请求的 Trace/Controller/工具计数。
+
+修复：
+- **删除** `ToolGateway._trace_recorder` 和 `ToolGateway._turn_controller` 实例字段
+- **删除** `ToolGateway.set_trace_recorder()` 和 `ToolGateway.set_turn_controller()` 方法
+- **删除** `MockTurnService._trace` 实例字段
+- `ToolGateway.execute()` 改为显式接收 `trace` 和 `controller` 参数
+- `MockTurnService._build_result()` 改为显式接收 `trace` 参数
+- `MockTurnService._fail_turn()` 不再静默吞掉 `TurnStateError`，意外非法转换记录 Trace 后重新抛出
+- ToolGateway 保持为无请求状态、可安全复用
+
+**新增并发测试（6 个）：**
+- `TestSameServiceFullToolChainConcurrent`：同一 Service 并发 data_question vs report_generation + 循环稳定性 + 工具计数独立
+- `TestSameServiceFailAndSuccessConcurrent`：同一 Service 并发失败+成功 + 工具序列不污染 + 失败不阻塞成功 commit
+
+**阶段B：FastAPI 最小骨架**
+
+- **Settings** (`backend/app/config/settings.py`)：Pydantic Settings，环境变量可覆盖，Mock 模式无需 API Key，不打印 Secret，Real 模式未实现时 `is_real_ready=False`
+- **FastAPI 应用** (`backend/app/main.py`)：`create_app()` + lifespan 管理 MockTurnService
+- **Health 接口** (`GET /health`)：返回结构化状态，不含 Secret，不调用 LLM/Power BI
+- **Chat 接口** (`POST /api/v1/chat`)：非流式对话，Pydantic 请求/响应，message 非空校验，extra="forbid"，Real 模式返回 503
+
+**API 测试（26 个）：**
+- `test_settings.py`：默认 Mock、环境变量覆盖、非法模式拒绝、Secret 不泄露、Real 模式未 ready、缓存隔离
+- `test_health.py`：200 OK、模式正确、无敏感字段、不调用 LLM
+- `test_chat.py`：数据问答、报表生成、空消息 422、幂等、clarification、结构完整性、Real 模式 503、额外字段 422、并发 data vs report + 不串场
+
+**测试结果：**
+- 265 个 pytest 全部通过（219 + 26 API + 20 Settings/Health/Chat 新增）
+- Golden Cases：11/11 mock_ready 通过，1 skipped (pending_real_baseline)
+- compileall 通过
+- Uvicorn 启动验证：/health 返回 200，/api/v1/chat 数据问答和报表均成功
+
+**Commit SHA：** 由 Git 解析
+**Push 状态：** 将在 Git 收尾完成推送
+**本轮 Tag：** `m0.4-foundation-release`（M0 封板，本 Prompt 已批准）
+
+---
+
 ## [M0.3.3] — 2026-07-31
 
 ### Mock场景并发隔离修复
@@ -43,8 +90,8 @@
 - Golden Cases：11/11 mock_ready 通过，1 skipped
 - compileall 通过
 
-**Commit SHA：** 由下一轮 Git 解析
-**Push 状态：** 将在 Git 收尾完成推送
+**Commit SHA：** `d0d47e3`
+**Push 状态：** ✅ 已推送至 origin/main
 **本轮 Tag：** 无（本轮不创建 Tag）
 
 ---
@@ -208,8 +255,8 @@
 - Golden Cases：11/11 mock_ready 通过，1 skipped
 - compileall 通过
 
-**Commit SHA：** 由下一轮 Git 解析
-**Push 状态：** 将在 Git 收尾完成推送
+**Commit SHA：** `ec1afcc`
+**Push 状态：** ✅ 已推送至 origin/main
 **本轮 Tag：** 无（本轮不创建 Tag）
 
 ---
