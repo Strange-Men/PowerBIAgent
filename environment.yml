@@ -17,5 +17,6 @@ dependencies:
   - pip
   - pip:
     # 核心依赖在 pyproject.toml 中管理
-    # 此处仅保留 Conda 级别的基础声明
-    - -e .
+    # 注意：-e . 仅当 pyproject.toml 实际可安装时启用
+    # 当前 M0.2 阶段尚未验证包结构，暂不启用
+

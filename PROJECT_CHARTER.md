@@ -129,13 +129,16 @@
 
 1. 用户最新明确要求
 2. PROJECT_CHARTER.md（本文件）
-3. 用户原始 PRD
+3. docs/00_product_requirements_document.md（正式 PRD）
 4. 已确认 ADR
 5. 正式设计文档
 6. docs/09_context_handoff.md 中的当前状态
-7. Claude 的可逆默认假设
+7. 原始 PRD.md（仅作历史参考，不直接指导开发）
+8. Claude 的可逆默认假设
 
 文件之间出现冲突时，按优先级处理；无法判断时记录到待确认事项；不得静默改变产品方向。
+
+**重要：** 原始 PRD（`PRD.md`）已降级为历史参考。正式 PRD（`docs/00_product_requirements_document.md`）是当前需求基线。原始 PRD 与正式 PRD 冲突时，以正式 PRD 为准。不修改原始 PRD。
 
 ---
 

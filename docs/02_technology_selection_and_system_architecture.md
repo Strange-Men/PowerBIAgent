@@ -1,8 +1,8 @@
 # 02 — 技术选型与系统架构
 
-> **状态：** M0.1 骨架已建立
-> **下一轮实质性填充：** M0.2（Agent 框架 ADR、LLM Provider 选型）
-> **警告：** 本文当前仅为骨架，尚未完成的技术决策不得用于指导开发
+> **状态：** M0.2 已更新实质性内容
+> **下一轮：** M0.3（Power BI MCP Adapter、Harness）
+> **关联 ADR：** ADR-001（Agent 框架）、ADR-002（记忆系统）
 
 ---
 
@@ -12,14 +12,14 @@
 |------|---------|------|---------|
 | 前端框架 | React + Vite | ✅ 已确定 | PRD |
 | 后端框架 | FastAPI | ✅ 已确定 | PRD |
-| Agent 框架 | 待 ADR | ⏳ 待定 | M0.2 |
-| LLM Provider | DeepSeek + Mock | ✅ 方向已定 | M0.2 |
-| LLM SDK | 待定（OpenAI 兼容 SDK 等） | ⏳ 待定 | M0.2 |
+| Agent 框架 | PydanticAI 2.21.0 | ✅ 已确定 | M0.2 (ADR-001) |
+| LLM Provider | DeepSeek + Mock | ✅ Mock 可运行，DeepSeek 骨架 | M0.2 |
+| LLM SDK | PydanticAI + OpenAI-compatible | ✅ 已确定 | M0.2 |
 | Power BI MCP | MCP Client | ⏳ 待定 | M0.3 |
 | 数据校验 | Pydantic v2 | ✅ 方向已定 | PRD |
-| 记忆存储 | SQLite（MVP） | ⏳ 待确认 | M0.2 |
+| 记忆存储 | Repository 接口 + 内存实现（MVP） | ✅ 契约已定，持久化延后 | M0.2 (ADR-002) |
 | 报表渲染 | Jinja2 固定模板 | ⏳ 待确认 | M3 |
-| 测试框架 | pytest + pytest-asyncio | ⏳ 待确认 | M0.4 |
+| 测试框架 | pytest + pytest-asyncio | ✅ 已确认（65 单测通过） | M0.2 |
 
 ## 二、系统架构概要
 
@@ -96,8 +96,8 @@
 ### 后续轮次边界
 
 - M0.2：完成 Agent 框架 ADR、LLM Provider 设计、意图识别设计、记忆系统设计
-- M0.3：完成 Power BI MCP Adapter 设计和数据流验证
-- M0.4：完成 Harness 设计、项目骨架搭建
+- M0.3：完成 Power BI MCP Adapter、Mock 适配器、Harness 完整闭环（ETCLOVG）、Golden Cases
+- M0.4：FastAPI 最小骨架、`/health`、全量测试、文档代码一致性、M0 总验收
 
 ---
 

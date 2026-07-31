@@ -71,7 +71,7 @@ MVP 功能阶段 (5轮)
 
 ## M0.2 — 智能体架构与记忆设计
 
-**状态：** ⏳ 待开始 | **Commit：** M0.2_智能体架构与记忆设计
+**状态：** ✅ 已完成 | **Commit：** M0.2_智能体架构与记忆设计
 
 ### 目标
 
@@ -100,9 +100,12 @@ MVP 功能阶段 (5轮)
 
 ### 完成标准
 
-- ADR 已记录关键架构决策
-- Mock LLM 可运行并通过基本测试
-- IntentSpec 已定义完整 Pydantic 模型
+- ✅ ADR-001 Agent 框架选择 (PydanticAI)
+- ✅ ADR-002 记忆系统与存储
+- ✅ IntentSpec 完整 Pydantic 模型
+- ✅ LLM Provider 抽象 + DeepSeek 骨架 + Mock LLM
+- ✅ 四层记忆设计 + 三态机制 + 提交准入
+- ✅ 65 个单元测试全部通过
 
 ### Tag：否
 
@@ -114,32 +117,52 @@ MVP 功能阶段 (5轮)
 
 ### 目标
 
-验证 Power BI MCP 连接可行性，建立从意图识别到数据查询的验证闭环。
+验证 Power BI MCP 连接可行性，建立从意图识别到数据查询的完整 Mock 验证闭环，实现轻量 Harness。
 
 ### 前置条件
 
 - M0.2 完成
-- 项目负责人 Power BI 账号可用
 
 ### 核心交付物
 
-- Power BI MCP Adapter 设计和基础实现
-- 数据流验证（Mock LLM → IntentSpec → DAX → Mock MCP 响应）
-- API 契约详细定义
-- Harness 核心骨架（工具白名单、查询限制）
+- Power BI MCP 与 OAuth 风险调研
+- PowerBIAdapter 接口定义
+- MockPowerBIAdapter 实现
+- Remote MCP Adapter 骨架
+- API 数据契约：QueryPlan、DAXRequest、QueryResult、AnswerSpec、ReportSpec
+- 轻量 ETCLOVG Harness
+- ToolGateway、ContextBuilder、TurnController
+- ValidationService、TraceRecorder
+- GoldenCaseRunner 和 Golden Cases
+- Mock 数据问答链路
+- Mock 报表链路
+- 失败不提交 Memory 的完整保护
+
+### 允许提前做
+
+- Power BI MCP 接口调研和文档
+- Mock 适配器完整实现
+- 所有数据契约的 Pydantic 模型
 
 ### 不允许提前做
 
-- M0.4 的完整项目骨架
+- M0.4 的 FastAPI 骨架和 `/health`
 - M1 真实 DeepSeek 调用
-- 报表生成
+- React 前端项目
+- 真实 Power BI 账号连接（如账号不可用，仍应通过 Mock 完成）
 
 ### 完成标准
 
 - Mock LLM + Mock Power BI MCP 数据流可跑通
-- API 契约已定义并文档化
+- Golden Cases 可重复执行
+- 失败轮次不污染 committed memory
+- 所有数据契约已定义并文档化
 
 ### Tag：否
+
+### 说明
+
+真实 Power BI 账号和远程 MCP 连接不是 M0.3 的硬性前置条件。缺少真实账号时，M0.3 仍应通过 Mock 和接口骨架完成。
 
 ---
 
@@ -149,7 +172,7 @@ MVP 功能阶段 (5轮)
 
 ### 目标
 
-搭建项目代码骨架、测试框架、Golden Cases 定义，完成 M0 阶段收尾。
+搭建 FastAPI 最小骨架，完成全量测试和 M0 总验收。
 
 ### 前置条件
 
@@ -157,21 +180,29 @@ MVP 功能阶段 (5轮)
 
 ### 核心交付物
 
-- 项目目录骨架（src/、tests/）
-- FastAPI app 骨架（仅 `/health` 可响应）
-- pytest 测试框架
-- Golden Cases 定义和 Runner 骨架
-- Harness Runner 骨架
+- FastAPI 最小骨架
+- `/health` 端点
+- 运行模式展示（Mock/真实）
+- health 测试
+- 全量测试运行
+- README 启动验证
+- 文档与代码一致性检查
+- CHANGELOG 更新
+- M0 总验收
+- 是否创建 M0 封板 Tag 由 M0.4 Prompt 决定
 
 ### 不允许提前做
 
 - M1 真实 DeepSeek 调用
 - React 前端项目
+- 报表生成（如 M3 未完成）
 
 ### 完成标准
 
-- 项目骨架可运行（`/health` 返回 200）
-- 测试框架就绪
+- `/health` 返回 200
+- 全量测试通过
+- 文档与代码一致
+- M0 验收标准全部满足
 
 ### Tag：由 M0.4 Prompt 决定是否创建 M0 封板 Tag
 

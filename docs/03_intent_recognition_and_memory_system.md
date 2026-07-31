@@ -1,8 +1,8 @@
 # 03 — 意图识别与记忆系统
 
-> **状态：** M0.1 骨架已建立
-> **下一轮实质性填充：** M0.2（意图识别方案、记忆系统设计）
-> **警告：** 本文当前仅为骨架，尚未完成的技术决策不得用于指导开发
+> **状态：** M0.2 已实质性完成
+> **下一轮：** M0.3 在 Harness 和 TurnController 中强制执行记忆提交准入
+> **关联 ADR：** ADR-001（Agent 框架）、ADR-002（记忆系统与存储）
 
 ---
 
@@ -12,26 +12,58 @@
 
 Agent 在接收用户输入后，第一步必须完成意图识别，输出结构化 IntentSpec。意图识别必须可独立测试和回归。
 
-### 1.2 IntentSpec 概要
+### 1.2 固定四类基础意图
 
-| 字段 | 说明 | 示例 |
-|------|------|------|
-| intent_type | 意图类型 | data_question / report_generation / clarification |
-| semantic_model | 目标语义模型 | "销售模型" |
-| metrics | 指标列表 | ["销售额", "利润"] |
-| dimensions | 维度列表 | ["区域", "月份"] |
-| time_range | 时间范围 | "本月" |
-| filters | 筛选条件 | [{"field": "区域", "op": "eq", "value": "华南"}] |
-| report_template | 报表模板（可选） | "销售周报模板" |
-| confidence | 置信度 | 0.95 |
+| 意图 | 枚举值 | 说明 | 后续动作 |
+|------|--------|------|---------|
+| 数据问答 | `data_question` | 用户查询 Power BI 数据 | 进入 QueryPlan → DAX → 查询 |
+| 报表生成 | `report_generation` | 用户请求生成固定模板报表 | 进入 ReportSpec → 模板渲染 |
+| 澄清 | `clarification` | 信息不足，需要向用户确认 | 返回澄清问题，不提交记忆 |
+| 拒绝 | `unsupported` | 非法或越权要求 | 返回拒绝原因，禁止进入后续流程 |
 
-### 1.3 待设计内容 (M0.2)
+### 1.3 IntentSpec 完整 Pydantic 模型
 
-- IntentSpec 完整 Pydantic 模型
-- 意图分类体系（数据问答、报表生成、追问、澄清）
-- 意图识别 Prompt 模板
-- 意图识别独立测试方案
-- 意图识别失败处理策略
+```python
+class IntentType(str, Enum):
+    DATA_QUESTION = "data_question"
+    REPORT_GENERATION = "report_generation"
+    CLARIFICATION = "clarification"
+    UNSUPPORTED = "unsupported"
+
+class IntentSpec(BaseModel):
+    intent: IntentType                      # 意图类型
+    confidence: float                       # 置信度 [0, 1]
+    normalized_question: str                # 标准化后的问题文本
+    needs_clarification: bool               # 是否需要向用户澄清
+    clarification_question: Optional[str]    # 澄清问题文本
+    inherited_context: Optional[str]         # 从 committed memory 继承的上下文摘要
+    detected_measures: list[str]             # 检测到的指标
+    detected_dimensions: list[str]           # 检测到的维度
+    detected_filters: list[dict[str, str]]   # 检测到的筛选条件
+    detected_time_range: Optional[str]       # 检测到的时间范围
+    requested_template: Optional[str]        # 请求的报表模板名称
+    unsupported_reason: Optional[str]        # 拒绝原因（仅 unsupported 意图）
+```
+
+### 1.4 意图识别规则
+
+- 必须结合 committed memory
+- "只看华南" → 继承已有指标和时间，替换筛选条件
+- "改成今年" → 继承已有指标和维度，替换时间范围
+- "换成订单数" → 继承已有维度和时间，替换指标
+- "生成周报" → 可复用已验证查询上下文
+- 信息不足 → clarification
+- 非法或越权要求 → unsupported
+- unsupported 不允许进入后续查询流程
+- 意图结果不能直接提交 committed memory
+- 只有完整成功轮次才允许提交状态
+
+### 1.5 实现位置
+
+- `backend/app/intent/models.py` — IntentType、IntentSpec
+- `backend/app/intent/service.py` — IntentService 抽象接口
+
+---
 
 ## 二、记忆系统
 
@@ -39,51 +71,161 @@ Agent 在接收用户输入后，第一步必须完成意图识别，输出结�
 
 记忆系统是产品核心卖点。必须包含结构化工作记忆和可靠的提交机制。
 
-### 2.2 会话记忆字段
+### 2.2 四层记忆设计
 
-| 字段 | 说明 | 生命周期 |
-|------|------|---------|
-| selected_model | 已选择语义模型 | 用户切换时清空旧模型上下文 |
-| last_intent | 最近一次意图 | 每轮更新 |
-| metrics | 当前关注指标 | 继承 + 用户覆盖 |
-| dimensions | 当前分析维度 | 继承 + 用户覆盖 |
-| time_range | 时间范围 | 继承 + 用户覆盖 |
-| filters | 筛选条件 | 增量合并 |
-| last_dax | 最近一次 DAX | 每轮更新 |
-| last_result_summary | 最近一次查询结果摘要 | 每轮更新 |
+| 层级 | 名称 | 说明 | 生命周期 |
+|------|------|------|---------|
+| L1 | 原始对话记忆 | 完整消息历史（用户 + 系统） | 不可变，append-only |
+| L2 | 结构化工作记忆 | 当前分析上下文（指标、维度、时间等） | pending/committed/failed |
+| L3 | 滚动摘要 | 长对话的压缩摘要 | 定期更新 |
+| L4 | 查询产物记忆 | QueryPlan、DAX、Result、ReportSpec | 按 request_id 关联 |
 
-### 2.3 记忆提交机制
+### 2.3 结构化工作记忆字段
 
-- 每轮对话结束时提交当前轮记忆
-- 提交前校验记忆结构完整性
-- 切换语义模型时清空旧模型相关上下文
-- 会话结束时持久化记忆快照
+**完整 Pydantic 模型：`StructuredWorkMemory`**
 
-### 2.4 待设计内容 (M0.2)
+| 分组 | 字段 | 类型 | 说明 |
+|------|------|------|------|
+| 会话 | `conversation_id` | str | 会话 ID |
+| 会话 | `request_id` | str | 请求唯一标识（幂等键） |
+| 模型 | `semantic_model_key` | Optional[str] | 语义模型 Key |
+| 模型 | `report_template_key` | Optional[str] | 报表模板 Key |
+| 意图 | `current_intent` | Optional[str] | 当前意图类型 |
+| 意图 | `analysis_goal` | Optional[str] | 分析目标 |
+| 分析 | `measures` | list[str] | 指标列表 |
+| 分析 | `dimensions` | list[str] | 维度列表 |
+| 分析 | `filters` | list[dict] | 筛选条件 |
+| 分析 | `time_range` | Optional[str] | 时间范围 |
+| 分析 | `sort` | Optional[str] | 排序方式 |
+| 分析 | `top_n` | Optional[int] | Top N 限制 |
+| 分析 | `comparison_mode` | Optional[str] | 对比模式 |
+| 查询 | `last_query_plan` | Optional[dict] | 最近一次 QueryPlan |
+| 查询 | `last_dax` | Optional[str] | 最近一次 DAX |
+| 查询 | `last_query_result_id` | Optional[str] | 最近一次结果 ID |
+| 查询 | `last_result_summary` | Optional[str] | 最近一次结果摘要 |
+| 查询 | `last_report_id` | Optional[str] | 最近一次报表 ID |
+| 澄清 | `clarification_pending` | bool | 是否待澄清 |
+| 澄清 | `clarification_question` | Optional[str] | 待澄清问题 |
+| 版本 | `memory_version` | int | 乐观锁版本号 |
+| 版本 | `state_status` | MemoryStatus | pending/committed/failed |
+| 时间 | `created_at` | datetime | 创建时间 |
+| 时间 | `updated_at` | datetime | 更新时间 |
+| 标记 | `is_mock` | bool | Mock 标记（不可作为真实结果） |
 
-- 记忆存储结构（SQLite 表设计）
-- 记忆读写接口
-- 记忆合并策略（追问时如何合并筛选条件）
-- 记忆过期和清理策略
-- 记忆与 Trace 的关系
+### 2.4 记忆状态机制
 
-## 三、模块边界
+**固定三态：`pending`、`committed`、`failed`**
 
-### 本轮 (M0.1) 边界
+```
+      ┌─────────┐
+      │ pending  │  ← 每轮开始
+      └────┬─────┘
+           │
+     ┌─────┴──────┐
+     │ 完整成功？   │
+     └──┬──────┬───┘
+   yes  │      │  no
+        ▼      ▼
+  ┌─────────┐ ┌─────────┐
+  │committed│ │ failed   │
+  └─────────┘ └─────────┘
+```
 
-- 仅建立骨架
-- 不定义具体 Pydantic 模型
-- 不设计数据库表
-- 不实现任何记忆逻辑
+### 2.5 记忆提交机制
 
-### M0.2 边界
+**只有满足完整成功边界时，才能提交 committed memory。**
 
-- 完成 IntentSpec 完整定义
-- 完成意图识别 Prompt 设计
-- 完成记忆系统设计文档
-- 不实现 Power BI MCP 集成
-- 不实现 Harness 完整闭环
+完整成功边界至少要求：
+1. 意图有效（非 unsupported）
+2. 请求未被拒绝
+3. 查询计划有效
+4. DAX 校验成功
+5. 工具执行成功
+6. 查询结果校验成功
+7. 最终回答或 ReportSpec 成功
+8. memory_version 未冲突
+9. 非 Mock 结果
+
+M0.2 已将这些准入条件固化为 `MemoryPolicies.check_commit_eligibility()`。
+
+**提交前校验：**
+- 通过 `MemoryPolicies.check_commit_eligibility()` 检查
+- 检查 `request_id` 幂等
+- 检查 `memory_version` 乐观锁
+
+### 2.6 一致性规则
+
+| 场景 | 规则 |
+|------|------|
+| 重复请求 | `request_id` 幂等，返回已有结果 |
+| 并发冲突 | `memory_version` 乐观锁拒绝写入 |
+| 失败轮次 | 不污染 committed memory |
+| 原始消息 | 不可变（append-only，L1） |
+| 结构化状态 | 版本化（`bump_version()`） |
+| 用户纠正 | 记录旧值和新值 |
+| 切换语义模型 | 清理旧模型状态（措施、维度、筛选、时间、DAX、查询结果） |
+| 切换报表模板 | 保留分析条件，清理旧 ReportSpec |
+| "重新开始" | 清空工作记忆，保留审计（conversation_id 和历史记录不丢） |
+| clarification | 不允许提交为 committed |
+| unsupported | 不提交分析状态 |
+| Mock 结果 | 不可标记为真实业务结果 |
+| failed → committed | 禁止 |
+
+### 2.7 Context Assembly 契约
+
+**上下文只允许包含：**
+- 系统规则
+- 当前用户输入
+- committed structured memory
+- 最近 5 轮消息
+- 滚动摘要
+- 相关 Schema 子集
+- 当前模型与模板
+- Mock/真实标识
+
+**上下文禁止包含：**
+- 全部历史对话
+- 完整 Schema
+- 大量原始查询结果
+- Secret（API Key 等）
+- failed/pending 状态
+- 与当前模型无关的数据
+
+### 2.8 实现位置
+
+- `backend/app/memory/models.py` — StructuredWorkMemory、MemoryStatus
+- `backend/app/memory/repository.py` — MemoryRepository 抽象接口
+- `backend/app/memory/policies.py` — MemoryPolicies 策略集合
 
 ---
 
-*创建日期：2026-07-31 | M0.1 仓库初始化与文档基线*
+## 三、模块边界
+
+### M0.2 完成内容
+
+- IntentSpec 完整 Pydantic 模型（含四类意图）
+- IntentService 抽象接口
+- 四层记忆设计文档
+- StructuredWorkMemory 完整数据契约
+- 三态机制（pending/committed/failed）
+- 记忆提交准入条件（MemoryPolicies）
+- request_id 幂等 + memory_version 乐观锁
+- 上下文切换策略（模型切换、模板切换、重新开始）
+- Context Assembly 契约
+- MemoryRepository 抽象接口
+- 65 个单元测试全部通过
+
+### M0.3 边界
+
+- 在 Harness 和 TurnController 中强制执行记忆提交准入
+- Context Builder 基于契约实现
+- 实现内存 MemoryRepository
+
+### 后续轮次边界
+
+- M1+：SQLite 持久化实现
+- M3-M4：滚动摘要生成、长对话管理
+
+---
+
+*最后更新：2026-07-31 | M0.2 智能体架构与记忆设计*

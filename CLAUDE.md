@@ -211,18 +211,22 @@ PowerBIAgent/
 │       └── README.md
 ├── frontend/
 │   └── README.md
-├── src/                        # 后端源码（后续创建）
-│   ├── agent/
-│   ├── api/
-│   ├── llm/
-│   ├── memory/
-│   ├── powerbi/
-│   ├── harness/
-│   └── reports/
-└── tests/                      # 测试（后续创建）
-    ├── unit/
-    ├── integration/
-    └── golden_cases/
+├── backend/                    # 后端源码
+│   ├── app/
+│   │   ├── agent/
+│   │   ├── intent/
+│   │   ├── llm/
+│   │   ├── memory/
+│   │   ├── powerbi/
+│   │   ├── report/
+│   │   ├── harness/
+│   │   ├── schemas/
+│   │   ├── core/
+│   │   └── application/
+│   └── tests/
+│       ├── unit/
+│       ├── integration/
+│       └── fixtures/
 ```
 
 ## 十、文档来源优先级
@@ -231,13 +235,16 @@ PowerBIAgent/
 
 1. 用户最新明确要求
 2. `PROJECT_CHARTER.md`
-3. 用户原始 PRD
+3. `docs/00_product_requirements_document.md`（正式 PRD）
 4. 已确认 ADR
 5. 正式设计文档
 6. `docs/09_context_handoff.md` 中的当前状态
-7. Claude 的可逆默认假设
+7. 原始 `PRD.md`（仅作历史参考，不直接指导开发）
+8. Claude 的可逆默认假设
 
 不得自行选择方便开发的版本；无法判断时记录到待确认事项；不得静默改变产品方向。
+
+**重要：** 原始 PRD 与正式 PRD 冲突时，以正式 PRD 为准。不修改原始 PRD。
 
 ---
 

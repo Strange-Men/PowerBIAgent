@@ -19,43 +19,39 @@ classifiers = [
 ]
 
 # ----------------------------------------------------------
-# 核心依赖
-# 当前 M0.1 阶段仅声明占位，后续轮次逐步填充
+# 核心依赖 — M0.2 已安装并验证
 # ----------------------------------------------------------
 dependencies = [
-    # Web Framework
+    # LLM / Agent Framework
+    "pydantic-ai>=2.21.0",         # PydanticAI Agent 框架（ADR-001）
+    "pydantic>=2.0.0",             # 数据校验
+
+    # Data Validation
+    # (pydantic 已覆盖)
+
+    # Utilities
+    # "python-dotenv>=1.0.0",     # M1 启用
+
+    # Web Framework — M0.4 启用
     # "fastapi>=0.110.0",
     # "uvicorn[standard]>=0.27.0",
 
-    # LLM / Agent
-    # "openai>=1.0.0",          # DeepSeek 兼容 OpenAI SDK
-
-    # Power BI
-    # (MCP client 依赖待 M0.3 确定)
-
-    # Data Validation
-    # "pydantic>=2.0.0",
-
-    # Memory
+    # Power BI — M0.3 确定
+    # Memory — M0.3/M1 启用
     # "sqlalchemy>=2.0.0",
-
-    # Utilities
-    # "httpx>=0.27.0",
-    # "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    # "pytest>=8.0",
-    # "pytest-asyncio>=0.23.0",
-    # "httpx>=0.27.0",
+    "pytest>=9.1.0",
+    "pytest-asyncio>=1.4.0",
 ]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["backend"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["backend/tests"]
 python_files = ["test_*.py", "*_test.py"]
 
 [tool.ruff]

@@ -1,0 +1,87 @@
+"""LLM Provider 抽象基类
+
+所有 LLM Provider 必须实现此接口。
+Provider 支持未来的多种 task：意图识别、QueryPlan、DAX、AnswerSpec、ReportSpec。
+"""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+from pydantic import BaseModel
+
+
+@dataclass
+class LLMRequest:
+    """统一的 LLM 请求结构"""
+
+    messages: list[dict[str, str]] = field(default_factory=list)
+    task: str = "intent_recognition"  # intent_recognition | query_plan | dax | answer | report
+    scenario_key: Optional[str] = None  # Mock 场景选择键
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class LLMResponse:
+    """统一的 LLM 响应结构"""
+
+    content: str
+    structured: Optional[BaseModel] = None  # 已解析的 Pydantic 对象
+    model: str = ""
+    usage: dict[str, int] = field(default_factory=dict)
+    finish_reason: str = "stop"
+
+
+class LLMProvider(ABC):
+    """LLM Provider 抽象基类
+
+    所有 Provider（Mock、DeepSeek、未来的其他模型）必须实现此接口。
+    业务层不得散落 if mode == "deepseek" 等分支，Provider 选择统一由 Registry 完成。
+    """
+
+    @abstractmethod
+    async def generate(self, request: LLMRequest, output_type: type[BaseModel]) -> LLMResponse:
+        """生成结构化响应
+
+        Args:
+            request: 统一的 LLM 请求
+            output_type: 期望的 Pydantic 输出类型
+
+        Returns:
+            LLMResponse: 包含原始内容和结构化对象的响应
+
+        Raises:
+            LLMProviderError: Provider 调用失败
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def provider_name(self) -> str:
+        """Provider 名称"""
+        ...
+
+    @property
+    @abstractmethod
+    def is_mock(self) -> bool:
+        """是否为 Mock Provider"""
+        ...
+
+
+class LLMProviderError(Exception):
+    """LLM Provider 通用异常"""
+
+    def __init__(self, message: str, provider: str = "", retryable: bool = False):
+        super().__init__(message)
+        self.provider = provider
+        self.retryable = retryable
+
+
+class LLMTimeoutError(LLMProviderError):
+    """LLM 调用超时"""
+    pass
+
+
+class LLMValidationError(LLMProviderError):
+    """LLM 输出校验失败"""
+    pass
