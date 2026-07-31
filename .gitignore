@@ -1,0 +1,146 @@
+# ============================================================
+# Environment & Secrets
+# ============================================================
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+credentials.json
+token.json
+secrets/
+secrets.yaml
+
+# API Key and Token files
+*_key.txt
+*_token.txt
+*_secret.txt
+*.apikey
+
+# Microsoft OAuth credentials
+ms_oauth*.json
+microsoft_credentials*.json
+azure_credentials*.json
+oauth_token_cache/
+
+# ============================================================
+# Power BI Data
+# ============================================================
+powerbi_data/
+powerbi_export/
+*.pbix
+exported_data/
+raw_data/
+business_data/
+
+# ============================================================
+# Generated Reports & Outputs
+# ============================================================
+reports/
+generated_reports/
+output/
+*.html.report
+
+# ============================================================
+# Database
+# ============================================================
+*.sqlite
+*.sqlite3
+*.db
+*.db3
+db/
+data/
+
+# ============================================================
+# Logs & Trace
+# ============================================================
+logs/
+*.log
+trace/
+traces/
+sensitive_trace/
+
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.manifest
+*.spec
+.python-version
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Conda environments (do not commit)
+envs/
+miniconda3/
+
+# pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ============================================================
+# Node / Frontend
+# ============================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+frontend/dist/
+frontend/build/
+
+# ============================================================
+# IDE & Editor
+# ============================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+*.temp
+
+# ============================================================
+# Testing & Coverage
+# ============================================================
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+*.cover
+
+# ============================================================
+# Docker (deferred)
+# ============================================================
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# ============================================================
+# Cache
+# ============================================================
+.cache/
+cache/
+__appcache__/
+.mypy_cache/
+.ruff_cache/

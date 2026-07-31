@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "powerbiagent"
+version = "0.1.0"
+description = "Power BI 数据分析 Agent MVP — 自然语言驱动的 Power BI 数据问答与固定模板报表生成"
+readme = "README.md"
+license = {text = "Proprietary"}
+requires-python = ">=3.11,<3.12"
+authors = [
+    {name = "PowerBIAgent Team"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Internal",
+    "Programming Language :: Python :: 3.11",
+]
+
+# ----------------------------------------------------------
+# 核心依赖
+# 当前 M0.1 阶段仅声明占位，后续轮次逐步填充
+# ----------------------------------------------------------
+dependencies = [
+    # Web Framework
+    # "fastapi>=0.110.0",
+    # "uvicorn[standard]>=0.27.0",
+
+    # LLM / Agent
+    # "openai>=1.0.0",          # DeepSeek 兼容 OpenAI SDK
+
+    # Power BI
+    # (MCP client 依赖待 M0.3 确定)
+
+    # Data Validation
+    # "pydantic>=2.0.0",
+
+    # Memory
+    # "sqlalchemy>=2.0.0",
+
+    # Utilities
+    # "httpx>=0.27.0",
+    # "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    # "pytest>=8.0",
+    # "pytest-asyncio>=0.23.0",
+    # "httpx>=0.27.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
