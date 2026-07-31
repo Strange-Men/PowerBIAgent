@@ -86,17 +86,18 @@ MVP 不引入 Docker、Kubernetes、LangGraph、OpenTelemetry、Redis、Celery �
 
 ## 六、M0.3/M0.4 边界
 
-| | M0.3 | M0.4 |
-|------|------|------|
-| HarnessConfig | Pydantic 模型 | Pydantic Settings (环境变量) |
-| ToolGateway | 完整实现 | — |
-| ContextBuilder | 完整实现 | — |
-| TurnController | 完整实现 | — |
-| TraceRecorder | 内存 + JSON | — |
-| ValidationService | 完整实现 | — |
-| GoldenCaseRunner | 完整实现 | — |
-| FastAPI 集成 | ❌ | ✅ |
+| | M0.3 | M0.3.2 | M0.4 |
+|------|------|------|------|
+| HarnessConfig | Pydantic 模型 | ✅ | Pydantic Settings |
+| ToolGateway | 完整实现 | 完整策略检查 | — |
+| ContextBuilder | 完整实现 | ✅ | — |
+| TurnController | 完整实现 | 失败流修复 | — |
+| TraceRecorder | 内存 + JSON | 深度安全修复 | — |
+| ValidationService | 完整实现 | source_mode error | — |
+| GoldenCaseRunner | 完整实现 | 严格化 | — |
+| FastAPI 集成 | ❌ | ❌ | ✅ |
 
 ---
 
 *创建日期：2026-07-31 | M0.3 数据接入与验证闭环*
+*最后更新：2026-07-31 | M0.3.2 工具网关与并发闭环修正*

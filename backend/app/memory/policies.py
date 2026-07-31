@@ -97,11 +97,12 @@ class MemoryPolicies:
         if memory.is_mock and memory.runtime_mode == RuntimeDataMode.REAL:
             failures.append("Mock 结果不可在 Real 空间提交")
 
-        # 证据检查（如果存在）
+        # 证据检查（如果存在）— 只检查 business_satisfied，不要求 all_satisfied
+        # 因为 version_matches 只能由 Repository 在原子提交时设置
         if memory.commit_evidence is not None:
-            if not memory.commit_evidence.all_satisfied:
+            if not memory.commit_evidence.business_satisfied:
                 failures.append(
-                    f"提交证据不完整: {memory.commit_evidence.failure_reason or '部分条件未满足'}"
+                    f"提交业务证据不完整: {memory.commit_evidence.failure_reason or '部分条件未满足'}"
                 )
 
         if failures:
@@ -111,13 +112,13 @@ class MemoryPolicies:
     def check_evidence_required(memory: StructuredWorkMemory) -> None:
         """检查是否具备完整提交证据
 
-        M0.3 要求结构化证据，不再只依赖几个字段猜测轮次是否成功。
+        M0.3.2: 只检查 business_satisfied，version_matches 由 Repository 原子设置。
         """
         if memory.commit_evidence is None:
             raise MemoryCommitDeniedError("缺少 MemoryCommitEvidence，不允许提交")
-        if not memory.commit_evidence.all_satisfied:
+        if not memory.commit_evidence.business_satisfied:
             raise MemoryCommitDeniedError(
-                f"MemoryCommitEvidence 不完整: {memory.commit_evidence.failure_reason or '未知原因'}"
+                f"MemoryCommitEvidence 业务条件不完整: {memory.commit_evidence.failure_reason or '未知原因'}"
             )
 
     # -----------------------------------------------------------------

@@ -94,8 +94,73 @@
 - Golden Cases：11/11 mock_ready 通过，1 skipped
 - compileall 通过
 
+**Commit SHA：** `3c7cc7c`
+**Push 状态：** ✅ 已推送至 origin/main
+**本轮 Tag：** 无（本轮不创建 Tag）
+
+---
+
+## [M0.3.2] — 2026-07-31
+
+### 工具网关与并发闭环修正
+
+**来源：** M0.3.1 专项审计后剩余的小范围真实性问题。
+
+**ToolGateway 策略真正生效：**
+- 取消全局 `TOOL_INTENT_POLICY`，以 `ToolSpec.allowed_intents` 为 Intent 权限唯一来源
+- `supported_modes` 统一使用 `RuntimeDataMode` 枚举（使用 `default_factory` 安全默认值）
+- `read_only` 真实检查 — read_only=False 工具拒绝执行
+- 完整策略检查链：read_only → Intent → runtime_mode → 用户工具权限 → 用户模型权限 → 用户模板权限 → 输入类型 → Handler → 输出类型
+- 新增 `ToolExecutionContext` 结构化执行上下文（替换松散参数）
+- 正确异常分类：ToolTimeoutError/ToolOutputValidationError
+- 不重试异常：未注册、权限拒绝、输入/输出类型错误、read_only 不满足
+- 有限重试：仅 asyncio.TimeoutError 和 retryable=True 的 Power BI 错误
+- Gateway 真实产生 tool_call_started/completed/failed Trace 事件（含 attempt、duration_ms）
+- 工具序列唯一来源：`TraceRecorder.get_tool_sequence()` — Application 不再手工拼装
+
+**TraceRecorder 修复：**
+- 深度超限返回 `[MAX_DEPTH_REACHED]` 而非原始对象（防止泄露）
+- 事件耗时在 `record()` 时自动计算并写入 duration_ms
+
+**状态机失败流修复：**
+- `PLAN_READY` 新增合法转换目标：`TOOL_EXECUTED`、`TOOL_FAILED`
+- 统一 `_fail_turn()` 方法处理所有失败分支
+- Memory 冲突时 pending 标记 failed、不返回 memory_commit=True
+
+**Mock 场景并发安全：**
+- MockAgentRuntime 移除共享 `_scenario_key` 实例字段
+- 新增并发测试：同一 Runtime 两个不同 Scenario 不串场
+
+**Repository 模式复合键：**
+- request_id 索引使用 `(runtime_mode, request_id)` 复合键
+- 全部 Repository 方法显式接收 runtime_mode
+- Mock 和 Real 相同 request_id 可以共存
+
+**MemoryPolicies 一致性：**
+- 提交前策略只检查 `business_satisfied`（不要求 `all_satisfied`）
+- `version_matches` 只由 Repository 在原子提交时设置
+
+**查询产物唯一 ID：**
+- `QueryResult` 新增 `result_id` 字段（UUID 自动生成）
+- Memory 写入 `last_query_result_id` 和 `last_report_id`
+
+**Answer 来源校验：**
+- source_mode 不一致从 warning 升级为 error
+
+**Golden Case 模型严格化：**
+- 全部模型 `extra="forbid"`，五类 Scenario Key 强制存在
+- 每个 Case 独立 Service 和 Repository
+- 幂等 Case 真实执行两次（repeat_target_turn）
+- 多轮 Case 验证 base_memory_version > 0
+- 失败 Case 验证 failed record、reason、stage
+
+**测试结果：**
+- 205 个 pytest 全部通过
+- Golden Cases：11/11 mock_ready 通过，1 skipped
+- compileall 通过
+
 **Commit SHA：** 由下一轮 Git 解析
-**Push 状态：** 待推送
+**Push 状态：** 将在 Git 收尾完成推送
 **本轮 Tag：** 无（本轮不创建 Tag）
 
 ---

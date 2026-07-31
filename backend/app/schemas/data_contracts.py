@@ -141,6 +141,7 @@ class PowerBIError(BaseModel):
 
 class QueryResult(BaseModel):
     """标准化 DAX 查询结果"""
+    result_id: str = Field(default_factory=lambda: str(__import__("uuid").uuid4()))
     semantic_model_key: str
     columns: list[str] = Field(default_factory=list)
     rows: list[list[Any]] = Field(default_factory=list)

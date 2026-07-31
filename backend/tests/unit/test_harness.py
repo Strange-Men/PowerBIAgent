@@ -68,11 +68,71 @@ class TestToolGateway:
         with pytest.raises(ToolPolicyDeniedError):
             gateway.check_intent_permission("render_report", IntentType.DATA_QUESTION)
 
-    def test_check_user_permission(self, gateway, test_user):
-        gateway.register(ToolSpec(name="get_semantic_model_schema"))
-        assert gateway.check_user_permission(
-            "get_semantic_model_schema", test_user
-        ) is True
+    def test_user_tool_permission_checked_in_execute(self, gateway):
+        """execute 中检查用户工具权限"""
+        from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
+        restricted_user = UserContext(allowed_tools=["only_this_tool"])
+        # 注册一个简单工具到 restricted user 不包含的列表中
+        gateway.register(ToolSpec(
+            name="get_semantic_model_schema",
+            allowed_intents=[IntentType.DATA_QUESTION],
+            handler=lambda x: {"ok": True},
+        ))
+        exec_ctx = ToolExecutionContext(
+            intent=IntentType.DATA_QUESTION,
+            user=restricted_user,
+        )
+        # get_semantic_model_schema 不在 restricted_user.allowed_tools 中
+        from backend.app.application.mock_turn_service import SchemaInput
+        with pytest.raises(ToolPolicyDeniedError, match="not allowed"):
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run, gateway.execute("get_semantic_model_schema", exec_ctx, SchemaInput())
+                    )
+                    future.result(timeout=10)
+            else:
+                loop.run_until_complete(gateway.execute("get_semantic_model_schema", exec_ctx, SchemaInput()))
+
+    def test_unsupported_runtime_mode_denied(self, gateway):
+        """不支持的 runtime_mode 被拒绝"""
+        from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
+        from backend.app.memory.models import RuntimeDataMode
+        gateway.register(ToolSpec(
+            name="get_semantic_model_schema",
+            allowed_intents=[IntentType.DATA_QUESTION],
+            supported_modes=[RuntimeDataMode.MOCK],  # 只支持 mock
+            handler=lambda x: {"ok": True},
+        ))
+        exec_ctx = ToolExecutionContext(
+            intent=IntentType.DATA_QUESTION,
+            user=UserContext(),
+            runtime_mode=RuntimeDataMode.REAL,  # real 不被支持
+        )
+        with pytest.raises(ToolPolicyDeniedError, match="does not support mode"):
+            import asyncio
+            from backend.app.application.mock_turn_service import SchemaInput
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run, gateway.execute("get_semantic_model_schema", exec_ctx, SchemaInput())
+                    )
+                    future.result(timeout=10)
+            else:
+                loop.run_until_complete(gateway.execute("get_semantic_model_schema", exec_ctx, SchemaInput()))
 
     def test_list_tools(self, gateway):
         gateway.register(ToolSpec(name="tool_a"))

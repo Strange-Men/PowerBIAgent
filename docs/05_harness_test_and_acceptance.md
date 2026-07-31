@@ -1,6 +1,6 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M0.3.1 加固完成（轻量 ETCLOVG 设计）
+> **状态：** M0.3.2 工具网关与并发闭环修正完成
 > **关联 ADR：** ADR-004
 
 ---
@@ -101,7 +101,7 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 | 集成测试（integration/） | Mock 完整链路 | 1 文件 |
 | Golden Cases | 端到端场景 | 10 条 YAML |
 
-## 四、191 测试覆盖（M0.3.1）
+## 四、205 测试覆盖（M0.3.2）
 
 | 测试文件 | 内容 |
 |---------|------|
@@ -116,4 +116,4 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 ---
 
-*最后更新：2026-07-31 | M0.3 数据接入与验证闭环*
+*最后更新：2026-07-31 | M0.3.2 工具网关与并发闭环修正*

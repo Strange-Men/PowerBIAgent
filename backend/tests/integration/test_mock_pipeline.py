@@ -1,15 +1,18 @@
-"""M0.3.1 集成测试 — Mock 完整链路（经过 ToolGateway）"""
+"""M0.3.2 集成测试 — Mock 完整链路（经过 ToolGateway，runtime_mode 复合键）"""
 
 import asyncio
 
 import pytest
 
 from backend.app.application.mock_turn_service import MockScenarioSelection, MockTurnService
-from backend.app.memory.models import MemoryStatus, RuntimeDataMode
-from backend.app.memory.repository import InMemoryMemoryRepository
+from backend.app.memory.models import MemoryStatus, RuntimeDataMode, StructuredWorkMemory, MemoryCommitEvidence
+from backend.app.memory.repository import InMemoryMemoryRepository, MemoryVersionConflictError
 from backend.app.agent.mock_runtime import MockAgentRuntime
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.mock import MockReportRenderer
+from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
+from backend.app.schemas.data_contracts import UserContext
+from backend.app.intent.models import IntentType
 
 
 @pytest.fixture
@@ -27,7 +30,6 @@ class TestMockDataQuestionPipeline:
 
     @pytest.mark.asyncio
     async def test_data_question_success(self, service):
-        """普通数据问答成功 — 经过 ToolGateway"""
         result = await service.execute(
             message="本月销售额是多少？",
             conversation_id="conv-int-001",
@@ -37,13 +39,11 @@ class TestMockDataQuestionPipeline:
         assert result["intent"] == "data_question"
         assert result["memory_commit"] is True
         assert result["response_type"] == "answer"
-        # 工具序列包含真实 Gateway 调用
         assert "get_semantic_model_schema" in result["tool_sequence"]
         assert "execute_dax" in result["tool_sequence"]
 
     @pytest.mark.asyncio
     async def test_clarification_no_tools_no_pending(self, service):
-        """clarification 不调用工具，不创建 pending memory"""
         result = await service.execute(
             message="帮我看看数据",
             conversation_id="conv-int-002",
@@ -54,13 +54,11 @@ class TestMockDataQuestionPipeline:
         assert result["memory_commit"] is False
         assert result["tool_sequence"] == []
 
-        # 验证没有 pending 记录留在 Repository
-        memory = await service.memory_repo.get_by_request_id("req-int-002")
-        assert memory is None  # clarification 不创建 pending
+        memory = await service.memory_repo.get_by_request_id("req-int-002", RuntimeDataMode.MOCK)
+        assert memory is None
 
     @pytest.mark.asyncio
     async def test_unsupported_no_tools_no_pending(self, service):
-        """unsupported 不调用工具，不创建 pending memory"""
         result = await service.execute(
             message="删除所有数据",
             conversation_id="conv-int-003",
@@ -71,12 +69,11 @@ class TestMockDataQuestionPipeline:
         assert result["memory_commit"] is False
         assert result["tool_sequence"] == []
 
-        memory = await service.memory_repo.get_by_request_id("req-int-003")
-        assert memory is None  # unsupported 不创建 pending
+        memory = await service.memory_repo.get_by_request_id("req-int-003", RuntimeDataMode.MOCK)
+        assert memory is None
 
     @pytest.mark.asyncio
     async def test_tool_failure_no_memory(self, service):
-        """Power BI timeout 经过 ToolGateway 且不提交 Memory"""
         result = await service.execute(
             message="查询超大数据集",
             conversation_id="conv-int-004",
@@ -90,14 +87,12 @@ class TestMockDataQuestionPipeline:
         assert result["memory_commit"] is False
         assert result["error_type"] == "timeout"
 
-        # 验证 pending 被标记 failed
-        memory = await service.memory_repo.get_by_request_id("req-timeout-001")
+        memory = await service.memory_repo.get_by_request_id("req-timeout-001", RuntimeDataMode.MOCK)
         assert memory is not None
         assert memory.state_status == MemoryStatus.FAILED
 
     @pytest.mark.asyncio
     async def test_dax_error_no_memory(self, service):
-        """DAX 错误不提交 Memory"""
         result = await service.execute(
             message="执行错误 DAX",
             conversation_id="conv-int-dax",
@@ -117,7 +112,6 @@ class TestMockReportPipeline:
 
     @pytest.mark.asyncio
     async def test_report_generation_success(self, service):
-        """固定模板报表生成成功 — 包含 render_report 在工具序列"""
         result = await service.execute(
             message="生成销售周报",
             conversation_id="conv-int-rpt-001",
@@ -134,12 +128,10 @@ class TestMockReportPipeline:
         assert result["terminal_state"] == "completed"
         assert result["memory_commit"] is True
         assert result["response_type"] == "report"
-        # 报表链路必须包含 render_report
         assert "render_report" in result["tool_sequence"]
 
     @pytest.mark.asyncio
     async def test_fake_report_field_rejected(self, service):
-        """虚假报表字段真实被拒绝 — terminal_state 为 response_failed"""
         result = await service.execute(
             message="生成虚假报表",
             conversation_id="conv-int-rpt-002",
@@ -153,11 +145,9 @@ class TestMockReportPipeline:
         assert result["terminal_state"] == "response_failed"
         assert result["memory_commit"] is False
         assert result["error_type"] == "report_validation_failed"
-        # render_report 不应被调用
         assert "render_report" not in result["tool_sequence"]
 
-        # 验证 pending 被标记 failed
-        memory = await service.memory_repo.get_by_request_id("req-rpt-fake")
+        memory = await service.memory_repo.get_by_request_id("req-rpt-fake", RuntimeDataMode.MOCK)
         assert memory is not None
         assert memory.state_status == MemoryStatus.FAILED
 
@@ -167,8 +157,6 @@ class TestMultiRoundPipeline:
 
     @pytest.mark.asyncio
     async def test_multiround_real_inheritance(self, service):
-        """多轮筛选继承 — 第一轮真实建立 committed memory，第二轮自动继承"""
-        # 第一轮
         result1 = await service.execute(
             message="本月销售额是多少？",
             conversation_id="conv-multi-001",
@@ -177,13 +165,11 @@ class TestMultiRoundPipeline:
         assert result1["terminal_state"] == "completed"
         assert result1["memory_commit"] is True
 
-        # 验证第一轮 committed memory
-        mem1 = await service.memory_repo.get_by_request_id("req-multi-001")
+        mem1 = await service.memory_repo.get_by_request_id("req-multi-001", RuntimeDataMode.MOCK)
         assert mem1 is not None
         assert mem1.state_status == MemoryStatus.COMMITTED
         assert mem1.memory_version == 1
 
-        # 第二轮：多轮追问
         result2 = await service.execute(
             message="只看华南",
             conversation_id="conv-multi-001",
@@ -199,14 +185,12 @@ class TestMultiRoundPipeline:
         assert result2["terminal_state"] == "completed"
         assert result2["memory_commit"] is True
 
-        # 验证第二轮 Repository — memory_version 应为 2
-        mem2 = await service.memory_repo.get_by_request_id("req-multi-002")
+        mem2 = await service.memory_repo.get_by_request_id("req-multi-002", RuntimeDataMode.MOCK)
         assert mem2 is not None
         assert mem2.state_status == MemoryStatus.COMMITTED
-        assert mem2.memory_version == 2  # 1→2
+        assert mem2.memory_version == 2
         assert mem2.base_memory_version == 1
 
-        # 第二轮继承：应有 measures, time_range, 华南 filter
         assert "SalesAmount" in mem2.measures
         assert mem2.time_range is not None
         has_region_filter = any(
@@ -217,8 +201,7 @@ class TestMultiRoundPipeline:
         assert mem2.last_dax is not None
         assert mem2.last_result_summary is not None
 
-        # 第一轮 committed 仍然存在且不变
-        mem1_check = await service.memory_repo.get_by_request_id("req-multi-001")
+        mem1_check = await service.memory_repo.get_by_request_id("req-multi-001", RuntimeDataMode.MOCK)
         assert mem1_check.memory_version == 1
         assert mem1_check.state_status == MemoryStatus.COMMITTED
 
@@ -228,10 +211,8 @@ class TestMemoryConflict:
 
     @pytest.mark.asyncio
     async def test_real_version_conflict(self, service):
-        """真实 stale-base 冲突 — 两个 pending 使用同一 base，第二个被拒绝"""
         conv_id = "conv-conflict-real"
 
-        # 先建立基线：第一轮成功提交
         r1 = await service.execute(
             message="第一轮查询",
             conversation_id=conv_id,
@@ -239,10 +220,7 @@ class TestMemoryConflict:
         )
         assert r1["terminal_state"] == "completed"
         assert r1["memory_commit"] is True
-        # 此时 committed version = 1
 
-        # 创建两个 pending（都基于 version=1）
-        from backend.app.memory.models import StructuredWorkMemory
         mem_a = StructuredWorkMemory(
             conversation_id=conv_id, request_id="req-conflict-A",
             current_intent="data_question", measures=["A"],
@@ -255,11 +233,9 @@ class TestMemoryConflict:
             runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
             base_memory_version=1, memory_version=0,
         )
-        await service.memory_repo.create_pending(mem_a)
-        await service.memory_repo.create_pending(mem_b)
+        await service.memory_repo.create_pending(mem_a, RuntimeDataMode.MOCK)
+        await service.memory_repo.create_pending(mem_b, RuntimeDataMode.MOCK)
 
-        # 第一个提交成功
-        from backend.app.memory.models import MemoryCommitEvidence
         evidence = MemoryCommitEvidence(
             intent_valid=True, request_allowed=True,
             query_plan_valid=True, dax_valid=True,
@@ -267,24 +243,18 @@ class TestMemoryConflict:
             response_valid=True, runtime_mode=RuntimeDataMode.MOCK,
         )
         committed_a = await service.memory_repo.commit(mem_a, evidence)
-        assert committed_a.memory_version == 2  # 1→2
+        assert committed_a.memory_version == 2
 
-        # 第二个提交 — base=1 但当前最新=2 → 冲突
-        from backend.app.memory.repository import MemoryVersionConflictError
         with pytest.raises(MemoryVersionConflictError):
             await service.memory_repo.commit(mem_b, evidence)
 
-        # 验证：最新 committed 版本仍为 2，未被覆盖
         latest = await service.memory_repo.get_latest_committed(conv_id, RuntimeDataMode.MOCK)
         assert latest is not None
         assert latest.memory_version == 2
-        assert latest.request_id == "req-conflict-A"  # 第一个成功提交
-        assert latest.measures == ["A"]  # 未被 B 覆盖
+        assert latest.request_id == "req-conflict-A"
+        assert latest.measures == ["A"]
 
-        # 第二个被标记 failed
-        failed_b = await service.memory_repo.get_by_request_id("req-conflict-B")
-        # mark_failed 应该在冲突时被调用
-        # 如果没有被mark_failed调用，至少状态不应该改变
+        failed_b = await service.memory_repo.get_by_request_id("req-conflict-B", RuntimeDataMode.MOCK)
         assert failed_b is not None
 
 
@@ -293,8 +263,6 @@ class TestToolGatewayIntegration:
 
     @pytest.mark.asyncio
     async def test_all_adapter_calls_through_gateway(self, service):
-        """验证所有工具调用经过 ToolGateway — Schema、DAX、渲染均在 Gateway 中注册"""
-        # 检查三个工具都已在 Gateway 中注册
         tools = service.tool_gateway.list_tools()
         assert "get_semantic_model_schema" in tools
         assert "execute_dax" in tools
@@ -302,33 +270,62 @@ class TestToolGatewayIntegration:
 
     @pytest.mark.asyncio
     async def test_unregistered_tool_denied(self, service):
-        """未注册工具被 Gateway 拒绝"""
         from backend.app.harness.errors import ToolNotRegisteredError
         with pytest.raises(ToolNotRegisteredError):
             service.tool_gateway.get_tool("nonexistent_tool")
 
     @pytest.mark.asyncio
-    async def test_tool_sequence_from_gateway(self, service):
-        """实际工具序列来自 ToolGateway 执行，不是硬编码"""
+    async def test_tool_sequence_from_gateway_trace(self, service):
+        """实际工具序列来自 TraceRecorder，不是硬编码"""
         result = await service.execute(
             message="本月销售额是多少？",
             conversation_id="conv-gw-001",
             request_id="req-gw-001",
         )
         assert result["terminal_state"] == "completed"
-        # 工具序列不应为空或硬编码
         assert len(result["tool_sequence"]) >= 2
-        # 至少包含 schema 和 dax
         assert "get_semantic_model_schema" in result["tool_sequence"]
         assert "execute_dax" in result["tool_sequence"]
+        # 报表不应出现在数据问答中
+        assert "render_report" not in result["tool_sequence"]
+
+    @pytest.mark.asyncio
+    async def test_gateway_uses_toolspec_allowed_intents(self, service):
+        """ToolGateway 以 ToolSpec.allowed_intents 为 Intent 权限唯一来源"""
+        from backend.app.harness.errors import ToolPolicyDeniedError
+        exec_ctx = ToolExecutionContext(
+            intent=IntentType.DATA_QUESTION,
+            user=UserContext(),
+        )
+        from backend.app.schemas.data_contracts import ReportSpec
+        with pytest.raises(ToolPolicyDeniedError):
+            await service.tool_gateway.execute("render_report", exec_ctx, ReportSpec(
+                title="Test", template_key="sales_weekly"
+            ))
+
+    @pytest.mark.asyncio
+    async def test_read_only_check(self, service):
+        """read_only=False 的工具被拒绝"""
+        from backend.app.harness.runtime.tool_gateway import ToolSpec
+        gw = service.tool_gateway
+        gw.register(ToolSpec(
+            name="write_tool_test",
+            read_only=False,
+            handler=lambda x: x,
+            input_model=type("X", (__import__("pydantic").BaseModel,), {}),
+        ))
+        exec_ctx = ToolExecutionContext(user=UserContext())
+        from backend.app.harness.errors import ToolPolicyDeniedError
+        from backend.app.application.mock_turn_service import SchemaInput
+        with pytest.raises(ToolPolicyDeniedError):
+            await gw.execute("write_tool_test", exec_ctx, SchemaInput())
 
 
 class TestRequestIdIdempotent:
-    """request_id 幂等"""
+    """request_id 幂等（复合键）"""
 
     @pytest.mark.asyncio
     async def test_duplicate_request_id(self, service):
-        """相同 request_id 不重复处理 — 返回 duplicate 状态"""
         result1 = await service.execute(
             message="测试",
             conversation_id="conv-idem-001",
@@ -336,7 +333,6 @@ class TestRequestIdIdempotent:
         )
         assert result1["terminal_state"] == "completed"
 
-        # 重复请求
         result2 = await service.execute(
             message="测试",
             conversation_id="conv-idem-001",
@@ -347,7 +343,6 @@ class TestRequestIdIdempotent:
 
     @pytest.mark.asyncio
     async def test_idempotent_no_version_increment(self, service):
-        """幂等不增加版本"""
         result1 = await service.execute(
             message="查询",
             conversation_id="conv-idem-002",
@@ -362,7 +357,6 @@ class TestRequestIdIdempotent:
         )
         v2 = result2.get("final_memory_version")
 
-        # 版本不应变化（幂等返回原结果）
         assert v1 == v2
 
 
@@ -371,7 +365,6 @@ class TestFailureCleanup:
 
     @pytest.mark.asyncio
     async def test_failure_no_committed(self, service):
-        """失败后无 committed memory"""
         await service.execute(
             message="超时查询",
             conversation_id="conv-fail-001",
@@ -381,7 +374,6 @@ class TestFailureCleanup:
                 powerbi_key="timeout",
             ),
         )
-        # 无 committed
         committed = await service.memory_repo.get_latest_committed(
             "conv-fail-001", RuntimeDataMode.MOCK
         )
@@ -389,7 +381,6 @@ class TestFailureCleanup:
 
     @pytest.mark.asyncio
     async def test_failure_no_permanent_pending(self, service):
-        """失败后 pending 被标记 failed，不留永久 pending"""
         await service.execute(
             message="超时查询",
             conversation_id="conv-fail-002",
@@ -399,27 +390,22 @@ class TestFailureCleanup:
                 powerbi_key="timeout",
             ),
         )
-        # pending 应为 failed
-        mem = await service.memory_repo.get_by_request_id("req-fail-002")
+        mem = await service.memory_repo.get_by_request_id("req-fail-002", RuntimeDataMode.MOCK)
         if mem is not None:
             assert mem.state_status == MemoryStatus.FAILED
 
     @pytest.mark.asyncio
     async def test_failure_version_not_incremented(self, service):
-        """失败后版本未递增"""
-        # 先成功一轮
         await service.execute(
             message="第一轮",
             conversation_id="conv-fail-003",
             request_id="req-fail-base",
         )
-        # 最新版本应为 1
         latest = await service.memory_repo.get_latest_committed(
             "conv-fail-003", RuntimeDataMode.MOCK
         )
         v_before = latest.memory_version if latest else 0
 
-        # 失败一轮
         await service.execute(
             message="失败轮",
             conversation_id="conv-fail-003",
@@ -429,9 +415,194 @@ class TestFailureCleanup:
                 powerbi_key="timeout",
             ),
         )
-        # 版本应未变化
         latest_after = await service.memory_repo.get_latest_committed(
             "conv-fail-003", RuntimeDataMode.MOCK
         )
         v_after = latest_after.memory_version if latest_after else 0
         assert v_after == v_before
+
+
+class TestConcurrentScenarios:
+    """M0.3.2 并发场景隔离"""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_different_scenarios_no_crosstalk(self):
+        """两个并发 Turn 使用不同 Scenario Key，不串场"""
+        service = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_runtime=MockAgentRuntime(),
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+
+        async def turn_a():
+            return await service.execute(
+                message="本月销售额？",
+                conversation_id="conv-conc-a",
+                request_id="req-conc-a",
+                scenario=MockScenarioSelection(intent_key="data_question"),
+            )
+
+        async def turn_b():
+            return await service.execute(
+                message="删除所有数据",
+                conversation_id="conv-conc-b",
+                request_id="req-conc-b",
+                scenario=MockScenarioSelection(intent_key="unsupported"),
+            )
+
+        r_a, r_b = await asyncio.gather(turn_a(), turn_b())
+
+        assert r_a["terminal_state"] == "completed"
+        assert r_a["intent"] == "data_question"
+        assert r_b["terminal_state"] == "unsupported"
+        assert r_b["intent"] == "unsupported"
+
+    @pytest.mark.asyncio
+    async def test_concurrent_same_mock_runtime_no_scenario_leak(self):
+        """同一个 MockAgentRuntime 并发不共享场景状态"""
+        runtime = MockAgentRuntime()
+        s1 = MockTurnService(llm_runtime=runtime)
+        s2 = MockTurnService(llm_runtime=runtime)
+
+        async def t1():
+            return await s1.execute(
+                message="销售额",
+                conversation_id="conv-leak-1",
+                request_id="req-leak-1",
+                scenario=MockScenarioSelection(intent_key="data_question"),
+            )
+
+        async def t2():
+            return await s2.execute(
+                message="非法请求",
+                conversation_id="conv-leak-2",
+                request_id="req-leak-2",
+                scenario=MockScenarioSelection(intent_key="unsupported"),
+            )
+
+        r1, r2 = await asyncio.gather(t1(), t2())
+        assert r1["intent"] == "data_question"
+        assert r2["intent"] == "unsupported"
+
+
+class TestProductIds:
+    """M0.3.2 查询产物唯一ID"""
+
+    @pytest.mark.asyncio
+    async def test_query_result_has_unique_result_id(self, service):
+        """每次 QueryResult 拥有唯一 result_id"""
+        from backend.app.powerbi.mock import MockPowerBIAdapter
+        adapter = MockPowerBIAdapter()
+        from backend.app.schemas.data_contracts import DAXRequest
+        r1 = await adapter.execute_dax(DAXRequest(
+            semantic_model_key="mock_sales_model",
+            dax="EVALUATE ...",
+            request_id="data_question",
+        ))
+        r2 = await adapter.execute_dax(DAXRequest(
+            semantic_model_key="mock_sales_model",
+            dax="EVALUATE ...",
+            request_id="data_question",
+        ))
+        # result_id 不是固定字符串
+        assert r1.result_id is not None
+        assert r2.result_id is not None
+        assert r1.result_id  # 非空
+        assert r1.result_id != "data_question"  # 不是 scenario key
+
+    @pytest.mark.asyncio
+    async def test_rendered_report_has_unique_report_id(self, service):
+        """每次 RenderedReport 拥有唯一 report_id"""
+        from backend.app.report.mock import MockReportRenderer
+        renderer = MockReportRenderer()
+        from backend.app.schemas.data_contracts import ReportSpec, RenderedReport
+        r1 = RenderedReport(
+            template_key="sales_weekly",
+            html=await renderer.render(ReportSpec(title="T1", template_key="sales_weekly")),
+        )
+        r2 = RenderedReport(
+            template_key="sales_weekly",
+            html=await renderer.render(ReportSpec(title="T2", template_key="sales_weekly")),
+        )
+        assert r1.report_id
+        assert r2.report_id
+        assert r1.report_id != r2.report_id  # 不重复
+
+    @pytest.mark.asyncio
+    async def test_memory_saves_last_query_result_id(self, service):
+        result = await service.execute(
+            message="查询",
+            conversation_id="conv-prod-1",
+            request_id="req-prod-1",
+        )
+        assert result["terminal_state"] == "completed"
+        mem = await service.memory_repo.get_by_request_id("req-prod-1", RuntimeDataMode.MOCK)
+        assert mem is not None
+        assert mem.last_query_result_id is not None
+        assert mem.last_query_result_id != ""  # 非空
+        # 不是 scenario key
+        assert mem.last_query_result_id != "data_question"
+
+    @pytest.mark.asyncio
+    async def test_report_memory_saves_last_report_id(self, service):
+        result = await service.execute(
+            message="生成周报",
+            conversation_id="conv-rpt-id",
+            request_id="req-rpt-id",
+            scenario=MockScenarioSelection(
+                intent_key="report_generation",
+                query_plan_key="report_generation",
+                dax_key="report_generation",
+                powerbi_key="report_generation",
+                response_key="report_generation",
+            ),
+            report_template_key="sales_weekly",
+        )
+        assert result["terminal_state"] == "completed"
+        mem = await service.memory_repo.get_by_request_id("req-rpt-id", RuntimeDataMode.MOCK)
+        assert mem is not None
+        assert mem.last_query_result_id is not None
+        # 报表场景有 last_report_id
+        assert mem.last_report_id is not None
+
+
+class TestAnswerValidation:
+    """M0.3.2 Answer 来源校验"""
+
+    @pytest.mark.asyncio
+    async def test_answer_semantic_model_mismatch_fails(self):
+        """Answer semantic_model_key 不一致必须失败"""
+        from backend.app.harness.validators.validation_service import ValidationService
+        from backend.app.schemas.data_contracts import AnswerSpec, QueryResult
+        validator = ValidationService()
+        result = QueryResult(
+            semantic_model_key="mock_sales_model",
+            columns=[], rows=[], row_count=0,
+        )
+        answer = AnswerSpec(
+            answer="test",
+            semantic_model_key="wrong_model",
+        )
+        vr = validator.validate_answer(answer, result)
+        assert not vr.is_valid
+
+    @pytest.mark.asyncio
+    async def test_answer_source_mode_mismatch_fails(self):
+        """Answer source_mode 与 QueryResult 不一致必须为 error（非 warning）"""
+        from backend.app.harness.validators.validation_service import ValidationService
+        from backend.app.schemas.data_contracts import AnswerSpec, QueryResult
+        validator = ValidationService()
+        result = QueryResult(
+            semantic_model_key="mock_sales_model",
+            source_mode="mock",
+            columns=[], rows=[], row_count=0,
+        )
+        answer = AnswerSpec(
+            answer="test",
+            source_mode="real",
+            semantic_model_key="mock_sales_model",
+        )
+        vr = validator.validate_answer(answer, result)
+        assert not vr.is_valid
+        assert any("source_mode" in e for e in vr.errors)

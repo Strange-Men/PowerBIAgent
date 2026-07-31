@@ -45,7 +45,12 @@ LEGAL_TRANSITIONS: dict[TurnState, set[TurnState]] = {
         TurnState.CLARIFICATION_REQUIRED,
         TurnState.UNSUPPORTED,
     },
-    TurnState.PLAN_READY: {TurnState.QUERY_VALIDATED, TurnState.VALIDATION_FAILED},
+    TurnState.PLAN_READY: {
+        TurnState.QUERY_VALIDATED,
+        TurnState.TOOL_EXECUTED,
+        TurnState.VALIDATION_FAILED,
+        TurnState.TOOL_FAILED,
+    },
     TurnState.QUERY_VALIDATED: {TurnState.TOOL_EXECUTED, TurnState.TOOL_FAILED},
     TurnState.TOOL_EXECUTED: {TurnState.RESULT_VALIDATED, TurnState.VALIDATION_FAILED, TurnState.TOOL_FAILED},
     TurnState.RESULT_VALIDATED: {TurnState.RESPONSE_READY, TurnState.RESPONSE_FAILED},

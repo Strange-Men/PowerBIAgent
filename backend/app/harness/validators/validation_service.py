@@ -194,16 +194,21 @@ class ValidationService:
                 f"does not match QueryResult '{result.semantic_model_key}'"
             )
 
-        # source_mode 一致
+        # source_mode 不一致 → 必须失败
         if answer.source_mode != result.source_mode:
-            warnings = [f"Answer source_mode '{answer.source_mode}' != QueryResult '{result.source_mode}'"]
-        else:
-            warnings = []
+            errors.append(
+                f"Answer source_mode '{answer.source_mode}' "
+                f"does not match QueryResult source_mode '{result.source_mode}'"
+            )
 
         # evidence 与 QueryResult 一致性
+        warnings: list[str] = []
         if answer.evidence:
             if "source" in answer.evidence and answer.evidence["source"] != result.semantic_model_key:
-                warnings.append("Answer evidence source does not match QueryResult")
+                errors.append(
+                    f"Answer evidence source '{answer.evidence['source']}' "
+                    f"does not match QueryResult semantic_model_key '{result.semantic_model_key}'"
+                )
 
         return ValidationResult(
             valid=len(errors) == 0, errors=errors, warnings=warnings,

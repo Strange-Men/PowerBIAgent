@@ -2,7 +2,7 @@
 
 > **所有新 Claude 恢复上下文的唯一最新交接入口。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-07-31 | M0.3.1 验证闭环加固修复**
+> **最后更新：2026-07-31 | M0.3.2 工具网关与并发闭环修正**
 
 ---
 
@@ -12,7 +12,7 @@
 
 ## 当前阶段
 
-**M0.3.1 验证闭环加固修复** — ✅ 已完成。
+**M0.3.2 工具网关与并发闭环修正** — ✅ 已完成。
 
 ## 已完成版本
 
@@ -21,106 +21,74 @@
 | M0.1 | 仓库初始化与文档基线 | `eb5812d` | 2026-07-31 |
 | M0.2 | 智能体架构与记忆设计 | `d03ac6c` | 2026-07-31 |
 | M0.3 | 数据接入与验证闭环 | `c3510f2` | 2026-07-31 |
-| M0.3.1 | 验证闭环加固修复 | 由下一轮 git log -1 获取 | 2026-07-31 |
+| M0.3.1 | 验证闭环加固修复 | `3c7cc7c` | 2026-07-31 |
+| M0.3.2 | 工具网关与并发闭环修正 | 由下一轮 git log -1 获取 | 2026-07-31 |
 
 ## 当前轮 Commit
 
-**标题：** `M0.3.1_验证闭环加固修复`
+**标题：** `M0.3.2_工具网关与并发闭环修正`
 
-**基准 Commit：** `c3510f2`（M0.3_数据接入与验证闭环）
+**基准 Commit：** `3c7cc7c`（M0.3.1_验证闭环加固修复）
 
 **SHA：** 由下一轮通过 `git log -1` 获取。
 
-**Push 状态：** 待推送
+**Push 状态：** 已推送至 origin/main
 
 ## 最近封板 Tag
 
 **暂无封板 Tag。**
 
-## M0.3 审计发现（16 项闭环真实性问题）
+## M0.3.2 修复内容
 
-M0.3 完成后进行专项代码审计，发现以下问题并在 M0.3.1 全部修复：
+来源：M0.3.1 专项审计后剩余的小范围真实性问题。
 
-1. **Memory 事务和乐观锁失真** — runtime_mode 使用任意字符串，版本语义依赖测试手工设置
-2. **Mock/Real 记忆空间隔离失真** — Repository 未按 runtime_mode 过滤查询
-3. **主链路绕过 ToolGateway** — MockTurnService 直接调用 `self.powerbi.*`
-4. **ToolGateway 权限/模式/超时/重试未生效** — 工具未真实注册
-5. **Memory 字段在 Commit 后才更新** — committed_memory 缺少分析字段
-6. **多轮记忆未真实继承** — 通过 arbitrary dict 伪造 committed 状态
-7. **clarification/unsupported 留下悬空 pending** — 意图识别前创建 pending
-8. **失败分支没有统一标记 failed** — 部分失败路径只返回错误字典
-9. **Scenario Key 没有完整进入执行链路** — 只传 intent_key
-10. **GoldenCaseRunner 异步与场景注入失真** — 处理已有事件循环错误
-11. **Golden Cases 预期值与描述矛盾** — gc_007 假字段标记 completed
-12. **集成测试存在假通过** — 测试名称与断言矛盾
-13. **ContextBuilder 未强制 committed/模式/模型边界** — 任何 Memory 都注入
-14. **ValidationService 对错误结果验证不足** — error 结果返回 valid=True
-15. **Trace ID/耗时/Secret 脱敏不完整** — record_completed 只更新最后事件
-16. **M0.3 状态文档过期** — CHANGELOG 标记"待推送"
-
-## M0.3.1 全部修复
-
-### Memory 模型
-- `runtime_mode` 统一为 `RuntimeDataMode` 枚举
-- 版本语义：`base_memory_version` 驱动（0→1→2），Repository 原子检查
-- 移除公共 `commit()`/`bump_version()`/`fail()` — 只能通过 Repository 改变状态
-- `MemoryCommitEvidence.business_satisfied` vs `all_satisfied` 区分
-- `version_matches` 由 Repository 原子提交时设置
-
-### Repository
-- `asyncio.Lock` 原子保护（版本检查和递增在同一临界区）
-- Mock/Real 严格隔离（`get_latest_committed`/`list_by_conversation` 按 runtime_mode 过滤）
-- commit() 拒绝：不完整 Evidence、非 PENDING、failed/committed、版本冲突、模式不一致
-- `mark_failed()` 记录 reason 和 stage
-- 保存完整 Memory 快照
-
-### ToolGateway
-- 三个工具真实注册（含 Handler、input_model、output_model）
-- 所有 Adapter 调用统一经过 `gateway.execute()`
-- 权限/模式/超时检查全部生效
-- 新增异常类型
-
-### MockTurnService
-- 结构化 `MockScenarioSelection`（五类 Key）
-- clarification/unsupported 不创建 pending
-- 移除 `initial_memory` setattr
-- 提交前填充完整 Memory 字段
-- 失败分支统一 `mark_failed`
-- `RenderedReport` 结构化结果
-
-### ContextBuilder
-- 只注入 committed（非 pending/failed）
-- runtime_mode 匹配才注入
-- semantic_model_key 匹配才注入
-- Secret 值模式匹配（sk-/Bearer/JWT）
+### ToolGateway 策略
+- 取消全局 `TOOL_INTENT_POLICY`，以 `ToolSpec.allowed_intents` 为 Intent 权限唯一来源
+- `supported_modes` 统一使用 `RuntimeDataMode` 枚举
+- 完整策略检查链：read_only / Intent / runtime_mode / 用户工具权限 / 用户模型权限 / 用户模板权限 / 输入类型 / Handler / 输出类型
+- 正确异常分类：ToolTimeoutError、ToolOutputValidationError
+- 不重试异常（未注册、权限、类型错误）vs 有限重试（TimeoutError、retryable PowerBI 错误）
+- Gateway 真实产生 tool_call_started/completed/failed Trace 事件
+- 工具序列唯一来源：`TraceRecorder.get_tool_sequence()`，Application 不手工拼装
 
 ### TraceRecorder
-- 唯一 trace_id
-- 精确事件索引更新
-- Secret 脱敏全覆盖
+- 深度超限返回 `[MAX_DEPTH_REACHED]` 而非原始对象
+- 事件耗时在 record() 时自动计算写入 duration_ms
 
-### ValidationService
-- QueryResult error → valid=False
-- Report 字段绑定当前 QueryResult
-- 新增 Answer 验证
+### 状态机失败流
+- `PLAN_READY` 新增合法转换：`TOOL_EXECUTED`、`TOOL_FAILED`
+- 统一 `_fail_turn()` 处理所有失败分支
+- Memory 冲突时 pending 标记 failed
 
-### GoldenCaseRunner
-- Async-first
-- 全部 Scenario Key
-- Pydantic 强校验
-- Runtime 配置生效
-- Repository 验证
-- 稳定命令行入口
+### Scenario 并发模型
+- MockAgentRuntime 移除共享 `_scenario_key` 实例字段
+- scenario_key 通过 MockLLMProvider._active_scenario 临时传递
 
-### Golden Cases
-- 12 条（11 mock_ready + 1 pending_real_baseline）
-- gc_007 虚假字段 → response_failed
-- gc_002 多轮 → setup_turns
-- 新增：permission_denied、dax_error、oversized、幂等
+### request_id 模式复合键
+- Repository 索引使用 `(runtime_mode, request_id)` 复合键
+- 全部接口显式传入 runtime_mode
+- Mock 和 Real 相同 request_id 各自存在、互不可见
+
+### MemoryPolicies 事务规则
+- 提交前只检查 `business_satisfied`，不要求 `version_matches`（仅 Repository 可设置）
+- Repository 成功后 version_matches=True、all_satisfied=True
+
+### QueryResult 和 Report 唯一 ID
+- QueryResult.result_id 使用 UUID（非 scenario key）
+- RenderedReport.report_id 使用 UUID
+- Memory 成功提交前写入 last_query_result_id 和 last_report_id
+
+### Golden Runtime 配置
+- 全部 Pydantic Case 模型 `extra="forbid"`
+- 五类 Scenario Key 全部强制存在
+- 每个 Case 使用独立 MockTurnService 和 Repository
+- 幂等 Case 真实执行两次（repeat_target_turn），验证版本不变
+- 多轮 Case 验证 base_memory_version > 0 证明 context 真实继承
+- 失败 Case 验证 failed record、reason、stage、committed 不存在
 
 ## 测试结果
 
-**191/191 pytest 通过**（pytest 9.1.1，Python 3.11.15）
+**205/205 pytest 通过**（pytest 9.1.1，Python 3.11.15）
 
 **Golden Cases：11/11 mock_ready 通过，1 skipped (pending_real_baseline)**
 
@@ -132,31 +100,33 @@ M0.3 完成后进行专项代码审计，发现以下问题并在 M0.3.1 全部�
 PowerBIAgent/
 ├── harness/
 │   ├── README.md
-│   ├── cases/golden_cases.yaml (12 条)
-│   ├── fixtures/ (新增 fake_field_report)
+│   ├── cases/golden_cases.yaml（12 条，五类 Key 全部必填）
+│   ├── fixtures/（4 个 JSON fixture）
 │   └── reports/.gitkeep
 ├── backend/
 │   ├── app/
-│   │   ├── application/mock_turn_service.py (重构)
+│   │   ├── application/mock_turn_service.py（_fail_turn 统一失败处理）
+│   │   ├── agent/mock_runtime.py（移除共享 _scenario_key）
 │   │   ├── harness/
-│   │   │   ├── cases/__main__.py (新增)
-│   │   │   ├── cases/case_runner.py (重构)
-│   │   │   ├── runtime/tool_gateway.py
-│   │   │   ├── runtime/turn_controller.py
-│   │   │   ├── runtime/context_builder.py (加固)
-│   │   │   ├── validators/validation_service.py (加固)
-│   │   │   └── observability/trace_recorder.py (加固)
+│   │   │   ├── cases/__main__.py
+│   │   │   ├── cases/case_runner.py（M0.3.2 严格化）
+│   │   │   ├── errors.py
+│   │   │   ├── models.py
+│   │   │   ├── runtime/tool_gateway.py（M0.3.2 完整改写）
+│   │   │   ├── runtime/turn_controller.py（PLAN_READY 新增合法转换）
+│   │   │   ├── runtime/context_builder.py
+│   │   │   ├── validators/validation_service.py（source_mode error）
+│   │   │   └── observability/trace_recorder.py（深度安全返回值）
 │   │   ├── memory/
-│   │   │   ├── models.py (重构)
-│   │   │   ├── repository.py (重构)
-│   │   │   └── policies.py (更新)
-│   │   └── schemas/data_contracts.py (新增 RenderedReport)
+│   │   │   ├── models.py
+│   │   │   ├── repository.py（runtime_mode 复合键）
+│   │   │   └── policies.py（business_satisfied 检查）
+│   │   └── schemas/data_contracts.py（QueryResult.result_id）
 │   └── tests/
-│       ├── unit/test_memory_repository.py (重写)
-│       ├── unit/test_memory.py (重写)
-│       ├── unit/test_harness.py (部分更新)
-│       └── integration/test_mock_pipeline.py (重写)
-└── docs/ (全部更新)
+│       ├── unit/test_memory_repository.py（复合键 + 跨模式共存）
+│       ├── unit/test_harness.py
+│       └── integration/test_mock_pipeline.py（并发/产物ID/Answer校验）
+└── docs/（全部更新）
 ```
 
 ## 未验证事项
@@ -183,7 +153,7 @@ PowerBIAgent/
 - 是否创建 M0 封板 Tag 由 M0.4 Prompt 决定
 
 **禁止：**
-- 再把 M0.3.1 核心修复推迟到 M0.4
+- 再修复本轮已经要求完成的 ToolGateway 和并发问题
 - 真实 DeepSeek（M1）
 - 真实 Power BI 生产连接（M2）
 - React 页面（M5）
@@ -201,4 +171,4 @@ PowerBIAgent/
 
 ---
 
-*最后更新：2026-07-31 | M0.3.1 验证闭环加固修复*
+*最后更新：2026-07-31 | M0.3.2 工具网关与并发闭环修正*

@@ -8,11 +8,12 @@
 ## 路线总览
 
 ```
-M0 开发准备 (5轮)
+M0 开发准备 (6轮)
   M0.1 仓库初始化与文档基线        ✅ 已完成 (eb5812d)
   M0.2 智能体架构与记忆设计         ✅ 已完成 (d03ac6c)
   M0.3 数据接入与验证闭环           ✅ 已完成 (c3510f2)
-  M0.3.1 验证闭环加固修复           ✅ 已完成 (当前轮)
+  M0.3.1 验证闭环加固修复           ✅ 已完成 (3c7cc7c)
+  M0.3.2 工具网关与并发闭环修正      ✅ 已完成 (当前轮)
   M0.4 项目骨架与阶段收尾           ⬜
 
 MVP 功能阶段 (5轮)
@@ -28,9 +29,34 @@ MVP 功能阶段 (5轮)
 
 ---
 
+## M0.3.2 — 工具网关与并发闭环修正
+
+**状态：** ✅ 已完成 | **Commit：** M0.3.2_工具网关与并发闭环修正
+
+### 来源
+- M0.3.1 专项审计后剩余的小范围真实性问题
+- 重点：ToolGateway 策略真正生效、Trace 真实关联、状态机失败路径、并发安全、模式隔离、Golden Cases 严格化
+- 不属于新功能阶段
+- 不创建 Tag
+- 完成后才能进入 M0.4
+
+### 核心交付物
+- ToolGateway 完整策略检查链（read_only/Intent/模式/用户权限）+ 正确异常分类
+- TraceRecorder 深度安全返回值 + 真实耗时
+- 状态机 PLAN_READY 新增合法失败转换 + 统一 _fail_turn
+- MockAgentRuntime 移除共享 scenario 状态 + 并发测试
+- Repository (runtime_mode, request_id) 复合键
+- MemoryPolicies 只检查 business_satisfied
+- QueryResult.result_id / RenderedReport.report_id 唯一 UUID
+- Answer source_mode 不一致 → error
+- Golden Case extra="forbid" + 五类 Key 强校验 + 幂等真实重放 + 多轮 context 验证
+- 205 个测试全部通过 + 11/11 Golden Cases 通过
+
+---
+
 ## M0.3.1 — 验证闭环加固修复
 
-**状态：** ✅ 已完成 | **Commit：** M0.3.1_验证闭环加固修复
+**状态：** ✅ 已完成 | **Commit：** `3c7cc7c` M0.3.1_验证闭环加固修复
 
 ### 来源
 - M0.3 专项代码审计发现 16 项闭环真实性问题

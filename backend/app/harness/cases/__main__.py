@@ -1,9 +1,9 @@
-"""Golden Case Runner 入口
+"""Golden Case Runner 入口 — M0.3.2
 
 运行:
     D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
-执行全部 mock_ready Golden Cases，输出每条结果和摘要。
+每个 Case 使用独立的 MockTurnService 和 MemoryRepository。
 """
 
 import asyncio
@@ -18,12 +18,14 @@ CASES_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "harne
 
 def main():
     """主入口"""
-    service = MockTurnService()
-    runner = GoldenCaseRunner(CASES_DIR, service)
+    # factory 为每个 Case 创建独立 Service
+    def service_factory():
+        return MockTurnService()
+
+    runner = GoldenCaseRunner(CASES_DIR, service_factory=service_factory)
 
     summary = asyncio.run(runner.run_all_async())
 
-    # 输出结果
     print("=" * 60)
     print("Golden Cases 运行结果")
     print("=" * 60)

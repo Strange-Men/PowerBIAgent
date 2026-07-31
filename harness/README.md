@@ -45,18 +45,24 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 Golden Cases 不逐字比较自然语言答案。
 重点比较：Intent、Tool 序列、状态流转、字段继承、Memory 提交、最终版本、Terminal State、Error Type、Response Type、Mock/Real 标记。
 
-## M0.3.1 范围
+## M0.3.2 范围
 
 - ✅ 11/11 可运行 Mock Golden Cases 通过
-- ✅ Memory 事务和版本语义加固
-- ✅ ToolGateway 真实接入（三个工具全链路）
-- ✅ ContextBuilder/TraceRecorder/ValidationService 加固
-- ✅ 完整 Harness 核心组件（ETCLOVG）
-- ✅ JSON Trace 含唯一 trace_id
-- ✅ Mock 问答链路
-- ✅ Mock 报表链路（含 render_report）
-- ✅ 失败保护链路（失败不提交，pending 标记 failed）
+- ✅ ToolGateway 完整策略检查（read_only/Intent/模式/用户权限）
+- ✅ 正确异常分类（不重试 vs 有限重试）
+- ✅ Gateway 真实产生 Trace 事件
+- ✅ 工具序列唯一来源：TraceRecorder
+- ✅ 状态机失败路径合法（PLAN_READY → TOOL_FAILED）
+- ✅ 统一 _fail_turn() 失败处理
+- ✅ MockAgentRuntime 无共享 scenario 状态
+- ✅ Repository (runtime_mode, request_id) 复合键
+- ✅ QueryResult.result_id / RenderedReport.report_id 唯一 UUID
+- ✅ Answer source_mode 不一致 → error
+- ✅ Golden Case extra="forbid" + 五类 Key 强校验
+- ✅ 幂等真实重放 + 多轮 context 继承验证
+- ✅ 失败 Case 验证 failed record/reason/stage
+- ✅ 205 pytest + 11/11 Golden Cases 通过
 
 ---
 
-*最后更新：2026-07-31 | M0.3.1 验证闭环加固修复*
+*最后更新：2026-07-31 | M0.3.2 工具网关与并发闭环修正*

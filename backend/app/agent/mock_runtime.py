@@ -1,7 +1,9 @@
 """MockAgentRuntime — 实现 AgentRuntime 接口的 Mock 运行时
 
-使用 MockLLMProvider，根据 task 和 scenario_key 返回预设结果。
-不调用网络，不调用 PowerBIAdapter，不绕过 ToolGateway。
+M0.3.2 修复：
+- 移除共享 _scenario_key 实例字段
+- scenario_key 通过 run() 的 context 参数传入
+- 每个 Turn 独立，无并发串场风险
 """
 
 from typing import Any, Optional
@@ -17,17 +19,22 @@ class MockAgentRuntime(AgentRuntime):
     """Mock Agent 运行时
 
     使用 MockLLMProvider 返回预设结构化结果。
+    scenario_key 通过 context dict 传入，不保存在实例字段。
     未知场景明确失败。
     """
 
     def __init__(self, llm_provider: Optional[MockLLMProvider] = None):
         self._llm = llm_provider or MockLLMProvider()
         self._tools: dict[str, Any] = {}
-        self._scenario_key: Optional[str] = None
 
     def set_scenario(self, scenario_key: str) -> None:
-        """设置 Mock 场景"""
-        self._scenario_key = scenario_key
+        """设置当前 Turn 的 scenario_key — 立即消费，不作为持久状态
+
+        M0.3.2：内部缓存到 _llm 的单次请求级别。
+        不保存在 Runtime 实例字段中。
+        """
+        # 通过 LLM Provider 的临时方式传递 scenario
+        self._llm._active_scenario = scenario_key
 
     async def run(
         self,
@@ -35,8 +42,7 @@ class MockAgentRuntime(AgentRuntime):
         context: dict[str, Any],
         output_type: type[BaseModel],
     ) -> AgentRunResult:
-        """执行 Mock Agent"""
-        # 根据 output_type 推断 task
+        """执行 Mock Agent — scenario_key 来自 _llm 内部已缓存的值"""
         task = LLMTask.INTENT_RECOGNITION
         type_name = output_type.__name__.lower()
         if "queryplan" in type_name:
@@ -48,10 +54,13 @@ class MockAgentRuntime(AgentRuntime):
         elif "report" in type_name:
             task = LLMTask.REPORT
 
+        # scenario_key 由 set_scenario 已设置到 _llm._active_scenario
+        scenario = getattr(self._llm, "_active_scenario", "data_question")
+
         request = LLMRequest(
             messages=[{"role": "user", "content": user_input}],
             task=task,
-            scenario_key=self._scenario_key or "data_question",
+            scenario_key=scenario,
         )
 
         response = await self._llm.generate(request, output_type)

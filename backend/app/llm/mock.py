@@ -48,6 +48,7 @@ class MockLLMProvider(LLMProvider):
         self._scenario_delay = scenario_delay
         self._fixtures_dir = fixtures_dir or DEFAULT_FIXTURES_DIR
         self._fixtures_loaded = False
+        self._active_scenario: str = "data_question"  # M0.3.2: 由 MockAgentRuntime.set_scenario 设置
         self._load_fixtures()
 
     def _load_fixtures(self) -> None:

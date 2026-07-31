@@ -74,7 +74,7 @@ SECRET_VALUE_PATTERNS = [
 def _redact_secrets(obj: Any, depth: int = 0, max_depth: int = 20) -> Any:
     """递归脱敏 Secret 字段和字符串值"""
     if depth > max_depth:
-        return obj
+        return "[MAX_DEPTH_REACHED]"
     if isinstance(obj, dict):
         return {
             k: "[REDACTED]" if k.lower().replace("_", "") in SECRET_FIELDS_LOWER
@@ -145,14 +145,14 @@ class TraceRecorder:
         # 完成事件自动记录耗时
         if event_type in ("request_completed", "request_failed", "tool_call_completed",
                          "tool_call_failed", "memory_committed"):
-            event.duration_ms = 0  # 将被后续 record_completed 覆盖
+            if event._start_time is not None:
+                event.duration_ms = (time.monotonic() - event._start_time) * 1000
 
         return event
 
     def record_completed(self, event_type: str, request_id: str = "") -> None:
         """标记事件完成并记录耗时 — 精确查找对应事件"""
         now = time.monotonic()
-        # 反向查找最近匹配的事件
         for event in reversed(self._events):
             if event.event_type == event_type:
                 if not request_id or event.request_id == request_id:

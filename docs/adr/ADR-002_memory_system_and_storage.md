@@ -121,7 +121,7 @@
 - 每个请求生成唯一 `request_id`
 - 相同 `request_id` 的重复请求返回已有结果，不重复执行
 
-### memory_version 乐观锁（M0.3.1 固化）
+### memory_version 乐观锁（M0.3.2 固化）
 
 - `base_memory_version`：开始本轮时读取到的 committed 版本（0 = 无历史）
 - 提交时 Repository 原子检查 base 与当前会话最新 committed 版本
@@ -129,6 +129,8 @@
 - 版本检查和递增在同一临界区完成
 - `version_matches` 由 Repository 原子提交时设置（调用方不可伪造）
 - 冲突不得覆盖现有 committed memory
+- request_id 索引使用 `(runtime_mode, request_id)` 复合键
+- Mock 和 Real 相同 request_id 可以共存
 
 ## 八、一致性规则
 
@@ -189,3 +191,4 @@
 ---
 
 *创建日期：2026-07-31 | M0.2 智能体架构与记忆设计*
+*最后更新：2026-07-31 | M0.3.2 工具网关与并发闭环修正*
