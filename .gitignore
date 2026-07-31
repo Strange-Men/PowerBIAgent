@@ -13,6 +13,13 @@ token.json
 secrets/
 secrets.yaml
 
+# Local secret backups (never commit)
+.env.backup
+.env.bak
+.env.old
+credentials/
+private_credentials/
+
 # API Key and Token files
 *_key.txt
 *_token.txt
@@ -62,6 +69,16 @@ logs/
 trace/
 traces/
 sensitive_trace/
+
+# ============================================================
+# Network captures and debug dumps (never commit)
+# ============================================================
+*.har
+http_dumps/
+network_capture/
+debug_responses/
+smoke_outputs/
+secret_scan_output/
 
 # ============================================================
 # Python

@@ -62,6 +62,21 @@ D:\Conda\envs\PBIAgent\python.exe -m pip install -e ".[dev]"
 
 项目使用 `.env` 文件和环境变量配置。Mock 模式启动不需要任何 API Key。
 
+#### 创建本地 .env
+
+```powershell
+Copy-Item .env.example .env
+```
+
+然后：
+- `.env` 由用户本人本地填写真实 API Key
+- `.env` 禁止提交（已在 `.gitignore` 中排除）
+- Claude 和其他自动化工具不得读取 `.env` 内容
+- DeepSeek API Key 只在后端运行时使用
+- 前端永远不保存模型 API Key
+
+#### 环境变量说明
+
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `APP_ENV` | `development` | 运行环境 (development/test/production) |
@@ -134,6 +149,9 @@ D:\Conda\envs\PBIAgent\python.exe -m pytest backend/tests -q
 
 # Golden Cases
 D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
+
+# 仓库安全检查（提交前必须执行）
+D:\Conda\envs\PBIAgent\python.exe scripts/check_repository_safety.py
 ```
 
 ## 技术栈
@@ -166,4 +184,4 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 ---
 
-*最后更新：2026-07-31 | M1.0.1 幂等并发与文档收尾修复*
+*最后更新：2026-07-31 | M1.0.2 密钥与仓库安全规则固化*

@@ -2,7 +2,7 @@
 
 > **所有新 Claude 恢复上下文的唯一最新交接入口。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-07-31 | M1.0.1 幂等并发与文档收尾修复**
+> **最后更新：2026-07-31 | M1.0.2 密钥与仓库安全规则固化**
 
 ---
 
@@ -12,11 +12,11 @@
 
 ## 当前阶段
 
-**M1.0.1 幂等并发与文档收尾修复** — ✅ 已完成。
+**M1.0.2 密钥与仓库安全规则固化** — ✅ 已完成。
 
 ## 当前完成轮次
 
-**M1.0.1** — 幂等并发与文档收尾修复
+**M1.0.2** — 密钥与仓库安全规则固化
 
 ## 下一轮
 
@@ -38,12 +38,7 @@ M1.2—M1.5：未开始
 | M0.4.1 | API骨架真实性修复 | `1f967b0` | 2026-07-31 |
 | M1.0 | M0遗留收口与M1路线固化 | `9247322` | 2026-07-31 |
 | M1.0.1 | 幂等并发与文档收尾修复 | 最终 SHA 以 git log -1 为准 | 2026-07-31 |
-
-## 当前轮 Commit
-
-**标题：** `M1.0.1_幂等并发与文档收尾修复`
-
-**Push 状态：** 将在 Git 收尾完成后推送
+| M1.0.2 | 密钥与仓库安全规则固化 | 最终 SHA 以 git log -1 为准 | 2026-07-31 |
 
 ## 最近封板 Tag
 
@@ -52,77 +47,61 @@ M1.2—M1.5：未开始
 | `m0.4.1-foundation-release` | `1f967b0` | M0.4.1 封板 — 保留不动 |
 | `m0.4-foundation-release` | `d5c1634` | M0.4 封板 — 保留不动 |
 
-## M1.0 交付内容
+## M1.0.2 交付内容
 
-### 修复1：clarification/unsupported 保留 conversation_id
-### 修复2：request_id 幂等重放
-### 修复3：默认报表模板 sales_weekly
-### 修复4：版本号和安装说明
-### M1.0—M1.5 路线固化
+### 安全规则固化
 
-**Commit：** `9247322` M1.0_M0遗留收口与M1路线固化
+**CLAUDE.md：**
+- 新增「Secret 与 API Key 绝对规则」章节（共 6 条子规则）
+- Secret 永不进入仓库、Claude 不得读取 .env、API Key 仅后端使用
+- 前端禁止持有 Provider Secret、日志与测试禁止泄漏
+- 提交前安全检查：禁止 `git add .`/`git add -A`，必须使用文件白名单
+- Commit 规则新增文件白名单和安全检查步骤
 
-## M1.0.1 交付内容
+**docs/06 安全规范：**
+- 新增 1.1—1.6 节：Secret 文件规则、Claude 禁止读取 .env、后端 Key 规则、前端禁止 Secret、日志安全、API Key 填写规则
+- 提交前检查清单更新为 10 项（新增文件白名单和安全扫描步骤）
 
-### 修复1：请求指纹与冲突检测
-- 新增 `RequestFingerprint` 模型（`backend/app/memory/request_fingerprint.py`）
-- message 首尾空白清理后参与指纹；client_conversation_id 使用客户端原始值
-- 使用 Canonical JSON + SHA-256 生成稳定 Hash
-- 相同 request_id、不同指纹 → `IdempotencyConflictError` → API 返回 HTTP 409
-- 不将原始 message 或完整请求内容写入日志和 Trace
+**.gitignore：**
+- 新增 `.env.backup`、`.env.bak`、`.env.old`、`credentials/`、`private_credentials/`
+- 新增 `*.har`、`http_dumps/`、`network_capture/`、`debug_responses/`、`smoke_outputs/`、`secret_scan_output/`
 
-### 修复2：并发 Owner/Waiter 防重
-- `IdempotencyTracker` 集成到 `ResultSnapshotStore`
-- `claim()` / `complete()` / `abort()` 三个原子操作
-- 使用 `asyncio.Lock` 保护 in-flight 字典，锁仅用于领取执行权
-- 相同指纹并发请求：一个成为 Owner 执行，其余 Waiter 等待
-- 不同指纹并发请求：立即冲突，不等待
-- Owner 异常时清理 in-flight 并唤醒 Waiter，Waiter 可重试
+**安全检查脚本：**
+- `scripts/check_repository_safety.py` — 检查：禁止跟踪文件名、前端 Secret、明显真实 Secret
+- 排除测试和脚本目录中的安全检测样本
+- 退出码：安全=0，发现风险=非0
 
-### 修复3：Report 快照结构化
-- 新增 `ReportResultSnapshot` Pydantic 模型（report_id/template_key/html 均为必填）
-- `TurnResultSnapshot.report` 类型从 `Optional[dict]` 改为 `Optional[ReportResultSnapshot]`
-- 保存快照时 Pydantic 校验，非法 report 不能进入快照 Store
-- `TurnResultSnapshot` 增加跨字段校验（answer/report/clarification/unsupported 一致性）
-- 快照包含 `request_fingerprint_hash` 字段
+**安全测试：**
+- `backend/tests/unit/test_repository_safety.py` — 26 个测试全部通过
+- 覆盖：禁止文件名、空值/占位值允许、疑似真实值拒绝、前端 Secret 拒绝、输出不含 Secret 原文、当前仓库通过
 
-### 修复4：Service 统一 UUID 生成
-- `MockTurnService.execute()` 签名：`conversation_id: str | None = None`、`request_id: str | None = None`
-- 未传时 Service 统一生成 UUID（`str(uuid.uuid4())`）
-- 指纹使用客户端原始 conversation_id（可能为 None）
-- 重放返回首次请求保存的 effective conversation_id
+**.env 状态：**
+- `.env.example` 继续受 Git 跟踪，已清理为安全默认状态（所有 Key 为空值，`LLM_MODE=mock`）
+- 本地 `.env` 已创建（从 `.env.example` 复制），已被 `.gitignore` 忽略且未被 Git 跟踪
+- Claude 本轮未读取 `.env` 内容
+- `.env` 中所有 Key 为空，待 M1.1 前由用户本人手动填写真实 DeepSeek API Key
 
-### 修复5：文档状态收尾
-- `docs/08`：M1.0 状态改为已完成，新增 M1.0.1 专项修复记录
-- `docs/09`：当前轮次更新为 M1.0.1，下一轮仍为 M1.1
-- 不再保留失效的进度标记。
+**README：**
+- 新增 `.env` 创建和安全说明
+- 新增仓库安全检查命令
+
+## M1.1 开始前准备
+
+- M1.1 开始前由用户本人填写本地 `.env` 中的 `DEEPSEEK_API_KEY`
+- M1.1 不得读取或回显 Key
+- M1.1 只实现 DeepSeekLLMProvider 基础接入，不涉及真实业务流程
 
 ## 测试结果
 
-**pytest 基准：327 passed（M1.0）**
-
-**Golden Cases：11/11 mock_ready 通过，1 skipped**
-
-## 新增/修改文件
-
-| 文件 | 变更 |
-|------|------|
-| `backend/app/memory/request_fingerprint.py` | **新增** — RequestFingerprint + IdempotencyConflictError |
-| `backend/app/memory/result_snapshot.py` | 重写 — ReportResultSnapshot + IdempotencyTracker |
-| `backend/app/application/mock_turn_service.py` | 重写 — 指纹/并发/UUID/结构化快照 |
-| `backend/app/api/routes.py` | 新增 409 冲突处理 + 可选 ID 传递 |
-| `README.md` | M1.0.1 功能说明 |
-| `CHANGELOG.md` | M1.0.1 条目 |
-| `docs/08_development_roadmap.md` | M1.0.1 专项修复记录 |
-| `docs/09_context_handoff.md` | 本文件 — M1.0.1 完成状态 |
-| `backend/tests/integration/test_m1_0_1_fixes.py` | **新增** — M1.0.1 专项测试 |
-| `backend/tests/api/test_chat.py` | 新增 M1.0.1 API 测试 |
+**pytest：** 待最终全量验证
+**Golden Cases：** 待最终验证
+**安全扫描：** `scripts/check_repository_safety.py` 通过
 
 ## 未完成或待观察事项
 
 - 跨进程持久化和分布式锁延后处理
 - 项目负责人 Power BI 账号状态（M2 前确认）
-- DeepSeek API Key 可用性（M1.1 前确认）
+- DeepSeek API Key 可用性（M1.1 前用户本人填写）
 - Entra App Registration 权限（M2 前确认）
 - Power BI Tenant 设置（M2 前确认）
 - Remote MCP Server 端点可用性（M2 早期验证）
@@ -138,7 +117,8 @@ M1.2—M1.5：未开始
 - 最小真实连通测试
 - Mock 模式保持完整可用
 
-**M1.1 禁止提前实现：**
+**M1.1 禁止：**
+- 读取或回显真实 API Key
 - 真实 Intent 业务流程
 - 真实 QueryPlan / DAX / Answer / ReportSpec 生成
 - 真实 Power BI 连接
@@ -147,4 +127,4 @@ M1.2—M1.5：未开始
 
 ---
 
-*最后更新：2026-07-31 | M1.0.1 幂等并发与文档收尾修复*
+*最后更新：2026-07-31 | M1.0.2 密钥与仓库安全规则固化*

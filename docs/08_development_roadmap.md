@@ -21,6 +21,7 @@ M0 开发准备 (7轮)
 M1 真实 DeepSeek 接入 (6轮)
   M1.0 M0遗留收口与M1路线固化       ✅ 已完成 (9247322)
   M1.0.1 幂等并发与文档收尾修复      ✅ 已完成
+  M1.0.2 密钥与仓库安全规则固化      ✅ 已完成
   M1.1 DeepSeek Provider基础接入    ⬜
   M1.2 真实意图识别                 ⬜
   M1.3 真实QueryPlan与DAX生成       ⬜
@@ -74,6 +75,27 @@ MVP 功能阶段 (后续)
 - Service 统一 UUID 生成：conversation_id 和 request_id 未传时服务端生成
 
 **本轮不接入 DeepSeek，不改变 M1.0—M1.5 主路线。**
+
+---
+
+### M1.0.2｜密钥与仓库安全规则固化
+
+**状态：** ✅ 已完成
+
+**完成内容：**
+- 确认 `.env.example` 文件名，从模板创建本地 `.env`
+- `.env` 被 `.gitignore` 正确忽略且未被 Git 跟踪
+- `CLAUDE.md`：新增「Secret 与 API Key 绝对规则」章节（Secret 不入仓库、Claude 不读 .env、API Key 仅后端使用、前端禁止 Secret、日志禁止泄漏、提交前安全检查）
+- `docs/06`：同步固化 Secret 文件规则、前端禁止 Secret、日志安全、API Key 填写规则
+- `.gitignore`：新增 `.env.backup`、`.env.bak`、`.env.old`、`*.har`、`http_dumps/`、`network_capture/`、`debug_responses/`、`smoke_outputs/`、`secret_scan_output/`、`credentials/`、`private_credentials/`
+- 新增 `scripts/check_repository_safety.py`：检查禁止跟踪文件名、前端 Secret、明显真实 Secret
+- 新增 `backend/tests/unit/test_repository_safety.py`：26 个测试覆盖
+- `README.md`：新增安全设置说明和提交前检查命令
+- `docs/08`：新增 M1.0.2 记录
+- `docs/09`：交接文档更新
+
+**本轮属于用户批准的专项安全修复，不改变 M1.0—M1.5 六轮主路线。**
+**本轮不接入 DeepSeek，不开发 Provider 代码。**
 
 ---
 
@@ -208,4 +230,4 @@ MVP 功能阶段 (后续)
 
 ---
 
-*最后更新：2026-07-31 | M1.0.1 幂等并发与文档收尾修复*
+*最后更新：2026-07-31 | M1.0.2 密钥与仓库安全规则固化*

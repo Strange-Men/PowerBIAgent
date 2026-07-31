@@ -1,5 +1,58 @@
 # CHANGELOG
 
+## [M1.0.2] — 2026-07-31
+
+### 密钥与仓库安全规则固化
+
+**来源：** 用户批准的 M1.0.2 专项安全修复轮次。
+
+**Secret 与 API Key 安全规则固化：**
+- `CLAUDE.md`：新增「Secret 与 API Key 绝对规则」章节（6 条子规则）
+  - Secret 永不进入仓库、Claude 不得读取 .env、API Key 仅后端使用
+  - 前端禁止持有 Provider Secret、日志与测试禁止泄漏
+  - 提交前安全检查（禁止 `git add .`/`git add -A`，必须文件白名单）
+- Commit 规则：提交前检查清单更新为 10 项（新增文件白名单和安全扫描步骤）
+
+**docs/06 安全规范同步：**
+- 新增 1.1—1.6 节：Secret 文件规则、Claude 禁止读取 .env、后端 Key 规则、前端禁止 Secret、日志安全、API Key 填写规则
+- 提交前检查清单更新
+
+**.env.example 清理：**
+- 所有 Secret 值改为空值（DeepSeek Key、Client Secret 等均设为空，无占位示例值）
+- 默认 `LLM_MODE=mock`、`POWERBI_MODE=mock`
+- 移除所有疑似真实 Key 格式的示例值
+- 本地 `.env` 从模板创建，已被 `.gitignore` 忽略且未跟踪
+
+**.gitignore 加强：**
+- 新增敏感产物忽略：`*.har`、`http_dumps/`、`network_capture/`、`debug_responses/`、`smoke_outputs/`、`secret_scan_output/`
+- 新增本地 Secret 备份忽略：`.env.backup`、`.env.bak`、`.env.old`、`credentials/`、`private_credentials/`
+
+**仓库安全检查：**
+- 新增 `scripts/check_repository_safety.py`：检查禁止跟踪文件名、前端 Secret、明显真实 Secret
+- 新增 `backend/tests/unit/test_repository_safety.py`：26 个测试覆盖
+- 提交前必须执行安全检查脚本
+
+**README：**
+- 新增 `.env` 创建和安全说明
+- 新增仓库安全检查命令
+
+**文档更新：**
+- `docs/08`：新增 M1.0.2 专项修复记录
+- `docs/09`：交接文档更新为 M1.0.2 完成状态
+- 本轮不改变 M1.0—M1.5 六轮主路线
+- 本轮不接入 DeepSeek，不开发 Provider 代码
+
+**测试结果：**
+- 安全扫描通过
+- 26 个安全测试全部通过
+- 待全量 pytest 和 Golden Cases 验证
+
+**Commit SHA：** 由 Git 解析
+**Push 状态：** 待推送
+**本轮 Tag：** 无（本轮不创建 Tag）
+
+---
+
 ## [M1.0.1] — 2026-07-31
 
 ### 幂等并发与文档收尾修复

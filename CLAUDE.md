@@ -94,15 +94,16 @@ M0.x.y_中文描述
 
 ### 提交前检查清单
 
-1. 检查 `git diff`
-2. 检查新增文件
-3. 执行 Secret 检查
-4. 检查 docs 文件名全部为英文
-5. 检查没有提前实现后续轮次内容
-6. 更新 `CHANGELOG.md`
-7. 更新 `docs/09_context_handoff.md`
-8. 检查 Commit 标题准确
-9. 检查本轮没有新增 Tag
+1. 使用明确文件白名单暂存（禁止 `git add .` 和 `git add -A`）
+2. 检查 `git diff --cached`，确认无 `.env` 等 Secret 文件
+3. 检查 `git diff` 和新增文件
+4. 执行 `python scripts/check_repository_safety.py`
+5. 检查 docs 文件名全部为英文
+6. 检查没有提前实现后续轮次内容
+7. 更新 `CHANGELOG.md`
+8. 更新 `docs/09_context_handoff.md`
+9. 检查 Commit 标题准确
+10. 检查本轮没有新增 Tag
 
 ---
 
@@ -182,7 +183,92 @@ Tag 名称的描述部分必须全部使用中文，禁止使用英文描述。
 - 真实业务数据
 - `.env` 文件
 
-## 八、Conda 开发环境
+## 八、Secret 与 API Key 绝对规则
+
+### 1. Secret 永不进入仓库
+
+永远禁止提交或上传：
+
+- `.env`、`.env.local`、`.env.development`、`.env.production` 等真实环境文件
+- API Key、Token、密码、Client Secret
+- OAuth Refresh Token、Authorization Header、Bearer Token
+- Cookie 和 Session、证书私钥、云服务凭据
+- `.har` 文件、网络抓包、HTTP Dump、Debug 响应转储
+- Smok 输出、Trace 日志、真实 Prompt 全文、真实模型原始响应
+- 真实业务数据、Power BI 导出文件（.pbix）、数据库文件、生成报表
+- 用户私人工作资料、截图包含的 Secret
+
+`.env.example` 是唯一允许提交的环境模板，只能包含空值、公开默认值或明显占位符。
+
+### 2. Claude 不得读取 Secret
+
+Claude **只能**：
+- 检查 `.env` 是否存在
+- 检查 `.env` 是否被 Git 忽略
+- 检查 `.env` 是否被 Git 跟踪
+
+Claude **不得**：
+- 打开、读取、搜索或总结 `.env` 文件内容
+- 输出任何环境变量真实值
+- 要求用户把 Key 发进对话
+- 将 Key 复制到 Prompt、代码、测试、文档、日志或截图
+- 使用调试命令打印 Secret（如 `echo $VAR`、`printenv`、`set`）
+
+### 3. API Key 只能后端运行时使用
+
+DeepSeek API Key 只能：
+- 由后端 `Settings` 以 `SecretStr` 或等价 Secret 类型读取
+- 在后端运行时通过 HTTPS Authorization Header 发送给 DeepSeek 官方 API
+
+除上述运行时鉴权用途外，Key 不得进入任何：
+- GitHub 仓库、Git 历史、Issue、PR
+- CI 日志、Artifact、云端文档
+- Vercel/Netlify 等前端配置
+- 浏览器、前端 Bundle、LocalStorage、SessionStorage、Cookie
+- HTML、JavaScript、Source Map
+- 日志、Trace、报表、截图、测试 Fixture、Golden Case
+
+### 4. 前端禁止持有 Provider Secret
+
+以下名称或同类形式禁止在前端源码、构建产物、环境变量中出现：
+
+```
+VITE_DEEPSEEK_API_KEY
+REACT_APP_DEEPSEEK_API_KEY
+NEXT_PUBLIC_DEEPSEEK_API_KEY
+PUBLIC_DEEPSEEK_API_KEY
+NUXT_PUBLIC_DEEPSEEK_API_KEY
+```
+
+前端只能调用 PowerBIAgent 后端接口。前端禁止：直接请求 DeepSeek API、构造 DeepSeek Authorization Header、接触任何模型 Provider API Key。
+
+### 5. 日志与测试禁止泄漏
+
+禁止将以下内容写入日志、Trace、测试 Fixture、Snapshot 或报告：
+- API Key、Authorization Header、完整请求 Header
+- `.env` 内容、真实 Prompt 全文、真实模型原始响应
+- 真实业务数据、真实用户问题、HTTP 抓包和 HAR 文件
+
+允许记录的只有脱敏元数据：
+```
+provider=deepseek
+model=deepseek-chat
+status_code=200
+prompt_tokens=10
+completion_tokens=5
+error_type=authentication_error
+```
+
+### 6. 提交前安全检查
+
+- 禁止默认使用 `git add .` 或 `git add -A`
+- 每轮必须使用明确文件白名单暂存
+- 暂存后必须检查 `git diff --cached`
+- Commit 前必须执行 `scripts/check_repository_safety.py`
+- Push 前必须确认 `.env` 未被跟踪和暂存
+- Push 成功才算本轮远端交付完成
+
+## 九、Conda 开发环境
 
 - 本机 Conda 安装目录：`D:\Conda`
 - 项目 Conda 环境名称：`PBIAgent`
@@ -192,7 +278,7 @@ Tag 名称的描述部分必须全部使用中文，禁止使用英文描述。
 - 不在 base 环境安装项目依赖
 - 不在业务代码中硬编码 Conda 路径
 
-## 九、项目目录结构
+## 十、项目目录结构
 
 ```
 PowerBIAgent/
@@ -237,7 +323,7 @@ PowerBIAgent/
 │       └── fixtures/
 ```
 
-## 十、文档来源优先级
+## 十一、文档来源优先级
 
 当文档内容存在冲突时，按以下优先级处理：
 
@@ -256,4 +342,4 @@ PowerBIAgent/
 
 ---
 
-*最后更新：2026-07-31 | M0.4 项目骨架与阶段收尾*
+*最后更新：2026-07-31 | M1.0.2 密钥与仓库安全规则固化*

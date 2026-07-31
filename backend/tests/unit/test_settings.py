@@ -133,7 +133,11 @@ class TestSettingsNoSecretLeak:
 
     def test_default_no_api_key(self):
         settings = Settings()
-        assert settings.deepseek_api_key is None
+        # 未设置或为空均视为无 Key
+        assert (
+            settings.deepseek_api_key is None
+            or settings.deepseek_api_key.get_secret_value() == ""
+        )
 
 
 class TestSettingsRealMode:
