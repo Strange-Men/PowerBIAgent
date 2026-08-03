@@ -618,7 +618,7 @@ class TestSmokeIntentExclusion:
         import inspect
         src = inspect.getsource(sm._run_case_a)
         assert "DeepSeekReportSpecService" not in src
-        assert "called_answer" in src
+        assert "DeepSeekAnswerService" in src
 
     def test_report_case_does_not_call_answer_service(self):
         """_run_case_b 不调用 DeepSeekAnswerService"""
@@ -626,16 +626,25 @@ class TestSmokeIntentExclusion:
         import inspect
         src = inspect.getsource(sm._run_case_b)
         assert "DeepSeekAnswerService" not in src
-        assert "called_spec" in src
+        assert "DeepSeekReportSpecService" in src
 
     def test_smoke_tracks_mutual_exclusion_flags(self):
-        """Smoke 输出包含 called_answer 和 called_spec 互斥标记"""
+        """Smoke 输出包含 answer_repairs 和 spec_repairs 互斥标记"""
         from backend.app.answer import deepseek_answer_report_smoke as sm
         import inspect
         src_a = inspect.getsource(sm._run_case_a)
         src_b = inspect.getsource(sm._run_case_b)
-        assert '"called_answer"' in src_a
-        assert '"called_spec"' in src_b
+        assert '"answer_repairs"' in src_a
+        assert '"spec_repairs"' in src_b
+
+    def test_smoke_case_b_uses_effective_template(self):
+        """_run_case_b 使用 effective_template 机制而非硬编码"""
+        from backend.app.answer import deepseek_answer_report_smoke as sm
+        import inspect
+        src = inspect.getsource(sm._run_case_b)
+        assert "effective_template" in src
+        assert "qp_requested_template" in src
+        assert "template_consistent" in src
 
 
 # ═══════════════════════════════════════════════
@@ -963,11 +972,16 @@ class TestDiagnosticFields:
         assert "真实 DeepSeek" in src
 
     def test_smoke_output_no_secret_leak(self):
-        """Smoke main 的 safe_fields 不含敏感字段"""
+        """Smoke main 的安全输出不含敏感字段"""
         from backend.app.answer.deepseek_answer_report_smoke import main as smoke_main
         import inspect
         src = inspect.getsource(smoke_main)
-        # 确认 safe_fields 列表存在且不含敏感 key
-        assert "safe_fields" in src
-        # case_a/case_b 内部的脱敏子字段由各自 case 函数控制
+        # 确认安全输出结构存在且不含敏感 key
+        assert "safe_output" in src
         assert '"success"' in src
+        assert '"case_a"' in src
+        assert '"case_b"' in src
+        # 不应泄露 DAX、Prompt、Secret
+        assert '"dax"' not in src.lower() or '"dax_sha"' in src
+        assert "secret" not in src.lower()
+        assert "api_key" not in src.lower()

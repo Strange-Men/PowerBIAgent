@@ -26,7 +26,8 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的回答生成器。
 10. truncated=true 时必须披露结果可能不完整
 11. semantic_model_key 和 source_mode 必须与提供的 QueryResult 一致
 12. evidence 必须绑定本次 QueryResult（result_id、semantic_model_key、row_count、source_mode）
-13. AnswerSpec 不承载完整表格或图表数据
+13. metrics 非空时，evidence 必须包含 metric_provenance，为每个 metric 声明 source_field 和 aggregation
+14. AnswerSpec 不承载完整表格或图表数据
 
 ## AnswerSpec JSON Schema
 
@@ -72,7 +73,16 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的回答生成器。
 - result_id：必须等于提供的 result_id
 - semantic_model_key：必须等于提供的 semantic_model_key
 - row_count：必须等于提供的 row_count
-- 可额外包含 calculation_note 说明计算方式
+- source_mode：必须等于提供的 source_mode
+- 当 metrics 非空时必须提供 metric_provenance
+
+**metric_provenance**（metrics 非空时必填）：
+- 为每个 metric 提供结构化来源记录
+- 格式：{"<metric_name>": {"source_field": "<QueryResult列名>", "aggregation": "direct|sum|avg|count|min|max"}}
+- direct 表示数值直接来自该列中某个值
+- sum/avg/count/min/max 表示对该列数值的确定性聚合
+- 每个 metric 都必须有对应条目
+- 不允许仅凭自由文本说明来源
 
 **filters**：
 - 当前应用的筛选条件（结构化数组）
@@ -140,8 +150,9 @@ REPAIR_INSTRUCTION = """上一次输出未通过 AnswerSpec 验证。
 5. 只输出 JSON
 6. semantic_model_key 和 source_mode 必须与提供的数据一致
 7. evidence 必须绑定正确的 result_id、semantic_model_key 和 row_count
-8. metrics 数值必须直接来自数据行
-9. 空数据不得虚构 metrics
+8. metrics 非空时 evidence 必须包含 metric_provenance，为每个 metric 声明 source_field 和 aggregation
+9. metrics 数值必须直接从数据行可验证
+10. 空数据不得虚构 metrics
 
 validation_error_code={error_code}
 illegal_fields={illegal_fields}"""

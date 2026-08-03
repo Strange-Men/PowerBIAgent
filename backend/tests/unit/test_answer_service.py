@@ -794,14 +794,24 @@ class TestMetricsTraceability:
 
     @pytest.mark.asyncio
     async def test_fabricated_metric_rejected(self):
-        """虚构指标被拒绝"""
+        """虚构指标被拒绝 — metric_provenance 值不匹配"""
         provider = FakeProvider(is_mock=False)
-        # metrics 包含无法追溯到 QueryResult 的值
+        # metrics 提供 metric_provenance 但值无法匹配
         provider.enqueue_success(_make_answer(
-            metrics={"GhostMetric": 99999},
+            answer="华南销售额最高。",
+            metrics={"TotalSales": 99999},
+            evidence={
+                "result_id": "qr_test_001",
+                "semantic_model_key": "mock_sales_model",
+                "row_count": 3,
+                "source_mode": "mock",
+                "metric_provenance": {
+                    "TotalSales": {"source_field": "SalesAmount", "aggregation": "sum"},
+                },
+            },
         ))
         svc = _make_svc(provider, max_repairs=0)
-        with pytest.raises(AnswerGenerationError, match="untraceable"):
+        with pytest.raises(AnswerGenerationError, match="mismatch"):
             await svc.generate(
                 "测试", _make_intent(), _make_query_plan(), _make_query_result(), _make_schema(),
             )

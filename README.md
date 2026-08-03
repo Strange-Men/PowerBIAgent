@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M1.4 真实 Answer 与 ReportSpec 生成** — DeepSeekAnswerService 和 DeepSeekReportSpecService 已完成。真实 DeepSeek Smoke 通过（双案例 + Mock QueryResult）。真实 Power BI 属 M2。
+**M1.4.1 真实性验证与Smoke验收修复** — Answer/Report/KPI/Metrics/Table 真实性验证加固，QueryPlan 模板 Key 契约固化，模板冲突与权限边界修复，Smoke 成功判定与 Token 统计加固。真实 DeepSeek Smoke 通过（双案例 + Mock QueryResult）。真实 Power BI 属 M2。
 
-> **Mock 模式完整可用。** DeepSeek Provider、Intent、QueryPlan、DAX、Answer 和 ReportSpec Service 已就绪。Chat 真实链路尚未完整接通（待 M1.5）。QueryResult 仍为 Mock。
+> **Mock 模式完整可用。** DeepSeek Provider、Intent、QueryPlan、DAX、Answer 和 ReportSpec Service 已就绪。Chat 真实链路尚未完整接通（待 M1.5）。QueryResult 仍为 Mock。当前版本 M1.4.1。
 
 ### 幂等与并发特性
 

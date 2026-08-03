@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M1.4 已完成，M1.5 未开始
+> **状态：** M1.4.1 已完成，M1.5 未开始
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -27,7 +27,8 @@ M1 真实 DeepSeek 接入
   M1.3 真实QueryPlan与DAX生成       ✅ 已完成 (441ca45)
   M1.3.1 QueryPlan与DAX验证修复     ✅ 已完成 (6647760)
   M1.3.2 前端视觉与结构化回答契约固化  ✅ 已完成 (db0a7e8)
-  M1.4 真实Answer与ReportSpec生成   ⬜
+  M1.4 真实Answer与ReportSpec生成   ✅ 已完成
+  M1.4.1 真实性验证与Smoke验收修复    ✅ 已完成
   M1.5 全链路验收与封板              ⬜
 
 MVP 功能阶段 (后续)
@@ -209,6 +210,25 @@ MVP 功能阶段 (后续)
 - 生成结构化 ReportSpec
 - Report Renderer 仍使用现有 Mock 实现
 - 校验回答、证据、模型和 source_mode 一致性
+
+---
+
+### M1.4.1｜真实性验证与Smoke验收修复
+
+**状态：** ✅ 已完成
+
+**完成内容：**
+- KPI 列顺序 Bug 修复（set → 有序列映射）
+- Answer semantic_model_key 强制非空绑定
+- Report data_source 强制非空绑定
+- KPI.value=None/bool 拒绝
+- Metrics metric_provenance 结构化来源契约
+- 模板冲突与空权限集合正确拒绝
+- Table 类型严格比较（bool/int/float/str/null 区分）
+- Smoke 成功条件加固与 Token 统计修复
+- Settings.is_real_ready 注释更新
+
+**本轮不创建 Tag。不进入 M1.5。**
 
 ---
 

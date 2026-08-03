@@ -105,6 +105,14 @@ class ValidationService:
         if plan.semantic_model_key not in self._allowed_models:
             errors.append(f"Model '{plan.semantic_model_key}' not allowed")
 
+        # requested_template 白名单校验
+        if plan.requested_template is not None:
+            if plan.requested_template not in self._allowed_templates:
+                errors.append(
+                    "query_plan_template_not_allowed: requested_template"
+                    " 不在模板白名单中"
+                )
+
         return ValidationResult(valid=len(errors) == 0, errors=errors)
 
     # -----------------------------------------------------------------
@@ -237,11 +245,16 @@ class ValidationService:
         if not answer.answer or not answer.answer.strip():
             errors.append("answer_empty: answer 字段为空")
 
-        # 2. semantic_model_key 一致
-        if answer.semantic_model_key and answer.semantic_model_key != result.semantic_model_key:
+        # 2. semantic_model_key 一致性 — 必须非空且匹配
+        if not answer.semantic_model_key:
+            errors.append(
+                "answer_model_key_empty: Answer semantic_model_key 为空，"
+                "必须等于 QueryResult.semantic_model_key"
+            )
+        elif answer.semantic_model_key != result.semantic_model_key:
             errors.append(
                 f"answer_model_key_mismatch: Answer semantic_model_key "
-                f"'{answer.semantic_model_key}' != QueryResult '{result.semantic_model_key}'"
+                f"与 QueryResult 不一致"
             )
 
         # 3. source_mode 一致
@@ -381,81 +394,126 @@ class ValidationService:
 
         return errors
 
-    # ── Metrics 可追溯验证（MVP 最小规则） ──
+    # ── Metrics 可追溯验证（metric_provenance 结构化契约） ──
 
     @staticmethod
     def _validate_answer_metrics_strict(answer: AnswerSpec, result: QueryResult) -> list[str]:
-        """验证 metrics 可追溯到 QueryResult（严格模式）
+        """验证 metrics 可追溯到 QueryResult（metric_provenance 结构化契约）
 
-        MVP 最小规则：
-        1. 直接来源于 QueryResult（列名匹配）；或
-        2. 能由确定性后台计算复现（简单聚合：sum/count/avg）
-        3. evidence 中记录了来源字段或计算规则
-        4. 无法证明来源的指标拒绝
+        当 metrics 非空时，evidence 必须包含 metric_provenance。
+        每个 metric 必须有对应条目：
+        - source_field 必须在 QueryResult.columns 中
+        - aggregation 必须是 direct|sum|avg|count|min|max 之一
+        - 值必须根据 source_field 和 aggregation 确定性复现
         """
         errors: list[str] = []
         if not answer.metrics:
             return errors
 
-        # 从 QueryResult 提取所有可用数值
-        result_values: dict[str, list[float]] = {}
-        col_indices: dict[str, int] = {}
-        for i, col in enumerate(result.columns):
-            col_indices[col] = i
-            col_values: list[float] = []
-            for row in result.rows:
+        # 提取 QueryResult 列数据（数值 + 非空计数）
+        col_values: dict[str, list[float]] = {}
+        col_non_null: dict[str, int] = {}
+        for row in result.rows:
+            for i, col_name in enumerate(result.columns):
                 if i < len(row):
+                    val = row[i]
+                    if val is not None:
+                        col_non_null[col_name] = col_non_null.get(col_name, 0) + 1
                     try:
-                        col_values.append(float(row[i]))
+                        col_values.setdefault(col_name, []).append(float(val))
                     except (ValueError, TypeError):
                         pass
-            if col_values:
-                result_values[col] = col_values
+
+        ev = answer.evidence or {}
+        provenance = ev.get("metric_provenance")
+
+        if not provenance or not isinstance(provenance, dict):
+            errors.append(
+                "answer_metrics_no_provenance: metrics 非空但 evidence 缺少 "
+                "metric_provenance 结构化来源"
+            )
+            return errors
 
         for metric_name, metric_value in answer.metrics.items():
-            if not isinstance(metric_value, (int, float)):
+            if not isinstance(metric_value, (int, float)) or isinstance(metric_value, bool):
                 errors.append(
                     f"answer_metric_non_numeric: metrics['{metric_name}'] "
-                    f"不是数值类型"
+                    f"不是合法数值"
                 )
                 continue
 
-            # 规则 1：直接来源于 QueryResult 列
-            if metric_name in result_values:
-                vals = result_values[metric_name]
-                if abs(metric_value - sum(vals)) < 0.01:
-                    continue  # sum 匹配
-                if len(vals) > 0 and abs(metric_value - (sum(vals) / len(vals))) < 0.01:
-                    continue  # avg 匹配
-                if abs(metric_value - len(vals)) < 0.01:
-                    continue  # count 匹配
-
-            # 规则 2：检查 evidence 是否记录了来源字段或计算规则
-            ev = answer.evidence or {}
-            source_field = ev.get("source_field") or ev.get("calculation_note") or ev.get("derived_from")
-            if source_field:
-                continue  # evidence 中注明了来源
-
-            # 规则 3：检查所有 QueryResult 列的聚合值
-            found = False
-            for col_name, vals in result_values.items():
-                if abs(metric_value - sum(vals)) < 0.01:
-                    found = True
-                    break
-                if len(vals) > 0 and abs(metric_value - (sum(vals) / len(vals))) < 0.01:
-                    found = True
-                    break
-                if abs(metric_value - len(vals)) < 0.01:
-                    found = True
-                    break
-            if found:
+            prov = provenance.get(metric_name)
+            if not prov or not isinstance(prov, dict):
+                errors.append(
+                    f"answer_metric_missing_provenance: metrics['{metric_name}'] "
+                    f"缺少 metric_provenance 来源条目"
+                )
                 continue
 
-            # 无法追溯
-            errors.append(
-                f"answer_metric_untraceable: metrics['{metric_name}']={metric_value} "
-                f"无法追溯到 QueryResult 列 {list(result_values.keys())}"
-            )
+            source_field = prov.get("source_field", "")
+            aggregation = prov.get("aggregation", "")
+
+            if not source_field:
+                errors.append(
+                    f"answer_metric_provenance_no_source_field: "
+                    f"metrics['{metric_name}'] 的 metric_provenance 缺少 source_field"
+                )
+                continue
+
+            if source_field not in result.columns:
+                errors.append(
+                    f"answer_metric_provenance_field_not_found: "
+                    f"metrics['{metric_name}'] source_field '{source_field}' "
+                    f"不在 QueryResult.columns 中"
+                )
+                continue
+
+            if aggregation not in _ALLOWED_AGGREGATIONS:
+                errors.append(
+                    f"answer_metric_provenance_aggregation_invalid: "
+                    f"metrics['{metric_name}'] aggregation '{aggregation}' "
+                    f"不在允许集合 {_ALLOWED_AGGREGATIONS}"
+                )
+                continue
+
+            vals = col_values.get(source_field, [])
+            # count 使用非空行数（支持字符串列），其他聚合使用数值
+            if aggregation == "count":
+                non_null = col_non_null.get(source_field, 0)
+                expected = float(non_null)
+            else:
+                expected = _compute_aggregation(vals, aggregation)
+            if expected is None:
+                if aggregation != "direct":
+                    errors.append(
+                        f"answer_metric_provenance_no_data: "
+                        f"metrics['{metric_name}'] source_field '{source_field}' "
+                        f"无可用数值数据"
+                    )
+                    continue
+                # direct mode with no vals — can't match
+                errors.append(
+                    f"answer_metric_provenance_unverifiable: "
+                    f"metrics['{metric_name}'] source_field '{source_field}' "
+                    f"无数据，无法验证"
+                )
+                continue
+
+            if isinstance(expected, list):
+                # direct: must match one of the values
+                if not any(abs(metric_value - v) < _NUMERIC_TOLERANCE for v in expected):
+                    errors.append(
+                        f"answer_metric_provenance_value_mismatch: "
+                        f"metrics['{metric_name}']={metric_value} 不匹配 "
+                        f"'{source_field}' 列中任何数值"
+                    )
+            else:
+                if abs(metric_value - expected) > _NUMERIC_TOLERANCE:
+                    errors.append(
+                        f"answer_metric_provenance_value_mismatch: "
+                        f"metrics['{metric_name}']={metric_value} "
+                        f"!= {aggregation}({source_field})={expected}"
+                    )
 
         return errors
 
@@ -561,10 +619,15 @@ class ValidationService:
                 f"report_template_not_allowed: template_key '{report.template_key}' "
                 f"不在白名单 {self._allowed_templates}"
             )
-        if report.data_source and report.data_source != query_result.semantic_model_key:
+        if not report.data_source:
             errors.append(
-                f"report_data_source_mismatch: data_source '{report.data_source}' "
-                f"!= QueryResult '{query_result.semantic_model_key}'"
+                "report_data_source_empty: data_source 为空，"
+                "必须等于 QueryResult.semantic_model_key"
+            )
+        elif report.data_source != query_result.semantic_model_key:
+            errors.append(
+                "report_data_source_mismatch: data_source 与 "
+                "QueryResult.semantic_model_key 不一致"
             )
         if report.source_mode != query_result.source_mode:
             errors.append(
@@ -572,21 +635,20 @@ class ValidationService:
                 f"'{report.source_mode}' != '{query_result.source_mode}'"
             )
 
-        result_columns_set = set(query_result.columns)
-        result_columns_list = list(query_result.columns)
+        result_columns_ordered = list(query_result.columns)
         result_rows = query_result.rows
         is_empty = query_result.row_count == 0 or not result_rows
 
         # 2. KPI 验证
-        kpi_errors = self._validate_kpis_strict(report.kpis, result_columns_set, result_rows, is_empty)
+        kpi_errors = self._validate_kpis_strict(report.kpis, result_columns_ordered, result_rows, is_empty)
         errors.extend(kpi_errors)
 
         # 3. Chart 验证
-        chart_errors = self._validate_charts_strict(report.charts, result_columns_set, is_empty)
+        chart_errors = self._validate_charts_strict(report.charts, set(query_result.columns), is_empty)
         errors.extend(chart_errors)
 
         # 4. Table 验证（整行投影）
-        table_errors = self._validate_tables_strict(report.tables, result_columns_list, result_rows, is_empty)
+        table_errors = self._validate_tables_strict(report.tables, result_columns_ordered, result_rows, is_empty)
         errors.extend(table_errors)
 
         # 5. 截断披露
@@ -616,7 +678,7 @@ class ValidationService:
 
     @staticmethod
     def _validate_kpis_strict(
-        kpis: list, result_columns: set[str], result_rows: list[list], is_empty: bool,
+        kpis: list, result_columns: list[str], result_rows: list[list], is_empty: bool,
     ) -> list[str]:
         errors: list[str] = []
         if not kpis:
@@ -625,16 +687,23 @@ class ValidationService:
             errors.append("report_empty_has_kpis: 空结果不得返回 KPI")
             return errors
 
-        # 提取可用数值索引
+        # 构建 column_name → index 映射（使用有序列保证索引稳定）
+        col_index: dict[str, int] = {c: i for i, c in enumerate(result_columns)}
+        columns_set = set(result_columns)
+
+        # 提取每列可用数值和非空计数
         col_values: dict[str, list[float]] = {}
+        col_non_null_count: dict[str, int] = {}
         for row in result_rows:
-            for j, col_name in enumerate(result_columns):
-                if j < len(row):
+            for col_name, idx in col_index.items():
+                if idx < len(row):
+                    val = row[idx]
+                    if val is not None:
+                        col_non_null_count[col_name] = col_non_null_count.get(col_name, 0) + 1
                     try:
-                        v = float(row[j])
+                        col_values.setdefault(col_name, []).append(float(val))
                     except (ValueError, TypeError):
-                        continue
-                    col_values.setdefault(col_name, []).append(v)
+                        pass
 
         for kpi in kpis:
             field = getattr(kpi, "field", "")
@@ -644,7 +713,7 @@ class ValidationService:
             if not field:
                 errors.append(f"report_kpi_field_empty: KPI '{name}' field 为空")
                 continue
-            if field not in result_columns:
+            if field not in columns_set:
                 errors.append(
                     f"report_kpi_field_not_found: KPI '{name}' field "
                     f"'{field}' 不在 QueryResult.columns 中"
@@ -653,6 +722,16 @@ class ValidationService:
 
             # 值真实性验证
             if value is None:
+                errors.append(
+                    f"report_kpi_value_none: KPI '{name}' value 为 None，"
+                    f"必须提供可验证数值"
+                )
+                continue
+            if isinstance(value, bool):
+                errors.append(
+                    f"report_kpi_value_bool: KPI '{name}' value 为 bool，"
+                    f"不得作为合法数值"
+                )
                 continue
             if not isinstance(value, (int, float)):
                 errors.append(
@@ -661,29 +740,34 @@ class ValidationService:
                 continue
 
             vals = col_values.get(field, [])
-            if not vals:
-                errors.append(
-                    f"report_kpi_value_unverifiable: KPI '{name}' field "
-                    f"'{field}' 在 QueryResult 中无数值数据"
-                )
-                continue
+            non_null_count = col_non_null_count.get(field, 0)
 
             # 直接匹配或聚合匹配
             matched = False
-            if any(abs(value - v) < 0.01 for v in vals):
+            if vals and any(abs(value - v) < _NUMERIC_TOLERANCE for v in vals):
                 matched = True
-            elif abs(value - sum(vals)) < 0.01:
+            elif vals and abs(value - sum(vals)) < _NUMERIC_TOLERANCE:
                 matched = True
-            elif len(vals) > 0 and abs(value - (sum(vals) / len(vals))) < 0.01:
+            elif vals and len(vals) > 0 and abs(value - (sum(vals) / len(vals))) < _NUMERIC_TOLERANCE:
                 matched = True
-            elif abs(value - len(vals)) < 0.01:
+            elif vals and abs(value - len(vals)) < _NUMERIC_TOLERANCE:
                 matched = True
+            # count 匹配非空行数（适用于字符串列，无需 numeric vals）
+            if not matched and non_null_count > 0:
+                if abs(value - non_null_count) < _NUMERIC_TOLERANCE:
+                    matched = True
 
             if not matched:
-                errors.append(
-                    f"report_kpi_value_unverifiable: KPI '{name}' value={value} "
-                    f"无法由 field '{field}' 的数据复现"
-                )
+                if not vals and non_null_count == 0:
+                    errors.append(
+                        f"report_kpi_value_unverifiable: KPI '{name}' field "
+                        f"'{field}' 在 QueryResult 中无数据"
+                    )
+                else:
+                    errors.append(
+                        f"report_kpi_value_unverifiable: KPI '{name}' value={value} "
+                        f"无法由 field '{field}' 的数据复现"
+                    )
 
         return errors
 
@@ -759,7 +843,10 @@ class ValidationService:
 
             # 3. 将 QueryResult 原始行投影为元组
             def _project(row: list) -> tuple:
-                return tuple(_safe_repr(row[i]) if i < len(row) else _NULL_SENTINEL for i in proj_indices)
+                return tuple(
+                    _safe_repr(row[i]) if i < len(row) else ("null", None)
+                    for i in proj_indices
+                )
 
             source_rows: list[tuple] = [_project(r) for r in result_rows]
 
@@ -833,18 +920,52 @@ class ValidationService:
 # ── 模块级辅助（Table 行投影验证） ──
 
 _NULL_SENTINEL = object()
+_NUMERIC_TOLERANCE = 0.01
+_ALLOWED_AGGREGATIONS = {"direct", "sum", "avg", "count", "min", "max"}
+
+
+def _compute_aggregation(values: list[float], aggregation: str) -> float | list[float] | None:
+    """根据聚合类型从数值列表计算期望值。
+
+    direct 返回原列表（匹配任一值）；count 返回非空值数量；
+    其他聚合返回标量或 None（无数据时）。
+    """
+    if not values:
+        if aggregation == "count":
+            return 0.0
+        return None
+    if aggregation == "direct":
+        return values
+    if aggregation == "sum":
+        return sum(values)
+    if aggregation == "avg":
+        return sum(values) / len(values)
+    if aggregation == "count":
+        return float(len(values))
+    if aggregation == "min":
+        return min(values)
+    if aggregation == "max":
+        return max(values)
+    return None
 
 
 def _safe_repr(value: object) -> object:
-    """类型安全的规范化表示：保留 int/float/bool/None 类型。
+    """类型安全的规范化表示：返回 (type_tag, normalized_value) 元组。
 
-    规则：
-    - None → _NULL_SENTINEL（避免与字符串 "None" 混淆）
-    - int/float/bool → 保持原类型（避免与字符串 "1"/"True" 混淆）
-    - 其他 → str(value)
+    类型标签区分：None、bool、int、float、string、other。
+    确保 True != 1、1 != 1.0、1 != "1"、None != "None"。
     """
     if value is None:
-        return _NULL_SENTINEL
-    if isinstance(value, (int, float, bool)):
-        return value
-    return str(value)
+        return ("null", None)
+    if isinstance(value, bool):
+        return ("bool", int(value))
+    if isinstance(value, int):
+        return ("int", value)
+    if isinstance(value, float):
+        return ("float", value)
+    if isinstance(value, str):
+        return ("str", value)
+    try:
+        return ("other", str(value))
+    except Exception:
+        return ("other", "<unrepresentable>")

@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M1.4", frozen=True)
+    version: str = Field(default="M1.4.1", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -110,12 +110,13 @@ class Settings(BaseSettings):
     def is_real_ready(self) -> bool:
         """Real 模式是否具备运行条件
 
-        M1.3：DeepSeek Provider、Intent、QueryPlan、DAX 已实现，
-        但真实 Answer/ReportSpec 和完整 Chat 链路尚未完成。
+        M1.4.1：Intent、QueryPlan、DAX、Answer、ReportSpec 均已实现。
+        但完整 DeepSeek Chat Pipeline 仍待 M1.5 验收封板。
+        真实 Power BI 仍待 M2。
         即使配置了 API Key，Chat 接口仍返回 503。
         """
         if self.llm_mode == LLMMode.DEEPSEEK:
-            return False  # M1.2+ 真实意图识别未完成
+            return False  # Chat Pipeline 待 M1.5 封板
         if self.powerbi_mode == PowerBIMode.REMOTE_MCP:
             return False  # M2 前不可用
         return True

@@ -28,6 +28,7 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 11. 明确指定指标（measures）、维度（dimensions）、筛选（filters）、时间范围（time_range）、排序（sort）、Top N（top_n）
 12. 不确定的字段不要猜测，宁可少选也不要虚构
 13. 只输出 JSON，不输出任何其他内容
+14. requested_template 只能输出模板内部 Key 或 null，禁止中文或自然语言
 
 ## QueryPlan JSON Schema
 
@@ -60,7 +61,12 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 - sort：排序方式（如 "desc"、"asc"），无明确排序则为 null
 - top_n：Top N 限制（正整数），无限制则为 null
 - comparison_mode：对比模式，无对比则为 null
-- requested_template：请求的报表模板名称，非报表请求则为 null
+- requested_template：请求的报表模板内部 Key，只能输出以下值或 null：
+  * "sales_weekly" — 销售周报、周报、销售经营周报
+  * "satisfaction" — 满意度报告
+  * "operating_overview" — 经营概览、经营总览
+  * null — 非报表请求
+  * 严禁输出中文名称、标题、或任何不在上述列表的值
 - inherited_context：从已提交上下文继承的摘要（可选）
 
 ### FilterSpec 结构
@@ -186,10 +192,12 @@ REPAIR_VALIDATION_INSTRUCTION = """上一次生成的 QueryPlan 未通过 Schema
 3. measures 只能使用 Schema 中真实存在的度量值或数值列
 4. dimensions 只能使用 Schema 中真实存在的非隐藏列
 5. filters.field 只能使用 Schema 中真实存在的列或度量值
-6. 不得虚构任何字段
-7. 不带 Markdown 代码块标记
-8. 不带解释性文本
-9. 只输出 JSON"""
+6. requested_template 只能输出 "sales_weekly"、"satisfaction"、"operating_overview" 或 null
+7. requested_template 严禁中文名称、标题或自然语言，只能使用内部 Key
+8. 不得虚构任何字段
+9. 不带 Markdown 代码块标记
+10. 不带解释性文本
+11. 只输出 JSON"""
 
 
 # ---------------------------------------------------------------------------

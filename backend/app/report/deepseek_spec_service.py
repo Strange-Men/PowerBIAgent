@@ -82,11 +82,26 @@ class DeepSeekReportSpecService:
         if query_result.source_mode != "mock":
             raise ReportSpecGenerationError("M1.4 仅支持 mock QueryResult")
 
-        allowed = allowed_templates or _DEFAULT_ALLOWED_TEMPLATES
-        effective_template = template_key or query_plan.requested_template or "sales_weekly"
+        # 模板权限边界
+        # None → 使用默认白名单；空集合 → 无权限
+        if allowed_templates is None:
+            allowed = _DEFAULT_ALLOWED_TEMPLATES
+        else:
+            allowed = allowed_templates
+
+        # 模板冲突检测：显式 template_key 与 query_plan.requested_template
+        # 两者都非空但不一致时，LLM 调用前拒绝
+        explicit_template = template_key.strip() if template_key else ""
+        requested_template = (query_plan.requested_template or "").strip()
+        if explicit_template and requested_template and explicit_template != requested_template:
+            raise ReportSpecGenerationError(
+                "模板冲突（report_spec_template_conflict）"
+            )
+
+        effective_template = explicit_template or requested_template or "sales_weekly"
         if effective_template not in allowed:
             raise ReportSpecGenerationError(
-                f"模板 '{effective_template}' 不在允许白名单中"
+                "模板不在允许白名单中"
                 "（report_spec_template_not_allowed）"
             )
 

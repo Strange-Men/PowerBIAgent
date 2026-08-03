@@ -1,5 +1,47 @@
 # CHANGELOG
 
+## [M1.4.1] — 2026-08-03
+
+### 真实性验证与Smoke验收修复
+
+**来源：** M1.4.1 修复轮次。
+
+**P0 修复：**
+- KPI 列顺序 Bug：`_validate_kpis_strict` 从 set 枚举改为有序列映射，确保列索引稳定
+- Answer `semantic_model_key` 强制非空绑定（空值拒绝）
+- Report `data_source` 强制非空绑定（空值拒绝）
+- KPI.value=None 和 bool 拒绝（不再静默通过）
+- Metrics 使用 `metric_provenance` 结构化来源契约（direct/sum/avg/count/min/max），旧自由文本 evidence 不再放行
+- QueryPlan `requested_template` 限制为三个内部 Key（sales_weekly/satisfaction/operating_overview）或 null，中文名称在 Prompt 中映射到内部 Key
+- 非法模板 Key 触发 QueryPlan 一次修复，Provider 最多调用 2 次
+- 模板冲突（显式模板与 QueryPlan 模板不一致）零次 ReportSpec 调用
+- 空模板权限集合正确拒绝所有模板（不错误回退默认）
+- Table 类型严格比较：区分 bool/int/float/string/null（True≠1, 1≠1.0, 1≠"1", None≠"None"）
+- Smoke 成功条件加固：所有关键条件参与判定，dax_safe/renderer_ok 失败时 success=false
+- Smoke Token 统计包含 Intent、QueryPlan、DAX、Answer/ReportSpec 全部阶段
+- `intent_repairs` 不再硬编码为 0，各阶段独立统计
+- Settings.is_real_ready 注释更新为 M1.4.1 当前边界
+
+**真实 DeepSeek Smoke 结果：**
+- 总体 success=true，model=deepseek-chat，total_tokens=8570
+- 数据问答：Answer repairs=0，evidence_bound=true，metrics_provenance_valid=true
+- 报表生成：ReportSpec repairs=0，qp_requested_template=sales_weekly，template_consistent=true
+- 使用真实 DeepSeek + 本地 Mock QueryResult，未调用真实 Power BI
+
+**测试结果：**
+- pytest：936 passed
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS（134 文件）
+
+**文档修改：**
+- Settings.version → M1.4.1
+- docs/05/07/08/09/11 + README + CHANGELOG 同步更新
+
+**Commit SHA：** 本轮提交
+**本轮 Tag：** 无
+
+---
+
 ## [M1.4] — 2026-08-03
 
 ### 真实 Answer 与 ReportSpec 生成

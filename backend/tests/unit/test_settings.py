@@ -31,9 +31,9 @@ class TestSettingsDefaults:
         settings = Settings()
         assert settings.app_name == "PowerBIAgent"
 
-    def test_version_is_m1_1(self):
+    def test_version_is_m1_4_1(self):
         settings = Settings()
-        assert settings.version == "M1.4"
+        assert settings.version == "M1.4.1"
 
     def test_host_default_localhost(self):
         settings = Settings()

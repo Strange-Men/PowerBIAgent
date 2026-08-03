@@ -268,7 +268,6 @@ class DeepSeekQueryPlanService:
 
         illegal_set: set[str] = set()
         for err in errors:
-            # 尝试匹配各种错误模式
             # "Model 'X' not in allowed list"
             m = re.search(r"Model '([^']+)'", err)
             if m:
@@ -295,6 +294,10 @@ class DeepSeekQueryPlanService:
                 if error_code == "query_plan_validation_failed":
                     error_code = "query_plan_filter_not_found"
                 illegal_set.add(m.group(1))
+                continue
+            # "query_plan_template_not_allowed"
+            if "query_plan_template_not_allowed" in err:
+                error_code = "query_plan_template_not_allowed"
                 continue
 
         illegal_list = sorted(illegal_set)[:_MAX_ILLEGAL_OBJECTS]
