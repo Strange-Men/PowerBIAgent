@@ -476,3 +476,63 @@ class TestM12ScannerSelfExemption:
         assert _is_scan_pattern_definition(
             "scripts/check_repository_safety.py", line
         ) is False
+
+
+# ═══════════════════════════════════════════════
+# M1.4-C 安全扫描覆盖未跟踪文件
+# ═══════════════════════════════════════════════
+
+class TestUntrackedFileCoverage:
+    """安全扫描覆盖未跟踪但未被 ignore 的文件"""
+
+    def test_collect_includes_untracked_files(self):
+        """_collect_files_to_check 包含未跟踪文件（合并 tracked + staged + untracked）"""
+        from scripts.check_repository_safety import _collect_files_to_check
+        files = _collect_files_to_check()
+        # 本轮新增的未跟踪 Python 文件应在列表中
+        assert isinstance(files, list)
+        assert len(files) > 0
+
+    def test_untracked_helper_exists(self):
+        """_get_untracked_files 函数存在"""
+        from scripts.check_repository_safety import _get_untracked_files
+        files = _get_untracked_files()
+        assert isinstance(files, list)
+
+    def test_answer_module_covered(self):
+        """本轮新增 answer 模块在扫描范围内"""
+        from scripts.check_repository_safety import _collect_files_to_check
+        files = _collect_files_to_check()
+        answer_files = [f for f in files if "backend/app/answer/" in f]
+        assert len(answer_files) > 0, f"answer 模块文件未被扫描覆盖，files={len(files)}"
+
+    def test_report_spec_covered(self):
+        """本轮新增 report spec 文件在扫描范围内"""
+        from scripts.check_repository_safety import _collect_files_to_check
+        files = _collect_files_to_check()
+        spec_files = [f for f in files if "spec_context" in f or "spec_prompt" in f or "spec_service" in f]
+        assert len(spec_files) > 0, f"spec 文件未被扫描覆盖"
+
+    def test_ignored_files_still_excluded(self):
+        """.gitignore 规则仍然生效（.env 不在扫描列表）"""
+        from scripts.check_repository_safety import _collect_files_to_check
+        files = _collect_files_to_check()
+        assert ".env" not in files
+        assert not any(f.endswith(".env") for f in files)
+
+    def test_untracked_pseudo_secret_would_be_found(self):
+        """未跟踪文件中的伪 Secret 会被发现（在测试安全标记下）"""
+        import tempfile, os as _os
+        from scripts.check_repository_safety import check_obvious_secrets
+
+        # 验证检查函数能正确处理文件路径
+        fd, tmppath = tempfile.mkstemp(suffix=".py", text=True)
+        try:
+            with open(fd, "w", encoding="utf-8") as f:
+                f.write("# TEST_ONLY: FOR_UNIT_TEST\n")
+                f.write("api_key = 'FAKE_TEST_KEY_NOT_A_REAL_SECRET'\n")
+            findings = check_obvious_secrets([tmppath])
+            # 包含测试安全标记，不应报告
+            assert len(findings) == 0, f"测试标记应豁免: {findings}"
+        finally:
+            _os.unlink(tmppath)

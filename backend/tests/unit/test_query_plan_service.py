@@ -679,6 +679,42 @@ class TestValidationServiceIntegration:
 # M1.3.1 Smoke KeyError 回归测试
 # ══════════════════════════════════════════════════════════════════
 
+class TestSmokeOutputWhitelist:
+    """Smoke 输出白名单：不输出 measures/dimensions/time_range/top_n/Prompt/DAX/Schema/Secret"""
+
+    def test_smoke_module_no_forbidden_assignments(self):
+        """Smoke 源码不包含对 result 的 measures/dimensions/time_range/top_n 赋值"""
+        from backend.app.query_plan import deepseek_query_dax_smoke as smoke_module
+        import inspect
+        source = inspect.getsource(smoke_module)
+        # 验证关键禁止字段不出现在 result dict 赋值中
+        forbidden_assignments = [
+            '["measures"]',
+            '["dimensions"]',
+            '["time_range"]',
+            '["top_n"]',
+        ]
+        for pattern in forbidden_assignments:
+            assert pattern not in source, f"Smoke 源码禁止包含 result{pattern} 赋值"
+
+    def test_smoke_uses_try_finally_for_provider(self):
+        """Smoke 使用 try/finally 恢复 Provider"""
+        from backend.app.query_plan import deepseek_query_dax_smoke as smoke_module
+        import inspect
+        source = inspect.getsource(smoke_module)
+        assert "finally:" in source
+        # 验证 provider.generate 在 finally 中恢复
+        assert "provider.generate = _original_generate" in source
+
+    def test_smoke_calls_real_intent_service(self):
+        """Smoke 调用真实 DeepSeekIntentService"""
+        from backend.app.query_plan import deepseek_query_dax_smoke as smoke_module
+        import inspect
+        source = inspect.getsource(smoke_module)
+        assert "DeepSeekIntentService" in source
+        assert "IntentSpec(" not in source or "#" not in source  # 不预构造 IntentSpec
+
+
 class TestSmokeKeyErrorRegression:
     """Smoke 中 registry.get('deepseek') 引发 KeyError 的回归测试"""
 
@@ -730,3 +766,81 @@ class TestSmokeKeyErrorRegression:
             assert result["success"] is False
             assert result["error"] == "deepseek_provider_not_registered"
             assert "reason" in result
+
+
+# ══════════════════════════════════════════════════════════════════
+# M1.4-A QueryPlan 模型 Key 权威性测试
+# ══════════════════════════════════════════════════════════════════
+
+class TestSemanticModelKeyAuthority:
+    """semantic_model_key 权威性校验"""
+
+    @pytest.mark.asyncio
+    async def test_matching_key_proceeds(self):
+        """semantic_model_key 与 schema.key 一致 → 正常执行"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_plan())
+        svc = _make_svc(provider)
+        result = await svc.generate(
+            "测试", _make_intent(), _make_schema(),
+            semantic_model_key="mock_sales_model",
+        )
+        assert result is not None
+        assert len(provider.calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_key_not_passed_uses_schema_key(self):
+        """未传 semantic_model_key → 使用 schema.key"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_plan())
+        svc = _make_svc(provider)
+        result = await svc.generate("测试", _make_intent(), _make_schema())
+        assert result is not None
+        assert len(provider.calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_mismatched_key_rejected_zero_calls(self):
+        """semantic_model_key 与 schema.key 不一致 → 拒绝，0 次 Provider 调用"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_plan())  # 不应被调用
+        svc = _make_svc(provider)
+        with pytest.raises(QueryPlanError, match="不一致"):
+            await svc.generate(
+                "测试", _make_intent(), _make_schema(),
+                semantic_model_key="wrong_key_xyz",
+            )
+        assert len(provider.calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_mismatched_key_error_sanitized(self):
+        """错误消息不包含调用方传入的原始 Key"""
+        provider = FakeProvider(is_mock=False)
+        svc = _make_svc(provider)
+        with pytest.raises(QueryPlanError) as exc_info:
+            await svc.generate(
+                "测试", _make_intent(), _make_schema(),
+                semantic_model_key="alien_model_xyz",
+            )
+        msg = str(exc_info.value)
+        # 不直接回显调用方传入的原始 Key
+        assert "alien_model_xyz" not in msg
+        # 包含稳定的错误代码
+        assert "query_plan_model_key_mismatch" in msg
+
+    @pytest.mark.asyncio
+    async def test_mismatched_key_error_has_stable_code(self):
+        """错误消息使用稳定错误代码，不含 Schema 内部信息"""
+        provider = FakeProvider(is_mock=False)
+        svc = _make_svc(provider)
+        with pytest.raises(QueryPlanError) as exc_info:
+            await svc.generate(
+                "测试", _make_intent(), _make_schema(),
+                semantic_model_key="another_bad_key",
+            )
+        msg = str(exc_info.value)
+        # 不使用 schema.key 等内部字段
+        assert "mock_sales_model" not in msg
+        # 有固定错误代码
+        assert "query_plan_model_key_mismatch" in msg
+        # 有中文说明
+        assert "不一致" in msg

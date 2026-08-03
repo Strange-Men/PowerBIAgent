@@ -367,16 +367,25 @@ class DAXSafetyValidator:
             refs.append(f"[{obj}]")
 
         # ── 步骤 4：在未消耗区域中提取 'Table' 引用 ──
+        standalone_tables: list[str] = []
         for m in re.finditer(r"'([^']+)'", dax_no_strings):
             if any(start <= m.start() < end for start, end in consumed_positions):
                 continue
             table = m.group(1)
             consumed_positions.append((m.start(), m.end()))
             refs.append(f"'{table}'")
+            standalone_tables.append(table)
 
         # ── 验证 ──
 
-        # 4a. 验证带表限定的引用
+        # 4a. 验证独立表引用（FILTER('Sales', ...) / COUNTROWS('Sales') / ALL('Sales') / VALUES('Sales') 等）
+        for table in standalone_tables:
+            if table.upper() in _DAX_KEYWORDS:
+                continue
+            if not idx.table_exists(table):
+                errors.append(f"unknown_table: 表 '{table}' 不存在于 Schema 中")
+
+        # 4c. 验证带表限定的引用
         for table, obj, raw in qualified_refs:
             if table.upper() in _DAX_KEYWORDS:
                 continue
@@ -400,7 +409,7 @@ class DAXSafetyValidator:
                         f"（且在任何表中均不存在）"
                     )
 
-        # 4b. 验证未限定引用 [Object]
+        # 4d. 验证未限定引用 [Object]
         for obj in unqualified_refs:
             is_m = idx.is_measure(obj)
             is_c = idx.is_column(obj)
@@ -410,14 +419,14 @@ class DAXSafetyValidator:
                 tables = idx.get_measure_tables(obj)
                 if len(tables) > 1:
                     errors.append(
-                        f"ambiguous_measure: [{[obj]}] 在多个表中存在同名度量值"
+                        f"ambiguous_measure: [{obj}] 在多个表中存在同名度量值"
                         f"（表: {', '.join(sorted(tables))}），必须带表限定"
                     )
                 # 唯一度量值 → 合法
             elif is_c and not is_m:
                 # 列必须带表限定
                 errors.append(
-                    f"unqualified_column_reference: [{[obj]}] 是列而非度量值，"
+                    f"unqualified_column_reference: [{obj}] 是列而非度量值，"
                     f"列引用必须带表名"
                 )
             elif is_m and is_c:
@@ -425,11 +434,11 @@ class DAXSafetyValidator:
                 tables = idx.get_measure_tables(obj)
                 if len(tables) > 1:
                     errors.append(
-                        f"ambiguous_measure: [{[obj]}] 在多个表中存在同名度量值"
+                        f"ambiguous_measure: [{obj}] 在多个表中存在同名度量值"
                         f"（表: {', '.join(sorted(tables))}），必须带表限定"
                     )
             else:
                 # 不存在
-                errors.append(f"unknown_measure: [{[obj]}] 不是 Schema 中的度量值或列")
+                errors.append(f"unknown_measure: [{obj}] 不是 Schema 中的度量值或列")
 
         return refs, errors

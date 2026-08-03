@@ -104,6 +104,13 @@ class DeepSeekQueryPlanService:
         if not user_input or not user_input.strip():
             raise QueryPlanError("user_input 不能为空")
 
+        # ── 模型 Key 权威性校验：传入值与 schema.key 不一致时拒绝 ──
+        if semantic_model_key is not None and semantic_model_key != schema.key:
+            raise QueryPlanError(
+                "semantic_model_key 与 Schema key 不一致，拒绝执行"
+                "（query_plan_model_key_mismatch）"
+            )
+
         effective_model_key = semantic_model_key or schema.key
 
         # 0. 构建当前 Schema 专用 ValidationService

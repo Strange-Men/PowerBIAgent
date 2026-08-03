@@ -204,11 +204,28 @@ def _match_forbidden_filename(filepath: str) -> str | None:
 # 检查函数
 # ---------------------------------------------------------------------------
 
+def _get_untracked_files() -> list[str]:
+    """获取未跟踪但未被 .gitignore 忽略的文件（如本轮新增代码文件）。"""
+    result = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard"],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
 def _collect_files_to_check() -> list[str]:
-    """收集需要检查的文件列表（已跟踪 + 已暂存，去重）。"""
+    """收集需要检查的文件列表（已跟踪 + 已暂存 + 未跟踪非忽略，去重）。
+
+    新增未跟踪文件（如本轮新代码）也会被扫描，但 .gitignore 规则仍然生效。
+    """
     tracked = set(_get_tracked_files())
     staged = set(_get_staged_files())
-    all_files = tracked | staged
+    untracked = set(_get_untracked_files())
+    all_files = tracked | staged | untracked
     # 排除被 .gitignore 忽略的文件
     ignored = _get_ignored_files()
     all_files = all_files - ignored

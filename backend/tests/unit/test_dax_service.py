@@ -843,3 +843,141 @@ class TestMultiTableDAXRepair:
         assert bad_dax not in repair_msg
         # 但包含错误信息
         assert "SalesAmount" in repair_msg or "object_not_in_table" in repair_msg
+
+
+# ══════════════════════════════════════════════════════════════════
+# M1.4-A DAX 独立表引用验证
+# ══════════════════════════════════════════════════════════════════
+
+class TestStandaloneTableValidation:
+    """独立表引用验证：FILTER('Table'), COUNTROWS('Table'), ALL('Table'), VALUES('Table')"""
+
+    def test_filter_known_table_passes(self):
+        """FILTER('Sales', ...) — 已知表通过"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE FILTER('Sales', 'Sales'[Region] = \"East\")"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+    def test_countrows_known_table_passes(self):
+        """COUNTROWS('Sales') — 已知表通过"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE ROW(\"Count\", COUNTROWS('Sales'))"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+    def test_all_known_table_passes(self):
+        """ALL('Sales') — 已知表通过"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE ALL('Sales')"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+    def test_values_known_table_passes(self):
+        """VALUES('Sales') — 已知表通过"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE VALUES('Sales')"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+    def test_unknown_table_returns_error(self):
+        """COUNTROWS('GhostTable') — 未知表返回错误"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE ROW(\"Count\", COUNTROWS('GhostTable'))"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is False
+        assert any("unknown_table" in e and "GhostTable" in e for e in result.errors), \
+            f"Errors: {result.errors}"
+
+    def test_unknown_table_all_rejected(self):
+        """ALL('UnknownTable') — 未知表拒绝"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE ALL('UnknownTable')"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is False
+        assert any("unknown_table" in e for e in result.errors)
+
+    def test_double_quoted_text_not_table_name(self):
+        """"East" — 双引号文本不作为表名"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE FILTER('Sales', 'Sales'[Region] = \"East\")"
+        result = validator.validate(dax, schema)
+        # "East" 不应被当作表名报错
+        assert not any("East" in e for e in result.errors if "unknown_table" in e), \
+            f"Errors: {result.errors}"
+
+    def test_output_alias_not_misidentified_as_table(self):
+        """输出别名 "Total" 不误判为表名"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = (
+            "EVALUATE "
+            "SUMMARIZECOLUMNS("
+            "'Sales'[Region], "
+            '"TotalRevenue", '
+            "SUM('Sales'[SalesAmount])"
+            ")"
+        )
+        result = validator.validate(dax, schema)
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+    def test_qualified_column_table_not_double_reported(self):
+        """'Sales'[Region] — 表部分不再重复报错为独立表引用"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS('Sales'[Region])"
+        result = validator.validate(dax, schema)
+        # Sales 表存在，应通过
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+
+# ══════════════════════════════════════════════════════════════════
+# M1.4-A DAX 错误文本格式验证
+# ══════════════════════════════════════════════════════════════════
+
+class TestDAXErrorTextFormat:
+    """错误文本格式正确：显示 [Region] 而非 [{[obj]}]"""
+
+    def test_error_text_shows_bracket_name_not_list_repr(self):
+        """错误信息显示 [Region] 而非 ['Region']"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS([Region])"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is False
+        # 应该包含 [Region] 格式，而非 ['Region'] 列表 repr
+        region_error = [e for e in result.errors if "Region" in e]
+        assert len(region_error) > 0
+        assert "[Region]" in region_error[0], f"Error: {region_error[0]}"
+        assert "['Region']" not in region_error[0], f"Error: {region_error[0]}"
+
+    def test_unknown_measure_format_correct(self):
+        """未知度量值错误格式：显示 [FakeMeasure] 而非 ['FakeMeasure']"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS('Sales'[Region], [FakeMeasure])"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is False
+        fake_error = [e for e in result.errors if "FakeMeasure" in e]
+        assert len(fake_error) > 0
+        assert "[FakeMeasure]" in fake_error[0], f"Error: {fake_error[0]}"
+        assert "['FakeMeasure']" not in fake_error[0], f"Error: {fake_error[0]}"
+
+    def test_ambiguous_measure_format_correct(self):
+        """歧义度量值错误格式正确"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS('Sales'[Region], [CommonMeasure])"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is False
+        common_error = [e for e in result.errors if "CommonMeasure" in e]
+        assert len(common_error) > 0
+        assert "[CommonMeasure]" in common_error[0], f"Error: {common_error[0]}"
+        assert "['CommonMeasure']" not in common_error[0], f"Error: {common_error[0]}"

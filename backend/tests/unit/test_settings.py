@@ -33,7 +33,7 @@ class TestSettingsDefaults:
 
     def test_version_is_m1_1(self):
         settings = Settings()
-        assert settings.version == "M1.3.1"
+        assert settings.version == "M1.4"
 
     def test_host_default_localhost(self):
         settings = Settings()

@@ -85,7 +85,7 @@ normalized_question, semantic_model_key, measures, dimensions, filters (Structur
 semantic_model_key, dax, max_rows, timeout_seconds, request_id, is_mock
 
 ### 3.4 QueryResult — 数据事实来源
-semantic_model_key, columns, rows, row_count, execution_time_ms, source_mode, request_id, error (PowerBIError), truncated
+result_id, semantic_model_key, columns, rows, row_count, execution_time_ms, source_mode, request_id, error (PowerBIError), truncated
 
 内置一致性校验：row_count vs rows 长度、每行字段 vs columns 数量。
 
@@ -100,6 +100,8 @@ answer, summary, metrics, evidence, filters, semantic_model_key, source_mode, ge
 **关键规则：**
 - answer 字段为自然语言结论，由 LLM 基于 QueryResult 生成
 - metrics 展示少量关键指标，数值必须来自 QueryResult
+- AnswerSpec 负责文字结论、摘要和指标，不承载完整表格数据
+- 表格数据直接来自 QueryResult，图表的数据事实来源也是 QueryResult
 - 不允许 LLM 自行计算无法验证的指标
 - evidence 提供数据来源追溯
 - source_mode 与 QueryResult.source_mode 应一致

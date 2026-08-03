@@ -35,7 +35,7 @@ class TestHealthM12:
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data["ready"] is True
-                assert data["version"] == "M1.3.1"
+                assert data["version"] == "M1.4"
 
     @pytest.mark.asyncio
     async def test_health_deepseek_no_key_503(self):

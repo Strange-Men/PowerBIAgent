@@ -522,18 +522,18 @@ class TestReportTemplateDefault:
 class TestVersionM10:
     """版本号验证"""
 
-    def test_settings_version_is_m131(self):
-        """Settings.version 为 M1.3.1"""
+    def test_settings_version_is_m14(self):
+        """Settings.version 为 M1.4"""
         from backend.app.config.settings import Settings
         s = Settings()
-        assert s.version == "M1.3.1", f"Expected M1.3.1, got {s.version}"
+        assert s.version == "M1.4", f"Expected M1.4, got {s.version}"
 
-    def test_health_version_returns_m131_in_safe_repr(self):
-        """safe_repr 中 version 为 M1.3.1"""
+    def test_health_version_returns_m14_in_safe_repr(self):
+        """safe_repr 中 version 为 M1.4"""
         from backend.app.config.settings import Settings
         s = Settings()
         info = s.safe_repr()
-        assert info["version"] == "M1.3.1"
+        assert info["version"] == "M1.4"
 
 
 class TestIdempotentResponseSchema:
@@ -598,14 +598,15 @@ class TestRoadmapDocument:
             ver = f"M1.{i}"
             assert ver in content, f"docs/08 缺少 {ver}"
         assert "M1.3.1" in content, "docs/08 缺少 M1.3.1"
-        # 顺序检查
-        idx_m10 = content.index("M1.0")
-        idx_m11 = content.index("M1.1")
-        idx_m12 = content.index("M1.2")
-        idx_m13 = content.index("M1.3 真实QueryPlan")  # 精确匹配避免匹配到 M1.3.1
-        idx_m131 = content.index("M1.3.1")
-        idx_m14 = content.index("M1.4")
-        idx_m15 = content.index("M1.5")
+        # 顺序检查：从路线总览章节之后开始（避免状态行中的版本号干扰）
+        overview_start = content.index("## 路线总览")
+        idx_m10 = content.index("M1.0", overview_start)
+        idx_m11 = content.index("M1.1", overview_start)
+        idx_m12 = content.index("M1.2", overview_start)
+        idx_m13 = content.index("M1.3 真实QueryPlan", overview_start)  # 精确匹配避免匹配到 M1.3.1
+        idx_m131 = content.index("M1.3.1", overview_start)
+        idx_m14 = content.index("M1.4", overview_start)
+        idx_m15 = content.index("M1.5", overview_start)
         assert idx_m10 < idx_m11 < idx_m12 < idx_m13 < idx_m131 < idx_m14 < idx_m15, \
             "M1.0—M1.5 顺序不正确"
 

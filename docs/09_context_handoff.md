@@ -2,7 +2,7 @@
 
 > **所有新 Claude 恢复上下文的唯一最新交接入口。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化**
+> **最后更新：2026-08-03 | M1.4 真实Answer与ReportSpec生成**
 
 ---
 
@@ -14,17 +14,15 @@
 
 ## 当前阶段
 
-**M1.3.2 前端视觉与结构化回答契约固化** — ✅ 已完成。
+**M1.4 真实 Answer 与 ReportSpec 生成** — ✅ 已完成。
 
 ## 上一轮
 
-**M1.3.1** — QueryPlan与DAX验证修复（Commit `6647760`）
+**M1.3.2** — 前端视觉与结构化回答契约固化（Commit `db0a7e8`）
 
 ## 下一轮
 
-**M1.4 真实Answer与ReportSpec生成**
-
-M1.5：未开始
+**M1.5 全链路验收与封板**
 
 ## 已完成版本
 
@@ -54,6 +52,38 @@ M1.5：未开始
 | `m0.4.1-foundation-release` | `1f967b0` | M0.4.1 封板 |
 | `m0.4-foundation-release` | `d5c1634` | M0.4 封板 |
 
+## M1.4 交付内容
+
+### Answer 生成
+- `DeepSeekAnswerService`：安全上下文、集中式 Prompt、最多一次修复
+- Evidence 四大字段强制绑定（result_id/semantic_model_key/row_count/source_mode）
+- Metrics 可追溯验证
+- Truncated/input_truncated 强制披露
+
+### ReportSpec 生成
+- `DeepSeekReportSpecService`：安全上下文、集中式 Prompt
+- KPI/Chart/Table 真实性验证
+- Table 整行投影验证（防跨行拼接 + 重复行限制 + 类型严格比较）
+- Mock Renderer 兼容
+
+### 真实 Smoke
+- 双案例（data_question + report_generation）均通过
+- Answer repairs=1（一次修复后严格验证通过）
+- ReportSpec repairs=0
+- 使用真实 DeepSeek + Mock QueryResult，未调用真实 Power BI
+
+### 测试结果
+- pytest：858 passed
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS（133 文件）
+
+### 运行边界
+- Settings.version=M1.4
+- QueryResult 仍为 Mock
+- Renderer 仍为 Mock
+- DeepSeek Chat 仍 503
+- 真实 Power BI 属 M2
+
 ## M1.3.2 交付内容
 
 ### 视觉资产归档
@@ -68,7 +98,7 @@ M1.5：未开始
 
 - 最终为带左侧栏的 GPT 式极简对话网页（React + Vite，M5 开发）
 - 全局视觉：纯白/极浅灰为主，黑色/深灰正文，克制蓝色图表，大面积留白
-- 左侧栏（约15%宽）：标识、新聊天、搜索聊天(M4)、项目、最近报表(M3)、最近对话(M4)、用户信息
+- 左侧栏（约15%宽）：标识、新聊天、搜索聊天、项目、最近报表、最近对话、用户信息。左侧栏 React UI 整体属 M5；M3/M4 只准备对应后端能力（报表资源、会话持久化、搜索）
 - 主对话区：新聊天欢迎态、已有对话态（用户消息+AI组合回答+底部输入器）
 - 输入器：胶囊形容器、"+"按钮（数据模型+报表模板两分组）、文本输入、模型菜单、发送按钮
 - 模型菜单：当前仅 DeepSeek 为正式用户模型，Mock 仅测试，GPT-5.6 未接入
@@ -85,7 +115,10 @@ M1.5：未开始
 
 - **当前正式用户模型只有 DeepSeek**；Mock 仅测试；GPT-5.6 未接入
 - **当前 QueryResult 仍为 Mock**；真实 Power BI 属于 M2
-- **报表资源（查看/下载）属于 M3**；会话历史/搜索属于 M4
+- **M3 只实现后端能力**：报表渲染、report_id、查看/下载资源、最近报表所需后端数据
+- **M4 只实现后端能力**：会话历史、搜索、持久化、最近对话所需后端数据
+- **最近报表列表、最近对话列表、搜索聊天界面和完整左侧栏统一在 M5 React 前端实现**
+- **M3、M4 不开发 React 左侧栏或任何前端 UI**
 - **前端正式开发延后至 M5**
 - **M1.4 继续使用现有 AnswerSpec、QueryResult 和 ReportSpec**
 - **完整组合消息编排在 M1.5/M5 继续确定**
@@ -135,8 +168,8 @@ M1.5：未开始
 - Entra App Registration 权限（M2 前确认）
 - Power BI Tenant 设置（M2 前确认）
 - Remote MCP Server 端点可用性（M2 早期验证）
-- 完整 Chat 仍未开放（待 M1.4-M1.5）
-- Answer/ReportSpec 生成仍使用 Mock（待 M1.4）
+- 完整 Chat 仍未开放（待 M1.5）
+- Answer/ReportSpec 真实生成已完成 → 仍使用 Mock QueryResult
 - 公司真实 Power BI 语义模型（M2 前确认）
 - 可用报表模板（M3 前确认）
 - 报表资源保存位置（M3 前确认）
@@ -145,4 +178,4 @@ M1.5：未开始
 
 ---
 
-*最后更新：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
+*最后更新：2026-08-03 | M1.4 真实Answer与ReportSpec生成*

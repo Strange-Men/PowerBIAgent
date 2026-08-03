@@ -1,5 +1,70 @@
 # CHANGELOG
 
+## [M1.4] — 2026-08-03
+
+### 真实 Answer 与 ReportSpec 生成
+
+**来源：** M1.4 开发轮次（M1.4-A/B/C/D1/D1.1/D2）。
+
+**M1.4-A：遗留问题收口**
+- 文档一致性：docs/08/05/11/04 M3/M4/M5 边界统一
+- QueryPlan 模型 Key 权威性：传入值与 schema.key 不一致时 LLM 调用前拒绝
+- DAX 独立表引用验证：FILTER/COUNTROWS/ALL/VALUES 等独立表名验证
+- 旧 QueryPlan+DAX Smoke 收紧：调用真实 Intent、输出白名单、try/finally
+
+**M1.4-B：真实 Answer 生成**
+- `DeepSeekAnswerService`：安全上下文、集中式 Prompt、最多一次修复
+- `AnswerContext`：行/单元格截断、不含 DAX/Secret
+- Evidence 四大字段强制绑定（result_id/semantic_model_key/row_count/source_mode）
+- Metrics 可追溯验证（列名直接匹配 + 跨列聚合匹配）
+- Truncated/input_truncated 强制披露（error，非 warning）
+- 空结果不得虚构 metrics
+
+**M1.4-C：真实 ReportSpec 生成**
+- `DeepSeekReportSpecService`：安全上下文、集中式 Prompt
+- KPI field/value 真实性验证（数值必须可由 QueryResult 复现）
+- Chart x_field/y_field 必须在 QueryResult.columns 中，type 仅允许 bar/line/pie/scatter
+- Table 整行投影验证（防跨行拼接 + 重复行限制 + 类型严格比较）
+- Mock Renderer 兼容性验证
+- M1.4 Smoke 入口：双案例（data_question + report_generation），安全脱敏输出
+
+**M1.4-D1/D1.1：Smoke 判定修复与安全诊断**
+- Overall success 严格由两个案例 AND 决定
+- 失败时退出码非 0、终端提示动态生成
+- 安全诊断字段：stage/error_type/error_code/validation_codes
+- 运行时 Intent 互斥分流验证
+
+**真实 DeepSeek Smoke 结果：**
+- 总体 success=true，model=deepseek-chat，total_tokens=7568
+- 数据问答：Answer repairs=1（首次需修复，修复后严格验证通过）
+- 报表生成：ReportSpec repairs=0，Mock Renderer 兼容通过
+- 使用真实 DeepSeek + 本地 Mock QueryResult，未调用真实 Power BI
+
+**Answer repairs=1 说明：**
+- 真实 DeepSeek 首次 Answer 输出未通过 evidence 严格验证（首次缺失某字段）
+- 一次修复后（≤2 次 Provider 调用）evidence 完整绑定，严格验证通过
+- 修复机制工作正常，符合设计预期
+
+**测试结果：**
+- pytest：858 passed（M1.3.2 基线 706 + M1.4 新增 ~152）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS（133 文件）
+- 离线测试不访问互联网
+
+**文档修改：**
+- Settings.version → M1.4
+- docs/05：同步最终测试结果与真实 Smoke 结果
+- docs/07：M1.4 完成，待观察项更新
+- docs/08：M1.4 已完成，M1.5 为下一轮
+- docs/09：当前代码能力、运行边界、真实 Smoke 结果
+- CHANGELOG：本记录
+- README：M1.4 能力说明
+
+**Commit SHA：** 本轮提交
+**本轮 Tag：** 无
+
+---
+
 ## [M1.3.2] — 2026-08-03
 
 ### 前端视觉与结构化回答契约固化

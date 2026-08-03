@@ -1,6 +1,6 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M1.3.2 正式固化
+> **状态：** M1.4 Answer + ReportSpec 已实现，契约持续有效
 > **目标：** 定义前端组合回答的产品目标与数据契约
 > **重要：** 本文档描述未来 M5 前端展示目标，当前 API 仍以 AnswerSpec + QueryResult + ReportSpec 为基础
 
@@ -172,6 +172,7 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 | y_field | string | Y 轴字段名 |
 | series | list[string] | 多系列字段名（可选） |
 | data_reference | string | 数据引用（指向 QueryResult.result_id） |
+| source_mode | string | 数据来源：mock / real |
 
 ### 数据来源
 
@@ -193,7 +194,7 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 ```json
 {
   "type": "chart",
-  "chart_type": "bar",
+  "type": "bar",
   "title": "各区域销售额对比",
   "x_field": "区域",
   "y_field": "销售额",

@@ -2,7 +2,8 @@
 
 > **状态：** M1.3.2 同步更新
 > **关联 ADR：** ADR-004
-> **当前基线：** pytest 706 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS
+> **当前基线：** pytest 858 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS（133 文件）
+> **真实 Smoke：** success=true, deepseek-chat, 7568 tokens, Answer repairs=1, ReportSpec repairs=0
 
 ---
 
@@ -60,7 +61,7 @@
 ### 位置
 `harness/cases/golden_cases.yaml`
 
-### M0.3.1 12 条
+### 12 条定义案例（M0.3.1 制定，11 passed / 1 skipped）
 
 | ID | 类别 | 状态 |
 |----|------|------|
@@ -96,11 +97,13 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 ## 三、测试策略
 
-| 层级 | 覆盖 | 数量 |
-|------|------|------|
-| 单元测试（unit/） | 独立函数和类 | 6 文件 |
-| 集成测试（integration/） | Mock 完整链路 | 1 文件 |
-| Golden Cases | 端到端场景 | 10 条 YAML |
+| 层级 | 覆盖范围 |
+|------|---------|
+| 单元测试（unit/） | 独立函数和类：Provider、Service、验证器、Model 校验、Prompt 规则、安全扫描 |
+| 集成测试（integration/） | Mock 完整链路：问答、报表、多轮、并发、幂等、失败清理 |
+| Golden Cases | 端到端场景：12 个定义案例，11 passed / 1 skipped |
+
+> 测试数量为事实记录，不作为验收目标。
 
 ## 四、706 测试覆盖（M1.3.1 基线，本轮无变化）
 
