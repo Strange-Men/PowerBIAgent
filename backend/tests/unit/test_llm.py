@@ -15,8 +15,10 @@ import asyncio
 import pytest
 
 from backend.app.llm.base import (
+    LLMConfigurationError,
     LLMProviderError,
     LLMRequest,
+    LLMRequestError,
     LLMScenarioNotFoundError,
     LLMTask,
     LLMTimeoutError,
@@ -24,7 +26,7 @@ from backend.app.llm.base import (
 )
 from backend.app.llm.mock import MockLLMProvider
 from backend.app.llm.registry import LLMProviderRegistry
-from backend.app.llm.deepseek import DeepSeekConfigError, DeepSeekProvider
+from backend.app.llm.deepseek import DeepSeekLLMProvider
 from backend.app.intent.models import IntentSpec, IntentType
 
 
@@ -213,37 +215,64 @@ class TestProviderRegistry:
 
 
 class TestDeepSeekSecurity:
-    """DeepSeek Provider 安全测试"""
+    """DeepSeekLLMProvider 安全测试 — M1.1"""
 
     def test_no_api_key_raises_config_error(self):
         """未配置 Key 时抛出配置异常"""
-        # 空字符串也会触发
-        with pytest.raises(DeepSeekConfigError, match="API Key"):
-            DeepSeekProvider(api_key="")
+        with pytest.raises(LLMConfigurationError, match="API Key"):
+            DeepSeekLLMProvider(
+                api_key="",
+                base_url="https://api.deepseek.com/v1",
+                model="deepseek-chat",
+                timeout_seconds=30.0,
+            )
 
     def test_api_key_not_in_repr(self):
         """repr 不暴露 API Key"""
-        provider = DeepSeekProvider(api_key="sk-test-secret-key-12345")
+        fake_key = "sk-" + ("Z" * 20)
+        provider = DeepSeekLLMProvider(
+            api_key=fake_key,
+            base_url="https://api.deepseek.com/v1",
+            model="deepseek-chat",
+            timeout_seconds=30.0,
+        )
         r = repr(provider)
-        assert "sk-test-secret-key-12345" not in r
+        assert fake_key not in r
         assert "has_api_key=True" in r
 
     def test_has_api_key_no_leak(self):
         """has_api_key 属性不暴露原文"""
-        provider = DeepSeekProvider(api_key="sk-test-secret-123")
+        fake_key = "sk-" + ("Y" * 20)
+        provider = DeepSeekLLMProvider(
+            api_key=fake_key,
+            base_url="https://api.deepseek.com/v1",
+            model="deepseek-chat",
+            timeout_seconds=30.0,
+        )
         assert provider.has_api_key is True
-        # 确认不能直接读取 api_key 属性（不存在公开属性暴露原文）
         assert not hasattr(provider, "api_key")
 
     def test_is_not_mock(self):
-        provider = DeepSeekProvider(api_key="sk-test-123")
+        fake_key = "sk-" + ("W" * 20)
+        provider = DeepSeekLLMProvider(
+            api_key=fake_key,
+            base_url="https://api.deepseek.com/v1",
+            model="deepseek-chat",
+            timeout_seconds=30.0,
+        )
         assert provider.is_mock is False
         assert provider.provider_name == "deepseek"
 
     @pytest.mark.asyncio
-    async def test_generate_not_implemented(self):
-        """M0.2/M0.3 阶段 generate 抛出 NotImplementedError"""
-        provider = DeepSeekProvider(api_key="sk-test-123")
-        request = LLMRequest()
-        with pytest.raises(NotImplementedError):
+    async def test_empty_messages_raises(self):
+        """空 messages 抛 LLMRequestError（非 NotImplementedError）"""
+        fake_key = "sk-" + ("V" * 20)
+        provider = DeepSeekLLMProvider(
+            api_key=fake_key,
+            base_url="https://api.deepseek.com/v1",
+            model="deepseek-chat",
+            timeout_seconds=30.0,
+        )
+        request = LLMRequest(messages=[])
+        with pytest.raises(LLMRequestError, match="不能为空"):
             await provider.generate(request, IntentSpec)

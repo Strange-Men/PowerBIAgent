@@ -1,61 +1,123 @@
-"""DeepSeek LLM Provider 骨架
+"""DeepSeek LLM Provider — M1.1 真实实现
 
 通过 OpenAI-compatible API 接入 DeepSeek。
-M0.2 仅骨架，M1 实现真实网络调用。
+支持可独立调用、可测试、错误可分类。
 
 安全要求：
-- API Key 使用 SecretStr 封装，不可通过属性直接读取原文
-- repr 和日志不暴露 Key
-- Trace 不得记录 Key
+- API Key 使用 SecretStr 封装，repr 不暴露
+- Authorization Header 不输出到日志/Trace
+- 不输出完整 Prompt/响应
 - 未配置 Key 时抛出明确配置异常
 """
 
+import json
 from typing import Optional
 
+import httpx
 from pydantic import BaseModel, SecretStr
 
 from backend.app.llm.base import (
+    LLMAuthenticationError,
+    LLMConfigurationError,
+    LLMConnectionError,
     LLMProvider,
     LLMProviderError,
+    LLMRateLimitError,
     LLMRequest,
+    LLMRequestError,
     LLMResponse,
+    LLMResponseError,
+    LLMServiceError,
+    LLMTimeoutError,
+    LLMValidationError,
 )
 
+# ---------------------------------------------------------------------------
+# 错误分类映射
+# ---------------------------------------------------------------------------
 
-class DeepSeekConfigError(LLMProviderError):
-    """DeepSeek 配置异常 — API Key 未设置等"""
-    pass
+
+def _classify_http_error(
+    status_code: int,
+    provider: str,
+) -> tuple[type[LLMProviderError], bool]:
+    """根据 HTTP 状态码返回 (异常类型, retryable)"""
+    mapping: dict[int, tuple[type[LLMProviderError], bool]] = {
+        400: (LLMRequestError, False),
+        401: (LLMAuthenticationError, False),
+        403: (LLMAuthenticationError, False),
+        404: (LLMRequestError, False),
+        422: (LLMRequestError, False),
+        429: (LLMRateLimitError, True),
+    }
+    if status_code in mapping:
+        exc_type, retryable = mapping[status_code]
+        return exc_type, retryable
+    if 500 <= status_code < 600:
+        return LLMServiceError, True
+    return LLMProviderError, False
 
 
-class DeepSeekProvider(LLMProvider):
-    """DeepSeek LLM Provider
+# ---------------------------------------------------------------------------
+# DeepSeekLLMProvider
+# ---------------------------------------------------------------------------
+
+
+class DeepSeekLLMProvider(LLMProvider):
+    """DeepSeek LLM Provider — M1.1 真实实现
 
     通过 OpenAI-compatible API 接入 DeepSeek。
-    M0.2 仅骨架，M1 实现真实网络调用。
+    构造时不访问网络。Provider 不编写业务 Prompt。
     """
 
     PROVIDER_NAME = "deepseek"
 
     def __init__(
         self,
-        api_key: str = "",
-        base_url: str = "https://api.deepseek.com",
-        model: str = "deepseek-chat",
-        timeout: float = 60.0,
-        max_retries: int = 2,
+        api_key: SecretStr | str,
+        base_url: str,
+        model: str,
+        timeout_seconds: float,
+        client: httpx.AsyncClient | None = None,
     ):
-        if not api_key:
-            raise DeepSeekConfigError(
-                "DeepSeek API Key 未配置。"
-                "M0.2 阶段请使用 MockLLMProvider 进行测试。",
+        # ── 参数校验 ──
+        if isinstance(api_key, SecretStr):
+            key_value = api_key.get_secret_value()
+        else:
+            key_value = api_key
+
+        if not key_value or not key_value.strip():
+            raise LLMConfigurationError(
+                "DeepSeek API Key 未配置",
                 provider=self.PROVIDER_NAME,
                 retryable=False,
             )
-        self._api_key = SecretStr(api_key)
-        self._base_url = base_url
+
+        base_url = base_url.strip()
+        if not base_url:
+            raise LLMConfigurationError(
+                "DeepSeek Base URL 为空",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+            )
+
+        model = model.strip()
+        if not model:
+            raise LLMConfigurationError(
+                "DeepSeek Model 为空",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+            )
+
+        # ── 存储 ──
+        self._api_key = SecretStr(key_value) if isinstance(api_key, str) else api_key
+        self._base_url = base_url.rstrip("/")
         self._model = model
-        self._timeout = timeout
-        self._max_retries = max_retries
+        self._timeout_seconds = float(timeout_seconds)
+        self._client = client  # 外部注入的 Client（不由我们关闭）
+        self._owns_client = client is None
+
+    # ── 属性 ──
 
     @property
     def provider_name(self) -> str:
@@ -76,33 +138,274 @@ class DeepSeekProvider(LLMProvider):
     @property
     def has_api_key(self) -> bool:
         """检查是否已配置 API Key（不暴露原文）"""
-        key = self._api_key.get_secret_value() if self._api_key else ""
+        key = self._api_key.get_secret_value()
         return bool(key)
 
-    def _get_api_key(self) -> str:
-        """内部获取 API Key 原文 — 仅用于构建 HTTP 请求"""
-        return self._api_key.get_secret_value()
+    # ── Client 管理 ──
 
-    async def generate(self, request: LLMRequest, output_type: type[BaseModel]) -> LLMResponse:
-        """[骨架] 调用 DeepSeek API 生成结构化响应
+    def _get_client(self) -> httpx.AsyncClient:
+        """获取或创建 httpx AsyncClient"""
+        if self._client is not None:
+            return self._client
+        if not hasattr(self, "_owned_client") or self._owned_client is None:
+            self._owned_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self._timeout_seconds),
+            )
+        return self._owned_client
 
-        M0.2 阶段仅定义接口，M1 实现真实调用。
+    async def aclose(self) -> None:
+        """关闭自建 Client（可重复调用）"""
+        if self._owns_client and hasattr(self, "_owned_client") and self._owned_client is not None:
+            client = self._owned_client
+            self._owned_client = None
+            await client.aclose()
+
+    # ── 构造 URL ──
+
+    def _build_url(self) -> str:
+        """构造请求 URL：<base_url>/chat/completions（不产生重复 //）"""
+        return f"{self._base_url}/chat/completions"
+
+    # ── 生成 ──
+
+    async def generate(
+        self,
+        request: LLMRequest,
+        output_type: type[BaseModel],
+    ) -> LLMResponse:
+        """调用 DeepSeek API 生成结构化响应
+
+        错误映射：
+        - Key 缺失 → LLMConfigurationError (retryable=false)
+        - Base URL/Model 为空 → LLMConfigurationError (retryable=false)
+        - messages 非法 → LLMRequestError (retryable=false)
+        - HTTP 400/404/422 → LLMRequestError (retryable=false)
+        - HTTP 401/403 → LLMAuthenticationError (retryable=false)
+        - HTTP 429 → LLMRateLimitError (retryable=true)
+        - ConnectError/DNS → LLMConnectionError (retryable=true)
+        - Timeout → LLMTimeoutError (retryable=true)
+        - HTTP 5xx → LLMServiceError (retryable=true)
+        - Body 非法 JSON → LLMResponseError (retryable=false)
+        - choices/message/content 缺失 → LLMResponseError (retryable=false)
+        - content 非法 JSON → LLMValidationError (retryable=false)
+        - content 不符合 output_type → LLMValidationError (retryable=false)
+
+        本轮不自动重试。不自动去除 Markdown 代码块。不自动修复 JSON。
         """
-        # TODO: M1 — 实现真实 DeepSeek 网络调用
-        # 1. 构建 OpenAI-compatible messages
-        # 2. 调用 httpx → {base_url}/v1/chat/completions
-        # 3. 解析响应为 output_type Pydantic 实例
-        # 4. 校验结构化输出
-        # 5. 超时和重试处理
+        self._validate_request(request)
 
-        raise NotImplementedError(
-            "TODO: M1 — 实现真实 DeepSeek 网络调用。"
-            "M0.2/M0.3 阶段请使用 MockLLMProvider 进行测试。"
+        messages = self._build_messages(request)
+        payload = self._build_payload(messages)
+        headers = self._build_headers()
+
+        url = self._build_url()
+        client = self._get_client()
+
+        # ── 发送请求 ──
+        try:
+            http_response = await client.post(
+                url,
+                json=payload,
+                headers=headers,
+            )
+        except httpx.TimeoutException:
+            raise LLMTimeoutError(
+                f"DeepSeek 请求超时 ({self._timeout_seconds}s)",
+                provider=self.PROVIDER_NAME,
+                retryable=True,
+            )
+        except httpx.ConnectError as e:
+            raise LLMConnectionError(
+                f"DeepSeek 连接失败: {e}",
+                provider=self.PROVIDER_NAME,
+                retryable=True,
+            )
+
+        # ── 解析 HTTP 状态码 ──
+        if http_response.status_code != 200:
+            exc_type, retryable = _classify_http_error(
+                http_response.status_code, self.PROVIDER_NAME
+            )
+            raise exc_type(
+                f"DeepSeek API 返回 HTTP {http_response.status_code}",
+                provider=self.PROVIDER_NAME,
+                retryable=retryable,
+                status_code=http_response.status_code,
+            )
+
+        # ── 解析响应 Body ──
+        return self._parse_response(http_response, output_type)
+
+    # ── 请求校验 ──
+
+    def _validate_request(self, request: LLMRequest) -> None:
+        """校验 LLMRequest 合法性"""
+        if not request.messages:
+            raise LLMRequestError(
+                "messages 不能为空",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+            )
+
+        # 检查是否要求 JSON 输出
+        has_json_instruction = False
+        for msg in request.messages:
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                if any(
+                    keyword in content.lower()
+                    for keyword in ["json", "json_object", "json object"]
+                ):
+                    has_json_instruction = True
+                    break
+
+        if not has_json_instruction:
+            raise LLMRequestError(
+                "消息中必须包含 JSON 输出要求",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+            )
+
+        # 校验 role 和 content
+        for msg in request.messages:
+            role = msg.get("role", "")
+            if role not in ("system", "user", "assistant"):
+                raise LLMRequestError(
+                    f"非法的 message role: {role}",
+                    provider=self.PROVIDER_NAME,
+                    retryable=False,
+                )
+            content = msg.get("content", "")
+            if not isinstance(content, str) or not content.strip():
+                raise LLMRequestError(
+                    f"message content 不能为空 (role={role})",
+                    provider=self.PROVIDER_NAME,
+                    retryable=False,
+                )
+
+    # ── 请求构造 ──
+
+    def _build_messages(self, request: LLMRequest) -> list[dict[str, str]]:
+        """构造发送给 DeepSeek 的消息列表
+
+        scenario_key 和 metadata 不发送。
+        """
+        return [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in request.messages
+        ]
+
+    def _build_payload(self, messages: list[dict[str, str]]) -> dict:
+        """构造请求 Body"""
+        return {
+            "model": self._model,
+            "messages": messages,
+            "stream": False,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+        }
+
+    def _build_headers(self) -> dict[str, str]:
+        """构造 HTTP Headers（含 Authorization）
+
+        注意：返回的 Header 不得输出到日志/Trace。
+        """
+        return {
+            "Authorization": f"Bearer {self._api_key.get_secret_value()}",
+            "Content-Type": "application/json",
+        }
+
+    # ── 响应解析 ──
+
+    def _parse_response(
+        self,
+        http_response: httpx.Response,
+        output_type: type[BaseModel],
+    ) -> LLMResponse:
+        """解析 DeepSeek HTTP 响应为 LLMResponse"""
+
+        # 1. HTTP Body 必须是合法 JSON
+        try:
+            body = http_response.json()
+        except (json.JSONDecodeError, ValueError) as e:
+            raise LLMResponseError(
+                f"DeepSeek 响应 Body 不是合法 JSON: {e}",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+            )
+
+        # 2. choices 必须存在且非空
+        choices = body.get("choices")
+        if not choices:
+            raise LLMResponseError(
+                "DeepSeek 响应缺少 choices 字段或为空",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+            )
+
+        # 3. message 必须存在
+        choice = choices[0]
+        message = choice.get("message")
+        if not message:
+            raise LLMResponseError(
+                "DeepSeek 响应 choices[0] 缺少 message",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+            )
+
+        # 4. content 必须为非空字符串
+        raw_content = message.get("content", "")
+        if not raw_content or not isinstance(raw_content, str) or not raw_content.strip():
+            raise LLMResponseError(
+                "DeepSeek 响应 content 为空",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+            )
+
+        # 5. 对 content 执行 json.loads()
+        try:
+            parsed_content = json.loads(raw_content)
+        except json.JSONDecodeError as e:
+            raise LLMValidationError(
+                f"DeepSeek 响应 content 不是合法 JSON: {e}",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+            )
+
+        # 6. 使用 output_type.model_validate()
+        try:
+            structured = output_type.model_validate(parsed_content)
+        except Exception as e:
+            raise LLMValidationError(
+                f"DeepSeek 响应不符合 {output_type.__name__}: {e}",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+            )
+
+        # ── 提取元数据 ──
+        finish_reason = choice.get("finish_reason", "stop")
+        response_model = body.get("model", self._model)
+
+        usage_data = body.get("usage", {})
+        usage = {
+            "prompt_tokens": usage_data.get("prompt_tokens", 0),
+            "completion_tokens": usage_data.get("completion_tokens", 0),
+            "total_tokens": usage_data.get("total_tokens", 0),
+        }
+
+        return LLMResponse(
+            content=raw_content,
+            structured=structured,
+            model=response_model,
+            usage=usage,
+            finish_reason=finish_reason,
         )
+
+    # ── 安全 repr ──
 
     def __repr__(self) -> str:
         return (
-            f"DeepSeekProvider(model={self._model}, "
+            f"DeepSeekLLMProvider(model={self._model}, "
             f"base_url={self._base_url}, "
             f"has_api_key={self.has_api_key})"
         )

@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M1.0", frozen=True)
+    version: str = Field(default="M1.1", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -95,14 +95,26 @@ class Settings(BaseSettings):
         return self.app_env == AppEnv.PRODUCTION
 
     @property
+    def is_deepseek_configured(self) -> bool:
+        """DeepSeek API Key 是否已配置
+
+        只判断是否存在非空 Secret，不进行网络访问。
+        不返回 Key 长度、前缀或后缀。
+        """
+        if self.deepseek_api_key is None:
+            return False
+        key = self.deepseek_api_key.get_secret_value()
+        return bool(key and key.strip())
+
+    @property
     def is_real_ready(self) -> bool:
         """Real 模式是否具备运行条件
 
-        M0.4：DeepSeek 和 Power BI Real 模式尚未实现。
-        即使配置了 API Key，也不应伪装为 ready。
+        M1.1：DeepSeek Provider 已实现，但真实意图链路尚未完成。
+        即使配置了 API Key，整个 Agent Pipeline 仍不可用。
         """
         if self.llm_mode == LLMMode.DEEPSEEK:
-            return False  # M1 前不可用
+            return False  # M1.2+ 真实意图识别未完成
         if self.powerbi_mode == PowerBIMode.REMOTE_MCP:
             return False  # M2 前不可用
         return True
@@ -122,6 +134,7 @@ class Settings(BaseSettings):
             "version": self.version,
             "is_mock": self.is_mock,
             "is_real_ready": self.is_real_ready,
+            "deepseek_configured": self.is_deepseek_configured,
         }
 
 

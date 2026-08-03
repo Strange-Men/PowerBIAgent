@@ -61,7 +61,7 @@ class TestHealthMockReady:
     async def test_health_version(self, mock_client):
         response = await mock_client.get("/health")
         data = response.json()
-        assert data["version"] == "M1.0"
+        assert data["version"] == "M1.1"
 
     @pytest.mark.asyncio
     async def test_health_mode_fields(self, mock_client):
@@ -94,11 +94,12 @@ class TestHealthNotReady:
     """Real 模式 Health 返回 503 — 通过显式传入 Settings 避免缓存问题"""
 
     @pytest.mark.asyncio
-    async def test_deepseek_mode_returns_503(self):
-        """DeepSeek 模式 Health 503、ready=false"""
+    async def test_deepseek_mode_no_key_returns_503(self):
+        """DeepSeek 模式无 Key → 503, deepseek_api_key_missing"""
         settings = Settings(
             llm_mode=LLMMode.DEEPSEEK,
             powerbi_mode=PowerBIMode.MOCK,
+            deepseek_api_key=None,
         )
         app = create_app(settings=settings)
         transport = ASGITransport(app=app)
@@ -109,7 +110,28 @@ class TestHealthNotReady:
                 data = response.json()
                 assert data["status"] == "not_ready"
                 assert data["ready"] is False
-                assert "deepseek_not_implemented" in data["reasons"]
+                assert "deepseek_api_key_missing" in data["reasons"]
+
+    @pytest.mark.asyncio
+    async def test_deepseek_mode_with_key_returns_503(self):
+        """DeepSeek 模式有 Key 但 Pipeline 未完成 → 503"""
+        fake_key = "sk-" + ("T" * 24)
+        settings = Settings(
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.MOCK,
+            deepseek_api_key=fake_key,
+        )
+        app = create_app(settings=settings)
+        transport = ASGITransport(app=app)
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.get("/health")
+                assert response.status_code == 503
+                data = response.json()
+                assert data["ready"] is False
+                assert "deepseek_pipeline_not_ready" in data["reasons"]
+                # Key 信息不泄露
+                assert "sk-" not in str(data)
 
     @pytest.mark.asyncio
     async def test_remote_mcp_mode_returns_503(self):
@@ -132,9 +154,11 @@ class TestHealthNotReady:
     @pytest.mark.asyncio
     async def test_both_real_modes_503(self):
         """DeepSeek + Remote MCP 同时 → 503、两个原因"""
+        fake_key = "sk-" + ("U" * 24)
         settings = Settings(
             llm_mode=LLMMode.DEEPSEEK,
             powerbi_mode=PowerBIMode.REMOTE_MCP,
+            deepseek_api_key=fake_key,
         )
         app = create_app(settings=settings)
         transport = ASGITransport(app=app)
@@ -144,16 +168,17 @@ class TestHealthNotReady:
                 assert response.status_code == 503
                 data = response.json()
                 assert data["ready"] is False
-                assert "deepseek_not_implemented" in data["reasons"]
+                assert "deepseek_pipeline_not_ready" in data["reasons"]
                 assert "powerbi_remote_mcp_not_implemented" in data["reasons"]
 
     @pytest.mark.asyncio
     async def test_health_no_secret_in_not_ready_response(self):
         """503 响应不含 Secret"""
+        fake_key = "sk-" + ("S" * 24)
         settings = Settings(
             llm_mode=LLMMode.DEEPSEEK,
             powerbi_mode=PowerBIMode.MOCK,
-            deepseek_api_key="sk-test-secret-key-12345",
+            deepseek_api_key=fake_key,
         )
         app = create_app(settings=settings)
         transport = ASGITransport(app=app)
@@ -162,7 +187,7 @@ class TestHealthNotReady:
                 response = await c.get("/health")
                 data = response.json()
                 data_str = str(data)
-                assert "sk-test-secret-key" not in data_str
+                assert fake_key not in data_str
                 assert "Bearer" not in data_str
 
 

@@ -271,14 +271,15 @@ class TestChatStructure:
 
 
 class TestChatRealModeRejection:
-    """Real 模式未实现时明确拒绝"""
+    """Real 模式未实现时明确拒绝 — M1.1"""
 
     @pytest.mark.asyncio
-    async def test_real_mode_chat_returns_503(self):
-        """DeepSeek 模式 chat 返回 503"""
+    async def test_deepseek_chat_no_key_503(self):
+        """DeepSeek Chat 无 Key → 503, deepseek_api_key_missing"""
         settings = Settings(
             llm_mode=LLMMode.DEEPSEEK,
             powerbi_mode=PowerBIMode.MOCK,
+            deepseek_api_key=None,
         )
         app = create_app(settings=settings)
         transport = ASGITransport(app=app)
@@ -289,7 +290,50 @@ class TestChatRealModeRejection:
                 })
                 assert response.status_code == 503
                 data = response.json()
-                assert "detail" in data
+                assert data["detail"]["error_type"] == "deepseek_api_key_missing"
+
+    @pytest.mark.asyncio
+    async def test_deepseek_chat_with_key_503(self):
+        """DeepSeek Chat 有 Key 但 Pipeline 未完成 → 503"""
+        fake_key = "sk-" + ("D" * 24)
+        settings = Settings(
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.MOCK,
+            deepseek_api_key=fake_key,
+        )
+        app = create_app(settings=settings)
+        transport = ASGITransport(app=app)
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.post("/api/v1/chat", json={
+                    "message": "测试",
+                })
+                assert response.status_code == 503
+                data = response.json()
+                assert data["detail"]["error_type"] == "deepseek_pipeline_not_ready"
+
+    @pytest.mark.asyncio
+    async def test_deepseek_chat_no_fallback_to_mock(self):
+        """DeepSeek Chat 不回退 Mock"""
+        fake_key = "sk-" + ("E" * 24)
+        settings = Settings(
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.MOCK,
+            deepseek_api_key=fake_key,
+        )
+        app = create_app(settings=settings)
+        transport = ASGITransport(app=app)
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.post("/api/v1/chat", json={
+                    "message": "测试",
+                })
+                # 必须 503，不能 200
+                assert response.status_code == 503
+                data = response.json()
+                # 不应返回 answer/report/tool_sequence（不是 Mock 结果）
+                if isinstance(data.get("detail"), dict):
+                    assert "answer" not in data.get("detail", {})
 
 
 class TestChatConcurrent:
@@ -568,12 +612,12 @@ class TestChatM10Version:
     """M1.0: 版本验证"""
 
     @pytest.mark.asyncio
-    async def test_health_version_m10(self, client):
-        """Health version 为 M1.0"""
+    async def test_health_version_m11(self, client):
+        """Health version 为 M1.1"""
         response = await client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["version"] == "M1.0"
+        assert data["version"] == "M1.1"
 
     @pytest.mark.asyncio
     async def test_health_ready_and_reasons(self, client):

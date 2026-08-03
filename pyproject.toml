@@ -36,6 +36,9 @@ dependencies = [
     # M0.3 新增 — YAML Golden Cases
     "pyyaml==6.0.3",
 
+    # M1.1: 网络调用（真实 LLM Provider 运行依赖）
+    "httpx==0.28.1",
+
     # Utilities
     # "python-dotenv>=1.0.0",     # M1 启用
 ]
@@ -44,7 +47,6 @@ dependencies = [
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
-    "httpx==0.28.1",
 ]
 
 [tool.setuptools.packages.find]

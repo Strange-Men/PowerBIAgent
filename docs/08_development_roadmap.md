@@ -101,14 +101,17 @@ MVP 功能阶段 (后续)
 
 ### M1.1｜DeepSeek Provider基础接入
 
-**状态：** ⬜ 未开始
+**状态：** ✅ 已完成
 
 **完成内容：**
 - 从 Settings 读取 API Key、Base URL、模型名
-- 实现 DeepSeekLLMProvider
-- 超时、鉴权、限流、网络和服务错误分类
-- 最小真实连通测试
+- 实现 DeepSeekLLMProvider（可独立调用、可测试、错误可分类）
+- 超时、鉴权、限流、网络和服务错误分类（10 种异常类型）
+- 最小真实连通测试通过（deepseek-v4-flash, 70 tokens）
 - Mock 模式保持完整可用
+- ScenarioFingerprint 替代无约束 Any
+- IdempotencyCoordinationError（Owner/Waiter 协调失败 → HTTP 503）
+- 安全扫描器纳入测试和 scripts 目录
 
 **本轮不接入真实 Intent 业务流程。**
 

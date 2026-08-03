@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M1.0.1 幂等并发与文档收尾修复** — M0 开发准备阶段已完成。FastAPI 骨架、Health/Chat 接口已上线。Mock 模式完整闭环。
+**M1.1 DeepSeek Provider基础接入** — DeepSeekLLMProvider 已实现，真实连通测试通过。Chat 真实链路尚未接通（M1.2+）。
 
-> **当前仅支持 Mock 模式。** 真实 DeepSeek 和 Power BI 尚未接入（计划 M1.1/M2）。
+> **Mock 模式完整可用。** DeepSeek Provider 已实现但真实 Intent 业务流程尚未接入。Chat 接口仅 Mock 模式可用。
 
 ### 幂等与并发特性
 
@@ -152,7 +152,20 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 # 仓库安全检查（提交前必须执行）
 D:\Conda\envs\PBIAgent\python.exe scripts/check_repository_safety.py
+
+# DeepSeek 真实连通测试（需要 .env 中配置 DEEPSEEK_API_KEY）
+D:\Conda\envs\PBIAgent\python.exe -m backend.app.llm.deepseek_smoke
 ```
+### DeepSeek 配置
+
+DeepSeek 配置由本地 `.env` 提供：
+- `LLM_MODE=deepseek` — 启用 DeepSeek 模式
+- `DEEPSEEK_API_KEY=<your_key_here>` — API Key（仅后端使用）
+- `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1` — API 地址
+- `DEEPSEEK_MODEL=deepseek-chat` — 模型名称
+
+Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过脱敏。
+`httpx` 属于运行依赖。
 
 ## 技术栈
 

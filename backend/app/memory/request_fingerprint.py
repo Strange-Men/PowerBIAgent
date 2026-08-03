@@ -5,6 +5,11 @@ M1.0.1 新增：
 - IdempotencyConflictError: 相同 request_id 不同指纹时抛出
 - 使用 Canonical JSON + SHA-256 生成指纹 Hash
 
+M1.1 修复：
+- ScenarioFingerprint: 独立 Pydantic 模型替代无约束 Any
+- 五个字段全部参与 Canonical JSON 和 SHA-256
+- Memory 层不得导入 Application 层
+
 设计原则：
 - 指纹使用稳定的 Canonical JSON 序列化，保证确定性
 - message 仅执行首尾空白清理，不做大小写转换或语义合并
@@ -15,7 +20,7 @@ M1.0.1 新增：
 
 import hashlib
 import json
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -35,9 +40,48 @@ class IdempotencyConflictError(Exception):
         super().__init__(self.detail)
 
 
+class IdempotencyCoordinationError(Exception):
+    """幂等协调失败异常 — Owner/Waiter 内部协调失败
+
+    语义：
+    - Waiter 重试耗尽
+    - Owner 完成后没有找到快照
+    - 无法安全确认执行结果
+
+    不得继续将协调失败伪装为 409。
+    """
+
+    def __init__(self, request_id: str, detail: str = ""):
+        self.request_id = request_id
+        self.detail = detail or (
+            "Idempotency coordination unavailable for request_id"
+        )
+        super().__init__(self.detail)
+
+
 class OwnerFailedError(Exception):
     """Owner 执行失败异常 — 内部使用，唤醒 Waiter 后由 Waiter 重试"""
     pass
+
+
+class ScenarioFingerprint(BaseModel):
+    """场景指纹 — M1.1 替代无约束 Any
+
+    Memory 层独立模型，不导入 Application 层。
+    Service 负责把 MockScenarioSelection 转换为 ScenarioFingerprint。
+    五个字段全部参与 Canonical JSON 和 SHA-256。
+    """
+
+    intent_key: str
+    query_plan_key: str
+    dax_key: str
+    powerbi_key: str
+    response_key: str
+
+    model_config = {
+        "frozen": True,
+        "extra": "forbid",
+    }
 
 
 class RequestFingerprint(BaseModel):
@@ -56,9 +100,9 @@ class RequestFingerprint(BaseModel):
         default=None,
         description="已解析完成的生效报表模板 Key",
     )
-    scenario: Optional[Any] = Field(
+    scenario: Optional[ScenarioFingerprint] = Field(
         default=None,
-        description="Harness 显式传入的 Scenario（MockScenarioSelection）",
+        description="场景指纹（Service 从 MockScenarioSelection 转换）",
     )
     intent_key: Optional[str] = Field(
         default=None,
@@ -76,7 +120,7 @@ class RequestFingerprint(BaseModel):
 
         Pydantic 字段按名称排序，确保确定性。
         """
-        result: dict[str, Any] = {
+        result: dict = {
             "client_conversation_id": self.client_conversation_id,
             "effective_report_template_key": self.effective_report_template_key,
             "intent_key": self.intent_key,
@@ -84,8 +128,8 @@ class RequestFingerprint(BaseModel):
             "powerbi_key": self.powerbi_key,
             "scenario": (
                 self.scenario.model_dump()
-                if self.scenario is not None and hasattr(self.scenario, "model_dump")
-                else self.scenario
+                if self.scenario is not None
+                else None
             ),
             "semantic_model_key": self.semantic_model_key,
         }
@@ -111,7 +155,7 @@ class RequestFingerprint(BaseModel):
         client_conversation_id: Optional[str] = None,
         semantic_model_key: str = "mock_sales_model",
         effective_report_template_key: Optional[str] = None,
-        scenario: Optional[Any] = None,
+        scenario: Optional[ScenarioFingerprint] = None,
         intent_key: Optional[str] = None,
         powerbi_key: Optional[str] = None,
     ) -> "RequestFingerprint":
@@ -137,7 +181,7 @@ class RequestFingerprint(BaseModel):
         client_conversation_id: Optional[str] = None,
         semantic_model_key: str = "mock_sales_model",
         effective_report_template_key: Optional[str] = None,
-        scenario: Optional[Any] = None,
+        scenario: Optional[ScenarioFingerprint] = None,
         intent_key: Optional[str] = None,
         powerbi_key: Optional[str] = None,
     ) -> str:

@@ -81,10 +81,54 @@ class LLMProvider(ABC):
 class LLMProviderError(Exception):
     """LLM Provider 通用异常"""
 
-    def __init__(self, message: str, provider: str = "", retryable: bool = False):
+    def __init__(
+        self,
+        message: str,
+        provider: str = "",
+        retryable: bool = False,
+        status_code: int | None = None,
+        error_code: str | None = None,
+    ):
         super().__init__(message)
         self.provider = provider
         self.retryable = retryable
+        self.status_code = status_code
+        self.error_code = error_code
+
+
+class LLMConfigurationError(LLMProviderError):
+    """LLM 配置错误 — Key 缺失、Base URL 为空、Model 为空等"""
+    pass
+
+
+class LLMAuthenticationError(LLMProviderError):
+    """LLM 鉴权失败 — HTTP 401/403"""
+    pass
+
+
+class LLMRateLimitError(LLMProviderError):
+    """LLM 限流 — HTTP 429"""
+    pass
+
+
+class LLMConnectionError(LLMProviderError):
+    """LLM 连接错误 — ConnectError/DNS"""
+    pass
+
+
+class LLMRequestError(LLMProviderError):
+    """LLM 请求错误 — HTTP 400/404/422、messages 非法等"""
+    pass
+
+
+class LLMServiceError(LLMProviderError):
+    """LLM 服务端错误 — HTTP 5xx"""
+    pass
+
+
+class LLMResponseError(LLMProviderError):
+    """LLM 响应解析错误 — HTTP Body 非法 JSON、choices 缺失等"""
+    pass
 
 
 class LLMTimeoutError(LLMProviderError):

@@ -61,8 +61,10 @@ from backend.app.memory.repository import (
 )
 from backend.app.memory.request_fingerprint import (
     IdempotencyConflictError,
+    IdempotencyCoordinationError,
     OwnerFailedError,
     RequestFingerprint,
+    ScenarioFingerprint,
 )
 from backend.app.memory.result_snapshot import (
     IdempotencyClaimStatus,
@@ -243,13 +245,24 @@ class MockTurnService:
 
         runtime_mode = RuntimeDataMode.MOCK if self.config.is_mock else RuntimeDataMode.REAL
 
+        # ── M1.1: 将 MockScenarioSelection 转换为 Memory 层 ScenarioFingerprint ──
+        scenario_fp: Optional[ScenarioFingerprint] = None
+        if resolved_scenario is not None:
+            scenario_fp = ScenarioFingerprint(
+                intent_key=resolved_scenario.intent_key,
+                query_plan_key=resolved_scenario.query_plan_key,
+                dax_key=resolved_scenario.dax_key,
+                powerbi_key=resolved_scenario.powerbi_key,
+                response_key=resolved_scenario.response_key,
+            )
+
         # ── M1.0.1: 计算请求指纹 ──
         fingerprint_hash = RequestFingerprint.compute_hash(
             message=message,
             client_conversation_id=conversation_id,  # 原始客户端值，可能为 None
             semantic_model_key=semantic_model_key,
             effective_report_template_key=effective_template_key,
-            scenario=resolved_scenario,
+            scenario=scenario_fp,
             intent_key=intent_key,
             powerbi_key=powerbi_key,
         )
@@ -307,8 +320,8 @@ class MockTurnService:
                 # 获得执行权
                 break
         else:
-            # 重试耗尽
-            raise IdempotencyConflictError(
+            # 重试耗尽 → 协调失败 (HTTP 503)
+            raise IdempotencyCoordinationError(
                 request_id=effective_req_id,
                 detail="Unable to acquire execution right after retries",
             )

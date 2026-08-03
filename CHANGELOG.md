@@ -1,5 +1,65 @@
 # CHANGELOG
 
+## [M1.1] — 2026-08-03
+
+### DeepSeek Provider基础接入
+
+**来源：** M1.1 开发轮次。
+
+**DeepSeekLLMProvider 实现：**
+- `backend/app/llm/deepseek.py` — 完整实现，支持独立调用
+- 构造时校验 Key/Base URL/Model，空值明确失败
+- URL 拼接正确去除末尾 `/`，不产生重复 `//`
+- 请求：messages、stream=false、temperature=0、response_format=json_object
+- 响应解析：choices[0].message.content → json.loads() → model_validate()
+- 无自动重试、无 Markdown 去除、无 JSON 自动修复（留待 M1.2）
+
+**LLM 异常契约（10 种）：**
+- LLMConfigurationError、LLMAuthenticationError、LLMRateLimitError
+- LLMConnectionError、LLMRequestError、LLMServiceError
+- LLMResponseError、LLMTimeoutError、LLMValidationError、LLMProviderError
+- 错误映射：HTTP 401/403 → Authentication、429 → RateLimit、5xx → Service 等
+- LLMProviderError 可安全携带 provider/retryable/status_code/error_code
+
+**Provider Factory 与 Registry：**
+- `backend/app/llm/factory.py` — build_llm_registry() 统一创建入口
+- Mock 模式：仅注册 MockLLMProvider
+- DeepSeek 模式：Mock + DeepSeek 同时注册，默认 deepseek
+- 每个 Factory 调用返回独立 Registry 实例
+
+**Settings 更新：**
+- 版本 M1.1
+- `is_deepseek_configured` 属性（不访问网络，不泄露 Key 信息）
+- `safe_repr()` 增加 `deepseek_configured` 字段
+
+**Health 与 Chat 边界：**
+- DeepSeek 无 Key：Health 503, `deepseek_api_key_missing`
+- DeepSeek 有 Key：Health 503, `deepseek_pipeline_not_ready`
+- Chat DeepSeek 模式：503，不回退 Mock
+
+**历史审计收口：**
+- docs/09：写入 M1.0.1 `c223d7b`、M1.0.2 `5726959`、pytest 415 passed
+- CHANGELOG：删除所有"由 Git 解析"和"待推送"占位符
+- ScenarioFingerprint：独立 Pydantic 模型替代 `Optional[Any]`
+- IdempotencyCoordinationError：Owner/Waiter 协调失败 → HTTP 503
+- 安全扫描器：不再整体排除 backend/tests 和 scripts
+- httpx==0.28.1 提升为运行依赖
+
+**真实连通测试：**
+- `backend/app/llm/deepseek_smoke.py` — 最小合成请求
+- 通过：success=True, model=deepseek-v4-flash, 70 tokens
+- 安全输出仅含脱敏字段
+
+**测试结果：**
+- pytest：506 passed
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS
+
+**Commit SHA：** 待下轮写入
+**本轮 Tag：** 无（本轮不创建 Tag）
+
+---
+
 ## [M1.0.2] — 2026-07-31
 
 ### 密钥与仓库安全规则固化
@@ -47,8 +107,7 @@
 - 26 个安全测试全部通过
 - 待全量 pytest 和 Golden Cases 验证
 
-**Commit SHA：** 由 Git 解析
-**Push 状态：** 待推送
+**Commit SHA：** `5726959`
 **本轮 Tag：** 无（本轮不创建 Tag）
 
 ---
@@ -96,8 +155,7 @@
 - Golden Cases：11/11 mock_ready 通过，1 skipped
 - compileall 通过 | pip check 通过
 
-**Commit SHA：** 由 Git 解析
-**Push 状态：** 待推送
+**Commit SHA：** `c223d7b`
 **本轮 Tag：** 无（本轮不创建 Tag）
 
 ---
@@ -145,8 +203,7 @@
 - compileall 通过 | pip check 通过
 - 新增 `backend/tests/integration/test_m1_fixes.py`（30 个 M1.0 专项测试）
 
-**Commit SHA：** 由 Git 解析
-**Push 状态：** 将在 Git 收尾完成推送
+**Commit SHA：** `9247322`
 **本轮 Tag：** 无（本轮不创建 Tag）
 
 ---
@@ -201,8 +258,7 @@
 - pip check 通过
 - Uvicorn 启动验证：Health Mock 200、数据问答返回真实 answer、报表返回 HTML、unsupported 真实可达
 
-**Commit SHA：** 由 Git 解析
-**Push 状态：** 将在 Git 收尾完成推送
+**Commit SHA：** `1f967b0`
 **本轮 Tag：** `m0.4.1-foundation-release`（M0.4.1 封板）
 
 ---
@@ -248,8 +304,7 @@
 - compileall 通过
 - Uvicorn 启动验证：/health 返回 200，/api/v1/chat 数据问答和报表均成功
 
-**Commit SHA：** 由 Git 解析
-**Push 状态：** 将在 Git 收尾完成推送
+**Commit SHA：** `d5c1634`
 **本轮 Tag：** `m0.4-foundation-release`（M0 封板，本 Prompt 已批准）
 
 ---

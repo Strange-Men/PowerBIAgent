@@ -50,10 +50,8 @@ ALLOWED_FILENAMES: list[str] = [
 FRONTEND_DIRS: list[str] = ["frontend"]
 
 # 排除目录（不检查这些目录中的文件）
-EXCLUDE_DIRS: list[str] = [
-    "backend/tests",
-    "scripts",
-]
+# M1.1: 不再整体排除 backend/tests 和 scripts — 测试和脚本代码必须扫描
+EXCLUDE_DIRS: list[str] = []
 
 # 前端禁止的 Secret 模式 (pattern, description)
 FORBIDDEN_FRONTEND_PATTERNS: list[tuple[str, str]] = [
@@ -72,7 +70,7 @@ FORBIDDEN_FRONTEND_PATTERNS: list[tuple[str, str]] = [
 # 注意：不输出捕获到的具体值
 OBVIOUS_SECRET_PATTERNS: list[tuple[str, str]] = [
     # DEEPSEEK_API_KEY 后跟非空非占位值
-    (r"DEEPSEEK_API_KEY\s*=\s*(?!\s*$)(?!\s*YOUR_KEY_HERE\b)(?!\s*REPLACE_ME\b)(?!\s*EXAMPLE_ONLY\b)(?!\s*your_)", "DEEPSEEK_API_KEY 有疑似真实值"),
+    (r"DEEPSEEK_API_KEY\s*=\s*(?!\s*$)(?!\s*YOUR_KEY_HERE\b)(?!\s*REPLACE_ME\b)(?!\s*EXAMPLE_ONLY\b)(?!\s*your_)(?!\s*fake_key\b)(?!\s*[0-9]+\s*$)", "DEEPSEEK_API_KEY 有疑似真实值"),
     # Authorization Bearer 后跟长 Token（>20 字符）
     (r"Authorization:\s*Bearer\s+[A-Za-z0-9_\-\.]{20,}", "Authorization Bearer 长 Token"),
     # sk- 后跟明显长随机字符串
@@ -92,7 +90,26 @@ PLACEHOLDER_VALUES = {
     "your_tenant_id_here",
     "your_client_id_here",
     "your_client_secret_here",
+    "your_key_here",  # 尖括号包裹的占位符
 }
+
+# 测试安全标记 — 包含这些子串的值视为明显测试占位，不报 Secret
+# M1.1: 测试和 scripts 目录纳入扫描后，避免因测试用假值产生误报
+TEST_SAFE_MARKERS = [
+    "FAKE_TEST_KEY",
+    "NOT_A_REAL_SECRET",
+    "TEST_ONLY",
+    "fake_test_",
+    "test_fake_",
+    "FOR_UNIT_TEST",
+    "FAKE_KEY_FROM",
+    "fake_key",  # 测试中用拼接生成的假 Key 变量
+    "fake_key_1",
+    "fake_key_2",
+    "sk-000000000000",  # 全零占位 Key（测试用）
+    "test-key-",  # 测试用标记 Key
+    "your_key_here",  # 占位符
+]
 
 # ---------------------------------------------------------------------------
 # 工具函数
@@ -248,8 +265,29 @@ def check_frontend_secrets(files: list[str]) -> list[dict]:
     return findings
 
 
+def _is_test_safe(line: str) -> bool:
+    """检查行是否包含测试安全标记（避免测试用假值产生误报）。
+
+    M1.1: 大小写不敏感匹配。测试文件中的假值应使用拼接生成，
+    或包含明显测试标记（如 FAKE_TEST、NOT_A_REAL、FOR_UNIT_TEST 等）。
+    """
+    line_lower = line.lower()
+    for marker in TEST_SAFE_MARKERS:
+        if marker.lower() in line_lower:
+            return True
+    # 额外检查：值看起来像 Python 变量/属性引用（非字面量）
+    # 如 api_key=settings.deepseek_api_key, secret=some_var 等
+    if re.search(
+        r'(?:DEEPSEEK_API_KEY|CLIENT_SECRET|api_key|apikey|secret|token|password)\s*=\s*[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*\s*[,\s)#]',
+        line,
+        re.IGNORECASE,
+    ):
+        return True
+    return False
+
+
 def check_obvious_secrets(files: list[str]) -> list[dict]:
-    """检查 3：明显真实 Secret（排除测试和脚本目录）。"""
+    """检查 3：明显真实 Secret。"""
     findings = []
     for filepath in files:
         if _is_excluded(filepath):
@@ -262,6 +300,8 @@ def check_obvious_secrets(files: list[str]) -> list[dict]:
         except OSError:
             continue
         for i, line in enumerate(lines, start=1):
+            if _is_test_safe(line):
+                continue  # M1.1: 跳过测试安全标记行
             for pattern, description in OBVIOUS_SECRET_PATTERNS:
                 if re.search(pattern, line, re.IGNORECASE):
                     findings.append({

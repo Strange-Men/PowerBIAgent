@@ -1,6 +1,6 @@
-"""API 路由 — M1.0
+"""API 路由 — M1.1
 
-GET  /health           — 健康检查（Mock 200 / Real 503）
+GET  /health           — 健康检查（Mock 200 / DeepSeek 503）
 POST /api/v1/chat      — 非流式对话接口
 
 M1.0 新增：
@@ -8,6 +8,11 @@ M1.0 新增：
 
 M1.0.1 新增：
 - 捕获 IdempotencyConflictError → HTTP 409
+
+M1.1 新增：
+- DeepSeek 模式 Health 返回 503（pipeline_not_ready 或 api_key_missing）
+- DeepSeek 模式 Chat 返回 503
+- 捕获 IdempotencyCoordinationError → HTTP 503
 """
 
 import uuid
@@ -19,25 +24,34 @@ from fastapi.responses import JSONResponse
 from backend.app.api.dependencies import get_mock_turn_service, get_settings_dep
 from backend.app.api.schemas import ChatRequest, ChatResponse, ErrorResponse, HealthResponse, ReportResponse
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
-from backend.app.memory.request_fingerprint import IdempotencyConflictError
+from backend.app.memory.request_fingerprint import (
+    IdempotencyConflictError,
+    IdempotencyCoordinationError,
+)
 
 router = APIRouter()
 
 
 @router.get("/health", response_model=HealthResponse)
 async def health(request: Request, response: Response, settings: Settings = Depends(get_settings_dep)):
-    """健康检查
+    """健康检查 — M1.1
 
     Mock 模式完整可用 → 200、ready=true。
-    Real 模式（DeepSeek / Remote MCP）尚未实现 → 503、ready=false。
-    不调用 LLM 或 Power BI 网络。
+    DeepSeek 模式 Key 缺失 → 503、deepseek_api_key_missing。
+    DeepSeek 模式 Key 已配置但 Pipeline 未完成 → 503、deepseek_pipeline_not_ready。
+    Remote MCP 模式 → 503、powerbi_remote_mcp_not_implemented。
+    不调用 LLM 或 Power BI 网络。不输出 Key 信息。
     """
     ready = settings.is_real_ready
     reasons: list[str] = []
 
     if not ready:
         if settings.llm_mode == LLMMode.DEEPSEEK:
-            reasons.append("deepseek_not_implemented")
+            if not settings.is_deepseek_configured:
+                reasons.append("deepseek_api_key_missing")
+            else:
+                # M1.1: Provider 已实现，但真实 Intent 链路未完成
+                reasons.append("deepseek_pipeline_not_ready")
         if settings.powerbi_mode == PowerBIMode.REMOTE_MCP:
             reasons.append("powerbi_remote_mcp_not_implemented")
 
@@ -74,13 +88,23 @@ async def chat(
     M1.0.1: 相同 request_id 不同请求内容返回 HTTP 409。
     """
 
-    # Real 模式未实现 → 明确拒绝
+    # M1.1: DeepSeek 模式 Chat 仍不可用（真实 Intent 链路未完成）
     if settings.llm_mode != LLMMode.MOCK or settings.powerbi_mode != PowerBIMode.MOCK:
+        if settings.llm_mode == LLMMode.DEEPSEEK:
+            if not settings.is_deepseek_configured:
+                error_type = "deepseek_api_key_missing"
+                detail_msg = "DeepSeek API Key 未配置。请在 .env 中设置 DEEPSEEK_API_KEY。"
+            else:
+                error_type = "deepseek_pipeline_not_ready"
+                detail_msg = "DeepSeek Provider 已就绪，但真实 Intent 链路尚未接通。请使用 Mock 模式。"
+        else:
+            error_type = "real_mode_unavailable"
+            detail_msg = "Real mode not yet implemented. Only Mock mode is available."
         raise HTTPException(
             status_code=503,
             detail={
-                "detail": "Real mode not yet implemented. Only Mock mode is available in M1.0.",
-                "error_type": "real_mode_unavailable",
+                "detail": detail_msg,
+                "error_type": error_type,
             },
         )
 
@@ -102,6 +126,16 @@ async def chat(
             content={
                 "detail": e.detail,
                 "error_type": "request_id_conflict",
+                "request_id": e.request_id,
+            },
+        )
+    except IdempotencyCoordinationError as e:
+        # M1.1: Owner/Waiter 协调失败 → HTTP 503
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": e.detail,
+                "error_type": "idempotency_coordination_unavailable",
                 "request_id": e.request_id,
             },
         )

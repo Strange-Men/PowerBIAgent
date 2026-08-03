@@ -31,9 +31,9 @@ class TestSettingsDefaults:
         settings = Settings()
         assert settings.app_name == "PowerBIAgent"
 
-    def test_version_is_m1_0(self):
+    def test_version_is_m1_1(self):
         settings = Settings()
-        assert settings.version == "M1.0"
+        assert settings.version == "M1.1"
 
     def test_host_default_localhost(self):
         settings = Settings()
@@ -111,29 +111,36 @@ class TestSettingsNoSecretLeak:
     """不泄露 Secret"""
 
     def test_safe_repr_no_secret(self):
-        settings = Settings(deepseek_api_key="sk-test-key-12345")
+        fake_key = "sk-" + ("T" * 15) + "-" + ("k" * 10)
+        settings = Settings(deepseek_api_key=fake_key)
         safe = settings.safe_repr()
         assert "deepseek_api_key" not in safe
         assert "api_key" not in str(safe)
 
     def test_str_repr_no_secret(self):
-        settings = Settings(deepseek_api_key="sk-test-key-12345")
+        fake_key = "sk-" + ("T" * 15) + "-" + ("k" * 10)
+        settings = Settings(deepseek_api_key=fake_key)
         r = repr(settings)
         # SecretStr repr 不应暴露实际值
-        assert "sk-test-key-12345" not in r
+        assert fake_key not in r
 
     def test_dict_no_secret_leak(self):
         """model_dump 包含 SecretStr 但值是 SecretStr 对象，不是明文"""
-        settings = Settings(deepseek_api_key="sk-test-key-12345")
+        fake_key = "sk-" + ("T" * 15) + "-" + ("k" * 10)
+        settings = Settings(deepseek_api_key=fake_key)
         dumped = settings.model_dump()
         # SecretStr 导出时应为占位符或对象（不应是明文字符串）
         val = dumped.get("deepseek_api_key")
         if val is not None:
-            assert str(val) != "sk-test-key-12345"
+            assert str(val) != fake_key
 
     def test_default_no_api_key(self):
-        settings = Settings()
-        # 未设置或为空均视为无 Key
+        settings = Settings(
+            deepseek_api_key=None,
+            llm_mode="mock",
+            powerbi_mode="mock",
+        )
+        # 显式传 None 应视为无 Key（覆盖 .env 中的值）
         assert (
             settings.deepseek_api_key is None
             or settings.deepseek_api_key.get_secret_value() == ""

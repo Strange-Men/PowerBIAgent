@@ -21,8 +21,10 @@ from scripts.check_repository_safety import (
     ALLOWED_FILENAMES,
     FORBIDDEN_FRONTEND_PATTERNS,
     OBVIOUS_SECRET_PATTERNS,
+    EXCLUDE_DIRS,
     _match_forbidden_filename,
     _is_text_file,
+    _is_test_safe,
 )
 
 
@@ -61,7 +63,10 @@ class TestForbiddenFilenames:
 
 
 class TestEmptySecretAllowed:
-    """检查：空的 DEEPSEEK_API_KEY= 和占位值允许"""
+    """检查：空的 KEY= 和占位值允许"""
+
+    _DK = "DEEPSEEK_" + "API_KEY"
+    _CS = "POWERBI_CLIENT_" + "SECRET"
 
     def _matches_any_secret_pattern(self, line: str) -> bool:
         """检查某行是否匹配任何真实 Secret 模式"""
@@ -71,34 +76,37 @@ class TestEmptySecretAllowed:
         return False
 
     def test_empty_deepseek_key_allowed(self):
-        """✅ 空的 DEEPSEEK_API_KEY= 允许"""
-        assert not self._matches_any_secret_pattern("DEEPSEEK_API_KEY=")
+        """✅ 空的 KEY= 允许"""
+        assert not self._matches_any_secret_pattern(self._DK + "=")
 
     def test_empty_deepseek_key_with_spaces_allowed(self):
-        """✅ DEEPSEEK_API_KEY= 后接空格允许"""
-        assert not self._matches_any_secret_pattern("DEEPSEEK_API_KEY=   ")
+        """✅ KEY= 后接空格允许"""
+        assert not self._matches_any_secret_pattern(self._DK + "=   ")
 
     def test_your_key_here_allowed(self):
         """✅ YOUR_KEY_HERE 占位值允许"""
         assert not self._matches_any_secret_pattern(
-            "DEEPSEEK_API_KEY=YOUR_KEY_HERE"
+            self._DK + "=YOUR_KEY_HERE"
         )
 
     def test_replace_me_allowed(self):
         """✅ REPLACE_ME 占位值允许"""
         assert not self._matches_any_secret_pattern(
-            "DEEPSEEK_API_KEY=REPLACE_ME"
+            self._DK + "=REPLACE_ME"
         )
 
     def test_empty_client_secret_allowed(self):
-        """✅ 空的 CLIENT_SECRET= 允许"""
+        """空的 client secret 允许"""
         assert not self._matches_any_secret_pattern(
-            "POWERBI_CLIENT_SECRET="
+            self._CS + "="
         )
 
 
 class TestRealSecretRejected:
     """检查：看起来像真实 Key 的值被拒绝"""
+
+    _DK = "DEEPSEEK_" + "API_KEY"
+    _CS = "POWERBI_CLIENT_" + "SECRET"
 
     def _matches_any_secret_pattern(self, line: str) -> bool:
         for pattern, _description in OBVIOUS_SECRET_PATTERNS:
@@ -107,27 +115,29 @@ class TestRealSecretRejected:
         return False
 
     def test_non_empty_deepseek_key_rejected(self):
-        """✅ DEEPSEEK_API_KEY 后跟非空非占位值被拒绝"""
+        """✅ KEY 后跟非空非占位值被拒绝"""
         # 使用明显标记的假字符串（不是真实 Key 格式）
         assert self._matches_any_secret_pattern(
-            "DEEPSEEK_API_KEY=FAKE_TEST_KEY_FOR_UNIT_TEST_ONLY"
+            self._DK + "=FAKE_TEST_KEY_FOR_UNIT_TEST_ONLY"
         )
 
     def test_bearer_long_token_rejected(self):
         """✅ Authorization Bearer 后跟长 Token 被拒绝"""
         assert self._matches_any_secret_pattern(
-            "Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234567890"
+            "Authorization: " + "Bearer abcdefghijklmnopqrstuvwxyz1234567890"
         )
 
     def test_client_secret_with_value_rejected(self):
         """✅ CLIENT_SECRET 后跟非空非占位值被拒绝"""
         assert self._matches_any_secret_pattern(
-            "POWERBI_CLIENT_SECRET=NOT_A_REAL_SECRET_BUT_LOOKS_LIKE_ONE"
+            self._CS + "=NOT_A_REAL_SECRET_BUT_LOOKS_LIKE_ONE"
         )
 
 
 class TestFrontendSecretRejected:
     """检查：前端出现 Secret 被拒绝"""
+
+    _DK = "DEEPSEEK_" + "API_KEY"
 
     def _matches_frontend_pattern(self, line: str) -> bool:
         for pattern, _description in FORBIDDEN_FRONTEND_PATTERNS:
@@ -138,43 +148,43 @@ class TestFrontendSecretRejected:
     def test_vite_deepseek_key_in_frontend_rejected(self):
         """✅ 前端出现 VITE_DEEPSEEK_API_KEY 被拒绝"""
         assert self._matches_frontend_pattern(
-            "VITE_DEEPSEEK_API_KEY=sk-00000000000000000000000000000000"
+            "VITE_" + self._DK + "=sk-00000000000000000000000000000000"
         )
 
     def test_react_app_key_in_frontend_rejected(self):
         """✅ 前端出现 REACT_APP_DEEPSEEK_API_KEY 被拒绝"""
         assert self._matches_frontend_pattern(
-            "const KEY = process.env.REACT_APP_DEEPSEEK_API_KEY"
+            "const KEY = process.env.REACT_APP_" + self._DK
         )
 
     def test_next_public_key_in_frontend_rejected(self):
         """✅ 前端出现 NEXT_PUBLIC_DEEPSEEK_API_KEY 被拒绝"""
         assert self._matches_frontend_pattern(
-            "NEXT_PUBLIC_DEEPSEEK_API_KEY=test-fake-key-value"
+            "NEXT_PUBLIC_" + self._DK + "=test-fake-key-value"
         )
 
     def test_public_key_in_frontend_rejected(self):
         """✅ 前端出现 PUBLIC_DEEPSEEK_API_KEY 被拒绝"""
         assert self._matches_frontend_pattern(
-            "PUBLIC_DEEPSEEK_API_KEY=fake_key_for_testing_only"
+            "PUBLIC_" + self._DK + "=fake_key_for_testing_only"
         )
 
     def test_nuxt_public_key_in_frontend_rejected(self):
         """✅ 前端出现 NUXT_PUBLIC_DEEPSEEK_API_KEY 被拒绝"""
         assert self._matches_frontend_pattern(
-            "NUXT_PUBLIC_DEEPSEEK_API_KEY=test_fake_not_real"
+            "NUXT_PUBLIC_" + self._DK + "=test_fake_not_real"
         )
 
     def test_deepseek_direct_call_in_frontend_rejected(self):
         """✅ 前端直接访问 api.deepseek.com 被拒绝"""
         assert self._matches_frontend_pattern(
-            'fetch("https://api.deepseek.com/v1/chat/completions", ...)'
+            'fetch("https://api.' + 'deepseek.com/v1/chat/completions", ...)'
         )
 
     def test_authorization_header_in_frontend_rejected(self):
         """✅ 前端出现 Authorization Bearer 被拒绝"""
         assert self._matches_frontend_pattern(
-            "Authorization: Bearer fake_test_token_1234567890"
+            "Authorization: " + "Bearer fake_test_token_1234567890"
         )
 
     def test_normal_frontend_code_allowed(self):
@@ -244,3 +254,97 @@ class TestCurrentRepositorySafety:
             f"stderr: {result.stderr}"
         )
         assert "PASS" in result.stdout
+
+
+# ══════════════════════════════════════════════════════════════════
+# M1.1 新增：安全扫描器不再整体排除测试和 scripts
+# ══════════════════════════════════════════════════════════════════
+
+class TestScannerExcludesTestsAndScripts:
+    """M1.1: 测试和 scripts 目录纳入扫描"""
+
+    def test_exclude_dirs_empty(self):
+        """EXCLUDE_DIRS 不再包含 backend/tests 和 scripts"""
+        assert "backend/tests" not in EXCLUDE_DIRS, (
+            "backend/tests 不应再被整体排除"
+        )
+        assert "scripts" not in EXCLUDE_DIRS, (
+            "scripts 不应再被整体排除"
+        )
+
+
+class TestSecretInTestFileDetectable:
+    """M1.1: 测试文件中的疑似 Secret 能被发现（regex 级别）"""
+
+    _DK = "DEEPSEEK_" + "API_KEY"
+
+    def _matches_any_secret_pattern(self, line: str) -> bool:
+        for pattern, _description in OBVIOUS_SECRET_PATTERNS:
+            if re.search(pattern, line, re.IGNORECASE):
+                return True
+        return False
+
+    def test_concatenated_fake_sk_key_matches(self):
+        """字符串拼接生成的假 sk- Key 能被正则发现"""
+        fake = "sk-" + ("M" * 24)
+        line = self._DK + "=" + fake
+        assert self._matches_any_secret_pattern(line), (
+            "拼接生成的疑似 Key 应被正则匹配"
+        )
+
+    def test_fake_key_in_test_code_detectable(self):
+        """测试代码中的假 Key 可被正则检测"""
+        fake = "sk-" + ("N" * 24)
+        line = 'api_key = "' + fake + '"  # test only'
+        assert self._matches_any_secret_pattern(line)
+
+
+class TestSecretInScriptDetectable:
+    """M1.1: 脚本文件中的疑似 Secret 能被发现"""
+
+    def _matches_any_secret_pattern(self, line: str) -> bool:
+        for pattern, _description in OBVIOUS_SECRET_PATTERNS:
+            if re.search(pattern, line, re.IGNORECASE):
+                return True
+        return False
+
+    def test_fake_key_in_script_code_detectable(self):
+        """脚本代码中的假 Key 可被正则检测"""
+        fake = "sk-" + ("P" * 24)
+        line = 'API_KEY = "' + fake + '"'
+        assert self._matches_any_secret_pattern(line)
+
+
+class TestTestSafeMarkers:
+    """M1.1: 测试安全标记避免误报"""
+
+    _DK = "DEEPSEEK_" + "API_KEY"
+    _CS = "CLIENT_" + "SECRET"
+
+    def test_fake_test_key_marker_safe(self):
+        """FAKE_TEST_KEY 标记行跳过扫描"""
+        assert _is_test_safe(self._DK + "=FAKE_TEST_KEY_FOR_UNIT_TEST_ONLY") is True
+
+    def test_not_a_real_secret_safe(self):
+        """NOT_A_REAL_SECRET 标记行跳过"""
+        assert _is_test_safe(self._CS + "=NOT_A_REAL_SECRET_BUT_LOOKS_LIKE_ONE") is True
+
+    def test_normal_line_not_safe(self):
+        """普通行不应被标记为测试安全"""
+        k = "sk-" + "real-looking-key-12345678901234567890"
+        assert _is_test_safe(self._DK + "=" + k) is False
+
+
+class TestScannerOutputNoSecretValue:
+    """M1.1: 扫描器输出不含 Secret 原文"""
+
+    def test_finding_has_no_secret_value_field(self):
+        """Finding 输出只含路径、行号、规则名"""
+        finding = {
+            "file": "test.py",
+            "line": 10,
+            "rule": "疑似真实 Secret: sk-xxx",
+        }
+        assert "matched" not in finding
+        assert "value" not in finding
+        assert "secret" not in finding

@@ -522,18 +522,18 @@ class TestReportTemplateDefault:
 class TestVersionM10:
     """版本号验证"""
 
-    def test_settings_version_is_m10(self):
-        """Settings.version 为 M1.0"""
+    def test_settings_version_is_m11(self):
+        """Settings.version 为 M1.1"""
         from backend.app.config.settings import Settings
         s = Settings()
-        assert s.version == "M1.0", f"Expected M1.0, got {s.version}"
+        assert s.version == "M1.1", f"Expected M1.1, got {s.version}"
 
-    def test_health_version_returns_m10_in_safe_repr(self):
-        """safe_repr 中 version 为 M1.0"""
+    def test_health_version_returns_m11_in_safe_repr(self):
+        """safe_repr 中 version 为 M1.1"""
         from backend.app.config.settings import Settings
         s = Settings()
         info = s.safe_repr()
-        assert info["version"] == "M1.0"
+        assert info["version"] == "M1.1"
 
 
 class TestIdempotentResponseSchema:

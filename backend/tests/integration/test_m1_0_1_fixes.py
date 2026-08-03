@@ -208,14 +208,27 @@ class TestRequestFingerprint:
         assert h1 != h2
 
     def test_fingerprint_scenario_participates(self):
-        """显式传入 Scenario 时参与指纹"""
+        """显式传入 ScenarioFingerprint 时参与指纹"""
+        from backend.app.memory.request_fingerprint import ScenarioFingerprint
         h1 = RequestFingerprint.compute_hash(
             message="销售额",
-            scenario=MockScenarioSelection(intent_key="data_question"),
+            scenario=ScenarioFingerprint(
+                intent_key="data_question",
+                query_plan_key="data_question",
+                dax_key="data_question",
+                powerbi_key="data_question",
+                response_key="data_question",
+            ),
         )
         h2 = RequestFingerprint.compute_hash(
             message="销售额",
-            scenario=MockScenarioSelection(intent_key="report_generation"),
+            scenario=ScenarioFingerprint(
+                intent_key="report_generation",
+                query_plan_key="report_generation",
+                dax_key="report_generation",
+                powerbi_key="report_generation",
+                response_key="report_generation",
+            ),
         )
         assert h1 != h2
 

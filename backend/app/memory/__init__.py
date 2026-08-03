@@ -15,8 +15,17 @@ from backend.app.memory.repository import (
     MemoryRepository,
     MemoryVersionConflictError,
 )
+from backend.app.memory.request_fingerprint import (
+    IdempotencyConflictError,
+    IdempotencyCoordinationError,
+    OwnerFailedError,
+    RequestFingerprint,
+    ScenarioFingerprint,
+)
 
 __all__ = [
+    "IdempotencyConflictError",
+    "IdempotencyCoordinationError",
     "InMemoryMemoryRepository",
     "MemoryCommitDeniedError",
     "MemoryCommitEvidence",
@@ -26,6 +35,9 @@ __all__ = [
     "MemoryRepository",
     "MemoryStatus",
     "MemoryVersionConflictError",
+    "OwnerFailedError",
+    "RequestFingerprint",
     "RuntimeDataMode",
+    "ScenarioFingerprint",
     "StructuredWorkMemory",
 ]
