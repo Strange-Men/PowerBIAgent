@@ -1,5 +1,53 @@
 # CHANGELOG
 
+## [M1.3] — 2026-08-03
+
+### 真实 QueryPlan 与 DAX 生成
+
+**来源：** M1.3 开发轮次。
+
+**M1.2 审计收口（三项）：**
+- `from_committed_memory()` state_status 检查：committed 继承、pending/failed/缺失不继承
+- 无效 Prompt 测试修复：`test_prompt_forbids_dax_and_answer` 永真断言修正
+- 验证错误脱敏：IntentRecognitionError 不再拼接 `str(LLMValidationError)`
+
+**DeepSeekQueryPlanService：**
+- `backend/app/query_plan/deepseek_service.py` — 复用 DeepSeekLLMProvider
+- `backend/app/query_plan/prompt.py` — 集中式 QueryPlan 提示词
+- `backend/app/query_plan/context.py` — Schema 安全精简视图
+- 只处理 data_question/report_generation；clarification/unsupported 明确拒绝
+- Prompt：严格 JSON、只用 Schema 真实字段、不生成 DAX/答案、不调用工具、不虚构
+- 最多一次格式修复（仅 JSON/Schema 错误可修复）
+- 复用现有 QueryPlan Pydantic 模型和 ValidationService
+
+**DeepSeekDAXService：**
+- `backend/app/dax/deepseek_service.py` — 复用 DeepSeekLLMProvider
+- `backend/app/dax/prompt.py` — 集中式 DAX 提示词
+- `backend/app/dax/safety.py` — DAX 只读安全验证器
+- Prompt：只生成一个只读 EVALUATE DAX、只用 Schema 对象、不生成 SQL/脚本/答案
+- DAX 安全验证：禁止写入/删除/更新、SQL/Shell/Python/JS、多语句注入、注释绕过、非法对象、空 DAX、超长/超复杂
+- 允许：EVALUATE、SUMMARIZECOLUMNS、FILTER、TOPN、ORDER BY、DEFINE MEASURE、VAR、RETURN
+- 验证结果结构化：is_valid、errors、warnings、referenced_objects
+- 最多一次修复（同 M1.2 规则）
+
+**API 与 Health 边界：**
+- Mock：200，ready=true，version=M1.3
+- DeepSeek 无 Key：503，deepseek_api_key_missing
+- DeepSeek 有 Key：503，deepseek_pipeline_not_ready
+- Health 不访问网络
+- Chat DeepSeek 模式仍 503
+
+**测试结果：**
+- pytest：675 passed（M1.2 604 + M1.3 新 126 - 版本号更新 5）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS
+- 真实 Smoke：分离入口 `python -m backend.app.query_plan.deepseek_query_dax_smoke`
+
+**Commit SHA：** 待提交
+**本轮 Tag：** 无
+
+---
+
 ## [M1.2] — 2026-08-03
 
 ### 真实意图识别

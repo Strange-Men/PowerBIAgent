@@ -523,17 +523,17 @@ class TestVersionM10:
     """版本号验证"""
 
     def test_settings_version_is_m11(self):
-        """Settings.version 为 M1.1"""
+        """Settings.version 为 M1.3"""
         from backend.app.config.settings import Settings
         s = Settings()
-        assert s.version == "M1.2", f"Expected M1.2, got {s.version}"
+        assert s.version == "M1.3", f"Expected M1.3, got {s.version}"
 
-    def test_health_version_returns_m11_in_safe_repr(self):
-        """safe_repr 中 version 为 M1.1"""
+    def test_health_version_returns_m13_in_safe_repr(self):
+        """safe_repr 中 version 为 M1.3"""
         from backend.app.config.settings import Settings
         s = Settings()
         info = s.safe_repr()
-        assert info["version"] == "M1.2"
+        assert info["version"] == "M1.3"
 
 
 class TestIdempotentResponseSchema:

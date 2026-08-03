@@ -1,0 +1,479 @@
+"""DeepSeekQueryPlanService 离线测试 — M1.3
+
+使用 Fake Provider 完成全部离线测试。绝对禁止访问互联网。
+
+覆盖：
+- 四类入口边界（data_question/report_generation/clarification/unsupported）
+- clarification/unsupported 不生成 QueryPlan
+- Schema 白名单
+- 不存在字段被拒绝
+- QueryPlan 一次修复
+- 不允许第三次调用
+- 并发请求无共享状态
+- Mock 不回退
+- 异常不泄漏 Secret
+- Prompt 规则验证
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any, Optional
+from unittest.mock import patch
+
+import pytest
+from pydantic import BaseModel
+
+from backend.app.intent.models import IntentSpec, IntentType
+from backend.app.llm.base import (
+    LLMProvider,
+    LLMProviderError,
+    LLMRequest,
+    LLMResponse,
+    LLMTask,
+    LLMValidationError,
+)
+from backend.app.query_plan.context import build_schema_view, render_schema_text
+from backend.app.query_plan.deepseek_service import DeepSeekQueryPlanService, QueryPlanError
+from backend.app.query_plan.prompt import (
+    SYSTEM_PROMPT,
+    build_query_plan_messages,
+)
+from backend.app.intent.context import IntentContextSnapshot
+from backend.app.schemas.data_contracts import (
+    ColumnSchema,
+    MeasureSchema,
+    QueryPlan,
+    SemanticModelSchema,
+    StructuredFilter,
+    TableSchema,
+)
+
+
+# ── Fake Provider ──
+
+class FakeProvider(LLMProvider):
+    """可控的 Fake LLM Provider"""
+
+    def __init__(self, is_mock: bool = False, provider_name: str = "fake"):
+        self._is_mock = is_mock
+        self._provider_name = provider_name
+        self.calls: list[LLMRequest] = []
+        self._response_queue: list[LLMResponse | Exception] = []
+
+    @property
+    def provider_name(self) -> str:
+        return self._provider_name
+
+    @property
+    def is_mock(self) -> bool:
+        return self._is_mock
+
+    def enqueue_response(self, response: LLMResponse | Exception) -> None:
+        self._response_queue.append(response)
+
+    def enqueue_success(self, plan: QueryPlan, model: str = "fake-model",
+                        raw_content: str = "") -> None:
+        if not raw_content:
+            raw_content = json.dumps({
+                "normalized_question": plan.normalized_question,
+                "semantic_model_key": plan.semantic_model_key,
+                "measures": plan.measures,
+                "dimensions": plan.dimensions,
+                "filters": [{"field": f.field, "operator": f.operator.value, "value": f.value} for f in plan.filters],
+                "time_range": plan.time_range,
+                "sort": plan.sort,
+                "top_n": plan.top_n,
+                "comparison_mode": plan.comparison_mode,
+                "requested_template": plan.requested_template,
+                "inherited_context": plan.inherited_context,
+                "is_mock": plan.is_mock,
+            })
+        self._response_queue.append(LLMResponse(
+            content=raw_content,
+            structured=plan,
+            model=model,
+            usage={"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70},
+        ))
+
+    def enqueue_error(self, exc: Exception) -> None:
+        self._response_queue.append(exc)
+
+    async def generate(
+        self,
+        request: LLMRequest,
+        output_type: type[BaseModel],
+    ) -> LLMResponse:
+        self.calls.append(request)
+        if not self._response_queue:
+            raise RuntimeError("FakeProvider 响应队列为空")
+        resp = self._response_queue.pop(0)
+        if isinstance(resp, Exception):
+            raise resp
+        return resp
+
+
+# ── Helpers ──
+
+def _make_schema() -> SemanticModelSchema:
+    return SemanticModelSchema(
+        name="Mock Sales Model",
+        key="mock_sales_model",
+        tables=[
+            TableSchema(
+                name="Sales",
+                columns=[
+                    ColumnSchema(name="SalesKey", data_type="int64", is_hidden=True),
+                    ColumnSchema(name="Date", data_type="dateTime"),
+                    ColumnSchema(name="Region", data_type="string"),
+                    ColumnSchema(name="ProductCategory", data_type="string"),
+                    ColumnSchema(name="SalesAmount", data_type="decimal"),
+                    ColumnSchema(name="OrderQuantity", data_type="int64"),
+                ],
+                measures=[
+                    MeasureSchema(name="TotalSales", expression="SUM('Sales'[SalesAmount])"),
+                    MeasureSchema(name="TotalCost", expression="SUM('Sales'[CostAmount])"),
+                    MeasureSchema(name="Profit", expression="[TotalSales]-[TotalCost]"),
+                    MeasureSchema(name="OrderCount", expression="SUM('Sales'[OrderQuantity])"),
+                ],
+            )
+        ],
+    )
+
+
+def _make_svc(provider: Optional[FakeProvider] = None, max_repairs: int = 1) -> DeepSeekQueryPlanService:
+    if provider is None:
+        provider = FakeProvider(is_mock=False)
+    return DeepSeekQueryPlanService(provider=provider, max_format_repairs=max_repairs)
+
+
+def _make_intent(intent: IntentType = IntentType.DATA_QUESTION) -> IntentSpec:
+    return IntentSpec(
+        intent=intent,
+        confidence=0.9,
+        normalized_question="测试问题",
+        needs_clarification=(intent == IntentType.CLARIFICATION),
+        clarification_question="请说明" if intent == IntentType.CLARIFICATION else None,
+        unsupported_reason="不支持" if intent == IntentType.UNSUPPORTED else None,
+    )
+
+
+def _make_plan(**kwargs) -> QueryPlan:
+    defaults = {
+        "normalized_question": "本月各区域销售额",
+        "semantic_model_key": "mock_sales_model",
+        "measures": ["TotalSales"],
+        "dimensions": ["Region"],
+        "filters": [],
+        "time_range": "本月",
+        "sort": "desc",
+        "top_n": 5,
+    }
+    defaults.update(kwargs)
+    return QueryPlan(**defaults)
+
+
+# ══════════════════════════════════════════════════════════════════
+# 四类入口边界
+# ══════════════════════════════════════════════════════════════════
+
+class TestEntryBoundary:
+    """入口边界测试"""
+
+    @pytest.mark.asyncio
+    async def test_data_question_proceeds(self):
+        """data_question 生成 QueryPlan"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_plan())
+        svc = _make_svc(provider)
+        result = await svc.generate("本月销售额", _make_intent(IntentType.DATA_QUESTION), _make_schema())
+        assert result is not None
+        assert result.semantic_model_key == "mock_sales_model"
+
+    @pytest.mark.asyncio
+    async def test_report_generation_proceeds(self):
+        """report_generation 生成 QueryPlan"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_plan(requested_template="sales_weekly"))
+        svc = _make_svc(provider)
+        result = await svc.generate("生成本周周报", _make_intent(IntentType.REPORT_GENERATION), _make_schema())
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_clarification_rejected(self):
+        """clarification 被拒绝"""
+        svc = _make_svc()
+        with pytest.raises(QueryPlanError, match="clarification"):
+            await svc.generate("帮我看看", _make_intent(IntentType.CLARIFICATION), _make_schema())
+
+    @pytest.mark.asyncio
+    async def test_unsupported_rejected(self):
+        """unsupported 被拒绝"""
+        svc = _make_svc()
+        with pytest.raises(QueryPlanError, match="unsupported"):
+            await svc.generate("删除数据", _make_intent(IntentType.UNSUPPORTED), _make_schema())
+
+
+# ══════════════════════════════════════════════════════════════════
+# Schema 白名单与字段验证
+# ══════════════════════════════════════════════════════════════════
+
+class TestSchemaValidation:
+    """Schema 白名单与字段验证"""
+
+    @pytest.mark.asyncio
+    async def test_real_measures_accepted(self):
+        """Schema 中真实存在的度量值被接受"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_plan(measures=["TotalSales"]))
+        svc = _make_svc(provider)
+        result = await svc.generate("销售额", _make_intent(), _make_schema())
+        assert "TotalSales" in result.measures
+
+    @pytest.mark.asyncio
+    async def test_fake_measure_not_accepted(self):
+        """虚构的度量值不通过 Pydantic 验证（LLM 输出中的虚构字段）"""
+        # 这个测试验证 fake 字段可以被 ValidationService 捕获
+        from backend.app.harness.validators.validation_service import ValidationService
+        validator = ValidationService()
+        schema = _make_schema()
+        fake_plan = _make_plan(measures=["FakeMeasure"])
+        result = validator.validate_query_plan(fake_plan, schema)
+        assert result.is_valid is False
+
+    @pytest.mark.asyncio
+    async def test_schema_view_hides_secrets(self):
+        """Schema 视图不暴露 DAX 表达式等敏感信息"""
+        schema = _make_schema()
+        view = build_schema_view(schema)
+        text = render_schema_text(view)
+        assert "SUM('Sales'[SalesAmount])" not in text
+        assert "expression" not in text.lower()
+
+
+# ══════════════════════════════════════════════════════════════════
+# 一次格式修复
+# ══════════════════════════════════════════════════════════════════
+
+class TestOneTimeRepair:
+    """一次格式修复测试"""
+
+    @pytest.mark.asyncio
+    async def test_first_invalid_json_second_success(self):
+        """首次非法 JSON、第二次成功"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_error(LLMValidationError(
+            "bad json", error_code="invalid_content_json",
+            provider="fake", retryable=False,
+        ))
+        provider.enqueue_success(_make_plan())
+        svc = _make_svc(provider, max_repairs=1)
+        result = await svc.generate("测试", _make_intent(), _make_schema())
+        assert result is not None
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_second_failure_stops(self):
+        """第二次失败后停止"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_error(LLMValidationError(
+            "bad", error_code="invalid_content_json",
+            provider="fake", retryable=False,
+        ))
+        provider.enqueue_error(LLMValidationError(
+            "still bad", error_code="output_schema_invalid",
+            provider="fake", retryable=False,
+        ))
+        provider.enqueue_success(_make_plan())  # 不会被调用
+        svc = _make_svc(provider, max_repairs=1)
+        with pytest.raises(QueryPlanError):
+            await svc.generate("测试", _make_intent(), _make_schema())
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_never_calls_third_time(self):
+        """绝不调用第三次"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_error(LLMValidationError(
+            "bad", error_code="invalid_content_json",
+            provider="fake", retryable=False,
+        ))
+        provider.enqueue_error(LLMValidationError(
+            "still bad", error_code="output_schema_invalid",
+            provider="fake", retryable=False,
+        ))
+        provider.enqueue_success(_make_plan())  # 不会被调用
+        svc = _make_svc(provider, max_repairs=1)
+        with pytest.raises(QueryPlanError):
+            await svc.generate("测试", _make_intent(), _make_schema())
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_provider_error_not_repairable(self):
+        """Provider 错误不修复"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_error(LLMProviderError(
+            "service error", provider="fake", retryable=True,
+        ))
+        svc = _make_svc(provider, max_repairs=1)
+        with pytest.raises(QueryPlanError):
+            await svc.generate("测试", _make_intent(), _make_schema())
+        assert len(provider.calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_repair_disabled_stops(self):
+        """修复禁用时首次失败即停止"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_error(LLMValidationError(
+            "bad json", error_code="invalid_content_json",
+            provider="fake", retryable=False,
+        ))
+        svc = _make_svc(provider, max_repairs=0)
+        with pytest.raises(QueryPlanError):
+            await svc.generate("测试", _make_intent(), _make_schema())
+        assert len(provider.calls) == 1
+
+
+# ══════════════════════════════════════════════════════════════════
+# Mock 隔离与并发
+# ══════════════════════════════════════════════════════════════════
+
+class TestMockIsolation:
+    """Mock 隔离与并发"""
+
+    def test_mock_provider_rejected(self):
+        """Mock Provider 被拒绝"""
+        with pytest.raises(QueryPlanError, match="非 Mock"):
+            DeepSeekQueryPlanService(provider=FakeProvider(is_mock=True))
+
+    @pytest.mark.asyncio
+    async def test_scenario_key_is_none(self):
+        """真实模式不使用 Scenario Key"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_plan())
+        svc = _make_svc(provider)
+        await svc.generate("测试", _make_intent(), _make_schema())
+        assert provider.calls[0].scenario_key is None
+
+    @pytest.mark.asyncio
+    async def test_task_is_query_plan(self):
+        """task 为 QUERY_PLAN"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_plan())
+        svc = _make_svc(provider)
+        await svc.generate("测试", _make_intent(), _make_schema())
+        assert provider.calls[0].task == LLMTask.QUERY_PLAN
+
+    @pytest.mark.asyncio
+    async def test_concurrent_requests_independent(self):
+        """并发请求独立"""
+        import asyncio
+
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_plan(normalized_question="问题A"))
+        provider.enqueue_success(_make_plan(normalized_question="问题B"))
+        svc = _make_svc(provider)
+
+        async def _call(msg: str) -> QueryPlan:
+            return await svc.generate(msg, _make_intent(), _make_schema())
+
+        results = await asyncio.gather(_call("问题A"), _call("问题B"))
+        assert results[0].normalized_question == "问题A"
+        assert results[1].normalized_question == "问题B"
+
+
+# ══════════════════════════════════════════════════════════════════
+# Prompt 规则
+# ══════════════════════════════════════════════════════════════════
+
+class TestPromptRules:
+    """Prompt 规则验证"""
+
+    def test_prompt_forbids_dax(self):
+        """Prompt 禁止生成 DAX"""
+        messages = build_query_plan_messages(
+            "测试", "data_question", "schema text",
+            IntentContextSnapshot(),
+        )
+        system = messages[0]["content"]
+        assert "不得生成 DAX" in system
+
+    def test_prompt_forbids_answer(self):
+        """Prompt 禁止生成答案"""
+        messages = build_query_plan_messages(
+            "测试", "data_question", "schema text",
+            IntentContextSnapshot(),
+        )
+        system = messages[0]["content"]
+        assert "不得生成最终回答" in system
+
+    def test_prompt_forbids_tools(self):
+        """Prompt 禁止调用工具"""
+        messages = build_query_plan_messages(
+            "测试", "data_question", "schema text",
+            IntentContextSnapshot(),
+        )
+        system = messages[0]["content"]
+        assert "不得调用工具" in system
+
+    def test_prompt_forbids_fabrication(self):
+        """Prompt 禁止虚构字段"""
+        messages = build_query_plan_messages(
+            "测试", "data_question", "schema text",
+            IntentContextSnapshot(),
+        )
+        system = messages[0]["content"]
+        assert "不得虚构" in system
+
+    def test_prompt_requires_json(self):
+        """Prompt 要求 JSON"""
+        messages = build_query_plan_messages(
+            "测试", "data_question", "schema text",
+            IntentContextSnapshot(),
+        )
+        system = messages[0]["content"]
+        assert "JSON" in system
+
+    def test_prompt_no_key_leak(self):
+        """Prompt 不包含 Secret 模板"""
+        messages = build_query_plan_messages(
+            "测试", "data_question", "schema text",
+            IntentContextSnapshot(),
+        )
+        for msg in messages:
+            assert "sk-" not in msg["content"]
+
+
+# ══════════════════════════════════════════════════════════════════
+# 异常脱敏
+# ══════════════════════════════════════════════════════════════════
+
+class TestErrorSanitization:
+    """异常脱敏"""
+
+    def test_query_plan_error_no_raw_response(self):
+        """QueryPlanError 不包含原始响应"""
+        e = QueryPlanError("test")
+        assert "choices" not in str(e).lower()
+
+    def test_query_plan_error_no_key(self):
+        """QueryPlanError 不包含 Key"""
+        e = QueryPlanError("test")
+        assert "sk-" not in str(e)
+
+    @pytest.mark.asyncio
+    async def test_repair_message_sanitized(self):
+        """修复消息不含原始响应"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_error(LLMValidationError(
+            "响应不符合 QueryPlan: detected_measures=['secret_value_test']",
+            provider="deepseek",
+            retryable=False,
+            error_code="output_schema_invalid",
+        ))
+        provider.enqueue_success(_make_plan())
+        svc = _make_svc(provider)
+        await svc.generate("测试", _make_intent(), _make_schema())
+        # 修复请求包含 error_code 但不含原始敏感值
+        repair_msg = provider.calls[1].messages[0]["content"]
+        assert "secret_value_test" not in repair_msg

@@ -56,7 +56,13 @@ class IntentContextSnapshot(BaseModel):
     ) -> "IntentContextSnapshot":
         """从已提交 Memory 中提取白名单字段。
 
-        只提取以下字段：semantic_model_key, report_template_key,
+        安全规则：
+        - committed_memory=None → 返回空上下文
+        - state_status="committed" → 只提取白名单字段
+        - state_status="pending" 或 "failed" → 不提取任何业务上下文
+        - 状态缺失或非法 → 按非 committed 处理
+
+        白名单字段：semantic_model_key, report_template_key,
         current_intent, measures, dimensions, filters, time_range,
         clarification_pending, clarification_question。
 
@@ -70,7 +76,16 @@ class IntentContextSnapshot(BaseModel):
                 report_template_key=report_template_key,
             )
 
-        # 白名单提取
+        # 检查 state_status：只有 committed 才提取业务上下文
+        state_status = committed_memory.get("state_status")
+        if state_status != "committed":
+            # pending、failed、缺失或非法状态 → 不继承业务上下文
+            return cls(
+                semantic_model_key=semantic_model_key,
+                report_template_key=report_template_key,
+            )
+
+        # 白名单提取（仅 state_status="committed" 时执行）
         raw_filters = committed_memory.get("filters", [])
         parsed_filters: list[FilterSpec] = []
         for f in raw_filters:

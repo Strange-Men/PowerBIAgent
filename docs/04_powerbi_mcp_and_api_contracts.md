@@ -89,4 +89,4 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-*最后更新：2026-07-31 | M0.3 数据接入与验证闭环*
+*最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成*

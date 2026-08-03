@@ -82,7 +82,6 @@ class DeepSeekIntentService(IntentService):
         )
 
         # 2. 首次请求
-        attempts = 1
         try:
             return await self._try_recognize(user_input, context, repair_error_code=None)
         except LLMValidationError as e:
@@ -90,41 +89,39 @@ class DeepSeekIntentService(IntentService):
             # 只有 JSON 或 Schema 错误才允许修复
             if not self._is_repairable(error_code):
                 raise IntentRecognitionError(
-                    f"意图识别失败（不可修复错误）: {e}",
+                    "意图识别失败（不可修复错误）",
                 ) from e
             if self._max_format_repairs < 1:
                 raise IntentRecognitionError(
-                    f"意图识别失败（格式修复已禁用）: {e}",
+                    "意图识别失败（格式修复已禁用）",
                 ) from e
         except LLMProviderError as e:
             # 网络、鉴权、限流等不可修复错误直接传播
             raise IntentRecognitionError(
-                f"意图识别失败（Provider 错误，不可修复, retryable={e.retryable}）",
+                "意图识别失败（Provider 错误，不可修复）",
             ) from e
         except Exception as e:
             raise IntentRecognitionError(
-                f"意图识别失败: {type(e).__name__}",
+                "意图识别失败",
             ) from e
 
         # 3. 一次格式修复
-        attempts = 2
         try:
             return await self._try_recognize(
                 user_input, context,
                 repair_error_code="invalid_content_json_or_schema",
             )
         except LLMValidationError as e:
-            error_code = getattr(e, "error_code", "") or ""
             raise IntentRecognitionError(
-                f"意图识别失败（格式修复后仍无效, error_code={error_code}）",
+                "意图识别失败（格式修复后仍无效）",
             ) from e
         except LLMProviderError as e:
             raise IntentRecognitionError(
-                f"意图识别失败（Provider 错误, retryable={e.retryable}）",
+                "意图识别失败（Provider 错误）",
             ) from e
         except Exception as e:
             raise IntentRecognitionError(
-                f"意图识别失败（未知错误）: {type(e).__name__}",
+                "意图识别失败（未知错误）",
             ) from e
 
     # ── 内部方法 ──

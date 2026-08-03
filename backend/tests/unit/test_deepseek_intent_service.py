@@ -221,7 +221,8 @@ class TestPromptRules:
         context = IntentContextSnapshot()
         messages = build_intent_messages("测试", context)
         system = messages[0]["content"]
-        assert "不得生成 DAX" in system or "不得生成 DAX" not in system
+        assert "不得生成 DAX" in system
+        assert "不得生成" in system and "答案" in system
         assert "不得调用工具" in system
 
     def test_prompt_treats_input_as_data(self):
@@ -288,32 +289,97 @@ class TestContextWhitelist:
         assert "last_result_summary" not in d
         assert "request_id" not in d
 
-    def test_pending_memory_not_sent(self):
-        """pending memory 某些字段被白名单过滤"""
+    def test_pending_memory_not_inherited(self):
+        """pending memory 完全不继承业务上下文"""
         pending_data = {
             "state_status": "pending",
             "current_intent": "data_question",
             "measures": ["销售额"],
+            "dimensions": ["区域"],
         }
-        snapshot = IntentContextSnapshot.from_committed_memory(pending_data)
-        # 即使状态是 pending，白名单字段仍可提取
-        assert snapshot.current_intent == "data_question"
-        # 但不会提取失败相关的字段（白名单外）
+        snapshot = IntentContextSnapshot.from_committed_memory(
+            pending_data,
+            semantic_model_key="test_model",
+            report_template_key="sales_weekly",
+        )
+        # pending 状态下不提取任何业务上下文
+        assert snapshot.current_intent is None
+        assert snapshot.measures == []
+        assert snapshot.dimensions == []
+        # 但通过 kwargs 传入的 model/template key 仍然生效
+        assert snapshot.semantic_model_key == "test_model"
+        assert snapshot.report_template_key == "sales_weekly"
         d = snapshot.model_dump()
         assert "state_status" not in d
+        assert "failure_reason" not in d
 
-    def test_failed_memory_whitelist(self):
-        """failed memory 白名单过滤"""
+    def test_failed_memory_not_inherited(self):
+        """failed memory 完全不继承业务上下文"""
         failed_data = {
             "state_status": "failed",
             "failure_reason": "DAX validation failed",
             "current_intent": "data_question",
-            "measures": [],
+            "measures": ["销售额"],
         }
         snapshot = IntentContextSnapshot.from_committed_memory(failed_data)
+        # failed 状态下不提取任何业务上下文
+        assert snapshot.current_intent is None
+        assert snapshot.measures == []
         d = snapshot.model_dump()
         assert "failure_reason" not in d
         assert "state_status" not in d
+
+    def test_missing_status_not_inherited(self):
+        """缺失 state_status 不继承业务上下文"""
+        no_status_data = {
+            "current_intent": "data_question",
+            "measures": ["销售额"],
+        }
+        snapshot = IntentContextSnapshot.from_committed_memory(no_status_data)
+        # 缺失状态不提取任何业务上下文
+        assert snapshot.current_intent is None
+        assert snapshot.measures == []
+
+    def test_committed_memory_is_inherited(self):
+        """committed memory 继承白名单字段"""
+        committed_data = {
+            "state_status": "committed",
+            "current_intent": "data_question",
+            "measures": ["销售额"],
+            "dimensions": ["区域"],
+            "time_range": "本月",
+            "filters": [],
+        }
+        snapshot = IntentContextSnapshot.from_committed_memory(committed_data)
+        assert snapshot.current_intent == "data_question"
+        assert snapshot.measures == ["销售额"]
+        assert snapshot.dimensions == ["区域"]
+        assert snapshot.time_range == "本月"
+
+    def test_committed_sensitive_fields_not_extracted(self):
+        """committed memory 的敏感字段不进入上下文"""
+        committed_data = {
+            "state_status": "committed",
+            "current_intent": "data_question",
+            "measures": ["销售额"],
+            # 敏感字段
+            "last_dax": "EVALUATE Sales",
+            "last_query_plan": {"secret": "data"},
+            "last_result_summary": "100 rows",
+            "request_id": "req-123",
+            "conversation_id": "conv-456",
+            "api_key": "sk-should-not-appear",
+        }
+        snapshot = IntentContextSnapshot.from_committed_memory(committed_data)
+        d = snapshot.model_dump()
+        assert "last_dax" not in d
+        assert "last_query_plan" not in d
+        assert "last_result_summary" not in d
+        assert "request_id" not in d
+        assert "conversation_id" not in d
+        assert "api_key" not in d
+        # 但白名单字段正常
+        assert snapshot.measures == ["销售额"]
 
     def test_key_not_in_prompt(self):
         """Key 不可能进入 Prompt（Prompt 中不包含 API Key 字段）"""
@@ -477,6 +543,7 @@ class TestIntentSpecStrict:
     def test_with_memory_context_inheritance(self):
         """有 Memory 的'只看华南'能够继承上下文"""
         full_memory = {
+            "state_status": "committed",
             "current_intent": "data_question",
             "measures": ["销售额"],
             "dimensions": ["区域"],
@@ -717,6 +784,42 @@ class TestOneTimeRepair:
         e = IntentRecognitionError("test error")
         msg = str(e)
         assert "choices" not in msg.lower() or "test error" in msg
+
+    def test_validation_error_sanitized_no_model_output(self):
+        """IntentRecognitionError 不从 LLMValidationError 拼接原始输出"""
+        svc = DeepSeekIntentService(
+            provider=FakeProvider(is_mock=False),
+            max_format_repairs=0,
+        )
+        # 构造包含敏感测试值的 ValidationError
+        inner = LLMValidationError(
+            "响应不符合 IntentSpec: detected_measures=['fake_secret_field_12345']",
+            provider="deepseek",
+            retryable=False,
+            error_code="output_schema_invalid",
+        )
+        try:
+            raise IntentRecognitionError("包装错误") from inner
+        except IntentRecognitionError as e:
+            msg = str(e)
+            # 只包含安全信息，不包含原始模型输出
+            assert "fake_secret_field_12345" not in msg
+
+    def test_deepseek_service_unrepairable_error_sanitized(self):
+        """不可修复的验证错误不泄漏模型输出到 Exception 消息"""
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_error(LLMValidationError(
+            "响应不符合: detected_measures=['sensitive_leak_test_value']",
+            provider="deepseek",
+            retryable=False,
+            error_code="output_schema_invalid",
+        ))
+        svc = DeepSeekIntentService(provider=provider, max_format_repairs=0)
+        import asyncio
+        with pytest.raises(IntentRecognitionError) as exc:
+            asyncio.run(svc.recognize("测试问题"))
+        msg = str(exc.value)
+        assert "sensitive_leak_test_value" not in msg
 
 
 # ══════════════════════════════════════════════════════════════════

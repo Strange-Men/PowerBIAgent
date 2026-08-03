@@ -119,4 +119,4 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 ---
 
-*最后更新：2026-07-31 | M0.4 项目骨架与阶段收尾*
+*最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成*

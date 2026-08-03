@@ -1,6 +1,6 @@
 # 03 — 意图识别与记忆系统
 
-> **状态：** M1.2 真实意图识别已完成
+> **状态：** M1.3 真实QueryPlan与DAX生成已完成
 > **关联 ADR：** ADR-001（Agent 框架）、ADR-002（记忆系统与存储）
 
 ---
@@ -64,6 +64,8 @@ class IntentSpec(BaseModel):
 - `backend/app/intent/context.py` — IntentContextSnapshot（M1.2 白名单上下文提取）
 - `backend/app/intent/prompt.py` — 集中式 Prompt 构造（M1.2）
 - `backend/app/intent/deepseek_service.py` — DeepSeekIntentService（M1.2 真实实现）
+- `backend/app/query_plan/` — DeepSeekQueryPlanService（M1.3 真实实现）
+- `backend/app/dax/` — DeepSeekDAXService + DAX 安全验证（M1.3 真实实现）
 
 ### 1.6 M1.2 真实意图识别
 
@@ -97,7 +99,7 @@ class IntentSpec(BaseModel):
 - `DeepSeekIntentService` 不使用 `MockScenarioResolver`
 - 真实模式不调用 Mock Provider
 - Mock 模式继续完整可用（通过 `MockScenarioResolver`）
-- 完整 Chat 链路仍未开放（QueryPlan/DAX/Answer/ReportSpec 待 M1.3-M1.4）
+- 完整 Chat 链路仍未开放（QueryPlan/DAX 已实现，Answer/ReportSpec 待 M1.4）
 
 ---
 
@@ -264,4 +266,4 @@ M0.2 已将这些准入条件固化为 `MemoryPolicies.check_commit_eligibility(
 
 ---
 
-*最后更新：2026-07-31 | M0.3.2 工具网关与并发闭环修正*
+*最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成*

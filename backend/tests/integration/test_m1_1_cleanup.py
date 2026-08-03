@@ -203,7 +203,8 @@ class TestDocsUpdated:
         content = open(path09, encoding="utf-8").read()
         assert "c223d7b" in content, "docs/09 应包含 M1.0.1 Commit SHA"
         assert "5726959" in content, "docs/09 应包含 M1.0.2 Commit SHA"
-        assert "604 passed" in content, "docs/09 应记录最新 pytest 结果"
+        assert "53cf43e" in content, "docs/09 应包含 M1.2 Commit SHA"
+        assert "675 passed" in content, "docs/09 应记录最新 pytest 结果"
 
     def test_changelog_no_pending_push(self):
         """CHANGELOG 旧区域不再保留待推送/由 Git 解析占位符"""

@@ -23,8 +23,8 @@ M1 真实 DeepSeek 接入 (6轮)
   M1.0.1 幂等并发与文档收尾修复      ✅ 已完成
   M1.0.2 密钥与仓库安全规则固化      ✅ 已完成
   M1.1 DeepSeek Provider基础接入    ✅ 已完成 (073a819)
-  M1.2 真实意图识别                 ✅ 已完成
-  M1.3 真实QueryPlan与DAX生成       ⬜
+  M1.2 真实意图识别                 ✅ 已完成 (53cf43e)
+  M1.3 真实QueryPlan与DAX生成       ✅ 已完成
   M1.4 真实Answer与ReportSpec生成   ⬜
   M1.5 全链路验收与封板              ⬜
 
@@ -137,14 +137,23 @@ MVP 功能阶段 (后续)
 
 ### M1.3｜真实QueryPlan与DAX生成
 
-**状态：** ⬜ 未开始
+**状态：** ✅ 已完成
 
 **完成内容：**
-- QueryPlan 结构化生成
-- 根据 Semantic Model Schema 生成 DAX
-- DAX 只读安全验证
-- 格式失败、非法字段和超限兜底
-- Power BI 查询仍使用 Mock Adapter
+- M1.2 审计收口：from_committed_memory() state_status 检查、无效 Prompt 测试修复、验证错误脱敏
+- DeepSeekQueryPlanService：基于 DeepSeek Provider 的真实 QueryPlan 生成
+  - 位置：`backend/app/query_plan/`（deepseek_service.py、prompt.py、context.py）
+  - 只处理 data_question/report_generation；clarification/unsupported 明确拒绝
+  - 复用现有 QueryPlan Pydantic 模型和 ValidationService
+  - 最多一次格式修复（JSON/Schema 错误）
+- DeepSeekDAXService：基于 DeepSeek Provider 的真实 DAX 生成
+  - 位置：`backend/app/dax/`（deepseek_service.py、prompt.py、safety.py）
+  - DAX 只读安全验证器：禁止写入/删除/SQL/脚本/注释绕过/多语句/非法对象
+  - 结构化解验证结果：is_valid、errors、warnings、referenced_objects
+  - 最多一次修复
+- Schema 安全精简视图（不暴露 DAX 表达式等内部细节）
+- Mock 链路完整可用；Chat DeepSeek 模式仍返回 503
+- 真实 Smoke 分离入口：`python -m backend.app.query_plan.deepseek_query_dax_smoke`
 
 ---
 
@@ -239,4 +248,4 @@ MVP 功能阶段 (后续)
 
 ---
 
-*最后更新：2026-07-31 | M1.0.2 密钥与仓库安全规则固化*
+*最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成*

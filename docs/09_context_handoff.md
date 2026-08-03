@@ -2,7 +2,7 @@
 
 > **所有新 Claude 恢复上下文的唯一最新交接入口。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-03 | M1.2 真实意图识别**
+> **最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成**
 
 ---
 
@@ -12,17 +12,17 @@
 
 ## 当前阶段
 
-**M1.2 真实意图识别** — ✅ 已完成。
+**M1.3 真实QueryPlan与DAX生成** — ✅ 已完成。
 
 ## 当前完成轮次
 
-**M1.2** — 真实意图识别
+**M1.3** — 真实QueryPlan与DAX生成
 
 ## 下一轮
 
-**M1.3 真实QueryPlan与DAX生成**
+**M1.4 真实Answer与ReportSpec生成**
 
-M1.4—M1.5：未开始
+M1.5：未开始
 
 ## 已完成版本
 
@@ -40,7 +40,8 @@ M1.4—M1.5：未开始
 | M1.0.1 | 幂等并发与文档收尾修复 | `c223d7b` | 2026-07-31 |
 | M1.0.2 | 密钥与仓库安全规则固化 | `5726959` | 2026-07-31 |
 | M1.1 | DeepSeek Provider基础接入 | `073a819` | 2026-08-03 |
-| M1.2 | 真实意图识别 | 待提交 | 2026-08-03 |
+| M1.2 | 真实意图识别 | `53cf43e` | 2026-08-03 |
+| M1.3 | 真实QueryPlan与DAX生成 | 待提交 | 2026-08-03 |
 
 ## 最近封板 Tag
 
@@ -49,84 +50,69 @@ M1.4—M1.5：未开始
 | `m0.4.1-foundation-release` | `1f967b0` | M0.4.1 封板 |
 | `m0.4-foundation-release` | `d5c1634` | M0.4 封板 |
 
-## M1.2 交付内容
+## M1.3 交付内容
 
-### M1.1 审计收口（四项）
+### M1.2 审计收口（三项）
 
-1. **网络异常分类补齐** — `backend/app/llm/deepseek.py`：ReadError/WriteError/CloseError/RemoteProtocolError → LLMConnectionError (retryable=true)；LocalProtocolError → LLMRequestError (retryable=false)；均携带安全 error_code
-2. **响应结构防御强化** — `_parse_response()` 增加 14 层严格验证：Body 类型、choices 类型、choice 类型、message 类型、finish_reason 类型、model 类型、usage 类型、Token 类型/非负/bool 拒绝；content JSON 对象校验
-3. **安全扫描豁免收紧** — `scripts/check_repository_safety.py`：TEST_SAFE_MARKERS 仅在 `backend/tests/` 生效；生产目录不可使用；新增 `_is_python_variable_ref` 全局豁免；新增 `_is_scan_pattern_definition` 窄范围豁免
-4. **M1.1 SHA 文档修正** — `docs/09` 和 `CHANGELOG.md` 写入 M1.1 SHA `073a819`，删除"待下轮写入"
+1. **from_committed_memory() state_status 检查** — `backend/app/intent/context.py`：committed 继承白名单字段、pending/failed/缺失不继承任何业务上下文
+2. **无效 Prompt 测试修复** — `test_prompt_forbids_dax_and_answer`：永真断言 `"不得生成 DAX" in system or "不得生成 DAX" not in system` → `"不得生成 DAX" in system`
+3. **验证错误脱敏** — `DeepSeekIntentService` 不再将 `str(LLMValidationError)` 拼入 `IntentRecognitionError`
 
-### DeepSeekIntentService
+### DeepSeekQueryPlanService
 
-- **位置：** `backend/app/intent/deepseek_service.py`
-- 基于 `DeepSeekLLMProvider`，复用现有 Provider 和 Registry
-- `provider.is_mock=True` 时明确失败
-- 支持四类意图：data_question / report_generation / clarification / unsupported
-- 最多一次格式修复（仅 JSON/Schema 错误允许修复）
-- Service 不保存请求级可变状态，支持并发
-- 不调用 MockScenarioResolver、不回退 Mock、不写 Memory、不执行工具
+- **位置：** `backend/app/query_plan/`（deepseek_service.py、prompt.py、context.py）
+- 复用现有 `QueryPlan`、`IntentSpec`、`SemanticModelSchema` 模型
+- 复用现有 `ValidationService.validate_query_plan()`
+- 只处理 `data_question` 和 `report_generation`；`clarification`/`unsupported` 明确拒绝
+- Prompt：严格 JSON、只用 Schema 真实字段、不生成 DAX/答案、不调用工具、不虚构
+- 最多一次格式修复（仅 JSON/Schema 错误）
+- Schema 安全精简视图（不暴露 DAX 表达式）
 
-### IntentContextSnapshot
+### DeepSeekDAXService
 
-- **位置：** `backend/app/intent/context.py`
-- 白名单模型（`extra="forbid"`, `frozen=True`）
-- 从 committed memory 提取安全字段子集
-- 禁止发送：DAX、查询结果、Trace、pending/failed memory、Secret
+- **位置：** `backend/app/dax/`（deepseek_service.py、prompt.py、safety.py）
+- 复用现有 `DAXRequest` 模型
+- Prompt：只生成只读 EVALUATE DAX、只用 Schema 对象、不生成 SQL/脚本/答案
+- 独立 DAX 只读安全验证器（不依赖 EVALUATE 字符串匹配）
+- 禁止：写入/删除/更新、SQL/Shell/Python/JS、多语句注入、注释绕过、非法对象、空 DAX
+- 允许：EVALUATE、SUMMARIZECOLUMNS、FILTER、TOPN、ORDER BY、DEFINE MEASURE、VAR、RETURN
+- 验证结果结构化：is_valid、errors、warnings、referenced_objects
+- 最多一次修复（JSON/Schema/安全验证错误）
 
-### Prompt
+### 一次修复边界
 
-- **位置：** `backend/app/intent/prompt.py`
-- 集中式构造：系统提示词（12 条规则）、四类意图规则、修复指令
-- 上下文渲染：白名单展示，无上下文时提示 clarification
-
-### 格式修复
-
-- **修复次数：** 最多 1 次（首次 + 1 次修复 = 2 次 LLM 调用）
-- **可修复错误：** `invalid_content_json`、`output_schema_invalid`
-- **不可修复：** 网络、鉴权、限流、5xx、HTTP Envelope 错误
-- 修复请求不携带原始完整响应
-
-### IntentSpec 严格化
-
-- IntentSpec 和 FilterSpec 增加 `extra="forbid"`
-- 字符串首尾空白清理、列表去空去重保持顺序
-- 第五类意图拒绝、空 normalised_question 拒绝、confidence 越界拒绝
-- 跨字段规则：clarification/unsupported/data_question/report_generation 互斥
-
-### 测试结果
-
-**pytest：** 604 passed（M1.1 506 + M1.2 新增 98, 5 个版本号更新）
-**Golden Cases：** 11 passed，1 skipped
-**安全扫描：** PASS
+- QueryPlan 修复：仅 `invalid_content_json` / `output_schema_invalid`
+- DAX 修复：JSON/Schema 错误 + 安全验证失败
+- 修复请求只包含：原 QueryPlan 摘要、精简 Schema、安全错误代码、缺失/非法对象名
+- 不发送：Secret、完整异常堆栈、HTTP Body、完整历史响应、真实查询结果
+- 第二次仍失败立即停止，不允许第三次调用
 
 ### API 与 Health 边界
 
-- Mock 模式：Health 200, ready=true, version=M1.2
-- DeepSeek 无 Key：Health 503, deepseek_api_key_missing
-- DeepSeek 有 Key：Health 503, deepseek_pipeline_not_ready
-- Chat DeepSeek 模式：503，不回退 Mock
-- Health 不发起网络请求
+- Mock：200，ready=true，version=M1.3
+- DeepSeek 无 Key：503，deepseek_api_key_missing
+- DeepSeek 有 Key：503，deepseek_pipeline_not_ready
+- Health 不访问网络
+- Chat DeepSeek 模式仍 503（完整链路待 M1.4-M1.5）
+- 不混用真实 Intent + Mock QueryPlan 等混合链路
 
-### 真实 Intent Smoke
+### 测试结果
 
-- **Smoke 命令：** `python -m backend.app.intent.deepseek_intent_smoke`
-- 5 个合成案例覆盖四类意图
-- 输出仅含脱敏字段（case_id, expected, actual, confidence, schema_valid, attempts, model, tokens）
-- 不输出 normalized_question 全文、clarification_question 全文、原始 Prompt/响应
+- pytest：675 passed
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS
+- 真实 Smoke：`python -m backend.app.query_plan.deepseek_query_dax_smoke`（脱敏输出）
 
-## M1.3 允许和禁止范围
+## M1.4 允许和禁止范围
 
 **允许：**
-- QueryPlan 结构化生成
-- 根据 Semantic Model Schema 生成 DAX
-- DAX 只读安全验证
-- 格式失败、非法字段和超限兜底
+- 真实 Answer 生成
+- 真实 ReportSpec 生成
+- 根据 Mock QueryResult 生成自然语言答案
+- Answer 和 ReportSpec 校验
 
-**M1.3 禁止：**
-- 真实 Answer / ReportSpec 生成
-- 真实 Power BI 连接
+**M1.4 禁止：**
+- 真实 Power BI 连接和查询
 - React 前端 / SSE / Docker / Redis / LangGraph / 多 Agent
 - 修改历史 Tag
 
@@ -137,8 +123,9 @@ M1.4—M1.5：未开始
 - Entra App Registration 权限（M2 前确认）
 - Power BI Tenant 设置（M2 前确认）
 - Remote MCP Server 端点可用性（M2 早期验证）
-- DeepSeek Chat 真实意图链路已接通但完整 Chat 仍未开放（待 M1.3-M1.4）
+- 完整 Chat 仍未开放（待 M1.4-M1.5）
+- Answer/ReportSpec 生成仍使用 Mock（待 M1.4）
 
 ---
 
-*最后更新：2026-08-03 | M1.2 真实意图识别*
+*最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成*

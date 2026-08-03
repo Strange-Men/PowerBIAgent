@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M1.2", frozen=True)
+    version: str = Field(default="M1.3", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -110,8 +110,9 @@ class Settings(BaseSettings):
     def is_real_ready(self) -> bool:
         """Real 模式是否具备运行条件
 
-        M1.1：DeepSeek Provider 已实现，但真实意图链路尚未完成。
-        即使配置了 API Key，整个 Agent Pipeline 仍不可用。
+        M1.3：DeepSeek Provider、Intent、QueryPlan、DAX 已实现，
+        但真实 Answer/ReportSpec 和完整 Chat 链路尚未完成。
+        即使配置了 API Key，Chat 接口仍返回 503。
         """
         if self.llm_mode == LLMMode.DEEPSEEK:
             return False  # M1.2+ 真实意图识别未完成
