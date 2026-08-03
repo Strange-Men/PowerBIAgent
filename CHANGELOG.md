@@ -43,7 +43,7 @@
 - 安全扫描：PASS
 - 真实 Smoke：分离入口 `python -m backend.app.query_plan.deepseek_query_dax_smoke`
 
-**Commit SHA：** 待提交
+**Commit SHA：** `441ca45`
 **本轮 Tag：** 无
 
 ---
@@ -88,7 +88,7 @@
 - Golden Cases：11 passed，1 skipped
 - 安全扫描：PASS
 
-**Commit SHA：** 待提交
+**Commit SHA：** `53cf43e`
 **本轮 Tag：** 无（本轮不创建 Tag）
 
 ---
