@@ -44,6 +44,8 @@ class FilterSpec(BaseModel):
     operator: FilterOperator = Field(default=FilterOperator.EQ, description="操作符")
     value: FilterValue = Field(..., description="筛选值（文本、数字、布尔或日期）")
 
+    model_config = {"extra": "forbid"}
+
     def to_legacy_dict(self) -> dict[str, str]:
         """转换为旧版 dict[str, str] 格式（向后兼容）"""
         return {
@@ -108,17 +110,74 @@ class IntentSpec(BaseModel):
             raise ValueError("normalized_question must not be blank or whitespace-only")
         return v
 
-    @model_validator(mode="after")
-    def validate_cross_field_rules(self) -> "IntentSpec":
-        """跨字段一致性验证"""
+    model_config = {"extra": "forbid"}
 
+    @model_validator(mode="after")
+    def _clean_and_validate(self) -> "IntentSpec":
+        """字符串清理 + 跨字段一致性验证
+
+        清理规则：
+        - 所有字符串首尾空白清理
+        - 列表中的空字符串移除
+        - 指标和维度去重保持原顺序
+        - normalized_question 不能为空
+        - confidence 必须在 0-1
+        """
+        # ── 字符串清理 ──
+        object.__setattr__(self, "normalized_question", self.normalized_question.strip())
+        if self.clarification_question is not None:
+            cleaned = self.clarification_question.strip()
+            object.__setattr__(self, "clarification_question", cleaned or None)
+        if self.unsupported_reason is not None:
+            cleaned = self.unsupported_reason.strip()
+            object.__setattr__(self, "unsupported_reason", cleaned or None)
+        if self.inherited_context is not None:
+            cleaned = self.inherited_context.strip()
+            object.__setattr__(self, "inherited_context", cleaned or None)
+        if self.detected_time_range is not None:
+            cleaned = self.detected_time_range.strip()
+            object.__setattr__(self, "detected_time_range", cleaned or None)
+        if self.requested_template is not None:
+            cleaned = self.requested_template.strip()
+            object.__setattr__(self, "requested_template", cleaned or None)
+
+        # ── 列表清理：去空字符串 + 去重保持原顺序 ──
+        measures = []
+        seen_m = set()
+        for m in self.detected_measures:
+            if isinstance(m, str) and m.strip():
+                m_clean = m.strip()
+                if m_clean not in seen_m:
+                    measures.append(m_clean)
+                    seen_m.add(m_clean)
+        object.__setattr__(self, "detected_measures", measures)
+
+        dimensions = []
+        seen_d = set()
+        for d in self.detected_dimensions:
+            if isinstance(d, str) and d.strip():
+                d_clean = d.strip()
+                if d_clean not in seen_d:
+                    dimensions.append(d_clean)
+                    seen_d.add(d_clean)
+        object.__setattr__(self, "detected_dimensions", dimensions)
+
+        # ── normalized_question 不能为空 ──
+        if not self.normalized_question:
+            raise ValueError("normalized_question must not be empty")
+
+        # ── confidence 必须在 0-1 ──
+        if not (0.0 <= self.confidence <= 1.0):
+            raise ValueError(f"confidence must be in [0, 1], got {self.confidence}")
+
+        # ── 跨字段规则 ──
         # 规则1：clarification 必须有 needs_clarification=True 和非空 clarification_question
         if self.intent == IntentType.CLARIFICATION:
             if not self.needs_clarification:
                 raise ValueError(
                     "clarification intent must have needs_clarification=True"
                 )
-            if not self.clarification_question or not self.clarification_question.strip():
+            if not self.clarification_question:
                 raise ValueError(
                     "clarification intent must have non-empty clarification_question"
                 )
@@ -132,14 +191,25 @@ class IntentSpec(BaseModel):
 
         # 规则3：unsupported 必须有 unsupported_reason
         if self.intent == IntentType.UNSUPPORTED:
-            if not self.unsupported_reason or not self.unsupported_reason.strip():
+            if not self.unsupported_reason:
                 raise ValueError(
                     "unsupported intent must have non-empty unsupported_reason"
                 )
 
         # 规则4：非 unsupported 不应携带拒绝原因
         if self.intent != IntentType.UNSUPPORTED:
-            if self.unsupported_reason is not None and self.unsupported_reason.strip():
+            if self.unsupported_reason is not None and self.unsupported_reason:
+                raise ValueError(
+                    f"intent '{self.intent.value}' should not have unsupported_reason"
+                )
+
+        # 规则5：data_question 和 report_generation 不应有 clarification 字段
+        if self.intent in (IntentType.DATA_QUESTION, IntentType.REPORT_GENERATION):
+            if self.clarification_question is not None:
+                raise ValueError(
+                    f"intent '{self.intent.value}' should not have clarification_question"
+                )
+            if self.unsupported_reason is not None:
                 raise ValueError(
                     f"intent '{self.intent.value}' should not have unsupported_reason"
                 )

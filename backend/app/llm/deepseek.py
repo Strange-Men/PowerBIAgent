@@ -219,6 +219,42 @@ class DeepSeekLLMProvider(LLMProvider):
                 f"DeepSeek 连接失败: {e}",
                 provider=self.PROVIDER_NAME,
                 retryable=True,
+                error_code="connect_error",
+            )
+        except httpx.ReadError as e:
+            raise LLMConnectionError(
+                f"DeepSeek 读取响应失败: {e}",
+                provider=self.PROVIDER_NAME,
+                retryable=True,
+                error_code="read_error",
+            )
+        except httpx.WriteError as e:
+            raise LLMConnectionError(
+                f"DeepSeek 发送请求失败: {e}",
+                provider=self.PROVIDER_NAME,
+                retryable=True,
+                error_code="write_error",
+            )
+        except httpx.CloseError as e:
+            raise LLMConnectionError(
+                f"DeepSeek 连接关闭: {e}",
+                provider=self.PROVIDER_NAME,
+                retryable=True,
+                error_code="close_error",
+            )
+        except httpx.RemoteProtocolError as e:
+            raise LLMConnectionError(
+                f"DeepSeek 远端协议错误: {e}",
+                provider=self.PROVIDER_NAME,
+                retryable=True,
+                error_code="remote_protocol_error",
+            )
+        except httpx.LocalProtocolError as e:
+            raise LLMRequestError(
+                f"DeepSeek 本地请求协议错误: {e}",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+                error_code="local_protocol_error",
             )
 
         # ── 解析 HTTP 状态码 ──
@@ -322,9 +358,13 @@ class DeepSeekLLMProvider(LLMProvider):
         http_response: httpx.Response,
         output_type: type[BaseModel],
     ) -> LLMResponse:
-        """解析 DeepSeek HTTP 响应为 LLMResponse"""
+        """解析 DeepSeek HTTP 响应为 LLMResponse
 
-        # 1. HTTP Body 必须是合法 JSON
+        严格验证响应结构的每一层，任何结构异常转为 LLMResponseError，
+        不泄漏为 AttributeError/TypeError/KeyError/IndexError。
+        """
+
+        # 1. HTTP Body 必须是合法 JSON，且必须是 dict
         try:
             body = http_response.json()
         except (json.JSONDecodeError, ValueError) as e:
@@ -332,37 +372,100 @@ class DeepSeekLLMProvider(LLMProvider):
                 f"DeepSeek 响应 Body 不是合法 JSON: {e}",
                 provider=self.PROVIDER_NAME,
                 retryable=False,
+                error_code="invalid_http_json",
+            )
+        if not isinstance(body, dict):
+            raise LLMResponseError(
+                "DeepSeek 响应 Body 不是 JSON 对象",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+                error_code="invalid_response_body",
             )
 
-        # 2. choices 必须存在且非空
+        # 2. choices 必须是非空 list
         choices = body.get("choices")
-        if not choices:
+        if not isinstance(choices, list) or len(choices) == 0:
             raise LLMResponseError(
-                "DeepSeek 响应缺少 choices 字段或为空",
+                "DeepSeek 响应 choices 缺失或为空",
                 provider=self.PROVIDER_NAME,
                 retryable=False,
+                error_code="invalid_choices",
             )
 
-        # 3. message 必须存在
+        # 3. choices[0] 必须是 dict
         choice = choices[0]
-        message = choice.get("message")
-        if not message:
+        if not isinstance(choice, dict):
             raise LLMResponseError(
-                "DeepSeek 响应 choices[0] 缺少 message",
+                "DeepSeek 响应 choices[0] 不是对象",
                 provider=self.PROVIDER_NAME,
                 retryable=False,
+                error_code="invalid_choice",
             )
 
-        # 4. content 必须为非空字符串
+        # 4. message 必须是 dict
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            raise LLMResponseError(
+                "DeepSeek 响应 message 缺失或不是对象",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+                error_code="invalid_message",
+            )
+
+        # 5. content 必须是非空字符串
         raw_content = message.get("content", "")
-        if not raw_content or not isinstance(raw_content, str) or not raw_content.strip():
+        if not isinstance(raw_content, str) or not raw_content.strip():
             raise LLMResponseError(
                 "DeepSeek 响应 content 为空",
                 provider=self.PROVIDER_NAME,
                 retryable=False,
+                error_code="empty_content",
             )
 
-        # 5. 对 content 执行 json.loads()
+        # 6. finish_reason 缺失时使用 stop，存在时必须为字符串
+        finish_reason = choice.get("finish_reason", "stop")
+        if finish_reason is not None and not isinstance(finish_reason, str):
+            raise LLMResponseError(
+                f"DeepSeek 响应 finish_reason 类型非法: {type(finish_reason).__name__}",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+                error_code="invalid_finish_reason",
+            )
+
+        # 7. model 缺失时使用配置模型，存在时必须为非空字符串
+        response_model = body.get("model", self._model)
+        if response_model is not None and (not isinstance(response_model, str) or not response_model.strip()):
+            raise LLMResponseError(
+                "DeepSeek 响应 model 非法",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+                error_code="invalid_model",
+            )
+
+        # 8. usage 缺失时使用全零，存在时必须是 dict
+        usage_data = body.get("usage", {})
+        if usage_data is not None and not isinstance(usage_data, dict):
+            raise LLMResponseError(
+                f"DeepSeek 响应 usage 类型非法: {type(usage_data).__name__}",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+                error_code="invalid_usage",
+            )
+
+        # 9. 三个 Token 字段必须是非负整数，bool 不得作为合法 Token 整数
+        usage: dict[str, int] = {}
+        for token_field in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            token_val = usage_data.get(token_field, 0) if isinstance(usage_data, dict) else 0
+            if isinstance(token_val, bool) or not isinstance(token_val, int) or token_val < 0:
+                raise LLMResponseError(
+                    f"DeepSeek 响应 {token_field} 类型非法",
+                    provider=self.PROVIDER_NAME,
+                    retryable=False,
+                    error_code="invalid_token_usage",
+                )
+            usage[token_field] = int(token_val)
+
+        # 10. content 执行 json.loads() 后必须是 JSON 对象
         try:
             parsed_content = json.loads(raw_content)
         except json.JSONDecodeError as e:
@@ -370,9 +473,17 @@ class DeepSeekLLMProvider(LLMProvider):
                 f"DeepSeek 响应 content 不是合法 JSON: {e}",
                 provider=self.PROVIDER_NAME,
                 retryable=False,
+                error_code="invalid_content_json",
+            )
+        if not isinstance(parsed_content, dict):
+            raise LLMValidationError(
+                "DeepSeek 响应 content JSON 不是对象",
+                provider=self.PROVIDER_NAME,
+                retryable=False,
+                error_code="invalid_content_json",
             )
 
-        # 6. 使用 output_type.model_validate()
+        # 11. 使用 output_type.model_validate()
         try:
             structured = output_type.model_validate(parsed_content)
         except Exception as e:
@@ -380,25 +491,15 @@ class DeepSeekLLMProvider(LLMProvider):
                 f"DeepSeek 响应不符合 {output_type.__name__}: {e}",
                 provider=self.PROVIDER_NAME,
                 retryable=False,
+                error_code="output_schema_invalid",
             )
-
-        # ── 提取元数据 ──
-        finish_reason = choice.get("finish_reason", "stop")
-        response_model = body.get("model", self._model)
-
-        usage_data = body.get("usage", {})
-        usage = {
-            "prompt_tokens": usage_data.get("prompt_tokens", 0),
-            "completion_tokens": usage_data.get("completion_tokens", 0),
-            "total_tokens": usage_data.get("total_tokens", 0),
-        }
 
         return LLMResponse(
             content=raw_content,
             structured=structured,
-            model=response_model,
+            model=str(response_model) if response_model else self._model,
             usage=usage,
-            finish_reason=finish_reason,
+            finish_reason=str(finish_reason) if finish_reason else "stop",
         )
 
     # ── 安全 repr ──

@@ -958,7 +958,7 @@ class TestDocumentStatus:
         """Test 38: docs/09 下一轮为 M1.1"""
         content = (pathlib.Path(__file__).parent.parent.parent.parent /
                    "docs/09_context_handoff.md").read_text(encoding="utf-8")
-        assert "M1.1" in content
+        assert "M1.2" in content
         assert "下一轮" in content
 
     def test_docs_no_stale_status(self):

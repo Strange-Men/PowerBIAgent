@@ -70,15 +70,15 @@ FORBIDDEN_FRONTEND_PATTERNS: list[tuple[str, str]] = [
 # 注意：不输出捕获到的具体值
 OBVIOUS_SECRET_PATTERNS: list[tuple[str, str]] = [
     # DEEPSEEK_API_KEY 后跟非空非占位值
-    (r"DEEPSEEK_API_KEY\s*=\s*(?!\s*$)(?!\s*YOUR_KEY_HERE\b)(?!\s*REPLACE_ME\b)(?!\s*EXAMPLE_ONLY\b)(?!\s*your_)(?!\s*fake_key\b)(?!\s*[0-9]+\s*$)", "DEEPSEEK_API_KEY 有疑似真实值"),
+    (r"DEEPSEEK_API_KEY\s*=\s*(?!\s*$)(?!\s*<)(?!\s*YOUR_KEY_HERE\b)(?!\s*REPLACE_ME\b)(?!\s*EXAMPLE_ONLY\b)(?!\s*your_)(?!\s*fake_key\b)(?!\s*[0-9]+\s*$)", "DEEPSEEK_API_KEY 有疑似真实值"),  # secret-scan: allow-pattern-definition
     # Authorization Bearer 后跟长 Token（>20 字符）
-    (r"Authorization:\s*Bearer\s+[A-Za-z0-9_\-\.]{20,}", "Authorization Bearer 长 Token"),
+    (r"Authorization:\s*Bearer\s+[A-Za-z0-9_\-\.]{20,}", "Authorization Bearer 长 Token"),  # secret-scan: allow-pattern-definition
     # sk- 后跟明显长随机字符串
-    (r"sk-[A-Za-z0-9_\-]{20,}", "疑似 OpenAI/DeepSeek 格式 Key"),
+    (r"sk-[A-Za-z0-9_\-]{20,}", "疑似 OpenAI/DeepSeek 格式 Key"),  # secret-scan: allow-pattern-definition
     # Microsoft / Azure Client Secret
-    (r"CLIENT_SECRET\s*=\s*(?!\s*$)(?!\s*YOUR_KEY_HERE\b)(?!\s*REPLACE_ME\b)(?!\s*EXAMPLE_ONLY\b)(?!\s*your_)", "CLIENT_SECRET 有疑似真实值"),
+    (r"CLIENT_SECRET\s*=\s*(?!\s*$)(?!\s*YOUR_KEY_HERE\b)(?!\s*REPLACE_ME\b)(?!\s*EXAMPLE_ONLY\b)(?!\s*your_)", "CLIENT_SECRET 有疑似真实值"),  # secret-scan: allow-pattern-definition
     # 通用 secret/key/token 后跟长随机字符串
-    (r"(?:secret|api_key|apikey|token|password)\s*[=:]\s*[A-Za-z0-9_\-\.\+/]{20,}", "通用凭据有疑似真实值"),
+    (r"(?:secret|api_key|apikey|token|password)\s*[=:]\s*[A-Za-z0-9_\-\.\+/]{20,}", "通用凭据有疑似真实值"),  # secret-scan: allow-pattern-definition
 ]
 
 # 占位值（允许）
@@ -265,24 +265,74 @@ def check_frontend_secrets(files: list[str]) -> list[dict]:
     return findings
 
 
-def _is_test_safe(line: str) -> bool:
-    """检查行是否包含测试安全标记（避免测试用假值产生误报）。
+# M1.2: 扫描器自身窄范围豁免 — 仅允许 scripts/check_repository_safety.py 自身
+# 在安全规则定义行使用。只豁免当前一行，只豁免安全规则定义。
+# 真实 Secret 即使位于脚本其他位置仍必须被发现。
+# secret-scan: allow-pattern-definition
 
-    M1.1: 大小写不敏感匹配。测试文件中的假值应使用拼接生成，
-    或包含明显测试标记（如 FAKE_TEST、NOT_A_REAL、FOR_UNIT_TEST 等）。
-    """
-    line_lower = line.lower()
-    for marker in TEST_SAFE_MARKERS:
-        if marker.lower() in line_lower:
+
+def _is_scan_pattern_definition(filepath: str, line: str) -> bool:
+    """扫描器自身窄范围豁免：仅检查正则定义行。"""
+    if filepath != "scripts/check_repository_safety.py":
+        return False
+    stripped = line.strip()
+    # 仅豁免正则模式定义行（以 r" 或 r' 开头且含 re. 模式语法）
+    if (stripped.startswith('r"') or stripped.startswith("r'")) and "# secret-scan: allow-pattern-definition" in stripped:
+        return True
+    return False
+
+
+M1_2_PRODUCTION_DIRS: list[str] = [
+    "backend/app/",
+    "frontend/",
+    "docs/",
+    "README.md",
+    "CLAUDE.md",
+]
+
+
+def _is_in_production_dir(filepath: str) -> bool:
+    """检查文件是否在生产源码目录中。"""
+    for d in M1_2_PRODUCTION_DIRS:
+        if filepath == d or filepath.startswith(d):
             return True
-    # 额外检查：值看起来像 Python 变量/属性引用（非字面量）
-    # 如 api_key=settings.deepseek_api_key, secret=some_var 等
-    if re.search(
-        r'(?:DEEPSEEK_API_KEY|CLIENT_SECRET|api_key|apikey|secret|token|password)\s*=\s*[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*\s*[,\s)#]',
+    return False
+
+
+def _is_in_test_dir(filepath: str) -> bool:
+    """检查文件是否在测试目录中。"""
+    return filepath.startswith("backend/tests/")
+
+
+def _is_python_variable_ref(line: str) -> bool:
+    """检查值是否为 Python 变量/属性引用（非 Secret 字面量）。
+
+    匹配 api_key=settings.foo, secret=some_var.bar 等引用。
+    这些引用不包含真实 Secret 字面量值，应全局豁免。
+    """
+    return bool(re.search(
+        r'(?:DEEPSEEK_API_KEY|CLIENT_SECRET|api_key|apikey|secret|token|password)\s*=\s*[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*\s*[,\s)#(]',
         line,
         re.IGNORECASE,
-    ):
-        return True
+    ))
+
+
+def _is_test_safe(filepath: str, line: str) -> bool:
+    """检查行是否包含测试安全标记（避免测试用假值产生误报）。
+
+    M1.2: TEST_SAFE_MARKERS 仅在 backend/tests/ 目录生效。
+    生产源码 (backend/app/, frontend/, docs/, README.md, CLAUDE.md)
+    不允许使用测试标记绕过检查。
+
+    测试文件中的假值应使用拼接生成（如 'sk-' + ('A' * 24)），
+    或包含明显测试标记（如 FAKE_TEST、NOT_A_REAL、FOR_UNIT_TEST 等）。
+    """
+    # M1.2: 测试安全标记仅在测试目录生效
+    if _is_in_test_dir(filepath):
+        line_lower = line.lower()
+        for marker in TEST_SAFE_MARKERS:
+            if marker.lower() in line_lower:
+                return True
     return False
 
 
@@ -300,8 +350,12 @@ def check_obvious_secrets(files: list[str]) -> list[dict]:
         except OSError:
             continue
         for i, line in enumerate(lines, start=1):
-            if _is_test_safe(line):
-                continue  # M1.1: 跳过测试安全标记行
+            if _is_python_variable_ref(line):
+                continue  # Python 变量/属性引用，非 Secret 字面量
+            if _is_test_safe(filepath, line):
+                continue  # 测试目录中允许使用安全标记
+            if _is_scan_pattern_definition(filepath, line):
+                continue  # secret-scan: 扫描器自身规则定义豁免
             for pattern, description in OBVIOUS_SECRET_PATTERNS:
                 if re.search(pattern, line, re.IGNORECASE):
                     findings.append({

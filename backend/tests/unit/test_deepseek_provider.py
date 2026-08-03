@@ -743,3 +743,234 @@ class TestConcurrency:
         with pytest.raises(LLMServiceError):
             await p.generate(req, _TestModel)
         assert call_count == 1  # 只发送了一次
+
+
+# ══════════════════════════════════════════════════════════════════
+# M1.2 收口：网络异常分类扩充
+# ══════════════════════════════════════════════════════════════════
+
+class TestM12NetworkErrors:
+    """M1.2 补齐的网络异常分类"""
+
+    @pytest.mark.asyncio
+    async def test_read_error_maps_to_connection_retryable(self):
+        """ReadError → LLMConnectionError, retryable=true"""
+        def _read_error(req):
+            raise httpx.ReadError("read error")
+
+        transport = httpx.MockTransport(_read_error)
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMConnectionError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.retryable is True
+        assert exc.value.error_code == "read_error"
+
+    @pytest.mark.asyncio
+    async def test_write_error_maps_to_connection_retryable(self):
+        """WriteError → LLMConnectionError, retryable=true"""
+        def _write_error(req):
+            raise httpx.WriteError("write error")
+
+        transport = httpx.MockTransport(_write_error)
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMConnectionError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.retryable is True
+        assert exc.value.error_code == "write_error"
+
+    @pytest.mark.asyncio
+    async def test_close_error_maps_to_connection_retryable(self):
+        """CloseError → LLMConnectionError, retryable=true"""
+        def _close_error(req):
+            raise httpx.CloseError("close error")
+
+        transport = httpx.MockTransport(_close_error)
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMConnectionError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.retryable is True
+        assert exc.value.error_code == "close_error"
+
+    @pytest.mark.asyncio
+    async def test_remote_protocol_error_maps_to_connection_retryable(self):
+        """RemoteProtocolError → LLMConnectionError, retryable=true"""
+        def _remote_proto_error(req):
+            raise httpx.RemoteProtocolError("remote protocol error")
+
+        transport = httpx.MockTransport(_remote_proto_error)
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMConnectionError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.retryable is True
+        assert exc.value.error_code == "remote_protocol_error"
+
+    @pytest.mark.asyncio
+    async def test_local_protocol_error_not_retryable(self):
+        """LocalProtocolError → LLMRequestError, retryable=false"""
+        def _local_proto_error(req):
+            raise httpx.LocalProtocolError("local protocol error")
+
+        transport = httpx.MockTransport(_local_proto_error)
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMRequestError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.retryable is False
+        assert exc.value.error_code == "local_protocol_error"
+
+    @pytest.mark.asyncio
+    async def test_network_error_no_key_leak(self):
+        """网络错误不泄漏 Key"""
+        secret = "sk-" + "secret-leak-test-key"
+        def _connect_error(req):
+            raise httpx.ConnectError("connection refused")
+
+        transport = httpx.MockTransport(_connect_error)
+        p = _build_provider(api_key=secret, transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        try:
+            await p.generate(req, _TestModel)
+        except LLMConnectionError as e:
+            msg = str(e)
+            assert "sk-secret" not in msg
+            assert "sk-" not in msg or "secret" not in msg
+
+
+# ══════════════════════════════════════════════════════════════════
+# M1.2 收口：响应结构防御加强
+# ══════════════════════════════════════════════════════════════════
+
+class TestM12ResponseStructureDefense:
+    """M1.2 加强的响应结构严格验证"""
+
+    @pytest.mark.asyncio
+    async def test_body_is_list_returns_response_error(self):
+        """Body 为 list 时返回 LLMResponseError"""
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json=[])
+        )
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMResponseError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.error_code == "invalid_response_body"
+
+    @pytest.mark.asyncio
+    async def test_choices_not_list_returns_response_error(self):
+        """choices 不是 list 时返回 LLMResponseError"""
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"choices": "not_a_list"})
+        )
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMResponseError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.error_code == "invalid_choices"
+
+    @pytest.mark.asyncio
+    async def test_choice_not_dict_returns_response_error(self):
+        """choice 不是 dict 时返回 LLMResponseError"""
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"choices": ["not_a_dict"]})
+        )
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMResponseError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.error_code == "invalid_choice"
+
+    @pytest.mark.asyncio
+    async def test_message_not_dict_returns_response_error(self):
+        """message 不是 dict 时返回 LLMResponseError"""
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={
+                "choices": [{"message": "not_a_dict"}],
+            })
+        )
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMResponseError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.error_code == "invalid_message"
+
+    @pytest.mark.asyncio
+    async def test_usage_not_dict_returns_response_error(self):
+        """usage 不是 dict 时返回 LLMResponseError"""
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={
+                "choices": [{"message": {"content": '{"status":"ok","value":1}'}}],
+                "usage": "not_a_dict",
+            })
+        )
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMResponseError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.error_code == "invalid_usage"
+
+    @pytest.mark.asyncio
+    async def test_token_as_string_returns_response_error(self):
+        """Token 为字符串时返回 LLMResponseError"""
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={
+                "choices": [{"message": {"content": '{"status":"ok","value":1}'}}],
+                "usage": {"prompt_tokens": "not_an_int", "completion_tokens": 5, "total_tokens": 5},
+            })
+        )
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMResponseError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.error_code == "invalid_token_usage"
+
+    @pytest.mark.asyncio
+    async def test_token_negative_returns_response_error(self):
+        """Token 为负数时返回 LLMResponseError"""
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={
+                "choices": [{"message": {"content": '{"status":"ok","value":1}'}}],
+                "usage": {"prompt_tokens": -1, "completion_tokens": 5, "total_tokens": 4},
+            })
+        )
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMResponseError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.error_code == "invalid_token_usage"
+
+    @pytest.mark.asyncio
+    async def test_token_as_bool_returns_response_error(self):
+        """Token 为 bool 时返回 LLMResponseError"""
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={
+                "choices": [{"message": {"content": '{"status":"ok","value":1}'}}],
+                "usage": {"prompt_tokens": True, "completion_tokens": 5, "total_tokens": 5},
+            })
+        )
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        with pytest.raises(LLMResponseError) as exc:
+            await p.generate(req, _TestModel)
+        assert exc.value.error_code == "invalid_token_usage"
+
+    @pytest.mark.asyncio
+    async def test_exception_no_raw_body_leak(self):
+        """异常不泄漏原始 Body 内容"""
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={
+                "choices": [{"message": {"content": '{"status":"ok","value":1}'}}],
+                "usage": {"prompt_tokens": "bad_value", "completion_tokens": 5, "total_tokens": 5},
+            })
+        )
+        p = _build_provider(transport=transport)
+        req = LLMRequest(messages=_json_messages())
+        try:
+            await p.generate(req, _TestModel)
+        except LLMResponseError as e:
+            msg = str(e)
+            # token 非法值不应直接出现在异常消息中（不泄漏完整响应）
+            assert "bad_value" not in msg

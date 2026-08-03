@@ -61,7 +61,7 @@ class TestHealthMockReady:
     async def test_health_version(self, mock_client):
         response = await mock_client.get("/health")
         data = response.json()
-        assert data["version"] == "M1.1"
+        assert data["version"] == "M1.2"
 
     @pytest.mark.asyncio
     async def test_health_mode_fields(self, mock_client):

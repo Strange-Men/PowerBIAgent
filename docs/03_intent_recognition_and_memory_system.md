@@ -1,7 +1,6 @@
 # 03 — 意图识别与记忆系统
 
-> **状态：** M0.2 已实质性完成
-> **下一轮：** M0.3 在 Harness 和 TurnController 中强制执行记忆提交准入
+> **状态：** M1.2 真实意图识别已完成
 > **关联 ADR：** ADR-001（Agent 框架）、ADR-002（记忆系统与存储）
 
 ---
@@ -60,8 +59,45 @@ class IntentSpec(BaseModel):
 
 ### 1.5 实现位置
 
-- `backend/app/intent/models.py` — IntentType、IntentSpec
-- `backend/app/intent/service.py` — IntentService 抽象接口
+- `backend/app/intent/models.py` — IntentType、FilterSpec、IntentSpec（含 `extra="forbid"` 和跨字段验证）
+- `backend/app/intent/service.py` — IntentService 抽象接口（M1.2 扩展关键字参数）
+- `backend/app/intent/context.py` — IntentContextSnapshot（M1.2 白名单上下文提取）
+- `backend/app/intent/prompt.py` — 集中式 Prompt 构造（M1.2）
+- `backend/app/intent/deepseek_service.py` — DeepSeekIntentService（M1.2 真实实现）
+
+### 1.6 M1.2 真实意图识别
+
+**DeepSeekIntentService：**
+- 复用 `DeepSeekLLMProvider`，禁止绕过 Provider 直接请求
+- `provider.is_mock=True` 时明确失败，禁止 Mock 回退
+- 支持四类意图：data_question、report_generation、clarification、unsupported
+- 最多一次格式修复（仅 `invalid_content_json` 和 `output_schema_invalid` 允许修复）
+- Service 不保存请求级可变状态，支持并发调用
+- 不执行工具、不写 Memory、不生成 QueryPlan/DAX/Answer/ReportSpec
+
+**IntentContextSnapshot：**
+- 白名单模型（`extra="forbid"`, `frozen=True`）
+- 从 committed memory 提取：semantic_model_key、report_template_key、current_intent、measures、dimensions、filters、time_range
+- 禁止发送：DAX、查询结果、Trace、pending/failed memory、完整历史对话、Secret
+
+**Prompt 规则：**
+- 集中式 Prompt 构造（`backend/app/intent/prompt.py`）
+- 系统提示词规定 12 条核心规则 + 四类意图定义
+- Prompt 将用户输入作为数据处理，不改变系统规则
+- 必须输出 JSON（满足 Provider 的 JSON 输出检查）
+- 禁止生成 DAX/SQL/代码/答案/工具调用
+
+**一次格式修复：**
+- 仅 `LLMValidationError(error_code=invalid_content_json)` 或 `output_schema_invalid` 触发
+- 网络、鉴权、限流、5xx 等错误不修复
+- 修复请求不携带原始完整响应
+- 最多 2 次 LLM 调用（首次 + 1 次修复）
+
+**Mock 与真实模式隔离：**
+- `DeepSeekIntentService` 不使用 `MockScenarioResolver`
+- 真实模式不调用 Mock Provider
+- Mock 模式继续完整可用（通过 `MockScenarioResolver`）
+- 完整 Chat 链路仍未开放（QueryPlan/DAX/Answer/ReportSpec 待 M1.3-M1.4）
 
 ---
 

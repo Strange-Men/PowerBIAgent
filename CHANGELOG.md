@@ -1,5 +1,50 @@
 # CHANGELOG
 
+## [M1.2] — 2026-08-03
+
+### 真实意图识别
+
+**来源：** M1.2 开发轮次。
+
+**M1.1 审计收口（四项）：**
+- 网络异常分类补齐：ReadError/WriteError/CloseError/RemoteProtocolError → LLMConnectionError (retryable=true)；LocalProtocolError → LLMRequestError (retryable=false)；均携带安全 error_code
+- 响应结构防御强化：`_parse_response()` 增加 14 层严格验证
+- 安全扫描豁免收紧：TEST_SAFE_MARKERS 仅在 `backend/tests/` 生效；Python 变量引用全局豁免
+- M1.1 SHA 文档修正：`docs/09` 和 `CHANGELOG.md` 写入 `073a819`
+
+**DeepSeekIntentService：**
+- `backend/app/intent/deepseek_service.py` — 复用 DeepSeekLLMProvider
+- `provider.is_mock=True` 时明确失败，禁止 Mock 回退
+- 支持四类意图：data_question / report_generation / clarification / unsupported
+- 最多一次格式修复（仅 JSON/Schema 错误可修复）
+- 不保存请求级状态，支持并发
+
+**IntentContextSnapshot：**
+- `backend/app/intent/context.py` — 白名单上下文提取（extra="forbid", frozen=True）
+- 从 committed memory 提取安全字段子集
+
+**Prompt：**
+- `backend/app/intent/prompt.py` — 集中式 Prompt 构造
+- 12 条系统规则、四类意图定义、修复指令、上下文渲染
+
+**IntentSpec 严格化：**
+- IntentSpec 和 FilterSpec 增加 `extra="forbid"`
+- 字符串清理、列表去空去重、跨字段规则、第五类意图拒绝
+
+**真实 Intent Smoke：**
+- `backend/app/intent/deepseek_intent_smoke.py` — 5 个合成案例
+- 脱敏输出（仅含 case_id、expected、actual、confidence、tokens 等）
+
+**测试结果：**
+- pytest：604 passed（M1.1 506 + M1.2 新增 98）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS
+
+**Commit SHA：** 待提交
+**本轮 Tag：** 无（本轮不创建 Tag）
+
+---
+
 ## [M1.1] — 2026-08-03
 
 ### DeepSeek Provider基础接入
@@ -55,7 +100,7 @@
 - Golden Cases：11 passed，1 skipped
 - 安全扫描：PASS
 
-**Commit SHA：** 待下轮写入
+**Commit SHA：** `073a819`
 **本轮 Tag：** 无（本轮不创建 Tag）
 
 ---

@@ -22,8 +22,8 @@ M1 真实 DeepSeek 接入 (6轮)
   M1.0 M0遗留收口与M1路线固化       ✅ 已完成 (9247322)
   M1.0.1 幂等并发与文档收尾修复      ✅ 已完成
   M1.0.2 密钥与仓库安全规则固化      ✅ 已完成
-  M1.1 DeepSeek Provider基础接入    ⬜
-  M1.2 真实意图识别                 ⬜
+  M1.1 DeepSeek Provider基础接入    ✅ 已完成 (073a819)
+  M1.2 真实意图识别                 ✅ 已完成
   M1.3 真实QueryPlan与DAX生成       ⬜
   M1.4 真实Answer与ReportSpec生成   ⬜
   M1.5 全链路验收与封板              ⬜
@@ -119,13 +119,19 @@ MVP 功能阶段 (后续)
 
 ### M1.2｜真实意图识别
 
-**状态：** ⬜ 未开始
+**状态：** ✅ 已完成
 
 **完成内容：**
-- DeepSeek 输出严格 IntentSpec
-- 支持 data_question / report_generation / clarification / unsupported
-- JSON 或结构化格式错误自动修复一次
-- 真实模式禁止调用 MockScenarioResolver
+- M1.1 四项审计收口：网络异常分类补齐（ReadError/WriteError/CloseError/RemoteProtocolError/LocalProtocolError）、响应结构防御强化（14 层严格验证）、安全扫描豁免收紧（TEST_SAFE_MARKERS 仅测试目录生效）、M1.1 SHA 文档修正
+- DeepSeekIntentService：复用 DeepSeekLLMProvider，支持四类真实意图识别
+- IntentContextSnapshot：白名单上下文提取（冻结模型，extra="forbid"）
+- 集中式 Prompt 构造：12 条系统规则 + 四类意图定义
+- IntentSpec 严格化：extra="forbid"、字符串清理、去重排序、第五类意图拒绝
+- 一次格式修复（仅 invalid_content_json / output_schema_invalid 可修复）
+- 真实模式不调用 MockScenarioResolver，不回退 Mock
+- 真实 Intent Smoke 入口（5 个合成案例，脱敏输出）
+- Provider.is_mock=True 时明确失败
+- Chat 仍 503（deepseek_pipeline_not_ready），不形成完整业务闭环
 
 ---
 

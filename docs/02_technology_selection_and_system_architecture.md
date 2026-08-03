@@ -13,7 +13,7 @@
 | 前端框架 | React + Vite | — | 已确定，M5 开发 |
 | 后端框架 | FastAPI | — | 已确定，M0.4 最小骨架 |
 | Agent 框架 | PydanticAI | 2.21.0 | ✅ M0.2 选定，Adapter 隔离 |
-| LLM Provider | DeepSeek + Mock | — | ✅ Mock 可运行，DeepSeek M1 |
+| LLM Provider | DeepSeek + Mock | — | ✅ Mock + DeepSeek Intent (M1.2) |
 | Power BI | Remote MCP Server | — | M2 真实连接，M0.3 Mock |
 | 数据校验 | Pydantic v2 | 2.13.4 | ✅ 已锁定 |
 | 记忆存储 | Repository + 内存 | — | ✅ M0.3 InMemory 实现 |

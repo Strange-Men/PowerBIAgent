@@ -323,16 +323,25 @@ class TestTestSafeMarkers:
 
     def test_fake_test_key_marker_safe(self):
         """FAKE_TEST_KEY 标记行跳过扫描"""
-        assert _is_test_safe(self._DK + "=FAKE_TEST_KEY_FOR_UNIT_TEST_ONLY") is True
+        assert _is_test_safe(
+            "backend/tests/unit/test_intent.py",
+            self._DK + "=FAKE_TEST_KEY_FOR_UNIT_TEST_ONLY",
+        ) is True
 
     def test_not_a_real_secret_safe(self):
         """NOT_A_REAL_SECRET 标记行跳过"""
-        assert _is_test_safe(self._CS + "=NOT_A_REAL_SECRET_BUT_LOOKS_LIKE_ONE") is True
+        assert _is_test_safe(
+            "backend/tests/unit/test_intent.py",
+            self._CS + "=NOT_A_REAL_SECRET_BUT_LOOKS_LIKE_ONE",
+        ) is True
 
     def test_normal_line_not_safe(self):
         """普通行不应被标记为测试安全"""
         k = "sk-" + "real-looking-key-12345678901234567890"
-        assert _is_test_safe(self._DK + "=" + k) is False
+        assert _is_test_safe(
+            "backend/tests/unit/test_intent.py",
+            self._DK + "=" + k,
+        ) is False
 
 
 class TestScannerOutputNoSecretValue:
@@ -348,3 +357,122 @@ class TestScannerOutputNoSecretValue:
         assert "matched" not in finding
         assert "value" not in finding
         assert "secret" not in finding
+
+
+# ══════════════════════════════════════════════════════════════════
+# M1.2 新增：安全扫描豁免收紧
+# ══════════════════════════════════════════════════════════════════
+
+class TestM12ExemptionTightening:
+    """M1.2: 测试豁免仅在测试目录生效"""
+
+    def test_test_dir_identified_correctly(self):
+        """backend/tests/ 目录正确识别为测试目录"""
+        from scripts.check_repository_safety import _is_in_test_dir
+        assert _is_in_test_dir("backend/tests/unit/test_intent.py") is True
+        assert _is_in_test_dir("backend/tests/integration/foo.py") is True
+
+    def test_production_dir_not_test(self):
+        """backend/app/ 不是测试目录"""
+        from scripts.check_repository_safety import _is_in_test_dir
+        assert _is_in_test_dir("backend/app/llm/deepseek.py") is False
+        assert _is_in_test_dir("backend/app/intent/models.py") is False
+
+    def test_production_dirs_identified(self):
+        """生产目录正确识别"""
+        from scripts.check_repository_safety import _is_in_production_dir
+        assert _is_in_production_dir("backend/app/main.py") is True
+        assert _is_in_production_dir("frontend/index.html") is True
+        assert _is_in_production_dir("docs/00_prd.md") is True
+        assert _is_in_production_dir("README.md") is True
+        assert _is_in_production_dir("CLAUDE.md") is True
+
+    def test_scripts_dir_not_production(self):
+        """scripts/ 不是生产目录"""
+        from scripts.check_repository_safety import _is_in_production_dir
+        assert _is_in_production_dir("scripts/check_repository_safety.py") is False
+
+    def test_test_dir_not_production(self):
+        """backend/tests/ 不是生产目录"""
+        from scripts.check_repository_safety import _is_in_production_dir
+        assert _is_in_production_dir("backend/tests/unit/test_intent.py") is False
+
+    _DK = "DEEPSEEK_" + "API_KEY"
+
+    def test_test_safe_markers_only_in_test_dir(self):
+        """测试安全标记仅在测试目录生效"""
+        from scripts.check_repository_safety import _is_test_safe
+
+        # 测试目录中的 FAKE_TEST_KEY 标记被跳过
+        assert _is_test_safe(
+            "backend/tests/unit/test_intent.py",
+            self._DK + "=FAKE_TEST_KEY_FOR_UNIT_TEST_ONLY",
+        ) is True
+
+        # 生产代码中的 FAKE_TEST_KEY 不应被跳过（因为不在测试目录）
+        assert _is_test_safe(
+            "backend/app/llm/deepseek.py",
+            self._DK + "=FAKE_TEST_KEY_FOR_UNIT_TEST_ONLY",
+        ) is False
+
+
+class TestM12PythonVariableRef:
+    """M1.2: Python 变量引用全局豁免"""
+
+    _DK = "DEEPSEEK_" + "API_KEY"
+
+    def test_variable_ref_global_exemption(self):
+        """Python 变量/属性引用应全局豁免（不区分目录）"""
+        from scripts.check_repository_safety import _is_python_variable_ref
+
+        assert _is_python_variable_ref("api_key=settings." + "deepseek_api_key,  # type: ignore") is True
+        assert _is_python_variable_ref("api_key=settings." + "deepseek_api_key)") is True
+        s = "some_provider." + "_api_key.get_" + "secret_value()"
+        assert _is_python_variable_ref("secret=" + s) is True
+
+    def test_literal_value_not_variable_ref(self):
+        """字面量值不应被判断为变量引用"""
+        from scripts.check_repository_safety import _is_python_variable_ref
+
+        # 字面字符串值不是变量引用
+        fake = "sk-" + ("F" * 20)
+        assert _is_python_variable_ref(self._DK + '="' + fake + '"') is False
+        fake2 = "my-" + ("S" * 20)
+        assert _is_python_variable_ref('secret="' + fake2 + '"') is False
+
+
+class TestM12ScannerSelfExemption:
+    """M1.2: 扫描器自身窄范围豁免"""
+
+    def test_scan_pattern_definition_exempted(self):
+        """# secret-scan: allow-pattern-definition 行豁免"""
+        from scripts.check_repository_safety import _is_scan_pattern_definition
+
+        line = (
+            'r"DEEPSEEK_' + 'API_KEY\\\\s*=\\\\s*...'
+            '", "DEEPSEEK_API_KEY 有疑似真实值"),'
+            '  # secret-scan: allow-pattern-definition'
+        )
+        assert _is_scan_pattern_definition(
+            "scripts/check_repository_safety.py", line
+        ) is True
+
+    def test_pattern_definition_only_in_scanner(self):
+        """扫描器豁免仅对自身生效"""
+        from scripts.check_repository_safety import _is_scan_pattern_definition
+
+        line = 'r"sk-[A-Za-z0-9_\\\\-]{20,}"  # secret-scan: allow-pattern-definition'
+        # 其他文件即使有相同注释也不豁免
+        assert _is_scan_pattern_definition(
+            "backend/app/llm/deepseek.py", line
+        ) is False
+
+    def test_normal_line_not_exempted(self):
+        """不带注释的普通行不被豁免"""
+        from scripts.check_repository_safety import _is_scan_pattern_definition
+
+        fake_sk = "sk-" + ("L" * 20)
+        line = 'api_key = "' + fake_sk + '"'
+        assert _is_scan_pattern_definition(
+            "scripts/check_repository_safety.py", line
+        ) is False

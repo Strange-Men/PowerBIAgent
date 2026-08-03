@@ -21,12 +21,17 @@ class IntentService(ABC):
         self,
         user_input: str,
         committed_memory: Optional[dict] = None,
+        *,
+        semantic_model_key: Optional[str] = None,
+        report_template_key: Optional[str] = None,
     ) -> IntentSpec:
         """识别用户意图
 
         Args:
             user_input: 用户原始输入文本
             committed_memory: 已提交的 committed structured memory（可选）
+            semantic_model_key: 语义模型 Key（关键字参数，M1.2）
+            report_template_key: 报表模板 Key（关键字参数，M1.2）
 
         Returns:
             IntentSpec: 结构化意图识别结果

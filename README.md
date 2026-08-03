@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M1.1 DeepSeek Provider基础接入** — DeepSeekLLMProvider 已实现，真实连通测试通过。Chat 真实链路尚未接通（M1.2+）。
+**M1.2 真实意图识别** — DeepSeekIntentService 已实现，真实意图 Smoke 可用。Chat 真实链路尚未接通（待 M1.3+）。
 
-> **Mock 模式完整可用。** DeepSeek Provider 已实现但真实 Intent 业务流程尚未接入。Chat 接口仅 Mock 模式可用。
+> **Mock 模式完整可用。** DeepSeek Provider 和 Intent Service 已就绪但完整 Chat Pipeline 尚未完成。Chat 接口仅 Mock 模式可用。
 
 ### 幂等与并发特性
 
@@ -155,6 +155,9 @@ D:\Conda\envs\PBIAgent\python.exe scripts/check_repository_safety.py
 
 # DeepSeek 真实连通测试（需要 .env 中配置 DEEPSEEK_API_KEY）
 D:\Conda\envs\PBIAgent\python.exe -m backend.app.llm.deepseek_smoke
+
+# 真实意图识别 Smoke 测试（需要 .env 中配置 DEEPSEEK_API_KEY）
+D:\Conda\envs\PBIAgent\python.exe -m backend.app.intent.deepseek_intent_smoke
 ```
 ### DeepSeek 配置
 
@@ -174,7 +177,7 @@ Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过�
 | 前端 | React + Vite | 骨架已确认，开发延后 (M5) |
 | 后端 | FastAPI | ✅ M0.4 最小骨架已完成 |
 | Agent | PydanticAI 单 Agent | ✅ M0.2 已选定 |
-| LLM | DeepSeek + Mock LLM | ✅ Mock 可运行；DeepSeek 延后 (M1.1) |
+| LLM | DeepSeek + Mock LLM | ✅ Mock 可运行；DeepSeek Intent 已就绪 (M1.2) |
 | 数据 | Power BI MCP | ✅ Mock 可运行；真实接入延后 (M2) |
 | 记忆 | 结构化工作记忆 | ✅ M0.2-M0.3.2 完整实现 |
 | 报表 | 固定模板 HTML | ✅ Mock 可运行；真实渲染延后 (M3) |
