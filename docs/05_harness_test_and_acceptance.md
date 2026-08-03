@@ -1,7 +1,8 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M0.4 项目骨架与阶段收尾完成
+> **状态：** M1.3.2 同步更新
 > **关联 ADR：** ADR-004
+> **当前基线：** pytest 706 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS
 
 ---
 
@@ -101,22 +102,46 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 | 集成测试（integration/） | Mock 完整链路 | 1 文件 |
 | Golden Cases | 端到端场景 | 10 条 YAML |
 
-## 四、265 测试覆盖（M0.4）
+## 四、706 测试覆盖（M1.3.1 基线，本轮无变化）
 
 | 测试文件 | 内容 |
 |---------|------|
-| test_intent.py | IntentSpec + FilterSpec + 跨字段规则 |
-| test_llm.py | Mock LLM + Fixture + 注册表 + DeepSeek 安全 |
-| test_memory.py | 状态 + 版本语义 + 幂等 + 准入 + Mock 空间 + Correction（重构）|
+| test_intent.py | IntentSpec + FilterSpec + 跨字段规则 + 真实 Intent |
+| test_llm.py | Mock LLM + Fixture + Registry + DeepSeek Provider |
+| test_memory.py | 状态 + 版本语义 + 幂等 + 准入 + Mock 空间 + Correction |
 | test_agent_framework.py | AgentRuntime + PydanticAI Smoke |
 | test_powerbi.py | Mock Adapter 全部场景 |
 | test_harness.py | ToolGateway + ContextBuilder + TurnController + Trace + Validation |
-| test_memory_repository.py | 版本 0→1→2 + 证据验证 + 隔离 + 原子性 + 失败审计（重写）|
-| test_mock_pipeline.py | 问答/报表/多轮继承/Gateway链路/冲突/幂等/失败清理/并发（重写）|
-| test_settings.py | Settings 默认/覆盖/校验/Secret/隔离（M0.4 新增）|
-| test_health.py | Health 200/模式/敏感字段/不调用LLM（M0.4 新增）|
-| test_chat.py | Chat 问答/报表/边界/并发/Real拒绝（M0.4 新增）|
+| test_memory_repository.py | 版本 + 证据验证 + 隔离 + 原子性 + 失败审计 |
+| test_mock_pipeline.py | 问答/报表/多轮/Gateway链路/冲突/幂等/失败清理/并发 |
+| test_settings.py | Settings 默认/覆盖/校验/Secret/隔离 |
+| test_health.py | Health 200/模式/敏感字段/不调用LLM |
+| test_chat.py | Chat 问答/报表/边界/并发/Real拒绝 |
+| test_query_plan.py | QueryPlan 真实验证集成测试 |
+| test_dax.py | DAX 表—归属验证测试 |
+| test_repository_safety.py | 仓库安全（26 测试） |
 
 ---
 
-*最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成*
+## 五、未来验收项（M1.4—M5）
+
+### M1.4 验收
+
+- Answer 数据真实性：AnswerSpec.answer 内容与 QueryResult 数据一致
+- 表格字段与 QueryResult.columns 一致
+- 图表字段与 QueryResult.columns 一致
+- ReportSpec 字段真实性
+- source_mode 真实性：Mock QueryResult 不得标为 real
+
+### M5 前端验收
+
+- 前端不得把 Mock 数据描述为真实 Power BI 数据
+- 不得把未接入模型（GPT-5.6 等）展示为可用
+- 不得把 Mock 展示为用户正式模型
+- 表格数据必须来自 API 返回的 QueryResult
+- 图表数据必须来自 API 返回的 QueryResult
+- 未实现功能（查看报表、下载 HTML 等）必须明确禁用
+
+---
+
+*最后更新：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*

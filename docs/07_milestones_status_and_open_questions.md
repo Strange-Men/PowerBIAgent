@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M0.4 已完成
+> **状态：** M1.3.2 已同步
 > **更新频率：** 每轮结束时更新
 
 ---
@@ -15,83 +15,85 @@
 | M0.3.1 | 验证闭环加固修复 | ✅ 已完成 | 2026-07-31 | `3c7cc7c` |
 | M0.3.2 | 工具网关与并发闭环修正 | ✅ 已完成 | 2026-07-31 | `ec1afcc` |
 | M0.3.3 | Mock场景并发隔离修复 | ✅ 已完成 | 2026-07-31 | `d0d47e3` |
-| M0.4 | 项目骨架与阶段收尾 | ✅ 已完成 | 2026-07-31 | 待提交 |
-| M1 | 真实 DeepSeek 接入 | ⬜ 计划中 | — | — |
-| M2 | 真实 Power BI MCP 与数据问答 | ⬜ 计划中 | — | — |
-| M3 | 报表生成闭环 | ⬜ 计划中 | — | — |
-| M4 | 多轮记忆完善 | ⬜ 计划中 | — | — |
-| M5 | React 前端与联调 | ⬜ 计划中 | — | — |
+| M0.4 | 项目骨架与阶段收尾 | ✅ 已完成 | 2026-07-31 | `d5c1634` |
+| M0.4.1 | API骨架真实性修复 | ✅ 已完成 | 2026-07-31 | `1f967b0` |
+| M1.0 | M0遗留收口与M1路线固化 | ✅ 已完成 | 2026-07-31 | `9247322` |
+| M1.0.1 | 幂等并发与文档收尾修复 | ✅ 已完成 | 2026-07-31 | `c223d7b` |
+| M1.0.2 | 密钥与仓库安全规则固化 | ✅ 已完成 | 2026-07-31 | `5726959` |
+| M1.1 | DeepSeek Provider基础接入 | ✅ 已完成 | 2026-08-03 | `073a819` |
+| M1.2 | 真实意图识别 | ✅ 已完成 | 2026-08-03 | `53cf43e` |
+| M1.3 | 真实QueryPlan与DAX生成 | ✅ 已完成 | 2026-08-03 | `441ca45` / `c0e782b` |
+| M1.3.1 | QueryPlan与DAX验证修复 | ✅ 已完成 | 2026-08-03 | `6647760` |
+| M1.3.2 | 前端视觉与结构化回答契约固化 | ✅ 已完成 | 2026-08-03 | 本轮提交 |
+| M1.4 | 真实Answer与ReportSpec生成 | ⬜ 未开始 | — | — |
+| M1.5 | 全链路验收与封板 | ⬜ 未开始 | — | — |
+| M2 | 真实 Power BI MCP 与数据问答 | ⬜ 未开始 | — | — |
+| M3 | 报表生成闭环 | ⬜ 未开始 | — | — |
+| M4 | 多轮记忆完善 | ⬜ 未开始 | — | — |
+| M5 | React 前端与联调 | ⬜ 未开始 | — | — |
 
-状态图例：⬜ 计划中 | ⏳ 待开始 | 🔄 进行中 | ✅ 已完成 | ❌ 阻塞
+状态图例：⬜ 未开始 | 🔄 进行中 | ✅ 已完成 | ❌ 阻塞
 
-## 二、M0.2 完成状态（已修正）
+## 二、当前主要交付物
 
 | 交付物 | 状态 |
 |--------|------|
-| Agent 框架 ADR (ADR-001) | ✅ |
-| ADR-002 记忆系统与存储 | ✅ |
-| IntentSpec + IntentService | ✅ |
-| LLM Provider（Mock + DeepSeek 骨架） | ✅ |
+| Agent 框架 (PydanticAI) | ✅ |
+| 意图识别 (IntentSpec + DeepSeekIntentService) | ✅ |
+| LLM Provider (Mock + DeepSeek) | ✅ |
+| QueryPlan 生成 (DeepSeekQueryPlanService) | ✅ |
+| DAX 生成 + 只读安全验证 (DeepSeekDAXService) | ✅ |
 | 四层记忆 + 三态机制 + 提交准入 | ✅ |
-| 65 个单元测试通过 | ✅ |
-| Commit `d03ac6c` 已推送 | ✅ |
+| Harness ETCLOVG 完整实现 | ✅ |
+| FastAPI 最小骨架 (/health + /api/v1/chat) | ✅ |
+| Golden Cases (12 条) | ✅ |
+| 前端视觉与组合回答契约 | ✅ M1.3.2 完成 |
+| Answer 真实生成 | ⬜ M1.4 |
+| ReportSpec 真实生成 | ⬜ M1.4 |
+| 真实 Power BI MCP 连接 | ⬜ M2 |
+| 报表正式渲染与资源 | ⬜ M3 |
+| 会话历史与持久化 | ⬜ M4 |
+| React 前端 | ⬜ M5 |
 
-## 三、M0.2 审计修复（M0.3 完成）
-
-| 修复项 | 状态 |
-|--------|------|
-| AgentRuntime 从字符串修复为真实类 | ✅ |
-| PydanticAI API 准确性（output_type 非 result_type） | ✅ |
-| Mock LLM Fixture 路径修复（harness/fixtures/） | ✅ |
-| Mock LLM time.sleep → asyncio.sleep | ✅ |
-| 未知 scenario 严格失败 | ✅ |
-| IntentSpec 跨字段规则 + FilterSpec | ✅ |
-| DeepSeek SecretStr 安全 | ✅ |
-| 核心依赖版本锁定 | ✅ |
-| 记忆系统 Mock 空间规则 | ✅ |
-| MemoryCommitEvidence + Correction 审计 | ✅ |
-| memory_version 语义修正 | ✅ |
-| InMemoryMemoryRepository | ✅ |
-
-## 四、待确认事项
+## 三、待确认事项
 
 | # | 事项 | 优先级 | 预计解决轮次 |
 |---|------|--------|------------|
-| 1 | Agent 框架选择 | ✅ PydanticAI | M0.2 |
-| 2 | 意图识别方案 | ✅ Prompt + Pydantic | M0.2 |
+| 1 | Agent 框架选择 | ✅ 已确定 PydanticAI | M0.2 |
+| 2 | 意图识别方案 | ✅ Prompt + Pydantic | M1.2 |
 | 3 | Mock LLM 策略 | ✅ scenario_key 驱动 | M0.2 |
-| 4 | 筛选 AND/OR 策略 | ⏳ 待确认 | M2 |
-| 5 | Power BI MCP 连接方式 | ✅ Remote MCP | ADR-003 |
-| 6 | DAX 生成策略 | ⏳ 待确认 | M2 |
-| 7 | 报表模板注册机制 | 中 | M3 |
-| 8 | 前端状态管理方案 | 低 | M5 |
-| 9 | 是否有现有 Power BI 语义模型 | 高 | M2 前 |
-| 10 | DeepSeek API Key | 中 | M1 前 |
-| 11 | Power BI 管理员 Tenant 设置 | 高 | M2 前 |
-| 12 | Entra App Registration 权限 | 高 | M2 前 |
+| 4 | Power BI MCP 连接方式 | ✅ Remote MCP | ADR-003 |
+| 5 | 筛选 AND/OR 策略 | ⏳ 待确认 | M2 |
+| 6 | DAX 生成策略 | ✅ DeepSeek + 只读安全验证 | M1.3 |
+| 7 | DeepSeek API Key | ✅ M1.1 前已确认 | M1.1 |
+| 8 | 公司真实 Power BI 语义模型（有哪些、结构如何） | 高 | M2 前 |
+| 9 | 可用报表模板（哪些模板、谁维护） | 中 | M3 前 |
+| 10 | Power BI 管理员 Tenant 设置 | 高 | M2 前 |
+| 11 | Entra App Registration 权限 | 高 | M2 前 |
+| 12 | 报表资源保存位置（本地文件/对象存储/数据库） | 中 | M3 前 |
+| 13 | 报表查看与下载方式（浏览器打开/后端下载/前端嵌入） | 中 | M3 前 |
+| 14 | 会话和报表持久化方案（SQLite/PostgreSQL/文件） | 中 | M4 前 |
+| 15 | 前端是否展示其他模型（GPT-5.6 等未接入模型） | 低 | M5 前 |
+| 16 | 当前正式模型仅 DeepSeek（Mock 仅测试、未来模型未接入前不展示为可用） | 中 | 已确定 |
+| 17 | 前端状态管理方案 | 低 | M5 |
 
-## 五、已知风险
+## 四、已知风险
 
 | # | 风险 | 影响 | 缓解措施 |
 |---|------|------|---------|
-| 1 | Power BI MCP 连接可能受账号影响 | 阻塞 M2 | M0.3 已完成 ADR-003 设计 |
+| 1 | Power BI MCP 连接可能受账号影响 | 阻塞 M2 | ADR-003 设计已完成 |
 | 2 | DeepSeek DAX 生成质量不确定 | 影响 M2 | DAX 校验层 + Golden Cases |
 | 3 | PydanticAI Breaking Changes | 影响长期 | Adapter 隔离 + 版本锁定 |
 | 4 | Remote MCP 端点不稳定 | 影响 M2 | ADR-003 Fallback 方案 |
 | 5 | Entra App Registration 权限不足 | 影响 M2 | M2 早期验证 |
 
-## 六、当前 Tag 状态
+## 五、当前 Tag 状态
 
-**`m0.4-foundation-release`** — M0 开发准备封板 Tag（M0.4 验收通过后创建）。
-
-## 七、M0.4 交付总结
-
-- 请求级并发上下文收口（删除共享 Trace/Controller 状态）
-- Pydantic Settings（环境变量覆盖，Mock 无需 API Key）
-- FastAPI 最小骨架（`/health` + `/api/v1/chat`）
-- 265 个测试全部通过，11/11 Golden Cases 通过
-- Uvicorn 启动验证通过
+| Tag | Commit | 说明 |
+|-----|--------|------|
+| `m0.4.1-foundation-release` | `1f967b0` | M0.4.1 封板 |
+| `m0.4-foundation-release` | `d5c1634` | M0.4 封板 |
 
 ---
 
-*最后更新：2026-07-31 | M0.4 项目骨架与阶段收尾*
+*最后更新：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*

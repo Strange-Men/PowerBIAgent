@@ -1,7 +1,30 @@
 # 04 — Power BI MCP 与 API 契约
 
-> **状态：** M0.3 实质性完成
+> **状态：** M1.3.2 核对并更新
 > **关联 ADR：** ADR-003
+> **API 源码：** `backend/app/api/routes.py`、`backend/app/main.py`
+> **数据契约源码：** `backend/app/schemas/data_contracts.py`
+
+---
+
+## 一、当前 API 路由（以实际代码为准）
+
+### 已实现
+
+| 方法 | 路径 | 说明 | 状态 |
+|------|------|------|------|
+| `GET` | `/health` | 健康检查（Mock 200 / DeepSeek 503） | ✅ M0.4 |
+| `POST` | `/api/v1/chat` | 非流式对话接口（当前仅 Mock 可用） | ✅ M0.4 |
+
+### 计划中的接口（PRD 定义，尚未实现）
+
+| 方法 | 路径 | 说明 | 目标轮次 |
+|------|------|------|---------|
+| `GET` | `/api/semantic-models` | 返回可选 Power BI 语义模型列表 | M2+ |
+| `GET` | `/api/report-templates` | 返回可选固定报表模板列表 | M3+ |
+| `GET` | `/api/reports/{report_id}` | 预览或下载已生成报表 | M3+ |
+
+> **注意：** PRD 中列出的 `/api/semantic-models`、`/api/report-templates`、`/api/reports/{report_id}` 为计划接口，当前未实现。不得在文档中将其描述为已有接口。
 
 ---
 
@@ -46,27 +69,87 @@
 
 ## 三、核心数据契约（`backend/app/schemas/data_contracts.py`）
 
-### QueryPlan
+### 3.1 契约职责总览
+
+| 模型 | 职责 | 数据来源 |
+|------|------|---------|
+| **QueryResult** | 表格和图表数据的事实来源。包含 columns、rows、row_count、source_mode 等。内置一致性校验（row_count vs rows 长度、每行字段 vs columns 数量） | Power BI MCP（当前 Mock） |
+| **AnswerSpec** | 自然语言答案、摘要、指标和证据。负责直接回答用户问题、给出总结、说明筛选条件。answer 字段为必填核心文本 | LLM 基于 QueryResult 生成 |
+| **ReportSpec** | 结构化报表描述。包含 title、template_key、kpis (KPISpec)、charts (ChartSpec)、tables (TableSpec)、insights 等。禁止任意 HTML/JS/外部脚本 | LLM 基于 QueryResult 和模板生成 |
+| **RenderedReport** | 报表渲染结果。包含 report_id、template_key、html 等。未来提供报表资源查看和下载引用 | Report Renderer 基于 ReportSpec 渲染 |
+
+### 3.2 QueryPlan
 normalized_question, semantic_model_key, measures, dimensions, filters (StructuredFilter), time_range, sort, top_n, comparison_mode, requested_template, inherited_context, is_mock
 
-### DAXRequest
+### 3.3 DAXRequest
 semantic_model_key, dax, max_rows, timeout_seconds, request_id, is_mock
 
-### QueryResult
+### 3.4 QueryResult — 数据事实来源
 semantic_model_key, columns, rows, row_count, execution_time_ms, source_mode, request_id, error (PowerBIError), truncated
 
-内置一致性校验：row_count vs rows 长度、每行字段 vs columns 数量
+内置一致性校验：row_count vs rows 长度、每行字段 vs columns 数量。
 
-### AnswerSpec
+**关键规则：**
+- 表格和图表数据必须来自 QueryResult
+- LLM 只负责解释或选择展示范围，不得虚构行列
+- source_mode 表示数据来源，不能因为使用真实 DeepSeek 就把 Mock QueryResult 标为 real
+
+### 3.5 AnswerSpec — 自然语言回答
 answer, summary, metrics, evidence, filters, semantic_model_key, source_mode, generated_at
 
-### ReportSpec
+**关键规则：**
+- answer 字段为自然语言结论，由 LLM 基于 QueryResult 生成
+- metrics 展示少量关键指标，数值必须来自 QueryResult
+- 不允许 LLM 自行计算无法验证的指标
+- evidence 提供数据来源追溯
+- source_mode 与 QueryResult.source_mode 应一致
+
+### 3.6 ReportSpec — 结构化报表
 title, template_key, summary, kpis (KPISpec), charts (ChartSpec), tables (TableSpec), insights, data_source, filters, generated_at, source_mode
 
-禁止任意 HTML、JavaScript、外部脚本、未登记模板、不存在字段
+禁止任意 HTML、JavaScript、外部脚本、未登记模板、不存在字段。
 
-### UserContext
+### 3.7 UserContext
 user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
+
+---
+
+## 三-A、前端组合回答目标（未来 M5，当前不实现）
+
+> **本节描述未来前端组合回答的产品目标，不代表当前 API 已经支持。**
+
+### 目标形态
+
+一条 AI 回答可由多个内容块按顺序组成，内容类型至少包括：
+
+| 类型 | 说明 | 数据来源 |
+|------|------|---------|
+| `text` | 自然语言结论、总结、筛选说明、空数据提示、截断提示 | AnswerSpec.answer |
+| `metrics` | 少量关键指标（数值来自 QueryResult，不允许 LLM 虚构） | QueryResult / AnswerSpec.metrics |
+| `table` | title、columns、rows、row_count、truncated、source_mode | QueryResult |
+| `chart` | type (bar/line/pie/scatter)、title、x_field、y_field、series、data_reference | QueryResult |
+| `report_attachment` | report_id、title、format、view_reference、download_reference、source_mode | RenderedReport |
+
+### 安全限制
+
+- 图表字段必须存在于 QueryResult.columns
+- 图表数据必须引用 QueryResult，不允许 LLM 虚构
+- 图表使用结构化字段描述，**禁止** LLM 生成 HTML、JavaScript、第三方脚本或任意前端代码
+- 报表查看和下载引用由后端生成，**禁止** LLM 生成任意外部 URL
+- source_mode 表示数据来源，不能因使用真实 DeepSeek 而将 Mock QueryResult 标为 real
+- LLM 不得生成任意外部 URL 或可执行脚本
+
+### 当前与未来边界
+
+| 能力 | 当前状态 | 目标轮次 |
+|------|---------|---------|
+| 统一前端消息 Envelope | ❌ 不存在 | M1.5/M5 确定 |
+| AnswerSpec + QueryResult | ✅ 已实现 | — |
+| ReportSpec + RenderedReport | ✅ Mock 可运行 | M3 正式渲染 |
+| 表格展示 | ✅ AnswerSpec 可携带 | M5 前端渲染 |
+| 图表展示 | ❌ 当前无 | M5 前端渲染 |
+| 报表查看/下载 | ❌ 当前无 | M3 报表资源 |
+| LLM 生成 HTML/JS | ❌ 永久禁止 | — |
 
 ## 四、只读 DAX 安全
 
@@ -89,4 +172,4 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-*最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成*
+*最后更新：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*

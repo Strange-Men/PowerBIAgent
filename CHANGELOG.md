@@ -1,5 +1,67 @@
 # CHANGELOG
 
+## [M1.3.2] — 2026-08-03
+
+### 前端视觉与结构化回答契约固化
+
+**来源：** M1.3.2 纯文档与视觉资产固化轮次。
+
+**视觉资产归档：**
+- 两张前端参考图归档至 `docs/assets/frontend/`：
+  - `整体01.png` — 已有对话与组合回答态
+  - `整体02.png` — 新聊天欢迎态与菜单展开态
+- 图片作为未来 M5 React 前端开发的视觉参考
+
+**前端最终产品方向固化：**
+- 最终为带左侧栏的 GPT 式极简对话网页（React + Vite，M5 开发）
+- 左侧栏：PowerBIAgent 标识、新聊天、搜索聊天、项目、最近报表、最近对话、用户信息
+- 主对话区：新聊天欢迎态、已有对话态、底部输入器
+- 输入器：胶囊形容器、"+"按钮、文本输入、模型选择、发送按钮
+- 全局视觉：纯白/极浅灰为主，黑色/深灰正文，克制蓝色用于图表，大面积留白
+
+**结构化组合回答契约：**
+- AI 回答未来可由多个内容块按顺序组成：text、metrics、table、chart、report_attachment
+- 表格和图表数据必须来自 QueryResult，LLM 不得虚构
+- 图表仅允许 bar/line/pie/scatter，使用结构化字段，禁止生成 HTML/JS/外部脚本
+- 报表附件引用由后端生成，禁止 LLM 生成任意外部 URL
+- 当前不创建新的 Python 消息 Envelope 或 API 代码
+
+**当前能力与未来边界：**
+- 当前正式用户模型仅 DeepSeek；Mock 仅测试；GPT-5.6 未接入
+- 当前 QueryResult 仍为 Mock；真实 Power BI 属于 M2
+- 报表资源（查看/下载）属于 M3；会话历史/搜索属于 M4
+- 前端正式开发延后至 M5；M1.4 继续复用现有 AnswerSpec 和 ReportSpec
+
+**文档修改：**
+- CHANGELOG：新增 M1.3.2 记录
+- `docs/00`：补充组合回答和左侧栏布局
+- `docs/01`：替换为带左侧栏的完整页面骨架
+- `docs/04`：核对真实 API 路径，补充 AnswerSpec/QueryResult/ReportSpec/RenderedReport 职责
+- `docs/05`：同步 706 passed / 11 Golden Cases 基线，补充未来验收项
+- `docs/07`：修复过期状态，新增待确认项
+- `docs/08`：插入 M1.3.2 记录，补充各阶段前固化内容
+- `docs/09`：覆盖更新交接文档
+- `frontend/README.md`：更新前端方向和引用
+- 新增 `docs/10_frontend_visual_and_interaction_spec.md`
+- 新增 `docs/11_structured_answer_contract.md`
+
+**本轮性质：**
+- 纯文档与视觉资产固化
+- 不修改后端业务代码、不修改前端业务代码
+- 不创建 React 项目、不修改 Settings.version
+- 不进入 M1.4、不创建 Tag
+- 下一轮仍为 M1.4 真实Answer与ReportSpec生成
+
+**测试结果：**
+- pytest：706 passed（无变化，本轮无代码修改）
+- Golden Cases：11 passed，1 skipped（无变化）
+- 安全扫描：PASS
+
+**Commit SHA：** 本轮提交
+**本轮 Tag：** 无
+
+---
+
 ## [M1.3.1] — 2026-08-03
 
 ### QueryPlan 与 DAX 验证修复

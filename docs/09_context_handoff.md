@@ -2,7 +2,7 @@
 
 > **所有新 Claude 恢复上下文的唯一最新交接入口。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-03 | M1.3.1 QueryPlan与DAX验证修复**
+> **最后更新：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化**
 
 ---
 
@@ -10,17 +10,15 @@
 
 开发供公司内部少量人员使用的 Power BI 数据分析 Agent MVP。用户通过自然语言对话查询 Power BI 语义模型数据，并以固定模板生成静态 HTML 报表。
 
+前端最终为带左侧栏的 GPT 式极简对话网页（React + Vite，M5 开发）。
+
 ## 当前阶段
 
-**M1.3.1 QueryPlan与DAX验证修复** — ✅ 已完成。
-
-## 当前完成轮次
-
-**M1.3.1** — QueryPlan与DAX验证修复
+**M1.3.2 前端视觉与结构化回答契约固化** — ✅ 已完成。
 
 ## 上一轮
 
-**M1.3** — 真实QueryPlan与DAX生成（主体实现 `441ca45`，文档回填 `c0e782b`）
+**M1.3.1** — QueryPlan与DAX验证修复（Commit `6647760`）
 
 ## 下一轮
 
@@ -46,6 +44,8 @@ M1.5：未开始
 | M1.1 | DeepSeek Provider基础接入 | `073a819` | 2026-08-03 |
 | M1.2 | 真实意图识别 | `53cf43e` | 2026-08-03 |
 | M1.3 | 真实QueryPlan与DAX生成 | `441ca45` / `c0e782b` | 2026-08-03 |
+| M1.3.1 | QueryPlan与DAX验证修复 | `6647760` | 2026-08-03 |
+| M1.3.2 | 前端视觉与结构化回答契约固化 | 本轮提交 | 2026-08-03 |
 
 ## 最近封板 Tag
 
@@ -54,99 +54,79 @@ M1.5：未开始
 | `m0.4.1-foundation-release` | `1f967b0` | M0.4.1 封板 |
 | `m0.4-foundation-release` | `d5c1634` | M0.4 封板 |
 
-## M1.3 交付内容（主体实现 `441ca45` + 文档回填 `c0e782b`）
+## M1.3.2 交付内容
 
-### M1.2 审计收口（三项）
+### 视觉资产归档
 
-1. **from_committed_memory() state_status 检查** — `backend/app/intent/context.py`：committed 继承白名单字段、pending/failed/缺失不继承任何业务上下文
-2. **无效 Prompt 测试修复** — `test_prompt_forbids_dax_and_answer`：永真断言 `"不得生成 DAX" in system or "不得生成 DAX" not in system` → `"不得生成 DAX" in system`
-3. **验证错误脱敏** — `DeepSeekIntentService` 不再将 `str(LLMValidationError)` 拼入 `IntentRecognitionError`
+- 两张前端参考图归档至 `docs/assets/frontend/`：
+  - `整体01.png` — 已有对话与组合回答态
+  - `整体02.png` — 新聊天欢迎态与菜单展开态
+- 图片为未来 M5 React 前端开发的视觉参考
+- 当前不根据图片创建 React 页面
 
-### DeepSeekQueryPlanService
+### 前端最终产品方向
 
-- **位置：** `backend/app/query_plan/`（deepseek_service.py、prompt.py、context.py）
-- 复用现有 `QueryPlan`、`IntentSpec`、`SemanticModelSchema` 模型
-- 声明复用 `ValidationService.validate_query_plan()`（**实际调用在 M1.3.1 补齐**）
-- 只处理 `data_question` 和 `report_generation`；`clarification`/`unsupported` 明确拒绝
-- Prompt：严格 JSON、只用 Schema 真实字段、不生成 DAX/答案、不调用工具、不虚构
-- 最多一次格式修复（仅 JSON/Schema 错误）
-- Schema 安全精简视图（不暴露 DAX 表达式）
+- 最终为带左侧栏的 GPT 式极简对话网页（React + Vite，M5 开发）
+- 全局视觉：纯白/极浅灰为主，黑色/深灰正文，克制蓝色图表，大面积留白
+- 左侧栏（约15%宽）：标识、新聊天、搜索聊天(M4)、项目、最近报表(M3)、最近对话(M4)、用户信息
+- 主对话区：新聊天欢迎态、已有对话态（用户消息+AI组合回答+底部输入器）
+- 输入器：胶囊形容器、"+"按钮（数据模型+报表模板两分组）、文本输入、模型菜单、发送按钮
+- 模型菜单：当前仅 DeepSeek 为正式用户模型，Mock 仅测试，GPT-5.6 未接入
 
-### DeepSeekDAXService
+### 结构化组合回答契约
 
-- **位置：** `backend/app/dax/`（deepseek_service.py、prompt.py、safety.py）
-- DAX 只读安全验证器（**M1.3 使用全局名称集合验证，表—归属验证在 M1.3.1 补齐**）
-- 禁止：写入/删除/更新、SQL/Shell/Python/JS、多语句注入、注释绕过、非法对象、空 DAX
-- 允许：EVALUATE、SUMMARIZECOLUMNS、FILTER、TOPN、ORDER BY、DEFINE MEASURE、VAR、RETURN
-- 验证结果结构化：is_valid、errors、warnings、referenced_objects
-- 最多一次修复（JSON/Schema/安全验证错误）
+- 目标：一条 AI 回答由多个内容块组成（text、metrics、table、chart、report_attachment）
+- 表格和图表数据必须来自 QueryResult，LLM 不得虚构
+- 图表使用结构化字段（bar/line/pie/scatter），禁止 HTML/JS/外部脚本
+- 报表附件引用由后端生成，禁止 LLM 生成任意外部 URL
+- 当前不创建新的 Python 消息 Envelope 或 API 代码
 
-### API 与 Health 边界
+### 关键边界
 
-- Mock：200，ready=true，version=M1.3
-- DeepSeek 无 Key：503，deepseek_api_key_missing
-- DeepSeek 有 Key：503，deepseek_pipeline_not_ready
-- Health 不访问网络
-- Chat DeepSeek 模式仍 503（完整链路待 M1.4-M1.5）
+- **当前正式用户模型只有 DeepSeek**；Mock 仅测试；GPT-5.6 未接入
+- **当前 QueryResult 仍为 Mock**；真实 Power BI 属于 M2
+- **报表资源（查看/下载）属于 M3**；会话历史/搜索属于 M4
+- **前端正式开发延后至 M5**
+- **M1.4 继续使用现有 AnswerSpec、QueryResult 和 ReportSpec**
+- **完整组合消息编排在 M1.5/M5 继续确定**
 
-### 测试结果（M1.3 结束时）
+### 文档修改
 
-- pytest：675 passed
-- Golden Cases：11 passed，1 skipped
-- 安全扫描：PASS
-- 真实 Smoke：`python -m backend.app.query_plan.deepseek_query_dax_smoke`（脱敏输出）
+- `CHANGELOG.md` — 新增 M1.3.2 记录
+- `docs/00` — 补充组合回答和左侧栏布局
+- `docs/01` — 替换为带左侧栏的完整页面骨架
+- `docs/04` — 核对 API 路径，补充契约职责和组合回答目标
+- `docs/05` — 同步 706 passed 基线 + 未来验收项
+- `docs/07` — 重写里程碑状态 + 待确认项
+- `docs/08` — 插入 M1.3.2 + 阶段前固化内容
+- `docs/09` — 本文件 — 覆盖更新
+- `frontend/README.md` — 更新前端方向
+- `docs/10` — 新增：正式视觉与交互规范
+- `docs/11` — 新增：结构化组合回答契约
 
----
+### 测试结果
 
-## M1.3.1 交付内容
+- pytest：706 passed（无变化，本轮无代码修改）
+- Golden Cases：11 passed，1 skipped（无变化）
+- 安全扫描：PASS（无变化）
 
-### QueryPlan 真实 Schema 验证
-
-- `DeepSeekQueryPlanService.generate()` 实际调用 `ValidationService.validate_query_plan(plan, schema)`
-- 为每次调用构造 `ValidationService(allowed_semantic_models=[schema.key])`
-- 验证错误与格式错误共用一次修复配额
-- 验证修复请求携带安全错误代码 + ≤5 个非法对象名
-- 网络/鉴权/限流/超时/HTTP 5xx 不进入修复
-
-### DAX 表—对象归属验证
-
-- `_SchemaIndex`：表→{columns, measures}，measure→tables，column→tables
-- 带表限定引用验证归属关系（不因全局名称集合误判）
-- 未限定引用分别处理：度量值唯一解析、列拒绝、歧义标记
-- 未加引号/含空格表名正确识别
-- 字符串别名不被误判为 Schema 对象
-- 新增错误代码：unknown_table、object_not_in_table、unknown_measure、ambiguous_measure、unqualified_column_reference
-
-### 测试
-
-- QueryPlan：11 个新增真实验证集成测试
-- DAX：12 个新增多表归属测试
-
-### Smoke
-
-- query_plan_repair_count=0、dax_repair_count=0、total_tokens=2178
-- 多表 Schema（Sales + Customer）
-- true positive: intent=data_question, QP valid, DAX valid+read_only
-- 修复：llm_mode 默认值导致 Provider 未注册的 KeyError
-
----
-
-## M1.3.1 允许和禁止范围
+### M1.3.2 允许和禁止范围
 
 **允许：**
-- QueryPlan 与 DAX 验证修复
-- 多表和 Smoke 测试
+- 归档两张前端参考图
+- 创建/修改文档（CHANGELOG + 9 docs + frontend/README）
+- 创建视觉规范与组合回答契约文档
 
 **禁止：**
-- Answer 真实生成
-- ReportSpec 真实生成
-- 真实 Power BI 连接
-- 完整 Chat 链路开放
-- 前端 / SSE / Docker / Redis / LangGraph / 多 Agent
-- 新建 Tag
-- 修改历史 Tag / Commit
-- Force push
-- M1.4 代码
+- 修改后端业务代码（Python）
+- 修改前端业务代码
+- 创建 React 项目 / package.json / src / CSS / 组件
+- 创建新 API / 数据库 / 会话持久化 / 报表下载
+- 修改 AnswerSpec / ReportSpec / RenderedReport
+- 修改 Settings.version
+- 开发 M1.4 功能
+- 创建 Tag
+- 声称 GPT-5.6 已接入、Mock 是正式模型、前端已完成
 
 ## 未完成或待观察事项
 
@@ -157,7 +137,12 @@ M1.5：未开始
 - Remote MCP Server 端点可用性（M2 早期验证）
 - 完整 Chat 仍未开放（待 M1.4-M1.5）
 - Answer/ReportSpec 生成仍使用 Mock（待 M1.4）
+- 公司真实 Power BI 语义模型（M2 前确认）
+- 可用报表模板（M3 前确认）
+- 报表资源保存位置（M3 前确认）
+- 会话和报表持久化方案（M4 前确认）
+- 前端是否展示其他模型（M5 前确认）
 
 ---
 
-*最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成*
+*最后更新：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*

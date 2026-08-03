@@ -947,12 +947,17 @@ class TestDocumentStatus:
         assert "M1.0.1" in content
         assert "幂等并发" in content
 
-    def test_docs_09_current_round_m101(self):
-        """Test 37: docs/09 当前完成轮次为 M1.0.1"""
+    def test_docs_09_preserves_m101_history(self):
+        """Test 37: docs/09 保留 M1.0.1 历史记录和交接结构"""
         content = (pathlib.Path(__file__).parent.parent.parent.parent /
                    "docs/09_context_handoff.md").read_text(encoding="utf-8")
-        assert "当前完成轮次" in content
-        assert "M1.0.1" in content
+        # 验证 M1.0.1 作为历史记录被保留（非当前轮次）
+        assert "M1.0.1" in content, "docs/09 应保留 M1.0.1 历史记录"
+        assert "c223d7b" in content, "docs/09 应保留 M1.0.1 Commit SHA"
+        # 验证交接文档结构完整
+        assert "当前阶段" in content, "docs/09 应有当前阶段说明"
+        assert "上一轮" in content, "docs/09 应有上一轮说明"
+        assert "下一轮" in content, "docs/09 应有下一轮说明"
 
     def test_docs_09_next_round(self):
         """Test 38: docs/09 下一轮为 M1.4"""

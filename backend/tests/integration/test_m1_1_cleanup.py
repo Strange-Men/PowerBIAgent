@@ -194,8 +194,9 @@ class TestDocsUpdated:
     """文档更新验证 — 离线检查 docs/09 和 CHANGELOG"""
 
     def test_docs_09_has_historical_commits(self):
-        """docs/09 写入了 c223d7b、5726959 和测试结果"""
+        """docs/09 写入了历史 Commit SHA（c223d7b、5726959、53cf43e）和有效测试状态"""
         import os
+        import re
         docs_dir = os.path.join(
             os.path.dirname(__file__), "..", "..", "..", "docs"
         )
@@ -204,7 +205,10 @@ class TestDocsUpdated:
         assert "c223d7b" in content, "docs/09 应包含 M1.0.1 Commit SHA"
         assert "5726959" in content, "docs/09 应包含 M1.0.2 Commit SHA"
         assert "53cf43e" in content, "docs/09 应包含 M1.2 Commit SHA"
-        assert "675 passed" in content, "docs/09 应记录最新 pytest 结果"
+        # 验证存在有效测试状态记录（兼容 Markdown 换行和中文标点）
+        assert re.search(r"pytest.*\d+\s*passed", content), \
+            "docs/09 应记录 pytest 测试结果（如 'pytest：706 passed'）"
+        assert "Golden Cases" in content, "docs/09 应记录 Golden Cases 状态"
 
     def test_changelog_no_pending_push(self):
         """CHANGELOG 旧区域不再保留待推送/由 Git 解析占位符"""
