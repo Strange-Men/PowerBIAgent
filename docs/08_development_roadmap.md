@@ -18,13 +18,14 @@ M0 开发准备 (7轮)
   M0.4 项目骨架与阶段收尾           ✅ 已完成 (d5c1634)
   M0.4.1 API骨架真实性修复          ✅ 已完成 (1f967b0)
 
-M1 真实 DeepSeek 接入 (6轮)
+M1 真实 DeepSeek 接入 (7轮)
   M1.0 M0遗留收口与M1路线固化       ✅ 已完成 (9247322)
   M1.0.1 幂等并发与文档收尾修复      ✅ 已完成
   M1.0.2 密钥与仓库安全规则固化      ✅ 已完成
   M1.1 DeepSeek Provider基础接入    ✅ 已完成 (073a819)
   M1.2 真实意图识别                 ✅ 已完成 (53cf43e)
-  M1.3 真实QueryPlan与DAX生成       ✅ 已完成
+  M1.3 真实QueryPlan与DAX生成       ✅ 已完成 (441ca45)
+  M1.3.1 QueryPlan与DAX验证修复     ✅ 已完成
   M1.4 真实Answer与ReportSpec生成   ⬜
   M1.5 全链路验收与封板              ⬜
 
@@ -137,7 +138,7 @@ MVP 功能阶段 (后续)
 
 ### M1.3｜真实QueryPlan与DAX生成
 
-**状态：** ✅ 已完成
+**状态：** ✅ 已完成 | **Commit：** `441ca45`（主体实现）、`c0e782b`（文档 SHA 回填）
 
 **完成内容：**
 - M1.2 审计收口：from_committed_memory() state_status 检查、无效 Prompt 测试修复、验证错误脱敏
@@ -154,6 +155,20 @@ MVP 功能阶段 (后续)
 - Schema 安全精简视图（不暴露 DAX 表达式等内部细节）
 - Mock 链路完整可用；Chat DeepSeek 模式仍返回 503
 - 真实 Smoke 分离入口：`python -m backend.app.query_plan.deepseek_query_dax_smoke`
+
+---
+
+### M1.3.1｜QueryPlan与DAX验证修复
+
+**状态：** ✅ 已完成
+
+**完成内容：**
+- QueryPlan 真实接入 ValidationService.validate_query_plan()（M1.3 声明但未实际调用）
+- DAX 表—列/度量值归属关系严格验证（替换全局名称集合验证）
+- 多表、未加引号、跨表错误引用测试补强
+- 脱敏真实 Smoke 验收通过（QP 0 修复、DAX 0 修复、2178 tokens）
+- Smoke KeyError 修复（llm_mode 默认值导致 Provider 未注册）
+- M1.3 真实 Commit 关系修正（441ca45 + c0e782b）
 
 ---
 
@@ -248,4 +263,4 @@ MVP 功能阶段 (后续)
 
 ---
 
-*最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成*
+*最后更新：2026-08-03 | M1.3.1 QueryPlan与DAX验证修复*

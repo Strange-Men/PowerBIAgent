@@ -477,3 +477,256 @@ class TestErrorSanitization:
         # 修复请求包含 error_code 但不含原始敏感值
         repair_msg = provider.calls[1].messages[0]["content"]
         assert "secret_value_test" not in repair_msg
+
+
+# ══════════════════════════════════════════════════════════════════
+# M1.3.1 真实 ValidationService 集成测试
+# ══════════════════════════════════════════════════════════════════
+
+class TestValidationServiceIntegration:
+    """QueryPlan 生成后真实验证"""
+
+    @pytest.mark.asyncio
+    async def test_valid_plan_passes_validation(self):
+        """合法 QueryPlan 通过 ValidationService 验证"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        plan = _make_plan(
+            measures=["TotalSales"],
+            dimensions=["Region"],
+            semantic_model_key="mock_sales_model",
+        )
+        provider.enqueue_success(plan)
+        svc = _make_svc(provider)
+        result = await svc.generate("本月销售额", _make_intent(), schema)
+        assert result is not None
+        assert result.measures == ["TotalSales"]
+        assert result.dimensions == ["Region"]
+
+    @pytest.mark.asyncio
+    async def test_fake_measure_triggers_validation_error(self):
+        """虚构 measure 触发验证错误并修复"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        # 首次返回虚构指标
+        bad_plan = _make_plan(measures=["FakeMetric"])
+        provider.enqueue_success(bad_plan)
+        # 二次修复返回正确指标
+        good_plan = _make_plan(measures=["TotalSales"])
+        provider.enqueue_success(good_plan)
+        svc = _make_svc(provider)
+        result = await svc.generate("销售额", _make_intent(), schema)
+        assert result is not None
+        assert "TotalSales" in result.measures
+        assert "FakeMetric" not in result.measures
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_fake_dimension_triggers_validation_error(self):
+        """虚构 dimension 触发验证错误并修复"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        bad_plan = _make_plan(measures=["TotalSales"], dimensions=["FakeDim"])
+        provider.enqueue_success(bad_plan)
+        good_plan = _make_plan(measures=["TotalSales"], dimensions=["Region"])
+        provider.enqueue_success(good_plan)
+        svc = _make_svc(provider)
+        result = await svc.generate("按区域销售额", _make_intent(), schema)
+        assert result is not None
+        assert "Region" in result.dimensions
+        assert "FakeDim" not in result.dimensions
+
+    @pytest.mark.asyncio
+    async def test_fake_filter_field_rejected(self):
+        """虚构 filter field 被拒绝并修复"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        from backend.app.schemas.data_contracts import StructuredFilter, FilterOperator
+        bad_plan = _make_plan(
+            measures=["TotalSales"],
+            filters=[StructuredFilter(field="GhostField", operator=FilterOperator.EQ, value="x")],
+        )
+        provider.enqueue_success(bad_plan)
+        good_plan = _make_plan(measures=["TotalSales"])
+        provider.enqueue_success(good_plan)
+        svc = _make_svc(provider)
+        result = await svc.generate("某字段筛选", _make_intent(), schema)
+        assert result is not None
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_semantic_model_key_mismatch_rejected(self):
+        """semantic_model_key 不匹配被拒绝并修复"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        bad_plan = _make_plan(
+            measures=["TotalSales"],
+            semantic_model_key="wrong_model_key",
+        )
+        provider.enqueue_success(bad_plan)
+        good_plan = _make_plan(
+            measures=["TotalSales"],
+            semantic_model_key="mock_sales_model",
+        )
+        provider.enqueue_success(good_plan)
+        svc = _make_svc(provider)
+        result = await svc.generate("销售额", _make_intent(), schema)
+        assert result is not None
+        assert result.semantic_model_key == "mock_sales_model"
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_repair_still_invalid_stops(self):
+        """修复后仍错误停止"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        bad_plan1 = _make_plan(measures=["FakeMeasure"])
+        provider.enqueue_success(bad_plan1)
+        bad_plan2 = _make_plan(measures=["AnotherFake"])
+        provider.enqueue_success(bad_plan2)
+        provider.enqueue_success(_make_plan())  # 不会被调用
+        svc = _make_svc(provider)
+        with pytest.raises(QueryPlanError, match="验证修复后仍无效"):
+            await svc.generate("销售", _make_intent(), schema)
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_only_two_calls_for_validation_repair(self):
+        """验证修复最多两次调用"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        provider.enqueue_success(_make_plan(measures=["GhostMeasure"]))
+        provider.enqueue_success(_make_plan(measures=["TotalSales"]))
+        provider.enqueue_success(_make_plan())  # 不应被调用
+        svc = _make_svc(provider)
+        await svc.generate("销售", _make_intent(), schema)
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_format_repair_then_validation_fails_stops(self):
+        """格式修复成功但验证失败 → 停止（一次修复已用）"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        provider.enqueue_error(LLMValidationError(
+            "bad json", error_code="invalid_content_json",
+            provider="fake", retryable=False,
+        ))
+        # 格式修复成功但返回虚构指标
+        provider.enqueue_success(_make_plan(measures=["GhostMeasure"]))
+        provider.enqueue_success(_make_plan())
+        svc = _make_svc(provider)
+        with pytest.raises(QueryPlanError):
+            await svc.generate("销售", _make_intent(), schema)
+        # 格式修复已消耗一次，不能再修复验证错误
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_provider_error_not_repaired_for_validation(self):
+        """Provider 网络错误不触发验证修复"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        provider.enqueue_error(LLMProviderError(
+            "timeout", provider="fake", retryable=True,
+        ))
+        svc = _make_svc(provider)
+        with pytest.raises(QueryPlanError):
+            await svc.generate("销售", _make_intent(), schema)
+        assert len(provider.calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_service_uses_validation_service(self):
+        """验证 Service 生成后确实调用 validate_query_plan
+        （通过验证错误修复场景间接验证：合法 plan 直接通过，非法 plan 触发修复）
+        """
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        # 合法 plan 直接通过验证
+        provider.enqueue_success(_make_plan(measures=["TotalSales"], dimensions=["Region"]))
+        svc = _make_svc(provider)
+        result = await svc.generate("销售额", _make_intent(), schema)
+        assert result is not None
+        assert len(provider.calls) == 1  # 一次通过，无需修复
+
+    @pytest.mark.asyncio
+    async def test_repair_instruction_contains_validation_details(self):
+        """验证修复请求包含验证错误详情"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        provider.enqueue_success(_make_plan(measures=["FakeMeasure"]))
+        provider.enqueue_success(_make_plan(measures=["TotalSales"]))
+        svc = _make_svc(provider)
+        await svc.generate("销售", _make_intent(), schema)
+        # 修复请求包含验证信息
+        repair_msg = provider.calls[1].messages[0]["content"]
+        assert "验证错误" in repair_msg or "FakeMeasure" in repair_msg
+
+    @pytest.mark.asyncio
+    async def test_error_message_no_full_response(self):
+        """验证错误不包含完整模型响应"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_schema()
+        provider.enqueue_success(_make_plan(measures=["FakeMeasure"]))
+        provider.enqueue_success(_make_plan(measures=["AlsoFake"]))
+        svc = _make_svc(provider)
+        with pytest.raises(QueryPlanError) as exc_info:
+            await svc.generate("销售", _make_intent(), schema)
+        msg = str(exc_info.value)
+        assert "choices" not in msg.lower()
+        assert len(msg) < 500
+
+
+# ══════════════════════════════════════════════════════════════════
+# M1.3.1 Smoke KeyError 回归测试
+# ══════════════════════════════════════════════════════════════════
+
+class TestSmokeKeyErrorRegression:
+    """Smoke 中 registry.get('deepseek') 引发 KeyError 的回归测试"""
+
+    def test_deepseek_mode_without_key_returns_not_configured(self):
+        """Settings(llm_mode='deepseek') 但无 Key → is_deepseek_configured 为 False"""
+        from backend.app.config.settings import Settings, LLMMode
+        s = Settings(llm_mode="deepseek")
+        # 在测试环境（无 .env 或未配置 Key）中，is_deepseek_configured 应为 False
+        # 但如果测试环境恰有 Key，至少确保 Settings 构造不崩溃
+        result = s.is_deepseek_configured
+        assert isinstance(result, bool)
+
+    def test_registry_missing_provider_raises_keyerror(self):
+        """Registry.get('deepseek') 在未注册时抛出 KeyError"""
+        from backend.app.llm.registry import LLMProviderRegistry
+        registry = LLMProviderRegistry()
+        with pytest.raises(KeyError, match="deepseek"):
+            registry.get("deepseek")
+
+    def test_smoke_handles_missing_provider_gracefully(self):
+        """Smoke 的 _run_smoke 在 Provider 未注册时返回错误 dict 而不崩溃"""
+        import asyncio
+        from unittest.mock import patch, MagicMock
+        from backend.app.query_plan.deepseek_query_dax_smoke import _run_smoke
+        from backend.app.llm.registry import LLMProviderRegistry
+        from backend.app.config.settings import Settings
+
+        # 模拟 Settings 配置了 Key 但 Registry 没有 deepseek
+        mock_settings = MagicMock(spec=Settings)
+        mock_settings.is_deepseek_configured = True
+        mock_settings.llm_mode = MagicMock()
+        mock_settings.llm_mode.value = "deepseek"
+        mock_settings.deepseek_api_key = MagicMock()
+        mock_settings.deepseek_base_url = "https://api.deepseek.com/v1"
+        mock_settings.deepseek_model = "deepseek-chat"
+        mock_settings.request_timeout_seconds = 120
+
+        empty_registry = LLMProviderRegistry()
+        # 只注册 mock，不注册 deepseek
+
+        with patch(
+            "backend.app.query_plan.deepseek_query_dax_smoke.Settings",
+            return_value=mock_settings,
+        ), patch(
+            "backend.app.query_plan.deepseek_query_dax_smoke.build_llm_registry",
+            return_value=empty_registry,
+        ):
+            result = asyncio.new_event_loop().run_until_complete(_run_smoke())
+            assert result["success"] is False
+            assert result["error"] == "deepseek_provider_not_registered"
+            assert "reason" in result

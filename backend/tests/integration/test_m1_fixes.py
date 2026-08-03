@@ -522,18 +522,18 @@ class TestReportTemplateDefault:
 class TestVersionM10:
     """版本号验证"""
 
-    def test_settings_version_is_m11(self):
-        """Settings.version 为 M1.3"""
+    def test_settings_version_is_m131(self):
+        """Settings.version 为 M1.3.1"""
         from backend.app.config.settings import Settings
         s = Settings()
-        assert s.version == "M1.3", f"Expected M1.3, got {s.version}"
+        assert s.version == "M1.3.1", f"Expected M1.3.1, got {s.version}"
 
-    def test_health_version_returns_m13_in_safe_repr(self):
-        """safe_repr 中 version 为 M1.3"""
+    def test_health_version_returns_m131_in_safe_repr(self):
+        """safe_repr 中 version 为 M1.3.1"""
         from backend.app.config.settings import Settings
         s = Settings()
         info = s.safe_repr()
-        assert info["version"] == "M1.3"
+        assert info["version"] == "M1.3.1"
 
 
 class TestIdempotentResponseSchema:
@@ -589,22 +589,24 @@ class TestIdempotentResponseSchema:
 class TestRoadmapDocument:
     """路线文档验证"""
 
-    def test_roadmap_contains_m1_six_rounds(self):
-        """docs/08 包含 M1.0—M1.5 共六轮"""
+    def test_roadmap_contains_m1_rounds(self):
+        """docs/08 包含 M1.0—M1.5 共七轮（含 M1.3.1）"""
         import pathlib
         content = (pathlib.Path(__file__).parent.parent.parent.parent /
                    "docs/08_development_roadmap.md").read_text(encoding="utf-8")
         for i in range(6):
             ver = f"M1.{i}"
             assert ver in content, f"docs/08 缺少 {ver}"
+        assert "M1.3.1" in content, "docs/08 缺少 M1.3.1"
         # 顺序检查
         idx_m10 = content.index("M1.0")
         idx_m11 = content.index("M1.1")
         idx_m12 = content.index("M1.2")
-        idx_m13 = content.index("M1.3")
+        idx_m13 = content.index("M1.3 真实QueryPlan")  # 精确匹配避免匹配到 M1.3.1
+        idx_m131 = content.index("M1.3.1")
         idx_m14 = content.index("M1.4")
         idx_m15 = content.index("M1.5")
-        assert idx_m10 < idx_m11 < idx_m12 < idx_m13 < idx_m14 < idx_m15, \
+        assert idx_m10 < idx_m11 < idx_m12 < idx_m13 < idx_m131 < idx_m14 < idx_m15, \
             "M1.0—M1.5 顺序不正确"
 
     def test_claude_md_does_not_contain_full_m1_roadmap(self):

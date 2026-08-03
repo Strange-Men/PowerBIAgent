@@ -2,7 +2,7 @@
 
 > **所有新 Claude 恢复上下文的唯一最新交接入口。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成**
+> **最后更新：2026-08-03 | M1.3.1 QueryPlan与DAX验证修复**
 
 ---
 
@@ -12,11 +12,15 @@
 
 ## 当前阶段
 
-**M1.3 真实QueryPlan与DAX生成** — ✅ 已完成。
+**M1.3.1 QueryPlan与DAX验证修复** — ✅ 已完成。
 
 ## 当前完成轮次
 
-**M1.3** — 真实QueryPlan与DAX生成
+**M1.3.1** — QueryPlan与DAX验证修复
+
+## 上一轮
+
+**M1.3** — 真实QueryPlan与DAX生成（主体实现 `441ca45`，文档回填 `c0e782b`）
 
 ## 下一轮
 
@@ -41,7 +45,7 @@ M1.5：未开始
 | M1.0.2 | 密钥与仓库安全规则固化 | `5726959` | 2026-07-31 |
 | M1.1 | DeepSeek Provider基础接入 | `073a819` | 2026-08-03 |
 | M1.2 | 真实意图识别 | `53cf43e` | 2026-08-03 |
-| M1.3 | 真实QueryPlan与DAX生成 | `441ca45` | 2026-08-03 |
+| M1.3 | 真实QueryPlan与DAX生成 | `441ca45` / `c0e782b` | 2026-08-03 |
 
 ## 最近封板 Tag
 
@@ -50,7 +54,7 @@ M1.5：未开始
 | `m0.4.1-foundation-release` | `1f967b0` | M0.4.1 封板 |
 | `m0.4-foundation-release` | `d5c1634` | M0.4 封板 |
 
-## M1.3 交付内容
+## M1.3 交付内容（主体实现 `441ca45` + 文档回填 `c0e782b`）
 
 ### M1.2 审计收口（三项）
 
@@ -62,7 +66,7 @@ M1.5：未开始
 
 - **位置：** `backend/app/query_plan/`（deepseek_service.py、prompt.py、context.py）
 - 复用现有 `QueryPlan`、`IntentSpec`、`SemanticModelSchema` 模型
-- 复用现有 `ValidationService.validate_query_plan()`
+- 声明复用 `ValidationService.validate_query_plan()`（**实际调用在 M1.3.1 补齐**）
 - 只处理 `data_question` 和 `report_generation`；`clarification`/`unsupported` 明确拒绝
 - Prompt：严格 JSON、只用 Schema 真实字段、不生成 DAX/答案、不调用工具、不虚构
 - 最多一次格式修复（仅 JSON/Schema 错误）
@@ -71,21 +75,11 @@ M1.5：未开始
 ### DeepSeekDAXService
 
 - **位置：** `backend/app/dax/`（deepseek_service.py、prompt.py、safety.py）
-- 复用现有 `DAXRequest` 模型
-- Prompt：只生成只读 EVALUATE DAX、只用 Schema 对象、不生成 SQL/脚本/答案
-- 独立 DAX 只读安全验证器（不依赖 EVALUATE 字符串匹配）
+- DAX 只读安全验证器（**M1.3 使用全局名称集合验证，表—归属验证在 M1.3.1 补齐**）
 - 禁止：写入/删除/更新、SQL/Shell/Python/JS、多语句注入、注释绕过、非法对象、空 DAX
 - 允许：EVALUATE、SUMMARIZECOLUMNS、FILTER、TOPN、ORDER BY、DEFINE MEASURE、VAR、RETURN
 - 验证结果结构化：is_valid、errors、warnings、referenced_objects
 - 最多一次修复（JSON/Schema/安全验证错误）
-
-### 一次修复边界
-
-- QueryPlan 修复：仅 `invalid_content_json` / `output_schema_invalid`
-- DAX 修复：JSON/Schema 错误 + 安全验证失败
-- 修复请求只包含：原 QueryPlan 摘要、精简 Schema、安全错误代码、缺失/非法对象名
-- 不发送：Secret、完整异常堆栈、HTTP Body、完整历史响应、真实查询结果
-- 第二次仍失败立即停止，不允许第三次调用
 
 ### API 与 Health 边界
 
@@ -94,27 +88,65 @@ M1.5：未开始
 - DeepSeek 有 Key：503，deepseek_pipeline_not_ready
 - Health 不访问网络
 - Chat DeepSeek 模式仍 503（完整链路待 M1.4-M1.5）
-- 不混用真实 Intent + Mock QueryPlan 等混合链路
 
-### 测试结果
+### 测试结果（M1.3 结束时）
 
 - pytest：675 passed
 - Golden Cases：11 passed，1 skipped
 - 安全扫描：PASS
 - 真实 Smoke：`python -m backend.app.query_plan.deepseek_query_dax_smoke`（脱敏输出）
 
-## M1.4 允许和禁止范围
+---
+
+## M1.3.1 交付内容
+
+### QueryPlan 真实 Schema 验证
+
+- `DeepSeekQueryPlanService.generate()` 实际调用 `ValidationService.validate_query_plan(plan, schema)`
+- 为每次调用构造 `ValidationService(allowed_semantic_models=[schema.key])`
+- 验证错误与格式错误共用一次修复配额
+- 验证修复请求携带安全错误代码 + ≤5 个非法对象名
+- 网络/鉴权/限流/超时/HTTP 5xx 不进入修复
+
+### DAX 表—对象归属验证
+
+- `_SchemaIndex`：表→{columns, measures}，measure→tables，column→tables
+- 带表限定引用验证归属关系（不因全局名称集合误判）
+- 未限定引用分别处理：度量值唯一解析、列拒绝、歧义标记
+- 未加引号/含空格表名正确识别
+- 字符串别名不被误判为 Schema 对象
+- 新增错误代码：unknown_table、object_not_in_table、unknown_measure、ambiguous_measure、unqualified_column_reference
+
+### 测试
+
+- QueryPlan：11 个新增真实验证集成测试
+- DAX：12 个新增多表归属测试
+
+### Smoke
+
+- query_plan_repair_count=0、dax_repair_count=0、total_tokens=2178
+- 多表 Schema（Sales + Customer）
+- true positive: intent=data_question, QP valid, DAX valid+read_only
+- 修复：llm_mode 默认值导致 Provider 未注册的 KeyError
+
+---
+
+## M1.3.1 允许和禁止范围
 
 **允许：**
-- 真实 Answer 生成
-- 真实 ReportSpec 生成
-- 根据 Mock QueryResult 生成自然语言答案
-- Answer 和 ReportSpec 校验
+- QueryPlan 与 DAX 验证修复
+- 多表和 Smoke 测试
 
-**M1.4 禁止：**
-- 真实 Power BI 连接和查询
-- React 前端 / SSE / Docker / Redis / LangGraph / 多 Agent
-- 修改历史 Tag
+**禁止：**
+- Answer 真实生成
+- ReportSpec 真实生成
+- 真实 Power BI 连接
+- 完整 Chat 链路开放
+- 前端 / SSE / Docker / Redis / LangGraph / 多 Agent
+- 新建 Tag
+- 修改历史 Tag / Commit
+- Force push
+- M1.4 代码
 
 ## 未完成或待观察事项
 

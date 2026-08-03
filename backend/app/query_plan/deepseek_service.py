@@ -1,9 +1,10 @@
-"""DeepSeekQueryPlanService — M1.3 真实 QueryPlan 生成
+"""DeepSeekQueryPlanService — M1.3.1 真实 QueryPlan 生成
 
 基于 DeepSeekLLMProvider 从已验证的 IntentSpec 和 Schema 生成结构化 QueryPlan。
 - 复用现有 QueryPlan、IntentSpec、SemanticModelSchema 模型
-- 复用现有 ValidationService.validate_query_plan()
-- 最多一次格式修复（仅 JSON/Schema 错误可修复）
+- 生成后通过 ValidationService.validate_query_plan() 真实验证
+- 最多一次修复（覆盖格式错误和 Schema 验证错误）
+- 网络/鉴权/限流/超时和 HTTP 5xx 不修复
 - Service 不保存请求级可变状态，支持并发
 """
 
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.context import IntentContextSnapshot
 from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.llm.base import (
@@ -30,12 +32,25 @@ class QueryPlanError(Exception):
     pass
 
 
+# ── 验证错误代码映射 ──
+
+_VALIDATION_ERROR_MAP: dict[str, str] = {
+    "allowed list": "query_plan_model_mismatch",
+    "not found in schema": "query_plan_measure_not_found",
+    "not found in schema columns": "query_plan_dimension_not_found",
+    "Filter field": "query_plan_filter_not_found",
+}
+
+# 验证错误中非法对象名提取上限
+_MAX_ILLEGAL_OBJECTS = 5
+
+
 class DeepSeekQueryPlanService:
     """基于 DeepSeek Provider 的真实 QueryPlan 生成服务
 
     构造函数：
         provider: 非 Mock LLMProvider
-        max_format_repairs: 最大格式修复次数（默认 1 次）
+        max_format_repairs: 最大修复次数（固定 1 次）
     """
 
     def __init__(
@@ -91,6 +106,9 @@ class DeepSeekQueryPlanService:
 
         effective_model_key = semantic_model_key or schema.key
 
+        # 0. 构建当前 Schema 专用 ValidationService
+        validation = ValidationService(allowed_semantic_models=[effective_model_key])
+
         # 1. 构建 Schema 安全视图
         schema_view = build_schema_view(schema)
         schema_text = render_schema_text(schema_view)
@@ -102,20 +120,41 @@ class DeepSeekQueryPlanService:
             report_template_key=report_template_key,
         )
 
+        repair_used = False
+
         # 3. 首次请求
         try:
-            return await self._try_generate(
-                user_input, intent, schema_text, context, repair_error_code=None,
+            plan = await self._try_generate(
+                user_input, intent, schema_text, context,
             )
         except LLMValidationError as e:
             error_code = getattr(e, "error_code", None) or ""
-            if not self._is_repairable(error_code):
+            if not self._is_format_repairable(error_code):
                 raise QueryPlanError(
                     "QueryPlan 生成失败（不可修复错误）"
                 ) from e
             if self._max_format_repairs < 1:
                 raise QueryPlanError(
                     "QueryPlan 生成失败（格式修复已禁用）"
+                ) from e
+            # 格式修复
+            repair_used = True
+            try:
+                plan = await self._try_generate(
+                    user_input, intent, schema_text, context,
+                    repair_error_code="invalid_content_json_or_schema",
+                )
+            except LLMValidationError as e:
+                raise QueryPlanError(
+                    "QueryPlan 生成失败（格式修复后仍无效）"
+                ) from e
+            except LLMProviderError as e:
+                raise QueryPlanError(
+                    "QueryPlan 生成失败（Provider 错误）"
+                ) from e
+            except Exception as e:
+                raise QueryPlanError(
+                    "QueryPlan 生成失败（未知错误）"
                 ) from e
         except LLMProviderError as e:
             raise QueryPlanError(
@@ -126,24 +165,48 @@ class DeepSeekQueryPlanService:
                 "QueryPlan 生成失败"
             ) from e
 
-        # 4. 一次格式修复
-        try:
-            return await self._try_generate(
-                user_input, intent, schema_text, context,
-                repair_error_code="invalid_content_json_or_schema",
-            )
-        except LLMValidationError as e:
-            raise QueryPlanError(
-                "QueryPlan 生成失败（格式修复后仍无效）"
-            ) from e
-        except LLMProviderError as e:
-            raise QueryPlanError(
-                "QueryPlan 生成失败（Provider 错误）"
-            ) from e
-        except Exception as e:
-            raise QueryPlanError(
-                "QueryPlan 生成失败（未知错误）"
-            ) from e
+        # 4. Schema 验证（首次生成或格式修复后）
+        val_result = validation.validate_query_plan(plan, schema)
+        if not val_result.is_valid:
+            if repair_used:
+                raise QueryPlanError(
+                    f"QueryPlan 验证失败（修复后仍无效）: {'; '.join(val_result.errors[:3])}"
+                )
+            if self._max_format_repairs < 1:
+                raise QueryPlanError(
+                    f"QueryPlan 验证失败（修复已禁用）: {'; '.join(val_result.errors[:3])}"
+                )
+
+            # ── 一次验证修复 ──
+            repair_used = True
+            error_code, illegal_objects = self._build_validation_error_summary(val_result)
+            try:
+                plan = await self._try_generate(
+                    user_input, intent, schema_text, context,
+                    repair_error_code=error_code,
+                    validation_errors=illegal_objects,
+                )
+            except LLMValidationError as e:
+                raise QueryPlanError(
+                    "QueryPlan 生成失败（验证修复后 JSON 仍无效）"
+                ) from e
+            except LLMProviderError as e:
+                raise QueryPlanError(
+                    "QueryPlan 生成失败（Provider 错误）"
+                ) from e
+            except Exception as e:
+                raise QueryPlanError(
+                    "QueryPlan 生成失败（验证修复时未知错误）"
+                ) from e
+
+            # 二次验证
+            val_result = validation.validate_query_plan(plan, schema)
+            if not val_result.is_valid:
+                raise QueryPlanError(
+                    f"QueryPlan 验证失败（验证修复后仍无效）: {'; '.join(val_result.errors[:3])}"
+                )
+
+        return plan
 
     # ── 内部方法 ──
 
@@ -154,6 +217,7 @@ class DeepSeekQueryPlanService:
         schema_text: str,
         context: IntentContextSnapshot,
         repair_error_code: Optional[str] = None,
+        validation_errors: str = "",
     ) -> QueryPlan:
         """单次 QueryPlan 生成调用"""
         messages = build_query_plan_messages(
@@ -162,6 +226,7 @@ class DeepSeekQueryPlanService:
             schema_text=schema_text,
             context=context,
             repair_error_code=repair_error_code,
+            validation_errors=validation_errors,
         )
 
         request = LLMRequest(
@@ -177,9 +242,58 @@ class DeepSeekQueryPlanService:
         return response.structured
 
     @staticmethod
-    def _is_repairable(error_code: str) -> bool:
-        """判断错误是否允许格式修复"""
+    def _is_format_repairable(error_code: str) -> bool:
+        """判断错误是否为可修复的格式错误"""
         return error_code in {"invalid_content_json", "output_schema_invalid"}
+
+    @staticmethod
+    def _build_validation_error_summary(val_result) -> tuple[str, str]:
+        """从 ValidationResult.errors 提取安全错误摘要
+
+        Returns:
+            (error_code, illegal_objects_str): 错误代码和最多5个非法对象名
+        """
+        errors = val_result.errors
+        error_code = "query_plan_validation_failed"
+
+        # 收集非法对象名
+        import re
+
+        illegal_set: set[str] = set()
+        for err in errors:
+            # 尝试匹配各种错误模式
+            # "Model 'X' not in allowed list"
+            m = re.search(r"Model '([^']+)'", err)
+            if m:
+                error_code = "query_plan_model_mismatch"
+                illegal_set.add(m.group(1))
+                continue
+            # "Measure/column 'X' not found"
+            m = re.search(r"(?:Measure|column) '([^']+)' not found", err)
+            if m:
+                if error_code == "query_plan_validation_failed":
+                    error_code = "query_plan_measure_not_found"
+                illegal_set.add(m.group(1))
+                continue
+            # "Dimension 'X' not found"
+            m = re.search(r"Dimension '([^']+)' not found", err)
+            if m:
+                if error_code == "query_plan_validation_failed":
+                    error_code = "query_plan_dimension_not_found"
+                illegal_set.add(m.group(1))
+                continue
+            # "Filter field 'X' not found"
+            m = re.search(r"Filter field '([^']+)' not found", err)
+            if m:
+                if error_code == "query_plan_validation_failed":
+                    error_code = "query_plan_filter_not_found"
+                illegal_set.add(m.group(1))
+                continue
+
+        illegal_list = sorted(illegal_set)[:_MAX_ILLEGAL_OBJECTS]
+        illegal_objects = ", ".join(illegal_list) if illegal_list else "（未知对象）"
+
+        return error_code, illegal_objects
 
     # ── 属性 ──
 

@@ -1,10 +1,60 @@
 # CHANGELOG
 
+## [M1.3.1] — 2026-08-03
+
+### QueryPlan 与 DAX 验证修复
+
+**来源：** M1.3.1 开发轮次。
+
+**QueryPlan 真实 Schema 验证：**
+- `DeepSeekQueryPlanService` 生成后实际调用 `ValidationService.validate_query_plan()`
+- 为每次调用构造当前 `schema.key` 的专用 `ValidationService`（不依赖固定白名单）
+- 验证覆盖：`semantic_model_key` 匹配、measures/dimensions/filters 字段真实存在、top_n 合法
+- 验证错误与格式错误共用一次修复配额，总调用 ≤2 次
+- 验证修复请求携带安全错误代码和最多5个非法对象名，不含完整异常或响应
+- 网络/鉴权/限流/超时/HTTP 5xx 不进入修复
+
+**DAX 表—对象归属验证：**
+- 构建 `_SchemaIndex`：表→列集合、表→度量值集合、度量值→表集合、列→表集合
+- 带表限定引用：验证表存在且对象确实属于该表（不因对象存在于其他表而误判通过）
+- 未限定引用 `[X]`：度量值需唯一解析，多表同名标记 `ambiguous_measure`；列引用标记 `unqualified_column_reference`
+- 未加引号表名 `Table[Column]` 正确识别和验证
+- 含空格表名 `'Sales Detail'[Amount]` 正确支持
+- 双引号字符串别名不被误判为 Schema 对象
+- 新增错误代码：`unknown_table`、`object_not_in_table`、`unknown_measure`、`ambiguous_measure`、`unqualified_column_reference`
+- 修复请求只携带 QueryPlan 摘要、安全 Schema、错误代码和非法对象名（≤5），不含完整失败 DAX
+
+**测试补强：**
+- QueryPlan：11 个新增真实验证集成测试（合法通过、虚构 measure/dimension/filter 修复、model_key 不匹配、修复仍失败停止、仅两次调用、Provider 错误不修复、错误脱敏等）
+- DAX：12 个新增多表归属测试（合法跨表引用、非法跨表引用、未知表、未限定度量值/列、歧义度量值、空格表名、字符串别名、修复边界等）
+
+**Smoke：**
+- 新增 `query_plan_repair_count`、`dax_repair_count`、`prompt_tokens`、`completion_tokens`、`total_tokens` 脱敏输出字段
+- 使用多表 Schema（Sales + Customer）
+
+**文档修正：**
+- M1.3 真实 Commit 关系：主体实现 `441ca45`，文档 SHA 回填 `c0e782b`
+
+**测试结果：**
+- pytest：706 passed（M1.3 703 + M1.3.1 新 3 回归测试）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS
+- 真实 Smoke：✅ 通过（QP 0 修复、DAX 0 修复、2178 tokens、deepseek-chat）
+
+**Commit SHA：** 本轮
+**本轮 Tag：** 无
+
+---
+
 ## [M1.3] — 2026-08-03
 
 ### 真实 QueryPlan 与 DAX 生成
 
 **来源：** M1.3 开发轮次。
+
+**真实 Commit 关系：**
+- M1.3 主体实现：`441ca45`
+- M1.3 文档 SHA 回填（补充遗漏文件）：`c0e782b`
 
 **M1.2 审计收口（三项）：**
 - `from_committed_memory()` state_status 检查：committed 继承、pending/failed/缺失不继承
@@ -19,6 +69,7 @@
 - Prompt：严格 JSON、只用 Schema 真实字段、不生成 DAX/答案、不调用工具、不虚构
 - 最多一次格式修复（仅 JSON/Schema 错误可修复）
 - 复用现有 QueryPlan Pydantic 模型和 ValidationService
+- **注意：** M1.3 仅声明复用 ValidationService，实际调用在 M1.3.1 中补齐
 
 **DeepSeekDAXService：**
 - `backend/app/dax/deepseek_service.py` — 复用 DeepSeekLLMProvider
@@ -29,6 +80,7 @@
 - 允许：EVALUATE、SUMMARIZECOLUMNS、FILTER、TOPN、ORDER BY、DEFINE MEASURE、VAR、RETURN
 - 验证结果结构化：is_valid、errors、warnings、referenced_objects
 - 最多一次修复（同 M1.2 规则）
+- **注意：** M1.3 使用全局名称集合验证，表—对象归属验证在 M1.3.1 中补齐
 
 **API 与 Health 边界：**
 - Mock：200，ready=true，version=M1.3
@@ -43,7 +95,7 @@
 - 安全扫描：PASS
 - 真实 Smoke：分离入口 `python -m backend.app.query_plan.deepseek_query_dax_smoke`
 
-**Commit SHA：** `441ca45`
+**Commit SHA：** `441ca45`（主体实现）、`c0e782b`（文档回填）
 **本轮 Tag：** 无
 
 ---

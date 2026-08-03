@@ -563,3 +563,283 @@ class TestDAXErrorSanitization:
         assert isinstance(result, DAXSafetyResult)
         assert result.is_valid is False
         assert len(result.errors) > 0
+
+
+# ══════════════════════════════════════════════════════════════════
+# M1.3.1 多表 DAX 测试 — 表—对象归属验证
+# ══════════════════════════════════════════════════════════════════
+
+def _make_multi_table_schema() -> SemanticModelSchema:
+    """构建多表 Schema：Sales + Customer"""
+    return SemanticModelSchema(
+        name="Multi-Table Model",
+        key="multi_table_model",
+        tables=[
+            TableSchema(
+                name="Sales",
+                columns=[
+                    ColumnSchema(name="SalesKey", data_type="int64", is_hidden=True),
+                    ColumnSchema(name="Date", data_type="dateTime"),
+                    ColumnSchema(name="Region", data_type="string"),
+                    ColumnSchema(name="SalesAmount", data_type="decimal"),
+                    ColumnSchema(name="OrderQuantity", data_type="int64"),
+                ],
+                measures=[
+                    MeasureSchema(name="TotalSales", expression="SUM('Sales'[SalesAmount])"),
+                    MeasureSchema(name="OrderCount", expression="SUM('Sales'[OrderQuantity])"),
+                    MeasureSchema(name="CommonMeasure", expression="SUM('Sales'[SalesAmount])"),
+                ],
+            ),
+            TableSchema(
+                name="Customer",
+                columns=[
+                    ColumnSchema(name="CustomerKey", data_type="int64", is_hidden=True),
+                    ColumnSchema(name="CustomerName", data_type="string"),
+                    ColumnSchema(name="Region", data_type="string"),
+                    ColumnSchema(name="CustomerCount", data_type="int64"),
+                ],
+                measures=[
+                    MeasureSchema(name="CustomerCountMeasure", expression="COUNTROWS('Customer')"),
+                    MeasureSchema(name="CommonMeasure", expression="COUNTROWS('Customer')"),
+                ],
+            ),
+            TableSchema(
+                name="Sales Detail",
+                columns=[
+                    ColumnSchema(name="Amount", data_type="decimal"),
+                ],
+                measures=[],
+            ),
+        ],
+    )
+
+
+MULTI_TABLE_SAFE_DAX = (
+    'EVALUATE '
+    'SUMMARIZECOLUMNS('
+    "'Sales'[Region], "
+    '"TotalSales", '
+    "[TotalSales]"
+    ')'
+)
+
+CROSS_TABLE_INVALID_DAX = (
+    'EVALUATE '
+    'SUMMARIZECOLUMNS('
+    "'Customer'[SalesAmount]"
+    ')'
+)
+
+UNKNOWN_TABLE_DAX = (
+    'EVALUATE '
+    'SUMMARIZECOLUMNS('
+    "'UnknownTable'[Region]"
+    ')'
+)
+
+
+class TestMultiTableValidation:
+    """多表—对象归属验证"""
+
+    def test_sales_region_valid(self):
+        """'Sales'[Region] — 合法引用"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS('Sales'[Region])"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+    def test_sales_unquoted_region_valid(self):
+        """Sales[Region] — 未加引号表名合法"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS(Sales[Region])"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+    def test_customer_customername_valid(self):
+        """'Customer'[CustomerName] — 合法"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS('Customer'[CustomerName])"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+    def test_customer_salesamount_invalid(self):
+        """Customer[SalesAmount] — SalesAmount 属于 Sales 而非 Customer"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        result = validator.validate(CROSS_TABLE_INVALID_DAX, schema)
+        assert result.is_valid is False
+        assert any("object_not_in_table" in e for e in result.errors), f"Errors: {result.errors}"
+        assert any("SalesAmount" in e for e in result.errors)
+
+    def test_sales_customername_invalid(self):
+        """Sales[CustomerName] — CustomerName 属于 Customer 而非 Sales"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS('Sales'[CustomerName])"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is False
+        assert any("object_not_in_table" in e for e in result.errors)
+
+    def test_unknown_table_invalid(self):
+        """UnknownTable[Region] — 表不存在"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        result = validator.validate(UNKNOWN_TABLE_DAX, schema)
+        assert result.is_valid is False
+        assert any("unknown_table" in e for e in result.errors), f"Errors: {result.errors}"
+
+    def test_unqualified_measure_valid(self):
+        """[TotalSales] — 唯一度量值合法"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS('Sales'[Region], [TotalSales])"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+    def test_unqualified_region_invalid(self):
+        """[Region] — 未限定列为非法"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS([Region])"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is False
+        assert any("unqualified_column_reference" in e for e in result.errors), f"Errors: {result.errors}"
+
+    def test_ambiguous_measure(self):
+        """[CommonMeasure] — 两个表存在同名度量值，必须歧义"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS('Sales'[Region], [CommonMeasure])"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is False
+        assert any("ambiguous_measure" in e for e in result.errors), f"Errors: {result.errors}"
+
+    def test_spaced_table_name_valid(self):
+        """'Sales Detail'[Amount] — 含空格表名支持"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = "EVALUATE SUMMARIZECOLUMNS('Sales Detail'[Amount])"
+        result = validator.validate(dax, schema)
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+    def test_string_alias_not_treated_as_object(self):
+        """"TotalSales" — 字符串别名不被当作 Schema 对象"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = (
+            "EVALUATE "
+            "SUMMARIZECOLUMNS("
+            "'Sales'[Region], "
+            '"TotalSales", '
+            "[TotalSales]"
+            ')'
+        )
+        result = validator.validate(dax, schema)
+        # "TotalSales" 是输出别名，不应被当作引用对象报错
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+    def test_alias_and_measure_coexist_parsed_correctly(self):
+        """输出别名"RegionName"与真实列 Region 同时存在，解析正确"""
+        validator = DAXSafetyValidator()
+        schema = _make_multi_table_schema()
+        dax = (
+            "EVALUATE "
+            "SUMMARIZECOLUMNS("
+            "'Sales'[Region], "
+            '"RegionName", '
+            "'Sales'[Region]"
+            ')'
+        )
+        result = validator.validate(dax, schema)
+        assert result.is_valid is True, f"Errors: {result.errors}"
+
+
+class TestMultiTableDAXRepair:
+    """多表 DAX 修复"""
+
+    @pytest.mark.asyncio
+    async def test_cross_table_error_triggers_repair(self):
+        """跨表错误引用触发一次修复"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_multi_table_schema()
+        # 首次返回跨表错误
+        provider.enqueue_success(_make_dax(
+            dax="EVALUATE SUMMARIZECOLUMNS('Customer'[SalesAmount])",
+            semantic_model_key="multi_table_model",
+        ))
+        # 修复后返回正确
+        provider.enqueue_success(_make_dax(
+            dax="EVALUATE SUMMARIZECOLUMNS('Sales'[SalesAmount])",
+            semantic_model_key="multi_table_model",
+        ))
+        svc = _make_svc(provider)
+        plan = _make_plan(semantic_model_key="multi_table_model")
+        result = await svc.generate(plan, schema)
+        assert result is not None
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_repair_still_invalid_stops(self):
+        """修复后仍跨表错误 → 停止"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_multi_table_schema()
+        provider.enqueue_success(_make_dax(
+            dax="EVALUATE SUMMARIZECOLUMNS('Customer'[SalesAmount])",
+            semantic_model_key="multi_table_model",
+        ))
+        provider.enqueue_success(_make_dax(
+            dax="EVALUATE SUMMARIZECOLUMNS('Sales'[CustomerName])",
+            semantic_model_key="multi_table_model",
+        ))
+        provider.enqueue_success(_make_dax())
+        svc = _make_svc(provider)
+        plan = _make_plan(semantic_model_key="multi_table_model")
+        with pytest.raises(DAXGenerationError):
+            await svc.generate(plan, schema)
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_never_third_call_cross_table(self):
+        """跨表错误修复两次仍失败，绝不第三次"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_multi_table_schema()
+        provider.enqueue_success(_make_dax(
+            dax="EVALUATE SUMMARIZECOLUMNS('Customer'[SalesAmount])",
+            semantic_model_key="multi_table_model",
+        ))
+        provider.enqueue_success(_make_dax(
+            dax="EVALUATE SUMMARIZECOLUMNS('Unknown'[Fake])",
+            semantic_model_key="multi_table_model",
+        ))
+        provider.enqueue_success(_make_dax())  # 不应被调用
+        svc = _make_svc(provider)
+        plan = _make_plan(semantic_model_key="multi_table_model")
+        with pytest.raises(DAXGenerationError):
+            await svc.generate(plan, schema)
+        assert len(provider.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_repair_prompt_no_full_dax(self):
+        """修复 Prompt 不包含完整失败 DAX"""
+        provider = FakeProvider(is_mock=False)
+        schema = _make_multi_table_schema()
+        bad_dax = "EVALUATE SUMMARIZECOLUMNS('Customer'[SalesAmount])"
+        provider.enqueue_success(_make_dax(
+            dax=bad_dax,
+            semantic_model_key="multi_table_model",
+        ))
+        provider.enqueue_success(_make_dax(
+            dax="EVALUATE SUMMARIZECOLUMNS('Sales'[SalesAmount])",
+            semantic_model_key="multi_table_model",
+        ))
+        svc = _make_svc(provider)
+        plan = _make_plan(semantic_model_key="multi_table_model")
+        await svc.generate(plan, schema)
+        # 修复请求不包含完整非法 DAX
+        repair_msg = provider.calls[1].messages[0]["content"]
+        assert bad_dax not in repair_msg
+        # 但包含错误信息
+        assert "SalesAmount" in repair_msg or "object_not_in_table" in repair_msg

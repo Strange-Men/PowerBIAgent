@@ -174,6 +174,23 @@ REPAIR_INSTRUCTION = """上一次输出未通过 JSON 或 QueryPlan 格式验证
 
 previous_output_error={error_code}"""
 
+REPAIR_VALIDATION_INSTRUCTION = """上一次生成的 QueryPlan 未通过 Schema 验证。
+请根据以下验证错误重新生成：
+
+验证错误代码：{error_code}
+不合法的对象：{illegal_objects}
+
+重新生成必须满足：
+1. 只输出一个合法 JSON 对象
+2. semantic_model_key 必须与当前 Schema 一致
+3. measures 只能使用 Schema 中真实存在的度量值或数值列
+4. dimensions 只能使用 Schema 中真实存在的非隐藏列
+5. filters.field 只能使用 Schema 中真实存在的列或度量值
+6. 不得虚构任何字段
+7. 不带 Markdown 代码块标记
+8. 不带解释性文本
+9. 只输出 JSON"""
+
 
 # ---------------------------------------------------------------------------
 # 组装函数
@@ -187,6 +204,7 @@ def build_query_plan_messages(
     context: IntentContextSnapshot,
     *,
     repair_error_code: str | None = None,
+    validation_errors: str = "",
 ) -> list[dict[str, str]]:
     """构造发送给 LLM 的 QueryPlan 消息列表
 
@@ -196,6 +214,7 @@ def build_query_plan_messages(
         schema_text: Schema 安全视图的文本表示
         context: 从 committed memory 提取的安全上下文快照
         repair_error_code: 修复时的错误代码（首次请求为 None）
+        validation_errors: 验证错误详细信息（仅修修复时使用）
 
     Returns:
         messages 列表，可直接传给 LLMProvider.generate()
@@ -203,12 +222,21 @@ def build_query_plan_messages(
     messages: list[dict[str, str]] = []
 
     if repair_error_code is not None:
-        messages.append({
-            "role": "system",
-            "content": SYSTEM_PROMPT + "\n\n" + REPAIR_INSTRUCTION.format(
-                error_code=repair_error_code,
-            ),
-        })
+        if validation_errors:
+            messages.append({
+                "role": "system",
+                "content": SYSTEM_PROMPT + "\n\n" + REPAIR_VALIDATION_INSTRUCTION.format(
+                    error_code=repair_error_code,
+                    illegal_objects=validation_errors,
+                ),
+            })
+        else:
+            messages.append({
+                "role": "system",
+                "content": SYSTEM_PROMPT + "\n\n" + REPAIR_INSTRUCTION.format(
+                    error_code=repair_error_code,
+                ),
+            })
     else:
         messages.append({
             "role": "system",
