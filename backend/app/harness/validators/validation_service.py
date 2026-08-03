@@ -40,15 +40,31 @@ class ValidationService:
     所有验证返回结构化 ValidationResult。
     """
 
+    # 系统默认值（仅当参数为 None 时使用）
+    _DEFAULT_MODELS: tuple[str, ...] = ("mock_sales_model",)
+    _DEFAULT_TEMPLATES: tuple[str, ...] = ("sales_weekly", "satisfaction", "operating_overview")
+
     def __init__(
         self,
-        allowed_semantic_models: Optional[list[str]] = None,
-        allowed_templates: Optional[list[str]] = None,
+        allowed_semantic_models: Optional[list[str] | set[str] | tuple[str, ...]] = None,
+        allowed_templates: Optional[list[str] | set[str] | tuple[str, ...]] = None,
     ):
-        self._allowed_models = allowed_semantic_models or ["mock_sales_model"]
-        self._allowed_templates = allowed_templates or [
-            "sales_weekly", "satisfaction", "operating_overview"
-        ]
+        # ── 语义模型权限 ──
+        if allowed_semantic_models is None:
+            self._allowed_models = self._DEFAULT_MODELS
+        elif isinstance(allowed_semantic_models, (list, set, tuple)):
+            self._allowed_models = tuple(allowed_semantic_models)
+        else:
+            self._allowed_models = self._DEFAULT_MODELS
+
+        # ── 模板权限 ──
+        if allowed_templates is None:
+            self._allowed_templates = self._DEFAULT_TEMPLATES
+        elif isinstance(allowed_templates, (list, set, tuple)):
+            self._allowed_templates = tuple(allowed_templates)
+        else:
+            self._allowed_templates = self._DEFAULT_TEMPLATES
+
         self._allowed_chart_types = {"bar", "line", "pie", "scatter", "table"}
 
     # -----------------------------------------------------------------

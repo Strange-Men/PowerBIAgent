@@ -1,5 +1,61 @@
 # CHANGELOG
 
+## [M1.5] — 2026-08-03
+
+### 全链路验收与M1封板
+
+**来源：** M1.5 开发轮次。
+
+**P0 修复：**
+- Token/repair 统计修复：建立请求级 LLMCallCollector + ObservedLLMProvider 观察层
+- Provider 失败调用计入 attempt_count，可取得 usage 的校验失败计入 Token
+- LLMValidationError 安全携带 usage/model/finish_reason
+- ValidationService 空权限语义修复：[] 拒绝全部，None 使用默认
+- MockPowerBIAdapter 新增 execute_fixture 内部方法，客户端不可控制 Fixture
+- 前端文档边界修正：移除绝对布局表述，明确 M2-M4 不绑定 UI
+
+**DeepSeek Chat 全链路：**
+- TurnServiceProtocol 通用协议
+- DeepSeekTurnService：Intent → Schema → QueryPlan → DAX → Mock QueryResult → Answer/ReportSpec → Mock Renderer → Memory Commit
+- RuntimeDataMode.REAL 空间隔离
+- 每个请求独立 LLMCallCollector + ObservedLLMProvider
+- DeepSeek 失败不回退 Mock LLM
+- 幂等重放不重复调用 LLM
+
+**API 模式切换：**
+- Mock+Mock: Health 200, Chat Mock 链路
+- DeepSeek+Mock (有 Key): Health 200, Chat 真实 DeepSeek
+- DeepSeek+Mock (无 Key): Health 503, Chat 503
+- Remote MCP: 503
+- is_real_ready 更新为 M1.5 边界
+
+**ChatResponse 扩展：**
+- 新增 llm_mode、powerbi_mode、source_mode、usage 字段
+- usage: call_count, repair_count, prompt_tokens, completion_tokens, total_tokens, duration_ms, estimated_cost_usd, pricing_configured
+- is_mock 动态反映 LLM 层
+- 不新增 UI 布局字段
+
+**Settings 新增：**
+- deepseek_input_cost_per_million_tokens、deepseek_output_cost_per_million_tokens（可选）
+
+**错误映射：**
+- 409/422/502/503/504
+
+**文档修改：**
+- Settings.version → M1.5
+- docs/08/09/10/11 + README + CHANGELOG 同步更新
+- docs/10 前端边界软化
+
+**测试结果：**
+- pytest：937 passed
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS（138 文件）
+
+**Commit SHA：** 本轮提交
+**封板 Tag：** `m1-deepseek-pipeline-release`
+
+---
+
 ## [M1.4.1] — 2026-08-03
 
 ### 真实性验证与Smoke验收修复

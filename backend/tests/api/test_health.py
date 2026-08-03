@@ -61,7 +61,7 @@ class TestHealthMockReady:
     async def test_health_version(self, mock_client):
         response = await mock_client.get("/health")
         data = response.json()
-        assert data["version"] == "M1.4.1"
+        assert data["version"] == "M1.5"
 
     @pytest.mark.asyncio
     async def test_health_mode_fields(self, mock_client):
@@ -113,8 +113,8 @@ class TestHealthNotReady:
                 assert "deepseek_api_key_missing" in data["reasons"]
 
     @pytest.mark.asyncio
-    async def test_deepseek_mode_with_key_returns_503(self):
-        """DeepSeek 模式有 Key 但 Pipeline 未完成 → 503"""
+    async def test_deepseek_mode_with_key_returns_200(self):
+        """DeepSeek+Mock 有 Key → M1.5 封板后返回 200 ready=true"""
         fake_key = "sk-" + ("T" * 24)
         settings = Settings(
             llm_mode=LLMMode.DEEPSEEK,
@@ -126,10 +126,11 @@ class TestHealthNotReady:
         async with app.router.lifespan_context(app):
             async with AsyncClient(transport=transport, base_url="http://test") as c:
                 response = await c.get("/health")
-                assert response.status_code == 503
+                assert response.status_code == 200
                 data = response.json()
-                assert data["ready"] is False
-                assert "deepseek_pipeline_not_ready" in data["reasons"]
+                assert data["ready"] is True
+                assert data["status"] == "ok"
+                assert data["llm_mode"] == "deepseek"
                 # Key 信息不泄露
                 assert "sk-" not in str(data)
 
@@ -153,7 +154,7 @@ class TestHealthNotReady:
 
     @pytest.mark.asyncio
     async def test_both_real_modes_503(self):
-        """DeepSeek + Remote MCP 同时 → 503、两个原因"""
+        """DeepSeek + Remote MCP 同时 → 503（Remote MCP 不可用）"""
         fake_key = "sk-" + ("U" * 24)
         settings = Settings(
             llm_mode=LLMMode.DEEPSEEK,
@@ -168,7 +169,6 @@ class TestHealthNotReady:
                 assert response.status_code == 503
                 data = response.json()
                 assert data["ready"] is False
-                assert "deepseek_pipeline_not_ready" in data["reasons"]
                 assert "powerbi_remote_mcp_not_implemented" in data["reasons"]
 
     @pytest.mark.asyncio

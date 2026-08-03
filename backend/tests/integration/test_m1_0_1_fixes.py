@@ -960,12 +960,12 @@ class TestDocumentStatus:
         assert "下一轮" in content, "docs/09 应有下一轮说明"
 
     def test_docs_09_next_round(self):
-        """Test 38: docs/09 下一轮为 M1.5"""
+        """Test 38: docs/09 M1.5 已封板，下一轮为 M2"""
         content = (pathlib.Path(__file__).parent.parent.parent.parent /
                    "docs/09_context_handoff.md").read_text(encoding="utf-8")
-        assert "M1.4.1" in content
-        assert "下一轮" in content
         assert "M1.5" in content
+        assert "M1 封板" in content
+        assert "M2" in content
 
     def test_docs_no_stale_status(self):
         """Test 39: docs/08 和 docs/09 不存在失效状态（当前进行中轮次除外）"""

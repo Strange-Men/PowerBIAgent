@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M1.4.1", frozen=True)
+    version: str = Field(default="M1.5", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -67,6 +67,16 @@ class Settings(BaseSettings):
     deepseek_api_key: Optional[SecretStr] = Field(default=None)
     deepseek_base_url: str = Field(default="https://api.deepseek.com/v1")
     deepseek_model: str = Field(default="deepseek-chat")
+
+    # ── 成本计算（可选） ──────────────────────
+    deepseek_input_cost_per_million_tokens: Optional[float] = Field(
+        default=None, ge=0,
+        description="DeepSeek 输入价格（美元/百万 Token）。未配置时 estimated_cost_usd=null",
+    )
+    deepseek_output_cost_per_million_tokens: Optional[float] = Field(
+        default=None, ge=0,
+        description="DeepSeek 输出价格（美元/百万 Token）。未配置时 estimated_cost_usd=null",
+    )
 
     # ── Power BI（仅 Real 模式需要） ────────────
     powerbi_tenant_id: Optional[str] = Field(default=None)
@@ -110,13 +120,15 @@ class Settings(BaseSettings):
     def is_real_ready(self) -> bool:
         """Real 模式是否具备运行条件
 
-        M1.4.1：Intent、QueryPlan、DAX、Answer、ReportSpec 均已实现。
-        但完整 DeepSeek Chat Pipeline 仍待 M1.5 验收封板。
-        真实 Power BI 仍待 M2。
-        即使配置了 API Key，Chat 接口仍返回 503。
+        M1.5: DeepSeek + Mock Power BI 全链路已封板。
+        DeepSeek 配置 Key 且 PowerBI 为 Mock 时 ready=true。
+        真实 Power BI (Remote MCP) 仍待 M2。
         """
         if self.llm_mode == LLMMode.DEEPSEEK:
-            return False  # Chat Pipeline 待 M1.5 封板
+            return (
+                self.is_deepseek_configured
+                and self.powerbi_mode == PowerBIMode.MOCK
+            )
         if self.powerbi_mode == PowerBIMode.REMOTE_MCP:
             return False  # M2 前不可用
         return True

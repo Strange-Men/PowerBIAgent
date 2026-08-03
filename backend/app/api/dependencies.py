@@ -1,27 +1,48 @@
-"""API 依赖注入 — M0.4.1
+"""API 依赖注入 — M1.5
 
 M0.4.1 修复：
 - 删除模块级全局 _mock_turn_service 和 set_mock_turn_service()
 - Service 通过 request.app.state 读取（由 lifespan 初始化）
 - 多个 app 实例互不覆盖
+
+M1.5 更新：
+- 新增 get_turn_service() 返回通用 TurnServiceProtocol
+- get_mock_turn_service() 保留为向后兼容别名
 """
 
 from fastapi import Request
 
 from backend.app.application.mock_turn_service import MockTurnService
+from backend.app.application.turn_service_protocol import TurnServiceProtocol
 from backend.app.config.settings import Settings, get_settings
 
 
-def get_mock_turn_service(request: Request) -> MockTurnService:
-    """从当前 app.state 获取 MockTurnService
+def get_turn_service(request: Request) -> TurnServiceProtocol:
+    """从当前 app.state 获取 TurnService
 
-    在 lifespan 启动时由 create_app() 初始化到 app.state.mock_turn_service。
+    在 lifespan 启动时由 create_app() 根据 Settings 初始化到 app.state.turn_service。
+    Mock+Mock 模式返回 MockTurnService，DeepSeek+Mock 模式返回 DeepSeekTurnService。
     不同 app 实例的 state 互不覆盖。
+    """
+    service = getattr(request.app.state, "turn_service", None)
+    if service is None:
+        raise RuntimeError(
+            "TurnService not initialized — "
+            "check Settings.llm_mode and Settings.powerbi_mode configuration"
+        )
+    return service
+
+
+def get_mock_turn_service(request: Request) -> MockTurnService:
+    """从当前 app.state 获取 MockTurnService（向后兼容别名）
+
+    仅 Mock+Mock 模式可用。其他模式返回 None 并抛出 RuntimeError。
     """
     service = getattr(request.app.state, "mock_turn_service", None)
     if service is None:
         raise RuntimeError(
-            "MockTurnService not initialized — ensure app lifespan has started"
+            "MockTurnService not initialized — "
+            "current mode does not use Mock LLM"
         )
     return service
 

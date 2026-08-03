@@ -465,6 +465,11 @@ class DeepSeekLLMProvider(LLMProvider):
                 )
             usage[token_field] = int(token_val)
 
+        # ── 安全上下文（用于后续校验异常携带） ──
+        _safe_model = str(response_model) if response_model else self._model
+        _safe_finish_reason = str(finish_reason) if finish_reason else "stop"
+        _safe_usage: dict[str, int] = dict(usage)
+
         # 10. content 执行 json.loads() 后必须是 JSON 对象
         try:
             parsed_content = json.loads(raw_content)
@@ -474,6 +479,9 @@ class DeepSeekLLMProvider(LLMProvider):
                 provider=self.PROVIDER_NAME,
                 retryable=False,
                 error_code="invalid_content_json",
+                usage=_safe_usage,
+                model=_safe_model,
+                finish_reason=_safe_finish_reason,
             )
         if not isinstance(parsed_content, dict):
             raise LLMValidationError(
@@ -481,6 +489,9 @@ class DeepSeekLLMProvider(LLMProvider):
                 provider=self.PROVIDER_NAME,
                 retryable=False,
                 error_code="invalid_content_json",
+                usage=_safe_usage,
+                model=_safe_model,
+                finish_reason=_safe_finish_reason,
             )
 
         # 11. 使用 output_type.model_validate()
@@ -492,6 +503,9 @@ class DeepSeekLLMProvider(LLMProvider):
                 provider=self.PROVIDER_NAME,
                 retryable=False,
                 error_code="output_schema_invalid",
+                usage=_safe_usage,
+                model=_safe_model,
+                finish_reason=_safe_finish_reason,
             )
 
         return LLMResponse(

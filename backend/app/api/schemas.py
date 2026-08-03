@@ -1,4 +1,4 @@
-"""API 请求/响应 Pydantic 模型 — M1.0
+"""API 请求/响应 Pydantic 模型 — M1.5
 
 M0.4.1 修复：
 - ChatResponse 增加结构化 report 字段（真实 RenderedReport）
@@ -7,9 +7,16 @@ M0.4.1 修复：
 
 M1.0 新增：
 - ChatResponse 增加 idempotent_replay / replayed_request_id 字段
+
+M1.5 新增：
+- ChatResponse 增加 llm_mode / powerbi_mode / source_mode / usage 字段
+- usage 包含 call_count, repair_count, prompt_tokens, completion_tokens,
+  total_tokens, duration_ms, estimated_cost_usd, pricing_configured
+- is_mock 语义：Mock LLM 时为 True，DeepSeek LLM 时为 False
+- 不新增 sidebar, workspace_layout, report_position, frontend_blocks, navigation_section
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -53,7 +60,7 @@ class ReportResponse(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """POST /api/v1/chat 响应 — M1.0"""
+    """POST /api/v1/chat 响应 — M1.5"""
 
     request_id: str
     conversation_id: str
@@ -80,7 +87,10 @@ class ChatResponse(BaseModel):
     tool_sequence: list[str] = Field(default_factory=list)
     memory_commit: bool = False
     trace_id: str = ""
-    is_mock: bool = True
+    is_mock: bool = Field(
+        default=True,
+        description="Mock LLM 时为 True，DeepSeek LLM 时为 False",
+    )
     allowed_tools: list[str] = Field(default_factory=list)
 
     # M1.0: 幂等重放字段
@@ -92,6 +102,18 @@ class ChatResponse(BaseModel):
         default=None,
         description="幂等重放时指向原始 request_id；首次请求为 null",
     )
+
+    # M1.5: 模式与使用统计字段
+    llm_mode: str = Field(default="", description="LLM 模式：mock / deepseek")
+    powerbi_mode: str = Field(default="", description="Power BI 模式：mock / remote_mcp")
+    source_mode: str = Field(default="", description="数据来源：mock / real")
+    usage: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="LLM 使用统计：call_count, repair_count, prompt_tokens, "
+                    "completion_tokens, total_tokens, duration_ms, "
+                    "estimated_cost_usd, pricing_configured",
+    )
+    # 不新增：sidebar, workspace_layout, report_position, frontend_blocks, navigation_section
 
 
 class HealthResponse(BaseModel):

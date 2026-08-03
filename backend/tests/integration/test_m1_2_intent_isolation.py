@@ -35,7 +35,7 @@ class TestHealthM12:
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data["ready"] is True
-                assert data["version"] == "M1.4.1"
+                assert data["version"] == "M1.5"
 
     @pytest.mark.asyncio
     async def test_health_deepseek_no_key_503(self):
@@ -57,7 +57,8 @@ class TestHealthM12:
                 assert "api_key_missing" in reason_text
 
     @pytest.mark.asyncio
-    async def test_health_deepseek_with_key_still_503(self):
+    async def test_health_deepseek_with_key_returns_200(self):
+        """M1.5: DeepSeek+Mock 有 Key → Health 200 ready=true"""
         settings = Settings(
             llm_mode="deepseek",
             powerbi_mode="mock",
@@ -68,11 +69,10 @@ class TestHealthM12:
         async with app.router.lifespan_context(app):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/health")
-                assert resp.status_code == 503
+                assert resp.status_code == 200
                 data = resp.json()
-                assert data["ready"] is False
-                reason_text = " ".join(data["reasons"])
-                assert "pipeline_not_ready" in reason_text
+                assert data["ready"] is True
+                assert data["llm_mode"] == "deepseek"
 
 
 class TestChatM12:
@@ -140,7 +140,8 @@ class TestChatM12:
         assert data["report"]["html"] is not None
 
     @pytest.mark.asyncio
-    async def test_chat_deepseek_503_no_fallback(self):
+    async def test_chat_deepseek_no_fallback_to_mock(self):
+        """M1.5: DeepSeek Chat 可用，不回退 Mock LLM"""
         settings = Settings(
             llm_mode="deepseek",
             powerbi_mode="mock",
@@ -153,14 +154,13 @@ class TestChatM12:
                 resp = await client.post("/api/v1/chat", json={
                     "message": "本月销售额是多少？",
                 })
-                assert resp.status_code == 503
+                # M1.5: Chat 已启用，假 Key 不会返回 503 mode guard
+                # 实际会尝试调用 DeepSeek API 并因假 Key 失败
+                assert resp.status_code != 200  # 不应返回 Mock 成功
                 data = resp.json()
-                # HTTPException detail can be nested dict
-                detail = data["detail"]
+                detail = data.get("detail", {})
                 if isinstance(detail, dict):
-                    assert "pipeline_not_ready" in str(detail)
-                else:
-                    assert "pipeline_not_ready" in detail
+                    assert detail.get("error_type") != "deepseek_pipeline_not_ready"
 
 
 class TestReplayM12:

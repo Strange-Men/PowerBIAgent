@@ -3,6 +3,7 @@
 import os
 
 import pytest
+from pydantic import SecretStr
 
 from backend.app.config.settings import (
     AppEnv,
@@ -31,9 +32,9 @@ class TestSettingsDefaults:
         settings = Settings()
         assert settings.app_name == "PowerBIAgent"
 
-    def test_version_is_m1_4_1(self):
+    def test_version_is_m1_5(self):
         settings = Settings()
-        assert settings.version == "M1.4.1"
+        assert settings.version == "M1.5"
 
     def test_host_default_localhost(self):
         settings = Settings()
@@ -154,10 +155,23 @@ class TestSettingsRealMode:
         settings = Settings(llm_mode=LLMMode.MOCK, powerbi_mode=PowerBIMode.MOCK)
         assert settings.is_real_ready is True
 
-    def test_deepseek_mode_not_real_ready(self):
-        """M0.4: DeepSeek 模式尚未实现，不应返回 ready"""
-        settings = Settings(llm_mode=LLMMode.DEEPSEEK, powerbi_mode=PowerBIMode.MOCK)
+    def test_deepseek_mode_not_real_ready_without_key(self):
+        """M1.5: DeepSeek 模式无 Key → not ready（需显式覆盖 .env）"""
+        settings = Settings(
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.MOCK,
+            deepseek_api_key=None,
+        )
         assert settings.is_real_ready is False
+
+    def test_deepseek_mode_real_ready_with_key(self):
+        """M1.5: DeepSeek+Mock 有 Key → ready"""
+        settings = Settings(
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.MOCK,
+            deepseek_api_key=SecretStr("test-key-not-real"),
+        )
+        assert settings.is_real_ready is True
 
     def test_remote_mcp_mode_not_real_ready(self):
         """M0.4: Remote MCP 模式尚未实现，不应返回 ready"""

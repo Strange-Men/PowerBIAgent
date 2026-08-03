@@ -95,13 +95,15 @@ class MockPowerBIAdapter(PowerBIAdapter):
         if self._delay > 0:
             await asyncio.sleep(self._delay)
 
-        key = request.request_id or "data_question"
+        # 优先使用内部 fixture_key（由 TurnService 设置），
+        # 否则回退到 request.request_id（向后兼容）。
+        fixture_key: str = getattr(request, "_fixture_key", None) or request.request_id or "data_question"
 
-        # 直接按 key 查找，不回退到默认值
-        raw = self._query_results.get(key)
+        # 直接按 fixture_key 查找，不回退到默认值
+        raw = self._query_results.get(fixture_key)
         if raw is None:
             raise PowerBIAdapterError(
-                f"Mock query result not found for key '{key}'. "
+                f"Mock query result not found for key '{fixture_key}'. "
                 f"Available: {list(self._query_results.keys())}",
                 provider=self.PROVIDER_NAME,
                 error_type="unknown_scenario",
@@ -111,6 +113,27 @@ class MockPowerBIAdapter(PowerBIAdapter):
         result.request_id = request.request_id or result.request_id
         result.semantic_model_key = request.semantic_model_key
         return result
+
+    async def execute_fixture(self, dax_request: DAXRequest, fixture_key: str) -> QueryResult:
+        """内部方法：以指定 fixture_key 执行 Mock DAX 查询
+
+        不在 PowerBIAdapter 公开契约上。
+        仅由 TurnService 内部使用，客户端不可控制 fixture_key。
+        fixture_key 未知时明确失败，不回退默认。
+
+        Args:
+            dax_request: DAX 查询请求
+            fixture_key: Fixture 查找键（如 "data_question" / "report_generation"）
+
+        Returns:
+            QueryResult
+
+        Raises:
+            PowerBIAdapterError: fixture_key 未知
+        """
+        # 设置内部标记，execute_dax 会优先使用
+        dax_request._fixture_key = fixture_key  # type: ignore[attr-defined]
+        return await self.execute_dax(dax_request)
 
     async def normalize_result(self, raw: object) -> QueryResult:
         """标准化 Mock 结果"""

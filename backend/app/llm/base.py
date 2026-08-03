@@ -88,12 +88,18 @@ class LLMProviderError(Exception):
         retryable: bool = False,
         status_code: int | None = None,
         error_code: str | None = None,
+        usage: dict[str, int] | None = None,
+        model: str | None = None,
+        finish_reason: str | None = None,
     ):
         super().__init__(message)
         self.provider = provider
         self.retryable = retryable
         self.status_code = status_code
         self.error_code = error_code
+        self.usage = usage
+        self.model = model
+        self.finish_reason = finish_reason
 
 
 class LLMConfigurationError(LLMProviderError):
@@ -137,8 +143,29 @@ class LLMTimeoutError(LLMProviderError):
 
 
 class LLMValidationError(LLMProviderError):
-    """LLM 输出校验失败"""
-    pass
+    """LLM 输出校验失败 — 可携带安全 usage/model/finish_reason"""
+
+    def __init__(
+        self,
+        message: str,
+        provider: str = "",
+        retryable: bool = False,
+        status_code: int | None = None,
+        error_code: str | None = None,
+        usage: dict[str, int] | None = None,
+        model: str | None = None,
+        finish_reason: str | None = None,
+    ):
+        super().__init__(
+            message,
+            provider=provider,
+            retryable=retryable,
+            status_code=status_code,
+            error_code=error_code,
+            usage=usage,
+            model=model,
+            finish_reason=finish_reason,
+        )
 
 
 class LLMScenarioNotFoundError(LLMProviderError):

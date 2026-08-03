@@ -2,7 +2,7 @@
 
 > **所有新 Claude 恢复上下文的唯一最新交接入口。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-03 | M1.4.1 真实性验证与Smoke验收修复**
+> **最后更新：2026-08-03 | M1.5 全链路验收与M1封板**
 
 ---
 
@@ -10,19 +10,21 @@
 
 开发供公司内部少量人员使用的 Power BI 数据分析 Agent MVP。用户通过自然语言对话查询 Power BI 语义模型数据，并以固定模板生成静态 HTML 报表。
 
-前端最终为带左侧栏的 GPT 式极简对话网页（React + Vite，M5 开发）。
+前端最终方向为带左侧栏的 GPT 式极简对话网页（React + Vite，M5 开发）。左侧栏内容、报表位置、导航层级和工作台结构尚未确定，M5 重新完成整体信息架构。
 
 ## 当前阶段
 
-**M1.4.1 真实性验证与Smoke验收修复** — ✅ 已完成。
+**M1.5 全链路验收与M1封板** — ✅ 已完成。M1 DeepSeek 后端链路已封板。
 
 ## 上一轮
 
-**M1.4** — 真实 Answer 与 ReportSpec 生成（Commit `4b1f0a3`）
+**M1.4.1** — 真实性验证与Smoke验收修复（Commit `e22f9bd`）
 
 ## 下一轮
 
-**M1.5 全链路验收与封板**
+**M2 真实 Power BI MCP 与数据问答** — 未开始。
+
+> **M1 封板 Tag：** `m1-deepseek-pipeline-release`
 
 ## 已完成版本
 
@@ -45,95 +47,90 @@
 | M1.3.1 | QueryPlan与DAX验证修复 | `6647760` | 2026-08-03 |
 | M1.3.2 | 前端视觉与结构化回答契约固化 | `db0a7e8` | 2026-08-03 |
 | M1.4 | 真实Answer与ReportSpec生成 | `4b1f0a3` | 2026-08-03 |
-| M1.4.1 | 真实性验证与Smoke验收修复 | 本轮提交 | 2026-08-03 |
+| M1.4.1 | 真实性验证与Smoke验收修复 | `e22f9bd` | 2026-08-03 |
+| M1.5 | 全链路验收与M1封板 | 本轮提交 | 2026-08-03 |
 
 ## 最近封板 Tag
 
 | Tag | Commit | 说明 |
 |-----|--------|------|
+| `m1-deepseek-pipeline-release` | 本轮提交 | M1 DeepSeek 全链路封板 |
 | `m0.4.1-foundation-release` | `1f967b0` | M0.4.1 封板 |
 | `m0.4-foundation-release` | `d5c1634` | M0.4 封板 |
 
-## M1.4.1 交付内容
+## M1.5 交付内容
 
 ### P0 修复
-- **KPI 列顺序**：`_validate_kpis_strict` 从 set 枚举改为有序列映射 + column_name→index 字典
-- **Answer 强制绑定**：`semantic_model_key` 必须非空且匹配 QueryResult
-- **Report 强制绑定**：`data_source` 必须非空且匹配 QueryResult
-- **KPI None/bool**：None 和 bool 被明确拒绝，不允许作为合法 KPI 数值
-- **Metrics provenance**：metrics 非空时 evidence 必须包含 `metric_provenance`（direct/sum/avg/count/min/max），旧自由文本不再放行
-- **QueryPlan 模板 Key 契约**：`requested_template` 只能输出 sales_weekly/satisfaction/operating_overview 或 null，中文名称在 Prompt 中映射到内部 Key
-- **模板非法修复**：非法 template_key 触发 QueryPlan 一次修复，Provider 最多调用 2 次
-- **模板冲突**：显式 template_key 与 QueryPlan.requested_template 不一致时零次 ReportSpec 调用
-- **空权限**：allowed_templates 为空集合时拒绝所有模板（不错误回退默认）
-- **Table 类型严格**：`_safe_repr` 返回 type_tag 元组区分 None/bool/int/float/str/other
-- **Smoke 加固**：所有关键条件参与 success 判定，dax_safe/renderer_ok 失败时 success=false
-- **Token 统计**：Intent 纳入 Token 和 repair_count 统计，各阶段独立追踪
+- **Token/repair 统计修复**：建立请求级 LLMCallCollector + ObservedLLMProvider 观察层
+- **LLMValidationError 安全携带 usage**：validation 失败仍计入 attempt 和 Token
+- **ValidationService 空权限语义修复**：[] 拒绝全部，None 使用默认
+- **前端文档边界修正**：移除"确定最终布局"等绝对表述，明确 M2-M4 不绑定 UI
 
-### 真实 Smoke 结果
-- 总体 success=true，model=deepseek-chat，total_tokens=8570
-- Case A（数据问答）：answer_repairs=0，evidence_bound=true，metrics_provenance_valid=true
-- Case B（报表生成）：spec_repairs=0，qp_requested_template=sales_weekly，template_consistent=true
+### DeepSeek Chat 全链路
+- **TurnServiceProtocol** 通用协议 + MockTurnService 适配
+- **DeepSeekTurnService**：Intent → Schema → QueryPlan → DAX → Mock QueryResult → Answer/ReportSpec → Memory Commit
+- 使用 RuntimeDataMode.REAL 空间，与 Mock 隔离
+- Memory: is_mock=False, llm_provider=deepseek, powerbi_provider=mock_powerbi
+- 每个请求独立 LLMCallCollector + ObservedLLMProvider
+- DeepSeek 失败不回退 Mock LLM
 
-### 测试结果
-- pytest：936 passed
-- Golden Cases：11 passed，1 skipped
-- 安全扫描：PASS（134 文件）
+### API 模式
+- Mock+Mock: Health 200, Chat Mock 链路
+- DeepSeek+Mock (有 Key): Health 200, Chat 真实 DeepSeek
+- DeepSeek+Mock (无 Key): Health 503, Chat 503
+- Remote MCP: Health 503, Chat 503
 
-### 运行边界
-- Settings.version=M1.4.1
-- QueryResult 仍为 Mock
-- Renderer 仍为 Mock
-- DeepSeek Chat 仍 503
-- 真实 Power BI 属 M2
+### ChatResponse 扩展
+- 新增: llm_mode, powerbi_mode, source_mode, usage
+- usage: call_count, repair_count, prompt_tokens, completion_tokens, total_tokens, duration_ms, estimated_cost_usd, pricing_configured
+- is_mock: Mock LLM=True, DeepSeek LLM=False
+- 不新增 UI 布局字段
 
-## M1.4 交付内容
+### QueryResult
+- source_mode 始终为 mock（使用 MockPowerBIAdapter）
 
-### Answer 生成
-- `DeepSeekAnswerService`：安全上下文、集中式 Prompt、最多一次修复
-- Evidence 四大字段强制绑定（result_id/semantic_model_key/row_count/source_mode）
-- Metrics 可追溯验证
-- Truncated/input_truncated 强制披露
-
-### ReportSpec 生成
-- `DeepSeekReportSpecService`：安全上下文、集中式 Prompt
-- KPI/Chart/Table 真实性验证
-- Table 整行投影验证（防跨行拼接 + 重复行限制 + 类型严格比较）
-- Mock Renderer 兼容
-
-### 真实 Smoke
-- 双案例（data_question + report_generation）均通过
-- Answer repairs=1（一次修复后严格验证通过）
-- ReportSpec repairs=0
-- 使用真实 DeepSeek + Mock QueryResult，未调用真实 Power BI
+### 错误映射
+- deepseek_api_key_missing → 503
+- deepseek_authentication_failed → 502
+- deepseek_rate_limited → 503
+- deepseek_timeout → 504
+- deepseek_connection_failed → 502
+- deepseek_service_unavailable → 502/503
+- request_id_conflict → 409
+- idempotency_coordination_unavailable → 503
+- powerbi_remote_mcp_not_implemented → 503
 
 ### 测试结果
-- pytest：858 passed
+- pytest：937 passed
 - Golden Cases：11 passed，1 skipped
-- 安全扫描：PASS
+- 安全扫描：PASS（138 文件）
 
 ### 运行边界
-- Settings.version=M1.4
+- Settings.version=M1.5
+- Chat DeepSeek+Mock 已可用（需配置 DEEPSEEK_API_KEY）
 - QueryResult 仍为 Mock
 - Renderer 仍为 Mock
-- DeepSeek Chat 仍 503
 - 真实 Power BI 属 M2
+- Remote MCP 属 M2
+- 前端属 M5
 
 ## 未完成或待观察事项
 
+- M2: 真实 Power BI MCP 连接、OAuth、DAX 真实验证
+- M3: 报表正式渲染管线、报表资源 ID
+- M4: 会话持久化、搜索、最近对话
+- M5: React 前端
 - 跨进程持久化和分布式锁延后处理
 - 项目负责人 Power BI 账号状态（M2 前确认）
 - Entra App Registration 权限（M2 前确认）
 - Power BI Tenant 设置（M2 前确认）
 - Remote MCP Server 端点可用性（M2 早期验证）
-- 完整 Chat 仍未开放（待 M1.5）
-- Answer/ReportSpec 真实生成已完成 → 仍使用 Mock QueryResult
 - 公司真实 Power BI 语义模型（M2 前确认）
 - 可用报表模板（M3 前确认）
 - 报表资源保存位置（M3 前确认）
 - 会话和报表持久化方案（M4 前确认）
-- 前端是否展示其他模型（M5 前确认）
+- 前端整体信息架构和交互设计（M5 前确认）
 
 ---
 
-*最后更新：2026-08-03 | M1.4.1 真实性验证与Smoke验收修复*
+*最后更新：2026-08-03 | M1.5 全链路验收与M1封板*

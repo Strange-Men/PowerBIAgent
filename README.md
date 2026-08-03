@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M1.4.1 真实性验证与Smoke验收修复** — Answer/Report/KPI/Metrics/Table 真实性验证加固，QueryPlan 模板 Key 契约固化，模板冲突与权限边界修复，Smoke 成功判定与 Token 统计加固。真实 DeepSeek Smoke 通过（双案例 + Mock QueryResult）。真实 Power BI 属 M2。
+**M1.5 全链路验收与封板** — DeepSeek + Mock Power BI 全链路已完成封板。Chat 正式接通 DeepSeek API，支持 data_question / report_generation / clarification / unsupported 四类意图。LLM 调用观测（Token、耗时、修复次数、成本）已建立。Mock + Mock 模式保持完整可用。真实 Power BI 属 M2。
 
-> **Mock 模式完整可用。** DeepSeek Provider、Intent、QueryPlan、DAX、Answer 和 ReportSpec Service 已就绪。Chat 真实链路尚未完整接通（待 M1.5）。QueryResult 仍为 Mock。当前版本 M1.4.1。
+> **Mock + Mock 模式完整可用。** **DeepSeek + Mock 模式 Chat 已可用（需配置 API Key）。** QueryResult 仍为 Mock。当前版本 M1.5。
 
 ### 幂等与并发特性
 
@@ -180,7 +180,7 @@ Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过�
 | 前端 | React + Vite | 骨架已确认，开发延后 (M5) |
 | 后端 | FastAPI | ✅ M0.4 最小骨架已完成 |
 | Agent | PydanticAI 单 Agent | ✅ M0.2 已选定 |
-| LLM | DeepSeek + Mock LLM | ✅ Mock 可运行；DeepSeek Intent/QueryPlan/DAX 已就绪 (M1.3) |
+| LLM | DeepSeek + Mock LLM | ✅ Mock 可运行；DeepSeek Chat 全链路已封板 (M1.5) |
 | 数据 | Power BI MCP | ✅ Mock 可运行；真实接入延后 (M2) |
 | 记忆 | 结构化工作记忆 | ✅ M0.2-M0.3.2 完整实现 |
 | 报表 | 固定模板 HTML | ✅ Mock 可运行；真实渲染延后 (M3) |
@@ -203,4 +203,4 @@ Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过�
 
 ---
 
-*最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成*
+*最后更新：2026-08-03 | M1.5 全链路验收与M1封板*

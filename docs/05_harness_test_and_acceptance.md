@@ -1,9 +1,11 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M1.3.2 同步更新
+> **状态：** M1.5 已更新
 > **关联 ADR：** ADR-004
-> **当前基线：** pytest 936 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS（134 文件）
-> **真实 Smoke：** success=true, deepseek-chat, 7568 tokens, Answer repairs=1, ReportSpec repairs=0
+> **当前基线：** pytest 937 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS（138 文件）
+> **真实 Chat Smoke：** overall_success=true, 6/6 cases passed (data_question, report_generation, clarification, unsupported, idempotent_replay, request_id_conflict)
+> **Token 统计：** call_count/repair_count 按 task 独立统计，LLMValidationError 携带 usage
+> **模式切换：** Mock+Mock 200 / DeepSeek+Mock 200 / Remote MCP 503
 
 ---
 
@@ -147,4 +149,4 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 ---
 
-*最后更新：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
+*最后更新：2026-08-03 | M1.5 全链路验收与M1封板*

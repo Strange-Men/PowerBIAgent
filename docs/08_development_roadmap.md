@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M1.4.1 已完成，M1.5 未开始
+> **状态：** M1.5 已完成，M1 已封板
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -234,17 +234,28 @@ MVP 功能阶段 (后续)
 
 ### M1.5｜全链路验收与封板
 
-**状态：** ⬜ 未开始
+**状态：** ✅ 已完成 | **Commit：** 本轮提交 | **Tag：** `m1-deepseek-pipeline-release`
 
 **完成内容：**
-- Mock 和 DeepSeek 模式切换
-- API 真实调用验证
-- DeepSeek 失败不得静默回退 Mock
-- 成本、Token、耗时和 Trace 记录
-- Golden Cases 继续全部通过
-- 新增真实 LLM 基线案例
-- 文档收尾
-- M1 封板 Commit 和 Tag
+- Token/repair 统计修复：建立请求级 LLMCallCollector + ObservedLLMProvider 观察层
+- LLMValidationError 安全携带 usage，校验失败仍计入 attempt 和 Token
+- ValidationService 空权限语义修复：[] 拒绝全部，None 使用默认
+- TurnServiceProtocol 通用协议 + MockTurnService 适配
+- MockPowerBIAdapter.execute_fixture 内部 Fixture 选择
+- DeepSeekTurnService：DeepSeek Intent → QueryPlan → DAX → Mock QueryResult → Answer/ReportSpec → Memory 全链路
+- Mock/DeepSeek 模式切换：Health 200/503、Chat 可用/不可用
+- ChatResponse 扩展：llm_mode / powerbi_mode / source_mode / usage 字段
+- Settings 新增可选成本配置：input/output cost per million tokens
+- 错误映射：409/422/502/503/504
+- Trace 安全强化：LLM 调用事件 + 验证事件
+- 幂等、Memory REAL 空间隔离、并发 Collector 隔离
+- 前端文档边界修正：移除绝对布局表述，明确 M2-M4 不绑定 UI
+- Golden Cases 11 passed / 1 skipped
+- M1 封板 Commit 和 Tag `m1-deepseek-pipeline-release`
+
+**真实 API Smoke：** 由用户以真实 Key 执行 `python -m backend.app.application.deepseek_chat_smoke`。
+
+**本轮不接入真实 Power BI、OAuth、Remote MCP。**
 
 ---
 

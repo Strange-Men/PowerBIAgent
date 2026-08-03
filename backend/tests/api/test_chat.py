@@ -293,8 +293,8 @@ class TestChatRealModeRejection:
                 assert data["detail"]["error_type"] == "deepseek_api_key_missing"
 
     @pytest.mark.asyncio
-    async def test_deepseek_chat_with_key_503(self):
-        """DeepSeek Chat 有 Key 但 Pipeline 未完成 → 503"""
+    async def test_deepseek_chat_with_key_attempts_real(self):
+        """DeepSeek+Mock 有 Key → M1.5 Chat 可用，尝试调用真实 API（会因假 Key 失败）"""
         fake_key = "sk-" + ("D" * 24)
         settings = Settings(
             llm_mode=LLMMode.DEEPSEEK,
@@ -308,13 +308,12 @@ class TestChatRealModeRejection:
                 response = await c.post("/api/v1/chat", json={
                     "message": "测试",
                 })
-                assert response.status_code == 503
-                data = response.json()
-                assert data["detail"]["error_type"] == "deepseek_pipeline_not_ready"
+                # M1.5: Chat 已启用，假 Key 会导致鉴权/连接错误（非 503 mode guard）
+                assert response.status_code in (502, 500)
 
     @pytest.mark.asyncio
     async def test_deepseek_chat_no_fallback_to_mock(self):
-        """DeepSeek Chat 不回退 Mock"""
+        """DeepSeek Chat 不回退 Mock LLM — 即使 API 调用失败也不返回 Mock 结果"""
         fake_key = "sk-" + ("E" * 24)
         settings = Settings(
             llm_mode=LLMMode.DEEPSEEK,
@@ -328,12 +327,12 @@ class TestChatRealModeRejection:
                 response = await c.post("/api/v1/chat", json={
                     "message": "测试",
                 })
-                # 必须 503，不能 200
-                assert response.status_code == 503
+                # M1.5: 不返回 Mock 模式的 200，必须是错误状态
+                assert response.status_code != 200
+                # 必须不是 503 mode guard
                 data = response.json()
-                # 不应返回 answer/report/tool_sequence（不是 Mock 结果）
                 if isinstance(data.get("detail"), dict):
-                    assert "answer" not in data.get("detail", {})
+                    assert data["detail"].get("error_type") != "deepseek_pipeline_not_ready"
 
 
 class TestChatConcurrent:
@@ -617,7 +616,7 @@ class TestChatM10Version:
         response = await client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["version"] == "M1.4.1"
+        assert data["version"] == "M1.5"
 
     @pytest.mark.asyncio
     async def test_health_ready_and_reasons(self, client):
