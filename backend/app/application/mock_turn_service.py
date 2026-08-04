@@ -36,12 +36,12 @@ from backend.app.harness.errors import (
     ToolPolicyDeniedError,
     ToolTimeoutError,
 )
-from backend.app.harness.models import DEFAULT_MOCK_CONFIG, HarnessConfig
+from backend.app.harness.models import HarnessConfig
+from backend.app.harness.tool_registry import SchemaInput, create_default_tool_gateway
 from backend.app.harness.runtime.context_builder import ContextBuilder
 from backend.app.harness.runtime.tool_gateway import (
     ToolExecutionContext,
     ToolGateway,
-    ToolSpec,
 )
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
 from backend.app.harness.observability.trace_recorder import TraceRecorder
@@ -97,11 +97,6 @@ class MockScenarioSelection(BaseModel):
     model_config = {"frozen": True}  # 不可变，防止并发污染
 
 
-class SchemaInput(BaseModel):
-    """get_semantic_model_schema 工具输入"""
-    semantic_model_key: str = "mock_sales_model"
-
-
 class MockTurnService:
     """Mock 轮次服务
 
@@ -121,7 +116,7 @@ class MockTurnService:
         self.llm = llm_runtime or MockAgentRuntime()
         self.powerbi = powerbi_adapter or MockPowerBIAdapter()
         self.report_renderer = report_renderer or MockReportRenderer()
-        self.config = config or DEFAULT_MOCK_CONFIG
+        self.config = config or HarnessConfig()
 
         self.context_builder = ContextBuilder(self.config)
         self.tool_gateway = self._build_tool_gateway()
@@ -131,67 +126,8 @@ class MockTurnService:
         self.snapshot_store = ResultSnapshotStore()
 
     def _build_tool_gateway(self) -> ToolGateway:
-        """构建 ToolGateway 并注册三个工具"""
-        gw = ToolGateway()
-
-        # 1. get_semantic_model_schema
-        async def _get_schema(input_data: SchemaInput) -> SemanticModelSchema:
-            return await self.powerbi.get_semantic_model_schema(input_data.semantic_model_key)
-
-        gw.register(ToolSpec(
-            name="get_semantic_model_schema",
-            description="获取 Power BI 语义模型结构",
-            input_model=SchemaInput,
-            output_model=SemanticModelSchema,
-            timeout_seconds=30.0,
-            max_retries=1,
-            read_only=True,
-            allowed_intents=[IntentType.DATA_QUESTION, IntentType.REPORT_GENERATION],
-            supported_modes=[RuntimeDataMode.MOCK, RuntimeDataMode.REAL],
-            handler=_get_schema,
-        ))
-
-        # 2. execute_dax
-        async def _execute_dax(input_data: DAXRequest) -> QueryResult:
-            return await self.powerbi.execute_dax(input_data)
-
-        gw.register(ToolSpec(
-            name="execute_dax",
-            description="执行 DAX 查询",
-            input_model=DAXRequest,
-            output_model=QueryResult,
-            timeout_seconds=30.0,
-            max_retries=1,
-            read_only=True,
-            allowed_intents=[IntentType.DATA_QUESTION, IntentType.REPORT_GENERATION],
-            supported_modes=[RuntimeDataMode.MOCK, RuntimeDataMode.REAL],
-            handler=_execute_dax,
-        ))
-
-        # 3. render_report
-        async def _render_report(input_data: ReportSpec) -> RenderedReport:
-            html = await self.report_renderer.render(input_data)
-            return RenderedReport(
-                report_id=str(uuid.uuid4()),
-                template_key=input_data.template_key,
-                html=html,
-                source_mode=input_data.source_mode,
-            )
-
-        gw.register(ToolSpec(
-            name="render_report",
-            description="渲染报表为 HTML",
-            input_model=ReportSpec,
-            output_model=RenderedReport,
-            timeout_seconds=60.0,
-            max_retries=0,
-            read_only=True,
-            allowed_intents=[IntentType.REPORT_GENERATION],
-            supported_modes=[RuntimeDataMode.MOCK, RuntimeDataMode.REAL],
-            handler=_render_report,
-        ))
-
-        return gw
+        """构建 ToolGateway — M1.6.2 使用共享工具注册入口，超时/重试来自 HarnessConfig"""
+        return create_default_tool_gateway(self.powerbi, self.report_renderer, self.config)
 
     async def execute(
         self,

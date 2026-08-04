@@ -19,6 +19,7 @@ from backend.app.agent.mock_runtime import MockAgentRuntime
 from backend.app.api.routes import router
 from backend.app.application.mock_turn_service import MockTurnService
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings, get_settings
+from backend.app.harness.models import HarnessConfig
 from backend.app.memory.repository import InMemoryMemoryRepository
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.mock import MockReportRenderer
@@ -41,6 +42,8 @@ async def lifespan(app: FastAPI):
         app.state.settings = get_settings()
 
     settings: Settings = app.state.settings
+    # M1.6.2: 统一从 Settings 构建一次 HarnessConfig，显式传给所有 TurnService
+    harness_config = HarnessConfig.from_settings(settings)
     turn_service = None
     _deepseek_provider = None  # 用于 shutdown 关闭
 
@@ -51,6 +54,7 @@ async def lifespan(app: FastAPI):
             llm_runtime=MockAgentRuntime(),
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
+            config=harness_config,
         )
 
     elif settings.llm_mode == LLMMode.DEEPSEEK and settings.powerbi_mode == PowerBIMode.MOCK:
@@ -74,6 +78,7 @@ async def lifespan(app: FastAPI):
                 powerbi_adapter=MockPowerBIAdapter(),
                 report_renderer=MockReportRenderer(),
                 settings=settings,
+                config=harness_config,
             )
 
     else:

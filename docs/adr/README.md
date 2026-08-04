@@ -65,7 +65,7 @@ Pydantic 数据契约 + Repository 抽象接口。四层记忆设计、三态机
 
 **后果：**
 - 正面：管线行为可预测、可测试；Mock/DeepSeek 一致性有保障；Harness 约束可统一生效
-- 负面：需要 M1.6.2—M1.6.3 两轮代码整改；PydanticAI 依赖需保留但不再作为生产路径
+- 负面：需要 M1.6.2—M1.6.3 两轮代码整改；PydanticAI 和旧 Agent 抽象（AgentRuntime/MockAgentRuntime）暂时保留，M1.6.3 确认无引用后删除，非永久保留
 - 代码整改范围：M1.6.2 Harness 与配置收口、M1.6.3 统一 TurnPipeline 与旧 Agent 抽象清理
 
 ### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面

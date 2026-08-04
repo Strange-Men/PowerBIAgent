@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from backend.app.application.turn_service_protocol import TurnServiceProtocol
 from backend.app.config.settings import Settings
-from backend.app.harness.models import DEFAULT_MOCK_CONFIG, HarnessConfig
+from backend.app.harness.models import HarnessConfig
 from backend.app.harness.observability.llm_observer import (
     LLMCallCollector,
     LLMUsageSummary,
@@ -102,7 +102,8 @@ class DeepSeekTurnService:
         self.powerbi = powerbi_adapter
         self.report_renderer = report_renderer
         self.settings = settings
-        self.config = config or DEFAULT_MOCK_CONFIG
+        # M1.6.2: 禁止回退 Mock 配置。若未显式传入 config，从自身 settings 构建。
+        self.config = config if config is not None else HarnessConfig.from_settings(settings)
         self.validator = ValidationService()
         self.snapshot_store = ResultSnapshotStore()
 

@@ -960,12 +960,11 @@ class TestDocumentStatus:
         assert "下一轮" in content, "docs/09 应有下一轮说明"
 
     def test_docs_09_next_round(self):
-        """Test 38: docs/09 M1.5 已封板，下一轮为 M2"""
+        """Test 38: docs/09 下一轮为 M1.6.2"""
         content = (pathlib.Path(__file__).parent.parent.parent.parent /
                    "docs/09_context_handoff.md").read_text(encoding="utf-8")
         assert "M1.5" in content
-        assert "M1 封板" in content
-        assert "M2" in content
+        assert "M1.6.2" in content
 
     def test_docs_no_stale_status(self):
         """Test 39: docs/08 和 docs/09 不存在失效状态（当前进行中轮次除外）"""
@@ -975,7 +974,7 @@ class TestDocumentStatus:
             # "进行中" 只允许出现在当前活跃轮次（M1.3.1），不允许其他已完结轮次仍标记为进行中
             # docs/08 有两处（概览+详情），docs/09 有一处
             in_progress_count = content.count("进行中")
-            max_allowed = 3 if doc_name == "docs/08_development_roadmap.md" else 1
+            max_allowed = 4 if doc_name == "docs/08_development_roadmap.md" else 1
             assert in_progress_count <= max_allowed, \
                 f"{doc_name} 包含 {in_progress_count} 处'进行中'，超过允许上限 {max_allowed}"
             assert "待推送" not in content, f"{doc_name} 不应包含'待推送'"

@@ -1,5 +1,51 @@
 # CHANGELOG
 
+## [M1.6.2] — 2026-08-04
+
+### Harness与配置收口
+
+**来源：** M1.6.2 开发轮次。
+
+**配置收口：**
+- `harness/models.py`：移除重复 Enum 定义（AppEnv/LLMMode/PowerBIMode/HarnessMode），统一从 `config/settings.py` 导入
+- `HarnessConfig.from_settings()`：Settings → HarnessConfig 完整映射入口，覆盖四种运行模式 + 8 个字段（request/powerbi timeout、max_tool_calls、max_dax_repairs、max_llm_format_retries、max_powerbi_retries、max_query_rows、max_user_input_length）
+- 移除 `DEFAULT_MOCK_CONFIG`：不再作为 DeepSeekTurnService 的默认回退
+- `DeepSeekTurnService`：移除 `DEFAULT_MOCK_CONFIG` 导入，config fallback 仅从自身 settings 构建（`HarnessConfig.from_settings(settings)`），禁止回退 Mock 配置
+- `main.py` lifespan：统一从 Settings 构建一次 `HarnessConfig`，显式传给 MockTurnService 和 DeepSeekTurnService
+
+**工具注册单一来源：**
+- 新增 `backend/app/harness/tool_registry.py`：`register_default_tools()` + `create_default_tool_gateway()` 共享入口
+- 集中注册三个白名单工具：`get_semantic_model_schema`、`execute_dax`、`render_report`
+- 工具超时和重试从 `HarnessConfig` 读取（不再写死 30s/1 等魔数）
+- `MockTurnService._build_tool_gateway()` 改用共享入口，不再自行维护三套 ToolSpec
+- `SchemaInput` 移至 `tool_registry.py` 作为共享模型
+
+**测试新增：**
+- 新增 `backend/tests/unit/test_m162_config.py`（24 个测试）
+- Settings 与 HarnessConfig Enum 类型统一验证
+- from_settings() 全部 12 个字段映射验证
+- DeepSeek 配置 llm_mode=DEEPSEEK 且 is_mock=False
+- main lifespan 配置传递验证（Mock/DeepSeek）
+- 共享工具注册三工具白名单 + 超时/重试来自配置
+
+**文档残差修正：**
+- `docs/08`：M1.6.1 → ✅已完成(0f6424f)，M1.6 章节标题修正，M1.6.2 → 进行中
+- `docs/09`：M1.6.1 Commit 回填 0f6424f，m1-deepseek-pipeline-release Tag SHA 修正为 a926b5e
+- `docs/adr/README.md`：明确 PydanticAI 和旧 Agent 抽象暂时保留，M1.6.3 确认无引用后删除，非永久保留
+- `docs/02`：同步临时保留说明，实施状态表更新
+
+**测试结果：**
+- pytest：961 passed（937 + 24 新增）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS（141 文件）
+
+**本轮不统一 TurnPipeline、不接入 ContextBuilder、不把 DeepSeek 工具调用改经 ToolGateway（M1.6.3 范围）。**
+
+**Commit SHA：** 本轮提交
+**本轮 Tag：** 无
+
+---
+
 ## [M1.6.1] — 2026-08-04
 
 ### 审计复验与架构定案

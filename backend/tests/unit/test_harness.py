@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.app.harness.models import DEFAULT_MOCK_CONFIG, HarnessConfig
+from backend.app.harness.models import HarnessConfig
 from backend.app.harness.runtime.context_builder import ContextBuilder
 from backend.app.harness.runtime.tool_gateway import ToolGateway, ToolSpec
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
@@ -83,7 +83,7 @@ class TestToolGateway:
             user=restricted_user,
         )
         # get_semantic_model_schema 不在 restricted_user.allowed_tools 中
-        from backend.app.application.mock_turn_service import SchemaInput
+        from backend.app.harness.tool_registry import SchemaInput
         with pytest.raises(ToolPolicyDeniedError, match="not allowed"):
             import asyncio
             try:
@@ -118,7 +118,7 @@ class TestToolGateway:
         )
         with pytest.raises(ToolPolicyDeniedError, match="does not support mode"):
             import asyncio
-            from backend.app.application.mock_turn_service import SchemaInput
+            from backend.app.harness.tool_registry import SchemaInput
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
@@ -146,7 +146,7 @@ class TestContextBuilder:
     """ContextBuilder 测试"""
 
     def test_build_basic_context(self):
-        builder = ContextBuilder(DEFAULT_MOCK_CONFIG)
+        builder = ContextBuilder(HarnessConfig())
         ctx = builder.build(user_message="测试问题")
         assert ctx["current_input"] == "测试问题"
         assert ctx["mock_real_flag"] == "mock"
@@ -154,13 +154,13 @@ class TestContextBuilder:
         assert "recent_messages" in ctx
 
     def test_recent_messages_limited_to_5(self):
-        builder = ContextBuilder(DEFAULT_MOCK_CONFIG)
+        builder = ContextBuilder(HarnessConfig())
         messages = [{"role": "user", "content": f"msg{i}"} for i in range(10)]
         ctx = builder.build(user_message="test", recent_messages=messages)
         assert len(ctx["recent_messages"]) <= 5
 
     def test_secret_fields_excluded(self):
-        builder = ContextBuilder(DEFAULT_MOCK_CONFIG)
+        builder = ContextBuilder(HarnessConfig())
         from backend.app.memory.models import MemoryStatus
         memory = StructuredWorkMemory(
             state_status=MemoryStatus.COMMITTED,
@@ -181,7 +181,7 @@ class TestContextBuilder:
         assert len(ctx["current_input"]) <= 10 + len("...[truncated]")
 
     def test_failed_memory_not_injected(self):
-        builder = ContextBuilder(DEFAULT_MOCK_CONFIG)
+        builder = ContextBuilder(HarnessConfig())
         # failed/pending memory 不应该出现在 committed_memory 中
         ctx = builder.build(user_message="test", committed_memory=None)
         assert ctx.get("committed_memory") is None  # None → 不注入
@@ -191,22 +191,22 @@ class TestTurnController:
     """TurnController 测试"""
 
     def test_initial_state(self):
-        ctrl = TurnController(DEFAULT_MOCK_CONFIG, request_id="req-1")
+        ctrl = TurnController(HarnessConfig(), request_id="req-1")
         assert ctrl.state == TurnState.RECEIVED
         assert not ctrl.is_terminal
 
     def test_legal_transition(self):
-        ctrl = TurnController(DEFAULT_MOCK_CONFIG)
+        ctrl = TurnController(HarnessConfig())
         ctrl.transition(TurnState.CONTEXT_READY)
         assert ctrl.state == TurnState.CONTEXT_READY
 
     def test_illegal_transition_raises(self):
-        ctrl = TurnController(DEFAULT_MOCK_CONFIG)
+        ctrl = TurnController(HarnessConfig())
         with pytest.raises(TurnStateError):
             ctrl.transition(TurnState.COMPLETED)  # RECEIVED → COMPLETED 不合法
 
     def test_terminal_states(self):
-        ctrl = TurnController(DEFAULT_MOCK_CONFIG)
+        ctrl = TurnController(HarnessConfig())
         ctrl.transition(TurnState.CONTEXT_READY)
         ctrl.transition(TurnState.UNSUPPORTED)
         assert ctrl.is_terminal
@@ -228,7 +228,7 @@ class TestTurnController:
             ctrl.check_dax_repair_limit()
 
     def test_can_commit_memory(self):
-        ctrl = TurnController(DEFAULT_MOCK_CONFIG)
+        ctrl = TurnController(HarnessConfig())
         assert not ctrl.can_commit_memory  # RECEIVED 不满足
         ctrl.transition(TurnState.CONTEXT_READY)
         ctrl.transition(TurnState.INTENT_CLASSIFIED)
@@ -240,7 +240,7 @@ class TestTurnController:
         assert ctrl.can_commit_memory
 
     def test_build_commit_evidence(self):
-        ctrl = TurnController(DEFAULT_MOCK_CONFIG)
+        ctrl = TurnController(HarnessConfig())
         ctrl.record_intent_valid()
         ctrl.record_query_plan_valid()
         ctrl.record_dax_valid()
@@ -259,13 +259,13 @@ class TestTraceRecorder:
     """TraceRecorder 测试"""
 
     def test_record_event(self):
-        tr = TraceRecorder(DEFAULT_MOCK_CONFIG)
+        tr = TraceRecorder(HarnessConfig())
         tr.record("request_received", request_id="r1")
         assert len(tr.events) == 1
         assert tr.events[0].event_type == "request_received"
 
     def test_no_secret_in_trace(self):
-        tr = TraceRecorder(DEFAULT_MOCK_CONFIG)
+        tr = TraceRecorder(HarnessConfig())
         tr.record("request_received", request_id="r1",
                   data_summary={"api_key": "sk-secret-123", "normal_field": "ok"})
         event_dict = tr.events[0].to_dict()
@@ -274,14 +274,14 @@ class TestTraceRecorder:
         assert summary.get("normal_field") == "ok"
 
     def test_multiple_events(self):
-        tr = TraceRecorder(DEFAULT_MOCK_CONFIG)
+        tr = TraceRecorder(HarnessConfig())
         tr.record("request_received", request_id="r1")
         tr.record("context_built", request_id="r1")
         tr.record("intent_classified", request_id="r1")
         assert len(tr.events) == 3
 
     def test_get_events_by_type(self):
-        tr = TraceRecorder(DEFAULT_MOCK_CONFIG)
+        tr = TraceRecorder(HarnessConfig())
         tr.record("request_received", request_id="r1")
         tr.record("request_received", request_id="r2")
         tr.record("completed", request_id="r1")
@@ -289,7 +289,7 @@ class TestTraceRecorder:
         assert len(recv) == 2
 
     def test_to_json(self):
-        tr = TraceRecorder(DEFAULT_MOCK_CONFIG)
+        tr = TraceRecorder(HarnessConfig())
         tr.record("request_received", request_id="r1")
         json_str = tr.to_json()
         assert "request_received" in json_str

@@ -92,7 +92,7 @@ M1.5 全链路验收后，动态复验证实以下问题：
 
 ### 架构决定（本轮已确认，用户明确批准）
 
-1. **废弃 PydanticAI 作为生产 Agent 框架**（ADR-001 → superseded）。PydanticAI 依赖保留但不再作为对话生命周期管理方案。
+1. **废弃 PydanticAI 作为生产 Agent 框架**（ADR-001 → superseded）。PydanticAI 和旧 Agent 抽象（AgentRuntime/MockAgentRuntime）暂时保留仅出于兼容测试需要，M1.6.3 确认无引用后删除，非永久保留。
 2. **采用确定性 TurnPipeline 控制生命周期**。管线按固定阶段顺序执行：Intent → QueryPlan → DAX → Answer → ReportSpec，LLM 不控制流程分支。
 3. **LLM 只负责受约束的结构化生成**。DeepSeek 在管线中仅作为 Intent、QueryPlan、DAX、Answer、ReportSpec 的结构化输出生成器。
 4. **ToolGateway 是唯一调用入口**。所有 Power BI 和 Renderer 调用必须经过 ToolGateway。
@@ -102,10 +102,10 @@ M1.5 全链路验收后，动态复验证实以下问题：
 
 | 决定 | 状态 |
 |------|------|
-| 架构方向定案 | ✅ 本轮已完成（文档固化） |
+| 架构方向定案 | ✅ 已完成（M1.6.1, `0f6424f`） |
 | TurnPipeline 统一实现 | ⬜ M1.6.3 |
-| Harness 与配置收口 | ⬜ M1.6.2 |
-| 旧 Agent 抽象清理 | ⬜ M1.6.3 |
+| Harness 与配置收口 | 🔄 M1.6.2 进行中 |
+| 旧 Agent 抽象清理 | ⬜ M1.6.3（确认无引用后删除，非永久保留） |
 | AI 真实性与对抗测试 | ⬜ M1.6.4 |
 | CI 与全量回归 | ⬜ M1.6.5 |
 

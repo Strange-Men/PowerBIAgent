@@ -316,7 +316,7 @@ class TestToolGatewayIntegration:
         ))
         exec_ctx = ToolExecutionContext(user=UserContext())
         from backend.app.harness.errors import ToolPolicyDeniedError
-        from backend.app.application.mock_turn_service import SchemaInput
+        from backend.app.harness.tool_registry import SchemaInput
         with pytest.raises(ToolPolicyDeniedError):
             await gw.execute("write_tool_test", exec_ctx, SchemaInput())
 
