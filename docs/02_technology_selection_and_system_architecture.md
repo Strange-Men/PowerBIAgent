@@ -1,7 +1,7 @@
 # 02 — 技术选型与系统架构
 
-> **状态：** M1.6.3 统一TurnPipeline与旧Agent抽象清理
-> **当前轮次：** M1.6.3
+> **状态：** M1.6.3.1 统一管线复验与彻底收口
+> **当前轮次：** M1.6.3.1
 > **关联 ADR：** ADR-001（已废弃）、ADR-002、ADR-003、ADR-004、ADR-005
 
 ---
@@ -12,7 +12,7 @@
 |------|------|------|------|
 | 前端框架 | React + Vite | — | 已确定，M5 开发 |
 | 后端框架 | FastAPI | — | 已确定，M0.4 最小骨架 |
-| Agent 框架 | 确定性 TurnPipeline（自研） | — | ✅ M1.6.3 统一实现，PydanticAI 已删除（ADR-001→superseded） |
+| Agent 框架 | 确定性 TurnPipeline（自研） | — | ✅ M1.6.3.1 控制面真正统一，PydanticAI 已删除（ADR-001→superseded） |
 | LLM Provider | DeepSeek + Mock | — | ✅ Mock + DeepSeek Intent/QueryPlan/DAX (M1.3) |
 | Power BI | Remote MCP Server | — | M2 真实连接，M0.3 Mock |
 | 数据校验 | Pydantic v2 | 2.13.4 | ✅ 已锁定 |
@@ -104,7 +104,7 @@ M1.5 全链路验收后，动态复验证实以下问题：
 | 架构方向定案 | ✅ 已完成（M1.6.1, `0f6424f`） |
 | Harness 与配置收口 | ✅ 已完成（M1.6.2, `208bca4`） |
 | TurnPipeline 统一实现 | ✅ 已完成（M1.6.3） |
-| 旧 Agent 抽象清理 | ✅ 已完成（M1.6.3：AgentRuntime、MockAgentRuntime 已删除，PydanticAI 依赖已移除） |
+| 旧 Agent 抽象清理 | ✅ 已完成（M1.6.3：AgentRuntime、MockAgentRuntime 已删除，PydanticAI 依赖已移除；M1.6.3.1：TurnPipeline 控制面真正统一） |
 | AI 真实性与对抗测试 | ⬜ M1.6.4 |
 | CI 与全量回归 | ⬜ M1.6.5 |
 

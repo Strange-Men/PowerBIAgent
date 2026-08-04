@@ -321,8 +321,8 @@ class TestMainLifespanConfig:
                         assert len(tools) == 3
                         assert set(tools) == set(DEFAULT_TOOL_NAMES)
 
-                        # 验证 ContextBuilder 已初始化
-                        assert service.context_builder is not None
+                        # M1.6.3.1: 验证 ContextBuilder 由 TurnPipeline 统一管理
+                        assert service.pipeline.context_builder is not None
         finally:
             del os.environ["DEEPSEEK_API_KEY"]
 

@@ -35,7 +35,7 @@
 
 ~~选择 PydanticAI 作为单 Agent 框架。结构化输出参数名为 `output_type`（非 `result_type`）。通过 AgentRuntime Adapter 隔离框架依赖。~~
 
-**M1.6.1 废弃。** 动态复验证实 PydanticAI 生产路径实际未使用，DeepSeekTurnService 绕过 AgentRuntime 直接调用 Provider。由 ADR-005 替代。
+**M1.6.1 废弃，M1.6.3 正式删除。** 动态复验证实 PydanticAI 生产路径实际未使用，DeepSeekTurnService 绕过 AgentRuntime 直接调用 Provider。AgentRuntime/MockAgentRuntime 已删除，pyproject.toml 不再声明 pydantic-ai。由 ADR-005 替代。
 
 ### ADR-002 — 记忆系统与存储方案
 
@@ -65,7 +65,7 @@ Pydantic 数据契约 + Repository 抽象接口。四层记忆设计、三态机
 
 **后果：**
 - 正面：管线行为可预测、可测试；Mock/DeepSeek 一致性有保障；Harness 约束可统一生效
-- 负面：需要 M1.6.2—M1.6.3 两轮代码整改；PydanticAI 和旧 Agent 抽象（AgentRuntime/MockAgentRuntime）暂时保留，M1.6.3 确认无引用后删除，非永久保留
+- 负面：需要 M1.6.2—M1.6.3.1 多轮代码整改；PydanticAI 和旧 Agent 抽象（AgentRuntime/MockAgentRuntime）已由 M1.6.3 正式删除；TurnPipeline 控制面在 M1.6.3.1 真正统一
 - 代码整改范围：M1.6.2 Harness 与配置收口（已完成）、M1.6.3 统一 TurnPipeline 与旧 Agent 抽象清理（已完成）
 
 ### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面

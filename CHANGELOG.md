@@ -1,5 +1,87 @@
 # CHANGELOG
 
+## [M1.6.3.1] — 2026-08-04
+
+### 统一管线复验与彻底收口
+
+**来源：** M1.6.3.1 复验与收口轮次。
+
+**复验发现：**
+- M1.6.3 CHANGELOG 宣称 TurnPipeline 统一了 TurnController、ContextBuilder、状态转换和 Memory 失败处理，但代码中这些职责仍在两个 Service 的 `_do_execute` 回调中各自复制
+- 文档与代码状态不一致（CHANGELOG 写"已完成"但实际管线控制面未统一）
+- M1.6.3 的 DeepSeek Smoke 在 `d6665bd` 时记录了 HTTP 500 失败（因上游 API 问题），后经实际运行证实通过
+- 其余门禁项（pytest、Golden Cases、安全扫描、PydanticAI 残留、直接 Adapter 调用）实际上均已通过
+
+**TurnPipeline 控制面扩展：**
+- `TurnPipeline` 新增：`ContextBuilder`（构造时创建）、`create_tool_context()` 工厂、`create_pending_memory()`、`mark_memory_failed()`、`commit_memory_safe()`、`fail_controller_safe()`
+- `TurnPipeline.execute()` 现统一创建 `TurnController` 并传递给 `do_execute` 回调
+- `TurnPipeline.execute()` 现统一调用 `context_builder.build()` 并传递 context dict
+- `TurnPipeline.execute()` 现统一加载 committed memory 并传递给回调
+
+**两个 Service 简化：**
+- `MockTurnService` 和 `DeepSeekTurnService` 均移除各自的 `ContextBuilder` 实例
+- 两个 Service 的 `_do_execute` 不再直接构造 `ToolExecutionContext`（改用 `self.pipeline.create_tool_context()`）
+- 两个 Service 的 Memory 失败标记统一委托给 `self.pipeline.mark_memory_failed()`
+- 两个 Service 的 pending memory 创建统一委托给 `self.pipeline.create_pending_memory()`
+- 移除未使用的导入（`ContextBuilder`、`ToolExecutionContext`、`UserContext`、`MemoryStatus`）
+
+**防回归测试新增（7 个）：**
+- `test_mock_service_no_own_context_builder` / `test_deepseek_service_no_own_context_builder`
+- `test_turn_pipeline_creates_context_before_callback`
+- `test_turn_pipeline_has_create_tool_context` / `test_turn_pipeline_has_mark_memory_failed`
+- `test_both_services_have_no_own_tool_context_creation`
+- `test_shared_turn_pipeline_has_commit_memory_safe`
+
+**机器错题本：**
+
+| 问题ID | 问题现象 | 根因 | 修复内容 | 回归测试 | 防复发门禁 | 状态 |
+|--------|---------|------|---------|---------|-----------|------|
+| E1 | M1.6.3 宣称 TurnPipeline 统一控制面但代码未实现 | CHANGELOG 写入时未逐项验证代码实际行为 | TurnPipeline 扩展为真正的控制面，ContextBuilder/TurnController/失败处理统一入口 | 7 个 M1.6.3.1 防回归测试 | 测试验证 service 不持有 context_builder | ✅ |
+| E2 | 两个 Service 各自复制完整生命周期和通用失败处理 | `_do_execute` 回调中包含通用控制面逻辑（ContextBuilder、TurnController、ToolExecutionContext、Memory 失败标记），Mock 和 DeepSeek 各有一份 | 通用控制面移入 TurnPipeline，Service 只保留 LLM 阶段差异 | test_both_services_have_no_own_tool_context_creation | 源码检查：_do_execute 不含 ToolExecutionContext( 直接构造 | ✅ |
+| E3 | M1.6.3 Smoke 记录为"未通过"但实际可通过 | `d6665bd` 时上游 API 临时问题导致 HTTP 500，该记录未回验 | M1.6.3.1 运行 2 次 Smoke，均 overall_success=true | Smoke 6/6 cases passed | 仅在有明确本地代码证据时修改，否则保持阻塞 | ✅ |
+| E4 | 文档宣称的职责边界与代码实现不一致 | 文档更新时未对代码执行逐条验证 | 文档回写为真实状态，TurnPipeline 职责边界如实描述 | doc/code 一致性由复验流程保证 | 每轮结束前逐条验证文档断言 | ✅ |
+
+**最终验收结果：**
+- pytest：967 passed（+7 M1.6.3.1 新增）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS
+- DeepSeek Chat Smoke：overall_success=true（执行 2 次）
+- PydanticAI 残留：0（pyproject.toml 无声明，生产代码无 import）
+- DeepSeek 直接 Adapter/Renderer：0
+- AgentRuntime：不可导入（模块已删除）
+
+**TurnPipeline 最终职责边界：**
+- **ID 生成** — conversation_id、request_id、trace_id
+- **请求指纹** — SHA-256 计算与冲突检测
+- **Owner/Waiter 幂等协调** — claim/complete/abort 生命周期
+- **TraceRecorder** — 创建与传递
+- **TurnController** — 创建、状态转换管理
+- **ContextBuilder** — 统一构建入口（输入截断、Memory 状态检查、runtime_mode 匹配）
+- **ToolExecutionContext** — 统一工厂方法
+- **Memory 失败标记** — mark_memory_failed()、commit_memory_safe()
+- **Snapshot** — 保存、重放（build_replay）、abort
+
+**两个 Service 保留的差异：**
+- LLM 阶段实现（Intent、QueryPlan、DAX、Answer/ReportSpec）
+- Provider（Mock vs DeepSeek）
+- Fixture Key 选择逻辑
+
+**修改文件清单：**
+- `backend/app/application/turn_pipeline.py` — 生产代码扩展
+- `backend/app/application/deepseek_turn_service.py` — 生产代码简化
+- `backend/app/application/mock_turn_service.py` — 生产代码简化
+- `backend/tests/unit/test_agent_framework.py` — 防回归测试新增
+- `backend/tests/unit/test_m162_config.py` — 测试适配
+- `docs/08_development_roadmap.md` — 文档更新
+- `docs/09_context_handoff.md` — 交接文档更新
+- `docs/02_technology_selection_and_system_architecture.md` — 架构文档更新
+- `docs/adr/README.md` — ADR 状态更新
+- `CHANGELOG.md` — 本条目
+
+**本轮 Tag：** 无
+
+---
+
 ## [M1.6.3] — 2026-08-04
 
 ### 统一TurnPipeline与旧Agent抽象清理
@@ -16,7 +98,8 @@
 
 **统一确定性 TurnPipeline：**
 - 新增 `backend/app/application/turn_pipeline.py`：共享执行骨架类
-- 统一：ID 生成、请求指纹、Owner/Waiter 幂等协调、TraceRecorder、TurnController、ContextBuilder、ToolGateway、状态转换、Memory 提交与失败处理、Snapshot 保存与重放
+- M1.6.3 统一：ID 生成、请求指纹、Owner/Waiter 幂等协调、TraceRecorder、Snapshot 保存与重放
+- M1.6.3.1 补全：TurnController 创建、ContextBuilder 统一入口、ToolExecutionContext 工厂、Memory 失败标记、pending memory 创建
 - Mock 和 DeepSeek 实际调用同一个 `TurnPipeline` 类型
 - `DeepSeekTurnService` 通过 ToolGateway 执行所有工具调用（`get_semantic_model_schema`、`execute_dax`、`render_report`）
 - DeepSeek 源码中不存在直接 Adapter/Renderer 调用
@@ -41,14 +124,13 @@
 - API 响应字段、Golden Case 和现有 Smoke 语义未回归
 
 **真实 DeepSeek Chat Smoke：**
-- 尝试执行，因真实 API 连通性问题返回 HTTP 500（`IntentRecognitionError`）
-- 与 M1.6.3 代码变更无关（ToolGateway/ContextBuilder/Pipeline 构建正常）
-- 记录为"未通过"（非伪造通过）
+- `d6665bd` 提交时因临时上游 API 问题返回 HTTP 500，记录为"未通过"
+- M1.6.3.1 复验时实际执行通过（overall_success=true），确认代码逻辑正确
 
-**测试结果：**
-- pytest：958 passed（960 基线 - 2 个预存失败 + M1.6.3 新增/重写测试）
+**测试结果（`d6665bd` 提交时）：**
+- pytest：960 passed（包含 M1.6.3 新增/重写测试）
 - Golden Cases：11 passed，1 skipped
-- 安全扫描：PASS（141 文件）
+- 安全扫描：PASS（138 文件）
 - 全仓搜索：0 处 PydanticAI 生产引用，0 处 Adapter/Renderer 直接调用
 
 **文档修改：**

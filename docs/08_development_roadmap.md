@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M1.6.3 已完成，M1.6.4 待开始
+> **状态：** M1.6.3.1 已完成（M1.6.3 复验与收口），M1.6.4 待开始
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -34,7 +34,8 @@ M1 真实 DeepSeek 接入
 M1.6 架构收口与加固
   M1.6.1 审计复验与架构定案           ✅ 已完成 (0f6424f)
   M1.6.2 Harness与配置收口             ✅ 已完成 (208bca4)
-  M1.6.3 统一TurnPipeline与旧Agent抽象清理 ✅ 已完成（本轮）
+  M1.6.3 统一TurnPipeline与旧Agent抽象清理 ✅ 已完成（M1.6.3.1 复验收口）
+  M1.6.3.1 统一管线复验与彻底收口         ✅ 已完成（本轮）
   M1.6.4 AI真实性、异常处理与对抗测试    ⬜
   M1.6.5 CI、全量回归与封板             ⬜
 
@@ -300,19 +301,49 @@ MVP 功能阶段 (后续)
 
 ### M1.6.3｜统一TurnPipeline与旧Agent抽象清理
 
-**状态：** ✅ 已完成 | **Commit：** 本轮提交
+**状态：** ✅ 已完成 | **Commit：** `d6665bd`
 
 **完成内容：**
 - 统一确定性TurnPipeline（共享执行骨架）— Mock/DeepSeek 使用同一 TurnPipeline 类型
-- DeepSeek 路径纳入 ToolGateway 和 ContextBuilder — 工具白名单、权限、超时、重试真实生效
-- TurnController 限制在 DeepSeek 路径真实生效
+- DeepSeek 路径纳入 ToolGateway — 工具白名单、权限、超时、重试真实生效
+- TurnPipeline 在 M1.6.3 仅统一：ID 生成、请求指纹、Owner/Waiter 幂等协调、TraceRecorder、Snapshot
 - 清理旧 Agent 抽象（AgentRuntime、MockAgentRuntime 已删除）
 - 移除 PydanticAI 依赖（pyproject.toml 不再声明）
 - 防回归测试（共享骨架、无直接调用、统一 Registry、无 PydanticAI 残留）
 
+**M1.6.3 遗留（M1.6.3.1 修复）：**
+- TurnController 创建、ContextBuilder 入口仍在两个 Service 中各自复制
+- ToolExecutionContext 直接构造仍在两个 Service 中重复
+- Memory 失败标记未统一委托
+- CHANGELOG 宣称的职责范围超过代码实际实现
+
 **本轮不开发 M2 功能。**
 
-**本轮不删除AgentRuntime或PydanticAI依赖。**
+---
+
+### M1.6.3.1｜统一管线复验与彻底收口
+
+**状态：** ✅ 已完成 | **Commit：** 本轮提交
+
+**复验发现：**
+- M1.6.3 CHANGELOG 宣称 TurnPipeline 统一了 TurnController、ContextBuilder 但实际未实现
+- 两个 Service 各自复制通用控制面（ContextBuilder、TurnController、ToolExecutionContext、Memory 失败标记）
+- 文档与实际代码状态不一致
+
+**控制面补全：**
+- TurnPipeline 扩展为真正的控制面：ContextBuilder 创建、TurnController 创建与传递、ToolExecutionContext 工厂、create_pending_memory()、mark_memory_failed()、commit_memory_safe()
+- 两个 Service 移除各自 ContextBuilder、统一委托给 TurnPipeline
+- 两个 Service 移除直接 ToolExecutionContext 构造、Memory 失败标记委托给 TurnPipeline
+- 7 个防回归测试验证控制面统一
+
+**最终验收：**
+- pytest：967 passed（960 + 7 M1.6.3.1 新增）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS
+- DeepSeek Smoke：overall_success=true（执行 2 次）
+- PydanticAI 残留：0 | AgentRuntime 残留：0 | 直接 Adapter 调用：0
+
+**本轮不开发 M2 功能。**
 
 ---
 

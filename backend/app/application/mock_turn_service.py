@@ -24,9 +24,7 @@ from backend.app.harness.errors import (
 )
 from backend.app.harness.models import HarnessConfig
 from backend.app.harness.tool_registry import SchemaInput, create_default_tool_gateway
-from backend.app.harness.runtime.context_builder import ContextBuilder
 from backend.app.harness.runtime.tool_gateway import (
-    ToolExecutionContext,
     ToolGateway,
 )
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
@@ -69,7 +67,6 @@ from backend.app.schemas.data_contracts import (
     RenderedReport,
     ReportSpec,
     SemanticModelSchema,
-    UserContext,
 )
 
 
@@ -120,11 +117,10 @@ class MockTurnService:
         # 保留 llm_runtime 引用用于向后兼容（允许 Spy 拦截）
         self._llm_runtime = llm_runtime
 
-        self.context_builder = ContextBuilder(self.config)
         self.tool_gateway = self._build_tool_gateway()
         self.validator = ValidationService()
         self.snapshot_store = ResultSnapshotStore()
-        # M1.6.3: 共享 TurnPipeline 执行骨架
+        # M1.6.3: 共享 TurnPipeline 执行骨架（含 ContextBuilder、TurnController 生命周期）
         self.pipeline = TurnPipeline(
             config=self.config,
             memory_repo=self.memory_repo,
@@ -237,13 +233,20 @@ class MockTurnService:
         fingerprint_hash: str,
         resolved_scenario: Optional[MockScenarioSelection] = None,
         effective_template_key: Optional[str] = None,
+        controller: Optional[TurnController] = None,
+        context: Optional[dict[str, Any]] = None,
+        committed: Optional[StructuredWorkMemory] = None,
     ) -> dict[str, Any]:
-        """Owner 执行完整 Mock Turn 流程（由共享 TurnPipeline 骨架调用）"""
+        """Owner 执行 Mock LLM 管线（控制面由共享 TurnPipeline 骨架提供）"""
         # 确保 resolved_scenario 有效
         if resolved_scenario is None:
             resolved_scenario = MockScenarioSelection()
         if effective_template_key is None:
             effective_template_key = report_template_key
+        if context is None:
+            context = {}
+        if controller is None:
+            controller = TurnController(self.config, request_id=effective_req_id)
 
         trace.record("request_received", trace_id=trace_id, request_id=effective_req_id,
                      conversation_id=effective_conv_id)
@@ -257,20 +260,6 @@ class MockTurnService:
                 existing, effective_req_id, "duplicate", trace_id=trace_id,
                 trace=trace, conversation_id=effective_conv_id,
             )
-
-        # 2. 加载最新 committed memory
-        committed = await self.memory_repo.get_latest_committed(
-            effective_conv_id, runtime_mode
-        )
-
-        # 3. 构建上下文
-        context = self.context_builder.build(
-            user_message=message,
-            committed_memory=committed,
-            semantic_model_key=semantic_model_key,
-            report_template_key=effective_template_key,
-        )
-        trace.record("context_built", trace_id=trace_id, request_id=effective_req_id)
 
         # 4. 意图识别 — M1.6.3: 通过适配器（兼容旧 MockAgentRuntime 接口）
         context["mock_scenario_key"] = resolved_scenario.intent_key
@@ -306,27 +295,22 @@ class MockTurnService:
                 conversation_id=effective_conv_id,
             )
 
-        # 6. 创建 pending memory
+        # 6. 创建 pending memory — M1.6.3.1: 委托给 TurnPipeline
         base_version = committed.memory_version if committed is not None else 0
-        memory = StructuredWorkMemory(
+        memory = await self.pipeline.create_pending_memory(
             conversation_id=effective_conv_id,
             request_id=effective_req_id,
             semantic_model_key=semantic_model_key,
             report_template_key=effective_template_key,
-            current_intent=intent.intent.value,
-            state_status=MemoryStatus.PENDING,
+            intent_value=intent.intent.value,
             runtime_mode=runtime_mode,
             is_mock=True,
-            llm_provider="mock",
-            powerbi_provider="mock_powerbi",
-            base_memory_version=base_version,
-            memory_version=0,
+            llm_provider_name="mock",
+            powerbi_provider_name="mock_powerbi",
+            base_version=base_version,
         )
-        await self.memory_repo.create_pending(memory, runtime_mode)
 
-        # 7. TurnController
-        controller = TurnController(self.config, request_id=effective_req_id)
-        controller.transition(TurnState.CONTEXT_READY)
+        # 7. TurnController — M1.6.3.1: 由 TurnPipeline 提供
         controller.transition(TurnState.INTENT_CLASSIFIED)
         controller.record_intent_valid()
 
@@ -339,13 +323,12 @@ class MockTurnService:
         # 9. 通过 ToolGateway 获取 Schema
         controller.transition(TurnState.PLAN_READY)
         try:
-            exec_ctx = ToolExecutionContext(
+            exec_ctx = self.pipeline.create_tool_context(
                 trace_id=trace_id,
                 request_id=effective_req_id,
                 conversation_id=effective_conv_id,
                 runtime_mode=runtime_mode,
                 intent=intent.intent,
-                user=UserContext(),
             )
             schema_input = SchemaInput(semantic_model_key=semantic_model_key)
             schema: SemanticModelSchema = await self.tool_gateway.execute(
@@ -374,7 +357,7 @@ class MockTurnService:
         if not plan_validation.is_valid:
             controller.set_failure_reason(str(plan_validation.errors))
             controller.transition(TurnState.VALIDATION_FAILED)
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode,
                 reason=str(plan_validation.errors), stage="query_plan_validation"
             )
@@ -404,7 +387,7 @@ class MockTurnService:
         if not dax_validation.is_valid:
             controller.set_failure_reason(str(dax_validation.errors))
             controller.transition(TurnState.VALIDATION_FAILED)
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode,
                 reason=str(dax_validation.errors), stage="dax_validation"
             )
@@ -420,13 +403,12 @@ class MockTurnService:
 
         # 12. 通过 ToolGateway 执行 DAX
         try:
-            exec_ctx = ToolExecutionContext(
+            exec_ctx = self.pipeline.create_tool_context(
                 trace_id=trace_id,
                 request_id=effective_req_id,
                 conversation_id=effective_conv_id,
                 runtime_mode=runtime_mode,
                 intent=intent.intent,
-                user=UserContext(),
             )
             query_result: QueryResult = await self.tool_gateway.execute(
                 "execute_dax",
@@ -464,7 +446,7 @@ class MockTurnService:
         if query_result.error is not None:
             controller.set_failure_reason(query_result.error.message)
             controller.transition(TurnState.TOOL_FAILED)
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode,
                 reason=query_result.error.message,
                 stage="query_result_error"
@@ -483,7 +465,7 @@ class MockTurnService:
         if not result_validation.is_valid:
             controller.set_failure_reason(str(result_validation.errors))
             controller.transition(TurnState.VALIDATION_FAILED)
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode,
                 reason=str(result_validation.errors), stage="result_validation"
             )
@@ -551,13 +533,12 @@ class MockTurnService:
 
             # 通过 ToolGateway 渲染报表
             try:
-                exec_ctx = ToolExecutionContext(
+                exec_ctx = self.pipeline.create_tool_context(
                     trace_id=trace_id,
                     request_id=effective_req_id,
                     conversation_id=effective_conv_id,
                     runtime_mode=runtime_mode,
                     intent=intent.intent,
-                    user=UserContext(),
                 )
                 rendered: RenderedReport = await self.tool_gateway.execute(
                     "render_report",
@@ -621,7 +602,7 @@ class MockTurnService:
         except MemoryVersionConflictError as e:
             controller.set_failure_reason(str(e))
             controller.transition(TurnState.MEMORY_CONFLICT)
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode, reason=str(e), stage="memory_commit"
             )
             trace.record("memory_commit_rejected", trace_id=trace_id, request_id=effective_req_id,
@@ -635,7 +616,7 @@ class MockTurnService:
         except MemoryCommitDeniedError as e:
             controller.set_failure_reason(str(e))
             controller.transition(TurnState.RESPONSE_FAILED)
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode, reason=str(e), stage="memory_commit"
             )
             return self._build_result(
@@ -673,8 +654,9 @@ class MockTurnService:
         trace_id: str = "",
         conversation_id: str = "",
     ) -> dict[str, Any]:
-        """统一失败处理"""
+        """统一失败处理 — M1.6.3.1: 委托控制面给 TurnPipeline"""
 
+        # Transition controller
         controller.set_failure_reason(reason)
         if controller.is_terminal:
             pass
@@ -695,9 +677,9 @@ class MockTurnService:
                             data_summary={"reason": f"Illegal transition {controller.state.value} → {terminal_state.value}"})
                 raise
 
-        runtime_mode = memory.runtime_mode
-        await self.memory_repo.mark_failed(
-            request_id, runtime_mode, reason=reason, stage=stage
+        # M1.6.3.1: Memory 失败标记委托给 TurnPipeline
+        await self.pipeline.mark_memory_failed(
+            request_id, memory.runtime_mode, reason=reason, stage=stage
         )
 
         trace.record("request_failed", trace_id=trace_id, request_id=request_id,

@@ -33,9 +33,7 @@ from backend.app.harness.observability.llm_observer import (
     ObservedLLMProvider,
 )
 from backend.app.harness.observability.trace_recorder import TraceRecorder
-from backend.app.harness.runtime.context_builder import ContextBuilder
 from backend.app.harness.runtime.tool_gateway import (
-    ToolExecutionContext,
     ToolGateway,
 )
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
@@ -52,7 +50,6 @@ from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.llm.base import LLMProvider, LLMTask
 from backend.app.memory.models import (
     MemoryCommitEvidence,
-    MemoryStatus,
     RuntimeDataMode,
     StructuredWorkMemory,
 )
@@ -88,7 +85,6 @@ from backend.app.schemas.data_contracts import (
     RenderedReport,
     ReportSpec,
     SemanticModelSchema,
-    UserContext,
 )
 
 
@@ -127,10 +123,9 @@ class DeepSeekTurnService:
         self.config = config if config is not None else HarnessConfig.from_settings(settings)
         self.validator = ValidationService()
         self.snapshot_store = ResultSnapshotStore()
-        # M1.6.3: ContextBuilder 和 ToolGateway 统一进入 DeepSeek 管线
-        self.context_builder = ContextBuilder(self.config)
+        # M1.6.3: ToolGateway 统一进入 DeepSeek 管线
         self.tool_gateway = self._build_tool_gateway()
-        # M1.6.3: 共享 TurnPipeline 执行骨架
+        # M1.6.3: 共享 TurnPipeline 执行骨架（含 ContextBuilder、TurnController 生命周期）
         self.pipeline = TurnPipeline(
             config=self.config,
             memory_repo=self.memory_repo,
@@ -187,11 +182,20 @@ class DeepSeekTurnService:
         trace: TraceRecorder,
         trace_id: str,
         fingerprint_hash: str,
+        controller: Optional[TurnController] = None,
+        context: Optional[dict[str, Any]] = None,
+        committed: Optional[StructuredWorkMemory] = None,
     ) -> dict[str, Any]:
-        """Owner 执行完整 DeepSeek 管线（由共享 TurnPipeline 骨架调用）"""
+        """Owner 执行 DeepSeek LLM 管线（控制面由共享 TurnPipeline 骨架提供）"""
 
         trace.record("request_received", trace_id=trace_id, request_id=effective_req_id,
                      conversation_id=effective_conv_id)
+
+        # ── 默认值保护 ──
+        if context is None:
+            context = {}
+        if controller is None:
+            controller = TurnController(self.config, request_id=effective_req_id)
 
         # ── 1. 每请求独立的 Collector + ObservedProvider ──
         collector = LLMCallCollector(
@@ -199,20 +203,6 @@ class DeepSeekTurnService:
             output_cost_per_million=self.settings.deepseek_output_cost_per_million_tokens,
         )
         observed = ObservedLLMProvider(self.llm_provider, collector)
-
-        # ── 2. 加载 committed memory（REAL 空间） ──
-        committed = await self.memory_repo.get_latest_committed(
-            effective_conv_id, runtime_mode
-        )
-
-        # ── 2a. 构建上下文（ContextBuilder 统一进入 DeepSeek 管线）──
-        context = self.context_builder.build(
-            user_message=message,
-            committed_memory=committed,
-            semantic_model_key=semantic_model_key,
-            report_template_key=report_template_key,
-        )
-        trace.record("context_built", trace_id=trace_id, request_id=effective_req_id)
 
         # ── 3. 意图识别 ──
         intent_service = DeepSeekIntentService(provider=observed, max_format_repairs=1)
@@ -250,40 +240,34 @@ class DeepSeekTurnService:
                 collector=collector,
             )
 
-        # ── 5. 创建 pending memory ──
+        # ── 5. 创建 pending memory — M1.6.3.1: 委托给 TurnPipeline ──
         base_version = committed.memory_version if committed is not None else 0
-        memory = StructuredWorkMemory(
+        memory = await self.pipeline.create_pending_memory(
             conversation_id=effective_conv_id,
             request_id=effective_req_id,
             semantic_model_key=semantic_model_key,
             report_template_key=report_template_key,
-            current_intent=intent.intent.value,
-            state_status=MemoryStatus.PENDING,
+            intent_value=intent.intent.value,
             runtime_mode=runtime_mode,
             is_mock=False,
-            llm_provider="deepseek",
-            powerbi_provider="mock_powerbi",
-            base_memory_version=base_version,
-            memory_version=0,
+            llm_provider_name="deepseek",
+            powerbi_provider_name="mock_powerbi",
+            base_version=base_version,
         )
-        await self.memory_repo.create_pending(memory, runtime_mode)
 
-        # ── 6. TurnController ──
-        controller = TurnController(self.config, request_id=effective_req_id)
-        controller.transition(TurnState.CONTEXT_READY)
+        # ── 6. TurnController — M1.6.3.1: 由 TurnPipeline 提供 ──
         controller.transition(TurnState.INTENT_CLASSIFIED)
         controller.record_intent_valid()
 
         # ── 7. 通过 ToolGateway 获取 Schema ──
         controller.transition(TurnState.PLAN_READY)
         try:
-            exec_ctx = ToolExecutionContext(
+            exec_ctx = self.pipeline.create_tool_context(
                 trace_id=trace_id,
                 request_id=effective_req_id,
                 conversation_id=effective_conv_id,
                 runtime_mode=runtime_mode,
                 intent=intent.intent,
-                user=UserContext(),
             )
             schema_input = SchemaInput(semantic_model_key=semantic_model_key)
             schema: SemanticModelSchema = await self.tool_gateway.execute(
@@ -324,7 +308,7 @@ class DeepSeekTurnService:
         # QueryPlan 验证
         plan_validation = self.validator.validate_query_plan(query_plan, schema)
         if not plan_validation.is_valid:
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode,
                 reason=str(plan_validation.errors), stage="query_plan_validation"
             )
@@ -361,7 +345,7 @@ class DeepSeekTurnService:
         safety = DAXSafetyValidator()
         safety_result = safety.validate(dax_request.dax, schema)
         if not safety_result.is_valid:
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode,
                 reason=str(safety_result.errors), stage="dax_safety"
             )
@@ -383,13 +367,12 @@ class DeepSeekTurnService:
         # M1.6.3: fixture_key 通过私有属性传给 MockPowerBIAdapter.execute_dax
         dax_request._fixture_key = fixture_key  # type: ignore[attr-defined]
         try:
-            exec_ctx = ToolExecutionContext(
+            exec_ctx = self.pipeline.create_tool_context(
                 trace_id=trace_id,
                 request_id=effective_req_id,
                 conversation_id=effective_conv_id,
                 runtime_mode=runtime_mode,
                 intent=intent.intent,
-                user=UserContext(),
             )
             query_result: QueryResult = await self.tool_gateway.execute(
                 TOOL_NAME_DAX,
@@ -416,7 +399,7 @@ class DeepSeekTurnService:
 
         # QueryResult 验证
         if query_result.error is not None:
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode,
                 reason=query_result.error.message, stage="query_result_error"
             )
@@ -434,7 +417,7 @@ class DeepSeekTurnService:
 
         result_validation = self.validator.validate_query_result(query_result)
         if not result_validation.is_valid:
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode,
                 reason=str(result_validation.errors), stage="result_validation"
             )
@@ -511,13 +494,12 @@ class DeepSeekTurnService:
 
             # M1.6.3: 通过 ToolGateway 渲染报表
             try:
-                exec_ctx = ToolExecutionContext(
+                exec_ctx = self.pipeline.create_tool_context(
                     trace_id=trace_id,
                     request_id=effective_req_id,
                     conversation_id=effective_conv_id,
                     runtime_mode=runtime_mode,
                     intent=intent.intent,
-                    user=UserContext(),
                 )
                 rendered: RenderedReport = await self.tool_gateway.execute(
                     TOOL_NAME_RENDER,
@@ -593,7 +575,7 @@ class DeepSeekTurnService:
         except MemoryVersionConflictError as e:
             controller.set_failure_reason(str(e))
             controller.transition(TurnState.MEMORY_CONFLICT)
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode, reason=str(e), stage="memory_commit"
             )
             return self._build_result(
@@ -605,7 +587,7 @@ class DeepSeekTurnService:
         except MemoryCommitDeniedError as e:
             controller.set_failure_reason(str(e))
             controller.transition(TurnState.RESPONSE_FAILED)
-            await self.memory_repo.mark_failed(
+            await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode, reason=str(e), stage="memory_commit"
             )
             return self._build_result(

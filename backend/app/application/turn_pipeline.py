@@ -9,25 +9,37 @@ Mock 和 DeepSeek 路径共享同一执行骨架，两者只在以下部分不�
 - ID 生成（request_id、conversation_id、trace_id）
 - 请求指纹
 - Owner/Waiter 幂等协调
-- TraceRecorder
-- TurnController
-- ContextBuilder
-- ToolGateway
-- 状态转换
-- Memory 提交与失败处理
-- Snapshot 保存与重放
+- TraceRecorder 创建
+- TurnController 创建与生命周期管理
+- ContextBuilder 统一入口
+- ToolExecutionContext 工厂
+- 通用 Memory 失败标记
+- Snapshot 保存、重放与 abort
+
+每个 do_execute 回调只管 LLM 结构化阶段，不复制通用控制面。
 """
 
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any, Callable, Optional
 
 from backend.app.harness.models import HarnessConfig
 from backend.app.harness.observability.trace_recorder import TraceRecorder
+from backend.app.harness.runtime.context_builder import ContextBuilder
+from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
-from backend.app.memory.models import RuntimeDataMode
-from backend.app.memory.repository import InMemoryMemoryRepository
+from backend.app.memory.models import (
+    MemoryStatus,
+    RuntimeDataMode,
+    StructuredWorkMemory,
+)
+from backend.app.memory.repository import (
+    InMemoryMemoryRepository,
+    MemoryCommitDeniedError,
+    MemoryVersionConflictError,
+)
 from backend.app.memory.request_fingerprint import (
     IdempotencyConflictError,
     IdempotencyCoordinationError,
@@ -39,6 +51,7 @@ from backend.app.memory.result_snapshot import (
     ResultSnapshotStore,
     TurnResultSnapshot,
 )
+from backend.app.schemas.data_contracts import UserContext
 
 
 # _do_execute 回调签名
@@ -50,8 +63,8 @@ class TurnPipeline:
     """共享确定性 TurnPipeline 执行骨架
 
     MockTurnService 和 DeepSeekTurnService 各持有一个 TurnPipeline 实例。
-    TurnPipeline 负责执行骨架（ID、指纹、幂等、Snapshot），
-    具体 LLM 管线通过 _do_execute 回调注入。
+    TurnPipeline 负责执行骨架（ID、指纹、幂等、Snapshot、TurnController、
+    ContextBuilder、通用失败处理），具体 LLM 管线通过 _do_execute 回调注入。
     """
 
     def __init__(
@@ -63,6 +76,7 @@ class TurnPipeline:
         self.config = config
         self.memory_repo = memory_repo
         self.snapshot_store = snapshot_store or ResultSnapshotStore()
+        self.context_builder = ContextBuilder(config)
 
     async def execute(
         self,
@@ -149,7 +163,26 @@ class TurnPipeline:
                 detail="Unable to acquire execution right after retries",
             )
 
-        # ── OWNER: 执行 ──
+        # ── OWNER: 执行前准备（统一控制面） ──
+        # 加载 committed memory
+        committed = await self.memory_repo.get_latest_committed(
+            effective_conv_id, runtime_mode
+        )
+
+        # 构建上下文
+        context = self.context_builder.build(
+            user_message=message,
+            committed_memory=committed,
+            semantic_model_key=semantic_model_key,
+            report_template_key=report_template_key,
+        )
+        trace.record("context_built", trace_id=trace_id, request_id=effective_req_id)
+
+        # 创建 TurnController
+        controller = TurnController(self.config, request_id=effective_req_id)
+        controller.transition(TurnState.CONTEXT_READY)
+
+        # ── OWNER: 执行 LLM 管线 ──
         try:
             result = await do_execute(
                 message=message,
@@ -164,6 +197,9 @@ class TurnPipeline:
                 trace=trace,
                 trace_id=trace_id,
                 fingerprint_hash=fingerprint_hash,
+                controller=controller,
+                context=context,
+                committed=committed,
                 **execute_kwargs,
             )
             await self._save_snapshot(result, runtime_mode, fingerprint_hash)
@@ -301,6 +337,133 @@ class TurnPipeline:
             request_fingerprint_hash=fingerprint_hash,
         )
         await self.snapshot_store.save(snapshot, runtime_mode)
+
+    # ── 共享控制面方法 ──
+
+    def create_tool_context(
+        self,
+        trace_id: str,
+        request_id: str,
+        conversation_id: str,
+        runtime_mode: RuntimeDataMode,
+        intent: Any,
+        user: Optional[UserContext] = None,
+    ) -> ToolExecutionContext:
+        """统一 ToolExecutionContext 工厂"""
+        return ToolExecutionContext(
+            trace_id=trace_id,
+            request_id=request_id,
+            conversation_id=conversation_id,
+            runtime_mode=runtime_mode,
+            intent=intent,
+            user=user or UserContext(),
+        )
+
+    async def create_pending_memory(
+        self,
+        conversation_id: str,
+        request_id: str,
+        semantic_model_key: str,
+        report_template_key: Optional[str],
+        intent_value: str,
+        runtime_mode: RuntimeDataMode,
+        is_mock: bool,
+        llm_provider_name: str,
+        powerbi_provider_name: str,
+        base_version: int,
+    ) -> StructuredWorkMemory:
+        """统一创建 pending memory"""
+        memory = StructuredWorkMemory(
+            conversation_id=conversation_id,
+            request_id=request_id,
+            semantic_model_key=semantic_model_key,
+            report_template_key=report_template_key,
+            current_intent=intent_value,
+            state_status=MemoryStatus.PENDING,
+            runtime_mode=runtime_mode,
+            is_mock=is_mock,
+            llm_provider=llm_provider_name,
+            powerbi_provider=powerbi_provider_name,
+            base_memory_version=base_version,
+            memory_version=0,
+        )
+        await self.memory_repo.create_pending(memory, runtime_mode)
+        return memory
+
+    async def mark_memory_failed(
+        self,
+        request_id: str,
+        runtime_mode: RuntimeDataMode,
+        reason: str,
+        stage: str,
+    ) -> None:
+        """统一 Memory 失败标记（静默吞掉异常，因为已经处于失败路径）"""
+        try:
+            await self.memory_repo.mark_failed(
+                request_id, runtime_mode, reason=reason, stage=stage
+            )
+        except Exception:
+            pass
+
+    async def commit_memory(
+        self,
+        memory: StructuredWorkMemory,
+        evidence: Any,
+    ) -> StructuredWorkMemory:
+        """统一 Memory 原子提交"""
+        return await self.memory_repo.commit(memory, evidence)
+
+    async def commit_memory_safe(
+        self,
+        memory: StructuredWorkMemory,
+        evidence: Any,
+        controller: TurnController,
+        trace: TraceRecorder,
+        trace_id: str,
+        request_id: str,
+        runtime_mode: RuntimeDataMode,
+    ) -> tuple[Optional[StructuredWorkMemory], Optional[str]]:
+        """安全 Memory 提交 — 返回 (committed_memory, error_type_or_None)"""
+        try:
+            committed_memory = await self.memory_repo.commit(memory, evidence)
+            controller.record_version_matches()
+            controller.transition(TurnState.MEMORY_COMMITTED)
+            trace.record("memory_committed", trace_id=trace_id, request_id=request_id,
+                        data_summary={"version": committed_memory.memory_version})
+            return committed_memory, None
+        except MemoryVersionConflictError as e:
+            controller.set_failure_reason(str(e))
+            controller.transition(TurnState.MEMORY_CONFLICT)
+            await self.mark_memory_failed(
+                request_id, runtime_mode, reason=str(e), stage="memory_commit"
+            )
+            return None, "version_conflict"
+        except MemoryCommitDeniedError as e:
+            controller.set_failure_reason(str(e))
+            controller.transition(TurnState.RESPONSE_FAILED)
+            await self.mark_memory_failed(
+                request_id, runtime_mode, reason=str(e), stage="memory_commit"
+            )
+            return None, "memory_commit_denied"
+
+    def fail_controller_safe(
+        self,
+        controller: TurnController,
+        terminal_state: TurnState,
+        reason: str,
+        trace: TraceRecorder,
+        trace_id: str,
+        request_id: str,
+    ) -> None:
+        """安全设置 controller 失败状态"""
+        controller.set_failure_reason(reason)
+        try:
+            controller.transition(terminal_state)
+        except Exception:
+            pass
+        trace.record("request_failed", trace_id=trace_id, request_id=request_id,
+                    error_type="turn_failed",
+                    data_summary={"reason": reason})
 
     # Backward-compatible aliases (used by existing services during migration)
     _build_result = build_result

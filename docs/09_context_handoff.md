@@ -2,7 +2,7 @@
 
 > **所有新 Claude 恢复上下文的唯一最新交接入口。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-04 | M1.6.3 统一TurnPipeline与旧Agent抽象清理**
+> **最后更新：2026-08-04 | M1.6.3.1 统一管线复验与彻底收口**
 
 ---
 
@@ -14,17 +14,17 @@
 
 ## 当前阶段
 
-**M1.6.3 统一TurnPipeline与旧Agent抽象清理** — ✅ 已完成。
+**M1.6.3.1 统一管线复验与彻底收口** — ✅ 已完成。
 
-> **说明：** TurnPipeline 共享骨架已实现，DeepSeek 纳入 ToolGateway + ContextBuilder，AgentRuntime/MockAgentRuntime 已删除，PydanticAI 依赖已移除。M2 仍未开始。
+> **说明：** TurnPipeline 控制面已真正统一（ContextBuilder、TurnController、ToolExecutionContext 工厂、Memory 失败标记均由 TurnPipeline 管理）。两个 Service 仅保留 LLM 结构化阶段差异。AgentRuntime/MockAgentRuntime 已删除，PydanticAI 依赖已移除。M2 仍未开始。
 
 ## 上一轮
 
-**M1.5** — 全链路验收与M1封板（Commit `a926b5e`，Tag `m1-deepseek-pipeline-release`）
+**M1.6.3** — 统一TurnPipeline与旧Agent抽象清理（Commit `d6665bd`）
 
 ## 下一轮
 
-**M1.6.4 AI真实性、异常处理与对抗测试** — ⬜ 待开始。M1.6.3 已完成。
+**M1.6.4 AI真实性、异常处理与对抗测试** — ⬜ 待开始。M1.6.3.1 已完成。
 
 ## 已完成版本
 
@@ -51,6 +51,7 @@
 | M1.5 | 全链路验收与M1封板 | `a926b5e` | 2026-08-03 |
 | M1.6.1 | 审计复验与架构定案 | `0f6424f` | 2026-08-04 |
 | M1.6.2 | Harness与配置收口 | `208bca4` | 2026-08-04 |
+| M1.6.3 | 统一TurnPipeline与旧Agent抽象清理 | `d6665bd` | 2026-08-04 |
 
 ## 最近封板 Tag
 
@@ -135,4 +136,4 @@
 
 ---
 
-*最后更新：2026-08-04 | M1.6.3 统一TurnPipeline与旧Agent抽象清理*
+*最后更新：2026-08-04 | M1.6.3.1 统一管线复验与彻底收口*
