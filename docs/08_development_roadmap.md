@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M1.5 已完成，M1 已封板
+> **状态：** M1.5 已完成，M1 已封板，M1.6.1 已完成，M1.6.1 进行中
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -29,7 +29,14 @@ M1 真实 DeepSeek 接入
   M1.3.2 前端视觉与结构化回答契约固化  ✅ 已完成 (db0a7e8)
   M1.4 真实Answer与ReportSpec生成   ✅ 已完成
   M1.4.1 真实性验证与Smoke验收修复    ✅ 已完成
-  M1.5 全链路验收与封板              ⬜
+  M1.5 全链路验收与封板              ✅ 已完成 (a926b5e)
+
+M1.6 架构收口与加固
+  M1.6.1 审计复验与架构定案           ⬜
+  M1.6.2 Harness与配置收口             ⬜
+  M1.6.3 统一TurnPipeline与旧Agent抽象清理 ⬜
+  M1.6.4 AI真实性、异常处理与对抗测试    ⬜
+  M1.6.5 CI、全量回归与封板             ⬜
 
 MVP 功能阶段 (后续)
   M2 真实 Power BI MCP 与数据问答    ⬜
@@ -259,6 +266,77 @@ MVP 功能阶段 (后续)
 
 ---
 
+### M1.6．M0遗留收口与架构收口加固
+
+**状态：** ⬜ 待开始
+
+> ⭐ 本轮为文档轮，仅修改白名单文档，不修改业务代码。
+
+**完成内容：**
+- 动态复验确认：PydanticAI生产路径未使用、DeepSeek绕过ToolGateway和ContextBuilder、TurnController限制未生效、DeepSeek误用DEFAULT_MOCK_CONFIG、Mock与DeepSeek存在双管线
+- 架构决定固化：废弃PydanticAI作为生产Agent框架、确定性TurnPipeline、LLM只负责受约束结构化生成、ToolGateway为唯一入口、Mock与DeepSeek共享执行骨架
+- ADR-001→superseded，ADR-005新增：确定性TurnPipeline与受控LLM调用架构
+- M1.6五轮路线固化
+- PROJECT_CHARTER、docs/02、docs/08、docs/09、CHANGELOG同步更新
+
+**本轮不修改业务代码、不删除PydanticAI依赖、不发布Tag。**
+
+---
+
+### M1.6.2｜Harness与配置收口
+
+**状态：** ⬜ 待开始
+
+**计划内容：**
+- ETCLOVG Harness统一配置收口
+- DEFAULT_MOCK_CONFIG误用修复
+- Mock/DeepSeek共享配置入口
+- 工具白名单统一管理
+- 配置文件与环境变量规范
+
+**本轮不开发M2功能。**
+
+---
+
+### M1.6.3｜统一TurnPipeline与旧Agent抽象清理
+
+**状态：** ⬜ 待开始
+
+**计划内容：**
+- 实现统一确定性TurnPipeline
+- DeepSeek路径纳入ToolGateway和ContextBuilder
+- TurnController限制生效
+- 清理旧Agent抽象（保留PydanticAI依赖但不使用）
+- Mock/DeepSeek共享同一执行骨架
+
+**本轮不删除AgentRuntime或PydanticAI依赖。**
+
+---
+
+### M1.6.4｜AI真实性、异常处理与对抗测试
+
+**状态：** ⬜ 待开始
+
+**计划内容：**
+- 强化真实性验证（数据源头、数值一致性、LLM不虚构）
+- 异常处理全链路覆盖（网络、超时、鉴权、限流、模型错误、验证失败）
+- 对抗测试（恶意输入、边界值、超长输入、SQL注入尝试）
+- 安全扫描补强
+
+---
+
+### M1.6.5｜CI、全量回归与封板
+
+**状态：** ⬜ 待开始
+
+**计划内容：**
+- CI管线配置（安全扫描 + pytest + Golden Cases）
+- 全量回归与漏洞检查
+- M1.6封板Commit和Tag
+- 确保所有测试通过、Golden Cases全部通过
+
+---
+
 ## M0 历史轮次
 
 ### M0.4.1 — API骨架真实性修复
@@ -322,4 +400,4 @@ MVP 功能阶段 (后续)
 
 ---
 
-*最后更新：2026-08-03 | M1.4 真实Answer与ReportSpec生成*
+*最后更新：2026-08-04 | M1.6.1 审计复验与架构定案*

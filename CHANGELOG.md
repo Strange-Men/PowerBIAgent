@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## [M1.6.1] — 2026-08-04
+
+### 审计复验与架构定案
+
+**来源：** M1.6.1 文档轮次。
+
+**动态复验结论：**
+- PydanticAI 生产路径实际未使用（DeepSeekTurnService 绕过 AgentRuntime）
+- DeepSeek 绕过 ToolGateway 和 ContextBuilder
+- TurnController 限制未生效
+- DeepSeek 误用 DEFAULT_MOCK_CONFIG
+- Mock 与 DeepSeek 存在事实上的双管线
+
+**架构决定（用户明确批准）：**
+1. 废弃 PydanticAI 作为生产 Agent 框架（ADR-001 → superseded）
+2. 采用确定性 TurnPipeline 控制对话生命周期
+3. LLM 只负责受约束的结构化生成（Intent、QueryPlan、DAX、Answer、ReportSpec）
+4. ToolGateway 是 Power BI 和 Renderer 的唯一调用入口
+5. Mock 与 DeepSeek 共享同一执行骨架，只替换 Provider、Adapter 或 Fixture
+
+**文档修改：**
+- PROJECT_CHARTER.md：移除 PydanticAI 约束，改为确定性管线和 Provider 抽象
+- docs/02：ADR 表更新（ADR-001→superseded，ADR-005 新增），架构定案章节
+- docs/adr/README.md：ADR-001→superseded，ADR-005 摘要
+- docs/08：M1.6 五轮路线固化
+- docs/09：更新当前阶段为 M1.6.1 完成，下一轮 M1.6.2
+- CHANGELOG.md：本条目
+
+**M1.6 五轮路线：**
+- M1.6.1 审计复验与架构定案（本轮）
+- M1.6.2 Harness与配置收口
+- M1.6.3 统一TurnPipeline与旧Agent抽象清理
+- M1.6.4 AI真实性、异常处理与对抗测试
+- M1.6.5 CI、全量回归与封板
+
+**本轮未修改业务代码、未删除 PydanticAI 依赖、未创建 Tag。**
+
+---
+
 ## [M1.5] — 2026-08-03
 
 ### 全链路验收与M1封板

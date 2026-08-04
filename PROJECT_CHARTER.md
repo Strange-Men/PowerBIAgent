@@ -21,8 +21,8 @@
 用户自然语言提问
 → React 极简对话页面
 → FastAPI 后端
-→ 单 Agent 意图识别
-→ DeepSeek
+→ 确定性 TurnPipeline（意图识别 → QueryPlan → DAX → Answer → ReportSpec）
+→ DeepSeek（受控结构化 LLM 调用）
 → Power BI MCP
 → Power BI 语义模型
 → 数据问答或固定模板静态 HTML 报表
@@ -31,7 +31,8 @@
 ## 四、核心卖点
 
 - 自然语言对话式数据查询
-- 意图识别驱动的单 Agent 编排
+- 确定性 TurnPipeline 生命周期控制（非自主 Agent 循环）
+- 受控 LLM 结构化调用（Intent → QueryPlan → DAX → Answer → ReportSpec）
 - 结构化工作记忆与可靠提交机制
 - 固定模板安全报表生成
 - Power BI MCP 后端统一接入
@@ -45,17 +46,22 @@
 ## 六、后端固定方向
 
 - 使用 FastAPI
-- 使用成熟框架支持的单 Agent
+- 采用确定性 TurnPipeline 控制对话生命周期（非自主 Agent 循环）
+- LLM 仅负责受约束的结构化生成（Intent、QueryPlan、DAX、Answer、ReportSpec）
+- 通过统一 Provider 接口封装 LLM 调用，Mock 与 DeepSeek 共享同一执行骨架
+- ToolGateway 是 Power BI 和 Renderer 的唯一调用入口
 - **不使用 LangGraph**
 - **不使用多 Agent**
 - **不从零手写复杂 Agent Runtime**
-- Agent 必须包含明确、独立、可测试的意图识别
+- 意图识别必须明确、独立、可测试
 
-## 七、单 Agent 原则
+## 七、确定性管线原则
 
-- 整个对话生命周期由单个 Agent 管理
-- Agent 拥有明确工具白名单
-- Agent 不执行任意 Python、Shell、PowerShell、SQL、JavaScript 或自由 HTML
+- 整个对话生命周期由确定性 TurnPipeline 控制（非 LLM 自主决策）
+- TurnPipeline 按固定阶段顺序执行：Intent → QueryPlan → DAX → Answer → ReportSpec
+- 管线拥有明确工具白名单
+- 管线不执行任意 Python、Shell、PowerShell、SQL、JavaScript 或自由 HTML
+- LLM 在管线中仅作为结构化生成器，不控制流程分支或工具调用
 
 ## 八、意图识别要求
 
@@ -142,4 +148,4 @@
 
 ---
 
-*最后更新：2026-07-31 | M0.1 仓库初始化与文档基线*
+*最后更新：2026-08-04 | M1.6.1 审计复验与架构定案*
