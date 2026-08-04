@@ -26,7 +26,7 @@ from backend.app.memory.result_snapshot import (
     ResultSnapshotStore,
     TurnResultSnapshot,
 )
-from backend.app.agent.mock_runtime import MockAgentRuntime
+from backend.app.llm.mock import MockLLMProvider
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.mock import MockReportRenderer
 
@@ -36,15 +36,45 @@ from backend.app.report.mock import MockReportRenderer
 # ══════════════════════════════════════════════════════════════════════
 
 class SpyLLMRuntime:
-    """包装 MockAgentRuntime，统计 run() 调用次数"""
+    """包装 MockLLMProvider，统计 run() 调用次数（M1.6.3: 替代旧 MockAgentRuntime spy）"""
 
-    def __init__(self, inner: MockAgentRuntime):
+    def __init__(self, inner: MockLLMProvider):
         self._inner = inner
         self.call_count = 0
 
     async def run(self, message, context, output_type):
         self.call_count += 1
-        return await self._inner.run(message, context, output_type)
+        from backend.app.llm.base import LLMRequest, LLMTask
+        task = LLMTask.INTENT_RECOGNITION
+        type_name = output_type.__name__.lower()
+        if "queryplan" in type_name:
+            task = LLMTask.QUERY_PLAN
+        elif "dax" in type_name.lower():
+            task = LLMTask.DAX
+        elif "answer" in type_name:
+            task = LLMTask.ANSWER
+        elif "report" in type_name:
+            task = LLMTask.REPORT
+        scenario_key = context.get("mock_scenario_key", "data_question")
+        request = LLMRequest(
+            messages=[{"role": "user", "content": message}],
+            task=task,
+            scenario_key=scenario_key,
+        )
+        response = await self._inner.generate(request, output_type)
+        # 返回兼容旧 AgentRunResult 的对象
+        class _CompatResult:
+            def __init__(self, content, structured, finish_reason, usage):
+                self.content = content
+                self.structured = structured
+                self.finish_reason = finish_reason
+                self.usage = usage
+        return _CompatResult(
+            content=response.content,
+            structured=response.structured,
+            finish_reason=response.finish_reason,
+            usage=response.usage,
+        )
 
 
 class SpyPowerBIAdapter:
@@ -109,7 +139,7 @@ class SpyMemoryRepo:
 
 def spy_service_factory():
     """创建带 Spy 组件的 MockTurnService"""
-    llm_spy = SpyLLMRuntime(MockAgentRuntime())
+    llm_spy = SpyLLMRuntime(MockLLMProvider())
     powerbi_spy = SpyPowerBIAdapter(MockPowerBIAdapter())
     report_spy = SpyReportRenderer(MockReportRenderer())
     memory_spy = SpyMemoryRepo(InMemoryMemoryRepository())
@@ -134,7 +164,7 @@ def service_factory():
     def _make():
         return MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=MockAgentRuntime(),
+            # M1.6.3: llm_runtime 已移除，llm_provider 由默认创建
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )

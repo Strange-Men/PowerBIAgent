@@ -1,105 +1,159 @@
-"""M0.2+ Agent 框架测试
+"""M1.6.3 — Agent 抽象清理回归测试
 
-测试：
-1. AgentRuntime 真实可导入（非字符串）
-2. AgentRuntime 是抽象类
-3. 缺少抽象方法时不能实例化
-4. MockAgentRuntime 可实现接口
-5. PydanticAI 最小导入与 Smoke Test
-6. PydanticAI API 准确性验证
+验证：
+1. AgentRuntime 已删除（不可导入）
+2. PydanticAI 不在生产代码引用中
+3. TurnPipeline 共享骨架可被 Mock 和 DeepSeek 使用
 """
 
 import pytest
 
 
-class TestAgentRuntime:
-    """AgentRuntime 真实类测试"""
+class TestAgentRuntimeRemoved:
+    """验证旧 AgentRuntime 抽象已完全删除"""
 
-    def test_agent_runtime_importable(self):
-        """AgentRuntime 可以真实导入（不是字符串）"""
-        from backend.app.agent import AgentRuntime, AgentRunResult
-        assert AgentRuntime is not None
-        assert AgentRunResult is not None
-        # 确认是类，不是字符串
-        assert isinstance(AgentRuntime, type)
-        assert isinstance(AgentRunResult, type)
+    def test_agent_runtime_cannot_be_imported(self):
+        """AgentRuntime 无法从 backend.app.agent 导入"""
+        with pytest.raises(ImportError):
+            from backend.app.agent import AgentRuntime  # noqa: F401
 
-    def test_agent_runtime_is_abstract(self):
-        """AgentRuntime 是抽象类"""
-        from backend.app.agent import AgentRuntime
-        import inspect
-        assert inspect.isabstract(AgentRuntime)
+    def test_agent_run_result_cannot_be_imported(self):
+        """AgentRunResult 无法从 backend.app.agent 导入"""
+        with pytest.raises(ImportError):
+            from backend.app.agent import AgentRunResult  # noqa: F401
 
-    def test_agent_runtime_has_required_methods(self):
-        """AgentRuntime 定义了至少 run、register_tool、registered_tools、is_mock"""
-        from backend.app.agent import AgentRuntime
-        assert hasattr(AgentRuntime, 'run')
-        assert hasattr(AgentRuntime, 'register_tool')
-        assert hasattr(AgentRuntime, 'registered_tools')
-        assert hasattr(AgentRuntime, 'is_mock')
+    def test_mock_agent_runtime_cannot_be_imported(self):
+        """MockAgentRuntime 无法导入"""
+        with pytest.raises(ImportError):
+            from backend.app.agent.mock_runtime import MockAgentRuntime  # noqa: F401
 
-    def test_agent_runtime_cannot_instantiate(self):
-        """缺少抽象方法时不能实例化"""
-        from backend.app.agent import AgentRuntime
-        with pytest.raises(TypeError):
-            AgentRuntime()
-
-    def test_agent_run_result_create(self):
-        """AgentRunResult 可以创建"""
-        from backend.app.agent import AgentRunResult
-        result = AgentRunResult(content="test", finish_reason="stop")
-        assert result.content == "test"
-        assert result.usage == {}
+    def test_agent_module_does_not_exist(self):
+        """backend.app.agent 模块已不存在"""
+        import importlib
+        spec = importlib.util.find_spec("backend.app.agent")
+        assert spec is None, "backend.app.agent module should not exist"
 
 
-class TestPydanticAISmoke:
-    """PydanticAI 最小导入与基本功能测试"""
+class TestPydanticAIRemoved:
+    """验证 PydanticAI 依赖已移除"""
 
-    def test_import_pydantic_ai(self):
-        """验证 pydantic_ai 可导入"""
-        import pydantic_ai
-        assert pydantic_ai is not None
+    def test_no_pydantic_ai_in_pyproject(self):
+        """pyproject.toml 不包含 pydantic-ai 依赖"""
+        import pathlib
+        pyproject = (pathlib.Path(__file__).parent.parent.parent.parent /
+                     "pyproject.toml").read_text(encoding="utf-8")
+        assert "pydantic-ai" not in pyproject, \
+            "pyproject.toml should not reference pydantic-ai"
 
-    def test_import_agent(self):
-        """验证 Agent 类可导入"""
-        from pydantic_ai import Agent
-        assert Agent is not None
+    def test_no_pydantic_ai_production_import(self):
+        """验证生产代码不 import pydantic_ai"""
+        import subprocess
+        import pathlib
+        import sys
 
-    def test_import_openai_chat_model(self):
-        """验证 OpenAIChatModel 可导入"""
-        from pydantic_ai.models.openai import OpenAIChatModel
-        assert OpenAIChatModel is not None
+        repo_root = pathlib.Path(__file__).parent.parent.parent.parent
+        # 搜索所有 Python 生产文件（非测试）
+        result = subprocess.run(
+            [sys.executable, "-c",
+             """
+import os, pathlib
+root = pathlib.Path(r'%s')
+for f in root.rglob("*.py"):
+    rel = str(f.relative_to(root))
+    if "tests" in rel.split(os.sep) or "__pycache__" in rel.split(os.sep):
+        continue
+    content = f.read_text(encoding="utf-8", errors="ignore")
+    if "pydantic_ai" in content or "pydantic-ai" in content:
+        print(rel)
+""" % str(repo_root)],
+            capture_output=True, text=True, timeout=30,
+        )
+        pydantic_refs = [l for l in result.stdout.strip().split("\n") if l]
+        assert len(pydantic_refs) == 0, \
+            f"Production files still reference pydantic_ai: {pydantic_refs}"
 
-    def test_import_openai_provider(self):
-        """验证 OpenAIProvider 可导入"""
-        from pydantic_ai.providers.openai import OpenAIProvider
-        assert OpenAIProvider is not None
 
-    def test_agent_instantiation_test_model(self):
-        """验证 Agent 可实例化（使用内置 test 模型，无需 API Key）"""
-        from pydantic_ai import Agent
-        agent = Agent("test", system_prompt="You are a helpful assistant.")
-        assert agent is not None
-        assert agent.model is not None
+class TestTurnPipelineShared:
+    """验证 TurnPipeline 共享骨架可用于 Mock 和 DeepSeek"""
 
-    def test_structured_output_param_name(self):
-        """验证结构化输出参数名为 output_type（非 result_type）"""
-        from pydantic_ai import Agent
-        import inspect
-        sig = inspect.signature(Agent.__init__)
-        params = list(sig.parameters.keys())
-        assert "output_type" in params
-        # 注意：PydanticAI v2.21 使用 output_type，不是 result_type
+    def test_turn_pipeline_importable(self):
+        """TurnPipeline 可导入"""
+        from backend.app.application.turn_pipeline import TurnPipeline
+        assert TurnPipeline is not None
 
-    @pytest.mark.asyncio
-    async def test_structural_output_with_pydantic(self):
-        """验证 Agent 支持 Pydantic 结构化输出"""
-        from pydantic import BaseModel
-        from pydantic_ai import Agent
+    def test_turn_pipeline_both_services_use_same_type(self):
+        """Mock 和 DeepSeek 使用同一个 TurnPipeline 类型"""
+        from backend.app.application.turn_pipeline import TurnPipeline
+        from backend.app.application.mock_turn_service import MockTurnService
+        from backend.app.application.deepseek_turn_service import DeepSeekTurnService
+        from backend.app.powerbi.mock import MockPowerBIAdapter
+        from backend.app.report.mock import MockReportRenderer
+        from backend.app.memory.repository import InMemoryMemoryRepository
+        from backend.app.config.settings import Settings
+        from backend.app.harness.models import HarnessConfig
+        from unittest.mock import MagicMock
 
-        class SimpleResult(BaseModel):
-            answer: str
-            confidence: float
+        # Mock service
+        mock_svc = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+        assert isinstance(mock_svc.pipeline, TurnPipeline)
 
-        assert SimpleResult.model_fields["answer"].annotation is str
-        assert SimpleResult.model_fields["confidence"].annotation is float
+        # DeepSeek service（用 MagicMock 绕过 provider 检查）
+        settings = Settings(llm_mode="deepseek", powerbi_mode="mock")
+        config = HarnessConfig.from_settings(settings)
+        llm_provider = MagicMock()
+        llm_provider.is_mock = False
+        llm_provider.provider_name = "deepseek"
+
+        deepseek_svc = DeepSeekTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_provider=llm_provider,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+            settings=settings,
+            config=config,
+        )
+        assert isinstance(deepseek_svc.pipeline, TurnPipeline)
+
+    def test_both_services_tool_gateway_same_registry(self):
+        """两个 Service 的工具都来自 create_default_tool_gateway 共享入口"""
+        from backend.app.application.mock_turn_service import MockTurnService
+        from backend.app.application.deepseek_turn_service import DeepSeekTurnService
+        from backend.app.powerbi.mock import MockPowerBIAdapter
+        from backend.app.report.mock import MockReportRenderer
+        from backend.app.memory.repository import InMemoryMemoryRepository
+        from backend.app.config.settings import Settings
+        from backend.app.harness.models import HarnessConfig
+        from backend.app.harness.tool_registry import DEFAULT_TOOL_NAMES
+        from unittest.mock import MagicMock
+
+        mock_svc = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+        )
+        mock_tools = set(mock_svc.tool_gateway.list_tools())
+
+        settings = Settings(llm_mode="deepseek", powerbi_mode="mock")
+        config = HarnessConfig.from_settings(settings)
+        llm_provider = MagicMock()
+        llm_provider.is_mock = False
+        llm_provider.provider_name = "deepseek"
+
+        deepseek_svc = DeepSeekTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_provider=llm_provider,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+            settings=settings,
+            config=config,
+        )
+        deepseek_tools = set(deepseek_svc.tool_gateway.list_tools())
+
+        # 两者都必须包含相同的三个白名单工具
+        assert mock_tools == set(DEFAULT_TOOL_NAMES)
+        assert deepseek_tools == set(DEFAULT_TOOL_NAMES)
+        assert mock_tools == deepseek_tools

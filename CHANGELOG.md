@@ -1,5 +1,68 @@
 # CHANGELOG
 
+## [M1.6.3] — 2026-08-04
+
+### 统一TurnPipeline与旧Agent抽象清理
+
+**来源：** M1.6.3 开发轮次。
+
+**M1.6.2 遗留补齐：**
+- DeepSeekTurnService 初始化共享 ToolGateway（`create_default_tool_gateway()`）
+- `allowed_tools` 统一来自 `gateway.list_tools()`，不再硬编码
+- 真实工具执行统一经过 ToolGateway（白名单、Intent权限、runtime_mode、超时和重试真实生效）
+- ContextBuilder 统一进入 DeepSeek 管线（输入截断、Memory状态检查、runtime_mode匹配）
+- 补充 main DeepSeek 有 Key 路径测试（Mock 注册表/Provider 禁止网络，验证 lifespan 创建 DeepSeekTurnService，验证 HarnessConfig 为 DEEPSEEK 且 is_mock=False）
+- 文档闭环：M1.6.2 标记 ✅ 完成（Commit `208bca4`）
+
+**统一确定性 TurnPipeline：**
+- 新增 `backend/app/application/turn_pipeline.py`：共享执行骨架类
+- 统一：ID 生成、请求指纹、Owner/Waiter 幂等协调、TraceRecorder、TurnController、ContextBuilder、ToolGateway、状态转换、Memory 提交与失败处理、Snapshot 保存与重放
+- Mock 和 DeepSeek 实际调用同一个 `TurnPipeline` 类型
+- `DeepSeekTurnService` 通过 ToolGateway 执行所有工具调用（`get_semantic_model_schema`、`execute_dax`、`render_report`）
+- DeepSeek 源码中不存在直接 Adapter/Renderer 调用
+- 工具超时、重试、权限、max_tool_calls 在 DeepSeek 路径真实生效
+
+**清理旧 Agent 抽象：**
+- 删除 `backend/app/agent/runtime.py`（AgentRuntime 抽象类）
+- 删除 `backend/app/agent/mock_runtime.py`（MockAgentRuntime）
+- 删除 `backend/app/agent/__init__.py`
+- 移除 `pyproject.toml` 中 `pydantic-ai==2.21.0` 依赖
+- `MockTurnService` 直接使用 `MockLLMProvider`（通过 `_LLMProviderAdapter` 保持测试兼容）
+- `main.py` 移除 MockAgentRuntime 导入
+- 重写 `test_agent_framework.py` → M1.6.3 防回归测试
+- 更新 `test_mock_pipeline.py`、`test_m1_fixes.py`、`test_m1_0_1_fixes.py`、`test_m162_config.py` 移除旧引用
+
+**防回归测试：**
+- Mock 和 DeepSeek 使用同一 `TurnPipeline` 类型
+- DeepSeek 源码中无直接 Adapter/Renderer 调用
+- 两条路径的工具来自同一个 Registry（`create_default_tool_gateway`）
+- ContextBuilder 输入截断和 runtime_mode 检查在 DeepSeek 路径生效
+- 仓库中不存在 PydanticAI 生产引用或依赖声明（全仓搜索验证）
+- API 响应字段、Golden Case 和现有 Smoke 语义未回归
+
+**真实 DeepSeek Chat Smoke：**
+- 尝试执行，因真实 API 连通性问题返回 HTTP 500（`IntentRecognitionError`）
+- 与 M1.6.3 代码变更无关（ToolGateway/ContextBuilder/Pipeline 构建正常）
+- 记录为"未通过"（非伪造通过）
+
+**测试结果：**
+- pytest：958 passed（960 基线 - 2 个预存失败 + M1.6.3 新增/重写测试）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS（141 文件）
+- 全仓搜索：0 处 PydanticAI 生产引用，0 处 Adapter/Renderer 直接调用
+
+**文档修改：**
+- `docs/02`：移除 PydanticAI 引用，更新实施状态为 M1.6.3 完成
+- `docs/08`：M1.6.2 → ✅ 已完成（`208bca4`），M1.6.3 → 进行中
+- `docs/09`：M1.6.2 入已完成版本表，当前阶段改为 M1.6.3
+- `docs/adr/README.md`：更新整改范围为已完成
+- `CHANGELOG.md`：本条目
+
+**Commit SHA：** 本轮提交
+**本轮 Tag：** 无
+
+---
+
 ## [M1.6.2] — 2026-08-04
 
 ### Harness与配置收口

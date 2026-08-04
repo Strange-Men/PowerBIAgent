@@ -1,25 +1,11 @@
-"""MockTurnService — 确定性应用服务（非 FastAPI 接口）
+"""MockTurnService — M1.6.3 Mock 轮次服务（薄封装）
 
-M0.3.2 修复：
-- 工具序列唯一来源：TraceRecorder.get_tool_sequence()，不再手工拼装
-- Schema 失败路径合法状态转换
-- 统一 _fail_turn 处理所有失败分支
-- ToolExecutionContext 传入 Gateway
-- Gateway 集成 TraceRecorder
-- last_query_result_id/last_report_id 使用唯一 result_id/report_id
-- Memory 冲突时 pending 标记 failed、不返回 memory_commit=True
+M1.6.3 更新：
+- 共享 TurnPipeline 执行骨架统一 ID 生成、指纹、幂等、Snapshot
+- MockAgentRuntime 替换为直接 MockLLMProvider（LLM 调用不再经过 AgentRuntime）
+- ContextBuilder 和 ToolGateway 保持统一使用
 
-M1.0 修复：
-- _build_result() 接收 conversation_id 参数，clarification/unsupported 不再返回空 conversation_id
-- request_id 幂等重放：第一次保存 TurnResultSnapshot，重复请求返回完整快照
-- MockScenarioResolver 返回 MockScenarioResolution（含 effective_report_template_key）
-- 默认报表模板固定为 sales_weekly，贯穿 Memory/API 全链路
-
-M1.0.1 修复：
-- Service 未传 conversation_id/request_id 时生成 UUID
-- 请求指纹与冲突检测：相同 request_id 不同指纹 → IdempotencyConflictError
-- 并发 Owner/Waiter 防重：相同指纹等待，不同指纹冲突
-- Report 快照使用 ReportResultSnapshot Pydantic 模型
+M0.3.2—M1.0.1 历史修复保留在模块内部，不再逐一列举。
 """
 
 import uuid
@@ -28,7 +14,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from backend.app.agent.mock_runtime import MockAgentRuntime
+from backend.app.application.turn_pipeline import TurnPipeline
 from backend.app.harness.errors import (
     ToolExecutionError,
     ToolNotRegisteredError,
@@ -47,7 +33,8 @@ from backend.app.harness.runtime.turn_controller import TurnController, TurnStat
 from backend.app.harness.observability.trace_recorder import TraceRecorder
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.models import IntentSpec, IntentType
-from backend.app.llm.base import LLMTask
+from backend.app.llm.base import LLMProvider, LLMRequest, LLMTask
+from backend.app.llm.mock import MockLLMProvider
 from backend.app.memory.models import (
     MemoryCommitEvidence,
     MemoryStatus,
@@ -98,36 +85,66 @@ class MockScenarioSelection(BaseModel):
 
 
 class MockTurnService:
-    """Mock 轮次服务
+    """Mock 轮次服务（M1.6.3 薄封装）
 
-    完整的确定性流程控制，所有工具调用经过 ToolGateway。
-    工具序列唯一来源于 TraceRecorder.get_tool_sequence()。
+    M1.6.3: 共享 TurnPipeline 执行骨架，LLM 直接使用 MockLLMProvider。
+    所有工具调用经过 ToolGateway。
     """
 
     def __init__(
         self,
         memory_repo: Optional[InMemoryMemoryRepository] = None,
-        llm_runtime: Optional[MockAgentRuntime] = None,
+        llm_runtime: Any = None,  # M1.6.3: 向后兼容，内部提取 MockLLMProvider
         powerbi_adapter: Optional[MockPowerBIAdapter] = None,
         report_renderer: Optional[MockReportRenderer] = None,
         config: Optional[HarnessConfig] = None,
+        llm_provider: Optional[MockLLMProvider] = None,  # M1.6.3: 新的直接注入方式
     ):
         self.memory_repo = memory_repo or InMemoryMemoryRepository()
-        self.llm = llm_runtime or MockAgentRuntime()
         self.powerbi = powerbi_adapter or MockPowerBIAdapter()
         self.report_renderer = report_renderer or MockReportRenderer()
         self.config = config or HarnessConfig()
 
+        # M1.6.3: LLM — 优先使用直接注入的 llm_provider，否则通过 llm_runtime
+        if llm_provider is not None:
+            self.llm_provider: MockLLMProvider = llm_provider
+        elif llm_runtime is not None:
+            # 从 llm_runtime 提取内部 MockLLMProvider（可能是 MockAgentRuntime 或 Spy）
+            if hasattr(llm_runtime, "_llm") and isinstance(llm_runtime._llm, MockLLMProvider):
+                self.llm_provider = llm_runtime._llm
+            else:
+                self.llm_provider = MockLLMProvider()
+        else:
+            self.llm_provider = MockLLMProvider()
+
+        # 保留 llm_runtime 引用用于向后兼容（允许 Spy 拦截）
+        self._llm_runtime = llm_runtime
+
         self.context_builder = ContextBuilder(self.config)
         self.tool_gateway = self._build_tool_gateway()
         self.validator = ValidationService()
-        # M1.0: 快照存储 — 支持幂等重放
-        # M1.0.1: 集成 IdempotencyTracker 并发防重
         self.snapshot_store = ResultSnapshotStore()
+        # M1.6.3: 共享 TurnPipeline 执行骨架
+        self.pipeline = TurnPipeline(
+            config=self.config,
+            memory_repo=self.memory_repo,
+            snapshot_store=self.snapshot_store,
+        )
 
     def _build_tool_gateway(self) -> ToolGateway:
         """构建 ToolGateway — M1.6.2 使用共享工具注册入口，超时/重试来自 HarnessConfig"""
         return create_default_tool_gateway(self.powerbi, self.report_renderer, self.config)
+
+    @property
+    def llm(self) -> Any:
+        """M1.6.3: 向后兼容 — 返回相容 MockAgentRuntime 接口的适配器
+
+        旧测试通过 `svc.llm.run()` / `svc.llm.registered_tools` 等方式访问。
+        如果 llm_runtime 已注入（如 SpyLLMRuntime），直接返回以保留拦截。
+        """
+        if self._llm_runtime is not None:
+            return self._llm_runtime
+        return _LLMProviderAdapter(self.llm_provider)
 
     async def execute(
         self,
@@ -140,22 +157,13 @@ class MockTurnService:
         intent_key: Optional[str] = None,
         powerbi_key: Optional[str] = None,
     ) -> dict[str, Any]:
-        """执行完整 Turn 流程
-
-        M1.0.1:
-        - conversation_id 和 request_id 未传时服务端生成 UUID
-        - 请求指纹检测相同 request_id 不同内容冲突
-        - Owner/Waiter 并发防重
+        """执行完整 Turn 流程 — M1.6.3 委托给共享 TurnPipeline 骨架
 
         scenario=None 时使用 MockScenarioResolver 自动推断（API 路径）。
         显式传入 scenario 仅用于 Golden Cases 和内部测试。
         intent_key/powerbi_key 为向后兼容保留。
         """
-        # ── M1.0.1: 统一生成 ID ──
-        effective_conv_id = conversation_id or str(uuid.uuid4())
-        effective_req_id = request_id or str(uuid.uuid4())
-
-        # ── M1.0: 构建 Scenario 与 effective_report_template_key ──
+        # ── 构建 Scenario 与 effective_report_template_key ──
         effective_template_key: Optional[str] = report_template_key
         resolved_scenario: Optional[MockScenarioSelection] = scenario
 
@@ -181,7 +189,7 @@ class MockTurnService:
 
         runtime_mode = RuntimeDataMode.MOCK if self.config.is_mock else RuntimeDataMode.REAL
 
-        # ── M1.1: 将 MockScenarioSelection 转换为 Memory 层 ScenarioFingerprint ──
+        # ── 将 MockScenarioSelection 转换为 Memory 层 ScenarioFingerprint ──
         scenario_fp: Optional[ScenarioFingerprint] = None
         if resolved_scenario is not None:
             scenario_fp = ScenarioFingerprint(
@@ -192,100 +200,26 @@ class MockTurnService:
                 response_key=resolved_scenario.response_key,
             )
 
-        # ── M1.0.1: 计算请求指纹 ──
-        fingerprint_hash = RequestFingerprint.compute_hash(
+        # ── M1.6.3: 委托给共享 TurnPipeline 执行骨架 ──
+        return await self.pipeline.execute(
             message=message,
-            client_conversation_id=conversation_id,  # 原始客户端值，可能为 None
+            conversation_id=conversation_id,
+            request_id=request_id,
             semantic_model_key=semantic_model_key,
-            effective_report_template_key=effective_template_key,
-            scenario=scenario_fp,
-            intent_key=intent_key,
-            powerbi_key=powerbi_key,
+            report_template_key=effective_template_key,
+            runtime_mode=runtime_mode,
+            is_mock=True,
+            llm_provider_name="mock",
+            powerbi_provider_name="mock_powerbi",
+            scenario_fingerprint_hash_inputs={
+                "scenario": scenario_fp,
+                "intent_key": intent_key,
+                "powerbi_key": powerbi_key,
+            },
+            do_execute=self._do_execute,
+            resolved_scenario=resolved_scenario,
+            effective_template_key=effective_template_key,
         )
-
-        trace_id = str(uuid.uuid4())
-        trace = TraceRecorder(self.config)
-
-        # ── M1.0.1: 检查已完成快照（含指纹对比） ──
-        snapshot = await self.snapshot_store.get(effective_req_id, runtime_mode)
-        if snapshot is not None:
-            if snapshot.request_fingerprint_hash != fingerprint_hash:
-                raise IdempotencyConflictError(
-                    request_id=effective_req_id,
-                    detail="request_id has already been used by a different request",
-                )
-            # 指纹一致 → 幂等重放
-            trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
-                        data_summary={"terminal_state": "duplicate"})
-            return self._build_idempotent_replay(
-                snapshot, effective_req_id, trace_id,
-            )
-
-        # ── M1.0.1: Owner/Waiter 并发防重 ──
-        # 最多重试 3 次（处理 Owner 异常终止场景）
-        for retry_attempt in range(3):
-            claim_status, claim_future = await self.snapshot_store.claim(
-                effective_req_id, runtime_mode, fingerprint_hash
-            )
-
-            if claim_status == IdempotencyClaimStatus.CONFLICT:
-                raise IdempotencyConflictError(
-                    request_id=effective_req_id,
-                    detail="request_id has already been used by a different request",
-                )
-
-            elif claim_status == IdempotencyClaimStatus.WAITER:
-                # 等待 Owner 完成
-                try:
-                    await claim_future
-                except OwnerFailedError:
-                    # Owner 异常终止 → 重试 claim
-                    continue
-
-                # Owner 正常完成 → 从快照重放
-                snapshot = await self.snapshot_store.get(effective_req_id, runtime_mode)
-                if snapshot is not None:
-                    new_trace_id = str(uuid.uuid4())
-                    return self._build_idempotent_replay(
-                        snapshot, effective_req_id, new_trace_id,
-                    )
-                # 快照不存在（极端情况）→ 重试
-                continue
-
-            elif claim_status == IdempotencyClaimStatus.OWNER:
-                # 获得执行权
-                break
-        else:
-            # 重试耗尽 → 协调失败 (HTTP 503)
-            raise IdempotencyCoordinationError(
-                request_id=effective_req_id,
-                detail="Unable to acquire execution right after retries",
-            )
-
-        # ── OWNER: 执行完整流程 ──
-        try:
-            result = await self._do_execute(
-                message=message,
-                effective_conv_id=effective_conv_id,
-                effective_req_id=effective_req_id,
-                semantic_model_key=semantic_model_key,
-                effective_template_key=effective_template_key,
-                resolved_scenario=resolved_scenario,
-                runtime_mode=runtime_mode,
-                trace=trace,
-                trace_id=trace_id,
-            )
-            # 保存快照（含指纹 Hash）
-            await self._save_snapshot(
-                result, runtime_mode, fingerprint_hash
-            )
-            # 唤醒 Waiter
-            await self.snapshot_store.complete(effective_req_id, runtime_mode)
-            return result
-        except Exception:
-            # Owner 异常 → 清理 in-flight 状态并唤醒 Waiter
-            await self.snapshot_store.abort(effective_req_id, runtime_mode)
-            raise
 
     async def _do_execute(
         self,
@@ -293,13 +227,23 @@ class MockTurnService:
         effective_conv_id: str,
         effective_req_id: str,
         semantic_model_key: str,
-        effective_template_key: Optional[str],
-        resolved_scenario: MockScenarioSelection,
+        report_template_key: Optional[str],
         runtime_mode: RuntimeDataMode,
+        is_mock: bool,
+        llm_provider_name: str,
+        powerbi_provider_name: str,
         trace: TraceRecorder,
         trace_id: str,
+        fingerprint_hash: str,
+        resolved_scenario: Optional[MockScenarioSelection] = None,
+        effective_template_key: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Owner 执行完整 Turn 流程（原 execute 的核心逻辑）"""
+        """Owner 执行完整 Mock Turn 流程（由共享 TurnPipeline 骨架调用）"""
+        # 确保 resolved_scenario 有效
+        if resolved_scenario is None:
+            resolved_scenario = MockScenarioSelection()
+        if effective_template_key is None:
+            effective_template_key = report_template_key
 
         trace.record("request_received", trace_id=trace_id, request_id=effective_req_id,
                      conversation_id=effective_conv_id)
@@ -328,7 +272,7 @@ class MockTurnService:
         )
         trace.record("context_built", trace_id=trace_id, request_id=effective_req_id)
 
-        # 4. 意图识别 — M0.3.3: scenario_key 通过 context 局部传递
+        # 4. 意图识别 — M1.6.3: 通过适配器（兼容旧 MockAgentRuntime 接口）
         context["mock_scenario_key"] = resolved_scenario.intent_key
         intent_result = await self.llm.run(message, context, IntentSpec)
         intent: IntentSpec = intent_result.structured  # type: ignore[assignment]
@@ -386,7 +330,7 @@ class MockTurnService:
         controller.transition(TurnState.INTENT_CLASSIFIED)
         controller.record_intent_valid()
 
-        # 8. 生成 QueryPlan
+        # 8. 生成 QueryPlan — M1.6.3: 通过适配器
         context["mock_scenario_key"] = resolved_scenario.query_plan_key
         plan_result = await self.llm.run(message, context, QueryPlan)
         query_plan: QueryPlan = plan_result.structured  # type: ignore[assignment]
@@ -447,7 +391,7 @@ class MockTurnService:
         controller.record_query_plan_valid()
         controller.transition(TurnState.QUERY_VALIDATED)
 
-        # 11. 生成 DAX
+        # 11. 生成 DAX — M1.6.3: 通过适配器
         context["mock_scenario_key"] = resolved_scenario.dax_key
         dax_result = await self.llm.run(message, context, DAXRequest)
         dax_req: DAXRequest = dax_result.structured  # type: ignore[assignment]
@@ -854,38 +798,8 @@ class MockTurnService:
         request_id: str,
         trace_id: str,
     ) -> dict[str, Any]:
-        """M1.0: 构建幂等重放响应，M1.0.1: Report 使用结构化模型"""
-
-        # M1.0.1: Report 从 ReportResultSnapshot 转回 dict（兼容现有 API）
-        report_dict: Optional[dict[str, Any]] = None
-        if snapshot.report is not None:
-            report_dict = {
-                "report_id": snapshot.report.report_id,
-                "template_key": snapshot.report.template_key,
-                "html": snapshot.report.html,
-            }
-
-        result: dict[str, Any] = {
-            "request_id": request_id,
-            "conversation_id": snapshot.conversation_id,
-            "terminal_state": "duplicate",
-            "intent": snapshot.intent,
-            "response_type": snapshot.response_type,
-            "answer": snapshot.answer,
-            "report": report_dict,
-            "clarification_question": snapshot.clarification_question,
-            "unsupported_reason": snapshot.unsupported_reason,
-            "error_type": snapshot.error_type,
-            "tool_sequence": [],
-            "memory_commit": False,
-            "final_memory_version": snapshot.final_memory_version,
-            "is_mock": snapshot.is_mock,
-            "trace_id": trace_id,
-            "allowed_tools": snapshot.allowed_tools,
-            "idempotent_replay": True,
-            "replayed_request_id": snapshot.request_id,
-        }
-        return result
+        """M1.6.3: 委托给共享 TurnPipeline"""
+        return self.pipeline.build_replay(snapshot, request_id, trace_id)
 
     async def _save_snapshot(
         self,
@@ -893,35 +807,71 @@ class MockTurnService:
         runtime_mode: RuntimeDataMode,
         fingerprint_hash: str,
     ) -> None:
-        """M1.0.1: 从 _build_result 输出构建并保存 TurnResultSnapshot（含指纹 Hash）"""
+        """M1.6.3: 委托给共享 TurnPipeline"""
+        await self.pipeline._save_snapshot(result, runtime_mode, fingerprint_hash)
 
-        # M1.0.1: Report 转换为 ReportResultSnapshot
-        report_snapshot: Optional[ReportResultSnapshot] = None
-        if result.get("report"):
-            rd = result["report"]
-            report_snapshot = ReportResultSnapshot(
-                report_id=rd.get("report_id", ""),
-                template_key=rd.get("template_key", ""),
-                html=rd.get("html", ""),
-            )
 
-        snapshot = TurnResultSnapshot(
-            request_id=result.get("request_id", ""),
-            conversation_id=result.get("conversation_id", ""),
-            intent=result.get("intent", ""),
-            response_type=result.get("response_type", ""),
-            terminal_state=result.get("terminal_state", ""),
-            answer=result.get("answer"),
-            report=report_snapshot,
-            clarification_question=result.get("clarification_question"),
-            unsupported_reason=result.get("unsupported_reason"),
-            error_type=result.get("error_type"),
-            tool_sequence=result.get("tool_sequence", []),
-            memory_commit=result.get("memory_commit", False),
-            final_memory_version=result.get("final_memory_version"),
-            is_mock=result.get("is_mock", True),
-            trace_id=result.get("trace_id", ""),
-            allowed_tools=result.get("allowed_tools", []),
-            request_fingerprint_hash=fingerprint_hash,
+class _LLMProviderAdapter:
+    """M1.6.3: 向后兼容适配器 — 将 MockLLMProvider 包装为旧 MockAgentRuntime 接口
+
+    旧测试通过 svc.llm.run(message, context, output_type) 方式调用，
+    本适配器转换为 MockLLMProvider.generate(request, output_type)。
+    """
+
+    def __init__(self, provider: MockLLMProvider):
+        self._provider = provider
+        self._tools: dict[str, Any] = {}
+
+    async def run(
+        self,
+        user_input: str,
+        context: dict[str, Any],
+        output_type: type,
+    ) -> Any:
+        """兼容旧 MockAgentRuntime.run() 接口"""
+        from backend.app.llm.base import LLMRequest
+        task = LLMTask.INTENT_RECOGNITION
+        type_name = output_type.__name__.lower()
+        if "queryplan" in type_name:
+            task = LLMTask.QUERY_PLAN
+        elif "dax" in type_name.lower():
+            task = LLMTask.DAX
+        elif "answer" in type_name:
+            task = LLMTask.ANSWER
+        elif "report" in type_name:
+            task = LLMTask.REPORT
+
+        scenario_key = context.get("mock_scenario_key", "data_question")
+        request = LLMRequest(
+            messages=[{"role": "user", "content": user_input}],
+            task=task,
+            scenario_key=scenario_key,
         )
-        await self.snapshot_store.save(snapshot, runtime_mode)
+        response = await self._provider.generate(request, output_type)
+
+        # 返回兼容旧 AgentRunResult 的对象
+        class _CompatResult:
+            def __init__(self, content, structured, finish_reason, usage):
+                self.content = content
+                self.structured = structured
+                self.finish_reason = finish_reason
+                self.usage = usage
+
+        return _CompatResult(
+            content=response.content,
+            structured=response.structured,
+            finish_reason=response.finish_reason,
+            usage=response.usage,
+        )
+
+    def register_tool(self, tool: Any) -> None:
+        name = getattr(tool, "name", str(id(tool)))
+        self._tools[name] = tool
+
+    @property
+    def registered_tools(self) -> list[str]:
+        return list(self._tools.keys())
+
+    @property
+    def is_mock(self) -> bool:
+        return True

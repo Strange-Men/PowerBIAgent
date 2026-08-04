@@ -7,7 +7,7 @@ import pytest
 from backend.app.application.mock_turn_service import MockScenarioSelection, MockTurnService
 from backend.app.memory.models import MemoryStatus, RuntimeDataMode, StructuredWorkMemory, MemoryCommitEvidence
 from backend.app.memory.repository import InMemoryMemoryRepository, MemoryVersionConflictError
-from backend.app.agent.mock_runtime import MockAgentRuntime
+from backend.app.llm.mock import MockLLMProvider
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.mock import MockReportRenderer
 from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
@@ -19,7 +19,6 @@ from backend.app.intent.models import IntentType
 def service():
     return MockTurnService(
         memory_repo=InMemoryMemoryRepository(),
-        llm_runtime=MockAgentRuntime(),
         powerbi_adapter=MockPowerBIAdapter(),
         report_renderer=MockReportRenderer(),
     )
@@ -430,7 +429,6 @@ class TestConcurrentScenarios:
         """两个并发 Turn 使用不同 Scenario Key，不串场"""
         service = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=MockAgentRuntime(),
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
@@ -461,9 +459,9 @@ class TestConcurrentScenarios:
     @pytest.mark.asyncio
     async def test_concurrent_same_mock_runtime_no_scenario_leak(self):
         """同一个 MockAgentRuntime 并发不共享场景状态"""
-        runtime = MockAgentRuntime()
-        s1 = MockTurnService(llm_runtime=runtime)
-        s2 = MockTurnService(llm_runtime=runtime)
+        runtime = MockLLMProvider()
+        s1 = MockTurnService(llm_provider=runtime)
+        s2 = MockTurnService(llm_provider=runtime)
 
         async def t1():
             return await s1.execute(
@@ -618,17 +616,17 @@ class TestSameRuntimeConcurrent:
     @pytest.mark.asyncio
     async def test_same_runtime_data_question_vs_report_generation(self):
         """请求A=data_question, 请求B=report_generation，同Runtime并发"""
-        runtime = MockAgentRuntime()
+        runtime = MockLLMProvider()
 
         service_a = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=runtime,
+            llm_provider=runtime,
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
         service_b = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=runtime,
+            llm_provider=runtime,
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
@@ -684,18 +682,18 @@ class TestSameRuntimeConcurrent:
     @pytest.mark.asyncio
     async def test_same_runtime_repeated_stability(self):
         """同一Runtime并发重复运行10次，验证稳定性"""
-        runtime = MockAgentRuntime()
+        runtime = MockLLMProvider()
 
         async def run_one_iteration(i: int):
             sa = MockTurnService(
                 memory_repo=InMemoryMemoryRepository(),
-                llm_runtime=runtime,
+                llm_provider=runtime,
                 powerbi_adapter=MockPowerBIAdapter(),
                 report_renderer=MockReportRenderer(),
             )
             sb = MockTurnService(
                 memory_repo=InMemoryMemoryRepository(),
-                llm_runtime=runtime,
+                llm_provider=runtime,
                 powerbi_adapter=MockPowerBIAdapter(),
                 report_renderer=MockReportRenderer(),
             )
@@ -735,7 +733,6 @@ class TestSameServiceConcurrent:
         """同一Service：一个data_question，一个unsupported并发"""
         service = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=MockAgentRuntime(),
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
@@ -790,17 +787,17 @@ class TestSameServiceConcurrent:
         两个独立 Service 共享同一个 MockAgentRuntime，验证 LLM 层面的 Scenario 隔离。
         Service 层面（ToolGateway 内部状态）不共享，避免无关并发问题。
         """
-        runtime = MockAgentRuntime()
+        runtime = MockLLMProvider()
 
         sa = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=runtime,
+            llm_provider=runtime,
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
         sb = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=runtime,
+            llm_provider=runtime,
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
@@ -850,7 +847,6 @@ class TestSameServiceConcurrent:
         """同一Service并发重复10次，验证稳定性"""
         service = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=MockAgentRuntime(),
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
@@ -889,15 +885,14 @@ class TestForcedInterleaving:
 
         # 使用延迟确保真实交错
         llm = MockLLMProvider(scenario_delay=0.02)
-        runtime = MockAgentRuntime(llm_provider=llm)
 
         sa = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=runtime,
+            llm_provider=llm,
         )
         sb = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=runtime,
+            llm_provider=llm,
         )
 
         async def turn_a():
@@ -944,15 +939,14 @@ class TestForcedInterleaving:
 
         for iteration in range(10):
             llm = MockLLMProvider(scenario_delay=0.01)
-            runtime = MockAgentRuntime(llm_provider=llm)
 
             sa = MockTurnService(
                 memory_repo=InMemoryMemoryRepository(),
-                llm_runtime=runtime,
+                llm_provider=llm,
             )
             sb = MockTurnService(
                 memory_repo=InMemoryMemoryRepository(),
-                llm_runtime=runtime,
+                llm_provider=llm,
             )
 
             async def ta():
@@ -991,15 +985,14 @@ class TestForcedInterleaving:
         from backend.app.llm.mock import MockLLMProvider
 
         llm = MockLLMProvider(scenario_delay=0.02)
-        runtime = MockAgentRuntime(llm_provider=llm)
 
         sa = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=runtime,
+            llm_provider=llm,
         )
         sb = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=runtime,
+            llm_provider=llm,
         )
 
         async def turn_a():
@@ -1048,10 +1041,10 @@ class TestSameServiceFullToolChainConcurrent:
         两个请求都走完整工具链，验证 trace_id、工具序列、Memory 互不污染。
         """
         repo = InMemoryMemoryRepository()
-        runtime = MockAgentRuntime()
+        runtime = MockLLMProvider()
         service = MockTurnService(
             memory_repo=repo,
-            llm_runtime=runtime,
+            llm_provider=runtime,
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
@@ -1134,11 +1127,11 @@ class TestSameServiceFullToolChainConcurrent:
     @pytest.mark.asyncio
     async def test_same_service_repeated_loop_stability(self):
         """同一 Service 并发 data_question vs report_generation 循环 10 次，验证稳定性"""
-        runtime = MockAgentRuntime()
+        runtime = MockLLMProvider()
         repo = InMemoryMemoryRepository()
         service = MockTurnService(
             memory_repo=repo,
-            llm_runtime=runtime,
+            llm_provider=runtime,
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
@@ -1199,10 +1192,10 @@ class TestSameServiceFullToolChainConcurrent:
     async def test_tool_call_counts_independent(self):
         """两个请求的工具调用计数独立，不互相影响"""
         repo = InMemoryMemoryRepository()
-        runtime = MockAgentRuntime()
+        runtime = MockLLMProvider()
         service = MockTurnService(
             memory_repo=repo,
-            llm_runtime=runtime,
+            llm_provider=runtime,
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
@@ -1245,10 +1238,10 @@ class TestSameServiceFailAndSuccessConcurrent:
     async def test_failure_does_not_pollute_success_trace(self):
         """请求A工具超时失败，请求B正常成功 — B 不受 A 失败污染"""
         repo = InMemoryMemoryRepository()
-        runtime = MockAgentRuntime()
+        runtime = MockLLMProvider()
         service = MockTurnService(
             memory_repo=repo,
-            llm_runtime=runtime,
+            llm_provider=runtime,
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
@@ -1304,10 +1297,10 @@ class TestSameServiceFailAndSuccessConcurrent:
     async def test_failure_tool_sequence_not_pollute_success(self):
         """失败请求的工具序列不出现 render_report，成功请求的工具序列完整"""
         repo = InMemoryMemoryRepository()
-        runtime = MockAgentRuntime()
+        runtime = MockLLMProvider()
         service = MockTurnService(
             memory_repo=repo,
-            llm_runtime=runtime,
+            llm_provider=runtime,
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )
@@ -1357,10 +1350,10 @@ class TestSameServiceFailAndSuccessConcurrent:
     async def test_failure_does_not_block_success_commit(self):
         """失败请求的 pending 已 failed，成功请求可正常 commit 并递增版本"""
         repo = InMemoryMemoryRepository()
-        runtime = MockAgentRuntime()
+        runtime = MockLLMProvider()
         service = MockTurnService(
             memory_repo=repo,
-            llm_runtime=runtime,
+            llm_provider=runtime,
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )

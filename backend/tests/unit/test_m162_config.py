@@ -150,7 +150,6 @@ class TestMainLifespanConfig:
     async def test_mock_turn_service_receives_config(self):
         """MockTurnService 从 lifespan 接收正确的 Mock 配置"""
         from backend.app.application.mock_turn_service import MockTurnService
-        from backend.app.agent.mock_runtime import MockAgentRuntime
         from backend.app.powerbi.mock import MockPowerBIAdapter
         from backend.app.report.mock import MockReportRenderer
         from backend.app.memory.repository import InMemoryMemoryRepository
@@ -160,7 +159,6 @@ class TestMainLifespanConfig:
 
         service = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=MockAgentRuntime(),
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
             config=config,
@@ -177,7 +175,6 @@ class TestMainLifespanConfig:
     async def test_mock_turn_service_config_driven_timeouts(self):
         """MockTurnService 的 ToolSpec 超时和重试来自 HarnessConfig"""
         from backend.app.application.mock_turn_service import MockTurnService
-        from backend.app.agent.mock_runtime import MockAgentRuntime
         from backend.app.powerbi.mock import MockPowerBIAdapter
         from backend.app.report.mock import MockReportRenderer
         from backend.app.memory.repository import InMemoryMemoryRepository
@@ -193,7 +190,6 @@ class TestMainLifespanConfig:
 
         service = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=MockAgentRuntime(),
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
             config=config,
@@ -281,6 +277,88 @@ class TestMainLifespanConfig:
         finally:
             if old_key is not None:
                 os.environ["DEEPSEEK_API_KEY"] = old_key
+
+    @pytest.mark.anyio
+    async def test_deepseek_lifespan_creates_service_with_tool_gateway(self):
+        """M1.6.3: lifespan DeepSeek+Mock 有 Key → DeepSeekTurnService 使用共享 ToolGateway"""
+        from unittest.mock import MagicMock, AsyncMock, patch
+        from backend.app.main import create_app
+        import os
+
+        # 模拟 API Key（fake_key 为安全扫描允许的占位值）
+        os.environ["DEEPSEEK_API_KEY"] = "fake_key"
+        try:
+            settings = Settings(
+                llm_mode="deepseek",
+                powerbi_mode="mock",
+                deepseek_api_key="fake_key",
+                deepseek_base_url="https://api.deepseek.com/v1",
+                deepseek_model="deepseek-chat",
+            )
+
+            # Mock DeepSeekLLMProvider 以避免真实网络请求
+            mock_provider = MagicMock()
+            mock_provider.is_mock = False
+            mock_provider.provider_name = "deepseek"
+
+            with patch(
+                "backend.app.llm.factory.DeepSeekLLMProvider",
+                return_value=mock_provider,
+            ):
+                with patch.object(mock_provider, "aclose", AsyncMock()):
+                    app = create_app(settings=settings)
+
+                    async with app.router.lifespan_context(app):
+                        service = app.state.turn_service
+                        assert service is not None, "DeepSeekTurnService 应被创建"
+
+                        # 验证 HarnessConfig 为 DEEPSEEK 且 is_mock=False
+                        assert service.config.llm_mode == LLMMode.DEEPSEEK
+                        assert service.config.is_mock is False
+
+                        # M1.6.3: 验证 ToolGateway 来自 create_default_tool_gateway
+                        tools = service.tool_gateway.list_tools()
+                        assert len(tools) == 3
+                        assert set(tools) == set(DEFAULT_TOOL_NAMES)
+
+                        # 验证 ContextBuilder 已初始化
+                        assert service.context_builder is not None
+        finally:
+            del os.environ["DEEPSEEK_API_KEY"]
+
+    @pytest.mark.anyio
+    async def test_deepseek_turn_service_tool_gateway_is_shared_entry(self):
+        """M1.6.3: DeepSeekTurnService 的 allowed_tools 来自 gateway.list_tools()"""
+        from unittest.mock import MagicMock
+        from backend.app.application.deepseek_turn_service import DeepSeekTurnService
+        from backend.app.powerbi.mock import MockPowerBIAdapter
+        from backend.app.report.mock import MockReportRenderer
+        from backend.app.memory.repository import InMemoryMemoryRepository
+
+        settings = Settings(llm_mode="deepseek", powerbi_mode="mock")
+        config = HarnessConfig.from_settings(settings)
+
+        # 使用 MagicMock 创建非 Mock Provider
+        llm_provider = MagicMock()
+        llm_provider.is_mock = False
+        llm_provider.provider_name = "deepseek"
+
+        service = DeepSeekTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_provider=llm_provider,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+            settings=settings,
+            config=config,
+        )
+
+        # allowed_tools 必须来自 gateway.list_tools()
+        tools = service.tool_gateway.list_tools()
+        assert set(tools) == set(DEFAULT_TOOL_NAMES)
+
+        # _build_result 的 allowed_tools 也必须与 gateway 一致
+        result = service._build_result("req-1", "conv-1", "completed")
+        assert set(result["allowed_tools"]) == set(tools)
 
 
 # ──────────────────────────────────────────────

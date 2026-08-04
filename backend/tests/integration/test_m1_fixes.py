@@ -14,7 +14,7 @@ import pytest
 from backend.app.application.mock_turn_service import MockScenarioSelection, MockTurnService
 from backend.app.memory.models import MemoryStatus, RuntimeDataMode
 from backend.app.memory.repository import InMemoryMemoryRepository
-from backend.app.agent.mock_runtime import MockAgentRuntime
+# M1.6.3: MockAgentRuntime 已删除，MockTurnService 默认使用 MockLLMProvider
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.mock import MockReportRenderer
 from backend.app.harness.runtime.turn_controller import TurnState
@@ -26,7 +26,7 @@ def service_factory():
     def _make():
         return MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=MockAgentRuntime(),
+            # M1.6.3: llm_runtime 参数已移除，使用默认 MockLLMProvider
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
         )

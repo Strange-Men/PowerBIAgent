@@ -22,8 +22,7 @@ classifiers = [
 # 核心依赖 — M0.4.1 已验证并锁定版本
 # ----------------------------------------------------------
 dependencies = [
-    # LLM / Agent Framework — M0.2 已验证
-    "pydantic-ai==2.21.0",         # PydanticAI Agent 框架（ADR-001）
+    # Data Validation
     "pydantic==2.13.4",            # 数据校验
 
     # Config

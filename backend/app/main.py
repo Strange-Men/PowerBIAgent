@@ -15,7 +15,6 @@ from typing import Optional
 
 from fastapi import FastAPI
 
-from backend.app.agent.mock_runtime import MockAgentRuntime
 from backend.app.api.routes import router
 from backend.app.application.mock_turn_service import MockTurnService
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings, get_settings
@@ -51,7 +50,6 @@ async def lifespan(app: FastAPI):
         # Mock + Mock: 原有 MockTurnService
         turn_service = MockTurnService(
             memory_repo=InMemoryMemoryRepository(),
-            llm_runtime=MockAgentRuntime(),
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
             config=harness_config,

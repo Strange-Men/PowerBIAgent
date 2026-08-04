@@ -1,12 +1,13 @@
-"""DeepSeekTurnService — M1.5 DeepSeek + Mock Power BI 全链路
+"""DeepSeekTurnService — M1.6.3 DeepSeek + Mock Power BI 全链路
+
+M1.6.3 更新：
+- 真实工具执行统一通过 ToolGateway（create_default_tool_gateway）
+- allowed_tools 来自 gateway.list_tools()，不再硬编码
+- ContextBuilder 统一进入管线（输入长度限制、Memory 状态检查、runtime_mode 匹配）
+- 工具白名单、Intent 权限、runtime_mode、超时和重试在 DeepSeek 路径真实生效
 
 每个请求独立 LLMCallCollector + ObservedLLMProvider + Trace。
 使用 RuntimeDataMode.REAL 空间，与 Mock 模式隔离。
-复用 InMemoryMemoryRepository / ResultSnapshotStore / TraceRecorder / TurnController。
-
-不复制 MockTurnService 执行管线。
-不修改共享 Provider 实例方法。
-DeepSeek 失败不回退 MockAgentRuntime。
 """
 
 from __future__ import annotations
@@ -15,8 +16,16 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
+from backend.app.application.turn_pipeline import TurnPipeline
 from backend.app.application.turn_service_protocol import TurnServiceProtocol
 from backend.app.config.settings import Settings
+from backend.app.harness.errors import (
+    ToolExecutionError,
+    ToolNotRegisteredError,
+    ToolOutputValidationError,
+    ToolPolicyDeniedError,
+    ToolTimeoutError,
+)
 from backend.app.harness.models import HarnessConfig
 from backend.app.harness.observability.llm_observer import (
     LLMCallCollector,
@@ -24,7 +33,19 @@ from backend.app.harness.observability.llm_observer import (
     ObservedLLMProvider,
 )
 from backend.app.harness.observability.trace_recorder import TraceRecorder
+from backend.app.harness.runtime.context_builder import ContextBuilder
+from backend.app.harness.runtime.tool_gateway import (
+    ToolExecutionContext,
+    ToolGateway,
+)
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
+from backend.app.harness.tool_registry import (
+    SchemaInput,
+    TOOL_NAME_DAX,
+    TOOL_NAME_RENDER,
+    TOOL_NAME_SCHEMA,
+    create_default_tool_gateway,
+)
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.deepseek_service import DeepSeekIntentService
 from backend.app.intent.models import IntentSpec, IntentType
@@ -106,6 +127,19 @@ class DeepSeekTurnService:
         self.config = config if config is not None else HarnessConfig.from_settings(settings)
         self.validator = ValidationService()
         self.snapshot_store = ResultSnapshotStore()
+        # M1.6.3: ContextBuilder 和 ToolGateway 统一进入 DeepSeek 管线
+        self.context_builder = ContextBuilder(self.config)
+        self.tool_gateway = self._build_tool_gateway()
+        # M1.6.3: 共享 TurnPipeline 执行骨架
+        self.pipeline = TurnPipeline(
+            config=self.config,
+            memory_repo=self.memory_repo,
+            snapshot_store=self.snapshot_store,
+        )
+
+    def _build_tool_gateway(self) -> ToolGateway:
+        """构建 ToolGateway — M1.6.3 使用共享入口，与 Mock 路径完全一致"""
+        return create_default_tool_gateway(self.powerbi, self.report_renderer, self.config)
 
     # ── 公共 API ──
 
@@ -117,85 +151,25 @@ class DeepSeekTurnService:
         semantic_model_key: str = "mock_sales_model",
         report_template_key: Optional[str] = None,
     ) -> dict[str, Any]:
-        """执行完整 DeepSeek Turn 流程"""
+        """执行完整 DeepSeek Turn 流程 — 委托给共享 TurnPipeline 骨架"""
 
-        # ── 统一生成 ID ──
-        effective_conv_id = conversation_id or str(uuid.uuid4())
-        effective_req_id = request_id or str(uuid.uuid4())
-        runtime_mode = RuntimeDataMode.REAL
-
-        # ── 计算请求指纹 ──
-        fingerprint_hash = RequestFingerprint.compute_hash(
+        return await self.pipeline.execute(
             message=message,
-            client_conversation_id=conversation_id,
+            conversation_id=conversation_id,
+            request_id=request_id,
             semantic_model_key=semantic_model_key,
-            effective_report_template_key=report_template_key,
-            scenario=None,
-            intent_key=None,
-            powerbi_key=None,
+            report_template_key=report_template_key,
+            runtime_mode=RuntimeDataMode.REAL,
+            is_mock=False,
+            llm_provider_name="deepseek",
+            powerbi_provider_name="mock_powerbi",
+            scenario_fingerprint_hash_inputs={
+                "scenario": None,
+                "intent_key": None,
+                "powerbi_key": None,
+            },
+            do_execute=self._do_execute,
         )
-
-        trace_id = str(uuid.uuid4())
-        trace = TraceRecorder(self.config)
-
-        # ── 幂等检查 ──
-        snapshot = await self.snapshot_store.get(effective_req_id, runtime_mode)
-        if snapshot is not None:
-            if snapshot.request_fingerprint_hash != fingerprint_hash:
-                raise IdempotencyConflictError(
-                    request_id=effective_req_id,
-                    detail="request_id has already been used by a different request",
-                )
-            trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
-                        data_summary={"terminal_state": "duplicate"})
-            return self._build_replay(snapshot, effective_req_id, trace_id)
-
-        # ── Owner/Waiter 协调 ──
-        for retry_attempt in range(3):
-            claim_status, claim_future = await self.snapshot_store.claim(
-                effective_req_id, runtime_mode, fingerprint_hash
-            )
-            if claim_status == IdempotencyClaimStatus.CONFLICT:
-                raise IdempotencyConflictError(
-                    request_id=effective_req_id,
-                    detail="request_id has already been used by a different request",
-                )
-            elif claim_status == IdempotencyClaimStatus.WAITER:
-                try:
-                    await claim_future
-                except Exception:
-                    continue
-                snapshot = await self.snapshot_store.get(effective_req_id, runtime_mode)
-                if snapshot is not None:
-                    new_trace_id = str(uuid.uuid4())
-                    return self._build_replay(snapshot, effective_req_id, new_trace_id)
-                continue
-            elif claim_status == IdempotencyClaimStatus.OWNER:
-                break
-        else:
-            raise IdempotencyCoordinationError(
-                request_id=effective_req_id,
-                detail="Unable to acquire execution right after retries",
-            )
-
-        # ── OWNER: 执行 ──
-        try:
-            result = await self._do_execute(
-                message=message,
-                effective_conv_id=effective_conv_id,
-                effective_req_id=effective_req_id,
-                semantic_model_key=semantic_model_key,
-                report_template_key=report_template_key,
-                runtime_mode=runtime_mode,
-                trace=trace,
-                trace_id=trace_id,
-                fingerprint_hash=fingerprint_hash,
-            )
-            await self.snapshot_store.complete(effective_req_id, runtime_mode)
-            return result
-        except Exception:
-            await self.snapshot_store.abort(effective_req_id, runtime_mode)
-            raise
 
     # ── 核心执行管线 ──
 
@@ -207,11 +181,14 @@ class DeepSeekTurnService:
         semantic_model_key: str,
         report_template_key: Optional[str],
         runtime_mode: RuntimeDataMode,
+        is_mock: bool,
+        llm_provider_name: str,
+        powerbi_provider_name: str,
         trace: TraceRecorder,
         trace_id: str,
         fingerprint_hash: str,
     ) -> dict[str, Any]:
-        """Owner 执行完整 DeepSeek 管线"""
+        """Owner 执行完整 DeepSeek 管线（由共享 TurnPipeline 骨架调用）"""
 
         trace.record("request_received", trace_id=trace_id, request_id=effective_req_id,
                      conversation_id=effective_conv_id)
@@ -227,6 +204,15 @@ class DeepSeekTurnService:
         committed = await self.memory_repo.get_latest_committed(
             effective_conv_id, runtime_mode
         )
+
+        # ── 2a. 构建上下文（ContextBuilder 统一进入 DeepSeek 管线）──
+        context = self.context_builder.build(
+            user_message=message,
+            committed_memory=committed,
+            semantic_model_key=semantic_model_key,
+            report_template_key=report_template_key,
+        )
+        trace.record("context_built", trace_id=trace_id, request_id=effective_req_id)
 
         # ── 3. 意图识别 ──
         intent_service = DeepSeekIntentService(provider=observed, max_format_repairs=1)
@@ -288,18 +274,35 @@ class DeepSeekTurnService:
         controller.transition(TurnState.INTENT_CLASSIFIED)
         controller.record_intent_valid()
 
-        # ── 7. 获取 Schema ──
+        # ── 7. 通过 ToolGateway 获取 Schema ──
+        controller.transition(TurnState.PLAN_READY)
         try:
-            schema = await self.powerbi.get_semantic_model_schema(semantic_model_key)
-        except Exception as e:
+            exec_ctx = ToolExecutionContext(
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                conversation_id=effective_conv_id,
+                runtime_mode=runtime_mode,
+                intent=intent.intent,
+                user=UserContext(),
+            )
+            schema_input = SchemaInput(semantic_model_key=semantic_model_key)
+            schema: SemanticModelSchema = await self.tool_gateway.execute(
+                TOOL_NAME_SCHEMA,
+                exec_ctx,
+                schema_input,
+                trace=trace,
+                controller=controller,
+            )
+        except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
+                ToolNotRegisteredError, ToolOutputValidationError) as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
                 terminal_state=TurnState.TOOL_FAILED, error_type=type(e).__name__,
                 reason=str(e), stage="schema_fetch", trace_id=trace_id,
                 collector=collector,
             )
+
         controller.record_tool_execution_succeeded()
-        controller.transition(TurnState.PLAN_READY)
 
         # ── 8. QueryPlan 生成与验证 ──
         try:
@@ -375,11 +378,35 @@ class DeepSeekTurnService:
         trace.record("dax_validated", trace_id=trace_id, request_id=effective_req_id,
                      data_summary={"is_read_only": safety_result.is_valid})
 
-        # ── 10. 执行 Mock DAX 查询 ──
+        # ── 10. 通过 ToolGateway 执行 DAX 查询 ──
         fixture_key = "data_question" if intent.intent == IntentType.DATA_QUESTION else "report_generation"
+        # M1.6.3: fixture_key 通过私有属性传给 MockPowerBIAdapter.execute_dax
+        dax_request._fixture_key = fixture_key  # type: ignore[attr-defined]
         try:
-            query_result = await self.powerbi.execute_fixture(dax_request, fixture_key)
-        except Exception as e:
+            exec_ctx = ToolExecutionContext(
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                conversation_id=effective_conv_id,
+                runtime_mode=runtime_mode,
+                intent=intent.intent,
+                user=UserContext(),
+            )
+            query_result: QueryResult = await self.tool_gateway.execute(
+                TOOL_NAME_DAX,
+                exec_ctx,
+                dax_request,
+                trace=trace,
+                controller=controller,
+            )
+        except ToolTimeoutError as e:
+            return await self._fail_result(
+                memory, effective_req_id, effective_conv_id, controller, trace,
+                terminal_state=TurnState.TOOL_FAILED, error_type="timeout",
+                reason=str(e), stage="dax_execution", trace_id=trace_id,
+                collector=collector,
+            )
+        except (ToolExecutionError, ToolPolicyDeniedError,
+                ToolNotRegisteredError, ToolOutputValidationError) as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
                 terminal_state=TurnState.TOOL_FAILED, error_type=type(e).__name__,
@@ -482,15 +509,25 @@ class DeepSeekTurnService:
                     collector=collector,
                 )
 
-            # 渲染报表
+            # M1.6.3: 通过 ToolGateway 渲染报表
             try:
-                rendered = RenderedReport(
-                    report_id=str(uuid.uuid4()),
-                    template_key=report_spec.template_key,
-                    html=await self.report_renderer.render(report_spec),
-                    source_mode="mock",
+                exec_ctx = ToolExecutionContext(
+                    trace_id=trace_id,
+                    request_id=effective_req_id,
+                    conversation_id=effective_conv_id,
+                    runtime_mode=runtime_mode,
+                    intent=intent.intent,
+                    user=UserContext(),
                 )
-            except Exception as e:
+                rendered: RenderedReport = await self.tool_gateway.execute(
+                    TOOL_NAME_RENDER,
+                    exec_ctx,
+                    report_spec,
+                    trace=trace,
+                    controller=controller,
+                )
+            except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
+                    ToolNotRegisteredError, ToolOutputValidationError) as e:
                 return await self._fail_result(
                     memory, effective_req_id, effective_conv_id, controller, trace,
                     terminal_state=TurnState.RESPONSE_FAILED, error_type=type(e).__name__,
@@ -637,6 +674,8 @@ class DeepSeekTurnService:
             source_mode="mock", collector=collector,
         )
 
+    # M1.6.3: 辅助方法委托给共享 TurnPipeline，保证统一行为
+
     def _build_result(
         self,
         request_id: str,
@@ -655,43 +694,29 @@ class DeepSeekTurnService:
         clarification_question: Optional[str] = None,
         unsupported_reason: Optional[str] = None,
     ) -> dict[str, Any]:
-        """构建统一结果字典"""
-
-        tool_sequence: list[str] = []
-        if trace is not None:
-            tool_sequence = trace.get_tool_sequence()
-
-        # usage 摘要
+        """构建统一结果字典 — 委托给共享 TurnPipeline"""
         usage: Optional[LLMUsageSummary] = None
         if collector is not None:
             usage = collector.summary()
 
-        result: dict[str, Any] = {
-            "request_id": request_id,
-            "conversation_id": conversation_id,
-            "terminal_state": terminal_state,
-            "intent": intent,
-            "response_type": response_type,
-            "error_type": error_type,
-            "tool_sequence": tool_sequence,
-            "memory_commit": terminal_state == "completed",
-            "trace_id": trace_id,
-            "is_mock": is_mock,
-            "source_mode": source_mode,
-            "usage": usage,
-            "allowed_tools": ["get_semantic_model_schema", "execute_dax", "render_report"],
-        }
-
-        if answer_text is not None:
-            result["answer"] = answer_text
-        if report_data is not None:
-            result["report"] = report_data
-        if clarification_question is not None:
-            result["clarification_question"] = clarification_question
-        if unsupported_reason is not None:
-            result["unsupported_reason"] = unsupported_reason
-
-        return result
+        return self.pipeline.build_result(
+            request_id=request_id,
+            conversation_id=conversation_id,
+            terminal_state=terminal_state,
+            intent=intent,
+            response_type=response_type,
+            error_type=error_type,
+            trace=trace,
+            trace_id=trace_id,
+            is_mock=is_mock,
+            source_mode=source_mode,
+            allowed_tools=self.tool_gateway.list_tools(),
+            answer_text=answer_text,
+            report_data=report_data,
+            clarification_question=clarification_question,
+            unsupported_reason=unsupported_reason,
+            usage=usage,
+        )
 
     def _build_replay(
         self,
@@ -699,36 +724,8 @@ class DeepSeekTurnService:
         request_id: str,
         trace_id: str,
     ) -> dict[str, Any]:
-        """构建幂等重放响应"""
-        report_dict: Optional[dict[str, Any]] = None
-        if snapshot.report is not None:
-            report_dict = {
-                "report_id": snapshot.report.report_id,
-                "template_key": snapshot.report.template_key,
-                "html": snapshot.report.html,
-            }
-
-        return {
-            "request_id": request_id,
-            "conversation_id": snapshot.conversation_id,
-            "terminal_state": "duplicate",
-            "intent": snapshot.intent,
-            "response_type": snapshot.response_type,
-            "answer": snapshot.answer,
-            "report": report_dict,
-            "clarification_question": snapshot.clarification_question,
-            "unsupported_reason": snapshot.unsupported_reason,
-            "error_type": snapshot.error_type,
-            "tool_sequence": [],
-            "memory_commit": False,
-            "trace_id": trace_id,
-            "is_mock": snapshot.is_mock,
-            "source_mode": "mock",
-            "usage": None,
-            "allowed_tools": snapshot.allowed_tools,
-            "idempotent_replay": True,
-            "replayed_request_id": snapshot.request_id,
-        }
+        """构建幂等重放响应 — 委托给共享 TurnPipeline"""
+        return self.pipeline.build_replay(snapshot, request_id, trace_id)
 
     async def _save_snapshot(
         self,
@@ -736,33 +733,5 @@ class DeepSeekTurnService:
         runtime_mode: RuntimeDataMode,
         fingerprint_hash: str,
     ) -> None:
-        """保存幂等快照"""
-        report_snapshot: Optional[ReportResultSnapshot] = None
-        if result.get("report"):
-            rd = result["report"]
-            report_snapshot = ReportResultSnapshot(
-                report_id=rd.get("report_id", ""),
-                template_key=rd.get("template_key", ""),
-                html=rd.get("html", ""),
-            )
-
-        snapshot = TurnResultSnapshot(
-            request_id=result.get("request_id", ""),
-            conversation_id=result.get("conversation_id", ""),
-            intent=result.get("intent", ""),
-            response_type=result.get("response_type", ""),
-            terminal_state=result.get("terminal_state", ""),
-            answer=result.get("answer"),
-            report=report_snapshot,
-            clarification_question=result.get("clarification_question"),
-            unsupported_reason=result.get("unsupported_reason"),
-            error_type=result.get("error_type"),
-            tool_sequence=result.get("tool_sequence", []),
-            memory_commit=result.get("memory_commit", False),
-            final_memory_version=None,
-            is_mock=result.get("is_mock", False),
-            trace_id=result.get("trace_id", ""),
-            allowed_tools=result.get("allowed_tools", []),
-            request_fingerprint_hash=fingerprint_hash,
-        )
-        await self.snapshot_store.save(snapshot, runtime_mode)
+        """保存幂等快照 — 委托给共享 TurnPipeline"""
+        await self.pipeline._save_snapshot(result, runtime_mode, fingerprint_hash)

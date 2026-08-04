@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M1.6.1 已完成，M1.6.2 进行中
+> **状态：** M1.6.3 已完成，M1.6.4 待开始
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -33,8 +33,8 @@ M1 真实 DeepSeek 接入
 
 M1.6 架构收口与加固
   M1.6.1 审计复验与架构定案           ✅ 已完成 (0f6424f)
-  M1.6.2 Harness与配置收口             🔄 进行中
-  M1.6.3 统一TurnPipeline与旧Agent抽象清理 ⬜
+  M1.6.2 Harness与配置收口             ✅ 已完成 (208bca4)
+  M1.6.3 统一TurnPipeline与旧Agent抽象清理 ✅ 已完成（本轮）
   M1.6.4 AI真实性、异常处理与对抗测试    ⬜
   M1.6.5 CI、全量回归与封板             ⬜
 
@@ -285,9 +285,9 @@ MVP 功能阶段 (后续)
 
 ### M1.6.2｜Harness与配置收口
 
-**状态：** 🔄 进行中
+**状态：** ✅ 已完成 | **Commit：** `208bca4`
 
-**计划内容：**
+**完成内容：**
 - ETCLOVG Harness统一配置收口
 - DEFAULT_MOCK_CONFIG误用修复
 - Mock/DeepSeek共享配置入口
@@ -300,14 +300,17 @@ MVP 功能阶段 (后续)
 
 ### M1.6.3｜统一TurnPipeline与旧Agent抽象清理
 
-**状态：** ⬜ 待开始
+**状态：** ✅ 已完成 | **Commit：** 本轮提交
 
-**计划内容：**
-- 实现统一确定性TurnPipeline
-- DeepSeek路径纳入ToolGateway和ContextBuilder
-- TurnController限制生效
-- 清理旧Agent抽象（保留PydanticAI依赖但不使用）
-- Mock/DeepSeek共享同一执行骨架
+**完成内容：**
+- 统一确定性TurnPipeline（共享执行骨架）— Mock/DeepSeek 使用同一 TurnPipeline 类型
+- DeepSeek 路径纳入 ToolGateway 和 ContextBuilder — 工具白名单、权限、超时、重试真实生效
+- TurnController 限制在 DeepSeek 路径真实生效
+- 清理旧 Agent 抽象（AgentRuntime、MockAgentRuntime 已删除）
+- 移除 PydanticAI 依赖（pyproject.toml 不再声明）
+- 防回归测试（共享骨架、无直接调用、统一 Registry、无 PydanticAI 残留）
+
+**本轮不开发 M2 功能。**
 
 **本轮不删除AgentRuntime或PydanticAI依赖。**
 
