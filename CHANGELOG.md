@@ -36,6 +36,82 @@
 
 **本轮 Tag：** 无
 
+### 阶段B：真实测试、错题本与防偏移治理
+
+#### ERR-165-001：未知LLMConfigurationError不伪装为API Key缺失
+
+- 修复 `routes.py`：LLMConfigurationError 新增 `api_key_missing` 分支
+- else 分支返回通用脱敏 `deepseek_configuration_error`（不再伪装为 `deepseek_api_key_missing`）
+- 修复次数：1
+
+#### TEST-165-001：Prompt注入真实行为测试（53个）
+
+- 新增 `backend/tests/api/test_m165_prompt_injection.py`
+- 全部经过真实 API → Service → TurnPipeline 执行路径
+- 覆盖10类注入：忽略规则、索取Key/Prompt、绕过ToolGateway、未注册工具、伪造system消息、超长输入、特殊字符、代码执行、跨请求污染、Memory边界
+- 断言真实行为：HTTP状态码、source_mode、is_mock、tool_sequence、allowed_tools、Secret脱敏
+
+#### TEST-165-002：API异常ASGI集成测试（23个）
+
+- 新增 `backend/tests/api/test_m165_exception_integration.py`
+- 所有LLMProviderError子类通过真实ASGI请求验证
+- 覆盖17种异常类型的HTTP状态码、error_type、detail、request_id、Content-Type
+- 验证已知Provider异常不落入500 internal_error
+- 验证未知LLMConfigurationError不再伪装为deepseek_api_key_missing
+
+#### TEST-165-003：测试真实性Mutation证明（3项）
+
+- 临时Git worktree中完成，主工作区无残留
+- Mutation A：402映射改为api_key_missing → test_insufficient_balance_402 FAILED ✓
+- Mutation B：allowed_tools中注入drop_all_tables → 5个test_unregistered_tool_not_called FAILED ✓
+- Mutation C：_save_snapshot空操作 → 3个test_snapshot_single_writer FAILED ✓
+
+#### GOV-165-003：正式机器错题本（8条+校验器）
+
+- `docs/ai_development_error_ledger.yaml`：8条有证据历史错误（TX-001/002/003、NET-001、GOV-001、ARCH-164-001、ERR-164-001、ERR-165-001）
+- `scripts/check_ai_error_ledger.py`：校验器（YAML解析、ID唯一、必填字段、状态、修复次数、回归测试、ADR、Commit格式、空证据、Secret）
+- `backend/tests/unit/test_m165_error_ledger.py`：34个校验器单元测试
+
+#### AUDIT-165-001：架构偏移复验矩阵（18项）
+
+- 新增 `docs/12_m16_architecture_drift_audit.md`
+- 每项包含：原始偏移、发现版本、修复版本、当前证据、行为测试、状态、剩余风险
+- 状态统计：已解决14、部分解决2（TurnController限制+纸面测试残余）、不适用2
+
+**修改文件清单（16个）：**
+- `backend/app/api/routes.py` — ERR-165-001修复
+- `backend/app/config/settings.py` — version → M1.6.5
+- `backend/tests/api/test_m165_prompt_injection.py` — 新增（53个测试）
+- `backend/tests/api/test_m165_exception_integration.py` — 新增（23个测试）
+- `backend/tests/unit/test_m165_error_ledger.py` — 新增（34个测试）
+- `backend/tests/api/test_chat.py` — version同步
+- `backend/tests/api/test_health.py` — version同步
+- `backend/tests/integration/test_m1_0_1_fixes.py` — "进行中"计数更新
+- `backend/tests/integration/test_m1_2_intent_isolation.py` — version同步
+- `backend/tests/integration/test_m1_fixes.py` — version同步
+- `backend/tests/unit/test_settings.py` — version同步
+- `docs/08_development_roadmap.md` — footer更新
+- `docs/09_context_handoff.md` — 描述修正
+- `docs/12_m16_architecture_drift_audit.md` — 新增（审计矩阵）
+- `docs/ai_development_error_ledger.yaml` — 8条历史条目
+- `scripts/check_ai_error_ledger.py` — 新增（校验器）
+
+**最终验收结果：**
+- pytest：1180 passed（1070 + 110 M1.6.5新增）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS（146文件）
+- 错题本校验器：PASS（0 errors，8 entries）
+- 真实 LLM 调用次数：0
+- 新增生产文件：0
+- 新增依赖：0
+- 新增测试文件：3
+- 新增治理脚本：1
+- 新增治理文档：2
+- 修改生产文件：2（routes.py + settings.py）
+- 修复次数：1（ERR-165-001）
+
+**本轮 Tag：** 无
+
 ---
 
 ## [M1.6.4] — 2026-08-05
