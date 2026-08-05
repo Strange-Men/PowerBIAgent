@@ -84,6 +84,22 @@ git tag -l
 9. 检查 Commit 标题准确
 10. 检查本轮没有新增 Tag
 
+### 提交前文档先行规则（硬规则）
+
+1. README、CHANGELOG、docs/08、docs/09 和版本号必须在 Commit 前全部同步完成
+2. Commit 前必须搜索并清除以下失效内容：
+   - `本轮提交`
+   - `待回填`
+   - `等待Push`
+   - `等待CI`
+   - 错误旧版本状态
+3. 已知历史 Commit SHA 和 CI Run ID 必须在 Commit 前验证并回填
+4. 当前 Commit 自身 SHA 不得使用占位符，也不得手工推测
+5. 当前 Commit SHA 和当前 CI Run ID 只记录在最终报告与 Annotated Tag 中
+6. Commit 完成后不得再为回填文档追加 Commit
+7. Commit 后只允许 Push、CI 验证、Tag 创建和 Tag Push
+8. Commit 后发现文档错误必须停止，由用户决定是否新开修复版本
+
 ---
 
 ## 三、Tag 规则

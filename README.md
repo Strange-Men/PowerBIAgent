@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M1.7.1 最终封板候选** — M0—M1 正式封板前最后一次收口（文档修正、恒真测试删除、CI加固）。
+**M1.7.2 M0—M1 最终封板基线** — M0—M1 正式封板前最后一个版本，只修正文档状态并建立封板流程。M2 尚未开始。
 
-> **Mock + Mock 模式完整可用。** **DeepSeek + Mock 模式 Chat 已可用（需配置 API Key）。** QueryResult 仍为 Mock。当前版本 M1.7.1 最终封板候选。
+> **Mock + Mock 模式完整可用。** **DeepSeek + Mock 模式 Chat 已可用（需配置 API Key）。** QueryResult 仍为 Mock。真实 Power BI 尚未接入（M2）。当前版本 M1.7.2 M0—M1 最终封板基线。
 
 ### 幂等与并发特性
 
@@ -106,7 +106,7 @@ curl http://127.0.0.1:8000/health
   "reasons": [],
   "app_name": "PowerBIAgent",
   "app_env": "development",
-  "version": "M1.7.1",
+  "version": "M1.7.2",
   "llm_mode": "mock",
   "powerbi_mode": "mock",
   "harness_mode": "strict",
@@ -197,4 +197,4 @@ Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过�
 
 ---
 
-*最后更新：2026-08-05 | M1.7.1 最终封板候选*
+*最后更新：2026-08-05 | M1.7.2 M0—M1 最终封板基线*

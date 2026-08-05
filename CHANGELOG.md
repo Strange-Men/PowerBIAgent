@@ -4,28 +4,23 @@
 
 ---
 
-## [M1.7] — 2026-08-05
+## [M1.7.2] — 2026-08-05
 
-### MVP轻量化与通用CI固化
+### M0—M1 最终文档收口与封板
 
-**目标：** M0—M1 正式封板前最后一次整理 — 测试收敛、CI通用化、文档轻量化、Smoke移出生产包。
+**目标：** M0—M1 最后一个版本，只修正文档状态并建立封板流程，不新增功能、不修改业务逻辑、不进入 M2。
 
 **主要变更：**
-- 测试收敛：删除4个旧集成测试文件（已被更强领域测试覆盖），版本化测试文件重命名为领域名称
-- CI通用化：`.github/workflows/ci.yml`（PowerBIAgent Validation），动态版本一致性由pytest保护
-- Smoke轻量化：删除4个阶段性Smoke，只保留一个人工验收入口（`scripts/manual_smoke/deepseek_chat_smoke.py`）
-- 文档轻量化：归档M1.6审计文档、压缩docs/09和活跃CHANGELOG
-- 版本同步至M1.7
+- 文档状态最终同步：docs/08、docs/09、README 全部更新至 M1.7.2
+- 历史 Commit 和 CI 事实回填：M1.7 回填 `e5d1740`，M1.7.1 回填 `1dd20de` 及 CI Run #30991136311
+- 新增"文档先于 Commit"规则：固化为 CLAUDE.md 硬规则，Commit 后禁止再回填文档
+- 版本同步至 M1.7.2（Settings.version、README、docs/08、docs/09）
+- 不修改生产业务逻辑（变化为 0）
+- 不执行真实 LLM（调用次数为 0）
 
-**最终测试结果：**
-- pytest：1120 passed
-- Golden Cases：11 passed，1 skipped
-- 真实 LLM 调用次数：0
-- 生产依赖变化：0
-- 生产业务逻辑变化：0
-- 未创建 Tag
+**固定封板 Tag：** `m1.7.2-m0-m1正式封板` — 该 Tag 必须指向本封板基线提交，远程 CI 通过后创建。
 
-**Commit：** 本轮提交
+**Commit：** 该 Tag 必须指向本封板基线提交
 
 ---
 
@@ -51,7 +46,32 @@
 - 生产业务逻辑变化：0
 - 未创建 Tag
 
-**Commit：** 本轮提交
+**Commit：** `1dd20de`
+
+---
+
+## [M1.7] — 2026-08-05
+
+### MVP轻量化与通用CI固化
+
+**目标：** M0—M1 正式封板前最后一次整理 — 测试收敛、CI通用化、文档轻量化、Smoke移出生产包。
+
+**主要变更：**
+- 测试收敛：删除4个旧集成测试文件（已被更强领域测试覆盖），版本化测试文件重命名为领域名称
+- CI通用化：`.github/workflows/ci.yml`（PowerBIAgent Validation），动态版本一致性由pytest保护
+- Smoke轻量化：删除4个阶段性Smoke，只保留一个人工验收入口（`scripts/manual_smoke/deepseek_chat_smoke.py`）
+- 文档轻量化：归档M1.6审计文档、压缩docs/09和活跃CHANGELOG
+- 版本同步至M1.7
+
+**最终测试结果：**
+- pytest：1120 passed
+- Golden Cases：11 passed，1 skipped
+- 真实 LLM 调用次数：0
+- 生产依赖变化：0
+- 生产业务逻辑变化：0
+- 未创建 Tag
+
+**Commit：** `e5d1740`
 
 ---
 
@@ -166,4 +186,4 @@
 
 ---
 
-*最后更新：2026-08-05 | M1.7 轻量化候选*
+*最后更新：2026-08-05 | M1.7.2 M0—M1 最终封板基线*
