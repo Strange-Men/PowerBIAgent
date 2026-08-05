@@ -22,10 +22,12 @@ git tag -l
 1. `PROJECT_CHARTER.md`
 2. `CLAUDE.md`（本文件）
 3. `docs/00_product_requirements_document.md`
-4. `docs/08_development_roadmap.md`
-5. `docs/09_context_handoff.md`
-6. 当前轮 Prompt 指定的设计文档和 ADR
-7. `CHANGELOG.md` 最近一轮记录
+4. `docs/adr/README.md` 及当前有效 ADR
+5. `docs/ai_development_error_ledger.yaml`
+6. `docs/08_development_roadmap.md`
+7. `docs/09_context_handoff.md`
+8. 当前轮 Prompt 指定的设计文档
+9. `CHANGELOG.md` 最近一轮记录
 
 ### 3. 状态核实
 
@@ -42,7 +44,16 @@ git tag -l
 - 本轮禁止范围
 - 当前本地开发环境
 
-### 5. 阻塞条件
+### 5. 防偏移检查（不超过200字）
+
+开始开发前必须输出：
+
+- 本轮命中了哪些历史错误 ID
+- 哪些 ADR 限制本轮修改
+- 本轮可能产生的架构偏移
+- 本轮禁止触碰的边界
+
+### 6. 阻塞条件
 
 只有检查全部通过才能开始修改。
 
@@ -51,6 +62,8 @@ git tag -l
 - 先核查 Git 和文件
 - 记录阻塞
 - 不猜测上一轮已完成
+
+无法读取 `docs/ai_development_error_ledger.yaml` 或错题本格式错误时，禁止开发。
 
 **注意：不得将"没有上一轮 Tag"视为阻塞，因为普通轮次本来不创建 Tag。**
 

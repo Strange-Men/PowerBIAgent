@@ -1,5 +1,43 @@
 # CHANGELOG
 
+## [M1.6.5] — 2026-08-05
+
+### 阶段A：路线修订与治理基线
+
+**来源：** M1.6.5 真实测试、机器错题本与架构防偏移治理 — 阶段A。
+
+#### GOV-165-001：路线修订
+
+- `docs/08_development_roadmap.md`：M1.6.4 状态改为 ✅ 已完成、Commit 补充为 `4217b66`
+- M1.6.5 路线改为「真实测试、机器错题本与架构防偏移治理」
+- 新增 M1.6.6「CI、最终审计、真实Smoke与封板」
+- 明确 M1.6.5 不创建 Tag、不封板；M1.6.6 创建 M1.6 最终 Tag
+- `docs/09_context_handoff.md`：M1.6.4 记录补充 Commit `4217b66`、入已完成版本表
+- 当前阶段更新为 M1.6.5、下一轮更新为 M1.6.6
+- 明确 M1.6.5 和 M1.6.6 职责边界
+- "上一轮"修正为 M1.6.4（原误写 M1.6.3.1）
+
+#### GOV-165-002：错题本空壳与冷启动入口
+
+- 新增 `docs/ai_development_error_ledger.yaml`：正式机器错题总账
+  - Schema 版本 1.0、状态枚举、必填字段定义
+  - entries 为空列表，阶段B迁移历史错误
+- `CLAUDE.md` 冷启动协议更新：
+  - 必须阅读文件新增：`docs/adr/README.md` 及 ADR、`docs/ai_development_error_ledger.yaml`
+  - 新增「防偏移检查」步骤（命中错误ID、ADR限制、可能偏移、禁止边界）
+  - 新增阻塞条件：无法读取错题本或格式错误时禁止开发
+
+**修改文件清单（5个）：**
+- `docs/08_development_roadmap.md`
+- `docs/09_context_handoff.md`
+- `CLAUDE.md`
+- `docs/ai_development_error_ledger.yaml`
+- `CHANGELOG.md`
+
+**本轮 Tag：** 无
+
+---
+
 ## [M1.6.4] — 2026-08-05
 
 ### 架构稳定性、AI真实性、异常边界与对抗测试加固
