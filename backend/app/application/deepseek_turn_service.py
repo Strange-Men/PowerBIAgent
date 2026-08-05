@@ -12,12 +12,10 @@ M1.6.3 更新：
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 from typing import Any, Optional
 
 from backend.app.application.turn_pipeline import TurnPipeline
-from backend.app.application.turn_service_protocol import TurnServiceProtocol
 from backend.app.config.settings import Settings
 from backend.app.harness.errors import (
     ToolExecutionError,
@@ -47,28 +45,13 @@ from backend.app.harness.tool_registry import (
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.deepseek_service import DeepSeekIntentService
 from backend.app.intent.models import IntentSpec, IntentType
-from backend.app.llm.base import LLMProvider, LLMTask
+from backend.app.llm.base import LLMProvider
 from backend.app.memory.models import (
-    MemoryCommitEvidence,
     RuntimeDataMode,
     StructuredWorkMemory,
 )
 from backend.app.memory.repository import (
     InMemoryMemoryRepository,
-    MemoryCommitDeniedError,
-    MemoryVersionConflictError,
-)
-from backend.app.memory.request_fingerprint import (
-    IdempotencyConflictError,
-    IdempotencyCoordinationError,
-    RequestFingerprint,
-    ScenarioFingerprint,
-)
-from backend.app.memory.result_snapshot import (
-    IdempotencyClaimStatus,
-    ReportResultSnapshot,
-    ResultSnapshotStore,
-    TurnResultSnapshot,
 )
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.query_plan.deepseek_service import DeepSeekQueryPlanService
@@ -114,7 +97,6 @@ class DeepSeekTurnService:
         if llm_provider.is_mock:
             raise ValueError("DeepSeekTurnService 要求非 Mock LLM Provider")
 
-        self.memory_repo = memory_repo
         self.llm_provider = llm_provider
         self.powerbi = powerbi_adapter
         self.report_renderer = report_renderer
@@ -122,19 +104,28 @@ class DeepSeekTurnService:
         # M1.6.2: 禁止回退 Mock 配置。若未显式传入 config，从自身 settings 构建。
         self.config = config if config is not None else HarnessConfig.from_settings(settings)
         self.validator = ValidationService()
-        self.snapshot_store = ResultSnapshotStore()
         # M1.6.3: ToolGateway 统一进入 DeepSeek 管线
         self.tool_gateway = self._build_tool_gateway()
-        # M1.6.3: 共享 TurnPipeline 执行骨架（含 ContextBuilder、TurnController 生命周期）
+        # M1.6.3.2: Service 不持有 memory_repo/SnapshotStore —
+        #   TurnPipeline 是 Memory 和 Snapshot 的唯一写入者
         self.pipeline = TurnPipeline(
             config=self.config,
-            memory_repo=self.memory_repo,
-            snapshot_store=self.snapshot_store,
+            memory_repo=memory_repo,
         )
 
     def _build_tool_gateway(self) -> ToolGateway:
         """构建 ToolGateway — M1.6.3 使用共享入口，与 Mock 路径完全一致"""
         return create_default_tool_gateway(self.powerbi, self.report_renderer, self.config)
+
+    # ── 只读 Memory 访问（仅用于测试验证，Service 不用于写入） ──
+
+    @property
+    def memory_repo(self) -> InMemoryMemoryRepository:
+        """只读 Memory Repository 访问 — 通过 TurnPipeline 间接访问。
+
+        仅用于测试验证 Memory 状态。Service 自身不通过此属性写入。
+        """
+        return self.pipeline.memory_repo
 
     # ── 公共 API ──
 
@@ -460,7 +451,7 @@ class DeepSeekTurnService:
             answer_text = response_obj.answer
             answer_validation = self.validator.validate_answer_strict(response_obj, query_result)
             if not answer_validation.is_valid:
-                await self.memory_repo.mark_failed(
+                await self.pipeline.mark_memory_failed(
                     effective_req_id, runtime_mode,
                     reason=str(answer_validation.errors), stage="answer_validation"
                 )
@@ -526,7 +517,7 @@ class DeepSeekTurnService:
 
             report_validation = self.validator.validate_report_strict(report_spec, query_result)
             if not report_validation.is_valid:
-                await self.memory_repo.mark_failed(
+                await self.pipeline.mark_memory_failed(
                     effective_req_id, runtime_mode,
                     reason=str(report_validation.errors), stage="report_validation"
                 )
@@ -564,35 +555,16 @@ class DeepSeekTurnService:
             memory.last_report_id = report_data["report_id"]
         memory.updated_at = datetime.utcnow()
 
-        # ── 13. 原子提交 Memory ──
+        # ── 13. 原子提交 Memory — M1.6.3.2: 唯一通过 TurnPipeline ──
         evidence = controller.build_commit_evidence()
-        try:
-            committed_memory = await self.memory_repo.commit(memory, evidence)
-            controller.record_version_matches()
-            controller.transition(TurnState.MEMORY_COMMITTED)
-            trace.record("memory_committed", trace_id=trace_id, request_id=effective_req_id,
-                        data_summary={"version": committed_memory.memory_version})
-        except MemoryVersionConflictError as e:
-            controller.set_failure_reason(str(e))
-            controller.transition(TurnState.MEMORY_CONFLICT)
-            await self.pipeline.mark_memory_failed(
-                effective_req_id, runtime_mode, reason=str(e), stage="memory_commit"
-            )
+        committed_memory, commit_error = await self.pipeline.commit_memory_safe(
+            memory, evidence, controller, trace, trace_id, effective_req_id, runtime_mode
+        )
+        if commit_error is not None:
+            terminal_state = "memory_conflict" if commit_error == "version_conflict" else "response_failed"
             return self._build_result(
-                effective_req_id, effective_conv_id, "memory_conflict",
-                intent=intent.intent.value, error_type="version_conflict",
-                trace=trace, trace_id=trace_id, is_mock=False,
-                source_mode="mock", collector=collector,
-            )
-        except MemoryCommitDeniedError as e:
-            controller.set_failure_reason(str(e))
-            controller.transition(TurnState.RESPONSE_FAILED)
-            await self.pipeline.mark_memory_failed(
-                effective_req_id, runtime_mode, reason=str(e), stage="memory_commit"
-            )
-            return self._build_result(
-                effective_req_id, effective_conv_id, "response_failed",
-                intent=intent.intent.value, error_type="memory_commit_denied",
+                effective_req_id, effective_conv_id, terminal_state,
+                intent=intent.intent.value, error_type=commit_error,
                 trace=trace, trace_id=trace_id, is_mock=False,
                 source_mode="mock", collector=collector,
             )
@@ -601,7 +573,7 @@ class DeepSeekTurnService:
         trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
                     data_summary={"terminal_state": "completed"})
 
-        # ── 14. 保存快照 ──
+        # ── 14. 构建结果（Snapshot 由 TurnPipeline.execute() 统一保存） ──
         result = self._build_result(
             effective_req_id, effective_conv_id, "completed",
             intent=intent.intent.value, response_type=response_type,
@@ -610,10 +582,9 @@ class DeepSeekTurnService:
             answer_text=answer_text,
             report_data=report_data,
         )
-        await self._save_snapshot(result, runtime_mode, fingerprint_hash)
         return result
 
-    # ── 辅助方法 ──
+    # ── 辅助方法：结果构建委托给共享 TurnPipeline ──
 
     async def _fail_result(
         self,
@@ -637,12 +608,10 @@ class DeepSeekTurnService:
             pass
 
         runtime_mode = memory.runtime_mode
-        try:
-            await self.memory_repo.mark_failed(
-                request_id, runtime_mode, reason=reason, stage=stage
-            )
-        except Exception:
-            pass
+        # M1.6.3.2: Memory 失败标记统一通过 TurnPipeline
+        await self.pipeline.mark_memory_failed(
+            request_id, runtime_mode, reason=reason, stage=stage
+        )
 
         trace.record("request_failed", trace_id=trace_id, request_id=request_id,
                     error_type=error_type,
@@ -700,20 +669,4 @@ class DeepSeekTurnService:
             usage=usage,
         )
 
-    def _build_replay(
-        self,
-        snapshot: TurnResultSnapshot,
-        request_id: str,
-        trace_id: str,
-    ) -> dict[str, Any]:
-        """构建幂等重放响应 — 委托给共享 TurnPipeline"""
-        return self.pipeline.build_replay(snapshot, request_id, trace_id)
-
-    async def _save_snapshot(
-        self,
-        result: dict[str, Any],
-        runtime_mode: RuntimeDataMode,
-        fingerprint_hash: str,
-    ) -> None:
-        """保存幂等快照 — 委托给共享 TurnPipeline"""
-        await self.pipeline._save_snapshot(result, runtime_mode, fingerprint_hash)
+    # M1.6.3.2: _build_replay 和 _save_snapshot 已移除 — 统一由 TurnPipeline.execute() 管理

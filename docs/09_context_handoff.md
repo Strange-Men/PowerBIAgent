@@ -2,7 +2,7 @@
 
 > **所有新 Claude 恢复上下文的唯一最新交接入口。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-04 | M1.6.3.1 统一管线复验与彻底收口**
+> **最后更新：2026-08-05 | M1.6.3.2 事务边界与单写入者彻底收口**
 
 ---
 
@@ -14,17 +14,25 @@
 
 ## 当前阶段
 
-**M1.6.3.1 统一管线复验与彻底收口** — ✅ 已完成。
+**M1.6.3.2 事务边界与单写入者彻底收口** — ✅ 已完成。
 
-> **说明：** TurnPipeline 控制面已真正统一（ContextBuilder、TurnController、ToolExecutionContext 工厂、Memory 失败标记均由 TurnPipeline 管理）。两个 Service 仅保留 LLM 结构化阶段差异。AgentRuntime/MockAgentRuntime 已删除，PydanticAI 依赖已移除。M2 仍未开始。
+> **说明：**
+> - TurnPipeline 已成为 Memory 和 Snapshot 的唯一写入者。
+> - Service 只负责 LLM 结构化阶段计算（Intent/QueryPlan/DAX/Answer/ReportSpec）和 ToolGateway 调用。
+> - Service 不持有 `self.memory_repo`/`self.snapshot_store` 实例字段。
+> - Memory commit/mark_failed 统一通过 `pipeline.commit_memory_safe()`/`pipeline.mark_memory_failed()`。
+> - Snapshot save/complete/abort 仅由 `TurnPipeline.execute()` 触发。
+> - DeepSeek/HTTPX 错误分类已完善（402 + error_code）。
+> - CLAUDE.md 新增「外部证据修复门禁」和「两次修复上限」两节。
+> - AgentRuntime/MockAgentRuntime 已删除，PydanticAI 依赖已移除。M2 仍未开始。
 
 ## 上一轮
 
-**M1.6.3** — 统一TurnPipeline与旧Agent抽象清理（Commit `d6665bd`）
+**M1.6.3.1** — 统一管线复验与彻底收口（Commit `d99d243`）
 
 ## 下一轮
 
-**M1.6.4 AI真实性、异常处理与对抗测试** — ⬜ 待开始。M1.6.3.1 已完成。
+**M1.6.4 AI真实性、异常处理与对抗测试** — ⬜ 待开始。M1.6.3.2 已完成。
 
 ## 已完成版本
 
@@ -52,6 +60,8 @@
 | M1.6.1 | 审计复验与架构定案 | `0f6424f` | 2026-08-04 |
 | M1.6.2 | Harness与配置收口 | `208bca4` | 2026-08-04 |
 | M1.6.3 | 统一TurnPipeline与旧Agent抽象清理 | `d6665bd` | 2026-08-04 |
+| M1.6.3.1 | 统一管线复验与彻底收口 | `d99d243` | 2026-08-04 |
+| M1.6.3.2 | 事务边界与单写入者彻底收口 | 本轮提交 | 2026-08-05 |
 
 ## 最近封板 Tag
 

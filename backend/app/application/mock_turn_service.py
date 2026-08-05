@@ -31,31 +31,17 @@ from backend.app.harness.runtime.turn_controller import TurnController, TurnStat
 from backend.app.harness.observability.trace_recorder import TraceRecorder
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.models import IntentSpec, IntentType
-from backend.app.llm.base import LLMProvider, LLMRequest, LLMTask
+from backend.app.llm.base import LLMRequest, LLMTask
 from backend.app.llm.mock import MockLLMProvider
 from backend.app.memory.models import (
-    MemoryCommitEvidence,
-    MemoryStatus,
     RuntimeDataMode,
     StructuredWorkMemory,
 )
 from backend.app.memory.repository import (
     InMemoryMemoryRepository,
-    MemoryCommitDeniedError,
-    MemoryVersionConflictError,
 )
 from backend.app.memory.request_fingerprint import (
-    IdempotencyConflictError,
-    IdempotencyCoordinationError,
-    OwnerFailedError,
-    RequestFingerprint,
     ScenarioFingerprint,
-)
-from backend.app.memory.result_snapshot import (
-    IdempotencyClaimStatus,
-    ReportResultSnapshot,
-    ResultSnapshotStore,
-    TurnResultSnapshot,
 )
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.mock import MockReportRenderer
@@ -97,7 +83,7 @@ class MockTurnService:
         config: Optional[HarnessConfig] = None,
         llm_provider: Optional[MockLLMProvider] = None,  # M1.6.3: 新的直接注入方式
     ):
-        self.memory_repo = memory_repo or InMemoryMemoryRepository()
+        _repo = memory_repo or InMemoryMemoryRepository()
         self.powerbi = powerbi_adapter or MockPowerBIAdapter()
         self.report_renderer = report_renderer or MockReportRenderer()
         self.config = config or HarnessConfig()
@@ -119,17 +105,26 @@ class MockTurnService:
 
         self.tool_gateway = self._build_tool_gateway()
         self.validator = ValidationService()
-        self.snapshot_store = ResultSnapshotStore()
-        # M1.6.3: 共享 TurnPipeline 执行骨架（含 ContextBuilder、TurnController 生命周期）
+        # M1.6.3.2: Service 不持有 memory_repo/SnapshotStore —
+        #   TurnPipeline 是 Memory 和 Snapshot 的唯一写入者
         self.pipeline = TurnPipeline(
             config=self.config,
-            memory_repo=self.memory_repo,
-            snapshot_store=self.snapshot_store,
+            memory_repo=_repo,
         )
 
     def _build_tool_gateway(self) -> ToolGateway:
         """构建 ToolGateway — M1.6.2 使用共享工具注册入口，超时/重试来自 HarnessConfig"""
         return create_default_tool_gateway(self.powerbi, self.report_renderer, self.config)
+
+    # ── 只读 Memory 访问（仅用于测试验证，Service 不用于写入） ──
+
+    @property
+    def memory_repo(self) -> InMemoryMemoryRepository:
+        """只读 Memory Repository 访问 — 通过 TurnPipeline 间接访问。
+
+        仅用于测试验证 Memory 状态。Service 自身不通过此属性写入。
+        """
+        return self.pipeline.memory_repo
 
     @property
     def llm(self) -> Any:
@@ -251,9 +246,9 @@ class MockTurnService:
         trace.record("request_received", trace_id=trace_id, request_id=effective_req_id,
                      conversation_id=effective_conv_id)
 
-        # fallback: Memory 中存在但快照缺失（向后兼容）
-        if await self.memory_repo.request_exists(effective_req_id, runtime_mode):
-            existing = await self.memory_repo.get_by_request_id(effective_req_id, runtime_mode)
+        # M1.6.3.2: Memory 只读回退通过 TurnPipeline 只读方法
+        if await self.pipeline.request_exists_in_memory(effective_req_id, runtime_mode):
+            existing = await self.pipeline.get_memory_by_request_id(effective_req_id, runtime_mode)
             trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
                         data_summary={"terminal_state": "duplicate"})
             return self._build_result(
@@ -495,7 +490,7 @@ class MockTurnService:
             if not answer_validation.is_valid:
                 controller.set_failure_reason(str(answer_validation.errors))
                 controller.transition(TurnState.RESPONSE_FAILED)
-                await self.memory_repo.mark_failed(
+                await self.pipeline.mark_memory_failed(
                     effective_req_id, runtime_mode,
                     reason=str(answer_validation.errors), stage="answer_validation"
                 )
@@ -517,7 +512,7 @@ class MockTurnService:
             if not report_validation.is_valid:
                 controller.set_failure_reason(str(report_validation.errors))
                 controller.transition(TurnState.RESPONSE_FAILED)
-                await self.memory_repo.mark_failed(
+                await self.pipeline.mark_memory_failed(
                     effective_req_id, runtime_mode,
                     reason=str(report_validation.errors), stage="report_validation"
                 )
@@ -591,37 +586,16 @@ class MockTurnService:
             memory.last_report_id = rendered.report_id if rendered else None
         memory.updated_at = datetime.utcnow()
 
-        # 16. 原子提交
+        # 16. 原子提交 — M1.6.3.2: 唯一通过 TurnPipeline
         evidence = controller.build_commit_evidence()
-        try:
-            committed_memory = await self.memory_repo.commit(memory, evidence)
-            controller.record_version_matches()
-            controller.transition(TurnState.MEMORY_COMMITTED)
-            trace.record("memory_committed", trace_id=trace_id, request_id=effective_req_id,
-                        data_summary={"version": committed_memory.memory_version})
-        except MemoryVersionConflictError as e:
-            controller.set_failure_reason(str(e))
-            controller.transition(TurnState.MEMORY_CONFLICT)
-            await self.pipeline.mark_memory_failed(
-                effective_req_id, runtime_mode, reason=str(e), stage="memory_commit"
-            )
-            trace.record("memory_commit_rejected", trace_id=trace_id, request_id=effective_req_id,
-                        error_type="version_conflict")
+        committed_memory, commit_error = await self.pipeline.commit_memory_safe(
+            memory, evidence, controller, trace, trace_id, effective_req_id, runtime_mode
+        )
+        if commit_error is not None:
+            terminal_state = "memory_conflict" if commit_error == "version_conflict" else "response_failed"
             return self._build_result(
-                memory, effective_req_id, "memory_conflict", intent=intent.intent.value,
-                error_type="version_conflict", trace_id=trace_id,
-                trace=trace,
-                conversation_id=effective_conv_id,
-            )
-        except MemoryCommitDeniedError as e:
-            controller.set_failure_reason(str(e))
-            controller.transition(TurnState.RESPONSE_FAILED)
-            await self.pipeline.mark_memory_failed(
-                effective_req_id, runtime_mode, reason=str(e), stage="memory_commit"
-            )
-            return self._build_result(
-                memory, effective_req_id, "response_failed", intent=intent.intent.value,
-                error_type="memory_commit_denied", trace_id=trace_id,
+                memory, effective_req_id, terminal_state, intent=intent.intent.value,
+                error_type=commit_error, trace_id=trace_id,
                 trace=trace,
                 conversation_id=effective_conv_id,
             )
@@ -774,23 +748,8 @@ class MockTurnService:
 
         return result
 
-    def _build_idempotent_replay(
-        self,
-        snapshot: "TurnResultSnapshot",
-        request_id: str,
-        trace_id: str,
-    ) -> dict[str, Any]:
-        """M1.6.3: 委托给共享 TurnPipeline"""
-        return self.pipeline.build_replay(snapshot, request_id, trace_id)
-
-    async def _save_snapshot(
-        self,
-        result: dict[str, Any],
-        runtime_mode: RuntimeDataMode,
-        fingerprint_hash: str,
-    ) -> None:
-        """M1.6.3: 委托给共享 TurnPipeline"""
-        await self.pipeline._save_snapshot(result, runtime_mode, fingerprint_hash)
+    # M1.6.3.2: _build_idempotent_replay 和 _save_snapshot 已移除
+    #   — 统一由 TurnPipeline.execute() 管理幂等重放和快照保存
 
 
 class _LLMProviderAdapter:

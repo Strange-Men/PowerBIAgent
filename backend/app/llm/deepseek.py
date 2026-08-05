@@ -40,22 +40,29 @@ from backend.app.llm.base import (
 def _classify_http_error(
     status_code: int,
     provider: str,
-) -> tuple[type[LLMProviderError], bool]:
-    """根据 HTTP 状态码返回 (异常类型, retryable)"""
-    mapping: dict[int, tuple[type[LLMProviderError], bool]] = {
-        400: (LLMRequestError, False),
-        401: (LLMAuthenticationError, False),
-        403: (LLMAuthenticationError, False),
-        404: (LLMRequestError, False),
-        422: (LLMRequestError, False),
-        429: (LLMRateLimitError, True),
+) -> tuple[type[LLMProviderError], bool, str]:
+    """根据 HTTP 状态码返回 (异常类型, retryable, error_code)
+
+    M1.6.3.2: 基于 DeepSeek 官方 API 文档 (api-docs.deepseek.com/quick_start/error_codes)：
+    - 400/401/402/422 — 客户端错误，不可重试
+    - 429 — 限流，可用指数退避重试
+    - 500/503 — 服务端错误，可短暂等待后重试
+    """
+    mapping: dict[int, tuple[type[LLMProviderError], bool, str]] = {
+        400: (LLMRequestError, False, "invalid_format"),
+        401: (LLMAuthenticationError, False, "authentication_failed"),
+        402: (LLMConfigurationError, False, "insufficient_balance"),
+        403: (LLMAuthenticationError, False, "forbidden"),
+        404: (LLMRequestError, False, "not_found"),
+        422: (LLMRequestError, False, "invalid_parameters"),
+        429: (LLMRateLimitError, True, "rate_limited"),
     }
     if status_code in mapping:
-        exc_type, retryable = mapping[status_code]
-        return exc_type, retryable
+        exc_type, retryable, error_code = mapping[status_code]
+        return exc_type, retryable, error_code
     if 500 <= status_code < 600:
-        return LLMServiceError, True
-    return LLMProviderError, False
+        return LLMServiceError, True, f"http_{status_code}"
+    return LLMProviderError, False, f"http_{status_code}"
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +266,7 @@ class DeepSeekLLMProvider(LLMProvider):
 
         # ── 解析 HTTP 状态码 ──
         if http_response.status_code != 200:
-            exc_type, retryable = _classify_http_error(
+            exc_type, retryable, error_code = _classify_http_error(
                 http_response.status_code, self.PROVIDER_NAME
             )
             raise exc_type(
@@ -267,6 +274,7 @@ class DeepSeekLLMProvider(LLMProvider):
                 provider=self.PROVIDER_NAME,
                 retryable=retryable,
                 status_code=http_response.status_code,
+                error_code=error_code,
             )
 
         # ── 解析响应 Body ──

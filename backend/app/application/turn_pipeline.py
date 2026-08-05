@@ -465,6 +465,28 @@ class TurnPipeline:
                     error_type="turn_failed",
                     data_summary={"reason": reason})
 
+    # ── 只读 Memory 查询（Service 不得直接持有 memory_repo 写入能力） ──
+
+    async def request_exists_in_memory(
+        self, request_id: str, runtime_mode: RuntimeDataMode
+    ) -> bool:
+        """只读检查：request_id 是否已存在于 Memory 中
+
+        MockTurnService 的快照缺失向后兼容回退使用。
+        这是只读操作，不涉及任何写入。
+        """
+        return await self.memory_repo.request_exists(request_id, runtime_mode)
+
+    async def get_memory_by_request_id(
+        self, request_id: str, runtime_mode: RuntimeDataMode
+    ) -> Optional[StructuredWorkMemory]:
+        """只读查询：按 request_id 获取 Memory 记录
+
+        MockTurnService 的快照缺失向后兼容回退使用。
+        这是只读操作，不涉及任何写入。
+        """
+        return await self.memory_repo.get_by_request_id(request_id, runtime_mode)
+
     # Backward-compatible aliases (used by existing services during migration)
     _build_result = build_result
     _build_replay = build_replay

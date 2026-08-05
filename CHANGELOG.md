@@ -1,5 +1,100 @@
 # CHANGELOG
 
+## [M1.6.3.2] — 2026-08-05
+
+### 事务边界与单写入者彻底收口
+
+**来源：** M1.6.3.2 事务边界、单写入者与证据驱动修复收口。
+
+**架构问题发现：**
+
+- **TX-001** Service 直接写 Memory：两个 Service 的 `_do_execute` 中仍直接调用 `self.memory_repo.mark_failed()` 和 `self.memory_repo.commit()`，而非通过 TurnPipeline 统一事务协调
+- **TX-002** Snapshot 双重写入：DeepSeekTurnService 成功路径中 `_do_execute` 内部调用 `_save_snapshot()` 后再由 TurnPipeline.execute() 二次保存
+- **TX-003** Service 与 Pipeline 事务边界不清：Service 持有 `self.memory_repo`、`self.snapshot_store` 实例字段，自行管理提交、失败标记和快照生命周期
+
+**整改内容：**
+
+**Memory 写入统一（TX-001）：**
+- `DeepSeekTurnService` 4 处 `self.memory_repo.mark_failed()`/`self.memory_repo.commit()` → `self.pipeline.mark_memory_failed()`/`self.pipeline.commit_memory_safe()`
+- `MockTurnService` 3 处同类直接调用 → 统一委托 TurnPipeline
+- 两个 Service 移除 `self.memory_repo` 实例字段，仅通过 `self.pipeline` 访问
+- TurnPipeline 新增只读查询方法：`request_exists_in_memory()`、`get_memory_by_request_id()`
+
+**Snapshot 单写入者（TX-002）：**
+- 移除 `DeepSeekTurnService._do_execute()` 中的 `_save_snapshot()` 调用（双写消除）
+- 移除两个 Service 的 `self.snapshot_store` 实例字段
+- SnapshotStore 完全由 TurnPipeline 持有和调用
+- TurnPipeline.execute() 成功时保存快照 + complete，异常时 abort
+
+**错误分类完善（NET-001）：**
+- `_classify_http_error()` 新增 402 Insufficient Balance 显式映射 + error_code 三值返回
+- HTTP 状态错误现在携带 `error_code` 字段（基于 DeepSeek 官方文档 api-docs.deepseek.com/quick_start/error_codes）
+- HTTPX 异常分类与官方文档一致（python-httpx.org/exceptions）
+
+**机器错题本：**
+
+| 问题ID | 问题现象 | 本地证据 | 外部权威资料 | 根因 | 修复 | 回归测试 | 状态 |
+|--------|---------|---------|------------|------|------|---------|------|
+| TX-001 | Service 直接写 Memory | deepseek_turn_service.py:463,529,570,641; mock_turn_service.py:498,520,597 | — 架构原则 | M1.6.3 未完全收口直接写 | 全部替换为 TurnPipeline 方法 | 19 个 M1.6.3.2 测试 | ✅ |
+| TX-002 | Snapshot 双重写入 | deepseek_turn_service.py:613 + turn_pipeline.py:205 | — 架构原则 | Service 成功路径自行保存后再由 Pipeline 二次保存 | 移除 Service 内 `_save_snapshot()` | test_successful_owner_saves_snapshot_exactly_once | ✅ |
+| TX-003 | Service 和 Pipeline 事务边界不清 | Service 各自持有 memory_repo/snapshot_store | — 架构原则 | 控制面未完全统一到 Pipeline | Service 移除实例字段，Pipeline 成为唯一写入者 | test_service_does_not_hold_self_memory_repo | ✅ |
+| NET-001 | HTTP 错误缺 error_code | _classify_http_error 返回 2 值无 error_code | DeepSeek API Docs (api-docs.deepseek.com), HTTPX Docs (python-httpx.org) | 错误分类未携带结构化 error_code | 新增 error_code + 402 显式映射 | 全量 986 passed | ✅ |
+| GOV-001 | 无证据规则 | CLAUDE.md 无修复证据门禁 | — | 历史开发协议未包含 | CLAUDE.md 新增「外部证据修复门禁」 | 文档规则已固化 | ✅ |
+| GOV-002 | 无修复上限 | CLAUDE.md 无两次修复上限 | — | 历史开发协议未包含 | CLAUDE.md 新增「两次修复上限」 | 文档规则已固化 | ✅ |
+
+**防回归测试新增（19 个）：**
+- 源码静态门禁（10 个）：禁止 `self.memory_repo.mark_failed/commit/create_pending`、`self.snapshot_store.*`、`_save_snapshot(`、`pipeline._save_snapshot(`、`self.memory_repo =`
+- Snapshot 调用次数（4 个）：成功 1 次 save、幂等 0 次、异常 0 save + 1 abort、业务失败仍保存
+- Memory 事务边界（3 个）：commit 由 commit_memory_safe 触发、失败标记由 pipeline 触发、版本冲突通过 pipeline
+- 全仓静态搜索（2 个）：snapshot_store.save 仅 TurnPipeline、Service 使用 pipeline 方法
+
+**最终验收结果：**
+- pytest：986 passed（+19 M1.6.3.2 新增）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS
+- DeepSeek Smoke：（见下方 Smoke 执行记录）
+- Service 直接 Memory 写入：0 处（Service 源码不含 `self.memory_repo.mark_failed/commit/create_pending`）
+- Service Snapshot 写入：0 处（Service 源码不含 `snapshot_store.save/complete/abort`）
+- SnapshotStore.save 生产调用者：仅 TurnPipeline
+- PydanticAI 残留：0 | AgentRuntime 残留：0 | DeepSeek 直接 Adapter：0
+- 新增无限重试：0 | 未经官方确认的模型名修改：0
+
+**Service 与 TurnPipeline 最终职责边界：**
+
+| 职责 | TurnPipeline | Service | 说明 |
+|------|-------------|---------|------|
+| ID 生成 | ✅ | — | conversation_id/request_id/trace_id |
+| 请求指纹 | ✅ | — | SHA-256 + 冲突检测 |
+| Owner/Waiter 协调 | ✅ | — | claim/complete/abort |
+| TraceRecorder | ✅ | — | 创建与传递 |
+| TurnController 生命周期 | ✅ | — | 创建、状态管理 |
+| ContextBuilder | ✅ | — | 输入截断、Memory 状态检查 |
+| ToolExecutionContext | ✅ | — | 统一工厂 |
+| Memory 只读查询 | ✅ | — | request_exists_in_memory 等 |
+| Memory create_pending | ✅ | — | 仅 Pipeline |
+| Memory mark_failed | ✅ | — | 仅 Pipeline |
+| Memory commit | ✅ | — | 仅 Pipeline（commit_memory_safe） |
+| Snapshot save/complete/abort | ✅ | — | 仅 Pipeline |
+| Intent 识别 | — | ✅ | LLM 结构化阶段 |
+| QueryPlan 生成 | — | ✅ | LLM 结构化阶段 |
+| DAX 生成与安全验证 | — | ✅ | LLM 结构化阶段 |
+| Answer/ReportSpec 生成 | — | ✅ | LLM 结构化阶段 |
+| ToolGateway 调用 | — | ✅ | 通过 Gateway |
+| 业务数据验证 | — | ✅ | ValidationService |
+| Memory 分析字段填充 | — | ✅ | 计算，不持久化 |
+
+**修改文件清单（6 个）：**
+- `CLAUDE.md` — 新增「外部证据修复门禁」和「两次修复上限」两节
+- `backend/app/application/turn_pipeline.py` — 新增只读 Memory 查询方法
+- `backend/app/application/deepseek_turn_service.py` — 移除直接 Memory/Snapshot 写入、移除实例字段
+- `backend/app/application/mock_turn_service.py` — 移除直接 Memory/Snapshot 写入、移除实例字段
+- `backend/app/llm/deepseek.py` — error_code 完善、402 显式映射
+- `backend/tests/unit/test_m1632_transaction_boundary.py` — 新增（19 个测试）
+
+**本轮 Tag：** 无
+
+---
+
 ## [M1.6.3.1] — 2026-08-04
 
 ### 统一管线复验与彻底收口
