@@ -23,6 +23,7 @@ jobs:
     env:
       LLM_MODE: mock
       POWERBI_MODE: mock
+      PYTHONIOENCODING: utf-8
 
     steps:
       - name: Checkout (full history)
