@@ -29,6 +29,32 @@
 
 ---
 
+## [M1.7.1] — 2026-08-05
+
+### 最终状态收口与封板候选修复
+
+**目标：** M1.7 终审发现 4 个小问题的收口修复，不新增功能、不进入 M2。
+
+**修复内容：**
+- 修正 docs/08 M1.6.6 详细章节状态冲突（进行中 → 已完成）
+- 修正 docs/09 PydanticAI 错误描述（已从生产依赖移除，ADR-001 已被 ADR-005 替代）
+- 删除恒真测试 `test_no_stale_tag_for_current_version`（仅 `assert True`）
+- 加固 CI 工作区干净检查（git diff --check + git diff --exit-code + git status --porcelain）
+
+**最终测试结果：**
+- pytest：1119 passed（M1.7 的 1120 减去 1 个删除的恒真测试）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS
+- 错题本校验：PASS
+- 架构门禁：PASS
+- 真实 LLM 调用次数：0
+- 生产业务逻辑变化：0
+- 未创建 Tag
+
+**Commit：** 本轮提交
+
+---
+
 ## [M1.6] — 2026-08-04 ~ 2026-08-05
 
 ### 架构收口与加固（M1.6.1—M1.6.6）

@@ -260,11 +260,3 @@ class TestVersionConsistency:
         """.env 不得被 Git 跟踪"""
         r = subprocess.run(["git", "ls-files", ".env"], capture_output=True, text=True)
         assert r.stdout.strip() == "", ".env 被 Git 跟踪！"
-
-    def test_no_stale_tag_for_current_version(self):
-        """当前版本不应已有 Tag"""
-        s = Settings()
-        r = subprocess.run(["git", "tag", "-l"], capture_output=True, text=True)
-        # 不对 Tag 做硬性禁止，只在存在同名 Tag 时告警
-        # 真正的封板 Tag 名称由用户决定，此处仅检测意外情况
-        assert True  # 此测试不强制失败，仅记录
