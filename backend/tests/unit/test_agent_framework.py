@@ -60,7 +60,7 @@ import os, pathlib
 root = pathlib.Path(r'%s')
 for f in root.rglob("*.py"):
     rel = str(f.relative_to(root))
-    if "tests" in rel.split(os.sep) or "__pycache__" in rel.split(os.sep):
+    if "tests" in rel.split(os.sep) or "__pycache__" in rel.split(os.sep) or rel.split(os.sep)[0] == "scripts":
         continue
     content = f.read_text(encoding="utf-8", errors="ignore")
     if "pydantic_ai" in content or "pydantic-ai" in content:

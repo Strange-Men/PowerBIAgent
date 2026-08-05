@@ -1,8 +1,9 @@
 # 13 — M1.6 最终候选版架构审计
 
 > **AUDIT-166-001：M1.6.6 最终候选审计**
-> **最后更新：2026-08-05 | M1.6.6**
-> **状态：AUDIT-166-001 完成**
+> **AUDIT-166-002：候选验收修复重审（本轮）**
+> **最后更新：2026-08-05 | M1.6.6 候选验收修复**
+> **状态：AUDIT-166-002 进行中 — 测试补强和CI真实通过前，相关项目已降级**
 
 ---
 
@@ -195,11 +196,11 @@
 | 维度 | 内容 |
 |------|------|
 | **检查对象** | ToolGateway Spy 记录、Adapter Spy 记录 |
-| **当前代码证据** | `test_m166_prompt_injection_spy.py`: 20 个 Spy 测试，ToolGateway.execute 被 `Mock(wraps=...)` 记录真实调用 |
-| **行为测试** | Spy 验证：实际调用工具名、白名单约束、危险工具 0 次、Registry 不变、Config 不变、Adapter 对应、无绕过 |
+| **当前代码证据** | `test_m166_prompt_injection_spy.py`: Spy 测试已补强 — Adapter Spy 在 Gateway 构造前注入、Spy 具体方法（get_semantic_model_schema/execute_dax/render）、验证 Gateway↔Adapter 调用对应关系、每个请求至少产生一次 Gateway 调用 |
+| **行为测试** | Spy 验证：实际调用工具名、白名单约束、危险工具 0 次、Registry 不变、Config 不变、Adapter 对应、无绕过、Adapter 调用次数不超过 Gateway 对应调用次数 |
 | **CI 门禁** | CI 全量 pytest 含 Spy 测试 |
-| **当前状态** | **已解决** |
-| **剩余风险** | 低 |
+| **当前状态** | **已解决**（M1.6.6 候选验收修复已补强） |
+| **剩余风险** | 低 — Spy 在 Gateway 构造前注入，handler 绑定到 Spy Adapter |
 
 ### 18. 纸面测试是否被错误当作行为证据
 
@@ -228,11 +229,11 @@
 | 维度 | 内容 |
 |------|------|
 | **检查对象** | `.github/workflows/m16_candidate_validation.yml` |
-| **当前代码证据** | 工作流含：安全扫描、错题本校验、文档一致性、架构门禁、全量 pytest、Golden Cases、git diff check |
-| **行为测试** | GitHub Actions 远程运行结果（Push 后验证） |
-| **CI 门禁** | 自包含 |
-| **当前状态** | **部分解决**（本地代码已就绪，远程 CI 结果待 Push 后确认） |
-| **剩余风险** | 低 — CI 使用 `windows-latest`，需确认远程 Golden Cases 在 Windows CI 可正常执行 |
+| **当前代码证据** | 工作流含：安全扫描、错题本校验、文档一致性（10项检查、无pass假门禁）、AST架构门禁（替代git grep）、全量 pytest、Golden Cases、git diff check |
+| **行为测试** | GitHub Actions 远程运行 — **Run #30978309183 失败**：Step 6 "Repository security scan" 失败，后续全部 skipped |
+| **CI 门禁** | M1.6.6 候选验收修复已修复：文档一致性假门禁、AgentRuntime git grep 误报替换为 AST 检查、架构门禁新建独立脚本 |
+| **当前状态** | **未解决**（远程 CI 真实失败，本地安全扫描通过但CI失败根因待Push后确认） |
+| **剩余风险** | **P0 阻塞项** — CI 失败在候选封板前属于阻塞，不得仅标记为普通 P1 |
 
 ### 21. 文档是否夸大实际能力
 
@@ -291,13 +292,13 @@
 
 ---
 
-## 审计统计
+## 审计统计（M1.6.6 候选验收修复重审）
 
 | 状态 | 数量 | 项目 |
 |------|------|------|
-| 已解决 | 23 | #1—#7, #9—#17, #19, #21—#25 |
-| 部分解决 | 2 | #18（纸面测试残余）、#20（CI 远程结果待确认） |
-| 未解决 | 0 | — |
+| 已解决 | 22 | #1—#7, #9—#17, #19, #21—#25 |
+| 部分解决 | 2 | #8（TurnController限制路径已补强，Snapshot/Memory Spy已添加）、#18（纸面测试残余） |
+| 未解决 | 1 | #20（CI远程真实失败，Run #30978309183） |
 | 复发风险 | 0 | — |
 | 不适用 | 0 | — |
 
@@ -305,12 +306,12 @@
 
 ## P0 阻塞项
 
-无。
+1. **#20 CI 远程失败** — Run #30978309183：Step 6 "Repository security scan" 失败，所有后续步骤 skipped。本地安全扫描通过，CI失败根因待Push后确认。CI 失败在候选封板前属于 P0 阻塞项，不得降级为 P1。
 
 ## P1 非阻塞项
 
-1. **#18 纸面测试残余** — 部分静态源码检查测试仍作为行为证据保留，建议 M2 前全部替换为 Spy/Pipeline 集成测试
-2. **#20 CI 远程结果** — 本地代码已就绪，需 Push 后 GitHub Actions 真实运行确认
+1. **#8 TurnController 限制路径** — M1.6.6 候选验收修复已补强：明确 terminal_state 失败断言、Adapter 具体方法 Spy、SnapshotStore Spy、Memory Repository 记录验证、完整状态转换序列。剩余风险为 max_tool_calls 限制仅 ToolGateway.execute 中生效，DAX/LLM 修复限制在 Service 中独立调用。
+2. **#18 纸面测试残余** — 部分静态源码检查测试仍作为辅助门禁保留，建议 M2 前全部替换为 Spy/Pipeline 集成测试。
 
 ## 可延后到 M2 的事项
 
@@ -324,10 +325,10 @@
 
 ## 是否具备进入二审条件
 
-**是。** 25 项审计中 23 项已解决、2 项部分解决（均为非阻塞项）。本地全部门禁通过（1230 pytest、11/11 Golden Cases、安全扫描 PASS、错题本校验 PASS）。无 P0 未解决项。可以创建候选 Commit 并 Push，等待仓库二审。
+**需 CI 真实通过后重新评估。** 25 项审计中 22 项已解决、2 项部分解决、1 项未解决（P0 CI阻塞）。M1.6.6 候选验收修复已补强测试、修复 CI 门禁、记录错题本。需要 Push 后 GitHub Actions 真实通过才可进入二审。
 
 **不得在二审通过前声称 M1.6 正式封板完成。**
 
 ---
 
-*最后更新：2026-08-05 | M1.6.6 最终候选审计完成*
+*最后更新：2026-08-05 | M1.6.6 候选验收修复 — 审计重审完成，CI远程通过前不宣布封板*

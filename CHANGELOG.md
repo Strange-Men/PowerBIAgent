@@ -2,7 +2,97 @@
 
 ## [M1.6.6] — 2026-08-05
 
-### CI、最终架构审计与二审候选版
+### 候选验收修复（本轮：M1.6.6_CI候选验收修复）
+
+**来源：** M1.6.6 二审发现问题修复。本轮不是M2功能开发轮，也不是正式封板动作。
+
+#### CI-166-002：修复AgentRuntime CI误报
+
+- 新建 `scripts/check_architecture_gate.py`：Python AST 架构门禁（替代 git grep）
+- 注释、Docstring、字符串字面量中的 AgentRuntime/pydantic_ai 不触发失败
+- 检测：生产 import、ClassDef、可执行 Name 引用、已删除模块重新出现
+- 新建 `backend/tests/unit/test_m166_architecture_gate.py`：17 个测试（AST 单元测试 + 文件检查 + Main 集成）
+- `.github/workflows/m16_candidate_validation.yml`：Step 4 替换为 `python scripts/check_architecture_gate.py`
+
+#### CI-166-003：修复文档一致性pass假门禁
+
+- `.github/workflows/m16_candidate_validation.yml`：Step 3 文档一致性检查重写
+- 原 `pass  # just print, don't fail` 已删除
+- 新增 10 项真实检查：Settings.version、README、docs/08 header、M1.6.5 完成、docs/09 当前阶段/上一轮/下一动作、多版本进行中检测、.env 跟踪
+- 任一不一致返回非零退出码
+
+#### DOC-166-002：修正文档冲突
+
+- `docs/08_development_roadmap.md`：路线总览 M1.6.5 → ✅ 已完成、M1.6.6 → 进行中（二审中）
+- `README.md`：核心链路 "单 Agent 意图识别" → "确定性 TurnPipeline 编排（意图识别 → QueryPlan → DAX → Answer → ReportSpec）"
+
+#### GOV-166-001：记录错误SHA到错题本
+
+- `docs/ai_development_error_ledger.yaml`：新增 GOV-166-001 条目
+- 记录错误 SHA `dee16357c35dcb7864e1fe3be4337e3d27dd4c49` 和真实 SHA `dee1635d55199b033849a28d047e05a2d30c8fb6`
+- root_cause：只根据短SHA手工补全
+- prevention_rules：git rev-parse HEAD / git cat-file -t / git ls-remote 验证
+
+#### TEST-166-004：补强Gateway与Adapter Spy断言
+
+- `backend/tests/api/test_m166_prompt_injection_spy.py`：
+  - 新增 `_build_gateway_with_spy_adapters()`：在 Gateway 构造前注入 Adapter Spy
+  - Spy 具体方法：`get_semantic_model_schema`、`execute_dax`、`render`
+  - `test_gateway_adapter_correspondence_data_question`：验证 Gateway 调用与 Adapter 对应方法调用一致
+  - `test_gateway_adapter_correspondence_report`：验证 Gateway render_report ↔ Renderer.render
+  - `test_malicious_bypass_input_still_uses_gateway`：每个请求至少1次Gateway调用（非 after >= before）
+  - `test_dangerous_tools_zero_adapter_calls`：危险工具Gateway 0次 + Adapter无对应调用
+
+#### TEST-166-005：补强TurnController与Memory/Snapshot测试
+
+- `backend/tests/api/test_m166_turn_controller_limits.py`：
+  - `test_max_tool_calls_limit_in_pipeline`：明确断言 terminal_state != "completed" + memory_commit=False
+  - `test_max_tool_calls_limit_terminal_state_is_failure`：新增，terminal_state 为有效失败状态
+  - `test_limit_no_success_memory_commit`：移除 if 条件，直接断言
+  - `test_limit_no_further_adapter_calls`：Spy 具体方法 execute_dax/get_semantic_model_schema
+  - `test_snapshot_store_spy_on_failure`：Spy 真实 SnapshotStore.save/complete/abort
+  - `test_success_snapshot_store_spy`：新增，complete=1 且 abort=0
+  - `test_mock_deepseek_share_same_pipeline_type`：移除恒真断言 `TC is TurnController`
+  - `test_both_services_pass_turncontroller_to_gateway`：新增，验证 controller 为 TurnController 实例
+  - `test_turn_state_transitions_through_pipeline`：记录完整状态序列（7 个关键状态）
+  - `test_memory_repository_state_on_failure`：新增，验证 Repository 中无 committed 记录
+
+#### AUDIT-166-002：修正审计结论
+
+- `docs/13_m16_final_candidate_audit.md`：
+  - #17 Prompt注入 Spy 证据 → 已解决（M1.6.6 补强）
+  - #20 CI → 降级为**未解决**（远程 CI Run #30978309183 失败)
+  - CI 失败标记为 **P0 阻塞项**
+  - 统计重算：已解决 22、部分解决 2、未解决 1
+
+#### Mutation 验证（2项）
+
+- Mutation A（grep回退）：旧 `git grep AgentRuntime` 在 mock_turn_service.py 发现 6 个注释误报；AST 检查正确通过
+- Mutation B（bypass check_tool_call_limit）：6/11 TurnController 管线测试失败（预期），退出码 1
+
+**修改文件清单（10 个）：**
+- `.github/workflows/m16_candidate_validation.yml` — CI 文档一致性 + 架构门禁修复
+- `README.md` — 核心链路表述修正
+- `docs/08_development_roadmap.md` — M1.6.5 状态修正
+- `docs/13_m16_final_candidate_audit.md` — 审计重审
+- `docs/ai_development_error_ledger.yaml` — GOV-166-001 新条目
+- `scripts/check_architecture_gate.py` — 新增（AST 架构门禁）
+- `backend/tests/unit/test_m166_architecture_gate.py` — 新增（17 个测试）
+- `backend/tests/api/test_m166_prompt_injection_spy.py` — Spy 断言补强
+- `backend/tests/api/test_m166_turn_controller_limits.py` — 限制路径补强
+- `backend/tests/unit/test_agent_framework.py` — scripts 目录排除
+
+**最终验收结果：**
+- pytest：1253 passed
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS（153 文件）
+- 错题本校验：PASS（9 条目，0 错误）
+- 架构门禁：PASS（74 文件）
+- 文档一致性：PASS
+- 真实 LLM 调用次数：0
+- 未创建 Tag
+
+### CI、最终架构审计与二审候选版（上一轮）
 
 **来源：** M1.6.6 CI、最终架构审计与二审候选版。本轮不是 M2 功能开发轮，也不是正式封板动作。
 

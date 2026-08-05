@@ -55,68 +55,81 @@ jobs:
       - name: 3. Document consistency check
         run: |
           python -c "
-          import sys
+          import sys, re, subprocess
           errors = []
-          # read settings version
           sys.path.insert(0, '.')
           from backend.app.config.settings import Settings
           s = Settings()
           print(f'Settings.version = {s.version}')
-          # verify docs/08 footer
-          with open('docs/08_development_roadmap.md','r',encoding='utf-8') as f:
-              content = f.read()
-          if s.version not in content.split('*最后更新')[1][:80] if '*最后更新' in content else '':
-              pass  # just print, don't fail
-          # check README contains version
+
+          # 1. Settings.version must be M1.6.6
+          if s.version != 'M1.6.6':
+              errors.append(f'Settings.version={s.version}, expected M1.6.6')
+
+          # 2. README must contain M1.6.6
           with open('README.md','r',encoding='utf-8') as f:
               readme = f.read()
-          if s.version not in readme:
-              errors.append(f'README.md missing version {s.version}')
-          # check no .env tracked
-          import subprocess
+          if 'M1.6.6' not in readme:
+              errors.append('README.md missing M1.6.6')
+          if '二审候选' not in readme:
+              errors.append('README.md missing 二审候选')
+
+          # 3. docs/08 header must show M1.6.6 as current
+          with open('docs/08_development_roadmap.md','r',encoding='utf-8') as f:
+              roadmap = f.read()
+          if 'M1.6.6' not in roadmap.split('状态：')[1][:30] if '状态：' in roadmap else '':
+              errors.append('docs/08 header not showing M1.6.6 as current')
+
+          # 4. docs/08 M1.6.5 must be marked completed
+          if 'M1.6.5' in roadmap:
+              m165_section = roadmap.split('M1.6.5')[1][:50] if 'M1.6.5' in roadmap else ''
+              if '✅ 已完成' not in m165_section:
+                  errors.append('docs/08 M1.6.5 not marked completed in overview')
+
+          # 5. docs/08 M1.6.5 detail section must be completed
+          if '### M1.6.5' in roadmap:
+              m165_detail = roadmap.split('### M1.6.5')[1].split('###')[0]
+              if '✅ 已完成' not in m165_detail[:100]:
+                  errors.append('docs/08 M1.6.5 detail section not completed')
+
+          # 6. docs/09 current phase must be M1.6.6
+          with open('docs/09_context_handoff.md','r',encoding='utf-8') as f:
+              handoff = f.read()
+          if 'M1.6.6' not in handoff.split('当前阶段')[1][:80] if '当前阶段' in handoff else '':
+              errors.append('docs/09 current phase not M1.6.6')
+
+          # 7. docs/09 previous round must be M1.6.5
+          if '上一轮' in handoff:
+              prev_section = handoff.split('上一轮')[1][:100]
+              if 'M1.6.5' not in prev_section:
+                  errors.append('docs/09 previous round not M1.6.5')
+
+          # 8. docs/09 next action must mention 二审
+          if '下一动作' in handoff:
+              next_section = handoff.split('下一动作')[1][:100]
+              if '二审' not in next_section:
+                  errors.append('docs/09 next action missing 二审')
+
+          # 9. No two M1.6.x versions both marked '进行中'
+          in_progress = [m.group(0) for m in re.finditer(r'M1\.6\.\d.*进行中', roadmap)]
+          if len(in_progress) > 1:
+              errors.append(f'Multiple M1.6.x versions in progress: {in_progress}')
+
+          # 10. .env must not be tracked
           r = subprocess.run(['git','ls-files','.env'], capture_output=True, text=True)
           if r.stdout.strip():
               errors.append('.env is tracked by git!')
-          # report
+
           if errors:
-              for e in errors: print(f'FAIL: {e}')
+              for e in errors:
+                  print(f'FAIL: {e}')
               sys.exit(1)
           print('Document consistency: PASS')
           "
 
-      # ── Architecture gate ────────────────────────────────────────
+      # ── Architecture gate (AST-based, CI-166-002) ─────────────────
       - name: 4. Architecture gate
-        run: |
-          python -c "
-          import sys
-          errors = []
-
-          # PydanticAI remnants
-          import subprocess
-          r = subprocess.run(['git','grep','-l','pydantic.ai','--','backend/app/',':(exclude)*.pyc'], capture_output=True, text=True)
-          if r.stdout.strip():
-              errors.append(f'PydanticAI references found: {r.stdout.strip()}')
-
-          # AgentRuntime remnants
-          r = subprocess.run(['git','grep','-l','AgentRuntime','--','backend/app/',':(exclude)*.pyc'], capture_output=True, text=True)
-          if r.stdout.strip():
-              errors.append(f'AgentRuntime references found: {r.stdout.strip()}')
-
-          # Direct adapter calls (not through ToolGateway)
-          r = subprocess.run(['git','grep','-n','self\.powerbi\.\|self\.report_renderer\.','--','backend/app/application/',':(exclude)*.pyc'], capture_output=True, text=True)
-          if r.stdout.strip():
-              errors.append(f'Direct adapter calls found: {r.stdout.strip()}')
-
-          # Service memory_repo exposure
-          r = subprocess.run(['git','grep','-n','def memory_repo\|self\.memory_repo\s*[=\.]','--','backend/app/application/',':(exclude)*.pyc'], capture_output=True, text=True)
-          if r.stdout.strip():
-              errors.append(f'Service memory_repo exposure: {r.stdout.strip()}')
-
-          if errors:
-              for e in errors: print(f'FAIL: {e}')
-              sys.exit(1)
-          print('Architecture gate: PASS')
-          "
+        run: python scripts/check_architecture_gate.py
 
       # ── Tests ────────────────────────────────────────────────────
       - name: 5. Full pytest

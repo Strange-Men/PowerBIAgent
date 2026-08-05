@@ -281,3 +281,37 @@ entries:
     action: data_fixed
     version: M1.6.6
     reason: M1.6.6 LEDGER-166-001 — 修复乱码字符、补充缺失Commit引用、补充resolved事件Commit
+- id: GOV-166-001
+  title: 最终报告输出了不存在的完整Commit SHA
+  category: GOV
+  first_detected_version: M1.6.6
+  symptom: M1.6.6最终审计报告记录了不存在的完整Commit SHA dee16357c35dcb7864e1fe3be4337e3d27dd4c49
+  local_evidence: docs/13_m16_final_candidate_audit.md 中记录的错误SHA（已由本轮修复）
+  authoritative_sources:
+  - title: Git 验证规则
+    reason: 完整SHA只能来自git rev-parse HEAD实际命令输出
+  root_cause: 只根据短SHA手工补全或未经Git验证直接报告完整SHA，导致输出不存在的SHA值
+  failed_attempts: []
+  repair_attempt_count: 0
+  final_fix: 最终报告模板规则固化——完整SHA只能来自实际命令输出，禁止手工拼接
+  regression_tests:
+  - backend/tests/unit/test_m166_architecture_gate.py
+  prohibited_patterns:
+  - 基于短SHA手工推测完整SHA并写入报告
+  - 未经git rev-parse HEAD验证的SHA写入正式文档
+  - 未经git cat-file -t验证的SHA声称Commit存在
+  prevention_rules:
+  - 最终报告必须通过git rev-parse HEAD获取完整SHA
+  - 必须通过git cat-file -t验证
+  - Push后通过git ls-remote origin main核对
+  related_adr: null
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-05'
+    action: discovered
+    version: M1.6.6
+  - date: '2026-08-05'
+    action: mitigation
+    version: M1.6.6
+    reason: "修复最终报告，错误SHA: dee16357c35dcb7864e1fe3be4337e3d27dd4c49，真实SHA: dee1635d55199b033849a28d047e05a2d30c8fb6"

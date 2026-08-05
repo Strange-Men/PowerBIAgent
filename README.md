@@ -4,7 +4,7 @@
 
 PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent MVP。
 
-核心链路：用户自然语言提问 → React 极简对话页面 → FastAPI 后端 → 单 Agent 意图识别 → DeepSeek → Power BI MCP → Power BI 语义模型 → 数据问答或固定模板静态 HTML 报表。
+核心链路：用户自然语言提问 → React 极简对话页面 → FastAPI 后端 → 确定性 TurnPipeline 编排（意图识别 → QueryPlan → DAX → Answer → ReportSpec）→ DeepSeek（受控结构化 LLM 调用）→ Power BI MCP → Power BI 语义模型 → 数据问答或固定模板静态 HTML 报表。
 
 ## 当前状态
 
