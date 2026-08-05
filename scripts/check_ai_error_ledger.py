@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""AI 开发错误总账校验器 — M1.6.5
+"""AI 开发错误总账校验器 — M1.6.6
 
 检查 docs/ai_development_error_ledger.yaml 的完整性和正确性。
 
@@ -8,13 +8,19 @@
 2. Schema 版本存在
 3. ID 唯一
 4. 必填字段存在
-5. 状态合法
-6. repair_attempt_count 不超过 2
+5. 状态合法（不得缺失或为空）
+6. repair_attempt_count 必须为 0、1 或 2（负数必须失败）
 7. resolved 条目回归测试路径真实存在
-8. 关联 ADR 路径真实存在
-9. 关联 Commit 格式合法
-10. 禁止空字符串冒充证据
-11. 不输出 Secret
+8. resolved 条目的 related_commits 不得为空
+9. resolved 条目必须存在 resolved 事件
+10. resolved 事件必须记录 Commit
+11. 关联 ADR 路径真实存在
+12. 关联 Commit 格式合法
+13. related_commits 中的 SHA 必须真实存在于本地 Git 历史
+14. 禁止空字符串冒充证据
+15. 检测 U+FFFD Unicode 替换字符
+16. Commit 引用、事件 Commit 和最终修复状态基本一致
+17. 校验失败时不得输出 Secret 或 YAML 全文
 
 用法：
     python scripts/check_ai_error_ledger.py [--path PATH]
@@ -27,6 +33,7 @@
 import argparse
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -61,6 +68,36 @@ SECRET_PATTERNS = [
     re.compile(r"Bearer\s+[a-zA-Z0-9\-_\.]+"), # Bearer Token
     re.compile(r"eyJ[a-zA-Z0-9\-_]+\.eyJ"),   # JWT Token
 ]
+
+# Git commit SHA cache: {sha: True/False}
+_commit_exists_cache: dict[str, bool] = {}
+
+
+def _git_commit_exists(sha: str) -> bool:
+    """使用本地 Git 验证 commit SHA 是否存在（带缓存）"""
+    if sha in _commit_exists_cache:
+        return _commit_exists_cache[sha]
+    try:
+        result = subprocess.run(
+            ["git", "cat-file", "-t", sha],
+            capture_output=True, text=True, timeout=10,
+            cwd=str(PROJECT_ROOT),
+        )
+        exists = result.returncode == 0 and result.stdout.strip() == "commit"
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        exists = False
+    _commit_exists_cache[sha] = exists
+    return exists
+
+
+def check_unicode_replacement(data: dict) -> list[str]:
+    """检查 YAML 中是否存在 U+FFFD Unicode 替换字符（乱码）"""
+    import json
+    text = json.dumps(data, ensure_ascii=False, default=str)
+    count = text.count("�")
+    if count > 0:
+        return [f"存在 {count} 个 Unicode 替换字符 (U+FFFD)，表示编码损坏或乱码"]
+    return []
 
 
 # ── 校验函数 ────────────────────────────────────────────────────────────────
@@ -122,24 +159,58 @@ def check_entry(entry: dict, idx: int) -> list[str]:
         if field not in entry:
             errors.append(f"[{entry_id}] 缺少必填字段: {field}")
 
-    # 状态
-    status = entry.get("status", "")
-    if status and status not in VALID_STATUSES:
+    # 状态 — 不得缺失或为空
+    status = entry.get("status")
+    if status is None or (isinstance(status, str) and status.strip() == ""):
+        errors.append(f"[{entry_id}] status 不得缺失或为空")
+    elif status not in VALID_STATUSES:
         errors.append(f"[{entry_id}] 非法状态: {status}，允许: {VALID_STATUSES}")
 
-    # repair_attempt_count
+    # repair_attempt_count — 必须为 0、1 或 2，负数必须失败
     count = entry.get("repair_attempt_count")
     if count is not None:
         if not isinstance(count, int):
             errors.append(f"[{entry_id}] repair_attempt_count 必须是整数: {count}")
+        elif count < 0:
+            errors.append(f"[{entry_id}] repair_attempt_count={count} 为负数，不允许")
         elif count > 2:
             errors.append(f"[{entry_id}] repair_attempt_count={count} 超过上限 2")
 
-    # resolved 必须有关联回归测试
+    # resolved 条目: 回归测试、related_commits、resolved 事件、事件 Commit
     if status == "resolved":
+        # 必须有回归测试
         reg_tests = entry.get("regression_tests", [])
         if not isinstance(reg_tests, list) or len(reg_tests) == 0:
             errors.append(f"[{entry_id}] resolved 状态必须有至少一个回归测试")
+
+        # related_commits 不得为空
+        related_commits = entry.get("related_commits", [])
+        if not isinstance(related_commits, list) or len(related_commits) == 0:
+            errors.append(f"[{entry_id}] resolved 条目的 related_commits 不得为空")
+
+        # 必须存在 resolved 事件
+        events = entry.get("events", [])
+        if isinstance(events, list):
+            resolved_events = [e for e in events if isinstance(e, dict) and e.get("action") == "resolved"]
+            if not resolved_events:
+                errors.append(f"[{entry_id}] resolved 条目必须存在 action=resolved 的事件")
+            else:
+                # resolved 事件必须记录 Commit
+                for re_ev in resolved_events:
+                    if not re_ev.get("commit"):
+                        errors.append(f"[{entry_id}] resolved 事件缺少 commit 字段")
+
+        # Commit SHA 真实存在于本地 Git 历史
+        if isinstance(related_commits, list):
+            for commit_str in related_commits:
+                if not isinstance(commit_str, str):
+                    continue
+                sha_candidate = commit_str.split()[0] if commit_str.split() else ""
+                if COMMIT_SHA_RE.match(sha_candidate):
+                    if not _git_commit_exists(sha_candidate):
+                        errors.append(
+                            f"[{entry_id}] Commit SHA 在本地 Git 历史中不存在: {sha_candidate}"
+                        )
 
     # 回归测试路径真实存在
     if isinstance(entry.get("regression_tests"), list):
@@ -151,17 +222,14 @@ def check_entry(entry: dict, idx: int) -> list[str]:
     # ADR 路径真实存在
     related_adr = entry.get("related_adr")
     if related_adr and isinstance(related_adr, str):
-        # 允许 "ADR-005" 这种引用
         if related_adr.startswith("ADR-"):
             adr_files = list((PROJECT_ROOT / "docs" / "adr").glob(f"{related_adr}*.md"))
             if not adr_files:
-                # 也检查 ADR README 中是否包含该 ADR
                 adr_readme = PROJECT_ROOT / "docs" / "adr" / "README.md"
                 if adr_readme.exists():
                     readme_text = adr_readme.read_text(encoding="utf-8")
                     if related_adr not in readme_text:
                         errors.append(f"[{entry_id}] 关联 ADR 文件不存在且 README 中无记录: {related_adr}")
-            # 即使有文件或 README 中提及，也 OK
         elif related_adr.lower() not in ("none", "null", ""):
             errors.append(f"[{entry_id}] related_adr 格式不正确: {related_adr}")
 
@@ -171,7 +239,6 @@ def check_entry(entry: dict, idx: int) -> list[str]:
             if not isinstance(commit_str, str):
                 errors.append(f"[{entry_id}] Commit 记录必须是字符串: {commit_str}")
                 continue
-            # 提取 SHA: "d57e38c M1.6.3.2_..."
             sha_candidate = commit_str.split()[0] if commit_str.split() else ""
             if not COMMIT_SHA_RE.match(sha_candidate):
                 errors.append(f"[{entry_id}] Commit 格式不合法: {commit_str}")
@@ -284,7 +351,10 @@ def main() -> int:
     # 6. resolved 回归测试
     all_errors.extend(check_regression_tests(entries))
 
-    # 7. 无 Secret
+    # 7. Unicode 替换字符检测
+    all_errors.extend(check_unicode_replacement(data))
+
+    # 8. 无 Secret
     all_errors.extend(check_no_secrets(data))
 
     # ── 输出结果 ──

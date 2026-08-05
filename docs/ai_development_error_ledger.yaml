@@ -3,7 +3,7 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-05 | M1.6.5
+# 最后更新：2026-08-05 | M1.6.6
 # ============================================================================
 
 schema_version: '1.0'
@@ -255,7 +255,7 @@ entries:
     reason: 只有 401 为 Key 错误
   - title: ERR-164-001 修复记录
     reason: M1.6.4 已按 error_code 区分但 else 仍硬编码
-  root_cause: ERR-164-001 修复时 else 分支 fallback 值未改为通用配���错误
+  root_cause: ERR-164-001 修复时 else 分支 fallback 值未改为通用配置错误，仍伪装为 deepseek_api_key_missing
   failed_attempts: []
   repair_attempt_count: 1
   final_fix: 新增 api_key_missing 分支，else 返回 deepseek_configuration_error
@@ -266,7 +266,8 @@ entries:
   prevention_rules:
   - else 分支返回通用脱敏错误，不再伪装为具体错误
   related_adr: null
-  related_commits: []
+  related_commits:
+  - cb2826e M1.6.5_真实测试错题本与防偏移治理
   status: resolved
   events:
   - date: '2026-08-05'
@@ -275,3 +276,8 @@ entries:
   - date: '2026-08-05'
     action: resolved
     version: M1.6.5
+    commit: cb2826e
+  - date: '2026-08-05'
+    action: data_fixed
+    version: M1.6.6
+    reason: M1.6.6 LEDGER-166-001 — 修复乱码字符、补充缺失Commit引用、补充resolved事件Commit

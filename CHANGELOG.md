@@ -1,5 +1,120 @@
 # CHANGELOG
 
+## [M1.6.6] — 2026-08-05
+
+### CI、最终架构审计与二审候选版
+
+**来源：** M1.6.6 CI、最终架构审计与二审候选版。本轮不是 M2 功能开发轮，也不是正式封板动作。
+
+#### DOC-166-001：权威文档状态同步
+
+- `docs/08_development_roadmap.md`：M1.6.5 → ✅ 已完成（`e850f14`、`cb2826e`、`762f4cf`）、M1.6.6 → 🔄 进行中
+- `docs/09_context_handoff.md`：M1.6.5 入已完成版本表、"上一轮"改为 M1.6.5、当前阶段 M1.6.6、下一动作→"仓库二审"
+- `README.md`：当前版本从 M1.6.4 更新为 M1.6.6 二审候选、移除失效描述
+- `backend/app/config/settings.py`：version → M1.6.6
+- 版本断言同步：test_chat.py、test_health.py、test_settings.py、test_m1_fixes.py、test_m1_2_intent_isolation.py、test_m1_0_1_fixes.py
+
+#### LEDGER-166-001：错题本数据修复
+
+- 修复 ERR-165-001 root_cause 乱码（"通用配���错误" → "通用配置错误"）
+- ERR-165-001 related_commits 补充 `cb2826e`
+- ERR-165-001 resolved 事件补充 commit: `cb2826e`
+- ERR-165-001 追加 `data_fixed` 事件记录本次修复
+- 核查其余 7 条 resolved 条目 consistency：全部通过
+- U+FFFD 清除确认：0 个残留
+
+#### LEDGER-166-002：校验器强化
+
+- `scripts/check_ai_error_ledger.py` 新增校验：
+  - status 不得缺失或为空
+  - repair_attempt_count 必须为 0、1 或 2（负数必须失败）
+  - resolved 条目的 related_commits 不得为空
+  - resolved 条目必须存在 action=resolved 事件
+  - resolved 事件必须记录 commit
+  - related_commits 的 SHA 经本地 Git 验证真实存在（`git cat-file -t`）
+  - 检测 YAML 中 U+FFFD Unicode 替换字符
+- `backend/tests/unit/test_m165_error_ledger.py`：新增 8 个测试（负数、空状态、related_commits、resolved 事件、U+FFFD 检测）
+- 47 个校验器单元测试全部通过
+
+#### TEST-166-001：Prompt 注入 Spy 调用证据补强（20 个测试）
+
+- 新增 `backend/tests/api/test_m166_prompt_injection_spy.py`
+- 使用 `Mock(wraps=...)` Spy 记录 ToolGateway.execute 真实调用
+- 验证：实际调用工具名、白名单约束、危险工具 0 次、Registry 不变、Config 不变、Adapter 对应、无绕过
+- 验证：source_mode/llm_mode/is_mock 不能被输入修改
+- 验证：Secret 和系统 Prompt 不出现在响应中
+- 验证：失败请求不得错误提交 Memory
+- 不替换 ToolGateway 核心逻辑为固定 Mock 结果
+
+#### TEST-166-002：TurnController 真实限制路径（17 个测试）
+
+- 新增 `backend/tests/api/test_m166_turn_controller_limits.py`
+- 合同测试（10 个）：max_tool_calls、非法状态转换、终止状态、DAX/LLM 修复限制、can_commit_memory
+- 管线集成测试（7 个）：经 Service→TurnPipeline→ToolGateway→TurnController→Adapter 真实路径
+- 验证：max_tool_calls=1 在 data_question 场景触发限制、限制后 memory_commit=False、controller 参数传递、状态转换序列
+
+#### TEST-166-003：新增测试 Mutation 证明（1 项）
+
+- 临时 Git worktree 中 bypass `check_tool_call_limit()` 的 raise
+- Mutation 杀死目标：`test_max_tool_calls_limit_with_value_1` FAILED、`test_max_tool_calls_limit_enforced` FAILED
+- 退出码 1，主工作区无残留，恢复后测试通过
+
+#### CI-166-001：GitHub Actions 候选版 CI
+
+- 新增 `.github/workflows/m16_candidate_validation.yml`
+- 触发：push main、PR 指向 main、workflow_dispatch
+- 环境：windows-latest、Python 3.11、LLM_MODE=mock、POWERBI_MODE=mock
+- 执行：安全扫描、错题本校验、文档一致性、架构门禁、全量 pytest、Golden Cases、git diff check
+- 使用 fetch-depth: 0（错题本校验器需完整 Git 历史）
+- 不配置 API Key、不访问 api.deepseek.com、不使用 continue-on-error
+
+#### AUDIT-166-001：M1.6 最终候选审计（25 项）
+
+- 新增 `docs/13_m16_final_candidate_audit.md`
+- 25 项审计：PydanticAI 依赖（✅）、AgentRuntime 残留（✅）、TurnPipeline 共享（✅）、隐藏管线（✅）、ToolGateway 唯一入口（✅）、Service 直接 Adapter（✅）、ContextBuilder 覆盖（✅）、TurnController 限制（✅）、HarnessConfig 统一（✅）、Memory 单写入者（✅）、Snapshot 单管理（✅）、Repository 暴露（✅）、幂等（✅）、空间隔离（✅）、错误映射（✅）、AI 数值追溯（✅）、Prompt 注入证据（✅）、纸面测试残余（⚠️）、错题本校验（✅）、CI 门禁（⚠️）、文档夸大（✅）、M2 提前（✅）、ADR-005 绕过（✅）、Secret 入库（✅）、无限循环（✅）
+- 状态统计：已解决 23、部分解决 2、未解决 0
+- P0 阻塞项：0
+
+**修改文件清单（14 个）：**
+- `backend/app/config/settings.py` — version → M1.6.6
+- `docs/08_development_roadmap.md` — M1.6.5 完成、M1.6.6 进行中
+- `docs/09_context_handoff.md` — M1.6.5 入已完成表、当前阶段 M1.6.6、下一动作 二审
+- `README.md` — 版本 M1.6.6 二审候选
+- `CHANGELOG.md` — 本轮记录
+- `docs/ai_development_error_ledger.yaml` — 数据修复
+- `scripts/check_ai_error_ledger.py` — 校验器强化
+- `docs/13_m16_final_candidate_audit.md` — 新增（审计文档）
+- `.github/workflows/m16_candidate_validation.yml` — 新增（CI 工作流）
+- `backend/tests/api/test_m166_prompt_injection_spy.py` — 新增（20 个 Spy 测试）
+- `backend/tests/api/test_m166_turn_controller_limits.py` — 新增（17 个限制测试）
+- `backend/tests/unit/test_m165_error_ledger.py` — 新增 8 个测试
+- `backend/tests/api/test_chat.py` — version 同步
+- `backend/tests/api/test_health.py` — version 同步
+- `backend/tests/integration/test_m1_0_1_fixes.py` — document structure 同步
+- `backend/tests/integration/test_m1_2_intent_isolation.py` — version 同步
+- `backend/tests/integration/test_m1_fixes.py` — version 同步
+- `backend/tests/unit/test_settings.py` — version 同步
+
+**最终验收结果：**
+- pytest：1230 passed（1222 existing + 8 新版校验器测试）
+- Golden Cases：11 passed，1 skipped
+- 安全扫描：PASS（149 文件）
+- 错题本校验器：PASS（0 errors，8 entries）
+- 架构门禁：PydanticAI 0、AgentRuntime 0、直接 Adapter 0、Service memory_repo 0
+- Mutation 验证：1 项通过
+- 真实 LLM 调用次数：0
+- 新增生产 Python 文件：0
+- 新增依赖：0
+- 新增测试文件：2
+- 新增治理文档：1
+- 新增 CI 工作流：1
+- 修改生产文件：1（settings.py）
+
+**本轮 Tag：** 无
+**真实 DeepSeek Smoke：** 未执行（二审后再由用户人工执行）
+
+---
+
 ## [M1.6.5] — 2026-08-05
 
 ### 阶段A：路线修订与治理基线

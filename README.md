@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M1.6.4 架构稳定性、AI真实性、异常边界与对抗测试加固** — DeepSeek + Mock Power BI 全链路已完成封板。当前轮聚焦架构稳定性加固、AI 真实性门禁、异常边界完善与最小对抗测试。TurnPipeline 为 Memory 和 Snapshot 唯一写入者，Service 不持有可写 Repository。确定性管线原则已通过 ADR-005 固化，PydanticAI 依赖已移除。
+**M1.6.6 二审候选版** — DeepSeek + Mock Power BI 全链路已完成封板（M1.5）。当前轮为 CI、最终架构审计与二审候选版，不是正式封板动作。TurnPipeline 为 Memory 和 Snapshot 唯一写入者，Service 不持有可写 Repository。确定性管线原则已通过 ADR-005 固化，PydanticAI 依赖已移除。真实 Power BI 接入属于 M2。
 
-> **Mock + Mock 模式完整可用。** **DeepSeek + Mock 模式 Chat 已可用（需配置 API Key）。** QueryResult 仍为 Mock。当前版本 M1.6.4。
+> **Mock + Mock 模式完整可用。** **DeepSeek + Mock 模式 Chat 已可用（需配置 API Key）。** QueryResult 仍为 Mock。当前版本 M1.6.6 二审候选。
 
 ### 幂等与并发特性
 
@@ -106,7 +106,7 @@ curl http://127.0.0.1:8000/health
   "reasons": [],
   "app_name": "PowerBIAgent",
   "app_env": "development",
-  "version": "M1.6.4",
+  "version": "M1.6.6",
   "llm_mode": "mock",
   "powerbi_mode": "mock",
   "harness_mode": "strict",
@@ -203,4 +203,4 @@ Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过�
 
 ---
 
-*最后更新：2026-08-05 | M1.6.4 架构稳定性、AI真实性、异常边界与对抗测试加固*
+*最后更新：2026-08-05 | M1.6.6 CI、最终架构审计与二审候选版*
