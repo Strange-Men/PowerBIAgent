@@ -98,6 +98,7 @@ class DeepSeekLLMProvider(LLMProvider):
                 "DeepSeek API Key 未配置",
                 provider=self.PROVIDER_NAME,
                 retryable=False,
+                error_code="api_key_missing",
             )
 
         base_url = base_url.strip()
@@ -106,6 +107,7 @@ class DeepSeekLLMProvider(LLMProvider):
                 "DeepSeek Base URL 为空",
                 provider=self.PROVIDER_NAME,
                 retryable=False,
+                error_code="invalid_base_url",
             )
 
         model = model.strip()
@@ -114,6 +116,7 @@ class DeepSeekLLMProvider(LLMProvider):
                 "DeepSeek Model 为空",
                 provider=self.PROVIDER_NAME,
                 retryable=False,
+                error_code="invalid_model",
             )
 
         # ── 存储 ──
@@ -215,11 +218,40 @@ class DeepSeekLLMProvider(LLMProvider):
                 json=payload,
                 headers=headers,
             )
+        except httpx.ConnectTimeout:
+            raise LLMTimeoutError(
+                f"DeepSeek 连接超时 ({self._timeout_seconds}s)",
+                provider=self.PROVIDER_NAME,
+                retryable=True,
+                error_code="connect_timeout",
+            )
+        except httpx.ReadTimeout:
+            raise LLMTimeoutError(
+                f"DeepSeek 读取超时 ({self._timeout_seconds}s)",
+                provider=self.PROVIDER_NAME,
+                retryable=True,
+                error_code="read_timeout",
+            )
+        except httpx.WriteTimeout:
+            raise LLMTimeoutError(
+                f"DeepSeek 写入超时 ({self._timeout_seconds}s)",
+                provider=self.PROVIDER_NAME,
+                retryable=True,
+                error_code="write_timeout",
+            )
+        except httpx.PoolTimeout:
+            raise LLMTimeoutError(
+                f"DeepSeek 连接池超时 ({self._timeout_seconds}s)",
+                provider=self.PROVIDER_NAME,
+                retryable=True,
+                error_code="pool_timeout",
+            )
         except httpx.TimeoutException:
             raise LLMTimeoutError(
                 f"DeepSeek 请求超时 ({self._timeout_seconds}s)",
                 provider=self.PROVIDER_NAME,
                 retryable=True,
+                error_code="unknown_timeout",
             )
         except httpx.ConnectError as e:
             raise LLMConnectionError(

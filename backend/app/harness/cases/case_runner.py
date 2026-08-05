@@ -375,7 +375,7 @@ class GoldenCaseRunner:
                 return result
 
         # 验证 setup 建立了真实 committed memory
-        repo = service.memory_repo
+        repo = service.pipeline.memory_repo
         latest = await repo.get_latest_committed(conv_id, RuntimeDataMode.MOCK)
         if latest is None:
             result.errors.append("Setup turns did not establish committed memory")
@@ -422,7 +422,7 @@ class GoldenCaseRunner:
         self, case: GoldenCaseSpec, service: MockTurnService, result: GoldenCaseResult
     ) -> GoldenCaseResult:
         """M0.3.2 幂等真实重放 — 执行第二次并验证"""
-        repo = service.memory_repo
+        repo = service.pipeline.memory_repo
 
         # 记录第一次的状态
         before_count = repo._get_count()
@@ -499,7 +499,7 @@ class GoldenCaseRunner:
     ) -> list[str]:
         """M0.3.2 通过 Repository 验证 Memory 状态（含失败场景）"""
         mismatches: list[str] = []
-        repo = service.memory_repo
+        repo = service.pipeline.memory_repo
 
         request_id = actual.get("request_id", "")
         if not request_id:

@@ -24,9 +24,13 @@ from backend.app.llm.base import (
     LLMAuthenticationError,
     LLMConfigurationError,
     LLMConnectionError,
+    LLMProviderError,
     LLMRateLimitError,
+    LLMRequestError,
+    LLMResponseError,
     LLMServiceError,
     LLMTimeoutError,
+    LLMValidationError,
 )
 from backend.app.memory.request_fingerprint import (
     IdempotencyConflictError,
@@ -184,11 +188,76 @@ async def chat(
             },
         )
     except LLMConfigurationError as e:
+        # M1.6.4: 根据 error_code 区分配置错误类型
+        if e.error_code == "insufficient_balance":
+            return JSONResponse(
+                status_code=402,
+                content={
+                    "detail": "DeepSeek 账户余额不足，请充值后重试。",
+                    "error_type": "deepseek_insufficient_balance",
+                    "request_id": body.request_id or "",
+                },
+            )
+        elif e.error_code == "invalid_base_url":
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "LLM 配置错误：Base URL 无效。",
+                    "error_type": "deepseek_invalid_base_url",
+                    "request_id": body.request_id or "",
+                },
+            )
+        elif e.error_code == "invalid_model":
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "LLM 配置错误：模型名称无效。",
+                    "error_type": "deepseek_invalid_model",
+                    "request_id": body.request_id or "",
+                },
+            )
+        else:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "LLM 配置错误：API Key 未配置。",
+                    "error_type": "deepseek_api_key_missing",
+                    "request_id": body.request_id or "",
+                },
+            )
+    except LLMRequestError as e:
         return JSONResponse(
-            status_code=503,
+            status_code=502,
             content={
-                "detail": "LLM 配置错误。",
-                "error_type": "deepseek_api_key_missing",
+                "detail": "LLM 请求参数错误。",
+                "error_type": "deepseek_request_error",
+                "request_id": body.request_id or "",
+            },
+        )
+    except LLMResponseError as e:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "detail": "LLM 响应解析失败。",
+                "error_type": "deepseek_response_error",
+                "request_id": body.request_id or "",
+            },
+        )
+    except LLMValidationError as e:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "detail": "LLM 输出校验失败。",
+                "error_type": "deepseek_validation_error",
+                "request_id": body.request_id or "",
+            },
+        )
+    except LLMProviderError as e:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "detail": "LLM 服务异常。",
+                "error_type": "deepseek_provider_error",
                 "request_id": body.request_id or "",
             },
         )

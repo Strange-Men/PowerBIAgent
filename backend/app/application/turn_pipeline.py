@@ -467,6 +467,16 @@ class TurnPipeline:
 
     # ── 只读 Memory 查询（Service 不得直接持有 memory_repo 写入能力） ──
 
+    async def get_latest_committed_memory(
+        self, conversation_id: str, runtime_mode: RuntimeDataMode
+    ) -> Optional[StructuredWorkMemory]:
+        """只读查询：按 conversation_id 获取最近 committed Memory
+
+        用于测试验证和Service只读查询。
+        这是只读操作，不涉及任何写入。
+        """
+        return await self.memory_repo.get_latest_committed(conversation_id, runtime_mode)
+
     async def request_exists_in_memory(
         self, request_id: str, runtime_mode: RuntimeDataMode
     ) -> bool:

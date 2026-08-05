@@ -53,7 +53,7 @@ class TestMockDataQuestionPipeline:
         assert result["memory_commit"] is False
         assert result["tool_sequence"] == []
 
-        memory = await service.memory_repo.get_by_request_id("req-int-002", RuntimeDataMode.MOCK)
+        memory = await service.pipeline.get_memory_by_request_id("req-int-002", RuntimeDataMode.MOCK)
         assert memory is None
 
     @pytest.mark.asyncio
@@ -68,7 +68,7 @@ class TestMockDataQuestionPipeline:
         assert result["memory_commit"] is False
         assert result["tool_sequence"] == []
 
-        memory = await service.memory_repo.get_by_request_id("req-int-003", RuntimeDataMode.MOCK)
+        memory = await service.pipeline.get_memory_by_request_id("req-int-003", RuntimeDataMode.MOCK)
         assert memory is None
 
     @pytest.mark.asyncio
@@ -86,7 +86,7 @@ class TestMockDataQuestionPipeline:
         assert result["memory_commit"] is False
         assert result["error_type"] == "timeout"
 
-        memory = await service.memory_repo.get_by_request_id("req-timeout-001", RuntimeDataMode.MOCK)
+        memory = await service.pipeline.get_memory_by_request_id("req-timeout-001", RuntimeDataMode.MOCK)
         assert memory is not None
         assert memory.state_status == MemoryStatus.FAILED
 
@@ -146,7 +146,7 @@ class TestMockReportPipeline:
         assert result["error_type"] == "report_validation_failed"
         assert "render_report" not in result["tool_sequence"]
 
-        memory = await service.memory_repo.get_by_request_id("req-rpt-fake", RuntimeDataMode.MOCK)
+        memory = await service.pipeline.get_memory_by_request_id("req-rpt-fake", RuntimeDataMode.MOCK)
         assert memory is not None
         assert memory.state_status == MemoryStatus.FAILED
 
@@ -164,7 +164,7 @@ class TestMultiRoundPipeline:
         assert result1["terminal_state"] == "completed"
         assert result1["memory_commit"] is True
 
-        mem1 = await service.memory_repo.get_by_request_id("req-multi-001", RuntimeDataMode.MOCK)
+        mem1 = await service.pipeline.get_memory_by_request_id("req-multi-001", RuntimeDataMode.MOCK)
         assert mem1 is not None
         assert mem1.state_status == MemoryStatus.COMMITTED
         assert mem1.memory_version == 1
@@ -184,7 +184,7 @@ class TestMultiRoundPipeline:
         assert result2["terminal_state"] == "completed"
         assert result2["memory_commit"] is True
 
-        mem2 = await service.memory_repo.get_by_request_id("req-multi-002", RuntimeDataMode.MOCK)
+        mem2 = await service.pipeline.get_memory_by_request_id("req-multi-002", RuntimeDataMode.MOCK)
         assert mem2 is not None
         assert mem2.state_status == MemoryStatus.COMMITTED
         assert mem2.memory_version == 2
@@ -200,7 +200,7 @@ class TestMultiRoundPipeline:
         assert mem2.last_dax is not None
         assert mem2.last_result_summary is not None
 
-        mem1_check = await service.memory_repo.get_by_request_id("req-multi-001", RuntimeDataMode.MOCK)
+        mem1_check = await service.pipeline.get_memory_by_request_id("req-multi-001", RuntimeDataMode.MOCK)
         assert mem1_check.memory_version == 1
         assert mem1_check.state_status == MemoryStatus.COMMITTED
 
@@ -232,8 +232,8 @@ class TestMemoryConflict:
             runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
             base_memory_version=1, memory_version=0,
         )
-        await service.memory_repo.create_pending(mem_a, RuntimeDataMode.MOCK)
-        await service.memory_repo.create_pending(mem_b, RuntimeDataMode.MOCK)
+        await service.pipeline.memory_repo.create_pending(mem_a, RuntimeDataMode.MOCK)
+        await service.pipeline.memory_repo.create_pending(mem_b, RuntimeDataMode.MOCK)
 
         evidence = MemoryCommitEvidence(
             intent_valid=True, request_allowed=True,
@@ -241,19 +241,19 @@ class TestMemoryConflict:
             tool_execution_succeeded=True, query_result_valid=True,
             response_valid=True, runtime_mode=RuntimeDataMode.MOCK,
         )
-        committed_a = await service.memory_repo.commit(mem_a, evidence)
+        committed_a = await service.pipeline.memory_repo.commit(mem_a, evidence)
         assert committed_a.memory_version == 2
 
         with pytest.raises(MemoryVersionConflictError):
-            await service.memory_repo.commit(mem_b, evidence)
+            await service.pipeline.memory_repo.commit(mem_b, evidence)
 
-        latest = await service.memory_repo.get_latest_committed(conv_id, RuntimeDataMode.MOCK)
+        latest = await service.pipeline.get_latest_committed_memory(conv_id, RuntimeDataMode.MOCK)
         assert latest is not None
         assert latest.memory_version == 2
         assert latest.request_id == "req-conflict-A"
         assert latest.measures == ["A"]
 
-        failed_b = await service.memory_repo.get_by_request_id("req-conflict-B", RuntimeDataMode.MOCK)
+        failed_b = await service.pipeline.get_memory_by_request_id("req-conflict-B", RuntimeDataMode.MOCK)
         assert failed_b is not None
 
 
@@ -373,7 +373,7 @@ class TestFailureCleanup:
                 powerbi_key="timeout",
             ),
         )
-        committed = await service.memory_repo.get_latest_committed(
+        committed = await service.pipeline.get_latest_committed_memory(
             "conv-fail-001", RuntimeDataMode.MOCK
         )
         assert committed is None
@@ -389,7 +389,7 @@ class TestFailureCleanup:
                 powerbi_key="timeout",
             ),
         )
-        mem = await service.memory_repo.get_by_request_id("req-fail-002", RuntimeDataMode.MOCK)
+        mem = await service.pipeline.get_memory_by_request_id("req-fail-002", RuntimeDataMode.MOCK)
         if mem is not None:
             assert mem.state_status == MemoryStatus.FAILED
 
@@ -400,7 +400,7 @@ class TestFailureCleanup:
             conversation_id="conv-fail-003",
             request_id="req-fail-base",
         )
-        latest = await service.memory_repo.get_latest_committed(
+        latest = await service.pipeline.get_latest_committed_memory(
             "conv-fail-003", RuntimeDataMode.MOCK
         )
         v_before = latest.memory_version if latest else 0
@@ -414,7 +414,7 @@ class TestFailureCleanup:
                 powerbi_key="timeout",
             ),
         )
-        latest_after = await service.memory_repo.get_latest_committed(
+        latest_after = await service.pipeline.get_latest_committed_memory(
             "conv-fail-003", RuntimeDataMode.MOCK
         )
         v_after = latest_after.memory_version if latest_after else 0
@@ -535,7 +535,7 @@ class TestProductIds:
             request_id="req-prod-1",
         )
         assert result["terminal_state"] == "completed"
-        mem = await service.memory_repo.get_by_request_id("req-prod-1", RuntimeDataMode.MOCK)
+        mem = await service.pipeline.get_memory_by_request_id("req-prod-1", RuntimeDataMode.MOCK)
         assert mem is not None
         assert mem.last_query_result_id is not None
         assert mem.last_query_result_id != ""  # 非空
@@ -558,7 +558,7 @@ class TestProductIds:
             report_template_key="sales_weekly",
         )
         assert result["terminal_state"] == "completed"
-        mem = await service.memory_repo.get_by_request_id("req-rpt-id", RuntimeDataMode.MOCK)
+        mem = await service.pipeline.get_memory_by_request_id("req-rpt-id", RuntimeDataMode.MOCK)
         assert mem is not None
         assert mem.last_query_result_id is not None
         # 报表场景有 last_report_id
@@ -768,12 +768,12 @@ class TestSameServiceConcurrent:
         assert r_b["tool_sequence"] == []
 
         # Memory 分别写入对应 conversation
-        mem_a = await service.memory_repo.get_by_request_id("req-svc-conc-a", RuntimeDataMode.MOCK)
+        mem_a = await service.pipeline.get_memory_by_request_id("req-svc-conc-a", RuntimeDataMode.MOCK)
         assert mem_a is not None
         assert mem_a.state_status == MemoryStatus.COMMITTED
         assert mem_a.conversation_id == "conv-svc-conc-a"
 
-        mem_b = await service.memory_repo.get_by_request_id("req-svc-conc-b", RuntimeDataMode.MOCK)
+        mem_b = await service.pipeline.get_memory_by_request_id("req-svc-conc-b", RuntimeDataMode.MOCK)
         assert mem_b is None  # unsupported 不创建 pending
 
         # 不发生 Scenario 串场
@@ -836,8 +836,8 @@ class TestSameServiceConcurrent:
         assert r_b["response_type"] == "report"
 
         # Memory 分别正确
-        mem_a = await sa.memory_repo.get_by_request_id("req-svc-dr-a", RuntimeDataMode.MOCK)
-        mem_b = await sb.memory_repo.get_by_request_id("req-svc-dr-b", RuntimeDataMode.MOCK)
+        mem_a = await sa.pipeline.get_memory_by_request_id("req-svc-dr-a", RuntimeDataMode.MOCK)
+        mem_b = await sb.pipeline.get_memory_by_request_id("req-svc-dr-b", RuntimeDataMode.MOCK)
         assert mem_a is not None and mem_a.state_status == MemoryStatus.COMMITTED
         assert mem_b is not None and mem_b.state_status == MemoryStatus.COMMITTED
         assert mem_a.conversation_id != mem_b.conversation_id

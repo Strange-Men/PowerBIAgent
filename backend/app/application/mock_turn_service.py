@@ -116,15 +116,9 @@ class MockTurnService:
         """构建 ToolGateway — M1.6.2 使用共享工具注册入口，超时/重试来自 HarnessConfig"""
         return create_default_tool_gateway(self.powerbi, self.report_renderer, self.config)
 
-    # ── 只读 Memory 访问（仅用于测试验证，Service 不用于写入） ──
-
-    @property
-    def memory_repo(self) -> InMemoryMemoryRepository:
-        """只读 Memory Repository 访问 — 通过 TurnPipeline 间接访问。
-
-        仅用于测试验证 Memory 状态。Service 自身不通过此属性写入。
-        """
-        return self.pipeline.memory_repo
+    # M1.6.4: Service 不再暴露 memory_repo 属性 —
+    #   只读查询必须使用 TurnPipeline 公开只读方法：
+    #   request_exists_in_memory() / get_memory_by_request_id()
 
     @property
     def llm(self) -> Any:

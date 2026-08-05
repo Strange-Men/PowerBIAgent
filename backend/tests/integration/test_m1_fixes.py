@@ -465,7 +465,7 @@ class TestReportTemplateDefault:
         assert result["report"]["template_key"] == "sales_weekly"
 
         # 从 Repository 验证 Memory 中的模板
-        memory = await svc.memory_repo.get_by_request_id(
+        memory = await svc.pipeline.get_memory_by_request_id(
             "req-template-memory", RuntimeDataMode.MOCK
         )
         assert memory is not None
@@ -506,7 +506,7 @@ class TestReportTemplateDefault:
         assert result["terminal_state"] == "completed"
         assert result["response_type"] == "answer"
 
-        memory = await svc.memory_repo.get_by_request_id(
+        memory = await svc.pipeline.get_memory_by_request_id(
             "req-dq-no-template", RuntimeDataMode.MOCK
         )
         assert memory is not None
@@ -523,17 +523,17 @@ class TestVersionM10:
     """版本号验证"""
 
     def test_settings_version_is_m1_5(self):
-        """Settings.version 为 M1.5"""
+        """Settings.version 为 M1.6.4"""
         from backend.app.config.settings import Settings
         s = Settings()
-        assert s.version == "M1.5", f"Expected M1.5, got {s.version}"
+        assert s.version == "M1.6.4", f"Expected M1.6.4, got {s.version}"
 
     def test_health_version_returns_m1_5_in_safe_repr(self):
-        """safe_repr 中 version 为 M1.5"""
+        """safe_repr 中 version 为 M1.6.4"""
         from backend.app.config.settings import Settings
         s = Settings()
         info = s.safe_repr()
-        assert info["version"] == "M1.5"
+        assert info["version"] == "M1.6.4"
 
 
 class TestIdempotentResponseSchema:

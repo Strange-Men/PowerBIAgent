@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M1.5 全链路验收与封板** — DeepSeek + Mock Power BI 全链路已完成封板。Chat 正式接通 DeepSeek API，支持 data_question / report_generation / clarification / unsupported 四类意图。LLM 调用观测（Token、耗时、修复次数、成本）已建立。Mock + Mock 模式保持完整可用。真实 Power BI 属 M2。
+**M1.6.4 架构稳定性、AI真实性、异常边界与对抗测试加固** — DeepSeek + Mock Power BI 全链路已完成封板。当前轮聚焦架构稳定性加固、AI 真实性门禁、异常边界完善与最小对抗测试。TurnPipeline 为 Memory 和 Snapshot 唯一写入者，Service 不持有可写 Repository。确定性管线原则已通过 ADR-005 固化，PydanticAI 依赖已移除。
 
-> **Mock + Mock 模式完整可用。** **DeepSeek + Mock 模式 Chat 已可用（需配置 API Key）。** QueryResult 仍为 Mock。当前版本 M1.5。
+> **Mock + Mock 模式完整可用。** **DeepSeek + Mock 模式 Chat 已可用（需配置 API Key）。** QueryResult 仍为 Mock。当前版本 M1.6.4。
 
 ### 幂等与并发特性
 
@@ -56,7 +56,7 @@ D:\Conda\envs\PBIAgent\python.exe -m pip install -e .
 D:\Conda\envs\PBIAgent\python.exe -m pip install -e ".[dev]"
 ```
 
-核心依赖：FastAPI、Uvicorn、pydantic-settings、pydantic-ai（版本已锁定，见 pyproject.toml）。httpx 为开发/测试依赖。
+核心依赖：FastAPI、Uvicorn、pydantic-settings、httpx（版本已锁定，见 pyproject.toml）。
 
 ### 环境变量
 
@@ -106,7 +106,7 @@ curl http://127.0.0.1:8000/health
   "reasons": [],
   "app_name": "PowerBIAgent",
   "app_env": "development",
-  "version": "M1.3",
+  "version": "M1.6.4",
   "llm_mode": "mock",
   "powerbi_mode": "mock",
   "harness_mode": "strict",
@@ -179,7 +179,7 @@ Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过�
 |------|------|------|
 | 前端 | React + Vite | 骨架已确认，开发延后 (M5) |
 | 后端 | FastAPI | ✅ M0.4 最小骨架已完成 |
-| Agent | PydanticAI 单 Agent | ✅ M0.2 已选定 |
+| Agent | 确定性 TurnPipeline | ✅ M1.6.3 统一执行骨架 |
 | LLM | DeepSeek + Mock LLM | ✅ Mock 可运行；DeepSeek Chat 全链路已封板 (M1.5) |
 | 数据 | Power BI MCP | ✅ Mock 可运行；真实接入延后 (M2) |
 | 记忆 | 结构化工作记忆 | ✅ M0.2-M0.3.2 完整实现 |
@@ -203,4 +203,4 @@ Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过�
 
 ---
 
-*最后更新：2026-08-03 | M1.5 全链路验收与M1封板*
+*最后更新：2026-08-05 | M1.6.4 架构稳定性、AI真实性、异常边界与对抗测试加固*

@@ -1,5 +1,118 @@
 # CHANGELOG
 
+## [M1.6.4] — 2026-08-05
+
+### 架构稳定性、AI真实性、异常边界与对抗测试加固
+
+**来源：** M1.6.4 架构稳定性、AI真实性、异常边界与对抗测试加固。
+
+**本轮不是功能开发轮。**
+
+#### ARCH-164-001：Service 不再暴露可写 Memory Repository
+
+- MockTurnService 和 DeepSeekTurnService 移除 `memory_repo` @property
+- 只读验证使用 TurnPipeline 只读方法：
+  `request_exists_in_memory()` / `get_memory_by_request_id()` / `get_latest_committed_memory()`
+- TurnPipeline 新增 `get_latest_committed_memory()` 只读查询方法
+- Service 源码不含 `def memory_repo`、`self.memory_repo`、`pipeline.memory_repo`
+
+#### ERR-164-001：API 错误映射收口
+
+- HTTP 402 余额不足独立映射为 `deepseek_insufficient_balance`（不再伪装为 `deepseek_api_key_missing`）
+- LLMConfigurationError 根据 error_code 区分：`api_key_missing` / `insufficient_balance` / `invalid_base_url` / `invalid_model`
+- 补齐显式映射：LLMRequestError → 502 `deepseek_request_error`、LLMResponseError → 502 `deepseek_response_error`、LLMValidationError → 502 `deepseek_validation_error`
+- 新增 LLMProviderError 兜底处理器，已知 Provider 异常不再落入通用 500 `internal_error`
+- API 错误响应不泄漏 API Key、Authorization Header、完整 Prompt、模型响应、网络 Body、内部堆栈
+- 保持公开响应基本结构不变
+
+#### ERR-164-002：HTTPX 异常分类细化
+
+基于 HTTPX 官方文档完善异常分类：
+- `ConnectTimeout` → `connect_timeout`
+- `ReadTimeout` → `read_timeout`
+- `WriteTimeout` → `write_timeout`
+- `PoolTimeout` → `pool_timeout`
+- `TimeoutException` 兜底 → `unknown_timeout`
+- 保留 `ConnectError/ReadError/WriteError/CloseError/RemoteProtocolError/LocalProtocolError` 现有 error_code
+
+#### DOC-164-001：版本与文档同步
+
+- Settings.version → `M1.6.4`
+- README 移除 PydanticAI 作为当前依赖/Agent 架构的描述，更新当前状态至 M1.6.4
+- 健康检查示例版本同步 → `M1.6.4`
+- docs/09 M1.6.3.2 Commit SHA 回填为 `d57e38c`
+- docs/09 记录 M1.6.3.2 真实 DeepSeek Chat Smoke：overall_success=true、6 案例通过、source_mode=mock 当前设计、estimated_cost_usd=null 未配置价格
+- docs/08 状态更新至 M1.6.4
+
+#### TRUTH-164-001 & TRUTH-164-002：AI 真实性门禁
+
+- 增强 ValidationService 数值一致性验证（优先增强现有服务，未另建重复框架）
+- KPI bool/None/str 数值拒绝、虚构值拒绝、列不存在拒绝
+- 空 QueryResult 不得返回 KPI/Chart/Table
+- Table 类型严格比较（int≠str、bool≠int）
+- Answer evidence 强制绑定校验、metrics 可追溯校验、semantic_model_key 一致性校验
+- 模型输出冲突时拒绝而非猜测修正
+
+#### ADV-164-001 & ADV-164-002：最小对抗测试
+
+输入/Prompt 注入覆盖：
+- 忽略系统规则、输出 API Key/环境变量/Prompt、绕过 ToolGateway、调用未注册工具、
+  将 Mock 说成真实数据、空字符串、纯空白、大量 emoji、null 字节、XSS、重复注入、伪造 JSON
+- 不泄漏 Secret、不改变工具白名单、不绕开 ToolGateway、不改变 runtime_mode
+
+DAX 边界覆盖：
+- 多语句 DROP/DELETE/INSERT/UPDATE/CREATE、注释隐藏（`--`、`/**/`、`//`）、
+  SQL 语法、Shell shebang、Python exec/eval、不存在表/列、跨表错误引用
+- 正常 DAX 仍通过（FILTER/SUMMARIZE）
+- 仅增强现有 DAXSafetyValidator，未重写 DAX 生成体系
+
+**新增测试：** 84 个（test_m164_arch_truth_adv.py）
+
+**最终验收结果：**
+- pytest：1070 passed（986 现有 + 84 M1.6.4 新增）
+- Golden Cases：11 passed，1 skipped（gc_012_real_baseline 等待 M2）
+- 安全扫描：PASS
+- 真实 LLM 调用次数：0
+- Service 公开 memory_repo 属性：0
+- Service 直接 memory_repo 写入：0
+- Service 直接 Snapshot 写入：0
+- Service 源码 pipeline.memory_repo：0
+- PydanticAI 生产依赖：0
+- AgentRuntime 有效残留：0（仅注释/文档字符串）
+- DeepSeek 直接 Adapter 调用：0
+- 测试中真实 api.deepseek.com 网络访问：0
+- 无限重试：0
+- 每个问题修复次数：≤2
+
+**修改文件清单（12 个）：**
+- `backend/app/config/settings.py` — version → M1.6.4
+- `backend/app/application/mock_turn_service.py` — 移除 memory_repo @property
+- `backend/app/application/deepseek_turn_service.py` — 移除 memory_repo @property
+- `backend/app/application/turn_pipeline.py` — 新增 get_latest_committed_memory()
+- `backend/app/llm/deepseek.py` — HTTPX timeout 细化、LLMConfigurationError error_code
+- `backend/app/api/routes.py` — 错误映射补全、LLMProviderError 兜底
+- `backend/app/harness/cases/case_runner.py` — memory_repo → pipeline.memory_repo
+- `backend/tests/unit/test_m164_arch_truth_adv.py` — 新增（84 个测试）
+- `backend/tests/api/test_health.py` — version 断言同步
+- `backend/tests/api/test_chat.py` — version 断言同步
+- `backend/tests/unit/test_settings.py` — version 断言同步
+- `backend/tests/integration/test_m1_fixes.py` — version 断言同步、memory_repo → pipeline
+- `backend/tests/integration/test_mock_pipeline.py` — memory_repo → pipeline
+- `backend/tests/integration/test_m1_2_intent_isolation.py` — version 断言同步
+- `README.md` — PydanticAI 移除、状态更新、版本示例同步
+- `docs/08_development_roadmap.md` — 状态更新、SHA 回填
+- `docs/09_context_handoff.md` — SHA 回填、Smoke 记录、状态更新
+- `CHANGELOG.md` — 本轮记录
+
+**本轮 Tag：** 无
+
+**留给 M1.6.5 的人工 Smoke 命令：**
+```
+D:\Conda\envs\PBIAgent\python.exe -m backend.app.application.deepseek_chat_smoke
+```
+
+---
+
 ## [M1.6.3.2] — 2026-08-05
 
 ### 事务边界与单写入者彻底收口

@@ -2,7 +2,7 @@
 
 > **所有新 Claude 恢复上下文的唯一最新交接入口。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-05 | M1.6.3.2 事务边界与单写入者彻底收口**
+> **最后更新：2026-08-05 | M1.6.4 已完成 — 架构稳定性、AI真实性、异常边界与对抗测试加固**
 
 ---
 
@@ -14,17 +14,16 @@
 
 ## 当前阶段
 
-**M1.6.3.2 事务边界与单写入者彻底收口** — ✅ 已完成。
+**M1.6.4 架构稳定性、AI真实性、异常边界与对抗测试加固** — ✅ 已完成。
 
 > **说明：**
-> - TurnPipeline 已成为 Memory 和 Snapshot 的唯一写入者。
-> - Service 只负责 LLM 结构化阶段计算（Intent/QueryPlan/DAX/Answer/ReportSpec）和 ToolGateway 调用。
-> - Service 不持有 `self.memory_repo`/`self.snapshot_store` 实例字段。
-> - Memory commit/mark_failed 统一通过 `pipeline.commit_memory_safe()`/`pipeline.mark_memory_failed()`。
-> - Snapshot save/complete/abort 仅由 `TurnPipeline.execute()` 触发。
-> - DeepSeek/HTTPX 错误分类已完善（402 + error_code）。
-> - CLAUDE.md 新增「外部证据修复门禁」和「两次修复上限」两节。
-> - AgentRuntime/MockAgentRuntime 已删除，PydanticAI 依赖已移除。M2 仍未开始。
+> - ARCH-164-001: Service 不再暴露 `memory_repo` @property，只读验证通过 TurnPipeline 只读方法。
+> - ERR-164-001: 402 余额不足使用独立 `deepseek_insufficient_balance`，LLMConfigurationError 按 error_code 区分，
+>   补齐 LLMRequestError/LLMResponseError/LLMValidationError 显式映射，新增 LLMProviderError 兜底。
+> - ERR-164-002: HTTPX Timeout 子类（ConnectTimeout/ReadTimeout/WriteTimeout/PoolTimeout）具有可区分 error_code。
+> - TRUTH-164-001/002: 增强 ValidationService 数值一致性验证，拒绝虚构值/空结果/KPI 类型错误。
+> - ADV-164-001/002: 对抗输入不突破 Secret/工具/模式边界，DAX 注入被安全验证器拒绝。
+> - 本轮 0 次真实 LLM 调用，所有测试基于 Mock/Fixture。
 
 ## 上一轮
 
@@ -32,7 +31,7 @@
 
 ## 下一轮
 
-**M1.6.4 AI真实性、异常处理与对抗测试** — ⬜ 待开始。M1.6.3.2 已完成。
+**M1.6.5 CI、全量回归与封板** — ⬜ 待开始。M1.6.4 已完成。
 
 ## 已完成版本
 
@@ -61,7 +60,7 @@
 | M1.6.2 | Harness与配置收口 | `208bca4` | 2026-08-04 |
 | M1.6.3 | 统一TurnPipeline与旧Agent抽象清理 | `d6665bd` | 2026-08-04 |
 | M1.6.3.1 | 统一管线复验与彻底收口 | `d99d243` | 2026-08-04 |
-| M1.6.3.2 | 事务边界与单写入者彻底收口 | 本轮提交 | 2026-08-05 |
+| M1.6.3.2 | 事务边界与单写入者彻底收口 | `d57e38c` | 2026-08-05 |
 
 ## 最近封板 Tag
 
@@ -127,6 +126,14 @@
 - Remote MCP 属 M2
 - 前端属 M5
 
+## M1.6.3.2 真实 DeepSeek Chat Smoke 记录
+
+- **执行时间：** 2026-08-05（M1.6.3.2 轮次内）
+- **结果：** overall_success=true
+- **案例数：** 6 个通过
+- **source_mode=mock：** 属于当前设计（Power BI 仍使用 Mock 适配器）
+- **estimated_cost_usd=null：** 属于未配置价格（Settings 中成本参数为 None）
+
 ## 未完成或待观察事项
 
 - M2: 真实 Power BI MCP 连接、OAuth、DAX 真实验证
@@ -146,4 +153,4 @@
 
 ---
 
-*最后更新：2026-08-04 | M1.6.3.1 统一管线复验与彻底收口*
+*最后更新：2026-08-05 | M1.6.4 架构稳定性、AI真实性、异常边界与对抗测试加固*
