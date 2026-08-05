@@ -2,98 +2,276 @@
 # AI 开发错误总账 — PowerBIAgent 项目治理文件
 # ============================================================================
 #
-# 本文件是后续 Claude 开发必须读取的正式机器错题总账。
-# 每条错误记录包含根因、修复、回归测试和防复发规则。
-#
-# 规则：
-#   1. ID 唯一，历史条目不得删除
-#   2. 根因和原始证据不得被静默重写
-#   3. 状态变化通过 events 追加记录
-#   4. 修复次数不得超过 2（repair_attempt_count <= 2）
-#   5. resolved 必须至少关联一个真实存在的回归测试
-#   6. 架构类错误必须关联 ADR 或明确说明为何无需 ADR
-#   7. authoritative_sources 无资料时必须明确记录原因，不得伪造来源
-#   8. 不得填写不存在的 Commit 或测试路径
-#   9. 不得输出 Secret
-#
 # Schema 版本：1.0
 # 最后更新：2026-08-05 | M1.6.5
 # ============================================================================
 
-schema_version: "1.0"
-
-# 状态枚举
-#   open         — 新发现，尚未修复
-#   blocked      — 因外部依赖或未知原因暂时无法修复
-#   monitoring   — 已修复，持续观察中（修复后需经过真实环境验证）
-#   resolved     — 已修复，回归测试通过，门禁生效
-#   superseded   — 被后续架构决定取代（如 ADR-001 → ADR-005）
-#
-# 状态转换：
-#   open → blocked | resolved | superseded
-#   blocked → open | resolved
-#   resolved → monitoring | open (复发)
-#   monitoring → resolved | open (复发)
-
-# 错误分类
-#   TX       — 事务边界与数据一致性
-#   NET      — 网络、HTTP、异常分类
-#   GOV      — 治理、文档、流程
-#   ARCH     — 架构偏移与设计违反
-#   ERR      — 错误处理与异常映射
-#   TRUTH    — AI 真实性与验证
-#   ADV      — 对抗输入与安全边界
-#   DOC      — 文档不一致
-#   TEST     — 测试质量与真实性
-
-# 条目必填字段：
-#   id, title, category, first_detected_version
-#   symptom, local_evidence, authoritative_sources
-#   root_cause, failed_attempts, repair_attempt_count
-#   final_fix, regression_tests, prohibited_patterns
-#   prevention_rules, related_adr, related_commits
-#   status, events
-#
-# 其中：
-#   - failed_attempts 为列表，记录每次失败尝试和原因
-#   - repair_attempt_count 为最终成功修复前的失败次数（含成功的最后一次）
-#   - events 为按时间排序的事件列表，记录状态变化
-#   - regression_tests 为测试路径列表，resolved 状态至少一条
-#   - related_adr 可为 null 或明确说明为何无 ADR
-
-entries: []
-# entries 示例结构（空壳阶段仅作参考，实际条目在阶段B迁移）：
-# - id: "TX-001"
-#   title: "Service 直接写 Memory"
-#   category: "TX"
-#   first_detected_version: "M1.6.3.2"
-#   symptom: "两个 Service 的 _do_execute 中仍直接调用 self.memory_repo.mark_failed() 和 self.memory_repo.commit()"
-#   local_evidence: "deepseek_turn_service.py:463,529,570,641; mock_turn_service.py:498,520,597"
-#   authoritative_sources:
-#     - title: "架构原则 — 单写入者"
-#       reason: "项目架构原则，TurnPipeline 为唯一写入者"
-#   root_cause: "M1.6.3 未完全收口直接写"
-#   failed_attempts: []
-#   repair_attempt_count: 1
-#   final_fix: "全部替换为 TurnPipeline 方法"
-#   regression_tests:
-#     - "backend/tests/unit/test_m1632_transaction_boundary.py"
-#   prohibited_patterns:
-#     - "self.memory_repo.mark_failed("
-#     - "self.memory_repo.commit("
-#     - "self.memory_repo.create_pending("
-#   prevention_rules:
-#     - "Service 不持有 memory_repo 实例字段"
-#     - "Memory 写入仅通过 TurnPipeline"
-#   related_adr: "ADR-005"
-#   related_commits:
-#     - "d57e38c M1.6.3.2_事务边界与单写入者彻底收口"
-#   status: "resolved"
-#   events:
-#     - date: "2026-08-05"
-#       action: "discovered"
-#       version: "M1.6.3.2"
-#     - date: "2026-08-05"
-#       action: "resolved"
-#       version: "M1.6.3.2"
-#       commit: "d57e38c"
+schema_version: '1.0'
+entries:
+- id: TX-001
+  title: Service 直接写 Memory
+  category: TX
+  first_detected_version: M1.6.3.2
+  symptom: 两个 Service 的 _do_execute 中仍直接调用 self.memory_repo.mark_failed() 和 self.memory_repo.commit()
+  local_evidence: deepseek_turn_service.py:463,529,570,641; mock_turn_service.py:498,520,597
+  authoritative_sources:
+  - title: 架构原则 — 单写入者
+    reason: TurnPipeline 为 Memory 唯一写入者，Service 不得持有可写 Repository
+  root_cause: M1.6.3 未完全收口直接 Memory 写入，Service 仍保留 self.memory_repo 实例字段
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 全部替换为 TurnPipeline 方法
+  regression_tests:
+  - backend/tests/unit/test_m1632_transaction_boundary.py
+  prohibited_patterns:
+  - self.memory_repo.mark_failed(
+  - self.memory_repo.commit(
+  - self.memory_repo.create_pending(
+  prevention_rules:
+  - Service 不持有 memory_repo 实例字段
+  - Memory 写入仅通过 TurnPipeline
+  related_adr: ADR-005
+  related_commits:
+  - d57e38c M1.6.3.2_事务边界与单写入者彻底收口
+  status: resolved
+  events:
+  - date: '2026-08-05'
+    action: discovered
+    version: M1.6.3.2
+  - date: '2026-08-05'
+    action: resolved
+    version: M1.6.3.2
+    commit: d57e38c
+- id: TX-002
+  title: Snapshot 双重写入
+  category: TX
+  first_detected_version: M1.6.3.2
+  symptom: DeepSeekTurnService 成功路径中 _do_execute 内部调用 _save_snapshot() 后再由 TurnPipeline.execute() 二次保存
+  local_evidence: deepseek_turn_service.py:613 + turn_pipeline.py:205
+  authoritative_sources:
+  - title: 架构原则 — 单写入者
+    reason: Snapshot 仅由 TurnPipeline 管理，Service 不得自行保存
+  root_cause: Service 成功路径自行保存快照，Pipeline 再重复保存，形成双写
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 移除 Service 内 _save_snapshot() 调用，SnapshotStore 完全由 TurnPipeline 持有
+  regression_tests:
+  - backend/tests/unit/test_m1632_transaction_boundary.py
+  prohibited_patterns:
+  - _save_snapshot(
+  - self.snapshot_store
+  prevention_rules:
+  - Service 不持有 snapshot_store 实例字段
+  - Snapshot 保存仅 TurnPipeline.execute()
+  related_adr: ADR-005
+  related_commits:
+  - d57e38c M1.6.3.2_事务边界与单写入者彻底收口
+  status: resolved
+  events:
+  - date: '2026-08-05'
+    action: discovered
+    version: M1.6.3.2
+  - date: '2026-08-05'
+    action: resolved
+    version: M1.6.3.2
+    commit: d57e38c
+- id: TX-003
+  title: Service 和 Pipeline 事务边界不清
+  category: TX
+  first_detected_version: M1.6.3.2
+  symptom: Service 各自持有 memory_repo/snapshot_store 实例字段，自行管理提交和快照生命周期
+  local_evidence: DeepSeekTurnService 和 MockTurnService 构造函数均接收并保存 memory_repo 为实例字段
+  authoritative_sources:
+  - title: 架构原则 — 控制面统一
+    reason: 事务控制面应完全统一到 Pipeline
+  root_cause: 控制面未完全统一到 Pipeline，Service 保留独立的 Repository 引用
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Service 移除 self.memory_repo 和 self.snapshot_store 实例字段
+  regression_tests:
+  - backend/tests/unit/test_m1632_transaction_boundary.py
+  prohibited_patterns:
+  - self.memory_repo =
+  - self.snapshot_store =
+  prevention_rules:
+  - Service 构造函数不接收 Repository 实例字段
+  - 所有持久化操作通过 TurnPipeline
+  related_adr: ADR-005
+  related_commits:
+  - d57e38c M1.6.3.2_事务边界与单写入者彻底收口
+  status: resolved
+  events:
+  - date: '2026-08-05'
+    action: discovered
+    version: M1.6.3.2
+  - date: '2026-08-05'
+    action: resolved
+    version: M1.6.3.2
+    commit: d57e38c
+- id: NET-001
+  title: HTTP 错误分类缺 error_code
+  category: NET
+  first_detected_version: M1.6.3.2
+  symptom: _classify_http_error 返回 2 值无 error_code
+  local_evidence: deepseek.py _classify_http_error 返回 (exception_type, retryable)
+  authoritative_sources:
+  - title: DeepSeek API Docs
+    url: https://api-docs.deepseek.com/quick_start/error_codes
+    reason: 官方错误码文档
+  - title: HTTPX Docs
+    url: https://www.python-httpx.org/exceptions/
+    reason: 官方异常分类
+  root_cause: 错误分类函数未携带结构化 error_code
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 新增 error_code 三值返回 + 402 Insufficient Balance 显式映射
+  regression_tests:
+  - backend/tests/unit/test_m164_arch_truth_adv.py
+  prohibited_patterns: []
+  prevention_rules:
+  - 新增 Provider 错误类型时必须分配 error_code
+  related_adr: null
+  related_commits:
+  - d57e38c M1.6.3.2_事务边界与单写入者彻底收口
+  status: resolved
+  events:
+  - date: '2026-08-05'
+    action: discovered
+    version: M1.6.3.2
+  - date: '2026-08-05'
+    action: resolved
+    version: M1.6.3.2
+    commit: d57e38c
+- id: GOV-001
+  title: 开发协议无修复证据门禁
+  category: GOV
+  first_detected_version: M1.6.3.2
+  symptom: CLAUDE.md 未要求修复前查找官方最新文档、保存本地错误证据
+  local_evidence: M1.6.3.2 前 CLAUDE.md 无外部证据修复门禁章节
+  authoritative_sources:
+  - title: 项目治理需求
+    reason: 防止基于幻觉修复 Bug，需要证据驱动修复流程
+  root_cause: 历史开发协议未包含证据驱动修复流程
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: CLAUDE.md 新增外部证据修复门禁和两次修复上限
+  regression_tests: []
+  prohibited_patterns: []
+  prevention_rules:
+  - 修复前必须查官方资料
+  - 同一问题最多两次修复
+  related_adr: null
+  related_commits:
+  - d57e38c M1.6.3.2_事务边界与单写入者彻底收口
+  status: monitoring
+  events:
+  - date: '2026-08-05'
+    action: discovered
+    version: M1.6.3.2
+  - date: '2026-08-05'
+    action: resolved
+    version: M1.6.3.2
+    commit: d57e38c
+  - date: '2026-08-05'
+    action: monitoring
+    version: M1.6.5
+    reason: 治理类条目无自动化回归测试，状态降为monitoring
+- id: ARCH-164-001
+  title: Service 暴露可写 Memory Repository
+  category: ARCH
+  first_detected_version: M1.6.4
+  symptom: 两个 Service 均有 memory_repo @property，允许绕过 TurnPipeline 直接写 Memory
+  local_evidence: mock_turn_service.py 和 deepseek_turn_service.py 中的 memory_repo @property
+  authoritative_sources:
+  - title: ADR-005
+    reason: TurnPipeline 为唯一事务入口，Service 不得暴露可写 Repository
+  root_cause: M1.6.3.2 收口后 Service 仍暴露 memory_repo 公共属性
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 移除两个 Service 的 memory_repo @property，只读查询通过 TurnPipeline 只读方法
+  regression_tests:
+  - backend/tests/unit/test_m164_arch_truth_adv.py
+  prohibited_patterns:
+  - def memory_repo
+  - pipeline.memory_repo
+  - self.memory_repo
+  prevention_rules:
+  - Service 不暴露 Repository 公共访问
+  related_adr: ADR-005
+  related_commits:
+  - 4217b66 M1.6.4_真实性异常边界与对抗加固
+  status: resolved
+  events:
+  - date: '2026-08-05'
+    action: discovered
+    version: M1.6.4
+  - date: '2026-08-05'
+    action: resolved
+    version: M1.6.4
+    commit: 4217b66
+- id: ERR-164-001
+  title: API 错误映射收口不全
+  category: ERR
+  first_detected_version: M1.6.4
+  symptom: 402 伪装为 api_key_missing，LLMRequestError/ResponseError/ValidationError 无显式映射
+  local_evidence: routes.py 中 LLMConfigurationError else 分支返回 deepseek_api_key_missing
+  authoritative_sources:
+  - title: DeepSeek API Docs
+    url: https://api-docs.deepseek.com/quick_start/error_codes
+    reason: 402 为余额不足
+  root_cause: LLMConfigurationError 未按 error_code 区分，else 分支错误映射
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 按 error_code 区分配置错误，补齐显式映射，添加 LLMProviderError 兜底
+  regression_tests:
+  - backend/tests/api/test_m165_exception_integration.py
+  - backend/tests/unit/test_m164_arch_truth_adv.py
+  prohibited_patterns:
+  - 未知配置错误返回 deepseek_api_key_missing
+  prevention_rules:
+  - 新增 error_code 时必须更新 routes.py 映射
+  related_adr: null
+  related_commits:
+  - 4217b66 M1.6.4_真实性异常边界与对抗加固
+  status: resolved
+  events:
+  - date: '2026-08-05'
+    action: discovered
+    version: M1.6.4
+  - date: '2026-08-05'
+    action: resolved
+    version: M1.6.4
+    commit: 4217b66
+- id: ERR-165-001
+  title: 未知LLMConfigurationError伪装为API Key缺失
+  category: ERR
+  first_detected_version: M1.6.5
+  symptom: LLMConfigurationError 的 else 分支返回 deepseek_api_key_missing，非 api_key_missing 错误无法区分
+  local_evidence: routes.py else 分支 error_type=deepseek_api_key_missing；test_m165_exception_integration.py TestLLMConfigurationErrorUnknown
+    2 个测试失败
+  authoritative_sources:
+  - title: DeepSeek API Docs
+    url: https://api-docs.deepseek.com/quick_start/error_codes
+    reason: 只有 401 为 Key 错误
+  - title: ERR-164-001 修复记录
+    reason: M1.6.4 已按 error_code 区分但 else 仍硬编码
+  root_cause: ERR-164-001 修复时 else 分支 fallback 值未改为通用配���错误
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 新增 api_key_missing 分支，else 返回 deepseek_configuration_error
+  regression_tests:
+  - backend/tests/api/test_m165_exception_integration.py
+  prohibited_patterns:
+  - else 分支返回 deepseek_api_key_missing
+  prevention_rules:
+  - else 分支返回通用脱敏错误，不再伪装为具体错误
+  related_adr: null
+  related_commits: []
+  status: resolved
+  events:
+  - date: '2026-08-05'
+    action: discovered
+    version: M1.6.5
+  - date: '2026-08-05'
+    action: resolved
+    version: M1.6.5

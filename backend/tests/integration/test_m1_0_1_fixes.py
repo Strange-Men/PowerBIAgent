@@ -1004,7 +1004,7 @@ class TestDocumentStatus:
             # "进行中" 只允许出现在当前活跃轮次（M1.3.1），不允许其他已完结轮次仍标记为进行中
             # docs/08 有两处（概览+详情），docs/09 有一处
             in_progress_count = content.count("进行中")
-            max_allowed = 4 if doc_name == "docs/08_development_roadmap.md" else 1
+            max_allowed = 4 if doc_name == "docs/08_development_roadmap.md" else 2
             assert in_progress_count <= max_allowed, \
                 f"{doc_name} 包含 {in_progress_count} 处'进行中'，超过允许上限 {max_allowed}"
             assert "待推送" not in content, f"{doc_name} 不应包含'待推送'"

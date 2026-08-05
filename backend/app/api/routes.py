@@ -216,12 +216,22 @@ async def chat(
                     "request_id": body.request_id or "",
                 },
             )
-        else:
+        elif e.error_code == "api_key_missing":
             return JSONResponse(
                 status_code=503,
                 content={
                     "detail": "LLM 配置错误：API Key 未配置。",
                     "error_type": "deepseek_api_key_missing",
+                    "request_id": body.request_id or "",
+                },
+            )
+        else:
+            # M1.6.5: 未知配置错误返回通用脱敏 error_type，不伪装为 api_key_missing
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "LLM 配置错误。",
+                    "error_type": "deepseek_configuration_error",
                     "request_id": body.request_id or "",
                 },
             )
