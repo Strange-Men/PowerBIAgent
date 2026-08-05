@@ -40,7 +40,7 @@ class TestRequiredFields:
             "failed_attempts": [],
             "repair_attempt_count": 1,
             "final_fix": "test fix",
-            "regression_tests": ["backend/tests/unit/test_m165_error_ledger.py"],
+            "regression_tests": ["backend/tests/unit/test_error_ledger.py"],
             "prohibited_patterns": [],
             "prevention_rules": [],
             "related_adr": None,
@@ -109,7 +109,7 @@ class TestStatusValidation:
             "authoritative_sources": [{"title": "T", "reason": "R"}],
             "root_cause": "c", "failed_attempts": [],
             "repair_attempt_count": 1, "final_fix": "f",
-            "regression_tests": ["backend/tests/unit/test_m165_error_ledger.py"],
+            "regression_tests": ["backend/tests/unit/test_error_ledger.py"],
             "prohibited_patterns": [], "prevention_rules": [],
             "related_adr": None, "related_commits": [],
             "status": status,
@@ -167,7 +167,7 @@ class TestResolvedRequiresRegressionTests:
         """resolved 有回归测试通过"""
         entry = self._make_entry()
         entry["status"] = "resolved"
-        entry["regression_tests"] = ["backend/tests/unit/test_m165_error_ledger.py"]
+        entry["regression_tests"] = ["backend/tests/unit/test_error_ledger.py"]
         entry["related_commits"] = ["d57e38c M1.6.3.2"]
         entry["events"] = [
             {"date": "2026-08-05", "action": "discovered", "version": "M1.0"},
@@ -375,7 +375,7 @@ class TestResolvedRelatedCommits:
             "authoritative_sources": [{"title": "T", "reason": "R"}],
             "root_cause": "c", "failed_attempts": [],
             "repair_attempt_count": 1, "final_fix": "f",
-            "regression_tests": ["backend/tests/unit/test_m165_error_ledger.py"],
+            "regression_tests": ["backend/tests/unit/test_error_ledger.py"],
             "prohibited_patterns": [], "prevention_rules": [],
             "related_adr": None, "related_commits": ["d57e38c M1.6.3.2"],
             "status": "resolved",
@@ -424,7 +424,7 @@ class TestResolvedEventRequirements:
             "authoritative_sources": [{"title": "T", "reason": "R"}],
             "root_cause": "c", "failed_attempts": [],
             "repair_attempt_count": 1, "final_fix": "f",
-            "regression_tests": ["backend/tests/unit/test_m165_error_ledger.py"],
+            "regression_tests": ["backend/tests/unit/test_error_ledger.py"],
             "prohibited_patterns": [], "prevention_rules": [],
             "related_adr": None, "related_commits": ["d57e38c M1.6.3.2"],
             "status": "resolved",

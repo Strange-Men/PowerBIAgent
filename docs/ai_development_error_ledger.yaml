@@ -22,7 +22,7 @@ entries:
   repair_attempt_count: 1
   final_fix: 全部替换为 TurnPipeline 方法
   regression_tests:
-  - backend/tests/unit/test_m1632_transaction_boundary.py
+  - backend/tests/unit/test_transaction_boundary.py
   prohibited_patterns:
   - self.memory_repo.mark_failed(
   - self.memory_repo.commit(
@@ -56,7 +56,7 @@ entries:
   repair_attempt_count: 1
   final_fix: 移除 Service 内 _save_snapshot() 调用，SnapshotStore 完全由 TurnPipeline 持有
   regression_tests:
-  - backend/tests/unit/test_m1632_transaction_boundary.py
+  - backend/tests/unit/test_transaction_boundary.py
   prohibited_patterns:
   - _save_snapshot(
   - self.snapshot_store
@@ -89,7 +89,7 @@ entries:
   repair_attempt_count: 1
   final_fix: Service 移除 self.memory_repo 和 self.snapshot_store 实例字段
   regression_tests:
-  - backend/tests/unit/test_m1632_transaction_boundary.py
+  - backend/tests/unit/test_transaction_boundary.py
   prohibited_patterns:
   - self.memory_repo =
   - self.snapshot_store =
@@ -126,7 +126,7 @@ entries:
   repair_attempt_count: 1
   final_fix: 新增 error_code 三值返回 + 402 Insufficient Balance 显式映射
   regression_tests:
-  - backend/tests/unit/test_m164_arch_truth_adv.py
+  - backend/tests/unit/test_architecture_truth.py
   prohibited_patterns: []
   prevention_rules:
   - 新增 Provider 错误类型时必须分配 error_code
@@ -190,7 +190,7 @@ entries:
   repair_attempt_count: 1
   final_fix: 移除两个 Service 的 memory_repo @property，只读查询通过 TurnPipeline 只读方法
   regression_tests:
-  - backend/tests/unit/test_m164_arch_truth_adv.py
+  - backend/tests/unit/test_architecture_truth.py
   prohibited_patterns:
   - def memory_repo
   - pipeline.memory_repo
@@ -224,8 +224,8 @@ entries:
   repair_attempt_count: 1
   final_fix: 按 error_code 区分配置错误，补齐显式映射，添加 LLMProviderError 兜底
   regression_tests:
-  - backend/tests/api/test_m165_exception_integration.py
-  - backend/tests/unit/test_m164_arch_truth_adv.py
+  - backend/tests/api/test_exception_integration.py
+  - backend/tests/unit/test_architecture_truth.py
   prohibited_patterns:
   - 未知配置错误返回 deepseek_api_key_missing
   prevention_rules:
@@ -247,7 +247,7 @@ entries:
   category: ERR
   first_detected_version: M1.6.5
   symptom: LLMConfigurationError 的 else 分支返回 deepseek_api_key_missing，非 api_key_missing 错误无法区分
-  local_evidence: routes.py else 分支 error_type=deepseek_api_key_missing；test_m165_exception_integration.py TestLLMConfigurationErrorUnknown
+  local_evidence: routes.py else 分支 error_type=deepseek_api_key_missing；test_exception_integration.py TestLLMConfigurationErrorUnknown
     2 个测试失败
   authoritative_sources:
   - title: DeepSeek API Docs
@@ -260,7 +260,7 @@ entries:
   repair_attempt_count: 1
   final_fix: 新增 api_key_missing 分支，else 返回 deepseek_configuration_error
   regression_tests:
-  - backend/tests/api/test_m165_exception_integration.py
+  - backend/tests/api/test_exception_integration.py
   prohibited_patterns:
   - else 分支返回 deepseek_api_key_missing
   prevention_rules:
@@ -295,7 +295,7 @@ entries:
   repair_attempt_count: 0
   final_fix: 最终报告模板规则固化——完整SHA只能来自实际命令输出，禁止手工拼接
   regression_tests:
-  - backend/tests/unit/test_m166_architecture_gate.py
+  - backend/tests/unit/test_architecture_gate.py
   prohibited_patterns:
   - 基于短SHA手工推测完整SHA并写入报告
   - 未经git rev-parse HEAD验证的SHA写入正式文档

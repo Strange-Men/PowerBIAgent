@@ -616,7 +616,8 @@ class TestChatM10Version:
         response = await client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["version"] == "M1.6.6"
+        from backend.app.config.settings import Settings
+        assert data["version"] == Settings().version
 
     @pytest.mark.asyncio
     async def test_health_ready_and_reasons(self, client):

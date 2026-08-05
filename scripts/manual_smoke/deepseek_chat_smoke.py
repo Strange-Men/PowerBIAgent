@@ -1,10 +1,15 @@
-"""M1.5 DeepSeek Chat Smoke（真实 DeepSeek + Mock Power BI + ASGITransport）
+"""PowerBIAgent 人工验收 Smoke（真实 DeepSeek + Mock Power BI + ASGITransport）
 
 通过 ASGITransport 调用本地 /health 和 /api/v1/chat。
 使用真实 DeepSeek + MockPowerBIAdapter + MockReportRenderer。
 不调用真实 Power BI。不输出 DAX/Prompt/Secret/Answer 原文。
 
-运行：python -m backend.app.application.deepseek_chat_smoke
+运行（项目根目录）：
+  D:\\Conda\\envs\\PBIAgent\\python.exe scripts\\manual_smoke\\deepseek_chat_smoke.py
+
+要求：
+  - .env 中 DEEPSEEK_API_KEY 已配置
+  - 已 conda activate PBIAgent 或使用上述完整路径
 """
 
 from __future__ import annotations
@@ -12,7 +17,13 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from pathlib import Path
 from typing import Any
+
+# 确保项目根目录在 sys.path 中
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 
 def _safe_hash(text: str) -> str:

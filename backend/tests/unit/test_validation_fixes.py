@@ -1539,27 +1539,3 @@ class TestQueryPlanServiceTemplateRepair:
         with pytest.raises(QueryPlanError):
             await svc.generate("测试", intent, schema, semantic_model_key="mock_sales_model")
         assert len(provider.calls) == 2, f"应为2次，实际{len(provider.calls)}"
-
-
-class TestSmokeTemplateContract:
-    """Smoke 模板来源契约"""
-
-    def test_smoke_case_b_respects_qp_template(self):
-        """Smoke _run_case_b 以 QueryPlan 为模板权威来源"""
-        from backend.app.answer import deepseek_answer_report_smoke as sm
-        import inspect
-        src = inspect.getsource(sm._run_case_b)
-        assert "effective_template" in src
-        assert "qp_requested_template" in src
-        assert "qp_requested" in src
-        # 不应硬编码 template_key="sales_weekly" 传给 spec_svc
-        assert 'template_key="sales_weekly"' not in src
-
-    def test_smoke_template_sources_are_documented(self):
-        """Smoke main 输出包含新诊断字段"""
-        from backend.app.answer.deepseek_answer_report_smoke import main as smoke_main
-        import inspect
-        src = inspect.getsource(smoke_main)
-        assert "qp_requested_template" in src
-        assert "effective_template" in src
-        assert "template_consistent" in src

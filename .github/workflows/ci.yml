@@ -1,0 +1,72 @@
+# PowerBIAgent Validation — 版本无关通用 CI
+# 触发: push main, PR 指向 main, workflow_dispatch
+# 环境: windows-latest, Python 3.11, LLM_MODE=mock, POWERBI_MODE=mock
+# 禁止: 真实 API Key, api.deepseek.com, continue-on-error, 无限重试
+
+name: PowerBIAgent Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Full Validation (Windows)
+    runs-on: windows-latest
+
+    env:
+      LLM_MODE: mock
+      POWERBI_MODE: mock
+      PYTHONUTF8: 1
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Verify install
+        run: |
+          python -c "import fastapi; import uvicorn; import pydantic; import pydantic_settings; import httpx; import yaml; print('All imports OK')"
+
+      # ── Security ─────────────────────────────────────────────────
+      - name: 1. Repository security scan
+        run: python scripts/check_repository_safety.py
+
+      - name: 2. AI error ledger validator
+        run: python scripts/check_ai_error_ledger.py
+
+      # ── Architecture gate (AST-based) ────────────────────────────
+      - name: 3. Architecture gate
+        run: python scripts/check_architecture_gate.py
+
+      # ── Tests ────────────────────────────────────────────────────
+      - name: 4. Full pytest (includes dynamic version consistency)
+        run: python -m pytest backend/tests -q
+
+      - name: 5. Golden Cases
+        run: python -m backend.app.harness.cases
+
+      # ── Final checks ─────────────────────────────────────────────
+      - name: 6. Git diff check
+        run: |
+          git diff --check
+          git status
+          echo "Git state: OK"

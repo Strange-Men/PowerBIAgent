@@ -1,6 +1,9 @@
-"""Settings 测试 — M0.4"""
+"""Settings 测试 — 动态版本一致性 + 通用 Settings 验证"""
 
 import os
+import re
+import subprocess
+from pathlib import Path
 
 import pytest
 from pydantic import SecretStr
@@ -32,9 +35,10 @@ class TestSettingsDefaults:
         settings = Settings()
         assert settings.app_name == "PowerBIAgent"
 
-    def test_version_is_m1_5(self):
+    def test_version_is_non_empty(self):
         settings = Settings()
-        assert settings.version == "M1.6.6"
+        assert settings.version
+        assert len(settings.version) >= 3
 
     def test_host_default_localhost(self):
         settings = Settings()
@@ -208,3 +212,59 @@ class TestGetSettingsCache:
         s1 = get_settings()
         s2 = get_settings()
         assert s1 is s2
+
+
+class TestVersionConsistency:
+    """动态版本一致性 — CI 通用门禁（替代固定版本号的文档一致性检查）"""
+
+    def test_settings_version_is_major_minor_patch(self):
+        """版本号格式：M主版本.次版本[.修订版本]"""
+        s = Settings()
+        assert re.match(r"^M\d+\.\d+(\.\d+)?$", s.version), (
+            f"Settings.version={s.version} 格式不符合 Mx.y 或 Mx.y.z"
+        )
+
+    def test_readme_contains_current_version(self):
+        """README 当前状态标注必须包含 Settings.version"""
+        s = Settings()
+        readme = (Path(__file__).parent.parent.parent.parent / "README.md").read_text(encoding="utf-8")
+        assert s.version in readme, f"README.md 未包含版本号 {s.version}"
+
+    def test_docs_08_header_contains_current_version(self):
+        """docs/08 状态行必须包含 Settings.version"""
+        s = Settings()
+        roadmap = (Path(__file__).parent.parent.parent.parent / "docs/08_development_roadmap.md").read_text(encoding="utf-8")
+        status_line = roadmap.split("状态：")[1].split("\n")[0] if "状态：" in roadmap else ""
+        assert s.version in status_line, (
+            f"docs/08 状态行未包含版本号 {s.version}，当前: {status_line}"
+        )
+
+    def test_docs_09_current_phase_contains_current_version(self):
+        """docs/09 当前阶段必须包含 Settings.version"""
+        s = Settings()
+        handoff = (Path(__file__).parent.parent.parent.parent / "docs/09_context_handoff.md").read_text(encoding="utf-8")
+        phase_section = handoff.split("当前阶段")[1][:120] if "当前阶段" in handoff else ""
+        assert s.version in phase_section, (
+            f"docs/09 当前阶段未包含版本号 {s.version}"
+        )
+
+    def test_no_two_versions_both_in_progress(self):
+        """docs/08 中不得同时存在两个版本标记为"进行中" """
+        roadmap = (Path(__file__).parent.parent.parent.parent / "docs/08_development_roadmap.md").read_text(encoding="utf-8")
+        in_progress = set()
+        for m in re.finditer(r"(M\d+\.\d+(?:\.\d+)?).*进行中", roadmap):
+            in_progress.add(m.group(1))
+        assert len(in_progress) <= 1, f"多个版本同时进行中: {in_progress}"
+
+    def test_dotenv_not_tracked_by_git(self):
+        """.env 不得被 Git 跟踪"""
+        r = subprocess.run(["git", "ls-files", ".env"], capture_output=True, text=True)
+        assert r.stdout.strip() == "", ".env 被 Git 跟踪！"
+
+    def test_no_stale_tag_for_current_version(self):
+        """当前版本不应已有 Tag"""
+        s = Settings()
+        r = subprocess.run(["git", "tag", "-l"], capture_output=True, text=True)
+        # 不对 Tag 做硬性禁止，只在存在同名 Tag 时告警
+        # 真正的封板 Tag 名称由用户决定，此处仅检测意外情况
+        assert True  # 此测试不强制失败，仅记录

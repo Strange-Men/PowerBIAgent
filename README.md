@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M1.6.6 二审候选版** — DeepSeek + Mock Power BI 全链路已完成封板（M1.5）。当前轮为 CI、最终架构审计与二审候选版，不是正式封板动作。TurnPipeline 为 Memory 和 Snapshot 唯一写入者，Service 不持有可写 Repository。确定性管线原则已通过 ADR-005 固化，PydanticAI 依赖已移除。真实 Power BI 接入属于 M2。
+**M1.7 轻量化候选** — M0—M1 正式封板前最后一次整理（测试收敛、CI通用化、文档轻量化）。
 
-> **Mock + Mock 模式完整可用。** **DeepSeek + Mock 模式 Chat 已可用（需配置 API Key）。** QueryResult 仍为 Mock。当前版本 M1.6.6 二审候选。
+> **Mock + Mock 模式完整可用。** **DeepSeek + Mock 模式 Chat 已可用（需配置 API Key）。** QueryResult 仍为 Mock。当前版本 M1.7 轻量化候选。
 
 ### 幂等与并发特性
 
@@ -106,7 +106,7 @@ curl http://127.0.0.1:8000/health
   "reasons": [],
   "app_name": "PowerBIAgent",
   "app_env": "development",
-  "version": "M1.6.6",
+  "version": "M1.7",
   "llm_mode": "mock",
   "powerbi_mode": "mock",
   "harness_mode": "strict",
@@ -153,14 +153,8 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 # 仓库安全检查（提交前必须执行）
 D:\Conda\envs\PBIAgent\python.exe scripts/check_repository_safety.py
 
-# DeepSeek 真实连通测试（需要 .env 中配置 DEEPSEEK_API_KEY）
-D:\Conda\envs\PBIAgent\python.exe -m backend.app.llm.deepseek_smoke
-
-# 真实意图识别 Smoke 测试（需要 .env 中配置 DEEPSEEK_API_KEY）
-D:\Conda\envs\PBIAgent\python.exe -m backend.app.intent.deepseek_intent_smoke
-
-# 真实 QueryPlan + DAX Smoke 测试（需要 .env 中配置 DEEPSEEK_API_KEY）
-D:\Conda\envs\PBIAgent\python.exe -m backend.app.query_plan.deepseek_query_dax_smoke
+# 人工验收 Smoke（需 .env 中配置 DEEPSEEK_API_KEY，项目根目录执行）
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\deepseek_chat_smoke.py
 ```
 ### DeepSeek 配置
 
@@ -203,4 +197,4 @@ Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过�
 
 ---
 
-*最后更新：2026-08-05 | M1.6.6 CI、最终架构审计与二审候选版*
+*最后更新：2026-08-05 | M1.7 轻量化候选*
