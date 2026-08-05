@@ -92,6 +92,28 @@
 - 真实 LLM 调用次数：0
 - 未创建 Tag
 
+### CI远程修复（本轮：M1.6.6_CI远程编码与文档检查修复）
+
+#### CI-166-004：修复CI中文编码导致全步骤失败
+
+- `.github/workflows/m16_candidate_validation.yml`：添加 `PYTHONIOENCODING: utf-8` 环境变量
+- **root_cause：** GitHub Actions `windows-latest` runner 默认 stdout 编码为 cp1252，无法输出中文字符
+- 影响脚本：`check_repository_safety.py`、`check_ai_error_ledger.py`、`check_architecture_gate.py`、Golden Cases 均输出中文
+- 编码错误导致 Python `print()` 抛出 `UnicodeEncodeError`，脚本异常退出 → 步骤失败
+- 修复后安全扫描、错题本校验、文档一致性、架构门禁、全量 pytest、Golden Cases 全部通过
+
+#### CI-166-005：修复文档一致性检查#9假阳性
+
+- `.github/workflows/m16_candidate_validation.yml`：多版本进行中检测改为按唯一版本号去重
+- **root_cause：** 同一版本 M1.6.6 在 `docs/08` 标题行（`**状态：** M1.6.6 进行中`）和路线表（`M1.6.6 ... 🔄 进行中`）各出现一次，正则匹配2次误判为"多版本进行中"
+- 修复后：使用 `set` 收集唯一版本号，仅当 >1 个不同版本才报错
+
+**修改文件清单（1 个）：**
+- `.github/workflows/m16_candidate_validation.yml` — PYTHONIOENCODING + 文档检查#9去重
+
+**远程CI验证结果（Run #30983637121，2026-08-05）：**
+- 全部 7 个步骤通过（安全扫描 1s、错题本校验 0s、文档一致性 1s、架构门禁 1s、全量 pytest 12s、Golden Cases 1s、Git diff check 1s）
+
 ### CI、最终架构审计与二审候选版（上一轮）
 
 **来源：** M1.6.6 CI、最终架构审计与二审候选版。本轮不是 M2 功能开发轮，也不是正式封板动作。
