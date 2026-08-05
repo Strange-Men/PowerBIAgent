@@ -46,7 +46,19 @@ jobs:
 
       # ── Security ─────────────────────────────────────────────────
       - name: 1. Repository security scan
-        run: python scripts/check_repository_safety.py
+        shell: bash
+        run: |
+          set -e
+          python scripts/check_repository_safety.py 2>&1 || {
+            echo "::warning::Security scan found issues or encountered an error."
+            echo "::group::Debug: git tracked files"
+            git ls-files --cached | head -50
+            echo "::endgroup::"
+            echo "::group::Debug: untracked non-ignored files"
+            git ls-files --others --exclude-standard | head -20
+            echo "::endgroup::"
+            exit 1
+          }
 
       - name: 2. AI error ledger validator
         run: python scripts/check_ai_error_ledger.py

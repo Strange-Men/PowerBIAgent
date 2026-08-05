@@ -391,10 +391,23 @@ def check_obvious_secrets(files: list[str]) -> list[dict]:
 def main() -> int:
     files = _collect_files_to_check()
 
+    print(f"[INFO] Checking {len(files)} files for security issues...")
+
     all_findings: list[dict] = []
-    all_findings.extend(check_forbidden_filenames(files))
-    all_findings.extend(check_frontend_secrets(files))
-    all_findings.extend(check_obvious_secrets(files))
+    fn_findings = check_forbidden_filenames(files)
+    if fn_findings:
+        print(f"[INFO] Forbidden filename findings: {len(fn_findings)}")
+    all_findings.extend(fn_findings)
+
+    fs_findings = check_frontend_secrets(files)
+    if fs_findings:
+        print(f"[INFO] Frontend secret findings: {len(fs_findings)}")
+    all_findings.extend(fs_findings)
+
+    os_findings = check_obvious_secrets(files)
+    if os_findings:
+        print(f"[INFO] Obvious secret findings: {len(os_findings)}")
+    all_findings.extend(os_findings)
 
     if all_findings:
         print(f"[FAIL] 发现 {len(all_findings)} 项安全问题：")
@@ -407,4 +420,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        print(f"[ERROR] 安全扫描脚本异常: {type(exc).__name__}: {exc}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(2)
