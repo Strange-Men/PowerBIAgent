@@ -123,10 +123,12 @@ jobs:
               if '二审' not in next_section:
                   errors.append('docs/09 next action missing 二审')
 
-          # 9. No two M1.6.x versions both marked '进行中'
-          in_progress = [m.group(0) for m in re.finditer(r'M1\.6\.\d.*进行中', roadmap)]
-          if len(in_progress) > 1:
-              errors.append(f'Multiple M1.6.x versions in progress: {in_progress}')
+          # 9. No two M1.6.x versions both marked '进行中' (unique versions only)
+          in_progress_versions = set()
+          for m in re.finditer(r'M1\.6\.(\d).*进行中', roadmap):
+              in_progress_versions.add(f'M1.6.{m.group(1)}')
+          if len(in_progress_versions) > 1:
+              errors.append(f'Multiple M1.6.x versions in progress: {in_progress_versions}')
 
           # 10. .env must not be tracked
           r = subprocess.run(['git','ls-files','.env'], capture_output=True, text=True)
