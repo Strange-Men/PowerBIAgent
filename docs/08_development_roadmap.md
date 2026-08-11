@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M2.1 Local MCP 最小真实连接验证完成候选
+> **状态：** M2.2 真实 Semantic Model Schema 接入完成候选
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -49,8 +49,8 @@ M1.8 Codex接管准备与仓库上下文固化          ✅ 已完成候选
 M2 真实 Power BI MCP 与数据问答
   M2.0 官方证据、架构与路线固化                 ✅ 已完成候选
   M2.1 Local MCP 最小真实连接验证                ✅ 已完成候选
-  M2.2 真实 Semantic Model Schema 接入          ⬜ 未开始
-  M2.3 真实 DAX 与 QueryResult 标准化            ⬜ 未开始
+  M2.2 真实 Semantic Model Schema 接入          ✅ 已完成候选
+  M2.3 真实 DAX 与 QueryResult 标准化            ⬜ 下一阶段
   M2.4 接入现有 TurnPipeline                    ⬜ 未开始
   M2.5 真实全链路验收与封板候选                  ⬜ 未开始
 
@@ -515,13 +515,13 @@ MVP 功能阶段 (后续)
 
 ### M2.2｜真实 Semantic Model Schema 接入
 
-**状态：** ⬜ 未开始
+**状态：** ✅ 已完成候选
 
-通过 `LocalMCPPowerBIAdapter` 从 Power BI Desktop 真实模型读取 tables、columns、measures、relationships、hierarchies，以及官方真实返回时的 description / AI metadata，并映射为现有 `SemanticModelSchema`。禁止真实数据问答。属于“看得懂模型”。
+已通过既有 ToolGateway → `LocalMCPPowerBIAdapter` 从 Power BI Desktop 真实读取 tables、columns、measures、relationships 与 hierarchies，并在单次只读会话中用 `List` / `Get` 映射为兼容的 `SemanticModelSchema`。真实 Measure expression 与数据类型已保留；description 字段真实存在但当前测试模型为空；Local 未返回 Prep for AI 专用 metadata，故未实现。未执行 DAX，未调用 DeepSeek，未接 Chat，属于“看得懂模型”。
 
 ### M2.3｜真实 DAX 执行与 QueryResult 标准化
 
-**状态：** ⬜ 未开始
+**状态：** ⬜ 下一阶段
 
 完成 DAXRequest → ToolGateway → Local Adapter → Local MCP → Power BI Desktop → QueryResult，并覆盖 success、timeout、DAX error、malformed response、oversized result；DeepSeek 尚不接 Chat。属于“查得到数据”。
 

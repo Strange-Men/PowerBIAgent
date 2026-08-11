@@ -1,8 +1,8 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M1.5 已更新
+> **状态：** M2.2 Schema Grounding 已真实接入
 > **关联 ADR：** ADR-004
-> **当前基线：** pytest 937 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS（138 文件）
+> **当前基线：** pytest 1149 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS（153 文件）
 > **真实 Chat Smoke：** overall_success=true, 6/6 cases passed (data_question, report_generation, clarification, unsupported, idempotent_replay, request_id_conflict)
 > **Token 统计：** call_count/repair_count 按 task 独立统计，LLMValidationError 携带 usage
 > **模式切换：** Mock+Mock 200 / DeepSeek+Mock 200 / Remote MCP 503
@@ -111,7 +111,9 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 ### Layer 1 — Schema Grounding（M2.2）
 
-当前真实 Power BI Provider 返回的 Semantic Model Schema 应尽可能保留生成 DAX 所需的 `tables`、`columns`、`measures`、`relationships`、`hierarchies`、descriptions（若真实返回）以及 AI optimized / Prep for AI metadata（若真实返回）。当前本地 `SemanticModelSchema` 尚未完整覆盖这些语义；M2.1 不猜测 Local MCP 响应结构，M2.2 必须依据当前真实 Provider 响应决定最小契约扩展。Demo Provider 为 Local MCP；未来恢复 Remote 后同一规则继续适用。
+**✅ M2.2 已完成候选。** 当前 Local Provider 已通过 ToolGateway → PowerBIAdapter 边界真实读取 `tables`、`columns`、`measures`、`relationships` 与 `hierarchies`。Measure expression、data type、表归属以及关系 active/cardinality 已保留；Table/Column/Measure 的 description 以可选字段兼容真实响应。当前测试模型的 description 均为空，Local 未返回 Prep for AI 专用 metadata，因此不虚构此类语义。Fake MCP 响应用于离线 CI，真实 Schema 只由人工 Smoke 验证。
+
+M2.2 实机验收为 3 tables、19 columns、2 measures、1 relationship、2 hierarchies；`Total Sales` 与 `Total Quantity` 均准确识别为 Measure 且 expression 非空，`Quantity` 与 `UnitPrice` 保持 Column 身份。DAX 执行和 DeepSeek 调用均为 0。
 
 ### Layer 2 — QueryPlan Semantic Validation（M2.4）
 
@@ -167,4 +169,4 @@ QueryPlan 不仅验证字段存在，还必须确定请求的业务指标映射�
 
 ---
 
-*最后更新：2026-08-03 | M1.5 全链路验收与M1封板*
+*最后更新：2026-08-11 | M2.2 Schema Grounding 真实接入*

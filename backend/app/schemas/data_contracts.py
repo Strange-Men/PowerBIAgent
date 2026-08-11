@@ -42,12 +42,15 @@ class ColumnSchema(BaseModel):
     name: str
     data_type: str
     is_hidden: bool = False
+    description: Optional[str] = None
 
 
 class MeasureSchema(BaseModel):
     name: str
     expression: str = ""
     data_type: str = "decimal"
+    is_hidden: bool = False
+    description: Optional[str] = None
 
 
 class HierarchySchema(BaseModel):
@@ -60,6 +63,9 @@ class TableSchema(BaseModel):
     columns: list[ColumnSchema] = Field(default_factory=list)
     measures: list[MeasureSchema] = Field(default_factory=list)
     hierarchies: list[HierarchySchema] = Field(default_factory=list)
+    is_hidden: bool = False
+    is_system_managed: bool = False
+    description: Optional[str] = None
 
 
 class RelationshipSchema(BaseModel):
@@ -67,6 +73,9 @@ class RelationshipSchema(BaseModel):
     from_column: str
     to_table: str
     to_column: str
+    is_active: bool = True
+    from_cardinality: Optional[str] = None
+    to_cardinality: Optional[str] = None
 
 
 class SemanticModelSchema(BaseModel):

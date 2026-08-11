@@ -2,7 +2,7 @@
 
 > **当前状态交接入口；Claude / Codex / 其他代码 Agent 必须先从仓库根目录 `AGENTS.md` 进入。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-11 | M2.1 Local MCP 最小真实连接验证完成候选**
+> **最后更新：2026-08-11 | M2.2 真实 Semantic Model Schema 接入完成候选**
 
 ---
 
@@ -12,13 +12,13 @@
 
 ## 当前阶段
 
-**M2.1 Local Power BI MCP 最小真实连接验证** — ✅ 已完成候选。
+**M2.2 真实 Semantic Model Schema 接入** — ✅ 已完成候选。
 
-> 当前 Demo 经用户批准改走 Local MCP + Power BI Desktop；Remote MCP 因 Tenant / Entra 管理员前置条件暂缓，ADR-006 生产化路线保持 accepted。M2.1 已真实验证只读 stdio、协议 `2025-11-25`、21 个工具发现与 Desktop 连接；未读取完整 Schema、未执行 DAX、未调用 DeepSeek。
+> 当前 Demo 通过既有 ToolGateway → PowerBIAdapter → Local MCP 边界真实读取并标准化 Power BI Desktop Schema。实机协议为 `2025-11-25`；3 tables、19 columns、2 measures、1 relationship、2 hierarchies 已映射，`Total Sales` 与 `Total Quantity` 作为 Measure 且 expression 非空。未执行 DAX、未调用 DeepSeek、未接完整 Chat；Remote 生产化 Deferred。
 
 ## 上一轮
 
-**M1.8** — Codex 接管准备与仓库上下文固化（起始基线 Commit `8aede040b74cfeb4f18514ffef3c049da02a5e43`，远程 CI Run #31449122624 success）。
+**M2.1** — Local MCP 最小真实连接验证（Commit `66f1b8f2398d9fe036018b1c615c2fc55a619df6`，远程 CI Run #31462564306 success）。
 
 ## 固定封板 Tag
 
@@ -26,14 +26,14 @@
 
 ## 下一动作
 
-在新的 Codex 窗口进入 **M2.2 真实 Semantic Model Schema 接入**。通过现有 ToolGateway → LocalMCPPowerBIAdapter 边界读取真实模型语义；不得提前执行 DAX 或接完整 Chat。
+进入 **M2.3 真实 DAX 执行与 QueryResult 标准化**。必须先实机验证 `dax_query_operations Execute` 的当前 beta.12 响应；Microsoft 官方仓库公开 Issue #124 报告 0.5.x 可能执行成功但不返回 row data。不得提前接 DeepSeek + Local Chat 或采用未经批准的替代路线。
 
 以后 Claude / Codex / 其他代码 Agent 均以根目录 `AGENTS.md` 为仓库级入口。
 
 ## 当前真实能力
 
 - **LLM:** DeepSeek（真实 API）+ Mock（确定性测试）
-- **Power BI:** Mock 完整可用；Local MCP Server 与 Power BI Desktop 已真实连接；Schema 尚未接入、DAX 尚未执行；Remote MCP 未实现并因管理员条件 Deferred
+- **Power BI:** Mock 完整可用；Local MCP Server 与 Power BI Desktop 已真实连接；Schema 已真实接入，DAX 尚未执行；Remote MCP 未实现并因管理员条件 Deferred
 - **管线:** 确定性 TurnPipeline（ADR-005），Mock/DeepSeek 共享执行骨架
 - **能力:** 意图识别 → QueryPlan → DAX → Answer/ReportSpec，幂等重放，请求指纹冲突检测
 - **API:** Health 200/503、Chat 可用/不可用，Mock/DeepSeek 模式切换
@@ -42,7 +42,7 @@
 ## 当前技术边界
 
 - ADR-005 负责 TurnPipeline 总体架构；ADR-006 负责 Remote 生产化；ADR-007 负责当前 Local Demo 路径，三者均 accepted
-- 当前 M2.1 只允许 Adapter 内部使用 Local `connection_operations`；未来业务层仍只有 Schema 与 DAX Execute 两类抽象能力
+- M2.2 只允许 Adapter 内部使用 `connection_operations` 及五类 Schema 工具的 `List` / `Get`；业务层仍只有 Schema 与 DAX Execute 两类抽象能力
 - 任何 Local / Remote MCP SDK 只能位于 PowerBIAdapter 边界之后；Service/API/LLM 不得直接调用 MCP；Real 失败不得回退 Mock
 - M2.1—M2.3 不接完整 Chat；M2.4 才接入现有 TurnPipeline。会话持久化属 M4，报表正式渲染属 M3，React 属 M5
 
@@ -58,6 +58,9 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 # M2.1 Local MCP 人工连接 Smoke（先打开测试 PBIX）
 D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\powerbi_local_mcp_connection_smoke.py
 
+# M2.2 Local MCP 人工 Schema Smoke（先打开测试 PBIX）
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\powerbi_local_mcp_schema_smoke.py
+
 # 人工验收 Smoke（需 .env 中 DEEPSEEK_API_KEY）
 D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\deepseek_chat_smoke.py
 
@@ -70,8 +73,7 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ## 未完成事项
 
-- M2.2: 通过 LocalMCPPowerBIAdapter 接入真实 Semantic Model Schema（尚未开始）
-- M2.3: 真实 DAX 与 QueryResult 标准化（尚未开始）
+- M2.3: 真实 DAX 与 QueryResult 标准化（下一阶段）
 - M2.4: 接入现有 TurnPipeline（尚未开始）
 - M2.5: 真实全链路验收与封板候选（尚未开始）
 - M3: 报表正式渲染管线、报表资源 ID
@@ -90,6 +92,7 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ## 近期变更摘要
 
+- M2.2: 通过 ToolGateway → LocalMCPPowerBIAdapter 单次只读会话真实读取并标准化 Schema；Measure 与基础模型关系已可用于 Semantic Grounding
 - M2.1: Demo 路径调整为 Local MCP + Power BI Desktop；新增 ADR-007、Local Adapter / stdio Client 与只读安全边界；Remote ADR-006 完整保留
 - M2.0: 官方证据复核、ADR-005 文件化、ADR-006 与原始 M2.1—M2.5 路线固化；生产业务实现为 0
 - M1.8: Codex 接管准备与仓库上下文固化
@@ -104,4 +107,4 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ---
 
-*最后更新：2026-08-11 | M2.1 Local MCP 最小真实连接验证完成候选*
+*最后更新：2026-08-11 | M2.2 真实 Semantic Model Schema 接入完成候选*

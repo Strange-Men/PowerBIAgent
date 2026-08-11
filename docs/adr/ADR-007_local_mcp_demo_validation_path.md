@@ -31,6 +31,10 @@ M2 Demo 的目标是先证明 PowerBIAgent 经既有控制面访问真实 Power 
 - 正面：在不等待公司 Tenant 治理前置条件的情况下，先验证真实产品链路；Local/Remote 差异仍被 Adapter 隔离。
 - 负面：Local Modeling MCP 是 Public Preview，依赖 Windows、Node.js 与已打开的 Power BI Desktop；其工具包含写能力，因此必须使用只读模式并保持业务入口白名单。
 
+## M2.2 实机补充
+
+固定 beta.12 已在 `--readonly` 下通过五类 Schema 工具的 `List` / `Get` 真实读取并标准化 Desktop 模型；原始工具名与响应仍封装在 LocalMCPPowerBIAdapter 后，ToolGateway 继续只暴露项目 Schema 抽象。该观察不改变 ADR-005、ADR-006 或本 ADR 的决策关系。
+
 ---
 
-*最后更新：2026-08-11 | accepted*
+*最后更新：2026-08-11 | accepted；M2.2 实机 Schema 观察补充*

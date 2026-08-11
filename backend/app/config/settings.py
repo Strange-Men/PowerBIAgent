@@ -1,4 +1,4 @@
-"""Pydantic Settings — M2.1 项目配置
+"""Pydantic Settings — M2.2 项目配置
 
 环境变量可覆盖所有配置项。
 Mock 模式启动不需要任何 API Key。
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M2.1", frozen=True)
+    version: str = Field(default="M2.2", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     powerbi_local_mcp_package: str = Field(
         default="@microsoft/powerbi-modeling-mcp@0.5.0-beta.12"
     )
+    powerbi_local_semantic_model_key: str = Field(default="local_desktop_model")
     powerbi_local_mcp_readonly: bool = Field(default=True)
 
     # ── 资源限制 ──────────────────────────────
@@ -128,6 +129,7 @@ class Settings(BaseSettings):
         return (
             bool(self.powerbi_local_mcp_executable.strip())
             and bool(self.powerbi_local_mcp_package.strip())
+            and bool(self.powerbi_local_semantic_model_key.strip())
             and self.powerbi_local_mcp_readonly
         )
 
@@ -137,7 +139,7 @@ class Settings(BaseSettings):
 
         M1.5: DeepSeek + Mock Power BI 全链路已封板。
         DeepSeek 配置 Key 且 PowerBI 为 Mock 时 ready=true。
-        M2.1 仅验证 Local MCP 连接，完整 Real Chat 仍不可用。
+        M2.2 已接入 Local MCP Schema，完整 Real Chat 仍不可用。
         """
         if self.llm_mode == LLMMode.DEEPSEEK:
             return (

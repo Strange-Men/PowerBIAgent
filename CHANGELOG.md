@@ -4,6 +4,18 @@
 
 ---
 
+## [M2.2] — 2026-08-11
+
+### 真实 Semantic Model Schema 接入
+
+- 保留公开可复现的 Local MCP 实机固定版本 `0.5.0-beta.12`，并用 npm 官方 Registry 与隔离缓存复核
+- 在既有 ToolGateway → PowerBIAdapter → Local MCP 边界内，以单次只读会话调用五类 Schema 工具的 `List` / `Get`
+- 将真实 Table、Column、Measure、Relationship 与 Hierarchy 映射为向后兼容的 `SemanticModelSchema`，保留 Measure expression、数据类型与基础关系语义
+- 新增 Fake MCP 回归与脱敏人工 Schema Smoke；真实验收为 3 tables、19 columns、2 measures、1 relationship、2 hierarchies
+- `Total Sales` 与 `Total Quantity` 已准确识别为 Measure；未执行 DAX、未调用 DeepSeek、未接完整 Chat、未修改 TurnPipeline
+
+---
+
 ## [M2.1] — 2026-08-11
 
 ### Local Power BI MCP 最小真实连接验证

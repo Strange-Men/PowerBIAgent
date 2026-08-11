@@ -54,6 +54,10 @@ class TestSettingsDefaults:
         assert default_settings.powerbi_local_mcp_package == (
             "@microsoft/powerbi-modeling-mcp@0.5.0-beta.12"
         )
+        assert (
+            default_settings.powerbi_local_semantic_model_key
+            == "local_desktop_model"
+        )
         assert default_settings.powerbi_local_mcp_readonly is True
 
 
@@ -227,9 +231,13 @@ class TestSettingsRealMode:
         missing_command = configured.model_copy(
             update={"powerbi_local_mcp_executable": ""}
         )
+        missing_model_key = configured.model_copy(
+            update={"powerbi_local_semantic_model_key": ""}
+        )
         assert configured.is_powerbi_local_mcp_configured is True
         assert writable.is_powerbi_local_mcp_configured is False
         assert missing_command.is_powerbi_local_mcp_configured is False
+        assert missing_model_key.is_powerbi_local_mcp_configured is False
 
 
 class TestSettingsIsolation:

@@ -7,19 +7,34 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.app.harness.models import HarnessConfig
+from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
+from backend.app.harness.tool_registry import (
+    SchemaInput,
+    create_default_tool_gateway,
+)
+from backend.app.intent.models import IntentType
+from backend.app.memory.models import RuntimeDataMode
 from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
 from backend.app.powerbi.local_mcp import (
+    LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
     M2_1_ALLOWED_TOOL_NAMES,
+    SCHEMA_READ_OPERATION_WHITELIST,
     DiscoveredLocalTool,
     LocalMCPConnection,
     LocalMCPConnectionError,
     LocalMCPDiagnostics,
     LocalMCPErrorCategory,
     LocalMCPPowerBIAdapter,
+    LocalMCPSchemaSnapshot,
     PowerBILocalMCPClient,
 )
 from backend.app.powerbi.mock import MockPowerBIAdapter
-from backend.app.schemas.data_contracts import DAXRequest, SemanticModelSchema
+from backend.app.schemas.data_contracts import (
+    DAXRequest,
+    SemanticModelSchema,
+    UserContext,
+)
 
 
 @pytest.fixture
@@ -32,10 +47,15 @@ class FakeLocalMCPClient:
         self,
         result: LocalMCPDiagnostics | None = None,
         error: LocalMCPConnectionError | None = None,
+        schema_snapshot: LocalMCPSchemaSnapshot | None = None,
+        schema_error: LocalMCPConnectionError | None = None,
     ) -> None:
         self.result = result
         self.error = error
+        self.schema_snapshot = schema_snapshot
+        self.schema_error = schema_error
         self.calls = 0
+        self.schema_calls = 0
 
     async def connect_and_discover(self) -> LocalMCPDiagnostics:
         self.calls += 1
@@ -43,6 +63,13 @@ class FakeLocalMCPClient:
             raise self.error
         assert self.result is not None
         return self.result
+
+    async def read_semantic_model_schema(self) -> LocalMCPSchemaSnapshot:
+        self.schema_calls += 1
+        if self.schema_error is not None:
+            raise self.schema_error
+        assert self.schema_snapshot is not None
+        return self.schema_snapshot
 
 
 class FlakyLocalNetworkClient:
@@ -96,6 +123,141 @@ class FakeStdioMCPClient:
         )
 
 
+class FakeSchemaStdioMCPClient(FakeStdioMCPClient):
+    """Fake observed Local MCP List/Get response shapes for offline CI."""
+
+    def __init__(
+        self,
+        snapshot: LocalMCPSchemaSnapshot,
+        *,
+        malformed_tool: str | None = None,
+        error_tool: str | None = None,
+    ) -> None:
+        super().__init__()
+        self.snapshot = snapshot
+        self.malformed_tool = malformed_tool
+        self.error_tool = error_tool
+
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, object],
+        **kwargs: object,
+    ) -> object:
+        if name == "connection_operations":
+            return await super().call_tool(name, arguments, **kwargs)
+
+        self.calls.append((name, arguments))
+        request = arguments["request"]
+        assert isinstance(request, dict)
+        operation = request["operation"]
+        assert operation in {"List", "Get"}
+        if name == self.error_tool:
+            return SimpleNamespace(
+                is_error=True,
+                structured_content={"operation": operation},
+                content=[],
+            )
+        if name == self.malformed_tool and operation == "List":
+            return SimpleNamespace(
+                is_error=False,
+                structured_content={"operation": "List", "message": "safe"},
+                content=[],
+            )
+
+        if operation == "List":
+            payload = self._list_payload(name)
+        else:
+            references = request.get("references")
+            assert isinstance(references, list)
+            payload = self._get_payload(name, references)
+        return SimpleNamespace(
+            is_error=False,
+            structured_content=payload,
+            content=[],
+        )
+
+    def _list_payload(self, name: str) -> dict[str, object]:
+        if name == "table_operations":
+            data = [{"name": item["name"]} for item in self.snapshot.tables]
+        elif name == "column_operations":
+            data = self._group_list(self.snapshot.columns, "columns")
+        elif name == "measure_operations":
+            data = self._group_list(self.snapshot.measures, "measures")
+        elif name == "relationship_operations":
+            data = [{"name": item.get("name", f"relationship-{index}")}
+                    for index, item in enumerate(self.snapshot.relationships)]
+        elif name == "user_hierarchy_operations":
+            data = [
+                {
+                    "tableName": item["tableName"],
+                    "hierarchy": {"name": item["name"], "levels": item["levels"]},
+                }
+                for item in self.snapshot.hierarchies
+            ]
+        else:
+            raise AssertionError("unexpected schema tool")
+        return {"operation": "List", "message": "safe", "data": data}
+
+    @staticmethod
+    def _group_list(
+        records: tuple[dict[str, object], ...],
+        child_key: str,
+    ) -> list[dict[str, object]]:
+        groups: dict[str, list[dict[str, object]]] = {}
+        for item in records:
+            table_name = item["tableName"]
+            assert isinstance(table_name, str)
+            groups.setdefault(table_name, []).append({"name": item["name"]})
+        return [
+            {"tableName": table_name, child_key: children}
+            for table_name, children in groups.items()
+        ]
+
+    def _get_payload(
+        self,
+        name: str,
+        references: list[object],
+    ) -> dict[str, object]:
+        source = {
+            "table_operations": self.snapshot.tables,
+            "column_operations": self.snapshot.columns,
+            "measure_operations": self.snapshot.measures,
+            "relationship_operations": self.snapshot.relationships,
+            "user_hierarchy_operations": self.snapshot.hierarchies,
+        }[name]
+        results = []
+        for index, reference in enumerate(references):
+            assert isinstance(reference, dict)
+            if name == "table_operations":
+                match = next(item for item in source if item["name"] == reference["name"])
+            elif name in {"column_operations", "measure_operations"}:
+                match = next(
+                    item for item in source
+                    if item["tableName"] == reference["tableName"]
+                    and item["name"] == reference["name"]
+                )
+            elif name == "relationship_operations":
+                match = source[index]
+            else:
+                match = next(
+                    item for item in source
+                    if item["tableName"] == reference["tableName"]
+                    and item["name"] == reference["hierarchyName"]
+                )
+            results.append({"index": index, "data": match, "message": "safe"})
+        return {
+            "operation": "Get",
+            "message": "safe",
+            "results": results,
+            "summary": {
+                "totalItems": len(results),
+                "successCount": len(results),
+                "failureCount": 0,
+            },
+        }
+
+
 def _tool(name: str) -> DiscoveredLocalTool:
     return DiscoveredLocalTool(
         name=name,
@@ -135,12 +297,116 @@ def _healthy_local_diagnostics() -> LocalMCPDiagnostics:
     )
 
 
+def _schema_snapshot() -> LocalMCPSchemaSnapshot:
+    diagnostics = _healthy_local_diagnostics()
+    return LocalMCPSchemaSnapshot(
+        diagnostics=diagnostics,
+        tables=(
+            {
+                "name": "Sales",
+                "description": "Sales facts",
+                "isHidden": False,
+                "systemManaged": False,
+                "unknownFutureField": "ignored",
+            },
+            {
+                "name": "Products",
+                "description": None,
+                "isHidden": False,
+                "systemManaged": False,
+            },
+        ),
+        columns=(
+            {
+                "tableName": "Sales",
+                "name": "Quantity",
+                "dataType": "Int64",
+                "isHidden": False,
+                "description": "Units sold",
+            },
+            {
+                "tableName": "Sales",
+                "name": "UnitPrice",
+                "dataType": "Double",
+                "isHidden": False,
+                "description": None,
+            },
+            {
+                "tableName": "Sales",
+                "name": "ProductKey",
+                "dataType": "Int64",
+                "isHidden": True,
+            },
+            {
+                "tableName": "Products",
+                "name": "ProductKey",
+                "dataType": "Int64",
+                "isHidden": True,
+            },
+            {
+                "tableName": "Products",
+                "name": "Product",
+                "dataType": "String",
+                "isHidden": False,
+            },
+            {
+                "tableName": "Products",
+                "name": "Category",
+                "dataType": "String",
+                "isHidden": False,
+            },
+        ),
+        measures=(
+            {
+                "tableName": "Sales",
+                "name": "Total Sales",
+                "expression": "SUMX(Sales, Sales[Quantity] * Sales[UnitPrice])",
+                "dataType": "Double",
+                "isHidden": False,
+                "description": "Revenue measure",
+            },
+            {
+                "tableName": "Sales",
+                "name": "Total Quantity",
+                "expression": "SUM(Sales[Quantity])",
+                "dataType": "Int64",
+                "isHidden": False,
+            },
+        ),
+        relationships=(
+            {
+                "fromTable": "Sales",
+                "fromColumn": "ProductKey",
+                "toTable": "Products",
+                "toColumn": "ProductKey",
+                "isActive": True,
+                "fromCardinality": "Many",
+                "toCardinality": "One",
+            },
+        ),
+        hierarchies=(
+            {
+                "tableName": "Products",
+                "name": "Product Hierarchy",
+                "levels": [
+                    {"name": "Category", "columnName": "Category"},
+                    {"name": "Product", "columnName": "Product"},
+                ],
+            },
+        ),
+    )
+
+
 def _local_adapter(
     client: LocalMCPConnection,
     *,
     max_retries: int = 0,
 ) -> LocalMCPPowerBIAdapter:
-    return LocalMCPPowerBIAdapter(client=client, max_retries=max_retries)
+    return LocalMCPPowerBIAdapter(
+        client=client,
+        max_retries=max_retries,
+        semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+    )
 
 
 class TestMockPowerBIAdapter:
@@ -249,6 +515,29 @@ class TestMockPowerBIAdapter:
         assert "data_question" in scenarios
         assert "timeout" in scenarios
 
+    def test_legacy_schema_contract_remains_compatible(self):
+        schema = SemanticModelSchema.model_validate({
+            "name": "legacy",
+            "key": "legacy",
+            "tables": [{
+                "name": "Sales",
+                "columns": [{"name": "Quantity", "data_type": "integer"}],
+                "measures": [{"name": "Total Quantity"}],
+                "hierarchies": [{"name": "Date", "levels": ["Year"]}],
+            }],
+            "relationships": [{
+                "from_table": "Sales",
+                "from_column": "Quantity",
+                "to_table": "Sales",
+                "to_column": "Quantity",
+            }],
+        })
+
+        assert schema.tables[0].description is None
+        assert schema.tables[0].is_hidden is False
+        assert schema.tables[0].measures[0].description is None
+        assert schema.relationships[0].is_active is True
+
 
 class TestLocalMCPPowerBIAdapter:
     """M2.1 Local MCP 只验证 stdio、协议、工具与 Desktop 连接。"""
@@ -339,17 +628,152 @@ class TestLocalMCPPowerBIAdapter:
         adapter = LocalMCPPowerBIAdapter(readonly=False)
         assert await adapter.health_check() is False
         assert adapter.last_diagnostics.error_type == "readonly_required"
+        with pytest.raises(PowerBIAdapterError) as exc_info:
+            await adapter.get_semantic_model_schema(
+                LOCAL_DESKTOP_SEMANTIC_MODEL_KEY
+            )
+        assert exc_info.value.error_type == "SCHEMA_VALIDATION_FAILED"
 
     @pytest.mark.asyncio
-    async def test_schema_and_dax_business_methods_remain_unimplemented(self):
-        adapter = _local_adapter(FakeLocalMCPClient(_healthy_local_diagnostics()))
-        with pytest.raises(NotImplementedError, match="M2.2"):
-            await adapter.get_semantic_model_schema("friendly-model")
+    async def test_schema_mapping_and_dax_business_method_remains_unimplemented(self):
+        client = FakeLocalMCPClient(schema_snapshot=_schema_snapshot())
+        adapter = _local_adapter(client)
+
+        schema = await adapter.get_semantic_model_schema(
+            LOCAL_DESKTOP_SEMANTIC_MODEL_KEY
+        )
+
+        assert schema.key == LOCAL_DESKTOP_SEMANTIC_MODEL_KEY
+        assert [table.name for table in schema.tables] == ["Sales", "Products"]
+        sales = schema.tables[0]
+        assert sales.description == "Sales facts"
+        assert sales.is_hidden is False
+        assert sales.is_system_managed is False
+        assert [column.name for column in sales.columns] == [
+            "Quantity", "UnitPrice", "ProductKey"
+        ]
+        assert sales.columns[0].data_type == "Int64"
+        assert sales.columns[0].description == "Units sold"
+        assert sales.columns[2].is_hidden is True
+        assert [measure.name for measure in sales.measures] == [
+            "Total Sales", "Total Quantity"
+        ]
+        assert sales.measures[0].expression.startswith("SUMX")
+        assert sales.measures[0].data_type == "Double"
+        assert sales.measures[0].description == "Revenue measure"
+        assert "Total Sales" not in [column.name for column in sales.columns]
+        products = schema.tables[1]
+        assert products.hierarchies[0].levels == ["Category", "Product"]
+        relationship = schema.relationships[0]
+        assert relationship.from_table == "Sales"
+        assert relationship.to_table == "Products"
+        assert relationship.is_active is True
+        assert relationship.from_cardinality == "Many"
+        assert relationship.to_cardinality == "One"
+        assert schema.get_all_measures() == ["Total Sales", "Total Quantity"]
+        assert client.schema_calls == 1
+
         with pytest.raises(NotImplementedError, match="M2.3"):
             await adapter.execute_dax(DAXRequest(
-                semantic_model_key="friendly-model",
+                semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
                 dax="EVALUATE ROW(\"x\", 1)",
             ))
+
+    @pytest.mark.asyncio
+    async def test_schema_key_is_friendly_and_cannot_be_arbitrary_connection(self):
+        client = FakeLocalMCPClient(schema_snapshot=_schema_snapshot())
+        adapter = _local_adapter(client)
+
+        with pytest.raises(PowerBIAdapterError) as exc_info:
+            await adapter.get_semantic_model_schema("localhost:54321")
+
+        assert exc_info.value.error_type == "SCHEMA_VALIDATION_FAILED"
+        assert client.schema_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_schema_errors_are_standardized_without_mock_fallback(self):
+        client = FakeLocalMCPClient(schema_error=LocalMCPConnectionError(
+            LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
+            "schema_payload_not_object",
+        ))
+        adapter = _local_adapter(client)
+
+        with pytest.raises(PowerBIAdapterError) as exc_info:
+            await adapter.get_semantic_model_schema(
+                LOCAL_DESKTOP_SEMANTIC_MODEL_KEY
+            )
+
+        assert exc_info.value.error_type == "SCHEMA_MALFORMED_RESPONSE"
+        assert exc_info.value.provider == "local_mcp"
+        assert adapter.is_mock is False
+        assert client.schema_calls == 1
+        assert (
+            adapter.last_diagnostics.error_category
+            == LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE
+        )
+        assert adapter.last_diagnostics.error_type == "schema_payload_not_object"
+
+    @pytest.mark.asyncio
+    async def test_schema_validation_rejects_invalid_ownership(self):
+        snapshot = _schema_snapshot()
+        malformed = LocalMCPSchemaSnapshot(
+            diagnostics=snapshot.diagnostics,
+            tables=snapshot.tables,
+            columns=snapshot.columns + ({
+                "tableName": "Unknown",
+                "name": "Ghost",
+                "dataType": "String",
+            },),
+            measures=snapshot.measures,
+            relationships=snapshot.relationships,
+            hierarchies=snapshot.hierarchies,
+        )
+        adapter = _local_adapter(FakeLocalMCPClient(schema_snapshot=malformed))
+
+        with pytest.raises(PowerBIAdapterError) as exc_info:
+            await adapter.get_semantic_model_schema(
+                LOCAL_DESKTOP_SEMANTIC_MODEL_KEY
+            )
+
+        assert exc_info.value.error_type == "SCHEMA_VALIDATION_FAILED"
+
+    @pytest.mark.asyncio
+    async def test_tool_gateway_exposes_only_schema_abstraction(self):
+        client = FakeLocalMCPClient(schema_snapshot=_schema_snapshot())
+        adapter = _local_adapter(client)
+
+        async def render(_: object) -> str:
+            return "<html></html>"
+
+        gateway = create_default_tool_gateway(
+            adapter,
+            SimpleNamespace(render=render),
+            HarnessConfig(max_powerbi_retries=0),
+        )
+        context = ToolExecutionContext(
+            intent=IntentType.DATA_QUESTION,
+            user=UserContext(
+                allowed_semantic_models=[LOCAL_DESKTOP_SEMANTIC_MODEL_KEY],
+                allowed_tools=["get_semantic_model_schema"],
+            ),
+            runtime_mode=RuntimeDataMode.REAL,
+        )
+
+        schema = await gateway.execute(
+            "get_semantic_model_schema",
+            context,
+            SchemaInput(semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY),
+        )
+
+        assert isinstance(schema, SemanticModelSchema)
+        assert gateway.list_tools() == [
+            "get_semantic_model_schema",
+            "execute_dax",
+            "render_report",
+        ]
+        assert not set(SCHEMA_READ_OPERATION_WHITELIST).intersection(
+            gateway.list_tools()
+        )
 
     def test_m2_1_never_exposes_modeling_write_tools(self):
         write_tools = {
@@ -361,6 +785,19 @@ class TestLocalMCPPowerBIAdapter:
         }
         assert M2_1_ALLOWED_TOOL_NAMES == {"connection_operations"}
         assert M2_1_ALLOWED_TOOL_NAMES.isdisjoint(write_tools)
+
+    def test_schema_operation_whitelist_contains_only_list_and_get(self):
+        assert set(SCHEMA_READ_OPERATION_WHITELIST) == {
+            "table_operations",
+            "column_operations",
+            "measure_operations",
+            "relationship_operations",
+            "user_hierarchy_operations",
+        }
+        assert all(
+            operations == {"List", "Get"}
+            for operations in SCHEMA_READ_OPERATION_WHITELIST.values()
+        )
 
     def test_local_adapter_has_no_llm_or_mock_dependency(self):
         module = inspect.getmodule(LocalMCPPowerBIAdapter)
@@ -425,6 +862,83 @@ class TestLocalMCPPowerBIAdapter:
             "Connect",
             "ListConnections",
         ]
+
+    @pytest.mark.asyncio
+    async def test_stdio_schema_read_uses_one_connection_and_read_operations_only(self):
+        client = PowerBILocalMCPClient()
+        fake = FakeSchemaStdioMCPClient(_schema_snapshot())
+
+        snapshot = await client._read_schema_in_session(
+            fake,  # type: ignore[arg-type]
+            "2025-11-25",
+            _local_tools(),
+        )
+
+        assert len(snapshot.tables) == 2
+        assert len(snapshot.columns) == 6
+        assert len(snapshot.measures) == 2
+        assert len(snapshot.relationships) == 1
+        assert len(snapshot.hierarchies) == 1
+        assert [name for name, _ in fake.calls[:3]] == [
+            "connection_operations",
+            "connection_operations",
+            "connection_operations",
+        ]
+        schema_calls = fake.calls[3:]
+        assert len(schema_calls) == 10
+        assert all(
+            call[1]["request"]["operation"] in {"List", "Get"}  # type: ignore[index]
+            for call in schema_calls
+        )
+        assert all(name != "dax_query_operations" for name, _ in fake.calls)
+
+    @pytest.mark.asyncio
+    async def test_stdio_schema_read_reports_missing_tool(self):
+        client = PowerBILocalMCPClient()
+        fake = FakeSchemaStdioMCPClient(_schema_snapshot())
+        tools = tuple(
+            tool for tool in _local_tools()
+            if tool.name != "user_hierarchy_operations"
+        )
+
+        with pytest.raises(LocalMCPConnectionError) as exc_info:
+            await client._read_schema_in_session(
+                fake,  # type: ignore[arg-type]
+                "2025-11-25",
+                tools,
+            )
+
+        assert exc_info.value.category == LocalMCPErrorCategory.SCHEMA_TOOL_MISSING
+
+    @pytest.mark.asyncio
+    async def test_stdio_schema_read_reports_malformed_and_tool_errors(self):
+        client = PowerBILocalMCPClient()
+        malformed = FakeSchemaStdioMCPClient(
+            _schema_snapshot(),
+            malformed_tool="column_operations",
+        )
+        with pytest.raises(LocalMCPConnectionError) as malformed_info:
+            await client._read_schema_in_session(
+                malformed,  # type: ignore[arg-type]
+                "2025-11-25",
+                _local_tools(),
+            )
+        assert (
+            malformed_info.value.category
+            == LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE
+        )
+
+        failed = FakeSchemaStdioMCPClient(
+            _schema_snapshot(),
+            error_tool="measure_operations",
+        )
+        with pytest.raises(LocalMCPConnectionError) as failed_info:
+            await client._read_schema_in_session(
+                failed,  # type: ignore[arg-type]
+                "2025-11-25",
+                _local_tools(),
+            )
+        assert failed_info.value.category == LocalMCPErrorCategory.SCHEMA_READ_FAILED
 
     def test_official_mcp_v2_dependency_is_installed(self):
         assert version("mcp") == "2.0.0"

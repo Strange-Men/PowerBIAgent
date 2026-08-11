@@ -1,6 +1,6 @@
 # 12 — M2 真实 Power BI MCP 统一接入计划
 
-> **状态：** M2.1 Local MCP 最小真实连接验证完成候选
+> **状态：** M2.2 真实 Semantic Model Schema 接入完成候选
 > **官方资料查询日期：** 2026-08-11
 > **边界：** 当前 Demo 使用 Local MCP + Power BI Desktop；Remote MCP 作为 ADR-006 生产化路径延后。二者只能替换 PowerBIAdapter 后的 Provider。
 
@@ -61,7 +61,8 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 
 | 决策项 | 官方结论 | 项目决定 |
 |---|---|---|
-| Server / package | Microsoft 官方 Local Modeling MCP Server；npm 包为 `@microsoft/powerbi-modeling-mcp`，Public Preview | 固定 `0.5.0-beta.12`，不使用 `@latest`；Preview 升级必须重新 Smoke |
+| Server / package | Microsoft 官方 Local Modeling MCP Server；npm 包为 `@microsoft/powerbi-modeling-mcp`，Public Preview | M2.1/M2.2 实机验证固定 `0.5.0-beta.12`，不使用 `@latest`；Preview 升级必须重新 Smoke |
+| npm 可复现性 | 2026-08-11 通过 npm CLI 验证公开 versions、dist-tags、精确版本查询，并用全新隔离缓存重新解析 beta.12；精确版本公开可获取，查询时 `latest` dist-tag 为 beta.12 | 保留实机固定版本，不随 dist-tag 漂移 |
 | Runtime / transport | Microsoft Learn 要求 Local 路径使用 Windows 上的 Node.js 20+ / npx；transport 为 stdio | Node/npm 是外部运行时，不写入 Python 依赖 |
 | 启动方式 | 官方配置以 `npx -y <package> --start` 启动 | 项目增加 `--readonly`，禁止 M2.1 写模型 |
 | Python Client | MCP Python SDK v2 高层 `Client` 接受 `stdio_client(StdioServerParameters(...))`，上下文进入时连接并协商协议 | 锁定 `mcp==2.0.0`；SDK 只存在于 `backend/app/powerbi/` |
@@ -77,7 +78,8 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 ### LocalMCPPowerBIAdapter
 
 - M2.1：正式 `mcp` Client 通过 stdio 启动固定版本的官方 Local Server，只实现 `health_check()`、协议/工具发现、Desktop 发现与连接。
-- M2.2 / M2.3：`get_semantic_model_schema()`、`execute_dax()` 与结果标准化继续明确 `NotImplementedError`。
+- M2.2：`get_semantic_model_schema()` 已在一次 stdio / Desktop 连接生命周期内读取并映射真实 Schema；上层只接收 `SemanticModelSchema`。
+- M2.3：`execute_dax()` 与结果标准化继续明确 `NotImplementedError`。
 - 安全：强制只读、诊断不包含 PBIX 路径、模型名、连接串或业务数据；失败不回退 Mock。
 
 ### RemoteMCPPowerBIAdapter
@@ -92,7 +94,7 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 
 ### Settings
 
-版本为 M2.1；新增 `PowerBIMode.LOCAL_MCP`、Local 可执行命令、固定 package/version 与只读开关。Remote 历史配置保留，Local 不要求 Tenant ID、Client ID 或 Redirect URI；M2.4 前 Local / Remote 模式均不代表 Chat ready。
+版本为 M2.2；Local 配置增加 friendly `local_desktop_model` key，不接受端口、数据库名、PBIX 路径或连接串作为业务输入。Remote 历史配置保留，Local 不要求 Tenant ID、Client ID 或 Redirect URI；M2.4 前 Local / Remote 模式均不代表 Chat ready。
 
 ## 5. M2.0—M2.5 当前 Demo 路线
 
@@ -106,11 +108,11 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 
 ### M2.2｜真实 Semantic Model Schema 接入
 
-通过 Local Adapter 从 Power BI Desktop 读取真实 tables、columns、measures、relationships、hierarchies，以及官方真实返回时的 descriptions / AI metadata，并映射到现有 `SemanticModelSchema`。业务语义 Grounding 在此获得真实输入。
+**状态：✅ 已完成候选。** Local Adapter 通过五类工具的 `List` / `Get` 读取真实 tables、columns、measures、relationships 与 hierarchies，并映射到现有 `SemanticModelSchema`。业务语义 Grounding 已获得真实 Measure、expression、data type、表归属与基础关系输入；未执行 DAX。
 
 ### M2.3｜真实 DAX 执行与 QueryResult 标准化
 
-完成 `DAXRequest → ToolGateway → Local Adapter → Local MCP → Power BI Desktop → QueryResult`；DeepSeek 尚不接 Chat。
+**下一阶段。** 完成 `DAXRequest → ToolGateway → Local Adapter → Local MCP → Power BI Desktop → QueryResult`；DeepSeek 尚不接 Chat。
 
 ### M2.4｜接入现有 TurnPipeline
 
@@ -130,8 +132,9 @@ Remote 生产化不塞入当前 M2.1—M2.5 Demo 路线；管理员前置条件�
 
 - CI 完全离线，不启动 Node、Local Server 或 Power BI Desktop，不使用 Microsoft Token 或 DeepSeek Key。
 - MCP Client 使用 Fake boundary；优先补充已有 Power BI / Settings / Harness 测试，不创建版本型测试文件。
-- 真实 Local MCP 只跑人工 Smoke；不记录 PBIX 路径、模型名、连接串、业务数据或原始响应。
-- M2.1 的完整 Schema 读取、DAX 执行与 DeepSeek 调用均为 0；Golden 真实 Power BI Case 继续 pending / skipped。
+- 自动 CI 通过 Fake MCP `List` / `Get` 响应验证 Local Adapter → `SemanticModelSchema`；不启动 Node 或 Desktop。
+- 真实 Local MCP 只跑人工 Smoke；不记录 PBIX 路径、模型名、连接串、业务数据、Measure expression 全文或原始响应。
+- M2.2 的 DAX 执行与 DeepSeek 调用均为 0；Golden 真实 Power BI Case 继续 pending / skipped。
 
 ## 8. 外部前置与停止条件
 
@@ -145,7 +148,7 @@ Tenant 管理员启用 Remote MCP Preview、同 Tenant Entra App、委托权限�
 
 ## 9. M2.1 实机观察
 
-- Local Server：`@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，通过 `npx` 以 `--start --readonly` 启动。
+- Local Server：M2.1/M2.2 实机验证固定 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，通过 `npx` 以 `--start --readonly` 启动。
 - Python Client：官方 `mcp==2.0.0` 高层 `Client` + `stdio_client`。
 - 协议：成功协商 `2025-11-25`；`list_tools` 返回 21 个工具。
 - Desktop：`ListLocalInstances` 检测成功，`Connect` 后由 `ListConnections` 验证连接成功。
@@ -153,6 +156,20 @@ Tenant 管理员启用 Remote MCP Preview、同 Tenant Entra App、委托权限�
 - 安全：业务允许集合在 M2.1 仅含 `connection_operations`；大量建模写工具虽然可发现，但未进入 ToolGateway / LLM，且 Server 处于只读模式。
 - 调用计数：完整 Schema 读取 0，DAX 执行 0，DeepSeek 调用 0。
 
+## 10. M2.2 实机 Schema 观察
+
+- **真实读取操作：** `table_operations`、`column_operations`、`measure_operations`、`relationship_operations`、`user_hierarchy_operations`；每类仅允许 `List` 与 `Get`。Server `--readonly` 与 Adapter operation whitelist 形成双层只读边界。
+- **响应形状摘要：** `List` 返回 `operation/message/data`；Table 与 Relationship 为扁平 data 列表，Column 与 Measure 按 `tableName` 分组，Hierarchy 为 `tableName + hierarchy + levels`。`Get` 返回 `results/summary`，每个 result 的 `data` 是对象详情。未知字段被忽略，缺少必需结构、对象归属不一致或失败 item 会标准化失败。
+- **真实契约字段：** Table 新增可选 `description`、`is_hidden`、`is_system_managed`；Column 新增可选 `description`；Measure 新增可选 `description`、`is_hidden`；Relationship 新增 `is_active` 与可选双向 cardinality。旧 fixture 依赖的字段及 defaults 保持兼容。
+- **Grounding：** 实机读取 3 tables、19 columns、2 measures、1 relationship、2 hierarchies；`Total Sales`、`Total Quantity` 均归属正确并识别为 Measure，expression 与 data type 非空；`Quantity`、`UnitPrice` 等列保持 Column 身份。
+- **未实现 metadata：** Local `Get` 的 Table/Column/Measure/Hierarchy description 字段在当前测试模型中存在但为空；未返回 Prep for AI / Copilot 专用 metadata，因此未扩展此类字段。annotations / extendedProperties 未作为 AI metadata 猜测映射。
+- **安全与范围：** 对外只接受 friendly `local_desktop_model`；隐藏/系统管理标志被保留，避免把 Local 明确返回的系统对象误当业务表。人工 Smoke 不输出完整 Schema、expression、连接信息或业务数据。DAX 执行 0，DeepSeek 调用 0。
+
+## 11. M2.3 已知 Preview 风险
+
+- Microsoft 官方仓库未关闭 [Issue #124](https://github.com/microsoft/powerbi-modeling-mcp/issues/124)（查询日期 2026-08-11）报告 0.5.x 的 `dax_query_operations Execute` 可能成功执行并返回 metrics，却缺少 row data。其报告客户端/版本与本项目不完全相同，因此这是明确的兼容性风险，不是本项目已复现结论。
+- M2.3 必须用当前固定 beta.12、官方 Python MCP SDK 与本项目 stdio 边界实机验证 Execute 的 columns / rows / rowCount / execution time 响应；不得在 M2.2 写 workaround，不得未经用户批准切换 REST/XMLA 或并行固定另一版本。
+
 ---
 
-*最后更新：2026-08-11 | M2.1 Local MCP 最小真实连接验证完成候选；Remote 生产化路径保留*
+*最后更新：2026-08-11 | M2.2 真实 Semantic Model Schema 接入完成候选；Remote 生产化路径保留*

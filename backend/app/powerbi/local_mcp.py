@@ -1,8 +1,8 @@
 """Power BI Local Modeling MCP Adapter and stdio client boundary.
 
-M2.1 only starts the official local server, negotiates MCP, discovers tools,
-finds a running Power BI Desktop instance, and verifies a connection. It does
-not read model metadata, execute DAX, or expose modeling tools to the app.
+M2.2 keeps the official Local MCP SDK and raw tool payloads behind the existing
+PowerBIAdapter boundary. Schema reads use one read-only stdio session and an
+explicit List/Get operation whitelist. DAX remains unimplemented until M2.3.
 """
 
 from __future__ import annotations
@@ -14,43 +14,54 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any, Awaitable, Callable, Protocol, TypeVar
 
 from mcp import Client, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.shared.exceptions import MCPError
+from pydantic import ValidationError
 
-from backend.app.powerbi.base import PowerBIAdapter
+from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
 from backend.app.schemas.data_contracts import (
     DAXRequest,
+    ColumnSchema,
+    HierarchySchema,
+    MeasureSchema,
     PowerBIError,
     QueryResult,
+    RelationshipSchema,
     SemanticModelSchema,
+    TableSchema,
 )
 
 
 LOCAL_MCP_PACKAGE = "@microsoft/powerbi-modeling-mcp@0.5.0-beta.12"
 M2_1_ALLOWED_TOOL_NAMES = frozenset({"connection_operations"})
-_SCHEMA_CAPABILITY_TOOLS = frozenset(
-    {
-        "table_operations",
-        "column_operations",
-        "measure_operations",
-        "relationship_operations",
-        "user_hierarchy_operations",
-    }
-)
+LOCAL_DESKTOP_SEMANTIC_MODEL_KEY = "local_desktop_model"
+SCHEMA_READ_OPERATION_WHITELIST = {
+    "table_operations": frozenset({"List", "Get"}),
+    "column_operations": frozenset({"List", "Get"}),
+    "measure_operations": frozenset({"List", "Get"}),
+    "relationship_operations": frozenset({"List", "Get"}),
+    "user_hierarchy_operations": frozenset({"List", "Get"}),
+}
+_SCHEMA_CAPABILITY_TOOLS = frozenset(SCHEMA_READ_OPERATION_WHITELIST)
 _DAX_CAPABILITY_TOOL = "dax_query_operations"
+_T = TypeVar("_T")
 
 
 class LocalMCPErrorCategory(str, Enum):
-    """Safe M2.1 failure categories."""
+    """Safe Local MCP failure categories."""
 
     LOCAL_PREREQUISITE = "LOCAL_PREREQUISITE"
     MCP_STARTUP = "MCP_STARTUP"
     MCP_PROTOCOL = "MCP_PROTOCOL"
     DESKTOP_NOT_FOUND = "DESKTOP_NOT_FOUND"
     DESKTOP_CONNECTION = "DESKTOP_CONNECTION"
+    SCHEMA_TOOL_MISSING = "SCHEMA_TOOL_MISSING"
+    SCHEMA_READ_FAILED = "SCHEMA_READ_FAILED"
+    SCHEMA_MALFORMED_RESPONSE = "SCHEMA_MALFORMED_RESPONSE"
+    SCHEMA_VALIDATION_FAILED = "SCHEMA_VALIDATION_FAILED"
     NETWORK = "NETWORK"
     BUG = "BUG"
 
@@ -150,6 +161,21 @@ class LocalMCPConnection(Protocol):
     async def connect_and_discover(self) -> LocalMCPDiagnostics:
         ...
 
+    async def read_semantic_model_schema(self) -> "LocalMCPSchemaSnapshot":
+        ...
+
+
+@dataclass(frozen=True)
+class LocalMCPSchemaSnapshot:
+    """Raw Local MCP schema payloads contained within the Adapter boundary."""
+
+    diagnostics: LocalMCPDiagnostics
+    tables: tuple[dict[str, object], ...]
+    columns: tuple[dict[str, object], ...]
+    measures: tuple[dict[str, object], ...]
+    relationships: tuple[dict[str, object], ...]
+    hierarchies: tuple[dict[str, object], ...]
+
 
 class PowerBILocalMCPClient:
     """Minimal official MCP v2 stdio client for the Microsoft local server."""
@@ -174,6 +200,19 @@ class PowerBILocalMCPClient:
         self._timeout_seconds = timeout_seconds
 
     async def connect_and_discover(self) -> LocalMCPDiagnostics:
+        return await self._run_session(self._discover_and_connect_desktop)
+
+    async def read_semantic_model_schema(self) -> LocalMCPSchemaSnapshot:
+        """Read all supported schema objects in one stdio/Desktop connection."""
+        return await self._run_session(self._read_schema_in_session)
+
+    async def _run_session(
+        self,
+        handler: Callable[
+            [Client, str | None, tuple[DiscoveredLocalTool, ...]],
+            Awaitable[_T],
+        ],
+    ) -> _T:
         executable = shutil.which(self._executable)
         if executable is None:
             raise LocalMCPConnectionError(
@@ -198,11 +237,7 @@ class PowerBILocalMCPClient:
                             if client.protocol_version is not None
                             else None
                         )
-                        return await self._discover_and_connect_desktop(
-                            client,
-                            protocol,
-                            tools,
-                        )
+                        return await handler(client, protocol, tools)
             except LocalMCPConnectionError:
                 raise
             except Exception as exc:
@@ -211,11 +246,70 @@ class PowerBILocalMCPClient:
                     diagnostic_text=self._read_diagnostic_text(errlog),
                 ) from None
 
+    async def _read_schema_in_session(
+        self,
+        client: Client,
+        protocol: str | None,
+        tools: tuple[DiscoveredLocalTool, ...],
+    ) -> LocalMCPSchemaSnapshot:
+        diagnostics = await self._discover_and_connect_desktop(
+            client,
+            protocol,
+            tools,
+            require_future_capabilities=False,
+        )
+        if diagnostics.error_category is not None:
+            raise LocalMCPConnectionError(
+                diagnostics.error_category,
+                diagnostics.error_type or "desktop_connection_failed",
+            )
+
+        tool_names = {tool.name for tool in tools}
+        missing = _SCHEMA_CAPABILITY_TOOLS - tool_names
+        if missing:
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.SCHEMA_TOOL_MISSING,
+                "required_schema_tool_missing",
+            )
+
+        details: dict[str, tuple[dict[str, object], ...]] = {}
+        for tool_name in SCHEMA_READ_OPERATION_WHITELIST:
+            list_payload = await self._call_schema_tool(
+                client,
+                tool_name,
+                "List",
+            )
+            references = self._schema_references(tool_name, list_payload)
+            if not references:
+                details[tool_name] = ()
+                continue
+            get_payload = await self._call_schema_tool(
+                client,
+                tool_name,
+                "Get",
+                references=references,
+            )
+            details[tool_name] = self._schema_detail_records(
+                get_payload,
+                expected_count=len(references),
+            )
+
+        return LocalMCPSchemaSnapshot(
+            diagnostics=diagnostics,
+            tables=details["table_operations"],
+            columns=details["column_operations"],
+            measures=details["measure_operations"],
+            relationships=details["relationship_operations"],
+            hierarchies=details["user_hierarchy_operations"],
+        )
+
     async def _discover_and_connect_desktop(
         self,
         client: Client,
         protocol: str | None,
         tools: tuple[DiscoveredLocalTool, ...],
+        *,
+        require_future_capabilities: bool = True,
     ) -> LocalMCPDiagnostics:
         tool_names = {tool.name for tool in tools}
         state = {
@@ -238,7 +332,9 @@ class PowerBILocalMCPClient:
                 "connection_tool_missing",
                 **state,
             )
-        if not state["schema_capability"] or not state["dax_capability"]:
+        if require_future_capabilities and (
+            not state["schema_capability"] or not state["dax_capability"]
+        ):
             return LocalMCPDiagnostics.failure(
                 LocalMCPErrorCategory.MCP_PROTOCOL,
                 "required_future_capabilities_missing",
@@ -311,6 +407,166 @@ class PowerBILocalMCPClient:
             connection=True,
             **state,
         )
+
+    async def _call_schema_tool(
+        self,
+        client: Client,
+        tool_name: str,
+        operation: str,
+        **request: object,
+    ) -> dict[str, object]:
+        allowed_operations = SCHEMA_READ_OPERATION_WHITELIST.get(tool_name)
+        if allowed_operations is None:
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.SCHEMA_TOOL_MISSING,
+                "schema_tool_not_allowed",
+            )
+        if operation not in allowed_operations:
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.SCHEMA_READ_FAILED,
+                "schema_operation_not_allowed",
+            )
+
+        result = await client.call_tool(
+            tool_name,
+            {"request": {"operation": operation, **request}},
+            read_timeout_seconds=self._timeout_seconds,
+        )
+        payload = self._result_payload(result)
+        if result.is_error or self._payload_failed(payload):
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.SCHEMA_READ_FAILED,
+                "schema_tool_call_failed",
+            )
+        if not isinstance(payload, dict):
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
+                "schema_payload_not_object",
+            )
+        return payload
+
+    @classmethod
+    def _schema_references(
+        cls,
+        tool_name: str,
+        payload: dict[str, object],
+    ) -> list[dict[str, str]]:
+        data = payload.get("data")
+        if not isinstance(data, list):
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
+                "schema_list_data_missing",
+            )
+        if not all(isinstance(item, dict) for item in data):
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
+                "schema_list_item_malformed",
+            )
+
+        if tool_name == "table_operations":
+            return [
+                {"name": cls._required_text(item, "name")}
+                for item in data
+            ]
+        if tool_name in {"column_operations", "measure_operations"}:
+            child_key = (
+                "columns" if tool_name == "column_operations" else "measures"
+            )
+            references: list[dict[str, str]] = []
+            for group in data:
+                table_name = cls._required_text(group, "tableName")
+                children = group.get(child_key)
+                if not isinstance(children, list) or not all(
+                    isinstance(item, dict) for item in children
+                ):
+                    raise LocalMCPConnectionError(
+                        LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
+                        "schema_group_items_malformed",
+                    )
+                references.extend(
+                    {
+                        "tableName": table_name,
+                        "name": cls._required_text(item, "name"),
+                    }
+                    for item in children
+                )
+            return references
+        if tool_name == "relationship_operations":
+            return [
+                {"name": cls._required_text(item, "name")}
+                for item in data
+            ]
+        if tool_name == "user_hierarchy_operations":
+            references = []
+            for group in data:
+                hierarchy = group.get("hierarchy")
+                if not isinstance(hierarchy, dict):
+                    raise LocalMCPConnectionError(
+                        LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
+                        "schema_hierarchy_malformed",
+                    )
+                references.append(
+                    {
+                        "tableName": cls._required_text(group, "tableName"),
+                        "hierarchyName": cls._required_text(hierarchy, "name"),
+                    }
+                )
+            return references
+        raise LocalMCPConnectionError(
+            LocalMCPErrorCategory.SCHEMA_TOOL_MISSING,
+            "schema_tool_not_allowed",
+        )
+
+    @classmethod
+    def _schema_detail_records(
+        cls,
+        payload: dict[str, object],
+        *,
+        expected_count: int,
+    ) -> tuple[dict[str, object], ...]:
+        results = payload.get("results")
+        if not isinstance(results, list) or not all(
+            isinstance(item, dict) for item in results
+        ):
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
+                "schema_get_results_missing",
+            )
+
+        summary = payload.get("summary")
+        if isinstance(summary, dict):
+            failure_count = summary.get("failureCount")
+            if isinstance(failure_count, int) and failure_count:
+                raise LocalMCPConnectionError(
+                    LocalMCPErrorCategory.SCHEMA_READ_FAILED,
+                    "schema_get_item_failed",
+                )
+
+        records: list[dict[str, object]] = []
+        for item in results:
+            record = item.get("data")
+            if not isinstance(record, dict):
+                raise LocalMCPConnectionError(
+                    LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
+                    "schema_get_item_data_missing",
+                )
+            records.append(record)
+        if len(records) != expected_count:
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
+                "schema_get_item_count_mismatch",
+            )
+        return tuple(records)
+
+    @staticmethod
+    def _required_text(record: dict[str, object], field: str) -> str:
+        value = record.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
+                "schema_required_field_missing",
+            )
+        return value.strip()
 
     async def _list_all_tools(self, client: Client) -> tuple[DiscoveredLocalTool, ...]:
         tools: list[DiscoveredLocalTool] = []
@@ -539,6 +795,7 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
         *,
         executable: str = "npx",
         package: str = LOCAL_MCP_PACKAGE,
+        semantic_model_key: str = LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
         readonly: bool = True,
         timeout: float = 120.0,
         max_retries: int = 1,
@@ -546,6 +803,7 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
     ) -> None:
         self._executable = executable
         self._package = package
+        self._semantic_model_key = semantic_model_key.strip()
         self._readonly = readonly
         self._timeout = timeout
         self._max_retries = min(max(max_retries, 0), 1)
@@ -576,25 +834,19 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 readonly=False,
             )
             return False
-        if self._client is None:
-            try:
-                self._client = PowerBILocalMCPClient(
-                    executable=self._executable,
-                    package=self._package,
-                    readonly=self._readonly,
-                    timeout_seconds=self._timeout,
-                )
-            except ValueError:
-                self._last_diagnostics = LocalMCPDiagnostics.failure(
-                    LocalMCPErrorCategory.LOCAL_PREREQUISITE,
-                    "invalid_local_mcp_configuration",
-                    readonly=self._readonly,
-                )
-                return False
+        try:
+            client = self._ensure_client()
+        except ValueError:
+            self._last_diagnostics = LocalMCPDiagnostics.failure(
+                LocalMCPErrorCategory.LOCAL_PREREQUISITE,
+                "invalid_local_mcp_configuration",
+                readonly=self._readonly,
+            )
+            return False
 
         for attempt in range(self._max_retries + 1):
             try:
-                diagnostics = await self._client.connect_and_discover()
+                diagnostics = await client.connect_and_discover()
             except LocalMCPConnectionError as exc:
                 diagnostics = LocalMCPDiagnostics.failure(
                     exc.category,
@@ -617,9 +869,240 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
         self,
         semantic_model_key: str,
     ) -> SemanticModelSchema:
-        raise NotImplementedError(
-            "TODO: M2.2 — read Semantic Model metadata through Local MCP."
+        if not self._readonly:
+            raise PowerBIAdapterError(
+                "Local MCP schema access requires read-only mode",
+                provider=self.PROVIDER_NAME,
+                error_type=LocalMCPErrorCategory.SCHEMA_VALIDATION_FAILED.value,
+            )
+        if (
+            not semantic_model_key.strip()
+            or semantic_model_key != self._semantic_model_key
+        ):
+            raise PowerBIAdapterError(
+                "Semantic model key is not configured for Local MCP",
+                provider=self.PROVIDER_NAME,
+                error_type=LocalMCPErrorCategory.SCHEMA_VALIDATION_FAILED.value,
+            )
+
+        try:
+            client = self._ensure_client()
+        except ValueError:
+            raise PowerBIAdapterError(
+                "Local MCP configuration is invalid",
+                provider=self.PROVIDER_NAME,
+                error_type=LocalMCPErrorCategory.LOCAL_PREREQUISITE.value,
+            ) from None
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                snapshot = await client.read_semantic_model_schema()
+                self._last_diagnostics = snapshot.diagnostics
+                return self._map_schema(snapshot, semantic_model_key)
+            except LocalMCPConnectionError as exc:
+                self._last_diagnostics = LocalMCPDiagnostics.failure(
+                    exc.category,
+                    exc.error_type,
+                    readonly=self._readonly,
+                )
+                if (
+                    exc.category == LocalMCPErrorCategory.NETWORK
+                    and attempt < self._max_retries
+                ):
+                    await asyncio.sleep(0.25)
+                    continue
+                raise self._schema_adapter_error(exc) from None
+            except (ValidationError, ValueError, TypeError):
+                raise PowerBIAdapterError(
+                    "Local MCP schema validation failed",
+                    provider=self.PROVIDER_NAME,
+                    error_type=(
+                        LocalMCPErrorCategory.SCHEMA_VALIDATION_FAILED.value
+                    ),
+                ) from None
+        raise PowerBIAdapterError(
+            "Local MCP schema read failed",
+            provider=self.PROVIDER_NAME,
+            error_type=LocalMCPErrorCategory.SCHEMA_READ_FAILED.value,
         )
+
+    def _ensure_client(self) -> LocalMCPConnection:
+        if self._client is None:
+            self._client = PowerBILocalMCPClient(
+                executable=self._executable,
+                package=self._package,
+                readonly=self._readonly,
+                timeout_seconds=self._timeout,
+            )
+        return self._client
+
+    @classmethod
+    def _schema_adapter_error(
+        cls,
+        exc: LocalMCPConnectionError,
+    ) -> PowerBIAdapterError:
+        return PowerBIAdapterError(
+            f"Local MCP schema read failed ({exc.error_type})",
+            provider=cls.PROVIDER_NAME,
+            retryable=exc.retryable,
+            error_type=exc.category.value,
+        )
+
+    @classmethod
+    def _map_schema(
+        cls,
+        snapshot: LocalMCPSchemaSnapshot,
+        semantic_model_key: str,
+    ) -> SemanticModelSchema:
+        tables_by_name: dict[str, TableSchema] = {}
+        for raw_table in snapshot.tables:
+            name = cls._required_schema_text(raw_table, "name")
+            if name in tables_by_name:
+                raise ValueError("duplicate table")
+            tables_by_name[name] = TableSchema(
+                name=name,
+                is_hidden=cls._optional_bool(raw_table, "isHidden"),
+                is_system_managed=cls._optional_bool(
+                    raw_table,
+                    "systemManaged",
+                ),
+                description=cls._optional_text(raw_table, "description"),
+            )
+
+        if not tables_by_name:
+            raise ValueError("schema contains no tables")
+
+        seen_columns: set[tuple[str, str]] = set()
+        for raw_column in snapshot.columns:
+            table_name = cls._required_schema_text(raw_column, "tableName")
+            name = cls._required_schema_text(raw_column, "name")
+            key = (table_name, name)
+            if table_name not in tables_by_name or key in seen_columns:
+                raise ValueError("invalid column ownership")
+            seen_columns.add(key)
+            tables_by_name[table_name].columns.append(ColumnSchema(
+                name=name,
+                data_type=cls._required_schema_text(raw_column, "dataType"),
+                is_hidden=cls._optional_bool(raw_column, "isHidden"),
+                description=cls._optional_text(raw_column, "description"),
+            ))
+
+        seen_measures: set[tuple[str, str]] = set()
+        for raw_measure in snapshot.measures:
+            table_name = cls._required_schema_text(raw_measure, "tableName")
+            name = cls._required_schema_text(raw_measure, "name")
+            key = (table_name, name)
+            if table_name not in tables_by_name or key in seen_measures:
+                raise ValueError("invalid measure ownership")
+            seen_measures.add(key)
+            tables_by_name[table_name].measures.append(MeasureSchema(
+                name=name,
+                expression=cls._required_schema_text(
+                    raw_measure,
+                    "expression",
+                ),
+                data_type=cls._required_schema_text(raw_measure, "dataType"),
+                is_hidden=cls._optional_bool(raw_measure, "isHidden"),
+                description=cls._optional_text(raw_measure, "description"),
+            ))
+
+        seen_hierarchies: set[tuple[str, str]] = set()
+        for raw_hierarchy in snapshot.hierarchies:
+            table_name = cls._required_schema_text(raw_hierarchy, "tableName")
+            name = cls._required_schema_text(raw_hierarchy, "name")
+            key = (table_name, name)
+            levels = raw_hierarchy.get("levels")
+            if (
+                table_name not in tables_by_name
+                or key in seen_hierarchies
+                or not isinstance(levels, list)
+                or not all(isinstance(level, dict) for level in levels)
+            ):
+                raise ValueError("invalid hierarchy")
+            seen_hierarchies.add(key)
+            tables_by_name[table_name].hierarchies.append(HierarchySchema(
+                name=name,
+                levels=[
+                    cls._required_schema_text(level, "name")
+                    for level in levels
+                ],
+            ))
+
+        relationships: list[RelationshipSchema] = []
+        seen_relationships: set[tuple[str, str, str, str]] = set()
+        for raw_relationship in snapshot.relationships:
+            from_table = cls._required_schema_text(raw_relationship, "fromTable")
+            from_column = cls._required_schema_text(raw_relationship, "fromColumn")
+            to_table = cls._required_schema_text(raw_relationship, "toTable")
+            to_column = cls._required_schema_text(raw_relationship, "toColumn")
+            key = (from_table, from_column, to_table, to_column)
+            if (
+                from_table not in tables_by_name
+                or to_table not in tables_by_name
+                or (from_table, from_column) not in seen_columns
+                or (to_table, to_column) not in seen_columns
+                or key in seen_relationships
+            ):
+                raise ValueError("invalid relationship")
+            seen_relationships.add(key)
+            relationships.append(RelationshipSchema(
+                from_table=from_table,
+                from_column=from_column,
+                to_table=to_table,
+                to_column=to_column,
+                is_active=cls._optional_bool(
+                    raw_relationship,
+                    "isActive",
+                    default=True,
+                ),
+                from_cardinality=cls._optional_text(
+                    raw_relationship,
+                    "fromCardinality",
+                ),
+                to_cardinality=cls._optional_text(
+                    raw_relationship,
+                    "toCardinality",
+                ),
+            ))
+
+        return SemanticModelSchema(
+            name=semantic_model_key,
+            key=semantic_model_key,
+            tables=list(tables_by_name.values()),
+            relationships=relationships,
+        )
+
+    @staticmethod
+    def _required_schema_text(record: dict[str, object], field: str) -> str:
+        value = record.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("required schema field missing")
+        return value.strip()
+
+    @staticmethod
+    def _optional_text(
+        record: dict[str, object],
+        field: str,
+    ) -> str | None:
+        value = record.get(field)
+        if value is None or value == "":
+            return None
+        if not isinstance(value, str):
+            raise ValueError("optional schema text malformed")
+        value = value.strip()
+        return value or None
+
+    @staticmethod
+    def _optional_bool(
+        record: dict[str, object],
+        field: str,
+        *,
+        default: bool = False,
+    ) -> bool:
+        value = record.get(field, default)
+        if not isinstance(value, bool):
+            raise ValueError("optional schema boolean malformed")
+        return value
 
     async def execute_dax(self, request: DAXRequest) -> QueryResult:
         raise NotImplementedError(
