@@ -1,8 +1,9 @@
 """Power BI Local Modeling MCP Adapter and stdio client boundary.
 
-M2.2 keeps the official Local MCP SDK and raw tool payloads behind the existing
-PowerBIAdapter boundary. Schema reads use one read-only stdio session and an
-explicit List/Get operation whitelist. DAX remains unimplemented until M2.3.
+The official Local MCP SDK, tool names, and raw payloads stay behind the
+existing PowerBIAdapter boundary. Schema reads and DAX execution each use one
+read-only stdio/Desktop connection lifecycle and explicit operation
+whitelists.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ from backend.app.schemas.data_contracts import (
 LOCAL_MCP_PACKAGE = "@microsoft/powerbi-modeling-mcp@0.5.0-beta.12"
 M2_1_ALLOWED_TOOL_NAMES = frozenset({"connection_operations"})
 LOCAL_DESKTOP_SEMANTIC_MODEL_KEY = "local_desktop_model"
+MAX_DAX_RESULT_ROWS = 10_000
 SCHEMA_READ_OPERATION_WHITELIST = {
     "table_operations": frozenset({"List", "Get"}),
     "column_operations": frozenset({"List", "Get"}),
@@ -45,6 +47,7 @@ SCHEMA_READ_OPERATION_WHITELIST = {
     "relationship_operations": frozenset({"List", "Get"}),
     "user_hierarchy_operations": frozenset({"List", "Get"}),
 }
+DAX_EXECUTE_OPERATION_WHITELIST = frozenset({"Execute"})
 _SCHEMA_CAPABILITY_TOOLS = frozenset(SCHEMA_READ_OPERATION_WHITELIST)
 _DAX_CAPABILITY_TOOL = "dax_query_operations"
 _T = TypeVar("_T")
@@ -62,6 +65,13 @@ class LocalMCPErrorCategory(str, Enum):
     SCHEMA_READ_FAILED = "SCHEMA_READ_FAILED"
     SCHEMA_MALFORMED_RESPONSE = "SCHEMA_MALFORMED_RESPONSE"
     SCHEMA_VALIDATION_FAILED = "SCHEMA_VALIDATION_FAILED"
+    DAX_TOOL_MISSING = "DAX_TOOL_MISSING"
+    DAX_ERROR = "DAX_ERROR"
+    DAX_TIMEOUT = "DAX_TIMEOUT"
+    DAX_PERMISSION_DENIED = "DAX_PERMISSION_DENIED"
+    DAX_MALFORMED_RESPONSE = "DAX_MALFORMED_RESPONSE"
+    DAX_PREVIEW_ROW_DATA_MISSING = "DAX_PREVIEW_ROW_DATA_MISSING"
+    DAX_OVERSIZED = "DAX_OVERSIZED"
     NETWORK = "NETWORK"
     BUG = "BUG"
 
@@ -164,6 +174,9 @@ class LocalMCPConnection(Protocol):
     async def read_semantic_model_schema(self) -> "LocalMCPSchemaSnapshot":
         ...
 
+    async def execute_dax(self, request: DAXRequest) -> "LocalMCPDAXSnapshot":
+        ...
+
 
 @dataclass(frozen=True)
 class LocalMCPSchemaSnapshot:
@@ -175,6 +188,15 @@ class LocalMCPSchemaSnapshot:
     measures: tuple[dict[str, object], ...]
     relationships: tuple[dict[str, object], ...]
     hierarchies: tuple[dict[str, object], ...]
+
+
+@dataclass(frozen=True)
+class LocalMCPDAXSnapshot:
+    """One raw Execute payload plus request context inside the Adapter boundary."""
+
+    diagnostics: LocalMCPDiagnostics
+    request: DAXRequest
+    payload: dict[str, object]
 
 
 class PowerBILocalMCPClient:
@@ -205,6 +227,23 @@ class PowerBILocalMCPClient:
     async def read_semantic_model_schema(self) -> LocalMCPSchemaSnapshot:
         """Read all supported schema objects in one stdio/Desktop connection."""
         return await self._run_session(self._read_schema_in_session)
+
+    async def execute_dax(self, request: DAXRequest) -> LocalMCPDAXSnapshot:
+        """Execute one read-only DAX query in one stdio/Desktop connection."""
+
+        async def _execute(
+            client: Client,
+            protocol: str | None,
+            tools: tuple[DiscoveredLocalTool, ...],
+        ) -> LocalMCPDAXSnapshot:
+            return await self._execute_dax_in_session(
+                client,
+                protocol,
+                tools,
+                request=request,
+            )
+
+        return await self._run_session(_execute)
 
     async def _run_session(
         self,
@@ -301,6 +340,96 @@ class PowerBILocalMCPClient:
             measures=details["measure_operations"],
             relationships=details["relationship_operations"],
             hierarchies=details["user_hierarchy_operations"],
+        )
+
+    async def _execute_dax_in_session(
+        self,
+        client: Client,
+        protocol: str | None,
+        tools: tuple[DiscoveredLocalTool, ...],
+        *,
+        request: DAXRequest,
+    ) -> LocalMCPDAXSnapshot:
+        diagnostics = await self._discover_and_connect_desktop(
+            client,
+            protocol,
+            tools,
+            require_future_capabilities=False,
+        )
+        if diagnostics.error_category is not None:
+            raise LocalMCPConnectionError(
+                diagnostics.error_category,
+                diagnostics.error_type or "desktop_connection_failed",
+            )
+        if _DAX_CAPABILITY_TOOL not in {tool.name for tool in tools}:
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_TOOL_MISSING,
+                "dax_execute_tool_missing",
+            )
+
+        operation = "Execute"
+        if operation not in DAX_EXECUTE_OPERATION_WHITELIST:
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_ERROR,
+                "dax_operation_not_allowed",
+            )
+        arguments = {
+            "request": {
+                "operation": operation,
+                "query": request.dax,
+                "maxRows": request.max_rows,
+                "timeoutSeconds": request.timeout_seconds,
+                "getExecutionMetrics": False,
+                "executionMetricsOnly": False,
+                "resultMode": "Inline",
+            }
+        }
+        try:
+            result = await client.call_tool(
+                _DAX_CAPABILITY_TOOL,
+                arguments,
+                read_timeout_seconds=float(request.timeout_seconds),
+            )
+        except TimeoutError:
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_TIMEOUT,
+                "dax_execute_timeout",
+            ) from None
+
+        payload = self._result_payload(result)
+        if result.is_error or self._payload_failed(payload):
+            raise self._classify_dax_tool_failure(payload)
+        if not isinstance(payload, dict):
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                "dax_payload_not_object",
+            )
+        return LocalMCPDAXSnapshot(
+            diagnostics=diagnostics,
+            request=request,
+            payload=payload,
+        )
+
+    @staticmethod
+    def _classify_dax_tool_failure(payload: object) -> LocalMCPConnectionError:
+        """Classify a failed tool result without exposing its raw message."""
+        try:
+            text = json.dumps(payload, ensure_ascii=False).lower()
+        except (TypeError, ValueError):
+            text = ""
+        if re.search(r"permission|unauthori[sz]ed|forbidden|access denied", text):
+            return LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_PERMISSION_DENIED,
+                "dax_permission_denied",
+            )
+        if re.search(r"timed?\s*out|timeout", text):
+            return LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_TIMEOUT,
+                "dax_execute_timeout",
+            )
+        return LocalMCPConnectionError(
+            LocalMCPErrorCategory.DAX_ERROR,
+            "dax_execute_failed",
         )
 
     async def _discover_and_connect_desktop(
@@ -1105,16 +1234,320 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
         return value
 
     async def execute_dax(self, request: DAXRequest) -> QueryResult:
-        raise NotImplementedError(
-            "TODO: M2.3 — execute DAX through Local MCP."
-        )
+        if not self._readonly:
+            raise PowerBIAdapterError(
+                "Local MCP DAX execution requires read-only mode",
+                provider=self.PROVIDER_NAME,
+                error_type=LocalMCPErrorCategory.DAX_ERROR.value,
+            )
+        if (
+            not request.semantic_model_key.strip()
+            or request.semantic_model_key != self._semantic_model_key
+        ):
+            raise PowerBIAdapterError(
+                "Semantic model key is not configured for Local MCP",
+                provider=self.PROVIDER_NAME,
+                error_type=LocalMCPErrorCategory.DAX_ERROR.value,
+            )
+        if request.max_rows > MAX_DAX_RESULT_ROWS:
+            error = await self.normalize_error(LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_OVERSIZED,
+                "dax_max_rows_exceeds_limit",
+            ))
+            return self._query_error_result(request, error, truncated=True)
+
+        try:
+            client = self._ensure_client()
+        except ValueError:
+            error = await self.normalize_error(LocalMCPConnectionError(
+                LocalMCPErrorCategory.LOCAL_PREREQUISITE,
+                "invalid_local_mcp_configuration",
+            ))
+            return self._query_error_result(request, error)
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                snapshot = await client.execute_dax(request)
+                self._last_diagnostics = snapshot.diagnostics
+                return await self.normalize_result(snapshot)
+            except LocalMCPConnectionError as exc:
+                self._last_diagnostics = LocalMCPDiagnostics.failure(
+                    exc.category,
+                    exc.error_type,
+                    readonly=self._readonly,
+                )
+                if (
+                    exc.category == LocalMCPErrorCategory.NETWORK
+                    and attempt < self._max_retries
+                ):
+                    await asyncio.sleep(0.25)
+                    continue
+                error = await self.normalize_error(exc)
+                return self._query_error_result(request, error)
+            except (ValidationError, ValueError, TypeError):
+                error = await self.normalize_error(LocalMCPConnectionError(
+                    LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                    "dax_result_validation_failed",
+                ))
+                return self._query_error_result(request, error)
+
+        error = await self.normalize_error(LocalMCPConnectionError(
+            LocalMCPErrorCategory.DAX_ERROR,
+            "dax_execute_failed",
+        ))
+        return self._query_error_result(request, error)
 
     async def normalize_result(self, raw: object) -> QueryResult:
-        raise NotImplementedError(
-            "TODO: M2.3 — normalize Local MCP query results."
-        )
+        if not isinstance(raw, LocalMCPDAXSnapshot):
+            raise PowerBIAdapterError(
+                "Local MCP query response is malformed",
+                provider=self.PROVIDER_NAME,
+                error_type=LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE.value,
+            )
+        try:
+            return self._map_dax_result(raw)
+        except LocalMCPConnectionError as exc:
+            error = await self.normalize_error(exc)
+            return self._query_error_result(raw.request, error)
 
     async def normalize_error(self, raw: object) -> PowerBIError:
-        raise NotImplementedError(
-            "TODO: M2.3 — normalize Local MCP errors."
+        if isinstance(raw, PowerBIError):
+            return raw
+        if not isinstance(raw, LocalMCPConnectionError):
+            return PowerBIError(
+                type="malformed_response",
+                message="Power BI returned an unrecognized query response",
+                retryable=False,
+            )
+
+        mapping: dict[LocalMCPErrorCategory, tuple[str, str, bool]] = {
+            LocalMCPErrorCategory.DAX_TIMEOUT: (
+                "timeout",
+                "Power BI DAX query timed out",
+                False,
+            ),
+            LocalMCPErrorCategory.DAX_PERMISSION_DENIED: (
+                "permission_denied",
+                "Power BI query permission denied",
+                False,
+            ),
+            LocalMCPErrorCategory.DAX_ERROR: (
+                "dax_error",
+                "Power BI rejected the DAX query",
+                False,
+            ),
+            LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE: (
+                "malformed_response",
+                "Power BI returned an unrecognized query response",
+                False,
+            ),
+            LocalMCPErrorCategory.DAX_PREVIEW_ROW_DATA_MISSING: (
+                "preview_row_data_missing",
+                "Power BI MCP did not return query row data",
+                False,
+            ),
+            LocalMCPErrorCategory.DAX_OVERSIZED: (
+                "oversized",
+                "Power BI query exceeds the allowed row limit",
+                False,
+            ),
+            LocalMCPErrorCategory.MCP_PROTOCOL: (
+                "mcp_protocol",
+                "Power BI MCP protocol error",
+                False,
+            ),
+            LocalMCPErrorCategory.DAX_TOOL_MISSING: (
+                "mcp_protocol",
+                "Power BI MCP DAX capability is unavailable",
+                False,
+            ),
+            LocalMCPErrorCategory.NETWORK: (
+                "connection_error",
+                "Power BI MCP network connection failed",
+                True,
+            ),
+        }
+        connection_categories = {
+            LocalMCPErrorCategory.LOCAL_PREREQUISITE,
+            LocalMCPErrorCategory.MCP_STARTUP,
+            LocalMCPErrorCategory.DESKTOP_NOT_FOUND,
+            LocalMCPErrorCategory.DESKTOP_CONNECTION,
+        }
+        if raw.category in connection_categories:
+            error_type, message, retryable = (
+                "connection_error",
+                "Power BI Desktop connection failed",
+                False,
+            )
+        else:
+            error_type, message, retryable = mapping.get(
+                raw.category,
+                (
+                    "malformed_response",
+                    "Power BI returned an unrecognized query response",
+                    False,
+                ),
+            )
+        return PowerBIError(
+            type=error_type,
+            message=message,
+            retryable=retryable and raw.retryable,
+        )
+
+    @classmethod
+    def _map_dax_result(cls, snapshot: LocalMCPDAXSnapshot) -> QueryResult:
+        payload = snapshot.payload
+        data: dict[str, object]
+        nested = payload.get("data")
+        if isinstance(nested, dict):
+            data = nested
+        elif "columns" in payload or "rows" in payload:
+            data = payload
+        else:
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                "dax_data_object_missing",
+            )
+
+        if data.get("success") is False or payload.get("success") is False:
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_ERROR,
+                "dax_execute_failed",
+            )
+        if "rows" not in data:
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_PREVIEW_ROW_DATA_MISSING,
+                "dax_row_data_missing",
+            )
+
+        raw_columns = data.get("columns")
+        raw_rows = data.get("rows")
+        if not isinstance(raw_columns, list) or not isinstance(raw_rows, list):
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                "dax_columns_or_rows_malformed",
+            )
+        columns = cls._dax_column_names(raw_columns)
+        rows = cls._dax_rows(raw_rows, columns)
+
+        declared_row_count = data.get("rowCount")
+        if declared_row_count is not None and (
+            isinstance(declared_row_count, bool)
+            or not isinstance(declared_row_count, int)
+            or declared_row_count < 0
+        ):
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                "dax_row_count_malformed",
+            )
+
+        truncated = len(rows) > snapshot.request.max_rows
+        if (
+            isinstance(declared_row_count, int)
+            and declared_row_count > len(rows)
+        ):
+            truncated = True
+        rows = rows[:snapshot.request.max_rows]
+        return QueryResult(
+            semantic_model_key=snapshot.request.semantic_model_key,
+            columns=columns,
+            rows=rows,
+            row_count=len(rows),
+            execution_time_ms=cls._dax_execution_time_ms(payload, data),
+            source_mode="real",
+            request_id=snapshot.request.request_id or None,
+            truncated=truncated,
+        )
+
+    @staticmethod
+    def _dax_column_names(raw_columns: list[object]) -> list[str]:
+        columns: list[str] = []
+        for item in raw_columns:
+            if isinstance(item, str):
+                name = item
+            elif isinstance(item, dict) and isinstance(item.get("name"), str):
+                name = item["name"]
+            else:
+                raise LocalMCPConnectionError(
+                    LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                    "dax_column_malformed",
+                )
+            if not name.strip() or name in columns:
+                raise LocalMCPConnectionError(
+                    LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                    "dax_column_name_invalid",
+                )
+            columns.append(name)
+        return columns
+
+    @staticmethod
+    def _dax_rows(raw_rows: list[object], columns: list[str]) -> list[list[Any]]:
+        rows: list[list[Any]] = []
+        for item in raw_rows:
+            if isinstance(item, dict):
+                if any(column not in item for column in columns):
+                    raise LocalMCPConnectionError(
+                        LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                        "dax_row_column_missing",
+                    )
+                row = [item[column] for column in columns]
+            elif isinstance(item, list):
+                if len(item) != len(columns):
+                    raise LocalMCPConnectionError(
+                        LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                        "dax_row_width_mismatch",
+                    )
+                row = list(item)
+            else:
+                raise LocalMCPConnectionError(
+                    LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                    "dax_row_malformed",
+                )
+            rows.append(row)
+        return rows
+
+    @staticmethod
+    def _dax_execution_time_ms(
+        payload: dict[str, object],
+        data: dict[str, object],
+    ) -> int | None:
+        for candidate in (
+            data.get("executionTimeMs"),
+            payload.get("executionTimeMs"),
+        ):
+            if (
+                isinstance(candidate, (int, float))
+                and not isinstance(candidate, bool)
+                and candidate >= 0
+            ):
+                return int(round(candidate))
+
+        metrics = payload.get("executionMetrics")
+        if not isinstance(metrics, dict):
+            metrics = data.get("executionMetrics")
+        if isinstance(metrics, dict):
+            reported = metrics.get("reportedExecutionMetrics")
+            if isinstance(reported, dict):
+                candidate = reported.get("durationMs")
+                if (
+                    isinstance(candidate, (int, float))
+                    and not isinstance(candidate, bool)
+                    and candidate >= 0
+                ):
+                    return int(round(candidate))
+        return None
+
+    @staticmethod
+    def _query_error_result(
+        request: DAXRequest,
+        error: PowerBIError,
+        *,
+        truncated: bool = False,
+    ) -> QueryResult:
+        return QueryResult(
+            semantic_model_key=request.semantic_model_key,
+            source_mode="real",
+            request_id=request.request_id or None,
+            error=error,
+            truncated=truncated,
         )

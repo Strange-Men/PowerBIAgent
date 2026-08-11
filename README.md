@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M2.2 真实 Semantic Model Schema 接入完成候选。**
+**M2.3 真实 DAX 执行与 QueryResult 标准化完成候选。**
 
-> M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板。**Mock + Mock 模式完整可用，DeepSeek + Mock Power BI Chat 完整可用（需配置 API Key）。** 当前 Demo 已通过 Local MCP + Power BI Desktop 连接并真实接入 Semantic Model Schema；真实 DAX 尚未执行，DeepSeek + Local Chat 尚未接通。ADR-006 Remote MCP 生产化路线完整保留并 Deferred。
+> M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板。**Mock + Mock 模式完整可用，DeepSeek + Mock Power BI Chat 完整可用（需配置 API Key）。** 当前 Demo 已通过 Local MCP + Power BI Desktop 真实读取 Schema、执行固定 DAX 并将 row data 标准化为 `source_mode=real` 的 QueryResult；DeepSeek + Local Chat 尚未接通，现有 TurnPipeline 尚未注入 Local Provider。ADR-006 Remote MCP 生产化路线完整保留并 Deferred。
 
 ### 幂等与并发特性
 
@@ -62,7 +62,7 @@ D:\Conda\envs\PBIAgent\python.exe -m pip install -e ".[dev]"
 
 - Windows 与 Power BI Desktop；运行 Smoke 前需打开一个测试 PBIX。
 - Node.js 20+（包含 npm / npx）。
-- Local Server 的 M2.1/M2.2 实机验证固定版本为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，项目以 stdio 和 `--readonly` 启动。
+- Local Server 的 M2.1—M2.3 实机验证固定版本为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，项目以 stdio 和 `--readonly` 启动。
 - Local Demo 不要求 Tenant ID、Client ID、Redirect URI 或 Microsoft Token。
 
 ### 环境变量
@@ -114,7 +114,7 @@ curl http://127.0.0.1:8000/health
   "reasons": [],
   "app_name": "PowerBIAgent",
   "app_env": "development",
-  "version": "M2.2",
+  "version": "M2.3",
   "llm_mode": "mock",
   "powerbi_mode": "mock",
   "harness_mode": "strict",
@@ -141,6 +141,16 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\powerbi_local_mcp_schema_
 ```
 
 Smoke 经 ToolGateway → LocalMCPPowerBIAdapter 读取真实 Schema，只输出脱敏计数与固定预期字段检查；不打印完整 Schema、Measure expression、连接信息或业务数据，不执行 DAX，不调用 DeepSeek。
+
+### M2.3 Local MCP DAX 人工 Smoke
+
+先在 Power BI Desktop 打开本地测试 PBIX，再运行：
+
+```powershell
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\powerbi_local_mcp_dax_smoke.py
+```
+
+Smoke 经 ToolGateway → LocalMCPPowerBIAdapter 执行固定 `ROW` 与两个 Demo Measure 查询，只输出行数、固定值校验和 `source_mode` 标志；不打印连接信息、原始 MCP 响应或业务数值，不调用 DeepSeek。
 
 ### 对话接口
 
@@ -203,7 +213,7 @@ DeepSeek 配置由本地 `.env` 提供：
 | 后端 | FastAPI | ✅ M0.4 最小骨架已完成 |
 | Agent | 确定性 TurnPipeline | ✅ M1.6.3 统一执行骨架 |
 | LLM | DeepSeek + Mock LLM | ✅ Mock 可运行；DeepSeek Chat 全链路已封板 (M1.5) |
-| 数据 | Power BI MCP | ✅ Mock 可运行；Local Desktop 已真实连接并接入 Schema；DAX 待 M2.3；Remote Deferred |
+| 数据 | Power BI MCP | ✅ Mock 可运行；Local Desktop 已真实接入 Schema、DAX 与 QueryResult；DeepSeek + Local 待 M2.4；Remote Deferred |
 | 记忆 | 结构化工作记忆 | ✅ M0.2-M0.3.2 完整实现 |
 | 报表 | 固定模板 HTML | ✅ Mock 可运行；真实渲染延后 (M3) |
 | Harness | MVP 轻量控制面 | ✅ M0.3-M0.4 ETCLOVG 完整实现 |
@@ -226,4 +236,4 @@ DeepSeek 配置由本地 `.env` 提供：
 
 ---
 
-*最后更新：2026-08-11 | M2.2 真实 Semantic Model Schema 接入完成候选*
+*最后更新：2026-08-11 | M2.3 真实 DAX 执行与 QueryResult 标准化完成候选*

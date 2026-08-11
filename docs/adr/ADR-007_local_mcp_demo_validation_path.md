@@ -35,6 +35,10 @@ M2 Demo 的目标是先证明 PowerBIAgent 经既有控制面访问真实 Power 
 
 固定 beta.12 已在 `--readonly` 下通过五类 Schema 工具的 `List` / `Get` 真实读取并标准化 Desktop 模型；原始工具名与响应仍封装在 LocalMCPPowerBIAdapter 后，ToolGateway 继续只暴露项目 Schema 抽象。该观察不改变 ADR-005、ADR-006 或本 ADR 的决策关系。
 
+## M2.3 实机补充
+
+固定 beta.12 已在同一只读边界内通过 `dax_query_operations Execute` 返回可验证 row data；固定 ROW 值 1 与两个 Demo Measure 的实际数值均成功标准化为 `source_mode=real` 的 QueryResult。Microsoft Issue #124 仍为 Open，当前实机仅能证明该组合未复现，不能证明官方已修复。ToolGateway 继续只暴露项目 `execute_dax` 抽象，DeepSeek + Local Chat 仍延后 M2.4。
+
 ---
 
-*最后更新：2026-08-11 | accepted；M2.2 实机 Schema 观察补充*
+*最后更新：2026-08-11 | accepted；M2.3 实机 DAX / QueryResult 观察补充*

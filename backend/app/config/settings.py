@@ -1,4 +1,4 @@
-"""Pydantic Settings — M2.2 项目配置
+"""Pydantic Settings — M2.3 项目配置
 
 环境变量可覆盖所有配置项。
 Mock 模式启动不需要任何 API Key。
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M2.2", frozen=True)
+    version: str = Field(default="M2.3", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -139,7 +139,7 @@ class Settings(BaseSettings):
 
         M1.5: DeepSeek + Mock Power BI 全链路已封板。
         DeepSeek 配置 Key 且 PowerBI 为 Mock 时 ready=true。
-        M2.2 已接入 Local MCP Schema，完整 Real Chat 仍不可用。
+        M2.3 已接入 Local MCP Schema/DAX，完整 Real Chat 仍不可用。
         """
         if self.llm_mode == LLMMode.DEEPSEEK:
             return (

@@ -17,13 +17,16 @@ from backend.app.intent.models import IntentType
 from backend.app.memory.models import RuntimeDataMode
 from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
 from backend.app.powerbi.local_mcp import (
+    DAX_EXECUTE_OPERATION_WHITELIST,
     LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+    MAX_DAX_RESULT_ROWS,
     M2_1_ALLOWED_TOOL_NAMES,
     SCHEMA_READ_OPERATION_WHITELIST,
     DiscoveredLocalTool,
     LocalMCPConnection,
     LocalMCPConnectionError,
     LocalMCPDiagnostics,
+    LocalMCPDAXSnapshot,
     LocalMCPErrorCategory,
     LocalMCPPowerBIAdapter,
     LocalMCPSchemaSnapshot,
@@ -49,13 +52,18 @@ class FakeLocalMCPClient:
         error: LocalMCPConnectionError | None = None,
         schema_snapshot: LocalMCPSchemaSnapshot | None = None,
         schema_error: LocalMCPConnectionError | None = None,
+        dax_snapshot: LocalMCPDAXSnapshot | None = None,
+        dax_error: LocalMCPConnectionError | None = None,
     ) -> None:
         self.result = result
         self.error = error
         self.schema_snapshot = schema_snapshot
         self.schema_error = schema_error
+        self.dax_snapshot = dax_snapshot
+        self.dax_error = dax_error
         self.calls = 0
         self.schema_calls = 0
+        self.dax_calls = 0
 
     async def connect_and_discover(self) -> LocalMCPDiagnostics:
         self.calls += 1
@@ -71,6 +79,17 @@ class FakeLocalMCPClient:
         assert self.schema_snapshot is not None
         return self.schema_snapshot
 
+    async def execute_dax(self, request: DAXRequest) -> LocalMCPDAXSnapshot:
+        self.dax_calls += 1
+        if self.dax_error is not None:
+            raise self.dax_error
+        assert self.dax_snapshot is not None
+        return LocalMCPDAXSnapshot(
+            diagnostics=self.dax_snapshot.diagnostics,
+            request=request,
+            payload=self.dax_snapshot.payload,
+        )
+
 
 class FlakyLocalNetworkClient:
     def __init__(self) -> None:
@@ -85,6 +104,22 @@ class FlakyLocalNetworkClient:
                 retryable=True,
             )
         return _healthy_local_diagnostics()
+
+
+class FlakyLocalDAXNetworkClient:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+        self.calls = 0
+
+    async def execute_dax(self, request: DAXRequest) -> LocalMCPDAXSnapshot:
+        self.calls += 1
+        if self.calls == 1:
+            raise LocalMCPConnectionError(
+                LocalMCPErrorCategory.NETWORK,
+                "npm_registry_timeout",
+                retryable=True,
+            )
+        return _dax_snapshot(self.payload, request=request)
 
 
 class FakeStdioMCPClient:
@@ -258,6 +293,36 @@ class FakeSchemaStdioMCPClient(FakeStdioMCPClient):
         }
 
 
+class FakeDAXStdioMCPClient(FakeStdioMCPClient):
+    """Fake beta.12 Inline Execute boundary for offline CI."""
+
+    def __init__(
+        self,
+        payload: dict[str, object],
+        *,
+        is_error: bool = False,
+    ) -> None:
+        super().__init__()
+        self.payload = payload
+        self.is_error = is_error
+
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, object],
+        **kwargs: object,
+    ) -> object:
+        if name == "connection_operations":
+            return await super().call_tool(name, arguments, **kwargs)
+        assert name == "dax_query_operations"
+        self.calls.append((name, arguments))
+        return SimpleNamespace(
+            is_error=self.is_error,
+            structured_content=self.payload,
+            content=[],
+        )
+
+
 def _tool(name: str) -> DiscoveredLocalTool:
     return DiscoveredLocalTool(
         name=name,
@@ -395,6 +460,46 @@ def _schema_snapshot() -> LocalMCPSchemaSnapshot:
             },
         ),
     )
+
+
+def _dax_snapshot(
+    payload: dict[str, object],
+    *,
+    request: DAXRequest | None = None,
+) -> LocalMCPDAXSnapshot:
+    return LocalMCPDAXSnapshot(
+        diagnostics=_healthy_local_diagnostics(),
+        request=request or DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax='EVALUATE ROW("TestValue", 1)',
+            request_id="request-123",
+        ),
+        payload=payload,
+    )
+
+
+def _successful_dax_payload(
+    *,
+    rows: list[dict[str, object]] | None = None,
+    row_count: int | None = None,
+) -> dict[str, object]:
+    result_rows = rows if rows is not None else [
+        {"[Second]": 2, "[First]": 1}
+    ]
+    return {
+        "success": True,
+        "operation": "Execute",
+        "data": {
+            "success": True,
+            "rowCount": len(result_rows) if row_count is None else row_count,
+            "columns": [
+                {"name": "[First]", "ordinal": 0},
+                {"name": "[Second]", "ordinal": 1},
+            ],
+            "rows": result_rows,
+            "executionTimeMs": 7,
+        },
+    }
 
 
 def _local_adapter(
@@ -633,9 +738,15 @@ class TestLocalMCPPowerBIAdapter:
                 LOCAL_DESKTOP_SEMANTIC_MODEL_KEY
             )
         assert exc_info.value.error_type == "SCHEMA_VALIDATION_FAILED"
+        with pytest.raises(PowerBIAdapterError) as dax_info:
+            await adapter.execute_dax(DAXRequest(
+                semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+                dax='EVALUATE ROW("TestValue", 1)',
+            ))
+        assert dax_info.value.error_type == "DAX_ERROR"
 
     @pytest.mark.asyncio
-    async def test_schema_mapping_and_dax_business_method_remains_unimplemented(self):
+    async def test_schema_mapping_remains_compatible(self):
         client = FakeLocalMCPClient(schema_snapshot=_schema_snapshot())
         adapter = _local_adapter(client)
 
@@ -673,11 +784,180 @@ class TestLocalMCPPowerBIAdapter:
         assert schema.get_all_measures() == ["Total Sales", "Total Quantity"]
         assert client.schema_calls == 1
 
-        with pytest.raises(NotImplementedError, match="M2.3"):
+    @pytest.mark.asyncio
+    async def test_execute_dax_maps_ordered_rows_and_query_metadata(self):
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax='EVALUATE ROW("First", 1, "Second", 2)',
+            max_rows=10,
+            timeout_seconds=15,
+            request_id="request-123",
+        )
+        client = FakeLocalMCPClient(
+            dax_snapshot=_dax_snapshot(_successful_dax_payload(), request=request)
+        )
+        result = await _local_adapter(client).execute_dax(request)
+
+        assert result.columns == ["[First]", "[Second]"]
+        assert result.rows == [[1, 2]]
+        assert result.row_count == len(result.rows) == 1
+        assert result.execution_time_ms == 7
+        assert result.source_mode == "real"
+        assert result.request_id == "request-123"
+        assert result.error is None
+        assert result.truncated is False
+        assert client.dax_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_execute_dax_maps_empty_and_truncated_results(self):
+        empty_request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax="EVALUATE FILTER({1}, FALSE())",
+            request_id="empty",
+        )
+        empty_payload = _successful_dax_payload(rows=[])
+        empty_payload["data"].pop("executionTimeMs")  # type: ignore[union-attr]
+        empty_payload["executionMetrics"] = {
+            "reportedExecutionMetrics": {"durationMs": 4}
+        }
+        empty_result = await _local_adapter(FakeLocalMCPClient(
+            dax_snapshot=_dax_snapshot(empty_payload, request=empty_request)
+        )).execute_dax(empty_request)
+        assert empty_result.rows == []
+        assert empty_result.row_count == 0
+        assert empty_result.columns == ["[First]", "[Second]"]
+        assert empty_result.execution_time_ms == 4
+
+        limited_request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax="EVALUATE {1, 2, 3}",
+            max_rows=2,
+            request_id="limited",
+        )
+        rows = [
+            {"[Second]": value * 2, "[First]": value}
+            for value in (1, 2, 3)
+        ]
+        limited_result = await _local_adapter(FakeLocalMCPClient(
+            dax_snapshot=_dax_snapshot(
+                _successful_dax_payload(rows=rows),
+                request=limited_request,
+            )
+        )).execute_dax(limited_request)
+        assert limited_result.rows == [[1, 2], [2, 4]]
+        assert limited_result.row_count == 2
+        assert limited_result.truncated is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("category", "expected_type"),
+        [
+            (LocalMCPErrorCategory.DAX_ERROR, "dax_error"),
+            (LocalMCPErrorCategory.DAX_TIMEOUT, "timeout"),
+            (LocalMCPErrorCategory.DAX_PERMISSION_DENIED, "permission_denied"),
+            (LocalMCPErrorCategory.DESKTOP_CONNECTION, "connection_error"),
+            (LocalMCPErrorCategory.MCP_PROTOCOL, "mcp_protocol"),
+        ],
+    )
+    async def test_execute_dax_standardizes_errors_without_retry(
+        self,
+        category: LocalMCPErrorCategory,
+        expected_type: str,
+    ):
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax="EVALUATE BAD_DAX",
+            request_id="failed",
+        )
+        private_marker = "private-port-path-must-not-leak"
+        client = FakeLocalMCPClient(dax_error=LocalMCPConnectionError(
+            category,
+            private_marker,
+        ))
+        adapter = _local_adapter(client, max_retries=1)
+        result = await adapter.execute_dax(request)
+
+        assert result.error is not None
+        assert result.error.type == expected_type
+        assert result.error.retryable is False
+        assert private_marker not in result.error.message
+        assert result.source_mode == "real"
+        assert result.request_id == "failed"
+        assert adapter.is_mock is False
+        assert client.dax_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_execute_dax_retries_network_once_only(self):
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax='EVALUATE ROW("TestValue", 1)',
+        )
+        client = FlakyLocalDAXNetworkClient(_successful_dax_payload())
+        result = await _local_adapter(
+            client,  # type: ignore[arg-type]
+            max_retries=1,
+        ).execute_dax(request)
+
+        assert result.error is None
+        assert client.calls == 2
+
+    @pytest.mark.asyncio
+    async def test_execute_dax_rejects_malformed_and_preview_missing_rows(self):
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax='EVALUATE ROW("TestValue", 1)',
+            request_id="preview",
+        )
+        missing_rows = {
+            "success": True,
+            "operation": "Execute",
+            "data": {
+                "success": True,
+                "rowCount": 1,
+                "columns": [{"name": "[TestValue]"}],
+                "executionTimeMs": 3,
+            },
+            "executionMetrics": {
+                "reportedExecutionMetrics": {
+                    "queryResultRows": 1,
+                    "durationMs": 3,
+                }
+            },
+        }
+        preview_result = await _local_adapter(FakeLocalMCPClient(
+            dax_snapshot=_dax_snapshot(missing_rows, request=request)
+        )).execute_dax(request)
+        assert preview_result.error is not None
+        assert preview_result.error.type == "preview_row_data_missing"
+
+        malformed = _successful_dax_payload()
+        malformed["data"]["columns"] = [{"unknown": "value"}]  # type: ignore[index]
+        malformed_result = await _local_adapter(FakeLocalMCPClient(
+            dax_snapshot=_dax_snapshot(malformed, request=request)
+        )).execute_dax(request)
+        assert malformed_result.error is not None
+        assert malformed_result.error.type == "malformed_response"
+
+    @pytest.mark.asyncio
+    async def test_execute_dax_rejects_invalid_key_and_oversized_request(self):
+        client = FakeLocalMCPClient()
+        adapter = _local_adapter(client)
+        with pytest.raises(PowerBIAdapterError):
             await adapter.execute_dax(DAXRequest(
-                semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
-                dax="EVALUATE ROW(\"x\", 1)",
+                semantic_model_key="localhost:54321",
+                dax='EVALUATE ROW("TestValue", 1)',
             ))
+        assert client.dax_calls == 0
+
+        oversized = await adapter.execute_dax(DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax='EVALUATE ROW("TestValue", 1)',
+            max_rows=MAX_DAX_RESULT_ROWS + 1,
+        ))
+        assert oversized.error is not None
+        assert oversized.error.type == "oversized"
+        assert oversized.truncated is True
+        assert client.dax_calls == 0
 
     @pytest.mark.asyncio
     async def test_schema_key_is_friendly_and_cannot_be_arbitrary_connection(self):
@@ -738,8 +1018,16 @@ class TestLocalMCPPowerBIAdapter:
         assert exc_info.value.error_type == "SCHEMA_VALIDATION_FAILED"
 
     @pytest.mark.asyncio
-    async def test_tool_gateway_exposes_only_schema_abstraction(self):
-        client = FakeLocalMCPClient(schema_snapshot=_schema_snapshot())
+    async def test_tool_gateway_exposes_only_powerbi_abstractions(self):
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax='EVALUATE ROW("First", 1, "Second", 2)',
+            request_id="gateway",
+        )
+        client = FakeLocalMCPClient(
+            schema_snapshot=_schema_snapshot(),
+            dax_snapshot=_dax_snapshot(_successful_dax_payload(), request=request),
+        )
         adapter = _local_adapter(client)
 
         async def render(_: object) -> str:
@@ -754,7 +1042,7 @@ class TestLocalMCPPowerBIAdapter:
             intent=IntentType.DATA_QUESTION,
             user=UserContext(
                 allowed_semantic_models=[LOCAL_DESKTOP_SEMANTIC_MODEL_KEY],
-                allowed_tools=["get_semantic_model_schema"],
+                allowed_tools=["get_semantic_model_schema", "execute_dax"],
             ),
             runtime_mode=RuntimeDataMode.REAL,
         )
@@ -764,8 +1052,16 @@ class TestLocalMCPPowerBIAdapter:
             context,
             SchemaInput(semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY),
         )
+        query_result = await gateway.execute(
+            "execute_dax",
+            context,
+            request,
+        )
 
         assert isinstance(schema, SemanticModelSchema)
+        assert query_result.rows == [[1, 2]]
+        assert query_result.source_mode == "real"
+        assert client.dax_calls == 1
         assert gateway.list_tools() == [
             "get_semantic_model_schema",
             "execute_dax",
@@ -774,6 +1070,7 @@ class TestLocalMCPPowerBIAdapter:
         assert not set(SCHEMA_READ_OPERATION_WHITELIST).intersection(
             gateway.list_tools()
         )
+        assert "dax_query_operations" not in gateway.list_tools()
 
     def test_m2_1_never_exposes_modeling_write_tools(self):
         write_tools = {
@@ -798,6 +1095,9 @@ class TestLocalMCPPowerBIAdapter:
             operations == {"List", "Get"}
             for operations in SCHEMA_READ_OPERATION_WHITELIST.values()
         )
+
+    def test_dax_operation_whitelist_contains_only_execute(self):
+        assert DAX_EXECUTE_OPERATION_WHITELIST == {"Execute"}
 
     def test_local_adapter_has_no_llm_or_mock_dependency(self):
         module = inspect.getmodule(LocalMCPPowerBIAdapter)
@@ -839,6 +1139,23 @@ class TestLocalMCPPowerBIAdapter:
         assert classified.category == LocalMCPErrorCategory.NETWORK
         assert classified.error_type == "local_mcp_package_network_error"
         assert private_marker not in str(classified)
+
+    def test_result_payload_prefers_structured_and_supports_inline_text(self):
+        structured = SimpleNamespace(
+            structured_content={"source": "structured"},
+            content=[SimpleNamespace(text='{"source":"text"}')],
+        )
+        assert PowerBILocalMCPClient._result_payload(structured) == {
+            "source": "structured"
+        }
+
+        inline = SimpleNamespace(
+            structured_content=None,
+            content=[SimpleNamespace(text='result: {"source":"inline"}')],
+        )
+        assert PowerBILocalMCPClient._result_payload(inline) == {
+            "source": "inline"
+        }
 
     @pytest.mark.asyncio
     async def test_stdio_client_logic_only_calls_connection_operations(self):
@@ -939,6 +1256,73 @@ class TestLocalMCPPowerBIAdapter:
                 _local_tools(),
             )
         assert failed_info.value.category == LocalMCPErrorCategory.SCHEMA_READ_FAILED
+
+    @pytest.mark.asyncio
+    async def test_stdio_dax_execute_uses_inline_readonly_query_contract(self):
+        client = PowerBILocalMCPClient()
+        fake = FakeDAXStdioMCPClient(_successful_dax_payload())
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax='EVALUATE ROW("First", 1, "Second", 2)',
+            max_rows=25,
+            timeout_seconds=18,
+            request_id="stdio",
+        )
+
+        snapshot = await client._execute_dax_in_session(
+            fake,  # type: ignore[arg-type]
+            "2025-11-25",
+            _local_tools(),
+            request=request,
+        )
+
+        assert snapshot.request is request
+        assert [name for name, _ in fake.calls[:3]] == [
+            "connection_operations",
+            "connection_operations",
+            "connection_operations",
+        ]
+        assert len(fake.calls) == 4
+        tool_name, arguments = fake.calls[-1]
+        assert tool_name == "dax_query_operations"
+        dax_request = arguments["request"]
+        assert isinstance(dax_request, dict)
+        assert dax_request == {
+            "operation": "Execute",
+            "query": request.dax,
+            "maxRows": 25,
+            "timeoutSeconds": 18,
+            "getExecutionMetrics": False,
+            "executionMetricsOnly": False,
+            "resultMode": "Inline",
+        }
+
+    @pytest.mark.asyncio
+    async def test_stdio_dax_tool_error_is_classified_without_raw_leak(self):
+        client = PowerBILocalMCPClient()
+        fake = FakeDAXStdioMCPClient(
+            {
+                "success": False,
+                "operation": "Execute",
+                "message": "permission denied at private-path",
+            },
+            is_error=True,
+        )
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax="EVALUATE BAD_DAX",
+        )
+
+        with pytest.raises(LocalMCPConnectionError) as exc_info:
+            await client._execute_dax_in_session(
+                fake,  # type: ignore[arg-type]
+                "2025-11-25",
+                _local_tools(),
+                request=request,
+            )
+
+        assert exc_info.value.category == LocalMCPErrorCategory.DAX_PERMISSION_DENIED
+        assert "private-path" not in str(exc_info.value)
 
     def test_official_mcp_v2_dependency_is_installed(self):
         assert version("mcp") == "2.0.0"

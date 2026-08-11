@@ -4,6 +4,18 @@
 
 ---
 
+## [M2.3] — 2026-08-11
+
+### 真实 DAX 执行与 QueryResult 标准化
+
+- 在既有 ToolGateway → PowerBIAdapter → Local MCP 边界内，以单次只读 stdio/Desktop 会话调用 `dax_query_operations` 的 `Execute`
+- 依据 beta.12 实机 schema 使用 `resultMode=Inline`，标准化有序 columns、二维 rows、实际 row_count、execution time、request_id、`source_mode=real` 与 truncated
+- 新增 DAX、timeout、permission、connection、malformed、MCP protocol、oversized 与 Preview row-data missing 错误分类；仅 NETWORK 最多重试一次，Real 不回退 Mock
+- 新增 Fake MCP 回归与脱敏人工 DAX Smoke；固定 ROW 值 1 及 `Total Sales` / `Total Quantity` 实际数值均验证成功
+- 当前实机未复现仍为 Open 的 Issue #124；未调用 DeepSeek、未接完整 Chat、未修改 TurnPipeline / DeepSeekTurnService / main / routes
+
+---
+
 ## [M2.2] — 2026-08-11
 
 ### 真实 Semantic Model Schema 接入

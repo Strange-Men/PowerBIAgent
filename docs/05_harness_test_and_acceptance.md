@@ -1,8 +1,8 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M2.2 Schema Grounding 已真实接入
+> **状态：** M2.3 真实 DAX / QueryResult 验证层已接入
 > **关联 ADR：** ADR-004
-> **当前基线：** pytest 1149 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS（153 文件）
+> **当前基线：** pytest 1163 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS（154 文件）
 > **真实 Chat Smoke：** overall_success=true, 6/6 cases passed (data_question, report_generation, clarification, unsupported, idempotent_replay, request_id_conflict)
 > **Token 统计：** call_count/repair_count 按 task 独立统计，LLMValidationError 携带 usage
 > **模式切换：** Mock+Mock 200 / DeepSeek+Mock 200 / Remote MCP 503
@@ -115,6 +115,12 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 M2.2 实机验收为 3 tables、19 columns、2 measures、1 relationship、2 hierarchies；`Total Sales` 与 `Total Quantity` 均准确识别为 Measure 且 expression 非空，`Quantity` 与 `UnitPrice` 保持 Column 身份。DAX 执行和 DeepSeek 调用均为 0。
 
+### DAX Execution / QueryResult Boundary（M2.3）
+
+**✅ M2.3 已完成候选。** 当前 Local Provider 已通过 ToolGateway → PowerBIAdapter → Local MCP → Power BI Desktop 真实执行 `dax_query_operations Execute`。固定 ROW 返回 1 row / 1 column 且值为 1；`Total Sales` 与 `Total Quantity` 返回 1 row / 2 columns 的实际数值。结果按真实列顺序映射为二维 rows，`row_count=len(rows)`，并保留 execution time、request_id、`source_mode=real` 与 truncated。
+
+Fake MCP 离线覆盖正常/空/截断、DAX/timeout/permission/connection/MCP protocol 错误、malformed payload 与 Preview missing rows；真实 MCP 只由人工 Smoke 执行。Issue #124 仍为 Open，但当前 beta.12 + mcp 2.0.0 + Desktop 组合未复现，不能写成官方已修复。DeepSeek + Local Chat 与 Answer / Snapshot 的 real source_mode 传播仍属于 M2.4。
+
 ### Layer 2 — QueryPlan Semantic Validation（M2.4）
 
 QueryPlan 不仅验证字段存在，还必须确定请求的业务指标映射到模型中合法且合理的 Measure/字段。关键指标已有明确 Measure 时，不得默认以裸数值列重新构造另一套口径；业务歧义无法唯一消解时进入 clarification。
@@ -169,4 +175,4 @@ QueryPlan 不仅验证字段存在，还必须确定请求的业务指标映射�
 
 ---
 
-*最后更新：2026-08-11 | M2.2 Schema Grounding 真实接入*
+*最后更新：2026-08-11 | M2.3 真实 DAX / QueryResult 验证层接入*

@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M2.2 真实 Semantic Model Schema 接入完成候选
+> **状态：** M2.3 真实 DAX 执行与 QueryResult 标准化完成候选
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -50,8 +50,8 @@ M2 真实 Power BI MCP 与数据问答
   M2.0 官方证据、架构与路线固化                 ✅ 已完成候选
   M2.1 Local MCP 最小真实连接验证                ✅ 已完成候选
   M2.2 真实 Semantic Model Schema 接入          ✅ 已完成候选
-  M2.3 真实 DAX 与 QueryResult 标准化            ⬜ 下一阶段
-  M2.4 接入现有 TurnPipeline                    ⬜ 未开始
+  M2.3 真实 DAX 与 QueryResult 标准化            ✅ 已完成候选
+  M2.4 接入现有 TurnPipeline                    ⬜ 下一阶段
   M2.5 真实全链路验收与封板候选                  ⬜ 未开始
 
 MVP 功能阶段 (后续)
@@ -521,13 +521,13 @@ MVP 功能阶段 (后续)
 
 ### M2.3｜真实 DAX 执行与 QueryResult 标准化
 
-**状态：** ⬜ 下一阶段
+**状态：** ✅ 已完成候选
 
-完成 DAXRequest → ToolGateway → Local Adapter → Local MCP → Power BI Desktop → QueryResult，并覆盖 success、timeout、DAX error、malformed response、oversized result；DeepSeek 尚不接 Chat。属于“查得到数据”。
+已完成 DAXRequest → ToolGateway → Local Adapter → Local MCP → Power BI Desktop → QueryResult。固定 ROW 值 1 与 `Total Sales` / `Total Quantity` 实际数值均通过真实 Smoke；有序 columns、二维 rows、实际 row_count、execution time、request_id、`source_mode=real` 与 truncated 已标准化，并覆盖 DAX、timeout、permission、connection、malformed、MCP protocol、oversized 及 Preview row-data missing。当前实机未复现仍为 Open 的 Issue #124；DeepSeek 尚不接 Chat。属于“查得到数据”。
 
 ### M2.4｜接入现有 TurnPipeline
 
-**状态：** ⬜ 未开始
+**状态：** ⬜ 下一阶段
 
 在现有 TurnPipeline 接通 DeepSeek + Local Real Power BI；Service 仍依赖 PowerBIAdapter 抽象，`source_mode=real` 和 Snapshot 正确传播；禁止复制 Real Pipeline 或静默回退。属于“自然语言真的能查 Power BI”。
 
