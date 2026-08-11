@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M1.8 Codex 接管准备完成 / M2 尚未开始。**
+**M2.0 Remote MCP 接入规划完成候选。**
 
-> M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板。**Mock + Mock 模式完整可用。DeepSeek + Mock Power BI Chat 完整可用（需配置 API Key）。** 当前未连接真实 Power BI，QueryResult 仍来自 Mock。下一阶段是 M2.0 接入规划。
+> M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板，M1.8 已完成 Codex 接管准备。**Mock + Mock 模式完整可用，DeepSeek + Mock Power BI Chat 完整可用（需配置 API Key）。** M2.0 只完成官方证据复核、架构与路线设计；真实 Power BI 仍未接入，下一阶段是 M2.1 MCP Client / OAuth 最小真实连接验证。
 
 ### 幂等与并发特性
 
@@ -106,7 +106,7 @@ curl http://127.0.0.1:8000/health
   "reasons": [],
   "app_name": "PowerBIAgent",
   "app_env": "development",
-  "version": "M1.8",
+  "version": "M2.0",
   "llm_mode": "mock",
   "powerbi_mode": "mock",
   "harness_mode": "strict",
@@ -175,7 +175,7 @@ DeepSeek 配置由本地 `.env` 提供：
 | 后端 | FastAPI | ✅ M0.4 最小骨架已完成 |
 | Agent | 确定性 TurnPipeline | ✅ M1.6.3 统一执行骨架 |
 | LLM | DeepSeek + Mock LLM | ✅ Mock 可运行；DeepSeek Chat 全链路已封板 (M1.5) |
-| 数据 | Power BI MCP | ✅ Mock 可运行；真实接入延后 (M2) |
+| 数据 | Power BI MCP | ✅ Mock 可运行；真实接入按 M2.1—M2.5 实施，尚未开始 |
 | 记忆 | 结构化工作记忆 | ✅ M0.2-M0.3.2 完整实现 |
 | 报表 | 固定模板 HTML | ✅ Mock 可运行；真实渲染延后 (M3) |
 | Harness | MVP 轻量控制面 | ✅ M0.3-M0.4 ETCLOVG 完整实现 |
@@ -198,4 +198,4 @@ DeepSeek 配置由本地 `.env` 提供：
 
 ---
 
-*最后更新：2026-08-11 | M1.8 Codex 接管准备与仓库上下文固化*
+*最后更新：2026-08-11 | M2.0 Remote MCP 接入规划与开发路线固化*

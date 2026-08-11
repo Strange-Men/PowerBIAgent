@@ -1,10 +1,12 @@
 # ADR-003 — Power BI MCP 认证与接入方案
 
-- **状态：** accepted
+- **状态：** partially superseded by ADR-006
 - **日期：** 2026-07-31
 - **决策者：** PowerBIAgent 项目组
 
 ---
+
+> **后续状态说明（2026-08-11）：** Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code + 独立 MSAL + 本地缓存文件的实现选择，以及自动 Fallback 设想，由 ADR-006 的官方 MCP Python SDK、Authorization Code + PKCE、受控 TokenStorage 和显式失败边界替代。本文保留为历史决策上下文。
 
 ## 一、Context
 
@@ -197,4 +199,4 @@ headers = {"Authorization": f"Bearer {access_token}"}
 
 ---
 
-*创建日期：2026-07-31 | M0.3 数据接入与验证闭环*
+*创建日期：2026-07-31 | 2026-08-11 认证实现部分由 ADR-006 替代*

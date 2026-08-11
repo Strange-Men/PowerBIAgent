@@ -23,9 +23,10 @@ git rev-parse HEAD
 3. `CLAUDE.md`（本文件）
 4. `docs/09_context_handoff.md`
 5. `docs/08_development_roadmap.md` 当前阶段
-6. `docs/adr/README.md` 及当前阶段涉及的 ADR
-7. 当前轮 Prompt 指定文档
-8. 当前轮涉及的生产代码
+6. `docs/ai_development_error_ledger.yaml`：读取结构、当前有效治理规则及与当前轮相关条目；不要求完整复盘所有历史错误
+7. `docs/adr/README.md` 及当前阶段涉及的 ADR
+8. 当前轮 Prompt 指定文档
+9. 当前轮涉及的生产代码
 
 不要默认读取完整 CHANGELOG、`docs/archive/`、全部测试、全仓源码或历史 Commit diff；需要时再局部读取。
 
@@ -293,4 +294,4 @@ PowerBIAgent/
 
 ---
 
-*最后更新：2026-08-11 | M1.8 Codex 接管准备与仓库上下文固化*
+*最后更新：2026-08-11 | M2.0 Remote MCP 接入规划与开发路线固化*

@@ -2,7 +2,7 @@
 
 > **当前状态交接入口；Claude / Codex / 其他代码 Agent 必须先从仓库根目录 `AGENTS.md` 进入。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-11 | M1.8 Codex 接管准备与仓库上下文固化**
+> **最后更新：2026-08-11 | M2.0 Remote MCP 接入规划与开发路线固化**
 
 ---
 
@@ -12,13 +12,13 @@
 
 ## 当前阶段
 
-**M1.8 Codex 接管准备与仓库上下文固化** — ✅ 已完成候选。
+**M2.0 真实 Power BI Remote MCP 官方证据复核、架构设计与路线固化** — ✅ 已完成候选。
 
-> 本轮只建立 Codex 接管基础设施并固化仓库上下文，不新增功能、不修改生产业务逻辑、不进入 M2。
+> 本轮只修复治理/ADR 文档结构并固化 Remote MCP 官方证据、ADR-006 与 M2.1—M2.5 路线。生产业务逻辑变化为 0；真实 Power BI 仍未接入，M2 业务实现尚未开始。
 
 ## 上一轮
 
-**M1.7.2** — M0—M1 最终文档收口与封板（Commit `23d8ddb94a166d51fa7ba0d14620320b3e8d6b75`）。
+**M1.8** — Codex 接管准备与仓库上下文固化（起始基线 Commit `8aede040b74cfeb4f18514ffef3c049da02a5e43`，远程 CI Run #31449122624 success）。
 
 ## 固定封板 Tag
 
@@ -26,24 +26,25 @@
 
 ## 下一动作
 
-进入 M2.0 官方证据复核、真实 Power BI MCP 接入设计与开发路线固化。**M2 尚未开始业务实现。**
+进入 **M2.1 MCP Client / OAuth 最小真实连接验证**。只验证 OAuth、initialize/协议协商、`list_tools` 与 connection/health；不得接 Chat 或完整自然语言问答。
 
 以后 Claude / Codex / 其他代码 Agent 均以根目录 `AGENTS.md` 为仓库级入口。
 
 ## 当前真实能力
 
 - **LLM:** DeepSeek（真实 API）+ Mock（确定性测试）
-- **Power BI:** Mock（M2 接入真实 Remote MCP）
+- **Power BI:** Mock；真实 Remote MCP 仍未接入
 - **管线:** 确定性 TurnPipeline（ADR-005），Mock/DeepSeek 共享执行骨架
 - **能力:** 意图识别 → QueryPlan → DAX → Answer/ReportSpec，幂等重放，请求指纹冲突检测
 - **API:** Health 200/503、Chat 可用/不可用，Mock/DeepSeek 模式切换
-- **源模式:** source_mode=mock（Power BI 使用 Mock 适配器）
+- **源模式:** source_mode=mock（Power BI 使用 Mock 适配器；Real 传播设计延后 M2.4）
 
 ## 当前技术边界
 
-- M1.8 不接入真实 Power BI、不进行 OAuth/Entra、不修改 Remote MCP；M2 仅在方案确认后实施
-- Remote MCP 属 M2，会话持久化属 M4，报表资源属 M3
-- PydanticAI 已从生产依赖移除（pyproject.toml 不再声明），ADR-001 已被 ADR-005 替代，M2 继续沿用确定性 TurnPipeline、ToolGateway 和 PowerBIAdapter 边界
+- ADR-005 负责 TurnPipeline 总体架构；ADR-006 负责真实 Remote MCP 接入。ADR-003 的认证实现部分已被 ADR-006 替代
+- M2 只允许 Remote MCP 的 Schema 与 Execute Query；Generate Query 不进入白名单，避免第二个 DAX 生成入口
+- Remote MCP SDK/OAuth 只能位于 PowerBIAdapter 边界之后；Service/API/LLM 不得直接调用 MCP；Real 失败不得回退 Mock
+- M2.1—M2.3 不接完整 Chat；M2.4 才接入现有 TurnPipeline。会话持久化属 M4，报表正式渲染属 M3，React 属 M5
 
 ## 运行命令
 
@@ -66,11 +67,15 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ## 未完成事项
 
-- M2: 真实 Power BI MCP 连接、OAuth、DAX 真实验证
+- M2.1: MCP Client、用户委托 OAuth 与最小真实连接验证（尚未开始）
+- M2.2: 真实 Semantic Model Schema 与安全 Model ID 映射（尚未开始）
+- M2.3: 真实 DAX 与 QueryResult 标准化（尚未开始）
+- M2.4: 接入现有 TurnPipeline（尚未开始）
+- M2.5: 真实全链路验收与封板候选（尚未开始）
 - M3: 报表正式渲染管线、报表资源 ID
 - M4: 会话持久化、搜索、最近对话
 - M5: React 前端
-- 公司 Power BI 账号/Entra App/Tenant 设置（M2 前确认）
+- 公司 Power BI 账号、Tenant Remote MCP 设置、Entra App、目标模型 ID 与 Build 权限（M2.1 前确认）
 
 ## 重要 Tag
 
@@ -83,7 +88,8 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ## 近期变更摘要
 
-- M1.8: Codex 接管准备与仓库上下文固化；M2 尚未开始
+- M2.0: 官方证据复核、ADR-005 文件化、ADR-006 与 M2.1—M2.5 路线固化；生产业务实现为 0
+- M1.8: Codex 接管准备与仓库上下文固化
 - M1.7.2: M0—M1 正式封板（`23d8ddb`，Tag `m1.7.2-m0-m1正式封板`）
 - M1.7.1: 最终状态收口与封板候选修复（`1dd20de`，CI Run #30991136311 success）
 - M1.7: MVP轻量化与通用CI固化（`e5d1740`）
@@ -95,4 +101,4 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ---
 
-*最后更新：2026-08-11 | M1.8 Codex 接管准备与仓库上下文固化*
+*最后更新：2026-08-11 | M2.0 Remote MCP 接入规划与开发路线固化*

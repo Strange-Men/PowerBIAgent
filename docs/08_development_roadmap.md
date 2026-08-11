@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M1.8 Codex 接管准备与仓库上下文固化（已完成候选）
+> **状态：** M2.0 Remote MCP 接入规划完成候选
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -46,8 +46,15 @@ M1.7.1 最终状态收口与封板候选修复                 ✅ 已完成 (1d
 M1.7.2 M0—M1 最终文档收口与封板           ✅ 已完成 (23d8ddb，Tag: m1.7.2-m0-m1正式封板)
 M1.8 Codex接管准备与仓库上下文固化          ✅ 已完成候选
 
+M2 真实 Power BI MCP 与数据问答
+  M2.0 官方证据、架构与路线固化                 ✅ 已完成候选
+  M2.1 MCP Client / OAuth 最小真实连接验证       ⬜ 未开始
+  M2.2 真实 Semantic Model Schema 接入          ⬜ 未开始
+  M2.3 真实 DAX 与 QueryResult 标准化            ⬜ 未开始
+  M2.4 接入现有 TurnPipeline                    ⬜ 未开始
+  M2.5 真实全链路验收与封板候选                  ⬜ 未开始
+
 MVP 功能阶段 (后续)
-  M2 真实 Power BI MCP 与数据问答    ⬜
   M3 报表生成闭环                   ⬜
   M4 多轮记忆完善                   ⬜
   M5 React 前端与联调                ⬜
@@ -486,6 +493,52 @@ MVP 功能阶段 (后续)
 **本轮不开发 M2 业务代码，不修改生产业务逻辑，不创建 Tag。**
 
 ---
+
+## M2 轮次详细路线
+
+> M2 统一遵守 ADR-005 与 ADR-006：TurnPipeline 是唯一控制面，Power BI 只经 ToolGateway → PowerBIAdapter；Mock/Real 共用执行骨架，Generate Query 不使用，Real 失败不回退 Mock。实施细节与每轮门禁见 `docs/12_m2_remote_mcp_integration_plan.md`。
+
+### M2.0｜官方证据复核、架构设计与路线固化
+
+**状态：** ✅ 已完成候选
+
+- 修复 Error Ledger 冷启动规则与 ADR-005 文档结构。
+- 复核 Microsoft / MCP 官方证据，新增 ADR-006。
+- 固化 M2.1—M2.5 轮次、测试和防偏移门禁。
+- 生产业务实现为 0；真实 Power BI 仍未接入。
+
+### M2.1｜MCP Client + OAuth + 最小真实连接验证
+
+**状态：** ⬜ 未开始
+
+只证明 OAuth → initialize/协议协商 → list_tools → connection/health。允许必要依赖、最小 Client/OAuth 基础设施与人工 Smoke；禁止接 Chat、改 TurnPipeline 或完整自然语言问答。属于“连得上”。
+
+### M2.2｜真实 Semantic Model Schema 接入
+
+**状态：** ⬜ 未开始
+
+完成 ToolGateway → Remote Adapter → MCP → SemanticModelSchema、`get_semantic_model_schema()` 与 friendly key → real model ID 安全映射；禁止真实数据问答。属于“看得懂模型”。
+
+### M2.3｜真实 DAX 执行与 QueryResult 标准化
+
+**状态：** ⬜ 未开始
+
+完成 DAXRequest → ToolGateway → Remote Adapter → MCP → QueryResult，并覆盖 success、401、403、timeout、rate limit（若官方实机定义）、DAX error、malformed response、oversized result；禁止完整 Chat。属于“查得到数据”。
+
+### M2.4｜接入现有 TurnPipeline
+
+**状态：** ⬜ 未开始
+
+接通 DeepSeek + Real Power BI；Service 依赖 PowerBIAdapter 抽象，main 注入 Remote Adapter，routes 移除固定 503，`source_mode=real` 和 Snapshot 正确传播；禁止复制 Real Pipeline 或静默回退。属于“自然语言真的能查 Power BI”。
+
+### M2.5｜真实全链路验收与 M2 封板候选
+
+**状态：** ⬜ 未开始
+
+验证真实 Schema/DAX/QueryResult、核心数值一致、幂等重放不重复访问 MCP、OAuth/权限/超时/DAX 错误、Trace 脱敏、Mock/CI 回归与架构无偏移。完成后停止，等待仓库审计，不自动创建 M2.6。
+
+---
+
 ## M0 历史轮次
 
 ### M0.4.1 — API骨架真实性修复

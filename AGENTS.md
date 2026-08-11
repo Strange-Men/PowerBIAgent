@@ -25,7 +25,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 
 ## 二、当前真实状态
 
-- 当前版本：M1.8 Codex 接管准备。
+- 当前版本：M2.0 Remote MCP 接入规划完成候选。
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板。
 - Mock + Mock 完整可用。
 - DeepSeek + Mock Power BI Chat 完整可用。
@@ -61,10 +61,11 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 3. `CLAUDE.md`
 4. `docs/09_context_handoff.md`
 5. `docs/08_development_roadmap.md` 当前阶段
-6. `docs/adr/README.md`
-7. 当前阶段涉及的 ADR
-8. 当前轮 Prompt 指定文档
-9. 当前轮涉及的生产代码
+6. `docs/ai_development_error_ledger.yaml`：读取结构、当前有效治理规则及与当前轮相关条目；不要求完整复盘所有历史错误
+7. `docs/adr/README.md`
+8. 当前阶段涉及的 ADR
+9. 当前轮 Prompt 指定文档
+10. 当前轮涉及的生产代码
 
 不要默认读取：
 
@@ -118,9 +119,7 @@ API
 → Memory / Snapshot
 ```
 
-具体 M2 设计以后续 M2.0 官方文档调研结果为准。
-
-本文件不提前写死尚未验证的 MCP SDK、OAuth 实现或微软接口细节。
+具体 M2 设计以 `docs/12_m2_remote_mcp_integration_plan.md` 与 ADR-006 为准；标记“待 M2.1 实机验证”的外部细节不得提前写成事实。
 
 ## 七、修改前必须内部回答
 
@@ -159,4 +158,4 @@ API
 
 ---
 
-*最后更新：2026-08-11 | M1.8 Codex 接管准备与仓库上下文固化*
+*最后更新：2026-08-11 | M2.0 Remote MCP 接入规划与开发路线固化*

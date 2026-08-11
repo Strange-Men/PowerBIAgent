@@ -4,6 +4,19 @@
 
 ---
 
+## [M2.0] — 2026-08-11
+
+### 真实 Power BI Remote MCP 接入规划与开发路线固化
+
+- 修复 AGENTS / CLAUDE 冷启动遗漏 Error Ledger 的治理矛盾
+- 将 ADR-005 从 ADR 索引拆分为正式独立文件
+- 基于 Microsoft 与 MCP 官方资料复核 Remote MCP、OAuth、权限与 Python SDK
+- 新增 accepted ADR-006，固化 Adapter、ToolGateway、OAuth、工具白名单与失败边界
+- 固化 M2.1—M2.5 开发路线、防偏移门禁和离线 CI / 人工 Smoke 边界
+- 生产业务逻辑变化为 0；真实 LLM 调用为 0；真实 Power BI 调用为 0
+
+---
+
 ## [M1.8] — 2026-08-11
 
 ### Codex 接管准备与仓库上下文固化
@@ -198,4 +211,4 @@
 
 ---
 
-*最后更新：2026-08-11 | M1.8 Codex 接管准备与仓库上下文固化*
+*最后更新：2026-08-11 | M2.0 Remote MCP 接入规划与开发路线固化*

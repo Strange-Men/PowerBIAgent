@@ -25,9 +25,10 @@
 |------|------|------|------|
 | ADR-001 | Agent 框架选择 — PydanticAI | **superseded**（M1.6.1 废弃） | 2026-07-31 |
 | ADR-002 | 记忆系统与存储方案 | accepted | 2026-07-31 |
-| ADR-003 | Power BI MCP 认证与接入方案 | accepted | 2026-07-31 |
+| ADR-003 | Power BI MCP 认证与接入方案 | **partially superseded by ADR-006** | 2026-07-31 |
 | ADR-004 | Harness 方案：轻量 ETCLOVG 控制面 | accepted | 2026-07-31 |
-| ADR-005 | 确定性TurnPipeline与受控LLM调用架构 | accepted | 2026-08-04 |
+| ADR-005 | [确定性 TurnPipeline 与受控 LLM 调用架构](ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md) | accepted | 2026-08-04 |
+| ADR-006 | [真实 Power BI Remote MCP 生产接入架构](ADR-006_remote_powerbi_mcp_production_integration.md) | accepted | 2026-08-11 |
 
 ## ADR 详情
 
@@ -43,30 +44,15 @@ Pydantic 数据契约 + Repository 抽象接口。四层记忆设计、三态机
 
 ### ADR-003 — Power BI MCP 认证与接入方案
 
-使用 Remote MCP Server + MSAL device code flow。OAuth 风险、Entra App Registration、VS Code 与自定义客户端差异已明确。M0.3 仅设计、接口、Mock 和 Remote 骨架。
+Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code、独立 MSAL、Token 缓存和 Fallback 实现部分由 ADR-006 替代。保留历史上下文。
 
 ### ADR-005 — 确定性TurnPipeline与受控LLM调用架构
 
-**状态：** accepted | **日期：** 2026-08-04 | **决策者：** 用户明确批准
+正式正文见 [ADR-005 独立文件](ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md)。核心决策：PydanticAI 已废弃；TurnPipeline 为确定性控制面；LLM 仅受控结构化生成；ToolGateway 是 Power BI / Renderer 唯一入口；Mock 与 DeepSeek 共用执行骨架。
 
-**背景：** M1.5 全链路验收后动态复验发现：PydanticAI 生产路径实际未使用、DeepSeek 绕过 ToolGateway 和 ContextBuilder、TurnController 限制未生效、Mock 与 DeepSeek 存在双管线。
+### ADR-006 — 真实 Power BI Remote MCP 生产接入架构
 
-**决策内容：**
-1. 废弃 PydanticAI 作为生产 Agent 框架（ADR-001 → superseded）
-2. 采用确定性 TurnPipeline 控制对话生命周期（非 LLM 自主 Agent 循环）
-3. LLM 只负责受约束的结构化生成（Intent、QueryPlan、DAX、Answer、ReportSpec）
-4. ToolGateway 是 Power BI 和 Renderer 的唯一调用入口
-5. Mock 与 DeepSeek 共享同一执行骨架，只替换 Provider、Adapter 或 Fixture
-
-**备选方案：**
-- 继续使用 PydanticAI 并修复所有绕过问题 → 拒绝，PydanticAI Agent 循环模型不适合确定性管线需求
-- 从零手写 Agent Runtime → 拒绝，违反项目铁律
-- 引入 LangGraph → 拒绝，违反项目铁律
-
-**后果：**
-- 正面：管线行为可预测、可测试；Mock/DeepSeek 一致性有保障；Harness 约束可统一生效
-- 负面：需要 M1.6.2—M1.6.3.1 多轮代码整改；PydanticAI 和旧 Agent 抽象（AgentRuntime/MockAgentRuntime）已由 M1.6.3 正式删除；TurnPipeline 控制面在 M1.6.3.1 真正统一
-- 代码整改范围：M1.6.2 Harness 与配置收口（已完成）、M1.6.3 统一 TurnPipeline 与旧 Agent 抽象清理（已完成）
+正式正文见 [ADR-006 独立文件](ADR-006_remote_powerbi_mcp_production_integration.md)。在 ADR-005 总体管线之下，固化官方 MCP Python Client、用户委托 OAuth、PowerBIAdapter 隔离、工具白名单、无静默回退及离线 CI / 人工 Smoke 边界。
 
 ### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面
 
@@ -74,4 +60,4 @@ Execution、Tooling、Context、Lifecycle、Observability、Verification、Gover
 
 ---
 
-*最后更新：2026-08-04 | M1.6.3 统一TurnPipeline与旧Agent抽象清理*
+*最后更新：2026-08-11 | M2.0 ADR-005 正式文件化与 ADR-006 接入决策*
