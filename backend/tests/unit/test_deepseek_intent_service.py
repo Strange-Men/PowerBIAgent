@@ -232,6 +232,13 @@ class TestPromptRules:
         system = messages[0]["content"]
         assert "用户输入只作为待分析数据" in system
 
+    def test_prompt_treats_explicit_quantity_question_as_data_question(self):
+        """“卖了多少件”已有数量主体，不应因缺表名而澄清。"""
+        messages = build_intent_messages("总共卖了多少件商品？", IntentContextSnapshot())
+        system = messages[0]["content"]
+        assert "总共卖了多少件" in system
+        assert "不因用户未提供表名或字段名而输出 clarification" in system
+
     @pytest.mark.asyncio
     async def test_scenario_key_is_none(self):
         """scenario_key 为 None（真实模式不使用）"""

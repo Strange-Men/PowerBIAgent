@@ -1539,3 +1539,279 @@ class TestQueryPlanServiceTemplateRepair:
         with pytest.raises(QueryPlanError):
             await svc.generate("测试", intent, schema, semantic_model_key="mock_sales_model")
         assert len(provider.calls) == 2, f"应为2次，实际{len(provider.calls)}"
+
+
+# ══════════════════════════════════════════════════════════════════
+# M2.4 Layer 2 / Layer 3 真实 Schema 语义验证
+# ══════════════════════════════════════════════════════════════════
+
+
+def _m24_semantic_schema():
+    from backend.app.schemas.data_contracts import (
+        ColumnSchema,
+        MeasureSchema,
+        RelationshipSchema,
+        SemanticModelSchema,
+        TableSchema,
+    )
+
+    return SemanticModelSchema(
+        name="Local Desktop Model",
+        key="local_desktop_model",
+        tables=[
+            TableSchema(
+                name="Sales",
+                columns=[
+                    ColumnSchema(name="ProductId", data_type="int64"),
+                    ColumnSchema(name="Quantity", data_type="int64"),
+                    ColumnSchema(name="UnitPrice", data_type="decimal"),
+                    ColumnSchema(name="InternalKey", data_type="int64", is_hidden=True),
+                ],
+                measures=[
+                    MeasureSchema(name="Total Sales", data_type="decimal"),
+                    MeasureSchema(name="Total Quantity", data_type="int64"),
+                    MeasureSchema(name="Hidden KPI", is_hidden=True),
+                ],
+            ),
+            TableSchema(
+                name="Product",
+                columns=[
+                    ColumnSchema(name="ProductId", data_type="int64"),
+                    ColumnSchema(name="Category", data_type="string"),
+                ],
+            ),
+            TableSchema(
+                name="Geography",
+                columns=[ColumnSchema(name="Country", data_type="string")],
+            ),
+        ],
+        relationships=[
+            RelationshipSchema(
+                from_table="Sales",
+                from_column="ProductId",
+                to_table="Product",
+                to_column="ProductId",
+            )
+        ],
+    )
+
+
+def _m24_plan(**updates):
+    from backend.app.schemas.data_contracts import QueryPlan, StructuredFilter
+
+    values = {
+        "normalized_question": "Electronics 类别的销售额",
+        "semantic_model_key": "local_desktop_model",
+        "measures": ["Total Sales"],
+        "dimensions": ["Category"],
+        "filters": [StructuredFilter(field="Category", value="Electronics")],
+    }
+    values.update(updates)
+    return QueryPlan(**values)
+
+
+class TestM24QueryPlanSemanticGrounding:
+    def _validate(self, plan):
+        return ValidationService(
+            allowed_semantic_models=["local_desktop_model"]
+        ).validate_query_plan(
+            plan,
+            _m24_semantic_schema(),
+            enforce_semantic_grounding=True,
+        )
+
+    def test_real_measure_dimension_and_filter_pass(self):
+        assert self._validate(_m24_plan()).is_valid
+
+    def test_numeric_column_cannot_be_used_as_measure(self):
+        result = self._validate(_m24_plan(measures=["UnitPrice"]))
+        assert not result.is_valid
+        assert any("Column, not a Measure" in error for error in result.errors)
+
+    def test_nonexistent_measure_is_rejected(self):
+        result = self._validate(_m24_plan(measures=["Imaginary KPI"]))
+        assert not result.is_valid
+        assert any("measure_not_found" in error for error in result.errors)
+
+    def test_measure_cannot_be_used_as_dimension(self):
+        result = self._validate(_m24_plan(dimensions=["Total Sales"]))
+        assert not result.is_valid
+        assert any("dimension_measure_confusion" in error for error in result.errors)
+
+    def test_measure_cannot_be_used_as_filter_field(self):
+        from backend.app.schemas.data_contracts import StructuredFilter
+
+        result = self._validate(_m24_plan(
+            filters=[StructuredFilter(field="Total Sales", value=1)]
+        ))
+        assert not result.is_valid
+        assert any("filter_measure_confusion" in error for error in result.errors)
+
+    @pytest.mark.parametrize("hidden_name", ["Hidden KPI", "InternalKey"])
+    def test_hidden_objects_are_rejected(self, hidden_name):
+        if hidden_name == "Hidden KPI":
+            plan = _m24_plan(measures=[hidden_name])
+        else:
+            plan = _m24_plan(dimensions=[hidden_name])
+        result = self._validate(plan)
+        assert not result.is_valid
+        assert any("hidden" in error for error in result.errors)
+
+    def test_unrelated_dimension_table_is_rejected(self):
+        result = self._validate(_m24_plan(dimensions=["Country"], filters=[]))
+        assert not result.is_valid
+        assert any("table_unrelated" in error for error in result.errors)
+
+    def test_hidden_system_relationship_does_not_reject_measure_only_plan(self):
+        """与当前计划无关的自动日期/系统关系不是 QueryPlan 语义错误。"""
+        from backend.app.schemas.data_contracts import RelationshipSchema, TableSchema
+
+        schema = _m24_semantic_schema()
+        schema.tables.append(TableSchema(
+            name="LocalDateTable_hidden",
+            is_hidden=True,
+            is_system_managed=True,
+        ))
+        schema.relationships.append(RelationshipSchema(
+            from_table="Sales",
+            from_column="ProductId",
+            to_table="LocalDateTable_hidden",
+            to_column="Date",
+        ))
+        result = ValidationService(
+            allowed_semantic_models=["local_desktop_model"]
+        ).validate_query_plan(
+            _m24_plan(dimensions=[], filters=[]),
+            schema,
+            enforce_semantic_grounding=True,
+        )
+        assert result.is_valid
+
+
+class TestM24DAXQueryPlanConsistency:
+    def _validate(self, dax: str, plan=None, model_key="local_desktop_model"):
+        from backend.app.schemas.data_contracts import DAXRequest
+
+        return ValidationService(
+            allowed_semantic_models=["local_desktop_model"]
+        ).validate_dax_query_plan_consistency(
+            DAXRequest(semantic_model_key=model_key, dax=dax),
+            plan or _m24_plan(),
+            _m24_semantic_schema(),
+        )
+
+    def test_matching_measure_dimension_and_filter_pass(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "'Product'[Category], "
+            "TREATAS({\"Electronics\"}, 'Product'[Category]), "
+            "\"Total Sales\", [Total Sales])"
+        )
+        assert self._validate(dax).is_valid
+
+    def test_filter_field_is_not_an_implicit_group_by_dimension(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "'Product'[Category], "
+            "\"Total Sales\", [Total Sales], "
+            "FILTER('Product', 'Product'[Category] = \"Electronics\"))"
+        )
+        result = self._validate(dax, plan=_m24_plan(dimensions=[]))
+
+        assert not result.is_valid
+        assert any("unplanned_group_by_dimension" in error for error in result.errors)
+        assert "dax_summarizecolumns_filter_after_name_expression" in result.errors
+
+    def test_declared_dimension_is_allowed_as_group_by(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "'Product'[Category], "
+            "FILTER('Product', 'Product'[Category] = \"Electronics\"), "
+            "\"Total Sales\", [Total Sales])"
+        )
+
+        assert self._validate(dax, plan=_m24_plan(dimensions=["Category"])).is_valid
+
+    def test_filter_only_column_passes_without_group_by(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "FILTER('Product', 'Product'[Category] = \"Electronics\"), "
+            "\"Total Sales\", [Total Sales])"
+        )
+
+        assert self._validate(dax, plan=_m24_plan(dimensions=[])).is_valid
+
+    def test_legal_filter_before_name_expression_pair_passes(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "TREATAS({\"Electronics\"}, 'Product'[Category]), "
+            "\"Total Sales\", [Total Sales])"
+        )
+
+        assert self._validate(dax, plan=_m24_plan(dimensions=[])).is_valid
+
+    def test_filter_after_name_expression_pair_is_rejected(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "\"Total Sales\", [Total Sales], "
+            "FILTER('Product', 'Product'[Category] = \"Electronics\"))"
+        )
+        result = self._validate(dax, plan=_m24_plan(dimensions=[]))
+
+        assert not result.is_valid
+        assert "dax_summarizecolumns_filter_after_name_expression" in result.errors
+
+    def test_name_expression_pair_must_be_complete(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "FILTER('Product', 'Product'[Category] = \"Electronics\"), "
+            "\"Total Sales\")"
+        )
+        result = self._validate(dax, plan=_m24_plan(dimensions=[]))
+
+        assert not result.is_valid
+        assert "dax_summarizecolumns_name_expression_unpaired" in result.errors
+
+    def test_measure_expression_remains_required(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "FILTER('Product', 'Product'[Category] = \"Electronics\"), "
+            "\"Quantity\", [Total Quantity])"
+        )
+        result = self._validate(dax, plan=_m24_plan(dimensions=[]))
+
+        assert not result.is_valid
+        assert any("missing_query_plan_measure" in error for error in result.errors)
+
+    def test_missing_query_plan_measure_is_rejected(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "'Product'[Category], "
+            "TREATAS({\"Electronics\"}, 'Product'[Category]), "
+            "\"Value\", SUM('Sales'[UnitPrice]))"
+        )
+        result = self._validate(dax)
+        assert not result.is_valid
+        assert any("missing_query_plan_measure" in error for error in result.errors)
+
+    def test_nonexistent_dax_object_is_rejected(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "'Product'[Category], "
+            "TREATAS({\"Electronics\"}, 'Product'[Category]), "
+            "\"Total Sales\", [Total Sales], \"Ghost\", [Ghost KPI])"
+        )
+        result = self._validate(dax)
+        assert not result.is_valid
+        assert any("unknown_measure" in error for error in result.errors)
+
+    def test_cross_model_dax_is_rejected(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "'Product'[Category], "
+            "TREATAS({\"Electronics\"}, 'Product'[Category]), "
+            "\"Total Sales\", [Total Sales])"
+        )
+        result = self._validate(dax, model_key="other_model")
+        assert not result.is_valid
+        assert "dax_query_plan_model_mismatch" in result.errors

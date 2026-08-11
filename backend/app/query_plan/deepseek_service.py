@@ -77,6 +77,7 @@ class DeepSeekQueryPlanService:
         committed_memory: Optional[dict] = None,
         semantic_model_key: Optional[str] = None,
         report_template_key: Optional[str] = None,
+        enforce_semantic_grounding: bool = False,
     ) -> QueryPlan:
         """从 IntentSpec 和 Schema 生成 QueryPlan
 
@@ -173,7 +174,11 @@ class DeepSeekQueryPlanService:
             ) from e
 
         # 4. Schema 验证（首次生成或格式修复后）
-        val_result = validation.validate_query_plan(plan, schema)
+        val_result = validation.validate_query_plan(
+            plan,
+            schema,
+            enforce_semantic_grounding=enforce_semantic_grounding,
+        )
         if not val_result.is_valid:
             if repair_used:
                 raise QueryPlanError(
@@ -207,7 +212,11 @@ class DeepSeekQueryPlanService:
                 ) from e
 
             # 二次验证
-            val_result = validation.validate_query_plan(plan, schema)
+            val_result = validation.validate_query_plan(
+                plan,
+                schema,
+                enforce_semantic_grounding=enforce_semantic_grounding,
+            )
             if not val_result.is_valid:
                 raise QueryPlanError(
                     f"QueryPlan 验证失败（验证修复后仍无效）: {'; '.join(val_result.errors[:3])}"
@@ -268,6 +277,12 @@ class DeepSeekQueryPlanService:
 
         illegal_set: set[str] = set()
         for err in errors:
+            if err.startswith("query_plan_"):
+                error_code = err.split(":", 1)[0]
+                quoted = re.search(r"'([^']+)'", err)
+                if quoted:
+                    illegal_set.add(quoted.group(1))
+                continue
             # "Model 'X' not in allowed list"
             m = re.search(r"Model '([^']+)'", err)
             if m:

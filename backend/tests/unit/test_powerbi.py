@@ -1140,6 +1140,23 @@ class TestLocalMCPPowerBIAdapter:
         assert classified.error_type == "local_mcp_package_network_error"
         assert private_marker not in str(classified)
 
+    def test_exception_group_preserves_controlled_dax_error(self):
+        classified = PowerBILocalMCPClient._classify_exception(
+            ExceptionGroup(
+                "stdio shutdown",
+                [
+                    LocalMCPConnectionError(
+                        LocalMCPErrorCategory.DAX_ERROR,
+                        "dax_execute_failed",
+                    ),
+                    RuntimeError("resource cleanup"),
+                ],
+            )
+        )
+
+        assert classified.category == LocalMCPErrorCategory.DAX_ERROR
+        assert classified.error_type == "dax_execute_failed"
+
     def test_result_payload_prefers_structured_and_supports_inline_text(self):
         structured = SimpleNamespace(
             structured_content={"source": "structured"},

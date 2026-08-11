@@ -213,10 +213,29 @@ class TestSettingsRealMode:
         settings = Settings(llm_mode=LLMMode.MOCK, powerbi_mode=PowerBIMode.REMOTE_MCP)
         assert settings.is_real_ready is False
 
-    def test_local_mcp_mode_not_chat_ready_before_m2_4(self):
+    def test_mock_llm_plus_local_mcp_is_not_product_chat_mode(self):
         settings = Settings(llm_mode=LLMMode.MOCK, powerbi_mode=PowerBIMode.LOCAL_MCP)
         assert settings.is_real_ready is False
         assert settings.is_powerbi_local_mcp_configured is True
+
+    def test_deepseek_plus_local_mcp_is_configuration_ready(self):
+        settings = Settings(
+            _env_file=None,
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.LOCAL_MCP,
+            deepseek_api_key=SecretStr("test-key-not-real"),
+        )
+        assert settings.is_real_ready is True
+
+    def test_deepseek_plus_local_requires_readonly_local_configuration(self):
+        settings = Settings(
+            _env_file=None,
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.LOCAL_MCP,
+            deepseek_api_key=SecretStr("test-key-not-real"),
+            powerbi_local_mcp_readonly=False,
+        )
+        assert settings.is_real_ready is False
 
     def test_full_real_not_ready(self):
         settings = Settings(

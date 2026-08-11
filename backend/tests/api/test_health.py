@@ -154,6 +154,46 @@ class TestHealthNotReady:
                 assert "powerbi_remote_mcp_not_implemented" in data["reasons"]
 
     @pytest.mark.asyncio
+    async def test_deepseek_local_configuration_ready_without_runtime_probe(self):
+        """Health 只检查配置，不启动 npx、连接 Desktop 或读取 Schema。"""
+        fake_key = "sk-" + ("L" * 24)
+        settings = Settings(
+            _env_file=None,
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.LOCAL_MCP,
+            deepseek_api_key=fake_key,
+        )
+        app = create_app(settings=settings)
+        transport = ASGITransport(app=app)
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            assert service is not None
+            assert service.powerbi.provider_name == "local_mcp"
+            assert service.pipeline is not None
+            assert service._user_context.allowed_semantic_models == [
+                settings.powerbi_local_semantic_model_key
+            ]
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.get("/health")
+                assert response.status_code == 200
+                assert response.json()["ready"] is True
+
+    @pytest.mark.asyncio
+    async def test_mock_llm_plus_local_reports_explicit_not_ready_reason(self):
+        settings = Settings(
+            _env_file=None,
+            llm_mode=LLMMode.MOCK,
+            powerbi_mode=PowerBIMode.LOCAL_MCP,
+        )
+        app = create_app(settings=settings)
+        transport = ASGITransport(app=app)
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.get("/health")
+                assert response.status_code == 503
+                assert "powerbi_local_mcp_requires_deepseek" in response.json()["reasons"]
+
+    @pytest.mark.asyncio
     async def test_both_real_modes_503(self):
         """DeepSeek + Remote MCP 同时 → 503（Remote MCP 不可用）"""
         fake_key = "sk-" + ("U" * 24)

@@ -29,6 +29,11 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 12. 不确定的字段不要猜测，宁可少选也不要虚构
 13. 只输出 JSON，不输出任何其他内容
 14. requested_template 只能输出模板内部 Key 或 null，禁止中文或自然语言
+15. measures 只能选择 Schema 中明确列为“度量值”的对象，不能填普通数值列
+16. 用户业务指标有明确 Measure 时必须使用该 Measure，不得以裸列聚合重定义口径
+17. semantic_model_key 必须逐字等于当前 Schema 标示的 model_key，不得使用示例或历史 Key
+18. 业务词只能映射到当前 Schema 已列出的 Measure：如当前 Schema 确实存在 `Total Sales`，“总销售额/销售额”优先映射为 `Total Sales`；如当前 Schema 确实存在 `Total Quantity`，“总销量/总数量/卖了多少件”优先映射为 `Total Quantity`；对应 Measure 不存在时不得猜测
+19. Schema 对象名必须原样复制，不得翻译、删除空格、改变大小写或改用用户原话
 
 ## QueryPlan JSON Schema
 
@@ -38,7 +43,7 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 {
   "normalized_question": "<标准化问题文本>",
   "semantic_model_key": "<语义模型 Key>",
-  "measures": ["<度量值名或数值列名>"],
+  "measures": ["<Schema 中明确存在的度量值名>"],
   "dimensions": ["<维度列名>"],
   "filters": [],
   "time_range": null,
@@ -54,7 +59,7 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 ### 字段说明
 - normalized_question：清理后的用户问题文本（必填）
 - semantic_model_key：当前使用的语义模型 Key（必填）
-- measures：用户问题中涉及的度量值或数值列，只能从 Schema 中选取
+- measures：用户问题中涉及的业务度量值，只能从 Schema 的“度量值”列表选取；禁止填普通列
 - dimensions：用户问题中涉及的维度列（分组依据），只能从 Schema 中选取
 - filters：筛选条件数组，每个元素包含 field/operator/value
 - time_range：时间范围描述（如 "本月"、"2026年Q1"），无明确时间则为 null
@@ -80,31 +85,12 @@ filters 中每个元素：
 ```
 
 ### 筛选规则
-- 字段名必须来自 Schema 中真实存在的列或度量值
+- 字段名必须来自 Schema 中真实存在的非隐藏列；不得用 Measure 充当筛选字段
 - 数值类型筛选值不使用引号包裹（由程序处理类型）
 - 时间筛选放在 time_range 中，不在 filters 中重复
 - 不虚构任何字段
 
-### 示例
-
-用户："本月各区域销售额，按销售额降序取前5名"
-Schema 中有：TotalSales, Region, Date
-```json
-{
-  "normalized_question": "本月各区域销售额，按销售额降序取前5名",
-  "semantic_model_key": "mock_sales_model",
-  "measures": ["TotalSales"],
-  "dimensions": ["Region"],
-  "filters": [],
-  "time_range": "本月",
-  "sort": "desc",
-  "top_n": 5,
-  "comparison_mode": null,
-  "requested_template": null,
-  "inherited_context": null,
-  "is_mock": false
-}
-```
+不得复制任何固定的模型 Key 或对象名；当前 Schema 是唯一白名单。
 """
 
 
@@ -189,15 +175,17 @@ REPAIR_VALIDATION_INSTRUCTION = """上一次生成的 QueryPlan 未通过 Schema
 重新生成必须满足：
 1. 只输出一个合法 JSON 对象
 2. semantic_model_key 必须与当前 Schema 一致
-3. measures 只能使用 Schema 中真实存在的度量值或数值列
+3. measures 只能使用 Schema 中明确列为“度量值”的对象，不得使用数值列
 4. dimensions 只能使用 Schema 中真实存在的非隐藏列
-5. filters.field 只能使用 Schema 中真实存在的列或度量值
+5. filters.field 只能使用 Schema 中真实存在的非隐藏列，不得使用度量值
 6. requested_template 只能输出 "sales_weekly"、"satisfaction"、"operating_overview" 或 null
 7. requested_template 严禁中文名称、标题或自然语言，只能使用内部 Key
-8. 不得虚构任何字段
-9. 不带 Markdown 代码块标记
-10. 不带解释性文本
-11. 只输出 JSON"""
+8. 用户业务指标必须优先映射到 Schema 中同义的现有 Measure，不得以裸列聚合重定义
+9. Schema 对象名必须原样复制，不得翻译、删除空格或改变大小写
+10. 不得虚构任何字段
+11. 不带 Markdown 代码块标记
+12. 不带解释性文本
+13. 只输出 JSON"""
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 """API 路由 — M1.5
 
-GET  /health           — 健康检查（Mock 200 / DeepSeek+Mock 200 / Remote MCP 503）
+GET  /health           — 配置就绪检查（Mock / DeepSeek+Mock / DeepSeek+Local）
 POST /api/v1/chat      — 非流式对话接口
 
 M1.5 更新：
@@ -46,9 +46,9 @@ async def health(request: Request, response: Response, settings: Settings = Depe
 
     Mock 模式完整可用 → 200、ready=true。
     DeepSeek+Mock 模式 Key 已配置 → 200、ready=true。
-    DeepSeek+Mock 模式 Key 未配置 → 503、deepseek_api_key_missing。
+    DeepSeek+Local 模式 Key 与只读 Local 配置完整 → 200、ready=true。
     Remote MCP 模式 → 503、powerbi_remote_mcp_not_implemented。
-    不调用 LLM 或 Power BI 网络。不输出 Key 信息。
+    不调用 LLM、启动 npx 或连接 Power BI Desktop。不输出 Key 信息。
     """
     ready = settings.is_real_ready
     reasons: list[str] = []
@@ -59,6 +59,16 @@ async def health(request: Request, response: Response, settings: Settings = Depe
                 reasons.append("deepseek_api_key_missing")
         if settings.powerbi_mode == PowerBIMode.REMOTE_MCP:
             reasons.append("powerbi_remote_mcp_not_implemented")
+        if (
+            settings.powerbi_mode == PowerBIMode.LOCAL_MCP
+            and not settings.is_powerbi_local_mcp_configured
+        ):
+            reasons.append("powerbi_local_mcp_configuration_incomplete")
+        if (
+            settings.powerbi_mode == PowerBIMode.LOCAL_MCP
+            and settings.llm_mode != LLMMode.DEEPSEEK
+        ):
+            reasons.append("powerbi_local_mcp_requires_deepseek")
 
     response.status_code = 200 if ready else 503
     status = "ok" if ready else "not_ready"
@@ -87,6 +97,7 @@ async def chat(
 
     Mock+Mock: 完整 Mock 链路。
     DeepSeek+Mock: 真实 DeepSeek LLM + Mock Power BI。
+    DeepSeek+Local: 真实 DeepSeek LLM + Local MCP + Power BI Desktop。
     Remote MCP: 不可用（503）。
     """
 
@@ -108,6 +119,24 @@ async def chat(
                 "error_type": "powerbi_remote_mcp_not_implemented",
             },
         )
+
+    if settings.powerbi_mode == PowerBIMode.LOCAL_MCP:
+        if settings.llm_mode != LLMMode.DEEPSEEK:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "detail": "Local MCP Chat 需要 DeepSeek 模式。",
+                    "error_type": "powerbi_local_mcp_requires_deepseek",
+                },
+            )
+        if not settings.is_powerbi_local_mcp_configured:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "detail": "Local MCP 配置不完整或未启用只读模式。",
+                    "error_type": "powerbi_local_mcp_configuration_incomplete",
+                },
+            )
 
     # ── 获取 Service ──
     if settings.llm_mode == LLMMode.MOCK and settings.powerbi_mode == PowerBIMode.MOCK:

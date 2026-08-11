@@ -124,13 +124,6 @@ class DeepSeekAnswerService:
                 "（仅允许 mock/real）"
             )
 
-        # 5. M1.4 仅处理 mock QueryResult
-        if query_result.source_mode != "mock":
-            raise AnswerGenerationError(
-                "M1.4 仅支持 source_mode=mock 的 QueryResult，"
-                "real QueryResult 尚未就绪"
-            )
-
         if not user_input or not user_input.strip():
             raise AnswerGenerationError("user_input 不能为空")
 

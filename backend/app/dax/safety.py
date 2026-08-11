@@ -128,9 +128,11 @@ class _SchemaIndex:
         self._all_table_names: set[str] = set()
 
         for t in schema.tables:
+            if t.is_hidden or t.is_system_managed:
+                continue
             self._all_table_names.add(t.name)
             cols = {c.name for c in t.columns if not c.is_hidden}
-            meas = {m.name for m in t.measures}
+            meas = {m.name for m in t.measures if not m.is_hidden}
             self._table_columns[t.name] = cols
             self._table_measures[t.name] = meas
             for cn in cols:

@@ -1,6 +1,6 @@
 # 12 — M2 真实 Power BI MCP 统一接入计划
 
-> **状态：** M2.3 真实 DAX 执行与 QueryResult 标准化完成候选
+> **状态：** M2.4 现有 TurnPipeline 接入真实 Power BI 完成候选；M2.5 下一阶段
 > **官方资料查询日期：** 2026-08-11
 > **边界：** 当前 Demo 使用 Local MCP + Power BI Desktop；Remote MCP 作为 ADR-006 生产化路径延后。二者只能替换 PowerBIAdapter 后的 Provider。
 
@@ -80,6 +80,7 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 - M2.1：正式 `mcp` Client 通过 stdio 启动固定版本的官方 Local Server，只实现 `health_check()`、协议/工具发现、Desktop 发现与连接。
 - M2.2：`get_semantic_model_schema()` 已在一次 stdio / Desktop 连接生命周期内读取并映射真实 Schema；上层只接收 `SemanticModelSchema`。
 - M2.3：`execute_dax()` 已通过单次只读 stdio/Desktop 会话调用 `dax_query_operations Execute`；beta.12 原始 payload 只在 Adapter 内标准化为 `QueryResult`。
+- M2.4：Local Provider 已注入既有组合根；Adapter 仍只负责 Schema / QueryResult 标准化和 Local Client 调用，不承载 QueryPlan、Turn、Answer 或 Snapshot 逻辑。
 - 安全：强制只读、诊断不包含 PBIX 路径、模型名、连接串或业务数据；失败不回退 Mock。
 
 ### RemoteMCPPowerBIAdapter
@@ -88,13 +89,13 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 
 ### 上层控制面
 
-- `DeepSeekTurnService`、`main.py`、`routes.py`、TurnPipeline、ToolGateway、Intent、QueryPlan、DAX、Answer、ReportSpec、Memory / Snapshot 在 M2.1 均不修改。
-- M2.4 只能把 Local Adapter 注入现有组合根并传播真实 `source_mode`；不得复制 Service / Pipeline。
+- `DeepSeekTurnService` 已泛化为依赖 PowerBIAdapter 抽象，Mock/Local 共享同一 Service、TurnPipeline、Intent、QueryPlan、DAX、Answer、ReportSpec 与 Memory/Snapshot。
+- Local Adapter 只在组合根按 Provider 配置注入；`source_mode=real` 经既有控制面传播，没有复制 Service / Pipeline。
 - ToolGateway 未来仍只看到 PowerBIAdapter 的 Schema 与 DAX 两类抽象能力，不直接依赖 Local / Remote SDK 工具名。
 
 ### Settings
 
-版本为 M2.3；Local 配置使用 friendly `local_desktop_model` key，不接受端口、数据库名、PBIX 路径或连接串作为业务输入。Remote 历史配置保留，Local 不要求 Tenant ID、Client ID 或 Redirect URI；M2.4 前 Local / Remote 模式均不代表 Chat ready。
+版本为 M2.4；Local 配置使用 friendly `local_desktop_model` key，不接受端口、数据库名、PBIX 路径或连接串作为业务输入。DeepSeek + Local 配置就绪时 Chat 可用；Remote 历史配置保留且仍不可用。
 
 ## 5. M2.0—M2.5 当前 Demo 路线
 
@@ -116,11 +117,11 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 
 ### M2.4｜接入现有 TurnPipeline
 
-跑通 `用户问题 → DeepSeek → QueryPlan → DAX → ToolGateway → Local MCP → Power BI Desktop → QueryResult → Answer`，保持单一 Pipeline、单一 DAX 入口与无静默回退。
+**状态：✅ 已完成候选。** 已跑通 `用户问题 → DeepSeek → QueryPlan → DAX → ToolGateway → Local MCP → Power BI Desktop → QueryResult → Answer`，保持单一 Pipeline、单一 DAX 入口与无静默回退；real Snapshot/Replay、Layer 2/3 与三个真实业务 Case 已验证。
 
 ### M2.5｜真实 Demo 全链路验收
 
-通过 Harness / Golden 验证 Schema 真实性、DAX 业务语义与执行、QueryResult、Answer、幂等、Trace、Mock 回归和架构无偏移。
+**状态：⬜ 下一阶段。** 只通过 Business Golden / Bad Case / 回归验收验证真实业务口径并形成 M2 封板候选，不再新增主架构。
 
 Remote 生产化不塞入当前 M2.1—M2.5 Demo 路线；管理员前置条件具备后，按 ADR-006 并经用户另行批准恢复。
 
@@ -134,7 +135,7 @@ Remote 生产化不塞入当前 M2.1—M2.5 Demo 路线；管理员前置条件�
 - MCP Client 使用 Fake boundary；优先补充已有 Power BI / Settings / Harness 测试，不创建版本型测试文件。
 - 自动 CI 通过 Fake MCP `List` / `Get` 与 `Execute` 响应验证 Local Adapter → `SemanticModelSchema` / `QueryResult`；不启动 Node 或 Desktop。
 - 真实 Local MCP 只跑人工 Smoke；不记录 PBIX 路径、模型名、连接串、业务数据、Measure expression 全文或原始响应。
-- M2.2 的 DAX 执行与 DeepSeek 调用均为 0；Golden 真实 Power BI Case 继续 pending / skipped。
+- CI 继续使用 Mock/Fake Local Adapter；真实 DeepSeek + Local Chat 只在人工 Smoke 执行。Golden 真实 Power BI Case 继续 pending / skipped，留待 M2.5。
 
 ## 8. 外部前置与停止条件
 
@@ -175,13 +176,20 @@ Tenant 管理员启用 Remote MCP Preview、同 Tenant Entra App、委托权限�
 - **错误边界：** 标准化 `timeout`、`permission_denied`、`dax_error`、`connection_error`、`malformed_response`、`oversized`、`mcp_protocol` 与 `preview_row_data_missing`。只有 NETWORK 最多重试一次；DAX、timeout、malformed 与缺 rows 不重试；所有用户错误均不包含端口、PBIX 路径、连接串或 raw MCP 异常，Real 失败不回退 Mock。
 - **调用计数：** 本轮共 4 次真实 Execute 调用：2 次受控 metrics 探针返回 tool error，最终 Smoke 内 2 次固定 Execute 成功；DeepSeek 调用 0。
 
-## 12. M2.4 接入要求
+## 12. M2.4 完成观察
 
-- 只把 `LocalMCPPowerBIAdapter` 注入现有组合根；TurnPipeline、DeepSeekTurnService、ToolGateway 与 Intent → QueryPlan → DAX → Answer / ReportSpec 骨架不得复制或重写。
-- 继续先以真实 Schema / Measure 完成语义 Grounding，再执行 DAX；不得把 M2.3 的固定 Smoke 当成自然语言业务口径已验证。
-- 将 `QueryResult.source_mode=real` 通过现有 Answer / Snapshot 控制面传播；任何 Local 错误必须显式失败，禁止回退 Mock。
-- main/routes 的 Local Chat 注入只能在 M2.4 明确范围内完成；M2.3 不宣称 DeepSeek + Local Chat 已接通。
+- **Provider 注入：** `main.py` 按设置把 Mock 或 `LocalMCPPowerBIAdapter` 注入同一个 DeepSeekTurnService；API/Service 不接触 raw MCP SDK，ToolGateway 仍是唯一 Power BI 业务入口。
+- **Semantic Grounding：** Layer 2 确定性验证 Measure/Column 身份、隐藏对象、字段归属与关系可达性；真实 Schema 中明确 Measure 优先，禁止发明字段、Measure 或业务口径。
+- **DAX 一致性：** Layer 3 验证模型 key 与 QueryPlan 的 Measure/Dimension/Filter；只有 QueryPlan.dimensions 可成为 group-by，Filter 字段不自动成为维度；`SUMMARIZECOLUMNS` 强制 group-by → filter table → name/expression 对顺序。继续使用 DeepSeek 作为唯一 DAX 生成入口，没有第二个 LLM Judge。
+- **source_mode / Replay：** QueryResult 的 `source_mode=real` 传播到 Turn、Answer/Report、Snapshot 与 Replay；旧 Snapshot 缺字段默认 mock。相同 request_id 的 Replay 保持 real 且不重复调用 DeepSeek/PBI。
+- **真实 Smoke：** 总销售额、总数量和带类别筛选的销售额三个 Case 均通过正式 API/Service/TurnPipeline 链；Filter Case 中 dimensions 为空、筛选只作为 filter、Layer 3 PASS、Answer source_field 来自 QueryResult.columns。原始 DAX、业务值、连接信息与 Secret 未写入仓库。
+- **失败边界：** Local 连接/Schema/DAX/Preview 错误均受控失败且不回退 Mock；stdio 关闭产生异常组时保留已有 DAX 安全错误分类，不把它伪装为 malformed success。Issue #124 仍为 Open，当前实机未复现不代表官方修复。
+
+## 13. M2.5 剩余验收
+
+- 用现有 Harness/Golden 扩展代表性真实业务 Golden 与 Bad Case，核对业务口径、日期语义、粒度、结果与回归边界。
+- 完成 M2 最终审计与封板候选；不新增 Pipeline/Service，不实现 Remote/M3/M4/M5。
 
 ---
 
-*最后更新：2026-08-11 | M2.3 真实 DAX 执行与 QueryResult 标准化完成候选；Remote 生产化路径保留*
+*最后更新：2026-08-11 | M2.4 现有 TurnPipeline 接入真实 Power BI 完成候选；Remote 保留，M2.5 下一阶段*

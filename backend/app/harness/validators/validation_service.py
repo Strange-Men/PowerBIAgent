@@ -3,6 +3,7 @@
 Application 只依赖此服务，不散落独立验证逻辑。
 """
 
+import re
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -91,9 +92,17 @@ class ValidationService:
     # -----------------------------------------------------------------
 
     def validate_query_plan(
-        self, plan: QueryPlan, schema: SemanticModelSchema
+        self,
+        plan: QueryPlan,
+        schema: SemanticModelSchema,
+        *,
+        enforce_semantic_grounding: bool = False,
     ) -> ValidationResult:
-        """验证 QueryPlan"""
+        """验证 QueryPlan。
+
+        ``enforce_semantic_grounding`` 仅由真实 Power BI 路径开启；旧 Mock
+        fixture 仍保留 M0-M1 兼容行为。
+        """
         errors: list[str] = []
 
         if plan.semantic_model_key not in self._allowed_models:
@@ -101,25 +110,30 @@ class ValidationService:
                 f"Model '{plan.semantic_model_key}' not in allowed list: {self._allowed_models}"
             )
 
+        if plan.semantic_model_key != schema.key:
+            errors.append(
+                "query_plan_model_key_mismatch: QueryPlan model does not match Schema key"
+            )
+
         all_columns = schema.get_all_columns()
         all_measures = schema.get_all_measures()
-        for m in plan.measures:
-            if m not in all_measures and m not in all_columns:
-                errors.append(f"Measure/column '{m}' not found in schema")
+        if enforce_semantic_grounding:
+            errors.extend(self._validate_query_plan_semantics(plan, schema))
+        else:
+            for m in plan.measures:
+                if m not in all_measures and m not in all_columns:
+                    errors.append(f"Measure/column '{m}' not found in schema")
 
-        for d in plan.dimensions:
-            if d not in all_columns:
-                errors.append(f"Dimension '{d}' not found in schema columns")
+            for d in plan.dimensions:
+                if d not in all_columns:
+                    errors.append(f"Dimension '{d}' not found in schema columns")
 
-        for f in plan.filters:
-            if f.field not in all_columns and f.field not in all_measures:
-                errors.append(f"Filter field '{f.field}' not found in schema")
+            for f in plan.filters:
+                if f.field not in all_columns and f.field not in all_measures:
+                    errors.append(f"Filter field '{f.field}' not found in schema")
 
         if plan.top_n is not None and plan.top_n < 1:
             errors.append("top_n must be >= 1")
-
-        if plan.semantic_model_key not in self._allowed_models:
-            errors.append(f"Model '{plan.semantic_model_key}' not allowed")
 
         # requested_template 白名单校验
         if plan.requested_template is not None:
@@ -130,6 +144,133 @@ class ValidationService:
                 )
 
         return ValidationResult(valid=len(errors) == 0, errors=errors)
+
+    @staticmethod
+    def _validate_query_plan_semantics(
+        plan: QueryPlan,
+        schema: SemanticModelSchema,
+    ) -> list[str]:
+        """M2.4 Layer 2：基于标准化 Schema 的最小确定性语义验证。"""
+        errors: list[str] = []
+        visible_tables = {
+            table.name: table
+            for table in schema.tables
+            if not table.is_hidden and not table.is_system_managed
+        }
+        measure_tables: dict[str, set[str]] = {}
+        column_tables: dict[str, set[str]] = {}
+        hidden_objects: set[str] = set()
+
+        for table in schema.tables:
+            table_visible = table.name in visible_tables
+            for measure in table.measures:
+                if table_visible and not measure.is_hidden:
+                    measure_tables.setdefault(measure.name, set()).add(table.name)
+                else:
+                    hidden_objects.add(measure.name)
+            for column in table.columns:
+                if table_visible and not column.is_hidden:
+                    column_tables.setdefault(column.name, set()).add(table.name)
+                else:
+                    hidden_objects.add(column.name)
+
+        selected_tables: set[str] = set()
+        measure_owner_tables: set[str] = set()
+
+        for measure_name in plan.measures:
+            owners = measure_tables.get(measure_name, set())
+            if measure_name in hidden_objects and not owners:
+                errors.append(
+                    f"query_plan_hidden_measure: Measure '{measure_name}' is hidden"
+                )
+            elif not owners:
+                if measure_name in column_tables:
+                    errors.append(
+                        f"query_plan_measure_column_confusion: '{measure_name}' is a Column, not a Measure"
+                    )
+                else:
+                    errors.append(
+                        f"query_plan_measure_not_found: Measure '{measure_name}' not found in schema"
+                    )
+            elif len(owners) > 1:
+                errors.append(
+                    f"query_plan_ambiguous_measure: Measure '{measure_name}' belongs to multiple tables"
+                )
+            else:
+                measure_owner_tables.update(owners)
+                selected_tables.update(owners)
+
+            if measure_name in column_tables:
+                errors.append(
+                    f"query_plan_measure_column_identity_conflict: '{measure_name}' is both Measure and Column"
+                )
+
+        def validate_column(field_name: str, role: str) -> None:
+            owners = column_tables.get(field_name, set())
+            if field_name in hidden_objects and not owners:
+                errors.append(
+                    f"query_plan_hidden_{role}: {role.title()} '{field_name}' is hidden"
+                )
+            elif not owners:
+                if field_name in measure_tables:
+                    errors.append(
+                        f"query_plan_{role}_measure_confusion: '{field_name}' is a Measure, not a Column"
+                    )
+                else:
+                    errors.append(
+                        f"query_plan_{role}_not_found: {role.title()} '{field_name}' not found in schema columns"
+                    )
+            elif len(owners) > 1:
+                errors.append(
+                    f"query_plan_ambiguous_{role}: Column '{field_name}' belongs to multiple tables"
+                )
+            else:
+                selected_tables.update(owners)
+
+            if field_name in measure_tables:
+                errors.append(
+                    f"query_plan_{role}_identity_conflict: '{field_name}' is both Column and Measure"
+                )
+
+        for dimension in plan.dimensions:
+            validate_column(dimension, "dimension")
+        for query_filter in plan.filters:
+            validate_column(query_filter.field, "filter")
+
+        # 明显非法的跨表选择：每个维度/筛选表必须能通过 active relationship
+        # 到达至少一个 Measure 所在表。只做图可达性，不推断业务方向或基数。
+        if measure_owner_tables and not errors:
+            graph: dict[str, set[str]] = {name: set() for name in visible_tables}
+            for relationship in schema.relationships:
+                if not relationship.is_active:
+                    continue
+                if (
+                    relationship.from_table not in visible_tables
+                    or relationship.to_table not in visible_tables
+                ):
+                    # Power BI Schema 可包含自动日期表等隐藏/系统关系。
+                    # 它们不在 LLM 可见白名单中，也不应使一个仅使用可见
+                    # Measure 的计划失败。若计划真正选了跨表字段，下方
+                    # 可达性检查仍会以 query_plan_table_unrelated 严格拒绝。
+                    continue
+                graph[relationship.from_table].add(relationship.to_table)
+                graph[relationship.to_table].add(relationship.from_table)
+
+            for selected_table in selected_tables - measure_owner_tables:
+                pending = [selected_table]
+                visited = {selected_table}
+                while pending:
+                    current = pending.pop()
+                    for neighbor in graph.get(current, set()):
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            pending.append(neighbor)
+                if not (visited & measure_owner_tables):
+                    errors.append(
+                        f"query_plan_table_unrelated: Table '{selected_table}' is not related to the selected Measure table"
+                    )
+
+        return errors
 
     # -----------------------------------------------------------------
     # DAX 验证
@@ -165,11 +306,246 @@ class ValidationService:
             error_code="dax_validation_failed" if errors else None
         )
 
+    def validate_dax_query_plan_consistency(
+        self,
+        dax_request: DAXRequest,
+        plan: QueryPlan,
+        schema: SemanticModelSchema,
+    ) -> ValidationResult:
+        """M2.4 Layer 3：DAX 与已验证 QueryPlan 的最小确定性一致性检查。
+
+        不解析完整 AST；只在 DAXSafetyValidator 已有 Schema 安全检查之上，
+        验证模型边界及 QueryPlan 的 Measure/Dimension/Filter 引用。
+        """
+        errors: list[str] = []
+        if dax_request.semantic_model_key != plan.semantic_model_key:
+            errors.append("dax_query_plan_model_mismatch")
+        if plan.semantic_model_key != schema.key:
+            errors.append("dax_schema_model_mismatch")
+
+        from backend.app.dax.safety import DAXSafetyValidator
+
+        safety_result = DAXSafetyValidator().validate(dax_request.dax, schema)
+        errors.extend(safety_result.errors)
+
+        # 双引号内容是别名/字面量，不参与对象引用匹配。
+        dax_without_strings = re.sub(r'"(?:[^"\\]|\\.)*"', " ", dax_request.dax)
+        referenced_names = set(re.findall(r"\[([^\]]+)\]", dax_without_strings))
+
+        for measure in plan.measures:
+            if measure not in referenced_names:
+                errors.append(
+                    f"dax_missing_query_plan_measure: Measure '{measure}' is not referenced"
+                )
+        for dimension in plan.dimensions:
+            if dimension not in referenced_names:
+                errors.append(
+                    f"dax_missing_query_plan_dimension: Dimension '{dimension}' is not referenced"
+                )
+        for query_filter in plan.filters:
+            if query_filter.field not in referenced_names:
+                errors.append(
+                    f"dax_missing_query_plan_filter: Filter field '{query_filter.field}' is not referenced"
+                )
+
+        errors.extend(
+            self._validate_summarizecolumns_consistency(
+                dax_request.dax,
+                allowed_group_by=set(plan.dimensions),
+            )
+        )
+
+        return ValidationResult(
+            valid=len(errors) == 0,
+            errors=errors,
+            error_code="dax_semantic_consistency_failed" if errors else None,
+        )
+
+    @classmethod
+    def _validate_summarizecolumns_consistency(
+        cls,
+        dax: str,
+        *,
+        allowed_group_by: set[str],
+    ) -> list[str]:
+        """Validate only the reliable top-level SUMMARIZECOLUMNS argument shape.
+
+        This is intentionally not a general DAX parser. It recognizes direct
+        qualified group-by columns, common filter-table calls, and trailing
+        name/expression pairs while respecting quotes and nested delimiters.
+        """
+        errors: list[str] = []
+        for arguments in cls._summarizecolumns_argument_lists(dax):
+            first_name_index = next(
+                (
+                    index
+                    for index, argument in enumerate(arguments)
+                    if cls._is_dax_string_literal(argument)
+                ),
+                None,
+            )
+            prefix = (
+                arguments
+                if first_name_index is None
+                else arguments[:first_name_index]
+            )
+            seen_filter = False
+            for argument in prefix:
+                group_by = cls._qualified_column_name(argument)
+                if group_by is not None:
+                    if seen_filter:
+                        errors.append(
+                            "dax_summarizecolumns_group_by_after_filter"
+                        )
+                    if group_by not in allowed_group_by:
+                        errors.append(
+                            "dax_unplanned_group_by_dimension: "
+                            f"Column '{group_by}' is not in QueryPlan.dimensions"
+                        )
+                    continue
+                if cls._is_filter_table_expression(argument):
+                    seen_filter = True
+
+            if first_name_index is None:
+                continue
+
+            pairs = arguments[first_name_index:]
+            if any(cls._is_filter_table_expression(item) for item in pairs):
+                errors.append("dax_summarizecolumns_filter_after_name_expression")
+            if len(pairs) % 2:
+                errors.append("dax_summarizecolumns_name_expression_unpaired")
+                continue
+            for index in range(0, len(pairs), 2):
+                if not cls._is_dax_string_literal(pairs[index]):
+                    errors.append("dax_summarizecolumns_name_expression_unpaired")
+                    break
+        return list(dict.fromkeys(errors))
+
+    @classmethod
+    def _summarizecolumns_argument_lists(cls, dax: str) -> list[list[str]]:
+        calls: list[list[str]] = []
+        for match in re.finditer(r"\bSUMMARIZECOLUMNS\s*\(", dax, re.IGNORECASE):
+            opening = match.end() - 1
+            closing = cls._matching_parenthesis(dax, opening)
+            if closing is None:
+                continue
+            calls.append(cls._split_top_level_arguments(dax[opening + 1:closing]))
+        return calls
+
+    @staticmethod
+    def _matching_parenthesis(text: str, opening: int) -> int | None:
+        depth = 0
+        square_depth = 0
+        quote: str | None = None
+        index = opening
+        while index < len(text):
+            char = text[index]
+            if quote is not None:
+                if char == "\\" and quote == '"':
+                    index += 2
+                    continue
+                if char == quote:
+                    if index + 1 < len(text) and text[index + 1] == quote:
+                        index += 2
+                        continue
+                    quote = None
+                index += 1
+                continue
+            if char in {'"', "'"}:
+                quote = char
+            elif char == "[":
+                square_depth += 1
+            elif char == "]" and square_depth:
+                square_depth -= 1
+            elif square_depth == 0 and char == "(":
+                depth += 1
+            elif square_depth == 0 and char == ")":
+                depth -= 1
+                if depth == 0:
+                    return index
+            index += 1
+        return None
+
+    @staticmethod
+    def _split_top_level_arguments(text: str) -> list[str]:
+        arguments: list[str] = []
+        start = 0
+        round_depth = 0
+        square_depth = 0
+        brace_depth = 0
+        quote: str | None = None
+        index = 0
+        while index < len(text):
+            char = text[index]
+            if quote is not None:
+                if char == "\\" and quote == '"':
+                    index += 2
+                    continue
+                if char == quote:
+                    if index + 1 < len(text) and text[index + 1] == quote:
+                        index += 2
+                        continue
+                    quote = None
+                index += 1
+                continue
+            if char in {'"', "'"}:
+                quote = char
+            elif char == "(":
+                round_depth += 1
+            elif char == ")" and round_depth:
+                round_depth -= 1
+            elif char == "[":
+                square_depth += 1
+            elif char == "]" and square_depth:
+                square_depth -= 1
+            elif char == "{":
+                brace_depth += 1
+            elif char == "}" and brace_depth:
+                brace_depth -= 1
+            elif (
+                char == ","
+                and round_depth == 0
+                and square_depth == 0
+                and brace_depth == 0
+            ):
+                arguments.append(text[start:index].strip())
+                start = index + 1
+            index += 1
+        final = text[start:].strip()
+        if final or arguments:
+            arguments.append(final)
+        return arguments
+
+    @staticmethod
+    def _is_dax_string_literal(argument: str) -> bool:
+        return bool(re.fullmatch(r'"(?:[^"\\]|\\.|"")*"', argument.strip()))
+
+    @staticmethod
+    def _qualified_column_name(argument: str) -> str | None:
+        match = re.fullmatch(
+            r"(?:'[^']+'|[A-Za-z_]\w*)\[([^\]]+)\]",
+            argument.strip(),
+        )
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _is_filter_table_expression(argument: str) -> bool:
+        return bool(re.match(
+            r"^(?:FILTER|TREATAS|KEEPFILTERS|CALCULATETABLE)\s*\(",
+            argument.strip(),
+            re.IGNORECASE,
+        ))
+
     # -----------------------------------------------------------------
     # QueryResult 验证
     # -----------------------------------------------------------------
 
-    def validate_query_result(self, result: QueryResult) -> ValidationResult:
+    def validate_query_result(
+        self,
+        result: QueryResult,
+        *,
+        expected_source_mode: Optional[str] = None,
+    ) -> ValidationResult:
         """验证 QueryResult 结构一致性
 
         QueryResult.error 存在时不可继续处理 — 返回 valid=False。
@@ -198,6 +574,13 @@ class ValidationService:
 
         if not result.semantic_model_key:
             warnings.append("QueryResult has no semantic_model_key")
+
+        if result.source_mode not in {"mock", "real"}:
+            errors.append(f"Invalid QueryResult source_mode: {result.source_mode}")
+        if expected_source_mode is not None and result.source_mode != expected_source_mode:
+            errors.append(
+                f"QueryResult source_mode '{result.source_mode}' does not match expected '{expected_source_mode}'"
+            )
 
         return ValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings)
 

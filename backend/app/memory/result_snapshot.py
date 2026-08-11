@@ -73,6 +73,11 @@ class TurnResultSnapshot(BaseModel):
     memory_commit: bool = Field(default=False, description="是否提交了 Memory")
     final_memory_version: Optional[int] = Field(default=None, description="提交后的 memory_version")
     is_mock: bool = Field(default=True)
+    source_mode: str = Field(
+        default="mock",
+        pattern="^(mock|real)$",
+        description="数据来源；旧快照缺失时向后兼容为 mock",
+    )
     trace_id: str = Field(default="")
     allowed_tools: list[str] = Field(default_factory=list)
 

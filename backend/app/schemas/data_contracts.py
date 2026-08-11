@@ -89,6 +89,8 @@ class SemanticModelSchema(BaseModel):
         """获取所有列名"""
         names: list[str] = []
         for t in self.tables:
+            if t.is_hidden or t.is_system_managed:
+                continue
             for c in t.columns:
                 if not c.is_hidden:
                     names.append(c.name)
@@ -98,8 +100,11 @@ class SemanticModelSchema(BaseModel):
         """获取所有度量值名称"""
         names: list[str] = []
         for t in self.tables:
+            if t.is_hidden or t.is_system_managed:
+                continue
             for m in t.measures:
-                names.append(m.name)
+                if not m.is_hidden:
+                    names.append(m.name)
         return names
 
 

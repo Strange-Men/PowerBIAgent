@@ -862,6 +862,12 @@ class PowerBILocalMCPClient:
                 LocalMCPErrorCategory.LOCAL_PREREQUISITE,
                 LocalMCPErrorCategory.MCP_PROTOCOL,
                 LocalMCPErrorCategory.MCP_STARTUP,
+                LocalMCPErrorCategory.DAX_PERMISSION_DENIED,
+                LocalMCPErrorCategory.DAX_TIMEOUT,
+                LocalMCPErrorCategory.DAX_ERROR,
+                LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                LocalMCPErrorCategory.DAX_PREVIEW_ROW_DATA_MISSING,
+                LocalMCPErrorCategory.DAX_OVERSIZED,
             ):
                 match = next((item for item in classified if item.category == category), None)
                 if match is not None:

@@ -211,6 +211,69 @@ def _make_svc(provider: Optional[FakeProvider] = None, max_repairs: int = 1) -> 
     return DeepSeekAnswerService(provider=provider, max_repairs=max_repairs)
 
 
+def _make_real_answer_inputs(
+    *,
+    columns: list[str] | None = None,
+    rows: list[list] | None = None,
+    measures: list[str] | None = None,
+) -> tuple[QueryPlan, QueryResult, SemanticModelSchema]:
+    """M2.4 Real 形状：Measure 名与 Local MCP 结果列名可不同。"""
+    effective_columns = columns or ["[Total Sales]"]
+    effective_rows = rows or [[123]]
+    schema = SemanticModelSchema(
+        name="Local Desktop Model",
+        key="local_desktop_model",
+        tables=[TableSchema(
+            name="Sales",
+            measures=[MeasureSchema(name="Total Sales", data_type="int64")],
+        )],
+    )
+    plan = QueryPlan(
+        normalized_question="总销售额是多少？",
+        semantic_model_key=schema.key,
+        measures=measures or ["Total Sales"],
+        dimensions=[],
+        filters=[],
+    )
+    result = QueryResult(
+        result_id="qr-real-answer",
+        semantic_model_key=schema.key,
+        columns=effective_columns,
+        rows=effective_rows,
+        row_count=len(effective_rows),
+        source_mode="real",
+    )
+    return plan, result, schema
+
+
+def _make_real_metric_answer(
+    result: QueryResult,
+    *,
+    source_field: str,
+    value: int | float = 123,
+    metric_name: str = "Total Sales",
+) -> AnswerSpec:
+    return AnswerSpec(
+        answer=f"总销售额为 {value}。",
+        summary=f"总销售额为 {value}。",
+        metrics={metric_name: value},
+        evidence={
+            "result_id": result.result_id,
+            "semantic_model_key": result.semantic_model_key,
+            "row_count": result.row_count,
+            "source_mode": result.source_mode,
+            "metric_provenance": {
+                metric_name: {
+                    "source_field": source_field,
+                    "aggregation": "direct",
+                }
+            },
+        },
+        semantic_model_key=result.semantic_model_key,
+        source_mode=result.source_mode,
+    )
+
+
 # ══════════════════════════════════════════════════════════════════
 # Answer 成功生成
 # ══════════════════════════════════════════════════════════════════
@@ -412,16 +475,26 @@ class TestSourceModeAuthenticity:
         assert len(provider.calls) == 1
 
     @pytest.mark.asyncio
-    async def test_real_query_result_rejected_in_m1_4(self):
-        """M1.4 拒绝 real QueryResult"""
+    async def test_real_query_result_yields_real_answer(self):
+        """M2.4 real QueryResult 可生成且保持 real AnswerSpec"""
         provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_answer(
+            source_mode="real",
+            evidence={
+                "result_id": "qr_test_001",
+                "semantic_model_key": "mock_sales_model",
+                "row_count": 3,
+                "source_mode": "real",
+            },
+        ))
         svc = _make_svc(provider)
         real_result = _make_query_result(source_mode="real")
-        with pytest.raises(AnswerGenerationError, match="M1.4"):
-            await svc.generate(
-                "测试", _make_intent(), _make_query_plan(), real_result, _make_schema(),
-            )
-        assert len(provider.calls) == 0
+        answer = await svc.generate(
+            "测试", _make_intent(), _make_query_plan(), real_result, _make_schema(),
+        )
+        assert answer.source_mode == "real"
+        assert answer.evidence["source_mode"] == "real"
+        assert len(provider.calls) == 1
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -815,6 +888,127 @@ class TestMetricsTraceability:
             await svc.generate(
                 "测试", _make_intent(), _make_query_plan(), _make_query_result(), _make_schema(),
             )
+
+    @pytest.mark.asyncio
+    async def test_real_measure_name_differs_from_result_column(self):
+        """QueryPlan Measure 是语义意图；source_field 逐字使用真实结果列。"""
+        plan, result, schema = _make_real_answer_inputs()
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_real_metric_answer(
+            result,
+            source_field="[Total Sales]",
+        ))
+
+        answer = await _make_svc(provider).generate(
+            "总销售额是多少？",
+            _make_intent(),
+            plan,
+            result,
+            schema,
+        )
+
+        provenance = answer.evidence["metric_provenance"]["Total Sales"]
+        assert provenance["source_field"] == result.columns[0]
+        system_prompt = provider.calls[0].messages[0]["content"]
+        user_prompt = provider.calls[0].messages[1]["content"]
+        assert "QueryPlan 指标名只表示语义意图" in system_prompt
+        assert '["[Total Sales]"]' in user_prompt
+        assert "source_field 唯一白名单" in user_prompt
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_real_source_field_remains_rejected(self):
+        """Prompt 加强不改变 Validator：非 QueryResult 列仍拒绝。"""
+        plan, result, schema = _make_real_answer_inputs()
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_real_metric_answer(
+            result,
+            source_field="Total Sales",
+        ))
+
+        with pytest.raises(AnswerGenerationError, match="field_not_found"):
+            await _make_svc(provider, max_repairs=0).generate(
+                "总销售额是多少？",
+                _make_intent(),
+                plan,
+                result,
+                schema,
+            )
+
+    @pytest.mark.asyncio
+    async def test_multi_column_result_uses_exact_value_column(self):
+        """多列结果的 metric provenance 可精确选择数值所在列。"""
+        plan, result, schema = _make_real_answer_inputs(
+            columns=["Products[Category]", "[Total Sales]"],
+            rows=[["Electronics", 123]],
+        )
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_real_metric_answer(
+            result,
+            source_field="[Total Sales]",
+        ))
+
+        answer = await _make_svc(provider).generate(
+            "Electronics 类别的销售额是多少？",
+            _make_intent(),
+            plan,
+            result,
+            schema,
+        )
+        assert (
+            answer.evidence["metric_provenance"]["Total Sales"]["source_field"]
+            == result.columns[1]
+        )
+
+    @pytest.mark.asyncio
+    async def test_real_metric_value_cannot_be_recalculated_or_invented(self):
+        """source_field 正确也不能使不来自 QueryResult 的数值通过。"""
+        plan, result, schema = _make_real_answer_inputs()
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_real_metric_answer(
+            result,
+            source_field="[Total Sales]",
+            value=124,
+        ))
+
+        with pytest.raises(AnswerGenerationError, match="mismatch"):
+            await _make_svc(provider, max_repairs=0).generate(
+                "总销售额是多少？",
+                _make_intent(),
+                plan,
+                result,
+                schema,
+            )
+
+    @pytest.mark.asyncio
+    async def test_mock_metric_provenance_exact_column_still_passes(self):
+        """M0-M1 Mock Answer 的精确列名契约不回归。"""
+        result = _make_query_result()
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_answer(
+            answer="华南销售额为4560000。",
+            metrics={"TotalSales": 4560000},
+            evidence={
+                "result_id": result.result_id,
+                "semantic_model_key": result.semantic_model_key,
+                "row_count": result.row_count,
+                "source_mode": result.source_mode,
+                "metric_provenance": {
+                    "TotalSales": {
+                        "source_field": "SalesAmount",
+                        "aggregation": "direct",
+                    }
+                },
+            },
+        ))
+
+        answer = await _make_svc(provider).generate(
+            "华南销售额是多少？",
+            _make_intent(),
+            _make_query_plan(),
+            result,
+            _make_schema(),
+        )
+        assert answer.metrics["TotalSales"] == 4560000
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1296,6 +1490,7 @@ class TestPromptRules:
         system = messages[0]["content"]
         assert "source_mode" in system
         assert "answer_validation_failed" in system
+        assert 'allowed_source_fields=["A"]' in system
 
 
 # ══════════════════════════════════════════════════════════════════

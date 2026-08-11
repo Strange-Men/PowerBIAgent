@@ -4,6 +4,18 @@
 
 ---
 
+## [M2.4] — 2026-08-11
+
+### 现有 TurnPipeline 接入真实 Power BI
+
+- 将 `LocalMCPPowerBIAdapter` 作为 Provider 注入既有 DeepSeekTurnService / TurnPipeline / ToolGateway，没有复制 Service、Pipeline 或工具网关
+- 落地真实 Schema 驱动的 QueryPlan Semantic Validation，以及 Measure/Dimension/Filter、group-by 和 `SUMMARIZECOLUMNS` 参数顺序的确定性 Layer 3 校验
+- 将 `source_mode=real` 传播到 Turn、Answer/Report、Snapshot、Replay 与 Trace；幂等 Replay 不重复执行 DeepSeek 或 Power BI
+- 真实跑通总销售额、总数量和带类别过滤的销售额三个自然语言 Case；Answer provenance 严格引用 QueryResult.columns
+- 保持 Real 失败不回退 Mock、Remote Deferred、Issue #124 Open；修复 stdio 异常组掩盖既有 DAX 错误分类的问题
+
+---
+
 ## [M2.3] — 2026-08-11
 
 ### 真实 DAX 执行与 QueryResult 标准化

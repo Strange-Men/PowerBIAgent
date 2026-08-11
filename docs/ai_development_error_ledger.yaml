@@ -3,7 +3,7 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-05 | M1.6.6
+# 最后更新：2026-08-11 | M2.4
 # ============================================================================
 
 schema_version: '1.0'
@@ -315,3 +315,66 @@ entries:
     action: mitigation
     version: M1.6.6
     reason: "修复最终报告，错误SHA: dee16357c35dcb7864e1fe3be4337e3d27dd4c49，真实SHA: dee1635d55199b033849a28d047e05a2d30c8fb6"
+- id: ERR-240-001
+  title: Filter 字段被错误提升为 Group-by 且 SUMMARIZECOLUMNS 参数乱序
+  category: ERR
+  first_detected_version: M2.4
+  symptom: QueryPlan dimensions 为空且只有筛选字段时，DeepSeek 仍把筛选列加入 group-by，并把 FILTER 参数放在 name/expression 对之后；旧 Layer 3 只检查字段是否出现，错误 DAX 到达 Power BI 后才失败
+  local_evidence: M2.4 第三个真实 Chat Case 的本地临时 Trace；QueryPlan 正确但 DAX 在 query_result_error 阶段被 Power BI 拒绝
+  authoritative_sources:
+  - title: M2.4 DAX / QueryPlan 一致性契约
+    reason: QueryPlan.dimensions 是唯一 group-by 来源，Filter 字段只能作为筛选条件
+  root_cause: DAX Prompt 未区分 Dimension 与 Filter 的粒度职责，Layer 3 缺少 group-by 集合和 SUMMARIZECOLUMNS 参数阶段检查
+  failed_attempts:
+  - 仅检查 Measure/Dimension/Filter 名称是否出现在 DAX，无法识别额外 group-by 与 filter-after-pair
+  repair_attempt_count: 1
+  final_fix: Prompt 明确 Dimension/Filter 与 SUMMARIZECOLUMNS 顺序；现有 ValidationService 增加引号和嵌套分隔符感知的最小参数检查，拒绝未计划 group-by、filter-after-pair 和不成对 name/expression
+  regression_tests:
+  - backend/tests/unit/test_dax_service.py
+  - backend/tests/unit/test_validation_fixes.py
+  prohibited_patterns:
+  - 因字段存在于 QueryPlan.filters 就把它加入 group-by
+  - SUMMARIZECOLUMNS 的 filter table 参数位于 name/expression 对之后
+  prevention_rules:
+  - 只有 QueryPlan.dimensions 可以成为 group-by
+  - Layer 3 必须在调用 Power BI 前拒绝明显非法 SUMMARIZECOLUMNS 参数结构
+  related_adr: ADR-005
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-11'
+    action: discovered
+    version: M2.4
+  - date: '2026-08-11'
+    action: mitigation
+    version: M2.4
+- id: ERR-240-002
+  title: stdio 关闭异常组掩盖已有 DAX 错误分类
+  category: ERR
+  first_detected_version: M2.4
+  symptom: Local MCP 返回 is_error=true 的明确 DAX Execute 错误后，stdio 清理形成 ExceptionGroup；分类器未保留组内 DAX_ERROR，最终 QueryResult 被误映射为 malformed_response
+  local_evidence: 固定 Filter DAX 诊断中 client_error_category=BUG、client_error_type=exception_group，原始 tool result 同时明确 is_error=true
+  authoritative_sources:
+  - title: PowerBIAgent Local MCP 错误契约
+    reason: 已分类的 DAX 错误不得在传输清理阶段降级为未知 malformed 响应
+  root_cause: ExceptionGroup 优先级只保留网络、前置、协议和启动类错误，遗漏 DAX 安全错误类别
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: ExceptionGroup 分类保留嵌套的 DAX permission、timeout、error、malformed、preview missing 与 oversized 类别；未修改 QueryResult parser
+  regression_tests:
+  - backend/tests/unit/test_powerbi.py
+  prohibited_patterns:
+  - 把包含 LocalMCPConnectionError 的 ExceptionGroup 无条件降级为 BUG
+  prevention_rules:
+  - 传输清理异常不得掩盖已确定的业务错误类别
+  - MCP is_error=true 不得当作空结果或 malformed success
+  related_adr: ADR-007
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-11'
+    action: discovered
+    version: M2.4
+  - date: '2026-08-11'
+    action: mitigation
+    version: M2.4

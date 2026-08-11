@@ -250,6 +250,12 @@ class TestSchemaValidation:
         assert "SUM('Sales'[SalesAmount])" not in text
         assert "expression" not in text.lower()
 
+    def test_schema_text_marks_authoritative_key_and_exact_object_names(self):
+        """Schema Prompt 应把 key 和对象名标为逐字复制字段。"""
+        text = render_schema_text(build_schema_view(_make_schema()))
+        assert "semantic_model_key（必须原样复制到 QueryPlan）" in text
+        assert "包括空格和大小写" in text
+
 
 # ══════════════════════════════════════════════════════════════════
 # 一次格式修复
@@ -442,6 +448,31 @@ class TestPromptRules:
         )
         for msg in messages:
             assert "sk-" not in msg["content"]
+
+    def test_prompt_has_no_mock_specific_grounding_example(self):
+        """Real Schema 的 QueryPlan Prompt 不应被 Mock Key/对象名诱导。"""
+        messages = build_query_plan_messages(
+            "总销售额是多少？", "data_question", "schema text",
+            IntentContextSnapshot(),
+        )
+        system = messages[0]["content"]
+        assert "mock_sales_model" not in system
+        assert "TotalSales" not in system
+        assert "semantic_model_key 必须逐字等于" in system
+
+    def test_prompt_repair_preserves_measure_and_column_identity(self):
+        """Semantic repair 不得放宽 Measure/Column 身份边界。"""
+        messages = build_query_plan_messages(
+            "Electronics 类别的销售额是多少？",
+            "data_question",
+            "schema text",
+            IntentContextSnapshot(),
+            repair_error_code="query_plan_invalid_measure",
+            validation_errors=["invalid object"],
+        )
+        repair = messages[0]["content"]
+        assert "不得使用数值列" in repair
+        assert "不得使用度量值" in repair
 
 
 # ══════════════════════════════════════════════════════════════════

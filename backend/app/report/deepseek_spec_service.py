@@ -79,8 +79,6 @@ class DeepSeekReportSpecService:
 
         if query_result.source_mode not in ("mock", "real"):
             raise ReportSpecGenerationError("非法的 source_mode")
-        if query_result.source_mode != "mock":
-            raise ReportSpecGenerationError("M1.4 仅支持 mock QueryResult")
 
         # 模板权限边界
         # None → 使用默认白名单；空集合 → 无权限

@@ -1,4 +1,4 @@
-"""FastAPI 应用 — M1.5
+"""FastAPI 应用 — M2.4
 
 启动命令：
     python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
@@ -6,7 +6,7 @@
 M1.5 更新：
 - 根据 Settings 条件初始化 MockTurnService 或 DeepSeekTurnService
 - 存储为 app.state.turn_service（通用名称）
-- DeepSeek 无 Key 或 Remote MCP 模式不初始化 Service
+- DeepSeek 无 Key、Local 配置不完整或 Remote MCP 模式不初始化 Service
 - shutdown 关闭 DeepSeek httpx Client（如有）
 """
 
@@ -20,6 +20,8 @@ from backend.app.application.mock_turn_service import MockTurnService
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings, get_settings
 from backend.app.harness.models import HarnessConfig
 from backend.app.memory.repository import InMemoryMemoryRepository
+from backend.app.powerbi.base import PowerBIAdapter
+from backend.app.powerbi.local_mcp import LocalMCPPowerBIAdapter
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.mock import MockReportRenderer
 
@@ -31,7 +33,8 @@ async def lifespan(app: FastAPI):
     startup: 根据 Settings 条件初始化 TurnService
         - Mock+Mock: MockTurnService
         - DeepSeek+Mock (Key 已配置): DeepSeekTurnService
-        - DeepSeek+Mock (Key 未配置): turn_service=None → Health 503
+        - DeepSeek+Local (配置完整): 复用 DeepSeekTurnService + TurnPipeline
+        - DeepSeek 配置不完整: turn_service=None → Health 503
         - Remote MCP: turn_service=None → Health 503
 
     shutdown: 清理资源（关闭 DeepSeek httpx Client 等）
@@ -55,12 +58,15 @@ async def lifespan(app: FastAPI):
             config=harness_config,
         )
 
-    elif settings.llm_mode == LLMMode.DEEPSEEK and settings.powerbi_mode == PowerBIMode.MOCK:
-        if not settings.is_deepseek_configured:
-            # Key 未配置：不初始化 Service，Health 返回 503
+    elif (
+        settings.llm_mode == LLMMode.DEEPSEEK
+        and settings.powerbi_mode in {PowerBIMode.MOCK, PowerBIMode.LOCAL_MCP}
+    ):
+        if not settings.is_real_ready:
+            # DeepSeek 或 Local 配置不完整：不初始化 Service，Health 返回 503
             turn_service = None
         else:
-            # DeepSeek + Mock: 真实 LLM + Mock Power BI
+            # DeepSeek + Mock / Local: 只替换 PowerBIAdapter Provider。
             from backend.app.application.deepseek_turn_service import (
                 DeepSeekTurnService,
             )
@@ -70,10 +76,23 @@ async def lifespan(app: FastAPI):
             deepseek_provider = registry.get("deepseek")
             _deepseek_provider = deepseek_provider
 
+            powerbi_adapter: PowerBIAdapter
+            if settings.powerbi_mode == PowerBIMode.LOCAL_MCP:
+                powerbi_adapter = LocalMCPPowerBIAdapter(
+                    executable=settings.powerbi_local_mcp_executable,
+                    package=settings.powerbi_local_mcp_package,
+                    semantic_model_key=settings.powerbi_local_semantic_model_key,
+                    readonly=settings.powerbi_local_mcp_readonly,
+                    timeout=float(settings.request_timeout_seconds),
+                    max_retries=settings.max_powerbi_retries,
+                )
+            else:
+                powerbi_adapter = MockPowerBIAdapter()
+
             turn_service = DeepSeekTurnService(
                 memory_repo=InMemoryMemoryRepository(),
                 llm_provider=deepseek_provider,
-                powerbi_adapter=MockPowerBIAdapter(),
+                powerbi_adapter=powerbi_adapter,
                 report_renderer=MockReportRenderer(),
                 settings=settings,
                 config=harness_config,

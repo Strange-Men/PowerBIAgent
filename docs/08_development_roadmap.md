@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M2.3 真实 DAX 执行与 QueryResult 标准化完成候选
+> **状态：** M2.4 现有 TurnPipeline 接入真实 Power BI 完成候选；M2.5 下一阶段
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -51,8 +51,8 @@ M2 真实 Power BI MCP 与数据问答
   M2.1 Local MCP 最小真实连接验证                ✅ 已完成候选
   M2.2 真实 Semantic Model Schema 接入          ✅ 已完成候选
   M2.3 真实 DAX 与 QueryResult 标准化            ✅ 已完成候选
-  M2.4 接入现有 TurnPipeline                    ⬜ 下一阶段
-  M2.5 真实全链路验收与封板候选                  ⬜ 未开始
+  M2.4 接入现有 TurnPipeline                    ✅ 已完成候选
+  M2.5 真实全链路验收与封板候选                  ⬜ 下一阶段
 
 MVP 功能阶段 (后续)
   M3 报表生成闭环                   ⬜
@@ -527,13 +527,13 @@ MVP 功能阶段 (后续)
 
 ### M2.4｜接入现有 TurnPipeline
 
-**状态：** ⬜ 下一阶段
+**状态：** ✅ 已完成候选
 
-在现有 TurnPipeline 接通 DeepSeek + Local Real Power BI；Service 仍依赖 PowerBIAdapter 抽象，`source_mode=real` 和 Snapshot 正确传播；禁止复制 Real Pipeline 或静默回退。属于“自然语言真的能查 Power BI”。
+已在现有 TurnPipeline 接通 DeepSeek + Local Real Power BI；Service 仍依赖 PowerBIAdapter 抽象，ToolGateway 仍是唯一业务工具入口，没有复制 Pipeline/Service。Layer 2/3 语义校验、Answer provenance、`source_mode=real` 的 Snapshot/Replay 传播与 Real 失败不回退均已验证；三个受控真实自然语言 Case 成功。属于“自然语言真的能查 Power BI”。
 
 ### M2.5｜真实全链路验收与 M2 封板候选
 
-**状态：** ⬜ 未开始
+**状态：** ⬜ 下一阶段
 
 验证 Schema 真实性、DAX 业务语义与执行、QueryResult、Answer、幂等重放、Golden、Trace 脱敏、Mock/CI 回归与 Harness/架构无偏移。完成后停止，等待仓库审计，不自动创建后续 M2 版本。
 

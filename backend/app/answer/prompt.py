@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import json
+
 from backend.app.answer.context import AnswerContext
 
 
@@ -28,6 +30,10 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的回答生成器。
 12. evidence 必须绑定本次 QueryResult（result_id、semantic_model_key、row_count、source_mode）
 13. metrics 非空时，evidence 必须包含 metric_provenance，为每个 metric 声明 source_field 和 aggregation
 14. AnswerSpec 不承载完整表格或图表数据
+15. source_field 的唯一事实来源是 QueryResult.columns，必须从提供的 JSON 白名单中逐字复制一项
+16. QueryPlan 指标名只表示语义意图，不保证等于 QueryResult 列名，不得直接用作 source_field
+17. 不得翻译、改名、去掉方括号、改变大小写或根据业务别名推导 source_field
+18. 输出 metric 前先从 QueryResult 数据行确定数值所在的确切列，再复制该列的完整列名
 
 ## AnswerSpec JSON Schema
 
@@ -79,6 +85,8 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的回答生成器。
 **metric_provenance**（metrics 非空时必填）：
 - 为每个 metric 提供结构化来源记录
 - 格式：{"<metric_name>": {"source_field": "<QueryResult列名>", "aggregation": "direct|sum|avg|count|min|max"}}
+- source_field 只能是“source_field 唯一白名单” JSON 数组中的完整字符串，必须逐字相等
+- 不得使用 QueryPlan measures 中的名称替代真实结果列名
 - direct 表示数值直接来自该列中某个值
 - sum/avg/count/min/max 表示对该列数值的确定性聚合
 - 每个 metric 都必须有对应条目
@@ -114,13 +122,18 @@ USER_MESSAGE_TEMPLATE = """请根据以下数据回答用户问题。
 ## 数据上下文
 - result_id: {result_id}
 - semantic_model_key: {semantic_model_key}
-- 列名: {columns}
+- QueryResult.columns: {columns}
 - 总行数: {row_count}
 - 数据是否被截断: {truncated}
 - 数据来源模式: {source_mode}
 - 上下文是否因超限截断: {input_truncated}
 
-### 查询指标
+### source_field 唯一白名单（JSON）
+{source_field_allowlist}
+
+source_field 必须逐字复制上述数组中的完整元素；不得删除 `[`/`]`、表名、空格或其他字符。
+
+### QueryPlan 语义指标（不是 source_field 白名单）
 {measures_text}
 
 ### 查询维度
@@ -153,9 +166,12 @@ REPAIR_INSTRUCTION = """上一次输出未通过 AnswerSpec 验证。
 8. metrics 非空时 evidence 必须包含 metric_provenance，为每个 metric 声明 source_field 和 aggregation
 9. metrics 数值必须直接从数据行可验证
 10. 空数据不得虚构 metrics
+11. source_field 只能逐字复制 allowed_source_fields JSON 数组中的一项
+12. 不得使用 QueryPlan 指标名、业务别名或去掉方括号的名称替代真实列名
 
 validation_error_code={error_code}
-illegal_fields={illegal_fields}"""
+illegal_fields={illegal_fields}
+allowed_source_fields={allowed_source_fields}"""
 
 
 # ── 渲染函数 ──
@@ -191,6 +207,7 @@ def build_answer_messages(
         messages 列表
     """
     messages: list[dict[str, str]] = []
+    columns_json = json.dumps(context.columns, ensure_ascii=False)
 
     if repair_error_code is not None:
         messages.append({
@@ -198,6 +215,7 @@ def build_answer_messages(
             "content": SYSTEM_PROMPT + "\n\n" + REPAIR_INSTRUCTION.format(
                 error_code=repair_error_code,
                 illegal_fields=illegal_fields,
+                allowed_source_fields=columns_json,
             ),
         })
     else:
@@ -217,7 +235,8 @@ def build_answer_messages(
         user_input=context.user_input,
         result_id=context.result_id,
         semantic_model_key=context.semantic_model_key,
-        columns=", ".join(context.columns),
+        columns=columns_json,
+        source_field_allowlist=columns_json,
         row_count=context.row_count,
         truncated=str(context.truncated),
         source_mode=context.source_mode,

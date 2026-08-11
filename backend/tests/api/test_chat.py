@@ -14,9 +14,25 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from pydantic import BaseModel
 
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
+from backend.app.intent.models import IntentSpec, IntentType
+from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
+from backend.app.llm.registry import LLMProviderRegistry
 from backend.app.main import create_app
+from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
+from backend.app.schemas.data_contracts import (
+    AnswerSpec,
+    ColumnSchema,
+    DAXRequest,
+    MeasureSchema,
+    PowerBIError,
+    QueryPlan,
+    QueryResult,
+    SemanticModelSchema,
+    TableSchema,
+)
 
 
 @pytest_asyncio.fixture
@@ -856,3 +872,259 @@ class TestChatM101Concurrent:
         statuses = {ra.status_code, rb.status_code}
         assert 200 in statuses
         assert 409 in statuses
+
+
+# ══════════════════════════════════════════════════════════════════
+# M2.4 DeepSeek Provider Fake + Local Adapter Fake 正式组合
+# ══════════════════════════════════════════════════════════════════
+
+
+class _M24ScriptedDeepSeekProvider(LLMProvider):
+    def __init__(self) -> None:
+        self.calls: list[LLMRequest] = []
+
+    @property
+    def provider_name(self) -> str:
+        return "deepseek"
+
+    @property
+    def is_mock(self) -> bool:
+        return False
+
+    async def generate(
+        self,
+        request: LLMRequest,
+        output_type: type[BaseModel],
+    ) -> LLMResponse:
+        self.calls.append(request)
+        if request.task == LLMTask.INTENT_RECOGNITION:
+            structured = IntentSpec(
+                intent=IntentType.DATA_QUESTION,
+                confidence=0.99,
+                normalized_question="总销售额是多少？",
+                detected_measures=["Total Sales"],
+            )
+        elif request.task == LLMTask.QUERY_PLAN:
+            structured = QueryPlan(
+                normalized_question="总销售额是多少？",
+                semantic_model_key="local_desktop_model",
+                measures=["Total Sales"],
+            )
+        elif request.task == LLMTask.DAX:
+            structured = DAXRequest(
+                semantic_model_key="local_desktop_model",
+                dax='EVALUATE ROW("Total Sales", [Total Sales])',
+            )
+        elif request.task == LLMTask.ANSWER:
+            structured = AnswerSpec(
+                answer="总销售额为 100。",
+                summary="总销售额为 100。",
+                metrics={"Total Sales": 100},
+                evidence={
+                    "result_id": "qr-m24-real",
+                    "semantic_model_key": "local_desktop_model",
+                    "row_count": 1,
+                    "source_mode": "real",
+                    "metric_provenance": {
+                        "Total Sales": {
+                            "source_field": "[Total Sales]",
+                            "aggregation": "direct",
+                        }
+                    },
+                },
+                semantic_model_key="local_desktop_model",
+                source_mode="real",
+            )
+        else:
+            raise AssertionError(f"unexpected LLM task: {request.task}")
+        return LLMResponse(
+            content="{}",
+            structured=structured,
+            model="fake-deepseek",
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        )
+
+
+class _M24FakeLocalPowerBIAdapter(PowerBIAdapter):
+    def __init__(self, **_: object) -> None:
+        self.schema_calls = 0
+        self.dax_calls = 0
+
+    @property
+    def provider_name(self) -> str:
+        return "local_mcp"
+
+    @property
+    def is_mock(self) -> bool:
+        return False
+
+    async def health_check(self) -> bool:
+        raise AssertionError("configuration health must not probe Local MCP")
+
+    async def get_semantic_model_schema(self, semantic_model_key: str) -> SemanticModelSchema:
+        self.schema_calls += 1
+        assert semantic_model_key == "local_desktop_model"
+        return SemanticModelSchema(
+            name="Local Desktop Model",
+            key="local_desktop_model",
+            tables=[TableSchema(
+                name="Sales",
+                columns=[ColumnSchema(name="Category", data_type="string")],
+                measures=[
+                    MeasureSchema(name="Total Sales", data_type="decimal"),
+                    MeasureSchema(name="Total Quantity", data_type="int64"),
+                ],
+            )],
+        )
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.dax_calls += 1
+        return QueryResult(
+            result_id="qr-m24-real",
+            semantic_model_key=request.semantic_model_key,
+            columns=["[Total Sales]"],
+            rows=[[100]],
+            row_count=1,
+            source_mode="real",
+            request_id=request.request_id,
+        )
+
+    async def normalize_result(self, raw: object) -> QueryResult:
+        assert isinstance(raw, QueryResult)
+        return raw
+
+    async def normalize_error(self, raw: object) -> PowerBIError:
+        if isinstance(raw, PowerBIError):
+            return raw
+        return PowerBIError(type="unknown", message="normalized")
+
+
+class _M24PreviewMissingRowsAdapter(_M24FakeLocalPowerBIAdapter):
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.dax_calls += 1
+        return QueryResult(
+            semantic_model_key=request.semantic_model_key,
+            source_mode="real",
+            request_id=request.request_id,
+            error=PowerBIError(
+                type="preview_row_data_missing",
+                message="Power BI Preview response did not include row data",
+            ),
+        )
+
+
+class _M24ConnectionFailureAdapter(_M24FakeLocalPowerBIAdapter):
+    async def get_semantic_model_schema(self, semantic_model_key: str) -> SemanticModelSchema:
+        self.schema_calls += 1
+        raise PowerBIAdapterError(
+            "Local MCP connection failed",
+            provider="local_mcp",
+            retryable=False,
+            error_type="connection_error",
+        )
+
+
+def _patch_m24_local_composition(monkeypatch, adapter_type):
+    import backend.app.llm.factory as llm_factory
+    import backend.app.main as main_module
+
+    provider = _M24ScriptedDeepSeekProvider()
+    registry = LLMProviderRegistry()
+    registry.register("deepseek", provider, set_default=True)
+    monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+    monkeypatch.setattr(main_module, "LocalMCPPowerBIAdapter", adapter_type)
+    fake_key = "test-key-not-real"
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        deepseek_api_key=fake_key,
+    )
+    return main_module.create_app(settings=settings), provider
+
+
+class TestM24DeepSeekLocalChat:
+    @pytest.mark.asyncio
+    async def test_local_chat_and_replay_use_one_pipeline_without_reexecution(self, monkeypatch):
+        app, provider = _patch_m24_local_composition(
+            monkeypatch, _M24FakeLocalPowerBIAdapter
+        )
+        transport = ASGITransport(app=app)
+        payload = {
+            "message": "总销售额是多少？",
+            "conversation_id": "conv-m24-local",
+            "request_id": "req-m24-local",
+        }
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            adapter = service.powerbi
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                first = await c.post("/api/v1/chat", json=payload)
+                replay = await c.post("/api/v1/chat", json=payload)
+
+            assert first.status_code == 200
+            first_data = first.json()
+            assert first_data["terminal_state"] == "completed"
+            assert first_data["source_mode"] == "real"
+            assert first_data["powerbi_mode"] == "local_mcp"
+            assert first_data["tool_sequence"] == [
+                "get_semantic_model_schema",
+                "execute_dax",
+            ]
+            assert replay.status_code == 200
+            assert replay.json()["idempotent_replay"] is True
+            assert replay.json()["source_mode"] == "real"
+            assert len(provider.calls) == 4
+            assert adapter.schema_calls == 1
+            assert adapter.dax_calls == 1
+            query_plan_prompt = next(
+                call for call in provider.calls if call.task == LLMTask.QUERY_PLAN
+            )
+            assert "Total Sales" in str(query_plan_prompt.messages)
+            assert "local_desktop_model" in str(query_plan_prompt.messages)
+            answer_prompt = next(
+                call for call in provider.calls if call.task == LLMTask.ANSWER
+            )
+            assert '["[Total Sales]"]' in str(answer_prompt.messages)
+
+    @pytest.mark.asyncio
+    async def test_preview_missing_rows_is_controlled_and_never_falls_back(self, monkeypatch):
+        app, provider = _patch_m24_local_composition(
+            monkeypatch, _M24PreviewMissingRowsAdapter
+        )
+        transport = ASGITransport(app=app)
+        async with app.router.lifespan_context(app):
+            adapter = app.state.turn_service.powerbi
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.post("/api/v1/chat", json={
+                    "message": "总销售额是多少？",
+                    "request_id": "req-m24-preview-failure",
+                })
+            data = response.json()
+            assert response.status_code == 200
+            assert data["terminal_state"] == "tool_failed"
+            assert data["error_type"] == "preview_row_data_missing"
+            assert data["source_mode"] == "real"
+            assert len(provider.calls) == 3
+            assert adapter.dax_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_local_connection_failure_is_controlled_without_mock_fallback(self, monkeypatch):
+        app, provider = _patch_m24_local_composition(
+            monkeypatch, _M24ConnectionFailureAdapter
+        )
+        transport = ASGITransport(app=app)
+        async with app.router.lifespan_context(app):
+            adapter = app.state.turn_service.powerbi
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.post("/api/v1/chat", json={
+                    "message": "总销售额是多少？",
+                    "request_id": "req-m24-connection-failure",
+                })
+            data = response.json()
+            assert response.status_code == 200
+            assert data["terminal_state"] == "tool_failed"
+            assert data["source_mode"] == "real"
+            assert adapter.schema_calls == 1
+            assert adapter.dax_calls == 0
+            assert len(provider.calls) == 1

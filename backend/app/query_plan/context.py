@@ -25,6 +25,8 @@ def build_schema_view(schema: SemanticModelSchema) -> dict[str, Any]:
     """
     tables: list[dict[str, Any]] = []
     for t in schema.tables:
+        if t.is_hidden or t.is_system_managed:
+            continue
         columns = [
             {"name": c.name, "data_type": c.data_type}
             for c in t.columns
@@ -33,6 +35,7 @@ def build_schema_view(schema: SemanticModelSchema) -> dict[str, Any]:
         measures = [
             {"name": m.name}
             for m in t.measures
+            if not m.is_hidden
         ]
         hierarchies = [
             {"name": h.name, "levels": h.levels}
@@ -55,7 +58,12 @@ def build_schema_view(schema: SemanticModelSchema) -> dict[str, Any]:
 def render_schema_text(schema_view: dict[str, Any]) -> str:
     """将 Schema 视图渲染为纯文本（供 Prompt 使用）"""
     lines: list[str] = []
-    lines.append(f"语义模型：{schema_view['model_name']} ({schema_view['model_key']})")
+    lines.append(f"语义模型名称：{schema_view['model_name']}")
+    lines.append(
+        "semantic_model_key（必须原样复制到 QueryPlan）："
+        f"{schema_view['model_key']}"
+    )
+    lines.append("以下表、列和度量值名称必须按照 Schema 原样复制，包括空格和大小写。")
     lines.append("")
 
     for table in schema_view["tables"]:

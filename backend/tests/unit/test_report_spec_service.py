@@ -160,6 +160,21 @@ class TestReportSpecGeneration:
         assert r.data_source == "mock_sales_model"
         assert r.source_mode == "mock"
 
+    @pytest.mark.asyncio
+    async def test_real_query_result_yields_real_report_spec(self):
+        p = FakeProvider(is_mock=False)
+        p.enqueue_success(_make_spec(source_mode="real"))
+        r = await _make_svc(p).generate(
+            "周报",
+            _make_intent(),
+            _make_qp(),
+            _make_qr(source_mode="real"),
+            _make_schema(),
+            template_key="sales_weekly",
+        )
+        assert r.source_mode == "real"
+        assert len(p.calls) == 1
+
 
 # ═══════════════════════════════════════════════
 # 入口边界

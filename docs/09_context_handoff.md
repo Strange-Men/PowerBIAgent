@@ -2,7 +2,7 @@
 
 > **当前状态交接入口；Claude / Codex / 其他代码 Agent 必须先从仓库根目录 `AGENTS.md` 进入。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-11 | M2.3 真实 DAX 执行与 QueryResult 标准化完成候选**
+> **最后更新：2026-08-11 | M2.4 现有 TurnPipeline 接入真实 Power BI 完成候选**
 
 ---
 
@@ -12,13 +12,13 @@
 
 ## 当前阶段
 
-**M2.3 真实 DAX 执行与 QueryResult 标准化** — ✅ 已完成候选。
+**M2.4 现有 TurnPipeline 接入真实 Power BI** — ✅ 已完成候选；M2 尚未正式封板。
 
-> 当前 Demo 通过既有 ToolGateway → PowerBIAdapter → Local MCP 边界真实读取 Schema、执行 `dax_query_operations Execute` 并标准化 Power BI Desktop row data。实机协议为 `2025-11-25`；固定 ROW 值 1 与 `Total Sales` / `Total Quantity` 实际数值均验证成功，结果为 `source_mode=real` 的 QueryResult。未调用 DeepSeek、未接完整 Chat、未将 Local Provider 注入 TurnPipeline；Remote 生产化 Deferred。
+> 当前 Demo 已复用既有 DeepSeekTurnService、TurnPipeline 与 ToolGateway，真实跑通自然语言 → DeepSeek → Intent → SemanticModelSchema → QueryPlan → DAX → Local MCP → Power BI Desktop → QueryResult → Answer。三个受控业务 Case 均成功；`source_mode=real` 已传播至 Snapshot/Replay，幂等 Replay 不重复调用 LLM/PBI。Remote 生产化继续 Deferred。
 
 ## 上一轮
 
-**M2.2** — 真实 Semantic Model Schema 接入（Commit `caf21ebcd9650599b39374d5a815e6f966b38482`，远程 CI Run #31465570747 success）。
+**M2.3** — 真实 DAX 执行与 QueryResult 标准化（Commit `20c2b3ec01273f6a207947addc635993e99431b3`，远程 CI Run #31468672485 success）。
 
 ## 固定封板 Tag
 
@@ -26,25 +26,25 @@
 
 ## 下一动作
 
-进入 **M2.4 接入现有 TurnPipeline**。只允许把现有 Local Adapter 注入既有组合根并在现有 QueryPlan → DAX → ToolGateway → QueryResult → Answer / Snapshot 链传播 `source_mode=real`；不得复制 Real Service / Pipeline，不得静默回退 Mock。Issue #124 仍为 Open，虽然当前 beta.12 + mcp 2.0.0 + Desktop 实机未复现，后续 Preview 版本变更仍需重新 Smoke。
+进入 **M2.5 真实业务 Golden / Bad Case / 回归验收与 M2 封板候选**。不再新增主架构，不实现 Remote/M3/M4/M5；只扩展真实业务验收并复核当前 Layer 2/3、QueryResult、Answer、Replay、Trace 与 Mock/CI 回归。Issue #124 仍为 Open，当前实机未复现不代表官方已修复。
 
 以后 Claude / Codex / 其他代码 Agent 均以根目录 `AGENTS.md` 为仓库级入口。
 
 ## 当前真实能力
 
 - **LLM:** DeepSeek（真实 API）+ Mock（确定性测试）
-- **Power BI:** Mock 完整可用；Local MCP Server 与 Power BI Desktop 已真实连接；Schema、DAX Execute 与 QueryResult 已真实接入；Remote MCP 未实现并因管理员条件 Deferred
+- **Power BI:** Mock 完整可用；Local MCP + Power BI Desktop 的 Schema、DAX、QueryResult 与 DeepSeek Chat 已真实接入；Remote MCP 未实现并因管理员条件 Deferred
 - **管线:** 确定性 TurnPipeline（ADR-005），Mock/DeepSeek 共享执行骨架
-- **能力:** 意图识别 → QueryPlan → DAX → Answer/ReportSpec，幂等重放，请求指纹冲突检测
+- **能力:** 真实 Schema Grounding → QueryPlan Layer 2 → DAX Layer 3 → Answer/ReportSpec，幂等重放，请求指纹冲突检测
 - **API:** Health 200/503、Chat 可用/不可用，Mock/DeepSeek 模式切换
-- **源模式:** Local QueryResult 已为 `source_mode=real`；Answer / Snapshot 全链传播延后 M2.4，当前 Chat 仍使用 Mock Power BI
+- **源模式:** Local QueryResult、Turn、Answer/Report、Snapshot、Replay 均传播 `source_mode=real`
 
 ## 当前技术边界
 
 - ADR-005 负责 TurnPipeline 总体架构；ADR-006 负责 Remote 生产化；ADR-007 负责当前 Local Demo 路径，三者均 accepted
-- M2.3 只允许 Adapter 内部使用 `connection_operations`、五类 Schema 工具的 `List` / `Get` 与 `dax_query_operations Execute`；业务层仍只有 Schema 与 DAX Execute 两类抽象能力
+- Adapter 内部使用 `connection_operations`、五类 Schema 工具的 `List` / `Get` 与 `dax_query_operations Execute`；业务层仍只有 Schema 与 DAX Execute 两类抽象能力
 - 任何 Local / Remote MCP SDK 只能位于 PowerBIAdapter 边界之后；Service/API/LLM 不得直接调用 MCP；Real 失败不得回退 Mock
-- M2.1—M2.3 不接完整 Chat；M2.4 才接入现有 TurnPipeline。会话持久化属 M4，报表正式渲染属 M3，React 属 M5
+- M2.4 只替换 Provider 并接入现有 TurnPipeline；会话持久化属 M4，报表正式渲染属 M3，React 属 M5
 
 ## 运行命令
 
@@ -64,6 +64,9 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\powerbi_local_mcp_schema_
 # M2.3 Local MCP 人工 DAX Smoke（先打开测试 PBIX）
 D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\powerbi_local_mcp_dax_smoke.py
 
+# M2.4 DeepSeek + Local Power BI Chat Smoke（先打开测试 PBIX，需本地 DeepSeek 配置）
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\deepseek_local_powerbi_chat_smoke.py
+
 # 人工验收 Smoke（需 .env 中 DEEPSEEK_API_KEY）
 D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\deepseek_chat_smoke.py
 
@@ -76,8 +79,7 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ## 未完成事项
 
-- M2.4: 接入现有 TurnPipeline（下一阶段）
-- M2.5: 真实全链路验收与封板候选（尚未开始）
+- M2.5: Business Golden、Bad Case、回归验收与 M2 封板候选（下一阶段）
 - M3: 报表正式渲染管线、报表资源 ID
 - M4: 会话持久化、搜索、最近对话
 - M5: React 前端
@@ -94,6 +96,7 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ## 近期变更摘要
 
+- M2.4: Local Provider 注入现有 DeepSeekTurnService / TurnPipeline；Layer 2/3、Answer provenance、real Snapshot/Replay 与三个真实自然语言 Case 完成候选
 - M2.3: 通过 ToolGateway → LocalMCPPowerBIAdapter 真实执行固定 DAX 并获取 row data；QueryResult、错误与截断边界已标准化，当前实机未复现 Issue #124
 - M2.2: 通过 ToolGateway → LocalMCPPowerBIAdapter 单次只读会话真实读取并标准化 Schema；Measure 与基础模型关系已可用于 Semantic Grounding
 - M2.1: Demo 路径调整为 Local MCP + Power BI Desktop；新增 ADR-007、Local Adapter / stdio Client 与只读安全边界；Remote ADR-006 完整保留
@@ -110,4 +113,4 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ---
 
-*最后更新：2026-08-11 | M2.3 真实 DAX 执行与 QueryResult 标准化完成候选*
+*最后更新：2026-08-11 | M2.4 现有 TurnPipeline 接入真实 Power BI 完成候选；下一阶段 M2.5*

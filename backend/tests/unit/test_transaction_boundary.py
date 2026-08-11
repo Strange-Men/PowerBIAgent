@@ -156,6 +156,13 @@ class TestServiceSourceStaticGate:
             f"{rel_path} 含 self.memory_repo 实例字段赋值"
         )
 
+    def test_deepseek_service_depends_on_powerbi_adapter_abstraction(self):
+        source = _read_source(
+            _project_root() / "backend/app/application/deepseek_turn_service.py"
+        )
+        assert "powerbi_adapter: PowerBIAdapter" in source
+        assert "powerbi_adapter: MockPowerBIAdapter" not in source
+
 
 # ━━━━━━━━━━━━━━━━━ Snapshot 调用次数测试 ━━━━━━━━━━━━━━━━━
 
@@ -377,6 +384,68 @@ class TestSnapshotStoreCallers:
                     pytest.fail(
                         f"{rel} 含 snapshot_store.save( 调用，只有 TurnPipeline 允许: {code_lines[0].strip()}"
                     )
+
+
+class TestM24RealSourceModeSnapshotReplay:
+    """Real source_mode 由 TurnPipeline 单写入并原样重放。"""
+
+    @pytest.mark.asyncio
+    async def test_real_snapshot_and_replay_preserve_source_without_reexecution(self):
+        pipeline = TurnPipeline(
+            config=HarnessConfig(),
+            memory_repo=InMemoryMemoryRepository(),
+        )
+        execution_count = 0
+
+        async def real_do_execute(**kwargs: Any) -> dict[str, Any]:
+            nonlocal execution_count
+            execution_count += 1
+            return pipeline.build_result(
+                request_id=kwargs["effective_req_id"],
+                conversation_id=kwargs["effective_conv_id"],
+                terminal_state="completed",
+                intent="data_question",
+                response_type="answer",
+                answer_text="verified real answer",
+                source_mode="real",
+                is_mock=False,
+            )
+
+        execute_kwargs = {
+            "message": "总销售额是多少？",
+            "conversation_id": "conv-real-replay",
+            "request_id": "req-real-replay",
+            "semantic_model_key": "local_desktop_model",
+            "report_template_key": None,
+            "runtime_mode": RuntimeDataMode.REAL,
+            "is_mock": False,
+            "llm_provider_name": "deepseek",
+            "powerbi_provider_name": "local_mcp",
+            "do_execute": real_do_execute,
+        }
+
+        first = await pipeline.execute(**execute_kwargs)
+        snapshot = await pipeline.snapshot_store.get(
+            "req-real-replay", RuntimeDataMode.REAL
+        )
+        replay = await pipeline.execute(**execute_kwargs)
+
+        assert first["source_mode"] == "real"
+        assert snapshot is not None and snapshot.source_mode == "real"
+        assert replay["source_mode"] == "real"
+        assert replay["idempotent_replay"] is True
+        assert replay["tool_sequence"] == []
+        assert execution_count == 1
+
+    def test_legacy_snapshot_without_source_mode_defaults_to_mock(self):
+        snapshot = TurnResultSnapshot(
+            request_id="legacy-request",
+            conversation_id="legacy-conversation",
+            terminal_state="completed",
+            response_type="answer",
+            answer="legacy answer",
+        )
+        assert snapshot.source_mode == "mock"
 
 
 class TestServiceNoDirectRepoWrite:

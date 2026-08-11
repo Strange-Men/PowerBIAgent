@@ -1,11 +1,11 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M2.3 真实 DAX / QueryResult 验证层已接入
+> **状态：** M2.4 Layer 2 / Layer 3 与真实 Local Chat 已接入
 > **关联 ADR：** ADR-004
-> **当前基线：** pytest 1163 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS（154 文件）
+> **当前基线：** pytest 1205 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS（156 文件）
 > **真实 Chat Smoke：** overall_success=true, 6/6 cases passed (data_question, report_generation, clarification, unsupported, idempotent_replay, request_id_conflict)
 > **Token 统计：** call_count/repair_count 按 task 独立统计，LLMValidationError 携带 usage
-> **模式切换：** Mock+Mock 200 / DeepSeek+Mock 200 / Remote MCP 503
+> **模式切换：** Mock+Mock 200 / DeepSeek+Mock 200 / DeepSeek+Local MCP 200 / Remote MCP 503
 
 ---
 
@@ -119,21 +119,21 @@ M2.2 实机验收为 3 tables、19 columns、2 measures、1 relationship、2 hie
 
 **✅ M2.3 已完成候选。** 当前 Local Provider 已通过 ToolGateway → PowerBIAdapter → Local MCP → Power BI Desktop 真实执行 `dax_query_operations Execute`。固定 ROW 返回 1 row / 1 column 且值为 1；`Total Sales` 与 `Total Quantity` 返回 1 row / 2 columns 的实际数值。结果按真实列顺序映射为二维 rows，`row_count=len(rows)`，并保留 execution time、request_id、`source_mode=real` 与 truncated。
 
-Fake MCP 离线覆盖正常/空/截断、DAX/timeout/permission/connection/MCP protocol 错误、malformed payload 与 Preview missing rows；真实 MCP 只由人工 Smoke 执行。Issue #124 仍为 Open，但当前 beta.12 + mcp 2.0.0 + Desktop 组合未复现，不能写成官方已修复。DeepSeek + Local Chat 与 Answer / Snapshot 的 real source_mode 传播仍属于 M2.4。
+Fake MCP 离线覆盖正常/空/截断、DAX/timeout/permission/connection/MCP protocol 错误、malformed payload 与 Preview missing rows；真实 MCP 只由人工 Smoke 执行。Issue #124 仍为 Open，但当前 beta.12 + mcp 2.0.0 + Desktop 组合未复现，不能写成官方已修复。M2.4 已将 DeepSeek + Local Chat 与 Answer / Snapshot / Replay 的 real source_mode 传播接入同一 TurnPipeline。
 
 ### Layer 2 — QueryPlan Semantic Validation（M2.4）
 
-QueryPlan 不仅验证字段存在，还必须确定请求的业务指标映射到模型中合法且合理的 Measure/字段。关键指标已有明确 Measure 时，不得默认以裸数值列重新构造另一套口径；业务歧义无法唯一消解时进入 clarification。
+**✅ M2.4 已实现。** QueryPlan 不仅验证字段存在，还确定 Measure/Column 身份、隐藏对象、字段归属和关系可达性。关键指标已有明确 Measure 时不得以裸数值列重新构造口径；Measure、Dimension 与 Filter 必须来自真实 Schema，无法唯一消歧时进入 clarification。
 
 ### Layer 3 — DAX Structural / Semantic Consistency（M2.4）
 
-继续使用 `DAXSafetyValidator`，但它只证明安全与结构约束，不证明业务口径正确。后续增加最小确定性检查：DAX 使用的 Measure、维度与筛选必须和已验证 QueryPlan 一致；禁止增加第二个 LLM 充当 DAX Judge。
+**✅ M2.4 已实现。** 在 `DAXSafetyValidator` 之上确定性检查模型 key、Measure/Dimension/Filter 引用；只有 QueryPlan.dimensions 可成为 group-by，Filter 字段不会自动成为维度；`SUMMARIZECOLUMNS` 强制 group-by → filter table → name/expression 对的顺序并拒绝不成对参数。未增加第二个 LLM Judge 或完整 DAX AST Parser。
 
 ### Layer 4 — Business Golden Verification（M2.5）
 
 通过现有 Harness / Golden 体系建立 5—10 个高价值代表性业务 Case，不另建绕过 Harness 的验证脚本。每个 Case 至少定义：用户问题、预期业务 Measure、预期维度、预期过滤条件、预期日期口径、预期粒度，必要时记录已知 Power BI 结果。验收顺序是 QueryPlan 是否正确 → DAX 是否遵循 QueryPlan → QueryResult 是否与真实 Power BI 结果一致；不能只验证“DAX 执行成功”。
 
-## 五、706 测试覆盖（M1.3.1 基线，本轮无变化）
+## 五、自动化测试覆盖
 
 | 测试文件 | 内容 |
 |---------|------|

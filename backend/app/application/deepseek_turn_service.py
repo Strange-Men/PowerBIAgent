@@ -1,4 +1,4 @@
-"""DeepSeekTurnService — M1.6.3 DeepSeek + Mock Power BI 全链路
+"""DeepSeekTurnService — 共享 DeepSeek + PowerBIAdapter 全链路
 
 M1.6.3 更新：
 - 真实工具执行统一通过 ToolGateway（create_default_tool_gateway）
@@ -53,7 +53,7 @@ from backend.app.memory.models import (
 from backend.app.memory.repository import (
     InMemoryMemoryRepository,
 )
-from backend.app.powerbi.mock import MockPowerBIAdapter
+from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.query_plan.deepseek_service import DeepSeekQueryPlanService
 from backend.app.dax.deepseek_service import DeepSeekDAXService
 from backend.app.dax.safety import DAXSafetyValidator
@@ -68,14 +68,15 @@ from backend.app.schemas.data_contracts import (
     RenderedReport,
     ReportSpec,
     SemanticModelSchema,
+    UserContext,
 )
 
 
 class DeepSeekTurnService:
-    """DeepSeek + Mock Power BI 轮次服务
+    """DeepSeek + 可注入 PowerBIAdapter 轮次服务
 
-    完整链路：Intent → Schema → QueryPlan → DAX → Mock QueryResult →
-              Answer/ReportSpec → Mock Renderer → Memory Commit
+    完整链路：Intent → Schema → QueryPlan → DAX → QueryResult →
+              Answer/ReportSpec → Renderer → Memory Commit
 
     每个请求独立：
     - LLMCallCollector + ObservedLLMProvider（不污染并发）
@@ -89,7 +90,7 @@ class DeepSeekTurnService:
         self,
         memory_repo: InMemoryMemoryRepository,
         llm_provider: LLMProvider,
-        powerbi_adapter: MockPowerBIAdapter,
+        powerbi_adapter: PowerBIAdapter,
         report_renderer: MockReportRenderer,
         settings: Settings,
         config: Optional[HarnessConfig] = None,
@@ -103,7 +104,18 @@ class DeepSeekTurnService:
         self.settings = settings
         # M1.6.2: 禁止回退 Mock 配置。若未显式传入 config，从自身 settings 构建。
         self.config = config if config is not None else HarnessConfig.from_settings(settings)
-        self.validator = ValidationService()
+        self._semantic_model_key = (
+            "mock_sales_model"
+            if powerbi_adapter.is_mock
+            else settings.powerbi_local_semantic_model_key
+        )
+        self._source_mode = "mock" if powerbi_adapter.is_mock else "real"
+        self._user_context = UserContext(
+            allowed_semantic_models=[self._semantic_model_key]
+        )
+        self.validator = ValidationService(
+            allowed_semantic_models=[self._semantic_model_key]
+        )
         # M1.6.3: ToolGateway 统一进入 DeepSeek 管线
         self.tool_gateway = self._build_tool_gateway()
         # M1.6.3.2: Service 不持有 memory_repo/SnapshotStore —
@@ -133,16 +145,21 @@ class DeepSeekTurnService:
     ) -> dict[str, Any]:
         """执行完整 DeepSeek Turn 流程 — 委托给共享 TurnPipeline 骨架"""
 
+        effective_model_key = semantic_model_key
+        if not self.powerbi.is_mock and semantic_model_key == "mock_sales_model":
+            # API 历史默认值在 Local 组合中由组合根配置替换；真实连接信息不进入请求。
+            effective_model_key = self._semantic_model_key
+
         return await self.pipeline.execute(
             message=message,
             conversation_id=conversation_id,
             request_id=request_id,
-            semantic_model_key=semantic_model_key,
+            semantic_model_key=effective_model_key,
             report_template_key=report_template_key,
             runtime_mode=RuntimeDataMode.REAL,
             is_mock=False,
             llm_provider_name="deepseek",
-            powerbi_provider_name="mock_powerbi",
+            powerbi_provider_name=self.powerbi.provider_name,
             scenario_fingerprint_hash_inputs={
                 "scenario": None,
                 "intent_key": None,
@@ -209,7 +226,7 @@ class DeepSeekTurnService:
                 intent=intent.intent.value, response_type="clarification",
                 clarification_question=intent.clarification_question,
                 trace=trace, trace_id=trace_id, is_mock=False,
-                source_mode="mock",
+                source_mode=self._source_mode,
                 collector=collector,
             )
 
@@ -221,7 +238,7 @@ class DeepSeekTurnService:
                 intent=intent.intent.value, response_type="unsupported",
                 unsupported_reason=intent.unsupported_reason,
                 trace=trace, trace_id=trace_id, is_mock=False,
-                source_mode="mock",
+                source_mode=self._source_mode,
                 collector=collector,
             )
 
@@ -236,7 +253,7 @@ class DeepSeekTurnService:
             runtime_mode=runtime_mode,
             is_mock=False,
             llm_provider_name="deepseek",
-            powerbi_provider_name="mock_powerbi",
+            powerbi_provider_name=powerbi_provider_name,
             base_version=base_version,
         )
 
@@ -253,6 +270,7 @@ class DeepSeekTurnService:
                 conversation_id=effective_conv_id,
                 runtime_mode=runtime_mode,
                 intent=intent.intent,
+                user=self._user_context,
             )
             schema_input = SchemaInput(semantic_model_key=semantic_model_key)
             schema: SemanticModelSchema = await self.tool_gateway.execute(
@@ -281,6 +299,7 @@ class DeepSeekTurnService:
                 committed_memory=committed.model_dump() if committed else None,
                 semantic_model_key=semantic_model_key,
                 report_template_key=report_template_key,
+                enforce_semantic_grounding=not self.powerbi.is_mock,
             )
         except Exception as e:
             return await self._fail_result(
@@ -291,7 +310,11 @@ class DeepSeekTurnService:
             )
 
         # QueryPlan 验证
-        plan_validation = self.validator.validate_query_plan(query_plan, schema)
+        plan_validation = self.validator.validate_query_plan(
+            query_plan,
+            schema,
+            enforce_semantic_grounding=not self.powerbi.is_mock,
+        )
         if not plan_validation.is_valid:
             await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode,
@@ -303,7 +326,7 @@ class DeepSeekTurnService:
                 effective_req_id, effective_conv_id, "validation_failed",
                 intent=intent.intent.value, error_type="query_plan_validation_failed",
                 trace=trace, trace_id=trace_id, is_mock=False,
-                source_mode="mock", collector=collector,
+                source_mode=self._source_mode, collector=collector,
             )
 
         controller.record_query_plan_valid()
@@ -340,8 +363,36 @@ class DeepSeekTurnService:
                 effective_req_id, effective_conv_id, "validation_failed",
                 intent=intent.intent.value, error_type="dax_validation_failed",
                 trace=trace, trace_id=trace_id, is_mock=False,
-                source_mode="mock", collector=collector,
+                source_mode=self._source_mode, collector=collector,
             )
+
+        if not self.powerbi.is_mock:
+            consistency_result = self.validator.validate_dax_query_plan_consistency(
+                dax_request,
+                query_plan,
+                schema,
+            )
+            if not consistency_result.is_valid:
+                await self.pipeline.mark_memory_failed(
+                    effective_req_id,
+                    runtime_mode,
+                    reason=str(consistency_result.errors),
+                    stage="dax_semantic_consistency",
+                )
+                controller.set_failure_reason(str(consistency_result.errors))
+                controller.transition(TurnState.VALIDATION_FAILED)
+                return self._build_result(
+                    effective_req_id,
+                    effective_conv_id,
+                    "validation_failed",
+                    intent=intent.intent.value,
+                    error_type="dax_semantic_consistency_failed",
+                    trace=trace,
+                    trace_id=trace_id,
+                    is_mock=False,
+                    source_mode=self._source_mode,
+                    collector=collector,
+                )
 
         controller.record_dax_valid()
         trace.record("dax_validated", trace_id=trace_id, request_id=effective_req_id,
@@ -349,8 +400,9 @@ class DeepSeekTurnService:
 
         # ── 10. 通过 ToolGateway 执行 DAX 查询 ──
         fixture_key = "data_question" if intent.intent == IntentType.DATA_QUESTION else "report_generation"
-        # M1.6.3: fixture_key 通过私有属性传给 MockPowerBIAdapter.execute_dax
-        dax_request._fixture_key = fixture_key  # type: ignore[attr-defined]
+        # Fixture 选择只属于 Mock Adapter；Real Adapter 只接收标准 DAXRequest。
+        if self.powerbi.is_mock:
+            dax_request._fixture_key = fixture_key  # type: ignore[attr-defined]
         try:
             exec_ctx = self.pipeline.create_tool_context(
                 trace_id=trace_id,
@@ -358,6 +410,7 @@ class DeepSeekTurnService:
                 conversation_id=effective_conv_id,
                 runtime_mode=runtime_mode,
                 intent=intent.intent,
+                user=self._user_context,
             )
             query_result: QueryResult = await self.tool_gateway.execute(
                 TOOL_NAME_DAX,
@@ -394,13 +447,16 @@ class DeepSeekTurnService:
                 effective_req_id, effective_conv_id, "tool_failed",
                 intent=intent.intent.value, error_type=query_result.error.type,
                 trace=trace, trace_id=trace_id, is_mock=False,
-                source_mode="mock", collector=collector,
+                source_mode=self._source_mode, collector=collector,
             )
 
         controller.record_tool_execution_succeeded()
         controller.transition(TurnState.TOOL_EXECUTED)
 
-        result_validation = self.validator.validate_query_result(query_result)
+        result_validation = self.validator.validate_query_result(
+            query_result,
+            expected_source_mode=self._source_mode,
+        )
         if not result_validation.is_valid:
             await self.pipeline.mark_memory_failed(
                 effective_req_id, runtime_mode,
@@ -410,15 +466,17 @@ class DeepSeekTurnService:
                 effective_req_id, effective_conv_id, "validation_failed",
                 intent=intent.intent.value, error_type="query_result_invalid",
                 trace=trace, trace_id=trace_id, is_mock=False,
-                source_mode="mock", collector=collector,
+                source_mode=self._source_mode, collector=collector,
             )
 
         controller.record_query_result_valid()
         controller.transition(TurnState.RESULT_VALIDATED)
-        trace.record("query_result_validated", trace_id=trace_id, request_id=effective_req_id)
-
-        # 确保 source_mode 始终为 mock
-        query_result.source_mode = "mock"
+        trace.record(
+            "query_result_validated",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={"source_mode": query_result.source_mode},
+        )
 
         # ── 11. 生成 Answer 或 ReportSpec ──
         answer_text: Optional[str] = None
@@ -455,7 +513,7 @@ class DeepSeekTurnService:
                     effective_req_id, effective_conv_id, "response_failed",
                     intent=intent.intent.value, error_type="answer_validation_failed",
                     trace=trace, trace_id=trace_id, is_mock=False,
-                    source_mode="mock", collector=collector,
+                    source_mode=self._source_mode, collector=collector,
                 )
             trace.record("answer_validated", trace_id=trace_id, request_id=effective_req_id)
         else:
@@ -485,6 +543,7 @@ class DeepSeekTurnService:
                     conversation_id=effective_conv_id,
                     runtime_mode=runtime_mode,
                     intent=intent.intent,
+                    user=self._user_context,
                 )
                 rendered: RenderedReport = await self.tool_gateway.execute(
                     TOOL_NAME_RENDER,
@@ -521,7 +580,7 @@ class DeepSeekTurnService:
                     effective_req_id, effective_conv_id, "response_failed",
                     intent=intent.intent.value, error_type="report_validation_failed",
                     trace=trace, trace_id=trace_id, is_mock=False,
-                    source_mode="mock", collector=collector,
+                    source_mode=self._source_mode, collector=collector,
                 )
             trace.record("report_spec_validated", trace_id=trace_id, request_id=effective_req_id)
 
@@ -560,7 +619,7 @@ class DeepSeekTurnService:
                 effective_req_id, effective_conv_id, terminal_state,
                 intent=intent.intent.value, error_type=commit_error,
                 trace=trace, trace_id=trace_id, is_mock=False,
-                source_mode="mock", collector=collector,
+                source_mode=self._source_mode, collector=collector,
             )
 
         controller.transition(TurnState.COMPLETED)
@@ -572,7 +631,7 @@ class DeepSeekTurnService:
             effective_req_id, effective_conv_id, "completed",
             intent=intent.intent.value, response_type=response_type,
             trace=trace, trace_id=trace_id, is_mock=False,
-            source_mode="mock", collector=collector,
+            source_mode=self._source_mode, collector=collector,
             answer_text=answer_text,
             report_data=report_data,
         )
@@ -616,7 +675,7 @@ class DeepSeekTurnService:
             intent=memory.current_intent or "",
             error_type=error_type,
             trace=trace, trace_id=trace_id, is_mock=False,
-            source_mode="mock", collector=collector,
+            source_mode=self._source_mode, collector=collector,
         )
 
     # M1.6.3: 辅助方法委托给共享 TurnPipeline，保证统一行为
@@ -632,7 +691,7 @@ class DeepSeekTurnService:
         trace: Optional[TraceRecorder] = None,
         trace_id: str = "",
         is_mock: bool = False,
-        source_mode: str = "mock",
+        source_mode: Optional[str] = None,
         collector: Optional[LLMCallCollector] = None,
         answer_text: Optional[str] = None,
         report_data: Optional[dict[str, Any]] = None,
@@ -654,7 +713,7 @@ class DeepSeekTurnService:
             trace=trace,
             trace_id=trace_id,
             is_mock=is_mock,
-            source_mode=source_mode,
+            source_mode=source_mode or self._source_mode,
             allowed_tools=self.tool_gateway.list_tools(),
             answer_text=answer_text,
             report_data=report_data,

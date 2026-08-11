@@ -543,6 +543,18 @@ class TestDAXPromptRules:
         system = messages[0]["content"]
         assert "FakeMeasure" in system
 
+    def test_prompt_separates_dimensions_from_filters_and_orders_arguments(self):
+        messages = build_dax_messages(
+            "QP summary", "schema text", "mock_sales_model", "req-1",
+        )
+        system = messages[0]["content"]
+
+        assert "QueryPlan.dimensions 是 group-by 字段的唯一来源" in system
+        assert "Filter 字段不等于 Dimension" in system
+        assert "dimensions=[] 时不得添加任何 group-by 列" in system
+        assert "groupBy_column... → filterTable... → name, expression" in system
+        assert "filter 参数不得出现在任何 name/expression 对之后" in system
+
 
 # ══════════════════════════════════════════════════════════════════
 # 异常脱敏
