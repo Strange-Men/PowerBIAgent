@@ -1,4 +1,4 @@
-"""Pydantic Settings — M0.4 项目配置骨架
+"""Pydantic Settings — M2.1 项目配置
 
 环境变量可覆盖所有配置项。
 Mock 模式启动不需要任何 API Key。
@@ -25,6 +25,7 @@ class LLMMode(str, Enum):
 
 class PowerBIMode(str, Enum):
     MOCK = "mock"
+    LOCAL_MCP = "local_mcp"
     REMOTE_MCP = "remote_mcp"
 
 
@@ -51,7 +52,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M2.0", frozen=True)
+    version: str = Field(default="M2.1", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -83,6 +84,11 @@ class Settings(BaseSettings):
     powerbi_client_id: Optional[str] = Field(default=None)
     powerbi_client_secret: Optional[SecretStr] = Field(default=None)
     powerbi_mcp_endpoint: Optional[str] = Field(default=None)
+    powerbi_local_mcp_executable: str = Field(default="npx")
+    powerbi_local_mcp_package: str = Field(
+        default="@microsoft/powerbi-modeling-mcp@0.5.0-beta.12"
+    )
+    powerbi_local_mcp_readonly: bool = Field(default=True)
 
     # ── 资源限制 ──────────────────────────────
     request_timeout_seconds: int = Field(default=120, ge=10)
@@ -117,20 +123,32 @@ class Settings(BaseSettings):
         return bool(key and key.strip())
 
     @property
+    def is_powerbi_local_mcp_configured(self) -> bool:
+        """Local MCP 的非 Secret 启动配置是否完整且为只读。"""
+        return (
+            bool(self.powerbi_local_mcp_executable.strip())
+            and bool(self.powerbi_local_mcp_package.strip())
+            and self.powerbi_local_mcp_readonly
+        )
+
+    @property
     def is_real_ready(self) -> bool:
         """Real 模式是否具备运行条件
 
         M1.5: DeepSeek + Mock Power BI 全链路已封板。
         DeepSeek 配置 Key 且 PowerBI 为 Mock 时 ready=true。
-        真实 Power BI (Remote MCP) 仍待 M2。
+        M2.1 仅验证 Local MCP 连接，完整 Real Chat 仍不可用。
         """
         if self.llm_mode == LLMMode.DEEPSEEK:
             return (
                 self.is_deepseek_configured
                 and self.powerbi_mode == PowerBIMode.MOCK
             )
-        if self.powerbi_mode == PowerBIMode.REMOTE_MCP:
-            return False  # M2 前不可用
+        if self.powerbi_mode in {
+            PowerBIMode.LOCAL_MCP,
+            PowerBIMode.REMOTE_MCP,
+        }:
+            return False  # M2.4 前不可用于 Chat
         return True
 
     def safe_repr(self) -> dict:
@@ -149,6 +167,8 @@ class Settings(BaseSettings):
             "is_mock": self.is_mock,
             "is_real_ready": self.is_real_ready,
             "deepseek_configured": self.is_deepseek_configured,
+            "powerbi_local_mcp_configured": self.is_powerbi_local_mcp_configured,
+            "powerbi_local_mcp_readonly": self.powerbi_local_mcp_readonly,
         }
 
 

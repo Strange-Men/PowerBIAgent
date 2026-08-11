@@ -38,6 +38,9 @@ dependencies = [
     # M1.1: 网络调用（真实 LLM Provider 运行依赖）
     "httpx==0.28.1",
 
+    # M2.1: Power BI Local MCP 正式 stdio Client
+    "mcp==2.0.0",
+
     # Utilities
     # "python-dotenv>=1.0.0",     # M1 启用
 ]

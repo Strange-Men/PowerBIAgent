@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M2.0 Remote MCP 接入规划完成候选。**
+**M2.1 Local MCP 最小真实连接验证完成候选。**
 
-> M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板，M1.8 已完成 Codex 接管准备。**Mock + Mock 模式完整可用，DeepSeek + Mock Power BI Chat 完整可用（需配置 API Key）。** M2.0 只完成官方证据复核、架构与路线设计；真实 Power BI 仍未接入，下一阶段是 M2.1 MCP Client / OAuth 最小真实连接验证。
+> M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板。**Mock + Mock 模式完整可用，DeepSeek + Mock Power BI Chat 完整可用（需配置 API Key）。** 当前 Demo 经 ADR-007 调整为 Local MCP + Power BI Desktop，已真实验证只读 stdio、协议协商、工具发现与 Desktop 连接；ADR-006 Remote MCP 生产化路线完整保留，因管理员前置条件暂缓。Semantic Model Schema、DAX 与 DeepSeek + Local Chat 尚未接入。
 
 ### 幂等与并发特性
 
@@ -56,7 +56,14 @@ D:\Conda\envs\PBIAgent\python.exe -m pip install -e .
 D:\Conda\envs\PBIAgent\python.exe -m pip install -e ".[dev]"
 ```
 
-核心依赖：FastAPI、Uvicorn、pydantic-settings、httpx（版本已锁定，见 pyproject.toml）。
+核心依赖：FastAPI、Uvicorn、pydantic-settings、httpx、官方 MCP Python SDK（版本已锁定，见 pyproject.toml）。
+
+### M2 Local MCP 外部前置
+
+- Windows 与 Power BI Desktop；运行 Smoke 前需打开一个测试 PBIX。
+- Node.js 20+（包含 npm / npx）。
+- 官方 Local Server 固定为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，项目以 stdio 和 `--readonly` 启动。
+- Local Demo 不要求 Tenant ID、Client ID、Redirect URI 或 Microsoft Token。
 
 ### 环境变量
 
@@ -81,7 +88,7 @@ Copy-Item .env.example .env
 |------|--------|------|
 | `APP_ENV` | `development` | 运行环境 (development/test/production) |
 | `LLM_MODE` | `mock` | LLM 模式 (mock/deepseek) |
-| `POWERBI_MODE` | `mock` | Power BI 模式 (mock/remote_mcp) |
+| `POWERBI_MODE` | `mock` | Power BI 模式 (mock/local_mcp/remote_mcp)；M2.4 前 Local/Remote 不接 Chat |
 | `HOST` | `127.0.0.1` | 监听地址 |
 | `PORT` | `8000` | 监听端口 |
 
@@ -106,13 +113,23 @@ curl http://127.0.0.1:8000/health
   "reasons": [],
   "app_name": "PowerBIAgent",
   "app_env": "development",
-  "version": "M2.0",
+  "version": "M2.1",
   "llm_mode": "mock",
   "powerbi_mode": "mock",
   "harness_mode": "strict",
   "timestamp": "2026-07-31T07:03:23Z"
 }
 ```
+
+### M2.1 Local MCP 人工 Smoke
+
+先在 Power BI Desktop 打开测试 PBIX，再运行：
+
+```powershell
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\powerbi_local_mcp_connection_smoke.py
+```
+
+Smoke 只做协议、工具发现与 Desktop 连接，不读取完整 Schema、不执行 DAX、不调用 DeepSeek。
 
 ### 对话接口
 

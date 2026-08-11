@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M2.0 Remote MCP 接入规划完成候选
+> **状态：** M2.1 Local MCP 最小真实连接验证完成候选
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -48,7 +48,7 @@ M1.8 Codex接管准备与仓库上下文固化          ✅ 已完成候选
 
 M2 真实 Power BI MCP 与数据问答
   M2.0 官方证据、架构与路线固化                 ✅ 已完成候选
-  M2.1 MCP Client / OAuth 最小真实连接验证       ⬜ 未开始
+  M2.1 Local MCP 最小真实连接验证                ✅ 已完成候选
   M2.2 真实 Semantic Model Schema 接入          ⬜ 未开始
   M2.3 真实 DAX 与 QueryResult 标准化            ⬜ 未开始
   M2.4 接入现有 TurnPipeline                    ⬜ 未开始
@@ -438,7 +438,7 @@ MVP 功能阶段 (后续)
 **状态：** ✅ 已完成 | **Commit：** `1dd20de`
 
 **完成内容：**
-- 修正 docs/08 M1.6.6 详细章节状态冲突（进行中 → 已完成）
+- 修正 docs/08 M1.6.6 详细章节的历史状态冲突并统一为已完成
 - 修正 docs/09 PydanticAI 错误描述（已从生产依赖移除）
 - 删除恒真测试 test_no_stale_tag_for_current_version
 - 加固 CI 工作区干净检查（git diff --check + git diff --exit-code + git status --porcelain）
@@ -496,7 +496,7 @@ MVP 功能阶段 (后续)
 
 ## M2 轮次详细路线
 
-> M2 统一遵守 ADR-005 与 ADR-006：TurnPipeline 是唯一控制面，Power BI 只经 ToolGateway → PowerBIAdapter；Mock/Real 共用执行骨架，Generate Query 不使用，Real 失败不回退 Mock。实施细节与每轮门禁见 `docs/12_m2_remote_mcp_integration_plan.md`。
+> M2 统一遵守 ADR-005、ADR-006 与 ADR-007：TurnPipeline 是唯一控制面，Power BI 只经 ToolGateway → PowerBIAdapter；Mock/Real 共用执行骨架，Generate Query 不使用，Real 失败不回退 Mock。当前 Demo 走 Local MCP + Power BI Desktop，Remote MCP 生产化延后到管理员条件具备且用户另行批准后恢复。实施细节与每轮门禁见 `docs/12_m2_powerbi_mcp_integration_plan.md`。
 
 ### M2.0｜官方证据复核、架构设计与路线固化
 
@@ -507,35 +507,37 @@ MVP 功能阶段 (后续)
 - 固化 M2.1—M2.5 轮次、测试和防偏移门禁。
 - 生产业务实现为 0；真实 Power BI 仍未接入。
 
-### M2.1｜MCP Client + OAuth + 最小真实连接验证
+### M2.1｜Local MCP 最小真实连接验证
 
-**状态：** ⬜ 未开始
+**状态：** ✅ 已完成候选
 
-只证明 OAuth → initialize/协议协商 → list_tools → connection/health。允许必要依赖、最小 Client/OAuth 基础设施与人工 Smoke；禁止接 Chat、改 TurnPipeline 或完整自然语言问答。属于“连得上”。
+已真实证明官方 Local Server → stdio → initialize/协议协商 → `list_tools` → Power BI Desktop 发现与连接。使用只读模式；未读取完整 Schema、未执行 DAX、未接 Chat、未改 TurnPipeline。属于“连得上”。
 
 ### M2.2｜真实 Semantic Model Schema 接入
 
 **状态：** ⬜ 未开始
 
-完成 ToolGateway → Remote Adapter → MCP → SemanticModelSchema、`get_semantic_model_schema()` 与 friendly key → real model ID 安全映射；禁止真实数据问答。属于“看得懂模型”。
+通过 `LocalMCPPowerBIAdapter` 从 Power BI Desktop 真实模型读取 tables、columns、measures、relationships、hierarchies，以及官方真实返回时的 description / AI metadata，并映射为现有 `SemanticModelSchema`。禁止真实数据问答。属于“看得懂模型”。
 
 ### M2.3｜真实 DAX 执行与 QueryResult 标准化
 
 **状态：** ⬜ 未开始
 
-完成 DAXRequest → ToolGateway → Remote Adapter → MCP → QueryResult，并覆盖 success、401、403、timeout、rate limit（若官方实机定义）、DAX error、malformed response、oversized result；禁止完整 Chat。属于“查得到数据”。
+完成 DAXRequest → ToolGateway → Local Adapter → Local MCP → Power BI Desktop → QueryResult，并覆盖 success、timeout、DAX error、malformed response、oversized result；DeepSeek 尚不接 Chat。属于“查得到数据”。
 
 ### M2.4｜接入现有 TurnPipeline
 
 **状态：** ⬜ 未开始
 
-接通 DeepSeek + Real Power BI；Service 依赖 PowerBIAdapter 抽象，main 注入 Remote Adapter，routes 移除固定 503，`source_mode=real` 和 Snapshot 正确传播；禁止复制 Real Pipeline 或静默回退。属于“自然语言真的能查 Power BI”。
+在现有 TurnPipeline 接通 DeepSeek + Local Real Power BI；Service 仍依赖 PowerBIAdapter 抽象，`source_mode=real` 和 Snapshot 正确传播；禁止复制 Real Pipeline 或静默回退。属于“自然语言真的能查 Power BI”。
 
 ### M2.5｜真实全链路验收与 M2 封板候选
 
 **状态：** ⬜ 未开始
 
-验证真实 Schema/DAX/QueryResult、核心数值一致、幂等重放不重复访问 MCP、OAuth/权限/超时/DAX 错误、Trace 脱敏、Mock/CI 回归与架构无偏移。完成后停止，等待仓库审计，不自动创建 M2.6。
+验证 Schema 真实性、DAX 业务语义与执行、QueryResult、Answer、幂等重放、Golden、Trace 脱敏、Mock/CI 回归与 Harness/架构无偏移。完成后停止，等待仓库审计，不自动创建后续 M2 版本。
+
+Remote MCP 生产化不纳入当前 M2.1—M2.5 Demo 路线；公司管理员条件具备后，按 ADR-006 并经用户另行批准恢复。
 
 ---
 

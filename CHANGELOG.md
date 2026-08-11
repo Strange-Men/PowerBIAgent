@@ -4,6 +4,19 @@
 
 ---
 
+## [M2.1] — 2026-08-11
+
+### Local Power BI MCP 最小真实连接验证
+
+- 经用户批准将当前 Demo 验证路径从受管理员前置条件阻塞的 Remote MCP 调整为 Local MCP + Power BI Desktop；Remote 不是失败，ADR-006 生产化路线完整保留
+- 新增 accepted ADR-007 与统一 M2 Local Demo / Remote Production 计划
+- 引入官方 `mcp==2.0.0`，新增只读 stdio Local Adapter、脱敏连接诊断与人工 Smoke
+- 真实验证 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12` 启动、协议 `2025-11-25`、21 个工具发现以及 Power BI Desktop 连接
+- 保留并泛化 Semantic Grounding 与 DAX 业务语义四层验收契约
+- M2.1 不读取完整 Schema、不执行 DAX、不调用 DeepSeek、不接 Chat
+
+---
+
 ## [M2.0] — 2026-08-11
 
 ### 真实 Power BI Remote MCP 接入规划与开发路线固化

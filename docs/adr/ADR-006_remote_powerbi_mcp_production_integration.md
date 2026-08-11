@@ -3,13 +3,15 @@
 - **状态：** accepted
 - **日期：** 2026-08-11
 - **决策者：** PowerBIAgent 项目组
-- **证据基线：** `docs/12_m2_remote_mcp_integration_plan.md`
+- **证据基线：** `docs/12_m2_powerbi_mcp_integration_plan.md` 的 Remote 生产化证据基线
 
 ---
 
 ## 背景
 
 ADR-005 已确定 TurnPipeline、受控 LLM 与 ToolGateway 总体架构。M2 需要在不复制 Real Pipeline、不改变已封板生成主链的前提下，把真实 Power BI Remote MCP 接入现有 PowerBIAdapter 边界。Microsoft 当前将 Remote MCP 标记为 Public Preview，协议和工具响应仍可能变化。
+
+> ADR-007 accepted 后，本文原有 “M2.1 / M2.3 实机验证” 表述保留为 Remote 生产化实施序列的历史语义；当前 M2.1 Local Demo 不实现或宣称完成这些 Remote 验证项。
 
 ## 决策
 
@@ -28,12 +30,13 @@ ADR-005 已确定 TurnPipeline、受控 LLM 与 ToolGateway 总体架构。M2 �
 13. **模型 ID：** API 只接收 friendly `semantic_model_key`。ToolGateway 按 UserContext 白名单校验，Remote Adapter 再通过注入的只读配置映射为真实 semantic model ID；客户端不得任意提交真实 ID。
 14. **CI 与 Smoke：** 自动 CI 完全离线，使用 Fake/Stub MCP Client/Session 与脱敏 Fixture，不含 Microsoft Token、DeepSeek Key 或真实业务数据。真实 OAuth、initialize/协商、`list_tools`、Schema 与 DAX 只在人工 Smoke 中运行。
 15. **Preview 风险：** 工具名、输入/输出 schema 和协议协商均通过 Adapter 隔离并由 M2.1 实机固定；Preview 变更不得向上泄漏为业务契约变化。
-16. **Fallback：** M2 不实现 Local MCP、社区 Proxy、REST/XMLA 或 Real → Mock 自动回退。官方 Remote MCP 若不可用则明确失败并停止；任何替代后端必须另开批准轮次与 ADR，且仍受 PowerBIAdapter 与 ToolGateway 约束。
+16. **Fallback：** ADR-006 的 Remote 生产化实施不使用 Local MCP、社区 Proxy、REST/XMLA 或 Real → Mock 自动回退。官方 Remote MCP 若不可用则明确失败并停止；ADR-007 是用户另行批准的 Demo Provider 决策，不是 Remote 失败时的运行时 fallback，且仍受 PowerBIAdapter 与 ToolGateway 约束。
 
 ## 与其他 ADR 的关系
 
 - ADR-005 继续负责 Agent / TurnPipeline 总体架构；ADR-006 不替代它。
 - ADR-003 的 Remote MCP、Entra App 和 Adapter 方向保留；Device Code + 独立 MSAL + 本地缓存文件及自动 Fallback 实现设想被本 ADR 部分替代。
+- ADR-007 仅在管理员前置条件暂不可得时选择 Local MCP 作为 Demo 验证路径；不 supersede ADR-006。管理员条件具备并获用户批准后，生产化仍回到本 ADR。
 
 ## 后果
 

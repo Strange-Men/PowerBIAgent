@@ -48,6 +48,14 @@ class TestSettingsDefaults:
         settings = Settings()
         assert settings.port == 8000
 
+    def test_local_mcp_uses_pinned_readonly_defaults(self):
+        default_settings = Settings(_env_file=None)
+        assert default_settings.powerbi_local_mcp_executable == "npx"
+        assert default_settings.powerbi_local_mcp_package == (
+            "@microsoft/powerbi-modeling-mcp@0.5.0-beta.12"
+        )
+        assert default_settings.powerbi_local_mcp_readonly is True
+
 
 class TestSettingsEnvOverride:
     """环境变量覆盖"""
@@ -81,6 +89,11 @@ class TestSettingsEnvOverride:
         monkeypatch.setenv("LOG_LEVEL", "warning")
         settings = Settings()
         assert settings.log_level == "warning"
+
+    def test_env_override_powerbi_local_mcp_executable(self, monkeypatch):
+        monkeypatch.setenv("POWERBI_LOCAL_MCP_EXECUTABLE", "local-mcp-placeholder")
+        settings = Settings()
+        assert settings.powerbi_local_mcp_executable == "local-mcp-placeholder"
 
 
 class TestSettingsValidation:
@@ -151,6 +164,20 @@ class TestSettingsNoSecretLeak:
             or settings.deepseek_api_key.get_secret_value() == ""
         )
 
+    def test_powerbi_values_and_secret_stay_out_of_safe_repr(self):
+        fake_tenant = "tenant-value-must-not-appear"
+        fake_client = "client-value-must-not-appear"
+        fake_secret = "secret-value-must-not-appear"
+        settings = Settings(
+            powerbi_tenant_id=fake_tenant,
+            powerbi_client_id=fake_client,
+            powerbi_client_secret=SecretStr(fake_secret),
+        )
+        safe_text = str(settings.safe_repr())
+        assert fake_tenant not in safe_text
+        assert fake_client not in safe_text
+        assert fake_secret not in safe_text
+
 
 class TestSettingsRealMode:
     """Real 模式检查"""
@@ -182,12 +209,27 @@ class TestSettingsRealMode:
         settings = Settings(llm_mode=LLMMode.MOCK, powerbi_mode=PowerBIMode.REMOTE_MCP)
         assert settings.is_real_ready is False
 
+    def test_local_mcp_mode_not_chat_ready_before_m2_4(self):
+        settings = Settings(llm_mode=LLMMode.MOCK, powerbi_mode=PowerBIMode.LOCAL_MCP)
+        assert settings.is_real_ready is False
+        assert settings.is_powerbi_local_mcp_configured is True
+
     def test_full_real_not_ready(self):
         settings = Settings(
             llm_mode=LLMMode.DEEPSEEK,
             powerbi_mode=PowerBIMode.REMOTE_MCP,
         )
         assert settings.is_real_ready is False
+
+    def test_local_mcp_configuration_requires_readonly_and_non_empty_command(self):
+        configured = Settings(_env_file=None)
+        writable = configured.model_copy(update={"powerbi_local_mcp_readonly": False})
+        missing_command = configured.model_copy(
+            update={"powerbi_local_mcp_executable": ""}
+        )
+        assert configured.is_powerbi_local_mcp_configured is True
+        assert writable.is_powerbi_local_mcp_configured is False
+        assert missing_command.is_powerbi_local_mcp_configured is False
 
 
 class TestSettingsIsolation:

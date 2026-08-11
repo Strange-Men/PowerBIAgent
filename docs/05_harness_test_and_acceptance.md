@@ -107,7 +107,25 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 > 测试数量为事实记录，不作为验收目标。
 
-## 四、706 测试覆盖（M1.3.1 基线，本轮无变化）
+## 四、M2 DAX 业务语义正确性验收
+
+### Layer 1 — Schema Grounding（M2.2）
+
+当前真实 Power BI Provider 返回的 Semantic Model Schema 应尽可能保留生成 DAX 所需的 `tables`、`columns`、`measures`、`relationships`、`hierarchies`、descriptions（若真实返回）以及 AI optimized / Prep for AI metadata（若真实返回）。当前本地 `SemanticModelSchema` 尚未完整覆盖这些语义；M2.1 不猜测 Local MCP 响应结构，M2.2 必须依据当前真实 Provider 响应决定最小契约扩展。Demo Provider 为 Local MCP；未来恢复 Remote 后同一规则继续适用。
+
+### Layer 2 — QueryPlan Semantic Validation（M2.4）
+
+QueryPlan 不仅验证字段存在，还必须确定请求的业务指标映射到模型中合法且合理的 Measure/字段。关键指标已有明确 Measure 时，不得默认以裸数值列重新构造另一套口径；业务歧义无法唯一消解时进入 clarification。
+
+### Layer 3 — DAX Structural / Semantic Consistency（M2.4）
+
+继续使用 `DAXSafetyValidator`，但它只证明安全与结构约束，不证明业务口径正确。后续增加最小确定性检查：DAX 使用的 Measure、维度与筛选必须和已验证 QueryPlan 一致；禁止增加第二个 LLM 充当 DAX Judge。
+
+### Layer 4 — Business Golden Verification（M2.5）
+
+通过现有 Harness / Golden 体系建立 5—10 个高价值代表性业务 Case，不另建绕过 Harness 的验证脚本。每个 Case 至少定义：用户问题、预期业务 Measure、预期维度、预期过滤条件、预期日期口径、预期粒度，必要时记录已知 Power BI 结果。验收顺序是 QueryPlan 是否正确 → DAX 是否遵循 QueryPlan → QueryResult 是否与真实 Power BI 结果一致；不能只验证“DAX 执行成功”。
+
+## 五、706 测试覆盖（M1.3.1 基线，本轮无变化）
 
 | 测试文件 | 内容 |
 |---------|------|
@@ -128,7 +146,7 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
 ---
 
-## 五、未来验收项（M1.4—M5）
+## 六、未来验收项（M1.4—M5）
 
 ### M1.4 验收
 

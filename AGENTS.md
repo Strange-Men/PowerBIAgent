@@ -25,12 +25,12 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 
 ## 二、当前真实状态
 
-- 当前版本：M2.0 Remote MCP 接入规划完成候选。
+- 当前版本：M2.1 Local MCP 最小真实连接验证完成候选。
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板。
 - Mock + Mock 完整可用。
 - DeepSeek + Mock Power BI Chat 完整可用。
-- 真实 Power BI 尚未接入。
-- M2 尚未开始业务实现。
+- 当前 Demo Provider 为 Local MCP + Power BI Desktop，真实 stdio / 协议 / 工具发现 / Desktop 连接已验证；Remote MCP 保留为延后生产化路径。
+- M2.1 未读取完整 Schema、未执行 DAX、未接 DeepSeek Chat；下一阶段为 M2.2。
 - M3 报表正式渲染不得提前开发。
 - M4 持久化会话不得提前开发。
 - M5 React 前端不得提前开发。
@@ -85,10 +85,13 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 4. ToolGateway 是 Power BI / Renderer 唯一工具执行入口。
 5. Service / API / LLM 不得直接调用 MCP。
 6. LLM 不得自主发现、选择或执行 MCP 工具。
-7. Remote MCP 必须封装在 PowerBIAdapter 边界内。
+7. 任何真实 Power BI MCP Provider（Local / Remote）必须封装在 PowerBIAdapter 边界内；不得形成两套 Pipeline。
 8. Real 模式失败禁止静默回退 Mock。
 9. Memory / Snapshot 写入仍由既定控制面管理，不建立第二套事务链。
 10. 不得为了 M2 重构已封板的 Intent → QueryPlan → DAX → Answer / ReportSpec 主链。
+11. LLM 可生成 QueryPlan 与 DAX，但业务语义只能来自已验证的 Semantic Model metadata 或明确业务定义；DAX 语法正确不是业务正确的充分条件。
+
+Semantic Grounding 永久规则：不得发明 Measure、字段业务含义或日期口径，不得自行决定模糊业务术语；存在明确业务 Measure 时优先使用，不以裸列聚合重复定义；无法唯一消歧时必须 clarification，不得猜测。
 
 同时禁止：
 
@@ -119,7 +122,7 @@ API
 → Memory / Snapshot
 ```
 
-具体 M2 设计以 `docs/12_m2_remote_mcp_integration_plan.md` 与 ADR-006 为准；标记“待 M2.1 实机验证”的外部细节不得提前写成事实。
+当前 Demo 使用 Local MCP，Remote MCP 是延后生产化路径；二者只能替换 PowerBIAdapter 后的 Provider，不能改变上层主链。具体设计以 `docs/12_m2_powerbi_mcp_integration_plan.md`、ADR-006 与 ADR-007 为准；外部细节必须经当前 Provider 实机验证后才能写成事实。
 
 ## 七、修改前必须内部回答
 
@@ -158,4 +161,4 @@ API
 
 ---
 
-*最后更新：2026-08-11 | M2.0 Remote MCP 接入规划与开发路线固化*
+*最后更新：2026-08-11 | M2.1 Local MCP 最小真实连接验证完成候选*
