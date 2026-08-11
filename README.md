@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M1.7.2 M0—M1 最终封板基线** — M0—M1 正式封板前最后一个版本，只修正文档状态并建立封板流程。M2 尚未开始。
+**M1.8 Codex 接管准备完成 / M2 尚未开始。**
 
-> **Mock + Mock 模式完整可用。** **DeepSeek + Mock 模式 Chat 已可用（需配置 API Key）。** QueryResult 仍为 Mock。真实 Power BI 尚未接入（M2）。当前版本 M1.7.2 M0—M1 最终封板基线。
+> M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板。**Mock + Mock 模式完整可用。DeepSeek + Mock Power BI Chat 完整可用（需配置 API Key）。** 当前未连接真实 Power BI，QueryResult 仍来自 Mock。下一阶段是 M2.0 接入规划。
 
 ### 幂等与并发特性
 
@@ -71,7 +71,7 @@ Copy-Item .env.example .env
 然后：
 - `.env` 由用户本人本地填写真实 API Key
 - `.env` 禁止提交（已在 `.gitignore` 中排除）
-- Claude 和其他自动化工具不得读取 `.env` 内容
+- Claude / Codex / 其他代码 Agent 和自动化工具不得读取 `.env` 内容
 - DeepSeek API Key 只在后端运行时使用
 - 前端永远不保存模型 API Key
 
@@ -106,7 +106,7 @@ curl http://127.0.0.1:8000/health
   "reasons": [],
   "app_name": "PowerBIAgent",
   "app_env": "development",
-  "version": "M1.7.2",
+  "version": "M1.8",
   "llm_mode": "mock",
   "powerbi_mode": "mock",
   "harness_mode": "strict",
@@ -164,7 +164,7 @@ DeepSeek 配置由本地 `.env` 提供：
 - `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1` — API 地址
 - `DEEPSEEK_MODEL=deepseek-chat` — 模型名称
 
-Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过脱敏。
+代码 Agent 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过脱敏。
 `httpx` 属于运行依赖。
 
 ## 技术栈
@@ -184,8 +184,9 @@ Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过�
 
 | 文档 | 说明 |
 |------|------|
+| `AGENTS.md` | Claude / Codex / 其他代码 Agent 的仓库级入口与架构边界 |
 | `PROJECT_CHARTER.md` | 项目北极星，不可静默修改的核心约束 |
-| `CLAUDE.md` | 开发协议、Commit/Tag 规则、冷启动协议 |
+| `CLAUDE.md` | 通用代码 Agent 开发协议、Commit/Tag 规则、冷启动协议 |
 | `docs/00_product_requirements_document.md` | 正式 PRD |
 | `docs/08_development_roadmap.md` | 完整开发路线 |
 | `docs/09_context_handoff.md` | 最新交接入口 |
@@ -197,4 +198,4 @@ Claude 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过�
 
 ---
 
-*最后更新：2026-08-05 | M1.7.2 M0—M1 最终封板基线*
+*最后更新：2026-08-11 | M1.8 Codex 接管准备与仓库上下文固化*

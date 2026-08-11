@@ -1,33 +1,33 @@
-# CLAUDE.md — PowerBIAgent 项目开发协议
+# CLAUDE.md — PowerBIAgent 通用代码 Agent 开发协议
 
-> **每个新的 Claude 对话开始后，修改任何文件前，必须执行冷启动协议。**
+> **Claude / Codex / 其他代码 Agent 均必须遵守本协议。每个新会话修改任何文件前，必须执行冷启动协议。**
 
 ---
 
 ## 一、冷启动协议
 
-每个新的 Claude 对话开始后，修改任何文件前必须：
+每个新的代码 Agent 会话开始后，修改任何文件前必须：
 
 ### 1. 环境检查
 
 ```bash
 git status
 git branch
-git log --oneline -5
-git tag -l
+git rev-parse HEAD
 ```
 
 ### 2. 必须阅读的文件（按顺序）
 
-1. `PROJECT_CHARTER.md`
-2. `CLAUDE.md`（本文件）
-3. `docs/00_product_requirements_document.md`
-4. `docs/adr/README.md` 及当前有效 ADR
-5. `docs/ai_development_error_ledger.yaml`
-6. `docs/08_development_roadmap.md`
-7. `docs/09_context_handoff.md`
-8. 当前轮 Prompt 指定的设计文档
-9. `CHANGELOG.md` 最近一轮记录
+1. `AGENTS.md`（仓库级入口）
+2. `PROJECT_CHARTER.md`
+3. `CLAUDE.md`（本文件）
+4. `docs/09_context_handoff.md`
+5. `docs/08_development_roadmap.md` 当前阶段
+6. `docs/adr/README.md` 及当前阶段涉及的 ADR
+7. 当前轮 Prompt 指定文档
+8. 当前轮涉及的生产代码
+
+不要默认读取完整 CHANGELOG、`docs/archive/`、全部测试、全仓源码或历史 Commit diff；需要时再局部读取。
 
 ### 3. 状态核实
 
@@ -65,9 +65,9 @@ git tag -l
 
 ### 格式
 
-- 正常轮次：`M0.x_中文描述`
-- 专项修复（仅限用户明确批准）：`M0.x.y_中文描述`
-- Claude 不得自行增加修复版本号
+- 正常轮次：`Mx.y_中文描述`
+- 专项修复（仅限用户明确批准）：`Mx.y.z_中文描述`
+- 代码 Agent 不得自行增加修复版本号
 - 使用一个下划线连接版本号和中文描述
 - 当前轮 Commit 标题必须与当前轮固定名称一致
 
@@ -143,9 +143,9 @@ git tag -l
 
 `.env.example` 是唯一允许提交的环境模板，只能包含空值、公开默认值或明显占位符。
 
-### 2. Claude 不得读取 Secret
+### 2. 代码 Agent 不得读取 Secret
 
-Claude **只能**检查 `.env` 是否存在/被忽略/被跟踪；**不得**打开、读取、搜索 `.env` 文件内容或输出任何环境变量真实值。
+Claude / Codex / 其他代码 Agent **只能**检查 `.env` 是否存在/被忽略/被跟踪；**不得**打开、读取、搜索 `.env` 文件内容或输出任何环境变量真实值。
 
 ### 3. API Key 只能后端运行时使用
 
@@ -200,7 +200,7 @@ PUBLIC_DEEPSEEK_API_KEY / NUXT_PUBLIC_DEEPSEEK_API_KEY
 
 ## 八、开发核心原则
 
-- 每个新 Claude 开始前必须执行冷启动复习
+- 每个新代码 Agent 会话开始前必须执行冷启动复习
 - 必须阅读固定入口文件后才能修改代码
 - 当前轮未验收不得进入下一轮
 - **小步迭代** — 每轮只完成一个明确目标
@@ -218,18 +218,7 @@ PUBLIC_DEEPSEEK_API_KEY / NUXT_PUBLIC_DEEPSEEK_API_KEY
 
 ## 九、文档来源优先级
 
-当文档内容存在冲突时：
-
-1. 用户最新明确要求
-2. `PROJECT_CHARTER.md`
-3. `docs/00_product_requirements_document.md`（正式 PRD）
-4. 已确认 ADR
-5. 正式设计文档
-6. `docs/09_context_handoff.md` 中的当前状态
-7. 原始 `PRD.md`（仅作历史参考）
-8. Claude 的可逆默认假设
-
-不得自行选择方便开发的版本；无法判断时记录到待确认事项；不得静默改变产品方向。原始 PRD 与正式 PRD 冲突时以正式 PRD 为准。
+当文档内容存在冲突时，严格按 `AGENTS.md` 的权威文档顺序处理。不得自行选择方便开发的版本；无法判断时停止并核实，不得静默改变产品方向。产品方向按文档优先级判断，代码是否真的实现必须以真实代码和测试结果验证。
 
 ---
 
@@ -246,6 +235,7 @@ PUBLIC_DEEPSEEK_API_KEY / NUXT_PUBLIC_DEEPSEEK_API_KEY
 
 ```
 PowerBIAgent/
+├── AGENTS.md
 ├── PROJECT_CHARTER.md
 ├── README.md
 ├── CLAUDE.md
@@ -291,21 +281,16 @@ PowerBIAgent/
 
 ---
 
-## 十二、M2前禁止事项
+## 十二、阶段边界规则
 
-- 新增业务功能
-- 修改 Intent、QueryPlan、DAX、Answer、ReportSpec 行为
-- 接入真实 Power BI
-- 开发 OAuth 或 Entra
-- 开发 React 前端
-- 修改 API 公开契约
-- 修改 Memory/Snapshot 数据模型
-- 重构 TurnPipeline
-- 拆分大型生产模块
-- 新增生产依赖
-- 创建 Tag 或 Release
-- force push
+- 当前轮只能开发用户明确批准的 Milestone。
+- M2 不得提前开发 M3 报表正式渲染、M4 持久化会话或 M5 React 前端。
+- M2 可以在方案确认后接入 Power BI、OAuth 与必要生产依赖。
+- 不得借 M2 名义重构已封板的 Intent → QueryPlan → DAX → Answer / ReportSpec 主链。
+- 不得绕过 TurnPipeline、ToolGateway、Harness 或既定 Memory/Snapshot 控制面。
+- 未经用户明确批准，不得创建 Tag 或 Release。
+- 任何阶段均禁止 force push。
 
 ---
 
-*最后更新：2026-08-05 | M1.7 轻量化候选*
+*最后更新：2026-08-11 | M1.8 Codex 接管准备与仓库上下文固化*
