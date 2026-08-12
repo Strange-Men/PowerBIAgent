@@ -1,8 +1,9 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M2.4 Layer 2 / Layer 3 与真实 Local Chat 已接入
+> **状态：** M2.5 四层语义验收、Business Golden 与 Bad Case 已完成
 > **关联 ADR：** ADR-004
-> **当前基线：** pytest 1205 passed、Golden Cases 11 passed / 1 skipped、安全扫描 PASS（156 文件）
+> **当前基线：** pytest 1210 passed、Golden Cases 11 passed / 1 manual-real skipped、安全扫描 PASS
+> **真实 Business Golden：** 7/7 passed；最终完整 Smoke 28 次 LLM 调用、0 repair
 > **真实 Chat Smoke：** overall_success=true, 6/6 cases passed (data_question, report_generation, clarification, unsupported, idempotent_replay, request_id_conflict)
 > **Token 统计：** call_count/repair_count 按 task 独立统计，LLMValidationError 携带 usage
 > **模式切换：** Mock+Mock 200 / DeepSeek+Mock 200 / DeepSeek+Local MCP 200 / Remote MCP 503
@@ -78,7 +79,7 @@
 | gc_009 | 超大结果被截断 | mock_ready |
 | gc_010 | DAX 错误 | mock_ready |
 | gc_011 | request_id 幂等 | mock_ready |
-| gc_012 | 真实 Power BI 基线 | pending_real_baseline |
+| gc_012 | 真实 Power BI 基线 | manual_real_baseline（人工 Smoke 已通过；CI 安全跳过） |
 
 ### 运行命令
 
@@ -93,7 +94,7 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 - Pydantic 强校验 Case 结构
 - Runtime 配置真实生效
 - 读取 Repository 验证 Memory
-- pending_real_baseline 计为 skipped
+- manual_real_baseline 由 `m2_business_golden_smoke.py` 验证，通用 CI Runner 计为 skipped
 - actual=None 时不假通过
 - 不逐字比较自然语言答案
 
@@ -131,7 +132,13 @@ Fake MCP 离线覆盖正常/空/截断、DAX/timeout/permission/connection/MCP p
 
 ### Layer 4 — Business Golden Verification（M2.5）
 
-通过现有 Harness / Golden 体系建立 5—10 个高价值代表性业务 Case，不另建绕过 Harness 的验证脚本。每个 Case 至少定义：用户问题、预期业务 Measure、预期维度、预期过滤条件、预期日期口径、预期粒度，必要时记录已知 Power BI 结果。验收顺序是 QueryPlan 是否正确 → DAX 是否遵循 QueryPlan → QueryResult 是否与真实 Power BI 结果一致；不能只验证“DAX 执行成功”。
+**✅ M2.5 已完成。** 通过正式 `create_app → /api/v1/chat → DeepSeekTurnService → TurnPipeline → ToolGateway → LocalMCPPowerBIAdapter` 运行 7 个真实 Business Golden：总销售额、总数量、Category Filter、按 Category 看销售额、Top 3 Product 销售额、按 Product 看总数量、Top 3 Category 总数量。逐 Case 与最终完整 Smoke 均 7/7 通过；每个 Case 同时核对 Intent、model key、Measure、Dimension、Filter、sort/top_n、Layer 2、Layer 3、真实 QueryResult、Answer provenance 与 Memory commit。
+
+其中 Product、Product × Total Quantity、Category × Total Quantity × Top 3/desc 三个对象/组合未在 QueryPlan Prompt 中显式点名，全部首次成功且 0 repair。结论是当前 Prompt 示例未阻碍 Schema 驱动泛化；本轮保留示例但未增加任何“业务词 → 固定 Measure”词典。多轮真实 Case 未执行，因为现有 Mock Golden 已覆盖上下文继承，而 M2.5 无需为可选 Case 增加架构或真实调用成本。
+
+### M2.5 Bad Case Verification
+
+20 类关键 Bad Case 均由现有 Fake/Mock 定向回归覆盖并受控失败：不存在 Measure、Column/Measure 身份混淆、隐藏对象、非法 Filter、无关跨表、model key 不一致、额外 group-by、非法 `SUMMARIZECOLUMNS` 顺序、未知 DAX 对象、写操作、Local 连接失败、DAX execution error、Issue #124 missing rows、malformed QueryResult、Answer source_field/数值不可证明、Real 不回退 Mock、Replay 不重执行以及 request_id 指纹冲突。失败路径保持错误分类明确、Memory 不错误提交。
 
 ## 五、自动化测试覆盖
 
@@ -175,4 +182,4 @@ Fake MCP 离线覆盖正常/空/截断、DAX/timeout/permission/connection/MCP p
 
 ---
 
-*最后更新：2026-08-11 | M2.3 真实 DAX / QueryResult 验证层接入*
+*最后更新：2026-08-12 | M2.5 四层语义验收、Business Golden 与 Bad Case 完成*

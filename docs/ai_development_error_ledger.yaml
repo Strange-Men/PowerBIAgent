@@ -3,7 +3,7 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-11 | M2.4
+# 最后更新：2026-08-12 | M2.5
 # ============================================================================
 
 schema_version: '1.0'
@@ -378,3 +378,33 @@ entries:
   - date: '2026-08-11'
     action: mitigation
     version: M2.4
+- id: ERR-250-001
+  title: Business Golden Smoke 误读 Memory 状态字段
+  category: ERR
+  first_detected_version: M2.5
+  symptom: 首个真实 Business Golden 已执行到结果汇总，但 Smoke 使用不存在的 StructuredWorkMemory.status，导致 AttributeError，未输出可审计 Case 结果
+  local_evidence: scripts/manual_smoke/m2_business_golden_smoke.py 的首轮 sales_by_category 本地堆栈；StructuredWorkMemory 权威字段为 state_status
+  authoritative_sources:
+  - title: StructuredWorkMemory 仓库数据契约
+    reason: backend/app/memory/models.py 明确定义 state_status，Repository 与 TurnPipeline 均按该字段判断提交状态
+  root_cause: 新 Smoke 编写时沿用自然语言 status 称谓，未按现有 Pydantic 模型的真实字段名读取
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Smoke 改为 memory.state_status == MemoryStatus.COMMITTED；编译、Chat API 53 tests 与真实 Case 修复复验通过
+  regression_tests:
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - StructuredWorkMemory.status
+  prevention_rules:
+  - Smoke 与验收脚本必须直接复用仓库 Pydantic 契约字段，不得根据文档称谓猜测属性名
+  - 真实 Case 汇总失败必须计入调用审计，不得隐去已发生的主链调用
+  related_adr: ADR-005
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-12'
+    action: discovered
+    version: M2.5
+  - date: '2026-08-12'
+    action: mitigation
+    version: M2.5

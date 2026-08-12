@@ -4,6 +4,18 @@
 
 ---
 
+## [M2.5] — 2026-08-12
+
+### 真实业务 Golden 回归验收与 M2 封板
+
+- 新增唯一 M2 Business Golden 人工 Smoke，通过正式 Chat API 完成 7 个真实 Case，覆盖 Measure、Dimension、Filter、Top N/Sort 与 3 个未在 Prompt 点名的对象/组合
+- 将 `gc_012_real_baseline` 固化为 Local Desktop 人工真实基线，通用 CI 继续只使用 Mock/Fake，不接 Desktop、PBIX、DeepSeek 或 Microsoft 凭据
+- 20 类关键 Bad Case、Answer provenance、Replay、Real 不回退 Mock、M0—M1 Golden 与 Mock 全量回归通过
+- ValidationService 生产代码变化为 0，未新增完整 DAX Parser、业务词典、Pipeline、Service 或 Provider；现有 Prompt 无需为 Golden 增加固定答案
+- Remote MCP 生产化继续 Deferred；M2 能力限定为 Local MCP + Power BI Desktop Demo，下一阶段为 M3 固定模板报表正式渲染
+
+---
+
 ## [M2.4] — 2026-08-11
 
 ### 现有 TurnPipeline 接入真实 Power BI

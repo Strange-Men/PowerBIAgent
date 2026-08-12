@@ -133,7 +133,9 @@ class GoldenCaseSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    ALLOWED_STATUSES: ClassVar[set[str]] = {"mock_ready", "pending_real_baseline", "deprecated"}
+    ALLOWED_STATUSES: ClassVar[set[str]] = {
+        "mock_ready", "manual_real_baseline", "deprecated"
+    }
     ALLOWED_CATEGORIES: ClassVar[set[str]] = {
         "data_question", "report_generation", "clarification", "unsupported",
         "tool_failure", "validation", "memory_conflict", "tool_policy",
@@ -283,9 +285,12 @@ class GoldenCaseRunner:
         case_id = case.id
         result = GoldenCaseResult(case_id)
 
-        if case.status == "pending_real_baseline":
+        if case.status == "manual_real_baseline":
             result.skipped = True
-            result.errors.append(f"Status is 'pending_real_baseline' — 等待真实 Power BI 基线")
+            result.errors.append(
+                "Status is 'manual_real_baseline' — 真实基线由人工 Local Desktop "
+                "Business Golden Smoke 验证，通用 CI Runner 不连接 Desktop"
+            )
             return result
 
         runtime = case.runtime

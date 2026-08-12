@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M1.5 已更新，M1 已封板
+> **状态：** M2.5 Local Power BI Demo 正式封板候选
 > **更新频率：** 每轮结束时更新
 
 ---
@@ -26,9 +26,9 @@
 | M1.3.1 | QueryPlan与DAX验证修复 | ✅ 已完成 | 2026-08-03 | `6647760` |
 | M1.3.2 | 前端视觉与结构化回答契约固化 | ✅ 已完成 | 2026-08-03 | `db0a7e8` |
 | M1.4 | 真实Answer与ReportSpec生成 | ✅ 已完成 | 2026-08-03 | `4b1f0a3` |
-| M1.4.1 | 真实性验证与Smoke验收修复 | ✅ 已完成 | 2026-08-03 | 本轮提交 |
-| M1.5 | 全链路验收与M1封板 | ✅ 已完成 | 2026-08-03 | 本轮提交 |
-| M2 | 真实 Power BI MCP 与数据问答 | ⬜ 未开始 | — | — |
+| M1.4.1 | 真实性验证与Smoke验收修复 | ✅ 已完成 | 2026-08-03 | `e22f9bd` |
+| M1.5 | 全链路验收与M1封板 | ✅ 已完成 | 2026-08-03 | `a926b5e` |
+| M2 | 真实 Power BI MCP 与数据问答 | ✅ Local Demo 封板候选 | 2026-08-12 | M2.5 |
 | M3 | 报表生成闭环 | ⬜ 未开始 | — | — |
 | M4 | 多轮记忆完善 | ⬜ 未开始 | — | — |
 | M5 | React 前端与联调 | ⬜ 未开始 | — | — |
@@ -39,7 +39,7 @@
 
 | 交付物 | 状态 |
 |--------|------|
-| Agent 框架 (PydanticAI) | ✅ |
+| Agent 控制面 (确定性 TurnPipeline + Pydantic 契约) | ✅ |
 | 意图识别 (IntentSpec + DeepSeekIntentService) | ✅ |
 | LLM Provider (Mock + DeepSeek) | ✅ |
 | QueryPlan 生成 (DeepSeekQueryPlanService) | ✅ |
@@ -47,13 +47,13 @@
 | 四层记忆 + 三态机制 + 提交准入 | ✅ |
 | Harness ETCLOVG 完整实现 | ✅ |
 | FastAPI 最小骨架 (/health + /api/v1/chat) | ✅ |
-| Golden Cases (12 条) | ✅ |
+| Golden Cases (11 个 Mock/Fake 通过 + 1 个人工真实基线) | ✅ |
 | 前端视觉与组合回答契约 | ✅ M1.3.2 完成 |
 | Answer 真实生成 | ✅ M1.4 |
 | ReportSpec 真实生成 | ✅ M1.4 |
 | 真实性验证加固（KPI/Metrics/Table/模板） | ✅ M1.4.1 |
 | QueryPlan 模板 Key 契约 | ✅ M1.4.1 |
-| 真实 Power BI MCP 连接 | ⬜ M2 |
+| 真实 Power BI MCP 连接 | ✅ Local Desktop Demo；Remote Deferred |
 | 报表正式渲染与资源 | ⬜ M3 |
 | 会话历史与持久化 | ⬜ M4 |
 | React 前端 | ⬜ M5 |
@@ -62,17 +62,17 @@
 
 | # | 事项 | 优先级 | 预计解决轮次 |
 |---|------|--------|------------|
-| 1 | Agent 框架选择 | ✅ 已确定 PydanticAI | M0.2 |
+| 1 | Agent 控制面 | ✅ 确定性 TurnPipeline + Pydantic 契约 | M1.6.3 |
 | 2 | 意图识别方案 | ✅ Prompt + Pydantic | M1.2 |
 | 3 | Mock LLM 策略 | ✅ scenario_key 驱动 | M0.2 |
-| 4 | Power BI MCP 连接方式 | ✅ Remote MCP | ADR-003 |
-| 5 | 筛选 AND/OR 策略 | ⏳ 待确认 | M2 |
+| 4 | Power BI MCP 连接方式 | ✅ Local Demo；Remote 生产化 Deferred | ADR-006 / ADR-007 |
+| 5 | 筛选组合策略 | ✅ M2 当前只接受 QueryPlan/Validator 支持的确定性组合 | M2.5 |
 | 6 | DAX 生成策略 | ✅ DeepSeek + 只读安全验证 | M1.3 |
 | 7 | DeepSeek API Key | ✅ M1.1 前已确认 | M1.1 |
-| 8 | 公司真实 Power BI 语义模型（有哪些、结构如何） | 高 | M2 前 |
+| 8 | 公司真实 Power BI 语义模型（有哪些、结构如何） | 高 | Remote 生产化前 |
 | 9 | 可用报表模板（哪些模板、谁维护） | 中 | M3 前 |
-| 10 | Power BI 管理员 Tenant 设置 | 高 | M2 前 |
-| 11 | Entra App Registration 权限 | 高 | M2 前 |
+| 10 | Power BI 管理员 Tenant 设置 | 高 | Remote 生产化前 |
+| 11 | Entra App Registration 权限 | 高 | Remote 生产化前 |
 | 12 | 报表资源保存位置（本地文件/对象存储/数据库） | 中 | M3 前 |
 | 13 | 报表查看与下载方式（浏览器打开/后端下载/前端嵌入） | 中 | M3 前 |
 | 14 | 会话和报表持久化方案（SQLite/PostgreSQL/文件） | 中 | M4 前 |
@@ -84,11 +84,10 @@
 
 | # | 风险 | 影响 | 缓解措施 |
 |---|------|------|---------|
-| 1 | Power BI MCP 连接可能受账号影响 | 阻塞 M2 | ADR-003 设计已完成 |
-| 2 | DeepSeek DAX 生成质量不确定 | 影响 M2 | DAX 校验层 + Golden Cases |
-| 3 | PydanticAI Breaking Changes | 影响长期 | Adapter 隔离 + 版本锁定 |
-| 4 | Remote MCP 端点不稳定 | 影响 M2 | ADR-003 Fallback 方案 |
-| 5 | Entra App Registration 权限不足 | 影响 M2 | M2 早期验证 |
+| 1 | Local MCP / Desktop Preview 版本变化 | 影响 Local Demo | Adapter 隔离 + 固定版本 + 变更后重新 Smoke |
+| 2 | DeepSeek DAX 业务语义不确定 | 影响受控问答 | Schema Grounding + Layer 2/3 + Business Golden |
+| 3 | Issue #124 缺失 rows | 影响真实查询 | 保持 Open 风险；missing rows 受控失败，当前实机未复现 |
+| 4 | Remote MCP 管理员与授权条件不足 | 阻塞 Remote 生产化 | Remote Deferred，按 ADR-006 恢复 |
 
 ## 五、当前 Tag 状态
 
@@ -96,7 +95,9 @@
 |-----|--------|------|
 | `m0.4.1-foundation-release` | `1f967b0` | M0.4.1 封板 |
 | `m0.4-foundation-release` | `d5c1634` | M0.4 封板 |
+| `m1-deepseek-pipeline-release` | `a926b5e` | M1 DeepSeek 主链封板 |
+| `m1.7.2-m0-m1正式封板` | `23d8ddb` | M0—M1 正式封板 |
 
 ---
 
-*最后更新：2026-08-03 | M1.5 全链路验收与M1封板*
+*最后更新：2026-08-12 | M2.5 Local Power BI Demo 正式封板候选*

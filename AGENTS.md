@@ -25,12 +25,12 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 
 ## 二、当前真实状态
 
-- 当前版本：M2.1 Local MCP 最小真实连接验证完成候选。
+- 当前版本：M2.5 Local Power BI Demo 正式封板候选。
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板。
 - Mock + Mock 完整可用。
 - DeepSeek + Mock Power BI Chat 完整可用。
 - 当前 Demo Provider 为 Local MCP + Power BI Desktop，真实 stdio / 协议 / 工具发现 / Desktop 连接已验证；Remote MCP 保留为延后生产化路径。
-- M2.1 未读取完整 Schema、未执行 DAX、未接 DeepSeek Chat；下一阶段为 M2.2。
+- M2.1—M2.5 已完成真实 Schema、DAX、DeepSeek Chat、Business Golden、Bad Case 与回归验收；下一阶段为 M3。
 - M3 报表正式渲染不得提前开发。
 - M4 持久化会话不得提前开发。
 - M5 React 前端不得提前开发。
@@ -161,4 +161,4 @@ API
 
 ---
 
-*最后更新：2026-08-11 | M2.1 Local MCP 最小真实连接验证完成候选*
+*最后更新：2026-08-12 | M2.5 Local Power BI Demo 正式封板候选*

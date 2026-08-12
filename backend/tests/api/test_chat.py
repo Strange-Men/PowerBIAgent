@@ -1024,6 +1024,165 @@ class _M24ConnectionFailureAdapter(_M24FakeLocalPowerBIAdapter):
         )
 
 
+class _M25BusinessGoldenProvider(LLMProvider):
+    """Offline scripted provider for generalized Business Golden contracts."""
+
+    def __init__(
+        self,
+        *,
+        question: str,
+        measure: str,
+        dimension: str,
+        sort: str | None,
+        top_n: int | None,
+    ) -> None:
+        self.question = question
+        self.measure = measure
+        self.dimension = dimension
+        self.sort = sort
+        self.top_n = top_n
+        self.calls: list[LLMRequest] = []
+
+    @property
+    def provider_name(self) -> str:
+        return "deepseek"
+
+    @property
+    def is_mock(self) -> bool:
+        return False
+
+    async def generate(
+        self,
+        request: LLMRequest,
+        output_type: type[BaseModel],
+    ) -> LLMResponse:
+        self.calls.append(request)
+        if request.task == LLMTask.INTENT_RECOGNITION:
+            structured = IntentSpec(
+                intent=IntentType.DATA_QUESTION,
+                confidence=0.99,
+                normalized_question=self.question,
+                detected_measures=[self.measure],
+                detected_dimensions=[self.dimension],
+            )
+        elif request.task == LLMTask.QUERY_PLAN:
+            structured = QueryPlan(
+                normalized_question=self.question,
+                semantic_model_key="local_desktop_model",
+                measures=[self.measure],
+                dimensions=[self.dimension],
+                sort=self.sort,
+                top_n=self.top_n,
+            )
+        elif request.task == LLMTask.DAX:
+            grouped = (
+                f"SUMMARIZECOLUMNS('Sales'[{self.dimension}], "
+                f"\"{self.measure}\", [{self.measure}])"
+            )
+            if self.top_n is None:
+                dax = f"EVALUATE {grouped}"
+            else:
+                dax = (
+                    f"EVALUATE TOPN({self.top_n}, {grouped}, "
+                    f"[{self.measure}], DESC)"
+                )
+            structured = DAXRequest(
+                semantic_model_key="local_desktop_model",
+                dax=dax,
+            )
+        elif request.task == LLMTask.ANSWER:
+            structured = AnswerSpec(
+                answer="查询完成。",
+                summary="查询完成。",
+                metrics={self.measure: 30},
+                evidence={
+                    "result_id": "qr-m25-business-golden",
+                    "semantic_model_key": "local_desktop_model",
+                    "row_count": 3,
+                    "source_mode": "real",
+                    "metric_provenance": {
+                        self.measure: {
+                            "source_field": f"[{self.measure}]",
+                            "aggregation": "direct",
+                        }
+                    },
+                },
+                semantic_model_key="local_desktop_model",
+                source_mode="real",
+            )
+        else:
+            raise AssertionError(f"unexpected LLM task: {request.task}")
+        return LLMResponse(
+            content="{}",
+            structured=structured,
+            model="fake-deepseek",
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        )
+
+
+class _M25BusinessGoldenAdapter(_M24FakeLocalPowerBIAdapter):
+    async def get_semantic_model_schema(
+        self, semantic_model_key: str
+    ) -> SemanticModelSchema:
+        self.schema_calls += 1
+        assert semantic_model_key == "local_desktop_model"
+        return SemanticModelSchema(
+            name="Local Desktop Model",
+            key="local_desktop_model",
+            tables=[TableSchema(
+                name="Sales",
+                columns=[
+                    ColumnSchema(name="Category", data_type="string"),
+                    ColumnSchema(name="Product", data_type="string"),
+                ],
+                measures=[
+                    MeasureSchema(name="Total Sales", data_type="decimal"),
+                    MeasureSchema(name="Total Quantity", data_type="int64"),
+                ],
+            )],
+        )
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.dax_calls += 1
+        dimension = "Product" if "[Product]" in request.dax else "Category"
+        measure = (
+            "Total Quantity"
+            if "[Total Quantity]" in request.dax
+            else "Total Sales"
+        )
+        return QueryResult(
+            result_id="qr-m25-business-golden",
+            semantic_model_key=request.semantic_model_key,
+            columns=[f"Sales[{dimension}]", f"[{measure}]"],
+            rows=[["A", 30], ["B", 20], ["C", 10]],
+            row_count=3,
+            source_mode="real",
+            request_id=request.request_id,
+        )
+
+
+def _patch_m25_business_golden_composition(
+    monkeypatch,
+    provider: _M25BusinessGoldenProvider,
+):
+    import backend.app.llm.factory as llm_factory
+    import backend.app.main as main_module
+
+    registry = LLMProviderRegistry()
+    registry.register("deepseek", provider, set_default=True)
+    monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+    monkeypatch.setattr(
+        main_module, "LocalMCPPowerBIAdapter", _M25BusinessGoldenAdapter
+    )
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        deepseek_api_key="test-key-not-real",
+    )
+    return main_module.create_app(settings=settings)
+
+
 def _patch_m24_local_composition(monkeypatch, adapter_type):
     import backend.app.llm.factory as llm_factory
     import backend.app.main as main_module
@@ -1128,3 +1287,94 @@ class TestM24DeepSeekLocalChat:
             assert adapter.schema_calls == 1
             assert adapter.dax_calls == 0
             assert len(provider.calls) == 1
+
+
+class TestM25BusinessGoldenOffline:
+    @pytest.mark.parametrize(
+        ("question", "measure", "dimension", "sort", "top_n"),
+        [
+            ("按类别看销售额。", "Total Sales", "Category", None, None),
+            ("销售额最高的前3个产品是什么？", "Total Sales", "Product", "desc", 3),
+            ("按产品看总数量。", "Total Quantity", "Product", None, None),
+            ("总数量最高的前3个类别是什么？", "Total Quantity", "Category", "desc", 3),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_business_case_uses_formal_pipeline_and_commits_grounded_memory(
+        self,
+        monkeypatch,
+        question,
+        measure,
+        dimension,
+        sort,
+        top_n,
+    ):
+        from backend.app.memory.models import RuntimeDataMode
+
+        provider = _M25BusinessGoldenProvider(
+            question=question,
+            measure=measure,
+            dimension=dimension,
+            sort=sort,
+            top_n=top_n,
+        )
+        app = _patch_m25_business_golden_composition(monkeypatch, provider)
+        transport = ASGITransport(app=app)
+        request_id = f"req-m25-{dimension}-{measure}".replace(" ", "-").lower()
+
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            adapter = service.powerbi
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.post("/api/v1/chat", json={
+                    "message": question,
+                    "request_id": request_id,
+                })
+            memory = await service.pipeline.get_memory_by_request_id(
+                request_id, RuntimeDataMode.REAL
+            )
+
+        data = response.json()
+        assert response.status_code == 200
+        assert data["terminal_state"] == "completed"
+        assert data["source_mode"] == "real"
+        assert data["memory_commit"] is True
+        assert data["tool_sequence"] == [
+            "get_semantic_model_schema",
+            "execute_dax",
+        ]
+        assert memory is not None
+        assert memory.measures == [measure]
+        assert memory.dimensions == [dimension]
+        assert memory.sort == sort
+        assert memory.top_n == top_n
+        assert memory.last_dax is not None
+        assert f"[{measure}]" in memory.last_dax
+        assert f"[{dimension}]" in memory.last_dax
+        assert adapter.schema_calls == 1
+        assert adapter.dax_calls == 1
+        assert len(provider.calls) == 4
+
+    def test_manual_business_golden_definitions_are_generalized_and_sanitized(self):
+        from scripts.manual_smoke.m2_business_golden_smoke import (
+            BUSINESS_GOLDEN_CASES,
+        )
+
+        assert len(BUSINESS_GOLDEN_CASES) == 7
+        generalized = [
+            case for case in BUSINESS_GOLDEN_CASES if case["generalization"]
+        ]
+        assert len(generalized) >= 2
+        assert {dimension for case in generalized for dimension in case["dimensions"]} >= {
+            "Product",
+            "Category",
+        }
+        assert any(case["top_n"] == 3 and case["sort"] == "desc" for case in generalized)
+        forbidden_keys = {
+            "dax",
+            "expected_value",
+            "pbix_path",
+            "prompt",
+            "raw_response",
+        }
+        assert all(forbidden_keys.isdisjoint(case) for case in BUSINESS_GOLDEN_CASES)

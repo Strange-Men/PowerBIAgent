@@ -423,22 +423,22 @@ cases:
       - idempotent
 
   # ---------------------------------------------------------------------------
-  # Case 12: 待真实 Power BI 基线
+  # Case 12: 人工真实 Power BI 基线
   # ---------------------------------------------------------------------------
   - id: gc_012_real_baseline
     category: data_question
-    status: pending_real_baseline
-    description: "真实 Power BI 基线 — 等待 M2 实现后验证"
+    status: manual_real_baseline
+    description: "真实 Power BI 基线 — 由 M2 Business Golden Local Desktop 人工 Smoke 验证；通用 CI Runner 仅校验定义并安全跳过"
 
     runtime:
       llm_mode: deepseek
-      powerbi_mode: remote_mcp
+      powerbi_mode: local_mcp
       harness_mode: strict
 
     input:
-      message: "真实数据查询"
-      conversation_id: "conv-real"
-      request_id: "req-real"
+      message: "按类别看销售额。"
+      conversation_id: "conv-m2-business-golden"
+      request_id: "req-m2-business-golden"
 
     mock_scenario:
       intent_key: "data_question"
@@ -448,8 +448,18 @@ cases:
       response_key: "data_question"
 
     expected:
+      intent: "data_question"
       terminal_state: "completed"
       memory_commit: true
+      tool_sequence:
+        - "get_semantic_model_schema"
+        - "execute_dax"
+      measures:
+        - "Total Sales"
+      dimensions:
+        - "Category"
 
     tags:
       - real_data
+      - manual_smoke
+      - local_desktop

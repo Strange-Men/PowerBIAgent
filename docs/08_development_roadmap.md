@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M2.4 现有 TurnPipeline 接入真实 Power BI 完成候选；M2.5 下一阶段
+> **状态：** M2.5 真实业务验收完成；M2 Local Power BI Demo 开发与验收正式封板；M3 下一阶段
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -52,7 +52,7 @@ M2 真实 Power BI MCP 与数据问答
   M2.2 真实 Semantic Model Schema 接入          ✅ 已完成候选
   M2.3 真实 DAX 与 QueryResult 标准化            ✅ 已完成候选
   M2.4 接入现有 TurnPipeline                    ✅ 已完成候选
-  M2.5 真实全链路验收与封板候选                  ⬜ 下一阶段
+  M2.5 真实全链路验收与封板候选                  ✅ 已完成
 
 MVP 功能阶段 (后续)
   M3 报表生成闭环                   ⬜
@@ -478,7 +478,7 @@ MVP 功能阶段 (后续)
 
 ### M1.8｜Codex接管准备与仓库上下文固化
 
-**状态：** ✅ 已完成候选
+**状态：** ✅ 已完成；M2 开发与验收正式封板
 
 **完成内容：**
 - `AGENTS.md` 仓库级 Agent 入口
@@ -533,11 +533,13 @@ MVP 功能阶段 (后续)
 
 ### M2.5｜真实全链路验收与 M2 封板候选
 
-**状态：** ⬜ 下一阶段
+**状态：** ✅ 已完成候选
 
-验证 Schema 真实性、DAX 业务语义与执行、QueryResult、Answer、幂等重放、Golden、Trace 脱敏、Mock/CI 回归与 Harness/架构无偏移。完成后停止，等待仓库审计，不自动创建后续 M2 版本。
+在不新增 Pipeline、Service、Provider、业务词典或完整 DAX Parser 的前提下，完成 7 个真实 Business Golden 和 20 类 Fake/Mock Bad Case 验收。真实 Case 覆盖 Measure、Dimension、Filter、Top N/Sort，并有 3 个 Prompt 未显式点名的对象/组合首次通过、0 repair；`gc_012` 已转为人工 Local Desktop 基线，通用 CI 保持纯 Mock/Fake。full pytest 1210 passed，Golden 11 passed / 1 manual-real skipped，Safety、Ledger 与 Architecture 门禁全部通过。M2 能力准确限定为当前 Local MCP + Power BI Desktop Demo 路线下的受控自然语言数据问答。
 
 Remote MCP 生产化不纳入当前 M2.1—M2.5 Demo 路线；公司管理员条件具备后，按 ADR-006 并经用户另行批准恢复。
+
+**下一阶段：** M3 固定模板报表正式渲染；不在 M2.5 提前实现。
 
 ---
 

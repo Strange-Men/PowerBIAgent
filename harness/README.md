@@ -38,7 +38,7 @@ D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 | 状态 | 说明 |
 |------|------|
 | mock_ready | Mock 场景可运行 |
-| pending_real_baseline | 等待真实 Power BI 基线 |
+| manual_real_baseline | 已定义人工真实基线；由 `m2_business_golden_smoke.py` 验证，通用 CI Runner 不连接 Desktop |
 
 ### 比较策略
 
@@ -65,4 +65,4 @@ Golden Cases 不逐字比较自然语言答案。
 
 ---
 
-*最后更新：2026-07-31 | M0.3.2 工具网关与并发闭环修正*
+*最后更新：2026-08-12 | M2.5 gc_012 人工 Local Desktop 真实基线*

@@ -1,6 +1,6 @@
 # 12 — M2 真实 Power BI MCP 统一接入计划
 
-> **状态：** M2.4 现有 TurnPipeline 接入真实 Power BI 完成候选；M2.5 下一阶段
+> **状态：** M2.5 真实业务验收完成；M2 Local Power BI Demo 正式封板候选
 > **官方资料查询日期：** 2026-08-11
 > **边界：** 当前 Demo 使用 Local MCP + Power BI Desktop；Remote MCP 作为 ADR-006 生产化路径延后。二者只能替换 PowerBIAdapter 后的 Provider。
 
@@ -95,7 +95,7 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 
 ### Settings
 
-版本为 M2.4；Local 配置使用 friendly `local_desktop_model` key，不接受端口、数据库名、PBIX 路径或连接串作为业务输入。DeepSeek + Local 配置就绪时 Chat 可用；Remote 历史配置保留且仍不可用。
+版本为 M2.5；Local 配置使用 friendly `local_desktop_model` key，不接受端口、数据库名、PBIX 路径或连接串作为业务输入。DeepSeek + Local 配置就绪时 Chat 可用；Remote 历史配置保留且仍不可用。
 
 ## 5. M2.0—M2.5 当前 Demo 路线
 
@@ -121,7 +121,7 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 
 ### M2.5｜真实 Demo 全链路验收
 
-**状态：⬜ 下一阶段。** 只通过 Business Golden / Bad Case / 回归验收验证真实业务口径并形成 M2 封板候选，不再新增主架构。
+**状态：✅ 已完成候选。** 通过 Business Golden / Bad Case / 泛化与回归验收证明当前 Local Demo 业务口径受 Schema、Measure、Layer 2、Layer 3 与 Answer provenance 约束；未新增主架构。
 
 Remote 生产化不塞入当前 M2.1—M2.5 Demo 路线；管理员前置条件具备后，按 ADR-006 并经用户另行批准恢复。
 
@@ -135,7 +135,7 @@ Remote 生产化不塞入当前 M2.1—M2.5 Demo 路线；管理员前置条件�
 - MCP Client 使用 Fake boundary；优先补充已有 Power BI / Settings / Harness 测试，不创建版本型测试文件。
 - 自动 CI 通过 Fake MCP `List` / `Get` 与 `Execute` 响应验证 Local Adapter → `SemanticModelSchema` / `QueryResult`；不启动 Node 或 Desktop。
 - 真实 Local MCP 只跑人工 Smoke；不记录 PBIX 路径、模型名、连接串、业务数据、Measure expression 全文或原始响应。
-- CI 继续使用 Mock/Fake Local Adapter；真实 DeepSeek + Local Chat 只在人工 Smoke 执行。Golden 真实 Power BI Case 继续 pending / skipped，留待 M2.5。
+- CI 继续使用 Mock/Fake Local Adapter；真实 DeepSeek + Local Chat 只在人工 Smoke 执行。`gc_012` 已由 M2.5 Business Golden 人工 Smoke 建立真实基线，通用 CI Runner 继续安全 skipped。
 
 ## 8. 外部前置与停止条件
 
@@ -171,7 +171,7 @@ Tenant 管理员启用 Remote MCP Preview、同 Tenant Entra App、委托权限�
 - **工具 schema：** beta.12 的 `dax_query_operations` 顶层仍为 `request` envelope；`Execute` 可接收 `query`、`maxRows`、`timeoutSeconds`、`getExecutionMetrics`、`executionMetricsOnly` 与 `resultMode`。`resultMode` 明确提供 `Resource` / `Inline`，当前 Python Client 路径使用 `Inline` JSON text，不解析 Server 私有 stdout 或 resource URI。
 - **受控探针：** 初始 metrics-enabled 探针分别使用默认 Resource 与显式 Inline，均返回 tool error，未形成 Issue #124 的 “success + metrics 但缺 rows” 形态。主路径因此不启用 execution metrics；该参数组合继续作为 Preview 兼容风险，不从 metrics 伪造 rows。
 - **最终真实响应摘要：** `getExecutionMetrics=false`、`executionMetricsOnly=false`、`resultMode=Inline` 时，固定 ROW 与业务 Measure 两个 Case 均返回可标准化的 columns、rows、rowCount 与 execution time 信息。ROW 为 1 row / 1 column 且值等于 1；业务 Measure 为 1 row / 2 columns 且两个值均为实际数值。原始响应与业务数值未写入日志、Fixture 或仓库。
-- **Issue #124 结论：** Microsoft 官方 Issue #124 截至 2026-08-11 仍为 Open，官方仓库无 beta.12 修复 Release / Tag。当前 `beta.12 + mcp 2.0.0 + protocol 2025-11-25 + Power BI Desktop` 实机未复现该 Issue；这不代表 Issue 已修复，Preview 版本或参数变化后必须重新 Smoke。
+- **Issue #124 结论：** Microsoft 官方 Issue #124 截至 2026-08-12 仍为 Open，官方仓库无 beta.12 修复 Release / Tag。当前 `beta.12 + mcp 2.0.0 + protocol 2025-11-25 + Power BI Desktop` 实机未复现该 Issue；这不代表 Issue 已修复，Preview 版本或参数变化后必须重新 Smoke。
 - **QueryResult 映射：** 按 MCP columns 返回顺序建立 `list[str]`；字典行或等宽数组行转换为 `list[list[Any]]`；`row_count` 始终取 `len(rows)`；`executionTimeMs` 及已验证 metrics duration 路径映射到 `execution_time_ms`；friendly key、request_id 与 `source_mode=real` 明确传播。超过 `max_rows` 或服务端声明更多行时受控截断并标记 `truncated=true`。
 - **错误边界：** 标准化 `timeout`、`permission_denied`、`dax_error`、`connection_error`、`malformed_response`、`oversized`、`mcp_protocol` 与 `preview_row_data_missing`。只有 NETWORK 最多重试一次；DAX、timeout、malformed 与缺 rows 不重试；所有用户错误均不包含端口、PBIX 路径、连接串或 raw MCP 异常，Real 失败不回退 Mock。
 - **调用计数：** 本轮共 4 次真实 Execute 调用：2 次受控 metrics 探针返回 tool error，最终 Smoke 内 2 次固定 Execute 成功；DeepSeek 调用 0。
@@ -185,11 +185,17 @@ Tenant 管理员启用 Remote MCP Preview、同 Tenant Entra App、委托权限�
 - **真实 Smoke：** 总销售额、总数量和带类别筛选的销售额三个 Case 均通过正式 API/Service/TurnPipeline 链；Filter Case 中 dimensions 为空、筛选只作为 filter、Layer 3 PASS、Answer source_field 来自 QueryResult.columns。原始 DAX、业务值、连接信息与 Secret 未写入仓库。
 - **失败边界：** Local 连接/Schema/DAX/Preview 错误均受控失败且不回退 Mock；stdio 关闭产生异常组时保留已有 DAX 安全错误分类，不把它伪装为 malformed success。Issue #124 仍为 Open，当前实机未复现不代表官方修复。
 
-## 13. M2.5 剩余验收
+## 13. M2.5 完成观察
 
-- 用现有 Harness/Golden 扩展代表性真实业务 Golden 与 Bad Case，核对业务口径、日期语义、粒度、结果与回归边界。
-- 完成 M2 最终审计与封板候选；不新增 Pipeline/Service，不实现 Remote/M3/M4/M5。
+- **最终架构：** API、DeepSeekTurnService、TurnPipeline、ToolGateway 与 PowerBIAdapter 边界保持不变；Local 仍只替换 Adapter 后 Provider，DeepSeek 仍是唯一 DAX 生成入口，Real 失败不回退 Mock。
+- **Business Golden：** 7 个真实 Case 逐一通过，最终完整 Smoke 7/7 通过；覆盖两个 Measure、Category Filter、Category/Product Dimension 以及两类 Top N/Sort。
+- **泛化：** Product、Product × Total Quantity、Category × Total Quantity × Top 3/desc 三个 Prompt 未显式点名的对象/组合均首次通过、0 repair。现有显式 Measure 映射仅作为示例保留；没有新增业务词典，未引入 Embedding、第二个 LLM、Ontology 或 Semantic Engine。
+- **Layer 3 边界：** 定位保持“最小确定性 DAX/QueryPlan 一致性检查”，不是 DAX 编译器；M2.5 未修改 ValidationService，未新增 AST 或通用 Parser。
+- **Bad Case：** 20 类关键失败通过 Fake/Mock 覆盖，包含 Semantic Grounding、DAX 安全/一致性、Local 错误、Preview missing rows、malformed result、Answer provenance、Replay 与指纹冲突。
+- **真实基线：** `gc_012_real_baseline` 状态为 `manual_real_baseline`，由 `m2_business_golden_smoke.py` 提供人工 Local Desktop 证据；通用 CI 继续纯 Mock/Fake，不持有 DeepSeek Key、Microsoft Token 或 PBIX。
+- **外部风险：** Microsoft Issue #124 仍为 Open，当前实机未复现不代表已修复；Preview 版本或参数变化后仍须重新 Smoke。Remote 生产化继续 Deferred，Local 路线仅证明 Demo 能力。
+- **封板边界：** M2 能力限定为“当前 Local MCP + Power BI Desktop Demo 路线下，通过真实 Schema Grounding 和确定性 Harness 完成受控自然语言数据问答”，不是生产级通用 Power BI Copilot，也不承诺支持所有 DAX 或任意 Power BI 模型。
 
 ---
 
-*最后更新：2026-08-11 | M2.4 现有 TurnPipeline 接入真实 Power BI 完成候选；Remote 保留，M2.5 下一阶段*
+*最后更新：2026-08-12 | M2.5 Local Power BI Demo 正式封板候选；Remote Deferred，M3 下一阶段*
