@@ -1,8 +1,8 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M2.6 正确性契约、Layer 3 与 Architecture Gate 加固完成
+> **状态：** M2.6.1 Known-answer Oracle 与 Multi-turn Harness/Test Set 离线固化完成
 > **关联 ADR：** ADR-004
-> **当前基线：** pytest 1210 passed、Golden Cases 11 passed / 1 manual-real skipped、安全扫描 PASS
+> **当前基线：** pytest 1272 passed、Golden Cases 11 passed / 1 manual-real skipped、安全扫描 PASS
 > **真实 Business Golden：** 7/7 passed；最终完整 Smoke 28 次 LLM 调用、0 repair
 > **真实 Chat Smoke：** overall_success=true, 6/6 cases passed (data_question, report_generation, clarification, unsupported, idempotent_replay, request_id_conflict)
 > **Token 统计：** call_count/repair_count 按 task 独立统计，LLMValidationError 携带 usage
@@ -144,6 +144,34 @@ Real semantic validation 仅放行 `eq`；其余 Operator 在进入 Power BI 前
 
 TopN selection 与 presentation ordering 是两个契约：TOPN 必须匹配 QueryPlan 的 N、单一 Measure 与方向；显式 sort 另要求查询末尾 `ORDER BY [Measure] ASC|DESC`。第 N 名 ties 允许结果超过 N 行，因此 Golden 不再以 `row_count <= top_n` 为正确性标准。
 
+### Known-answer 独立数值 Oracle（M2.6.1）
+
+**✅ 已完成离线固化。** `backend/app/harness/oracles/known_answer.py` 只属于 Harness/Test infrastructure。Expected 只从显式 baseline 文件加载，禁止由 LLM、当前 DAX、Answer 或 Actual QueryResult 反向生成。Oracle 支持：
+
+- scalar：精确列/单行指标值比较；
+- grouped：按明确业务 Key canonicalize 后比较，不依赖 raw row 顺序；
+- ordered/TopN：比较成员和值并独立验证排序方向；同一指标值的 ties 可交换顺序，第 N 名并列可使行数超过 N。
+
+数值默认 `abs_tolerance=1e-9`、`rel_tolerance=1e-9`；绝对/相对容差配置上限分别为 `0.01` 与 `1e-6`。分类维度 exact match，`None` 显式比较。committed `harness/baselines/example_known_answers.yaml` 仅含虚构测试值；M2.6.2 真实 baseline 固定为 Git 忽略的 `local_state/m2_known_answers.yaml`，缺失时返回 `real_baseline_not_configured`，覆盖不完整时返回 `real_baseline_incomplete`，均禁止回退 example baseline。
+
+`harness/cases/known_answer_cases.yaml` 固化 8 个语义 Case，其中 2 个 holdout 不进入 QueryPlan Prompt 示例，也未引入业务词典或 Prompt 特化。
+
+### Real Multi-turn Harness/Test Set（M2.6.1）
+
+**✅ 已完成 Fake/Mock 离线固化；真实执行未开始。** `harness/cases/multi_turn_conversations.yaml` 定义 6 个 Conversation、15 个 Turn，覆盖 Filter refinement、Dimension switch + TopN、Filter replacement、Metric switch、Clarification 及失败 Turn Memory 完整性。Runner 复用正式 `create_app → /api/v1/chat`，同一 Conversation 使用同一 `conversation_id`、不同 `request_id`，上下文只由上一成功 Turn 正常 commit 形成，不直接写 Memory Repository。
+
+数据 Turn 的正式 M2.6.2 成功契约同时要求 semantic expectation、Layer 2、Layer 3、Oracle、Answer provenance、Memory、`source_mode=real` 与 Real→Mock=0；Clarification 不执行 Power BI 且不 commit；失败 Turn 必须停在预期阶段、不 commit、不污染上一成功状态。Conversation 使用严格 `all(turn.passed)`，任一 Turn 或 Oracle 失败都会使整组失败，最终真实封板要求 6/6。
+
+本轮唯一入口：
+
+```powershell
+# Fake/Mock 离线执行
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn_smoke.py --mode offline
+
+# M2.6.1 仅校验 local-only baseline 配置，不执行真实调用
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn_smoke.py --mode real
+```
+
 ### Layer 4 — Business Golden Verification（M2.5）
 
 **✅ M2.5 已完成。** 通过正式 `create_app → /api/v1/chat → DeepSeekTurnService → TurnPipeline → ToolGateway → LocalMCPPowerBIAdapter` 运行 7 个真实 Business Golden：总销售额、总数量、Category Filter、按 Category 看销售额、Top 3 Product 销售额、按 Product 看总数量、Top 3 Category 总数量。逐 Case 与最终完整 Smoke 均 7/7 通过；每个 Case 同时核对 Intent、model key、Measure、Dimension、Filter、sort/top_n、Layer 2、Layer 3、真实 QueryResult、Answer provenance 与 Memory commit。
@@ -172,16 +200,19 @@ TopN selection 与 presentation ordering 是两个契约：TOPN 必须匹配 Que
 | test_query_plan.py | QueryPlan 真实验证集成测试 |
 | test_dax.py | DAX 表—归属验证测试 |
 | test_repository_safety.py | 仓库安全（26 测试） |
+| test_known_answer_oracle.py | scalar/grouped/ordered、容差、TopN ties、local-only baseline 与独立 Expected 边界 |
+| test_multi_turn_benchmark.py | 6 Conversation / 15 Turn、Memory 完整性、Oracle 与严格全 Turn 评分 |
 
 ---
 
 ## 六、未来验收项（M1.4—M5）
 
-### M2.6.1 Known-answer / Real Multi-turn 成功契约（未实现）
+### M2.6.2 Known-answer / Real Multi-turn 最终验收（未执行）
 
-- Known-answer：Actual QueryResult 必须与独立 Expected Oracle 比较；DAX 字符串、Measure 名、字段出现或 HTTP 200 均不足以证明数值正确。
+- 使用 local-only 真实 PBIX baseline，通过 DeepSeek + Local MCP + Desktop 运行同一套 8 Case / 6 Conversation 契约。
 - 单 Turn：Intent、QueryPlan、Filter/operator/value、Layer 2、Layer 3、QueryResult Oracle、Answer provenance、Memory、`source_mode=real` 与 Real→Mock=0 必须全部 PASS。
-- Conversation：所有 Turn 全部成功才 PASS。M2.6 只固化契约，不实现 Oracle、Real Multi-turn 或真实调用。
+- Conversation：所有 Turn 全部成功才 PASS；只有 6/6 才允许 M0—M2 hardened 最终封板。
+- M2.6.1 的 Fake/Mock 通过不等同于真实数值、多轮或 Desktop 验收通过。
 
 ### M1.4 验收
 
@@ -202,4 +233,4 @@ TopN selection 与 presentation ordering 是两个契约：TOPN 必须匹配 Que
 
 ---
 
-*最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成*
+*最后更新：2026-08-12 | M2.6.1 Oracle 与多轮 Harness 离线固化完成*

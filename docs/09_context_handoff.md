@@ -2,7 +2,7 @@
 
 > **当前状态交接入口；Claude / Codex / 其他代码 Agent 必须先从仓库根目录 `AGENTS.md` 进入。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成**
+> **最后更新：2026-08-12 | M2.6.1 Oracle 与多轮 Harness 离线固化完成**
 
 ---
 
@@ -12,13 +12,13 @@
 
 ## 当前阶段
 
-**M2.6 数据问答正确性契约、Layer 3 与 Architecture Gate 加固** — ✅ 已完成。
+**M2.6.1 Known-answer 独立数值 Oracle 与 Real Multi-turn Harness/Test Set 固化** — ✅ 离线完成。
 
-> 当前 Demo 继续复用既有 DeepSeekTurnService、TurnPipeline 与 ToolGateway，真实跑通自然语言 → DeepSeek → Intent → SemanticModelSchema → QueryPlan → DAX → Local MCP → Power BI Desktop → QueryResult → Answer。7 个 Business Golden 全部通过，其中 3 个 Prompt 未显式点名对象/组合首次成功、0 repair；20 类 Bad Case、Mock/M0—M1 回归与治理门禁均通过。`source_mode=real` 已传播至 Snapshot/Replay，幂等 Replay 不重复调用 LLM/PBI。Remote 生产化继续 Deferred。
+> Harness/Test 边界已新增独立 Expected Oracle、8 个 Known-answer Case（2 个 holdout）以及 6 组/15 Turn Power BI 多轮 MiniSuite。Fake/Mock 离线 Runner 复用正式 Chat API，验证 Filter refinement、Dimension switch、Filter replacement、Metric switch、Clarification、失败 Turn Memory 完整性及严格 all-turn PASS。真实 baseline 仅 local-only；真实数值、多轮与 Desktop 验收尚未执行。Remote 生产化继续 Deferred。
 
 ## 上一轮
 
-**M2.5** — 真实业务 Golden 回归验收与 M2 Local Demo 封板（Commit `c9af48aa80ac50657478ef9067ec05d4d72d746f`，CI Run #31554713357 success）。
+**M2.6** — 数据问答正确性契约与架构治理加固（Commit `91829c845ca710e913b29babd593648b58a81257`，CI Run #31559389973 success）。
 
 ## 固定封板 Tag
 
@@ -26,7 +26,7 @@
 
 ## 下一动作
 
-下一开发阶段为 **M2.6.1 Known-answer Oracle + Real Multi-turn Harness**。只实现 Actual QueryResult 对独立 Expected Oracle 的数值比较与真实多轮 Harness；不得提前执行 M2.6.2 最终真实验收或 M3 Renderer。`m2-local-powerbi-demo-release` 已存在且保持不变。Issue #124 仍为 Open，Remote 继续 Deferred。
+下一阶段为 **M2.6.2 DeepSeek + Local MCP + Desktop 最终真实数值与多轮验收**。只允许将 local-only 真实 expected baseline 接入已固化 Oracle，并运行同一套 8 Case / 6 Conversation 契约；6/6 才能 M0—M2 hardened 最终封板。不得提前实施 M3 Renderer。`m2-local-powerbi-demo-release` 保持原指向；Issue #124 仍为 Open，Remote 继续 Deferred。
 
 以后 Claude / Codex / 其他代码 Agent 均以根目录 `AGENTS.md` 为仓库级入口。
 
@@ -39,6 +39,7 @@
 - **API:** Health 200/503、Chat 可用/不可用，Mock/DeepSeek 模式切换
 - **源模式:** Local QueryResult、Turn、Answer/Report、Snapshot、Replay 均传播 `source_mode=real`
 - **M2.6 正确性:** Real Filter 仅 `eq=SUPPORTED`；其余 Operator 均 `NOT_VERIFIED` 并受控拒绝。TopN selection 与 presentation ordering 分离验证；ties 可超过 N 行
+- **M2.6.1 离线正确性:** 独立 Oracle 支持 scalar/grouped/ordered；8 个 Case（2 holdout）与 6 Conversation/15 Turn Fake/Mock 全部 PASS；Conversation 严格要求 all-turn PASS
 - **Health:** `ready` 兼容 `configuration_ready`；Health 不做实时探针，`powerbi_live_connected=false`
 
 ## 当前技术边界
@@ -57,6 +58,9 @@ D:\Conda\envs\PBIAgent\python.exe -m pytest backend\tests -q
 
 # Golden Cases
 D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
+
+# M2.6.1 Known-answer / Multi-turn Fake/Mock 离线验收
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn_smoke.py --mode offline
 
 # M2.1 Local MCP 人工连接 Smoke（先打开测试 PBIX）
 D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\powerbi_local_mcp_connection_smoke.py
@@ -85,7 +89,6 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ## 未完成事项
 
-- M2.6.1: Known-answer 数值 Oracle、Real Multi-turn Harness
 - M2.6.2: DeepSeek + Local MCP + Desktop 最终真实数值与多轮验收、M0—M2 hardened 最终封板
 - M3: 报表正式渲染管线、报表资源 ID
 - M4: 会话持久化、搜索、最近对话
@@ -106,6 +109,7 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 - M2.5: 7 个真实 Business Golden、3 个未点名对象/组合、20 类 Bad Case、`gc_012` 人工真实基线与 full regression 完成；未新增业务词典、完整 Parser 或主架构
 - M2.6: eq Filter field/operator/value、TopN/Sort 语义、Architecture ownership 与 Health 真实性加固；未实现数值 Oracle 或 Real Multi-turn
+- M2.6.1: Harness/Test 层独立 scalar/grouped/ordered Oracle、8 个 Known-answer Case（2 holdout）、6 Conversation/15 Turn 与 local-only real baseline 契约完成；只做 Fake/Mock 离线验证，真实调用为 0
 - M2.4: Local Provider 注入现有 DeepSeekTurnService / TurnPipeline；Layer 2/3、Answer provenance、real Snapshot/Replay 与三个真实自然语言 Case 完成候选
 - M2.3: 通过 ToolGateway → LocalMCPPowerBIAdapter 真实执行固定 DAX 并获取 row data；QueryResult、错误与截断边界已标准化，当前实机未复现 Issue #124
 - M2.2: 通过 ToolGateway → LocalMCPPowerBIAdapter 单次只读会话真实读取并标准化 Schema；Measure 与基础模型关系已可用于 Semantic Grounding
@@ -123,4 +127,4 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ---
 
-*最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成；下一阶段 M2.6.1*
+*最后更新：2026-08-12 | M2.6.1 Oracle 与多轮 Harness 离线固化完成；下一阶段 M2.6.2*

@@ -25,13 +25,13 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 
 ## 二、当前真实状态
 
-- 当前版本：M2.6 数据问答正确性契约与架构治理加固完成。
+- 当前版本：M2.6.1 Known-answer 独立数值 Oracle 与多轮 Harness/Test Set 离线固化完成。
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板。
 - Mock + Mock 完整可用。
 - DeepSeek + Mock Power BI Chat 完整可用。
 - 当前 Demo Provider 为 Local MCP + Power BI Desktop，真实 stdio / 协议 / 工具发现 / Desktop 连接已验证；Remote MCP 保留为延后生产化路径。
-- M2.1—M2.5 已完成 Local Demo 封板；M2.6 已加固 Filter、TopN/Sort、Architecture Gate 与 Health 真实性；下一阶段为 M2.6.1。
-- M2.6.1 Known-answer Oracle / Real Multi-turn Harness 与 M2.6.2 最终真实验收不得提前开发。
+- M2.1—M2.5 已完成 Local Demo 封板；M2.6 已加固 Filter、TopN/Sort、Architecture Gate 与 Health 真实性；M2.6.1 已完成 Oracle、Multi-turn Case/Runner 与全部离线验证。
+- 下一阶段为 M2.6.2 DeepSeek + Local MCP + Desktop 最终真实数值与多轮验收；不得提前开发 M3。
 - M3 报表正式渲染不得提前开发。
 - M4 持久化会话不得提前开发。
 - M5 React 前端不得提前开发。
@@ -164,4 +164,4 @@ API
 
 ---
 
-*最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成*
+*最后更新：2026-08-12 | M2.6.1 Oracle 与多轮 Harness 离线固化完成*

@@ -71,6 +71,16 @@ class TestChatDataQuestion:
         assert "execute_dax" in data["tool_sequence"]
         assert data["trace_id"] != ""
 
+    def test_openapi_powerbi_mode_description_lists_current_modes(self):
+        schema = create_app().openapi()
+        description = schema["components"]["schemas"]["ChatResponse"][
+            "properties"
+        ]["powerbi_mode"]["description"]
+        assert "mock" in description
+        assert "local_mcp" in description
+        assert "remote_mcp" in description
+        assert "Deferred" in description
+
     @pytest.mark.asyncio
     async def test_data_question_auto_generate_ids(self, client):
         """未提供 conversation_id 时自动生成"""

@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M2.6 数据问答正确性契约与架构治理加固完成。**
+**M2.6.1 Known-answer 独立数值 Oracle 与多轮 Harness/Test Set 离线固化完成。**
 
-> M0—M1 已正式封板，M2 Local Demo 已由固定 Tag `m2-local-powerbi-demo-release` 封板。M2.6 在不新增 Pipeline、Service 或 Parser 的前提下，补强 eq Filter 的 field/operator/value、TopN selection 与 presentation ordering、Architecture Gate ownership 及 Health 语义。Filter Real 能力仅 `eq=SUPPORTED`，其余 Operator 为 `NOT_VERIFIED` 并受控拒绝。下一阶段固定为 M2.6.1 Known-answer Oracle + Real Multi-turn Harness；尚未实现或验收。
+> M0—M1 已正式封板，M2 Local Demo 已由固定 Tag `m2-local-powerbi-demo-release` 封板。M2.6.1 在 Harness/Test 边界建立独立数值 Oracle、8 个 Known-answer Case（2 个 holdout）与 6 组/15 Turn 多轮 MiniSuite，并完成 Fake/Mock 离线验收。真实 expected baseline 仅允许保存在 Git 忽略的 `local_state/`。本轮未调用 DeepSeek、Local MCP 或 Desktop；M2.6.2 最终真实数值与多轮验收尚未执行，Remote MCP 继续 Deferred。
 
 ### 幂等与并发特性
 
@@ -116,7 +116,7 @@ curl http://127.0.0.1:8000/health
   "reasons": [],
   "app_name": "PowerBIAgent",
   "app_env": "development",
-  "version": "M2.6",
+  "version": "M2.6.1",
   "llm_mode": "mock",
   "powerbi_mode": "mock",
   "harness_mode": "strict",
@@ -175,6 +175,14 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_business_golden_smoke.
 ```
 
 Smoke 通过正式 Chat API 验证 7 个真实业务 Case，覆盖 Measure、Dimension、Filter、Top N/Sort 与 Schema 泛化；输出仅包含 Case 成败、契约匹配、Layer 3、source mode、Answer provenance 和调用/修复计数，不打印 DAX、业务数值、Prompt、原始响应、连接信息或 PBIX 路径。`gc_012_real_baseline` 由该人工 Smoke 提供真实基线，通用 CI 仍只运行 Mock/Fake。
+
+### M2.6.1 Known-answer / Multi-turn 离线 Harness
+
+```powershell
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn_smoke.py --mode offline
+```
+
+该 Runner 复用正式 `create_app → /api/v1/chat` 路径，以 Fake/Mock 虚构数据验证 8 个 Known-answer Case、2 个 holdout 及 6 组/15 Turn Conversation。`--mode real` 在 M2.6.1 只校验 `local_state/m2_known_answers.yaml` 是否存在且覆盖完整，始终不执行真实调用；真实执行仅属于 M2.6.2。真实数值不得提交、推送或写入公开 fixture/Trace。
 
 ### 对话接口
 
@@ -240,7 +248,7 @@ DeepSeek 配置由本地 `.env` 提供：
 | 数据 | Power BI MCP | ✅ Local Desktop Demo 已完成 Business Golden 与 Bad Case 封板候选；Remote Deferred |
 | 记忆 | 结构化工作记忆 | ✅ M0.2-M0.3.2 完整实现 |
 | 报表 | 固定模板 HTML | ✅ Mock 可运行；真实渲染延后 (M3) |
-| Harness | MVP 轻量控制面 | ✅ M0.3-M0.4 ETCLOVG 完整实现 |
+| Harness | MVP 轻量控制面 | ✅ M2.6.1 独立 Oracle + 6 组多轮 MiniSuite 离线通过 |
 
 ## 文档导航
 
@@ -260,4 +268,4 @@ DeepSeek 配置由本地 `.env` 提供：
 
 ---
 
-*最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成；下一阶段 M2.6.1*
+*最后更新：2026-08-12 | M2.6.1 Oracle 与多轮 Harness 离线固化完成；下一阶段 M2.6.2*

@@ -1,6 +1,6 @@
 # 12 — M2 真实 Power BI MCP 统一接入计划
 
-> **状态：** M2.6 正确性契约与架构治理加固完成
+> **状态：** M2.6.1 Known-answer Oracle 与 Multi-turn Harness 离线固化完成
 > **官方资料查询日期：** 2026-08-11
 > **边界：** 当前 Demo 使用 Local MCP + Power BI Desktop；Remote MCP 作为 ADR-006 生产化路径延后。二者只能替换 PowerBIAdapter 后的 Provider。
 
@@ -28,7 +28,7 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 - **M2.4：** 对 QueryPlan 的业务指标映射及 DAX 与已验证 QueryPlan 的一致性施加确定性约束。
 - **M2.5：** 通过现有 Harness / Golden 体系核对真实业务口径与 Power BI 结果。
 - **M2.6：** 对可验证 eq Filter 的 field/operator/value、TopN selection、presentation ordering 与架构 ownership 建立确定性契约。
-- **M2.6.1（未实现）：** Actual QueryResult 对独立 Expected Oracle；Real Multi-turn 仅在全 Turn 契约通过时 PASS。
+- **M2.6.1（离线完成）：** Actual QueryResult 对独立 Expected Oracle；Real Multi-turn Harness/Test Set 严格要求全 Turn 契约通过才 PASS。真实 DeepSeek/Local MCP/Desktop 执行留给 M2.6.2。
 
 永久正确性链为 `Schema / Measure / 明确业务定义 → QueryPlan → DAX → QueryResult`；禁止变成“用户问题 → LLM 猜业务含义 → DAX”。
 
@@ -97,9 +97,9 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 
 ### Settings
 
-版本为 M2.6；Local 配置使用 friendly `local_desktop_model` key，不接受端口、数据库名、PBIX 路径或连接串作为业务输入。DeepSeek + Local 的 `ready/configuration_ready` 只代表配置具备创建 Service 的条件，不代表 Desktop 实时在线；真实连接由 Turn/Smoke 验证。Remote 历史配置保留且仍不可用。
+版本为 M2.6.1；Local 配置使用 friendly `local_desktop_model` key，不接受端口、数据库名、PBIX 路径或连接串作为业务输入。DeepSeek + Local 的 `ready/configuration_ready` 只代表配置具备创建 Service 的条件，不代表 Desktop 实时在线；真实连接由 Turn/Smoke 验证。Remote 历史配置保留且仍不可用。
 
-## 5. M2.0—M2.5 当前 Demo 路线
+## 5. M2.0—M2.6.1 当前 Demo 与离线加固路线
 
 ### M2.0｜官方证据复核、架构设计与路线固化
 
@@ -124,6 +124,10 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 ### M2.5｜真实 Demo 全链路验收
 
 **状态：✅ 已完成候选。** 通过 Business Golden / Bad Case / 泛化与回归验收证明当前 Local Demo 业务口径受 Schema、Measure、Layer 2、Layer 3 与 Answer provenance 约束；未新增主架构。
+
+### M2.6.1｜Known-answer Oracle + Real Multi-turn Harness
+
+**状态：✅ 已完成离线固化。** Oracle 与 Conversation evaluator 完全位于 Harness/Test 层，不进入 TurnPipeline、DeepSeekTurnService、ValidationService、ToolGateway 或 PowerBIAdapter。8 个 Known-answer Case（2 个 holdout）和 6 个 Conversation / 15 Turn 通过 Fake/Mock；Expected 只从显式 baseline 加载，真实 baseline 仅允许位于 Git 忽略的 `local_state/`。M2.6.2 才允许 DeepSeek + Local MCP + Desktop 的真实执行。
 
 Remote 生产化不塞入当前 M2.1—M2.5 Demo 路线；管理员前置条件具备后，按 ADR-006 并经用户另行批准恢复。
 
@@ -207,8 +211,9 @@ Tenant 管理员启用 Remote MCP Preview、同 Tenant Entra App、委托权限�
 - **Filter：** `eq=SUPPORTED`；`ne/gt/gte/lt/lte/in/not_in/contains=NOT_VERIFIED`。Real 路径未验证 Operator 在 Layer 2 受控拒绝；Layer 3 对 eq 的 field/operator/value 与额外业务 Filter 做确定性比较。
 - **TopN/Sort：** TOPN 只证明 selection，末尾 `ORDER BY` 才证明显式 presentation ordering；N、单一 Measure 与方向必须一致，ties 允许超过 N 行。
 - **Health：** 兼容 `ready` 等同 `configuration_ready`；Health 不做持续或即时 Desktop 探针，`powerbi_live_connected=false`。
-- **后续契约：** M2.6.1 必须使用独立 Expected Oracle 比较 Actual QueryResult，并要求每个 Real Turn 的全链契约与 Conversation 全 Turn 成功；当前尚未实现。
+- **M2.6.1 已固化：** 独立 Expected Oracle 比较 Actual QueryResult；每个 Real Turn 的全链契约与 Conversation 全 Turn 成功规则已由 Fake/Mock 验证。
+- **M2.6.2 待执行：** 使用 local-only 真实 PBIX baseline 运行 DeepSeek + Local MCP + Desktop；本轮不能宣称真实 Known-answer、真实多轮或 hardened 最终封板通过。
 
 ---
 
-*最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成；下一阶段 M2.6.1*
+*最后更新：2026-08-12 | M2.6.1 Oracle 与多轮 Harness 离线固化完成；下一阶段 M2.6.2*

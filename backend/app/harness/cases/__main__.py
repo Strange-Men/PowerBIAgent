@@ -1,4 +1,4 @@
-"""Golden Case Runner 入口 — M0.3.2
+r"""Golden Case Runner 入口 — M0.3.2
 
 运行:
     D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases

@@ -105,7 +105,10 @@ class ChatResponse(BaseModel):
 
     # M1.5: 模式与使用统计字段
     llm_mode: str = Field(default="", description="LLM 模式：mock / deepseek")
-    powerbi_mode: str = Field(default="", description="Power BI 模式：mock / remote_mcp")
+    powerbi_mode: str = Field(
+        default="",
+        description="Power BI 模式：mock / local_mcp / remote_mcp（Deferred）",
+    )
     source_mode: str = Field(default="", description="数据来源：mock / real")
     usage: Optional[dict[str, Any]] = Field(
         default=None,

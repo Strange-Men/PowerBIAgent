@@ -1,0 +1,243 @@
+# M2.6.1 formal Real multi-turn acceptance specification.
+# The offline runner maps each fixture_key to fictional Mock/Fake responses.
+conversations:
+  - id: conversation_a_filter_refinement
+    description: Filter refinement and metric switch preserve committed context.
+    conversation_id: m261-conversation-a
+    turns:
+      - turn_id: a1
+        message: "按类别看销售额"
+        request_id: m261-a-1
+        fixture_key: sales_by_category
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Sales"
+          expected_dimensions: [Category]
+          expected_memory_commit: true
+          expected_inheritance: none
+          oracle_key: sales_by_category
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+      - turn_id: a2
+        message: "只看 Electronics"
+        request_id: m261-a-2
+        fixture_key: electronics_sales_by_category
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Sales"
+          expected_dimensions: [Category]
+          expected_filters: [{field: Category, operator: eq, value: Electronics}]
+          expected_memory_commit: true
+          expected_inheritance: measure_and_dimension
+          oracle_key: electronics_sales_by_category
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+      - turn_id: a3
+        message: "那销量呢"
+        request_id: m261-a-3
+        fixture_key: electronics_quantity_by_category
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Quantity"
+          expected_dimensions: [Category]
+          expected_filters: [{field: Category, operator: eq, value: Electronics}]
+          expected_memory_commit: true
+          expected_inheritance: dimension_and_filter
+          oracle_key: electronics_quantity_by_category
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+
+  - id: conversation_b_dimension_switch_topn
+    description: Dimension replacement followed by TopN and descending order.
+    conversation_id: m261-conversation-b
+    turns:
+      - turn_id: b1
+        message: "按类别看销售额"
+        request_id: m261-b-1
+        fixture_key: sales_by_category
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Sales"
+          expected_dimensions: [Category]
+          expected_memory_commit: true
+          expected_inheritance: none
+          oracle_key: sales_by_category
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+      - turn_id: b2
+        message: "改成按产品看"
+        request_id: m261-b-2
+        fixture_key: sales_by_product
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Sales"
+          expected_dimensions: [Product]
+          expected_memory_commit: true
+          expected_inheritance: measure_only_and_replace_dimension
+          oracle_key: sales_by_product
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+      - turn_id: b3
+        message: "只要销售额最高的前3个"
+        request_id: m261-b-3
+        fixture_key: top3_products_sales
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Sales"
+          expected_dimensions: [Product]
+          expected_sort: desc
+          expected_top_n: 3
+          expected_memory_commit: true
+          expected_inheritance: measure_and_product_dimension
+          oracle_key: top3_products_sales
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+
+  - id: conversation_c_filter_replacement
+    description: A new value replaces the old filter on the same field.
+    conversation_id: m261-conversation-c
+    turns:
+      - turn_id: c1
+        message: "Electronics类别销售额是多少"
+        request_id: m261-c-1
+        fixture_key: electronics_sales
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Sales"
+          expected_filters: [{field: Category, operator: eq, value: Electronics}]
+          expected_memory_commit: true
+          expected_inheritance: none
+          oracle_key: electronics_sales
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+      - turn_id: c2
+        message: "换成 Furniture"
+        request_id: m261-c-2
+        fixture_key: furniture_sales
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Sales"
+          expected_filters: [{field: Category, operator: eq, value: Furniture}]
+          expected_memory_commit: true
+          expected_inheritance: measure_and_replace_filter
+          oracle_key: furniture_sales
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+
+  - id: conversation_d_metric_switch
+    description: Product dimension survives a switch from sales to quantity.
+    conversation_id: m261-conversation-d
+    turns:
+      - turn_id: d1
+        message: "按产品看销售额"
+        request_id: m261-d-1
+        fixture_key: sales_by_product
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Sales"
+          expected_dimensions: [Product]
+          expected_memory_commit: true
+          expected_inheritance: none
+          oracle_key: sales_by_product
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+      - turn_id: d2
+        message: "那总数量呢"
+        request_id: m261-d-2
+        fixture_key: quantity_by_product
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Quantity"
+          expected_dimensions: [Product]
+          expected_memory_commit: true
+          expected_inheritance: product_dimension
+          oracle_key: quantity_by_product
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+
+  - id: conversation_e_clarification
+    description: Ambiguous best metric requires clarification before execution.
+    conversation_id: m261-conversation-e
+    turns:
+      - turn_id: e1
+        message: "哪个表现最好？"
+        request_id: m261-e-1
+        fixture_key: ambiguous_best
+        expected:
+          expected_intent: clarification
+          expected_terminal_state: clarification_required
+          expected_memory_commit: false
+          expected_inheritance: none
+          expected_tool_sequence: []
+      - turn_id: e2
+        message: "按销售额"
+        request_id: m261-e-2
+        fixture_key: top_product_sales_after_clarification
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Sales"
+          expected_dimensions: [Product]
+          expected_sort: desc
+          expected_top_n: 1
+          expected_memory_commit: true
+          expected_inheritance: clarification_resolution
+          oracle_key: top_product_sales
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+
+  - id: conversation_f_failure_memory_integrity
+    description: Failed turn cannot pollute the last committed state.
+    conversation_id: m261-conversation-f
+    turns:
+      - turn_id: f1
+        message: "按产品看销售额"
+        request_id: m261-f-1
+        fixture_key: sales_by_product
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Sales"
+          expected_dimensions: [Product]
+          expected_memory_commit: true
+          expected_inheritance: none
+          oracle_key: sales_by_product
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real
+      - turn_id: f2
+        message: "执行一个受控失败查询"
+        request_id: m261-f-2
+        fixture_key: controlled_failure
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: tool_failed
+          expected_measure: "Total Sales"
+          expected_dimensions: [Product]
+          expected_memory_commit: false
+          expected_inheritance: product_and_measure
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_failure_stage: query_result_error
+      - turn_id: f3
+        message: "那总数量呢"
+        request_id: m261-f-3
+        fixture_key: quantity_by_product
+        expected:
+          expected_intent: data_question
+          expected_terminal_state: completed
+          expected_measure: "Total Quantity"
+          expected_dimensions: [Product]
+          expected_memory_commit: true
+          expected_inheritance: last_successful_turn_f1
+          oracle_key: quantity_by_product
+          expected_tool_sequence: [get_semantic_model_schema, execute_dax]
+          expected_source_mode: real

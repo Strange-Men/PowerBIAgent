@@ -4,6 +4,20 @@
 
 ---
 
+## [M2.6.1] — 2026-08-12
+
+### Known-answer 独立数值 Oracle 与多轮 Harness 固化
+
+- 在 Harness/Test 边界新增独立 Known-answer Oracle，Expected 只从显式 baseline 读取，不依赖 LLM、当前 DAX、Answer 或 Actual QueryResult 反向生成
+- 支持 scalar、按业务 Key canonicalize 的 grouped rows，以及校验顺序并允许第 N 名 ties 超过 N 行的 ordered/TopN；数值默认绝对/相对容差均为 `1e-9`，并限制可配置上限
+- 固化 8 个 Known-answer Case（含 2 个 holdout）和 6 组、15 Turn 的 Power BI 多轮 MiniSuite；Conversation 只有所有 Turn 全部 PASS 才成功
+- 唯一 M2.6.1 Runner 通过正式 Chat API 在 Fake/Mock 模式验证 Filter refinement、Dimension switch、Filter replacement、Metric switch、Clarification 与失败 Turn Memory 完整性
+- 真实 expected baseline 仅允许位于 Git 忽略的 `local_state/`；缺失或覆盖不完整时明确失败，不回退 committed fictional example baseline
+- 修复 Harness module docstring 的 invalid escape warning，并更新 `ChatResponse.powerbi_mode` 描述为 `mock / local_mcp / remote_mcp（Deferred）`
+- 本轮真实 DeepSeek、Local MCP 与 Power BI Desktop 调用均为 0；未修改 TurnPipeline、ValidationService、Architecture Gate 或 `local_mcp.py`，M2.6.2 真实验收仍未执行
+
+---
+
 ## [M2.6] — 2026-08-12
 
 ### 数据问答正确性契约与架构治理加固

@@ -41,6 +41,7 @@ powerbi_export/
 exported_data/
 raw_data/
 business_data/
+local_state/
 
 # ============================================================
 # Generated Reports & Outputs

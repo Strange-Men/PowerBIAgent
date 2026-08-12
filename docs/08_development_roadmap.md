@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M2.6 正确性契约与架构治理加固完成；下一阶段 M2.6.1
+> **状态：** M2.6.1 Known-answer Oracle 与 Multi-turn Harness 离线固化完成；下一阶段 M2.6.2
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -54,7 +54,7 @@ M2 真实 Power BI MCP 与数据问答
   M2.4 接入现有 TurnPipeline                    ✅ 已完成候选
   M2.5 真实全链路验收与封板候选                  ✅ 已完成
   M2.6 正确性契约与架构治理加固                  ✅ 已完成
-  M2.6.1 Known-answer Oracle + Real Multi-turn   ⬜ 未开始
+  M2.6.1 Known-answer Oracle + Real Multi-turn   ✅ 已完成（离线固化）
   M2.6.2 最终真实数值与多轮验收                  ⬜ 未开始
 
 MVP 功能阶段 (后续)
@@ -552,15 +552,15 @@ Real Filter 能力按真实性矩阵治理：`eq=SUPPORTED`，`ne/gt/gte/lt/lte/
 
 ### M2.6.1｜Known-answer Oracle + Real Multi-turn Harness
 
-**状态：** ⬜ 未开始；本轮仅固化成功契约。
+**状态：** ✅ 已完成离线固化。
 
-Known-answer 必须把 Actual QueryResult 与独立 Expected Oracle 比较，不能只检查 DAX 字符串、Measure 名、字段出现或 HTTP 200。单 Turn 必须同时满足 Intent、QueryPlan、Filter/operator/value、Layer 2/3、QueryResult Oracle、Answer provenance、Memory、`source_mode=real` 与 Real→Mock=0；Conversation 只有全部 Turn 成功才 PASS。
+在 Harness/Test 层建立不依赖 LLM、当前 DAX、Answer 或 Actual QueryResult 反向生成 Expected 的独立 Oracle，支持 scalar/grouped/ordered 与 TopN ties，并以严格显式 numeric tolerance 比较。固化 8 个 Known-answer Case（2 个 holdout）、6 个 Conversation / 15 Turn 及唯一离线 Runner；通过正式 Chat API 的 Fake/Mock 路径验证 Filter refinement、Dimension switch、Filter replacement、Metric switch、Clarification、失败 Turn Memory 完整性与严格 all-turn PASS 评分。真实 baseline 仅允许 local-only；本轮真实 DeepSeek、Local MCP、Desktop 调用均为 0。
 
 ### M2.6.2｜最终真实数值与多轮验收
 
 **状态：** ⬜ 未开始。DeepSeek + Local MCP + Desktop 的最终真实数值与多轮验收，以及 M0—M2 hardened 最终封板，只属于本阶段。
 
-**下一阶段：** M2.6.1；不得提前实施 M2.6.2 或 M3。
+**下一阶段：** M2.6.2；只执行 DeepSeek + Local MCP + Desktop 的真实数值/多轮最终验收与 M0—M2 hardened 封板，不得提前实施 M3。
 
 ---
 

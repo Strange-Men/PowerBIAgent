@@ -1,0 +1,62 @@
+# M2.6.1 Known-answer semantic cases. No real expected values belong here.
+cases:
+  - id: ka_001_total_sales
+    message: "总销售额是多少？"
+    expected_measure: "Total Sales"
+    oracle_key: total_sales
+
+  - id: ka_002_total_quantity
+    message: "总共卖了多少件商品？"
+    expected_measure: "Total Quantity"
+    oracle_key: total_quantity
+
+  - id: ka_003_electronics_sales
+    message: "Electronics 类别的销售额是多少？"
+    expected_measure: "Total Sales"
+    expected_filters:
+      - field: Category
+        operator: eq
+        value: Electronics
+    oracle_key: electronics_sales
+
+  - id: ka_004_sales_by_category
+    message: "按类别看销售额。"
+    expected_measure: "Total Sales"
+    expected_dimensions: [Category]
+    oracle_key: sales_by_category
+
+  - id: ka_005_quantity_by_product
+    message: "按产品看总数量。"
+    expected_measure: "Total Quantity"
+    expected_dimensions: [Product]
+    oracle_key: quantity_by_product
+
+  - id: ka_006_top3_products_sales
+    message: "销售额最高的前3个产品是什么？"
+    expected_measure: "Total Sales"
+    expected_dimensions: [Product]
+    expected_sort: desc
+    expected_top_n: 3
+    oracle_key: top3_products_sales
+
+  - id: ka_007_top3_categories_quantity
+    message: "总数量最高的前3个类别是什么？"
+    expected_measure: "Total Quantity"
+    expected_dimensions: [Category]
+    expected_sort: desc
+    expected_top_n: 3
+    oracle_key: top3_categories_quantity
+    holdout: true
+
+  - id: ka_008_electronics_top3_products_quantity
+    message: "Electronics 类别中总数量最高的前3个产品是什么？"
+    expected_measure: "Total Quantity"
+    expected_dimensions: [Product]
+    expected_filters:
+      - field: Category
+        operator: eq
+        value: Electronics
+    expected_sort: desc
+    expected_top_n: 3
+    oracle_key: electronics_top3_products_quantity
+    holdout: true
