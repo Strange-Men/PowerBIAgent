@@ -49,6 +49,8 @@ class TestHealthMockReady:
         response = await mock_client.get("/health")
         data = response.json()
         assert data["ready"] is True
+        assert data["configuration_ready"] is True
+        assert data["powerbi_live_connected"] is False
         assert data["reasons"] == []
 
     @pytest.mark.asyncio
@@ -177,6 +179,8 @@ class TestHealthNotReady:
                 response = await c.get("/health")
                 assert response.status_code == 200
                 assert response.json()["ready"] is True
+                assert response.json()["configuration_ready"] is True
+                assert response.json()["powerbi_live_connected"] is False
 
     @pytest.mark.asyncio
     async def test_mock_llm_plus_local_reports_explicit_not_ready_reason(self):

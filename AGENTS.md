@@ -25,12 +25,13 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 
 ## 二、当前真实状态
 
-- 当前版本：M2.5 Local Power BI Demo 正式封板候选。
+- 当前版本：M2.6 数据问答正确性契约与架构治理加固完成。
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板。
 - Mock + Mock 完整可用。
 - DeepSeek + Mock Power BI Chat 完整可用。
 - 当前 Demo Provider 为 Local MCP + Power BI Desktop，真实 stdio / 协议 / 工具发现 / Desktop 连接已验证；Remote MCP 保留为延后生产化路径。
-- M2.1—M2.5 已完成真实 Schema、DAX、DeepSeek Chat、Business Golden、Bad Case 与回归验收；下一阶段为 M3。
+- M2.1—M2.5 已完成 Local Demo 封板；M2.6 已加固 Filter、TopN/Sort、Architecture Gate 与 Health 真实性；下一阶段为 M2.6.1。
+- M2.6.1 Known-answer Oracle / Real Multi-turn Harness 与 M2.6.2 最终真实验收不得提前开发。
 - M3 报表正式渲染不得提前开发。
 - M4 持久化会话不得提前开发。
 - M5 React 前端不得提前开发。
@@ -101,6 +102,8 @@ Semantic Grounding 永久规则：不得发明 Measure、字段业务含义或�
 - 绕过 Harness
 - 复制新的 Real Pipeline
 
+`backend/app/powerbi/local_mcp.py` 的职责冻结为 Local Provider / protocol Adapter。M3/M4/M5 默认不得修改；只有 Microsoft MCP Preview 兼容变化、Local Provider Bug 或 Provider 协议/响应问题允许修改。Renderer、Memory 与 UI 逻辑不得进入该文件。
+
 ## 六、当前 M2 预期数据链
 
 ```text
@@ -161,4 +164,4 @@ API
 
 ---
 
-*最后更新：2026-08-12 | M2.5 Local Power BI Demo 正式封板候选*
+*最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成*

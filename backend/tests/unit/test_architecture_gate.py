@@ -188,6 +188,64 @@ class TestArchitectureGateAST:
             f"注释中的 pydantic_ai 不应触发违规: {visitor.violations}"
         )
 
+    @pytest.mark.parametrize("owner", [
+        "application", "api", "answer", "query_plan", "dax",
+    ])
+    def test_business_owner_import_mcp_fails(self, owner: str) -> None:
+        tree = ast.parse("from mcp import Client\n", filename="bad.py")
+        visitor = gate.ArchitectureVisitor(f"backend/app/{owner}/bad.py")
+        visitor.visit(tree)
+        assert any("MCP SDK import 越界" in item for item in visitor.violations)
+
+    def test_powerbi_owner_import_mcp_passes(self) -> None:
+        tree = ast.parse("from mcp import Client\n", filename="provider.py")
+        visitor = gate.ArchitectureVisitor("backend/app/powerbi/provider.py")
+        visitor.visit(tree)
+        assert visitor.violations == []
+
+    def test_raw_call_tool_outside_provider_fails(self) -> None:
+        tree = ast.parse("client.call_tool('x')\n", filename="bad.py")
+        visitor = gate.ArchitectureVisitor("backend/app/api/bad.py")
+        visitor.visit(tree)
+        assert any("raw MCP call_tool" in item for item in visitor.violations)
+
+    @pytest.mark.parametrize("class_name", [
+        "RealTurnPipeline", "LocalTurnPipeline", "RemoteTurnPipeline",
+        "PowerBITurnPipeline", "RealTurnService", "LocalTurnService",
+    ])
+    def test_parallel_production_control_plane_fails(self, class_name: str) -> None:
+        tree = ast.parse(f"class {class_name}:\n    pass\n", filename="bad.py")
+        visitor = gate.ArchitectureVisitor("backend/app/application/bad.py")
+        visitor.visit(tree)
+        assert any("生产控制面" in item for item in visitor.violations)
+
+    @pytest.mark.parametrize(
+        "method", ["execute_dax", "get_semantic_model_schema"]
+    )
+    def test_application_direct_adapter_call_fails(self, method: str) -> None:
+        tree = ast.parse(f"await adapter.{method}(request)\n", filename="bad.py")
+        visitor = gate.ArchitectureVisitor("backend/app/application/bad.py")
+        visitor.visit(tree)
+        assert any("绕过 ToolGateway" in item for item in visitor.violations)
+
+    @pytest.mark.parametrize("module", [
+        "backend.app.memory.repository",
+        "backend.app.answer.deepseek_service",
+        "backend.app.query_plan.deepseek_service",
+        "backend.app.application.turn_pipeline",
+    ])
+    def test_provider_reverse_business_dependency_fails(self, module: str) -> None:
+        tree = ast.parse(f"import {module}\n", filename="bad.py")
+        visitor = gate.ArchitectureVisitor("backend/app/powerbi/bad.py")
+        visitor.visit(tree)
+        assert any("反向依赖业务层" in item for item in visitor.violations)
+
+    def test_langgraph_import_fails(self) -> None:
+        tree = ast.parse("import langgraph\n", filename="bad.py")
+        visitor = gate.ArchitectureVisitor("backend/app/application/bad.py")
+        visitor.visit(tree)
+        assert any("LangGraph" in item for item in visitor.violations)
+
 
 class TestArchitectureGateFileCheck:
     """文件级检查测试：使用临时文件。"""

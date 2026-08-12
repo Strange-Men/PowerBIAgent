@@ -8,9 +8,9 @@ PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent
 
 ## 当前状态
 
-**M2.5 真实业务 Golden、Bad Case 与泛化回归完成；M2 Local Power BI Demo 正式封板候选。**
+**M2.6 数据问答正确性契约与架构治理加固完成。**
 
-> M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 正式封板。Mock + Mock、DeepSeek + Mock Power BI Chat 保持可用；DeepSeek + Local MCP 复用同一个 DeepSeekTurnService、TurnPipeline 与 ToolGateway，已完成 7 个真实 Business Golden（含 Dimension、Filter、Top N/Sort 与 3 个未在 Prompt 点名的对象/组合）和关键 Bad Case 验收。真实 Schema、QueryResult、Answer provenance、Snapshot/Replay 与 Real 失败不回退 Mock 均已验证。Remote MCP 生产化继续 Deferred；下一阶段为 M3 固定模板报表正式渲染。
+> M0—M1 已正式封板，M2 Local Demo 已由固定 Tag `m2-local-powerbi-demo-release` 封板。M2.6 在不新增 Pipeline、Service 或 Parser 的前提下，补强 eq Filter 的 field/operator/value、TopN selection 与 presentation ordering、Architecture Gate ownership 及 Health 语义。Filter Real 能力仅 `eq=SUPPORTED`，其余 Operator 为 `NOT_VERIFIED` 并受控拒绝。下一阶段固定为 M2.6.1 Known-answer Oracle + Real Multi-turn Harness；尚未实现或验收。
 
 ### 幂等与并发特性
 
@@ -111,16 +111,20 @@ curl http://127.0.0.1:8000/health
 {
   "status": "ok",
   "ready": true,
+  "configuration_ready": true,
+  "powerbi_live_connected": false,
   "reasons": [],
   "app_name": "PowerBIAgent",
   "app_env": "development",
-  "version": "M2.5",
+  "version": "M2.6",
   "llm_mode": "mock",
   "powerbi_mode": "mock",
   "harness_mode": "strict",
   "timestamp": "2026-07-31T07:03:23Z"
 }
 ```
+
+`ready` 为兼容字段，等同 `configuration_ready`；两者只说明配置可创建当前运行模式，不代表 Power BI Desktop 此刻实时连接正常。真实连接仍由实际 Turn 或人工 Smoke 验证。
 
 ### M2.1 Local MCP 人工 Smoke
 
@@ -256,4 +260,4 @@ DeepSeek 配置由本地 `.env` 提供：
 
 ---
 
-*最后更新：2026-08-12 | M2.5 Local Power BI Demo 正式封板候选；下一阶段 M3*
+*最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成；下一阶段 M2.6.1*

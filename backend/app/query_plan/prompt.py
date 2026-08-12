@@ -34,6 +34,9 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 17. semantic_model_key 必须逐字等于当前 Schema 标示的 model_key，不得使用示例或历史 Key
 18. 业务词只能映射到当前 Schema 已列出的 Measure：如当前 Schema 确实存在 `Total Sales`，“总销售额/销售额”优先映射为 `Total Sales`；如当前 Schema 确实存在 `Total Quantity`，“总销量/总数量/卖了多少件”优先映射为 `Total Quantity`；对应 Measure 不存在时不得猜测
 19. Schema 对象名必须原样复制，不得翻译、删除空格、改变大小写或改用用户原话
+20. Real MVP 的 Filter 只允许 operator="eq"；其他 operator 尚未完成确定性 Layer 3 验证，不得输出
+21. sort 只能是 "asc"、"desc" 或 null；top_n 非 null 时必须同时提供 sort
+22. 当前可验证排序模式只支持单个 Measure；需要排序时 measures 必须恰好一个，排序指标即该 Measure
 
 ## QueryPlan JSON Schema
 
@@ -63,8 +66,8 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 - dimensions：用户问题中涉及的维度列（分组依据），只能从 Schema 中选取
 - filters：筛选条件数组，每个元素包含 field/operator/value
 - time_range：时间范围描述（如 "本月"、"2026年Q1"），无明确时间则为 null
-- sort：排序方式（如 "desc"、"asc"），无明确排序则为 null
-- top_n：Top N 限制（正整数），无限制则为 null
+- sort：结果展示排序方向，只能为 "desc"、"asc" 或 null；有 top_n 时不得为 null
+- top_n：Top N 选择限制（正整数），无限制则为 null；第 N 名 ties 可能使结果超过 N 行
 - comparison_mode：对比模式，无对比则为 null
 - requested_template：请求的报表模板内部 Key，只能输出以下值或 null：
   * "sales_weekly" — 销售周报、周报、销售经营周报
@@ -79,7 +82,7 @@ filters 中每个元素：
 ```json
 {
   "field": "<字段名（必须来自 Schema）>",
-  "operator": "<eq|ne|gt|gte|lt|lte|in|not_in|contains|starts_with>",
+  "operator": "eq",
   "value": "<筛选值>"
 }
 ```
@@ -184,6 +187,7 @@ REPAIR_VALIDATION_INSTRUCTION = """上一次生成的 QueryPlan 未通过 Schema
 9. Schema 对象名必须原样复制，不得翻译、删除空格或改变大小写
 10. 不得虚构任何字段
 11. 不带 Markdown 代码块标记
+12. Real MVP 的 Filter 仅允许 eq；sort 仅允许 asc/desc，top_n 必须同时提供 sort
 12. 不带解释性文本
 13. 只输出 JSON"""
 

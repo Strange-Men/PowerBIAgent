@@ -460,6 +460,16 @@ class TestPromptRules:
         assert "TotalSales" not in system
         assert "semantic_model_key 必须逐字等于" in system
 
+    def test_prompt_limits_real_filter_and_sort_contract(self):
+        messages = build_query_plan_messages(
+            "前3名", "data_question", "schema text", IntentContextSnapshot(),
+        )
+        system = messages[0]["content"]
+
+        assert 'Filter 只允许 operator="eq"' in system
+        assert 'sort 只能是 "asc"、"desc" 或 null' in system
+        assert "top_n 非 null 时必须同时提供 sort" in system
+
     def test_prompt_repair_preserves_measure_and_column_identity(self):
         """Semantic repair 不得放宽 Measure/Column 身份边界。"""
         messages = build_query_plan_messages(

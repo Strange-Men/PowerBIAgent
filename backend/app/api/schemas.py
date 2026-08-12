@@ -117,13 +117,18 @@ class ChatResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """GET /health 响应 — M0.4.1"""
+    """GET /health 配置就绪响应；不执行实时 Power BI 探针。"""
 
     status: str
-    ready: bool = Field(description="当前配置下系统是否完整可用")
+    ready: bool = Field(description="兼容字段：等同 configuration_ready")
+    configuration_ready: bool = Field(description="当前配置可创建所选运行模式")
+    powerbi_live_connected: bool = Field(
+        default=False,
+        description="是否已由本次请求实时验证 Power BI 连接；Health 不探测，恒为 false",
+    )
     reasons: list[str] = Field(
         default_factory=list,
-        description="不可用原因列表（ready=false 时填充）",
+        description="配置不可用原因列表（configuration_ready=false 时填充）",
     )
     app_name: str
     app_env: str

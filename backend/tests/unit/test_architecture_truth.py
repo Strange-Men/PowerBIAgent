@@ -31,6 +31,35 @@ from backend.app.memory.request_fingerprint import (
     IdempotencyCoordinationError,
 )
 
+
+class TestM26ArchitectureOwnershipTruth:
+    """真实生产树必须满足 Architecture Gate 的 ownership 约束。"""
+
+    def test_current_production_architecture_passes_gate(self):
+        import sys
+        from pathlib import Path
+
+        scripts = Path(__file__).resolve().parents[3] / "scripts"
+        if str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        import check_architecture_gate as gate
+
+        violations = [
+            violation
+            for path in gate.collect_python_files(gate.PRODUCTION_DIR)
+            for violation in gate.check_file(path)
+        ]
+        assert violations == []
+
+    def test_services_expose_gateway_not_raw_mcp_client(self):
+        from backend.app.application.deepseek_turn_service import DeepSeekTurnService
+        from backend.app.application.mock_turn_service import MockTurnService
+
+        assert hasattr(DeepSeekTurnService, "_build_tool_gateway")
+        assert hasattr(MockTurnService, "_build_tool_gateway")
+        assert not hasattr(DeepSeekTurnService, "call_tool")
+        assert not hasattr(MockTurnService, "call_tool")
+
 # ═════════════════════════════════════════════════════════════════════════════
 # ARCH-164-001: Service 不暴露 memory_repo 属性
 # ═════════════════════════════════════════════════════════════════════════════

@@ -1084,7 +1084,7 @@ class _M25BusinessGoldenProvider(LLMProvider):
             else:
                 dax = (
                     f"EVALUATE TOPN({self.top_n}, {grouped}, "
-                    f"[{self.measure}], DESC)"
+                    f"[{self.measure}], DESC) ORDER BY [{self.measure}] DESC"
                 )
             structured = DAXRequest(
                 semantic_model_key="local_desktop_model",

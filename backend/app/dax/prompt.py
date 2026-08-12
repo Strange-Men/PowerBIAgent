@@ -33,6 +33,9 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的 DAX 查询生成器。
 19. QueryPlan.dimensions 是 group-by 字段的唯一来源；Filter 字段不等于 Dimension。dimensions=[] 时不得添加任何 group-by 列
 20. filters 只能作为筛选条件使用，不得因参与筛选而自动加入 group-by
 21. SUMMARIZECOLUMNS 参数必须严格按 group-by 列、filter table 参数、name/expression 对的顺序排列；filter 参数不得出现在任何 name/expression 对之后
+22. 当前 Real MVP 只支持 eq Filter；必须逐字保留 QueryPlan 的 field/operator/value，且不得加入 QueryPlan 未声明的业务 Filter
+23. top_n 的 TOPN 选择必须逐字使用 QueryPlan 的 N、单一 Measure 与方向；第 N 名 ties 允许返回超过 N 行
+24. TOPN 只负责选择，不保证最终展示顺序；QueryPlan.sort 非 null 时，查询末尾必须另有 ORDER BY [Measure] ASC|DESC
 
 ## DAXRequest JSON Schema
 
@@ -65,11 +68,11 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的 DAX 查询生成器。
 - measures + dimensions → SUMMARIZECOLUMNS
 - measures 必须直接引用 QueryPlan 指定的现有 Measure；不得改写为裸列聚合
 - 只有 dimensions 中的列可以成为 SUMMARIZECOLUMNS 的 group-by 列；dimensions=[] 时省略全部 group-by 列
-- filters → FILTER、CALCULATETABLE 或 SUMMARIZECOLUMNS 的 filter table 参数；筛选字段不得自动成为维度
+- eq filters → 单值 TREATAS 或直接字面量相等谓词；筛选字段不得自动成为维度，不得改变 value 或加入额外业务 Filter
 - SUMMARIZECOLUMNS 合法顺序：groupBy_column... → filterTable... → name, expression...；name/expression 对必须最后且保持成对
 - time_range → FILTER 中日期列筛选
-- sort → ORDER BY
-- top_n → TOPN
+- sort → 查询末尾 ORDER BY [QueryPlan 的单一 Measure] ASC|DESC，保证 presentation ordering
+- top_n → TOPN(N, table, [QueryPlan 的单一 Measure], ASC|DESC)，仅保证 selection semantics
 
 ## 示例
 
@@ -79,7 +82,7 @@ Schema: Sales 表有 [TotalSales], [Region], [Date]
 ```json
 {
   "semantic_model_key": "mock_sales_model",
-  "dax": "EVALUATE TOPN(5, SUMMARIZECOLUMNS('Sales'[Region], \\"TotalSales\\", [TotalSales]), [TotalSales], DESC)",
+  "dax": "EVALUATE TOPN(5, SUMMARIZECOLUMNS('Sales'[Region], \\"TotalSales\\", [TotalSales]), [TotalSales], DESC) ORDER BY [TotalSales] DESC",
   "max_rows": 1000,
   "timeout_seconds": 30,
   "request_id": "",
@@ -109,6 +112,8 @@ REPAIR_INSTRUCTION = """上一次输出未通过 DAX 格式或安全验证。
 9. 不得用裸列聚合替换 QueryPlan 中的现有 Measure
 10. 只有 QueryPlan.dimensions 可以成为 group-by；Filter 字段不得自动成为 Dimension
 11. SUMMARIZECOLUMNS 中 filter table 参数必须位于全部 name/expression 对之前，且 name/expression 必须成对
+12. eq Filter 的 field/operator/value 必须与 QueryPlan 一致，不得增加额外业务 Filter
+13. TOPN 的 N、Measure、方向必须与 QueryPlan 一致；sort 非 null 时必须另有查询末尾 ORDER BY 保证展示顺序
 
 previous_output_error={error_code}
 missing_or_illegal_objects={illegal_objects}"""

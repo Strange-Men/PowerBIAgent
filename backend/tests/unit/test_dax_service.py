@@ -555,6 +555,17 @@ class TestDAXPromptRules:
         assert "groupBy_column... → filterTable... → name, expression" in system
         assert "filter 参数不得出现在任何 name/expression 对之后" in system
 
+    def test_prompt_separates_topn_selection_from_presentation_ordering(self):
+        messages = build_dax_messages(
+            "QP summary", "schema text", "mock_sales_model", "req-1",
+        )
+        system = messages[0]["content"]
+
+        assert "TOPN 只负责选择" in system
+        assert "ORDER BY [Measure] ASC|DESC" in system
+        assert "ties 允许返回超过 N 行" in system
+        assert "不得加入 QueryPlan 未声明的业务 Filter" in system
+
 
 # ══════════════════════════════════════════════════════════════════
 # 异常脱敏

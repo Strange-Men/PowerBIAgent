@@ -1,4 +1,4 @@
-"""Pydantic Settings — M2.5 项目配置
+"""Pydantic Settings — M2.6 项目配置
 
 环境变量可覆盖所有配置项。
 Mock 模式启动不需要任何 API Key。
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M2.5", frozen=True)
+    version: str = Field(default="M2.6", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -135,12 +135,13 @@ class Settings(BaseSettings):
 
     @property
     def is_real_ready(self) -> bool:
-        """Real 模式是否具备运行条件
+        """Real 模式的配置是否具备创建 Service 的条件。
 
         M1.5: DeepSeek + Mock Power BI 全链路已封板。
         DeepSeek 配置 Key 且 PowerBI 为 Mock 时 ready=true。
-        M2.5: DeepSeek 配置 Key 且 Local MCP 启动配置完整时 ready=true。
-        此属性只检查配置，不启动 MCP、不连接 Desktop、不读取 Schema。
+        M2.6: DeepSeek 配置 Key 且 Local MCP 启动配置完整时 ready=true。
+        这是 configuration ready，不代表 Desktop 此刻 live connected；此属性
+        不启动 MCP、不连接 Desktop、不读取 Schema。
         """
         if self.llm_mode == LLMMode.DEEPSEEK:
             if not self.is_deepseek_configured:
@@ -167,6 +168,7 @@ class Settings(BaseSettings):
             "version": self.version,
             "is_mock": self.is_mock,
             "is_real_ready": self.is_real_ready,
+            "configuration_ready": self.is_real_ready,
             "deepseek_configured": self.is_deepseek_configured,
             "powerbi_local_mcp_configured": self.is_powerbi_local_mcp_configured,
             "powerbi_local_mcp_readonly": self.powerbi_local_mcp_readonly,

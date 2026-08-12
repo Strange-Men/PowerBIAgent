@@ -4,6 +4,19 @@
 
 ---
 
+## [M2.6] — 2026-08-12
+
+### 数据问答正确性契约与架构治理加固
+
+- Filter Layer 3 对可确定验证的 `eq` 检查 field/operator/value，并拒绝额外业务 Filter；Real 路径其余 Operator 明确为 `NOT_VERIFIED`，Mock 兼容路径不变
+- TopN 验证 N、单一 Measure 与方向；显式 sort 另要求查询末尾 `ORDER BY`，不再以 `row_count <= top_n` 否定合法 ties
+- Architecture Gate 升级为 AST + ownership：MCP SDK/raw call、ToolGateway、平行生产控制面、Provider 反向依赖与禁用框架均进入 CI 门禁
+- Health 保留 `ready` 兼容字段，新增 `configuration_ready` 与 `powerbi_live_connected=false`，不把配置就绪描述为 Desktop 实时在线
+- 冻结 `local_mcp.py` 的 Provider / protocol Adapter 职责；本轮未修改其业务逻辑，未调用 DeepSeek、Local MCP 或 Desktop
+- 仅固化 M2.6.1 Known-answer Oracle 与 Real Multi-turn Harness 成功契约；未实现后续验收
+
+---
+
 ## [M2.5] — 2026-08-12
 
 ### 真实业务 Golden 回归验收与 M2 封板

@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M2.5 Local Power BI Demo 正式封板候选
+> **状态：** M2.6 正确性契约与架构治理加固完成
 > **更新频率：** 每轮结束时更新
 
 ---
@@ -28,7 +28,9 @@
 | M1.4 | 真实Answer与ReportSpec生成 | ✅ 已完成 | 2026-08-03 | `4b1f0a3` |
 | M1.4.1 | 真实性验证与Smoke验收修复 | ✅ 已完成 | 2026-08-03 | `e22f9bd` |
 | M1.5 | 全链路验收与M1封板 | ✅ 已完成 | 2026-08-03 | `a926b5e` |
-| M2 | 真实 Power BI MCP 与数据问答 | ✅ Local Demo 封板候选 | 2026-08-12 | M2.5 |
+| M2.6 | 正确性契约与架构治理加固 | ✅ 已完成 | 2026-08-12 | Filter/TopN/Sort/Gate/Health |
+| M2.6.1 | Known-answer Oracle + Real Multi-turn Harness | ⬜ 未开始 | — | — |
+| M2.6.2 | 最终真实数值与多轮验收 | ⬜ 未开始 | — | — |
 | M3 | 报表生成闭环 | ⬜ 未开始 | — | — |
 | M4 | 多轮记忆完善 | ⬜ 未开始 | — | — |
 | M5 | React 前端与联调 | ⬜ 未开始 | — | — |
@@ -66,7 +68,7 @@
 | 2 | 意图识别方案 | ✅ Prompt + Pydantic | M1.2 |
 | 3 | Mock LLM 策略 | ✅ scenario_key 驱动 | M0.2 |
 | 4 | Power BI MCP 连接方式 | ✅ Local Demo；Remote 生产化 Deferred | ADR-006 / ADR-007 |
-| 5 | 筛选组合策略 | ✅ M2 当前只接受 QueryPlan/Validator 支持的确定性组合 | M2.5 |
+| 5 | 筛选组合策略 | ✅ Real 仅 eq=SUPPORTED；其余 NOT_VERIFIED 并受控拒绝 | M2.6 |
 | 6 | DAX 生成策略 | ✅ DeepSeek + 只读安全验证 | M1.3 |
 | 7 | DeepSeek API Key | ✅ M1.1 前已确认 | M1.1 |
 | 8 | 公司真实 Power BI 语义模型（有哪些、结构如何） | 高 | Remote 生产化前 |
@@ -88,6 +90,7 @@
 | 2 | DeepSeek DAX 业务语义不确定 | 影响受控问答 | Schema Grounding + Layer 2/3 + Business Golden |
 | 3 | Issue #124 缺失 rows | 影响真实查询 | 保持 Open 风险；missing rows 受控失败，当前实机未复现 |
 | 4 | Remote MCP 管理员与授权条件不足 | 阻塞 Remote 生产化 | Remote Deferred，按 ADR-006 恢复 |
+| 5 | 当前 Business Golden 未提供独立数值 Oracle / Real Multi-turn 证据 | 不足以完成 hardened 最终封板 | M2.6.1/2 按独立 Oracle 与全会话成功契约验收 |
 
 ## 五、当前 Tag 状态
 
@@ -97,7 +100,8 @@
 | `m0.4-foundation-release` | `d5c1634` | M0.4 封板 |
 | `m1-deepseek-pipeline-release` | `a926b5e` | M1 DeepSeek 主链封板 |
 | `m1.7.2-m0-m1正式封板` | `23d8ddb` | M0—M1 正式封板 |
+| `m2-local-powerbi-demo-release` | `c9af48a` | M2.5 Local Demo 正式封板；本轮保持不变 |
 
 ---
 
-*最后更新：2026-08-12 | M2.5 Local Power BI Demo 正式封板候选*
+*最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成*

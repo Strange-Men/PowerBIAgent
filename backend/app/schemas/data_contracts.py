@@ -6,7 +6,7 @@ UserContext、SemanticModelSchema、PowerBIError 等。
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -25,6 +25,23 @@ class FilterOperator(str, Enum):
     IN_SET = "in"
     NOT_IN = "not_in"
     CONTAINS = "contains"
+
+
+class FilterCapabilityStatus(str, Enum):
+    """真实 QueryPlan → DAX 链的可验证能力状态。"""
+
+    SUPPORTED = "SUPPORTED"
+    NOT_VERIFIED = "NOT_VERIFIED"
+
+
+FILTER_OPERATOR_CAPABILITIES: dict[FilterOperator, FilterCapabilityStatus] = {
+    operator: (
+        FilterCapabilityStatus.SUPPORTED
+        if operator == FilterOperator.EQ
+        else FilterCapabilityStatus.NOT_VERIFIED
+    )
+    for operator in FilterOperator
+}
 
 
 class StructuredFilter(BaseModel):
@@ -120,7 +137,7 @@ class QueryPlan(BaseModel):
     dimensions: list[str] = Field(default_factory=list)
     filters: list[StructuredFilter] = Field(default_factory=list)
     time_range: Optional[str] = None
-    sort: Optional[str] = None
+    sort: Optional[Literal["asc", "desc"]] = None
     top_n: Optional[int] = Field(default=None, ge=1)
     comparison_mode: Optional[str] = None
     requested_template: Optional[str] = None

@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M2.5 真实业务验收完成；M2 Local Power BI Demo 开发与验收正式封板；M3 下一阶段
+> **状态：** M2.6 正确性契约与架构治理加固完成；下一阶段 M2.6.1
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -53,6 +53,9 @@ M2 真实 Power BI MCP 与数据问答
   M2.3 真实 DAX 与 QueryResult 标准化            ✅ 已完成候选
   M2.4 接入现有 TurnPipeline                    ✅ 已完成候选
   M2.5 真实全链路验收与封板候选                  ✅ 已完成
+  M2.6 正确性契约与架构治理加固                  ✅ 已完成
+  M2.6.1 Known-answer Oracle + Real Multi-turn   ⬜ 未开始
+  M2.6.2 最终真实数值与多轮验收                  ⬜ 未开始
 
 MVP 功能阶段 (后续)
   M3 报表生成闭环                   ⬜
@@ -539,7 +542,25 @@ MVP 功能阶段 (后续)
 
 Remote MCP 生产化不纳入当前 M2.1—M2.5 Demo 路线；公司管理员条件具备后，按 ADR-006 并经用户另行批准恢复。
 
-**下一阶段：** M3 固定模板报表正式渲染；不在 M2.5 提前实现。
+**M2.5 完成后的加固阶段：** M2.6；不在 M2.5 提前实现 M3。
+
+### M2.6｜数据问答正确性契约与架构治理加固
+
+**状态：** ✅ 已完成。
+
+Real Filter 能力按真实性矩阵治理：`eq=SUPPORTED`，`ne/gt/gte/lt/lte/in/not_in/contains=NOT_VERIFIED` 并在 Layer 2 受控拒绝；Layer 3 对 eq 的 field/operator/value 与额外业务 Filter 做最小确定性检查。TopN selection 的 N/Measure/方向与 presentation ordering 的末尾 `ORDER BY` 分开验证，ties 不受 `row_count <= top_n` 约束。Architecture Gate 已覆盖 MCP SDK/raw call ownership、ToolGateway、平行生产控制面和 Provider 反向依赖；Health 明确 configuration-ready 不等于 Desktop live-connected。未新增 Pipeline、Service 或 Parser。
+
+### M2.6.1｜Known-answer Oracle + Real Multi-turn Harness
+
+**状态：** ⬜ 未开始；本轮仅固化成功契约。
+
+Known-answer 必须把 Actual QueryResult 与独立 Expected Oracle 比较，不能只检查 DAX 字符串、Measure 名、字段出现或 HTTP 200。单 Turn 必须同时满足 Intent、QueryPlan、Filter/operator/value、Layer 2/3、QueryResult Oracle、Answer provenance、Memory、`source_mode=real` 与 Real→Mock=0；Conversation 只有全部 Turn 成功才 PASS。
+
+### M2.6.2｜最终真实数值与多轮验收
+
+**状态：** ⬜ 未开始。DeepSeek + Local MCP + Desktop 的最终真实数值与多轮验收，以及 M0—M2 hardened 最终封板，只属于本阶段。
+
+**下一阶段：** M2.6.1；不得提前实施 M2.6.2 或 M3。
 
 ---
 

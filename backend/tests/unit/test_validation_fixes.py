@@ -1623,6 +1623,37 @@ class TestM24QueryPlanSemanticGrounding:
     def test_real_measure_dimension_and_filter_pass(self):
         assert self._validate(_m24_plan()).is_valid
 
+    def test_unverified_filter_operator_is_rejected_only_on_real_path(self):
+        from backend.app.schemas.data_contracts import FilterOperator, StructuredFilter
+
+        plan = _m24_plan(filters=[StructuredFilter(
+            field="Category", operator=FilterOperator.NE, value="Electronics"
+        )])
+        real_result = self._validate(plan)
+        mock_result = ValidationService(
+            allowed_semantic_models=["local_desktop_model"]
+        ).validate_query_plan(plan, _m24_semantic_schema())
+
+        assert not real_result.is_valid
+        assert real_result.error_code == "filter_operator_not_verified"
+        assert mock_result.is_valid
+
+    def test_filter_capability_matrix_does_not_overclaim(self):
+        from backend.app.schemas.data_contracts import (
+            FILTER_OPERATOR_CAPABILITIES,
+            FilterCapabilityStatus,
+            FilterOperator,
+        )
+
+        assert FILTER_OPERATOR_CAPABILITIES[FilterOperator.EQ] == (
+            FilterCapabilityStatus.SUPPORTED
+        )
+        assert all(
+            status == FilterCapabilityStatus.NOT_VERIFIED
+            for operator, status in FILTER_OPERATOR_CAPABILITIES.items()
+            if operator != FilterOperator.EQ
+        )
+
     def test_numeric_column_cannot_be_used_as_measure(self):
         result = self._validate(_m24_plan(measures=["UnitPrice"]))
         assert not result.is_valid
@@ -1708,6 +1739,40 @@ class TestM24DAXQueryPlanConsistency:
             "\"Total Sales\", [Total Sales])"
         )
         assert self._validate(dax).is_valid
+
+    def test_filter_value_mismatch_is_rejected(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "'Product'[Category], "
+            "TREATAS({\"Furniture\"}, 'Product'[Category]), "
+            "\"Total Sales\", [Total Sales])"
+        )
+        result = self._validate(dax)
+        assert not result.is_valid
+        assert "dax_filter_operator_or_value_mismatch" in result.errors
+
+    def test_filter_operator_mismatch_is_rejected(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "'Product'[Category], "
+            "FILTER('Product', 'Product'[Category] <> \"Electronics\"), "
+            "\"Total Sales\", [Total Sales])"
+        )
+        result = self._validate(dax)
+        assert not result.is_valid
+        assert "dax_filter_operator_or_value_mismatch" in result.errors
+
+    def test_extra_business_filter_is_rejected(self):
+        dax = (
+            "EVALUATE SUMMARIZECOLUMNS("
+            "'Product'[Category], "
+            "TREATAS({\"Electronics\"}, 'Product'[Category]), "
+            "TREATAS({\"Furniture\"}, 'Product'[Category]), "
+            "\"Total Sales\", [Total Sales])"
+        )
+        result = self._validate(dax)
+        assert not result.is_valid
+        assert "dax_filter_extra_or_changed" in result.errors
 
     def test_filter_field_is_not_an_implicit_group_by_dimension(self):
         dax = (
@@ -1815,3 +1880,65 @@ class TestM24DAXQueryPlanConsistency:
         result = self._validate(dax, model_key="other_model")
         assert not result.is_valid
         assert "dax_query_plan_model_mismatch" in result.errors
+
+    def test_top_n_selection_and_presentation_ordering_match(self):
+        plan = _m24_plan(filters=[], top_n=3, sort="desc")
+        dax = (
+            "EVALUATE TOPN(3, SUMMARIZECOLUMNS("
+            "'Product'[Category], \"Total Sales\", [Total Sales]), "
+            "[Total Sales], DESC) ORDER BY [Total Sales] DESC"
+        )
+        assert self._validate(dax, plan=plan).is_valid
+
+    def test_top_n_value_mismatch_is_rejected(self):
+        plan = _m24_plan(filters=[], top_n=3, sort="desc")
+        dax = (
+            "EVALUATE TOPN(5, SUMMARIZECOLUMNS("
+            "'Product'[Category], \"Total Sales\", [Total Sales]), "
+            "[Total Sales], DESC) ORDER BY [Total Sales] DESC"
+        )
+        result = self._validate(dax, plan=plan)
+        assert "dax_top_n_value_mismatch" in result.errors
+
+    def test_top_n_sort_direction_mismatch_is_rejected(self):
+        plan = _m24_plan(filters=[], top_n=3, sort="desc")
+        dax = (
+            "EVALUATE TOPN(3, SUMMARIZECOLUMNS("
+            "'Product'[Category], \"Total Sales\", [Total Sales]), "
+            "[Total Sales], ASC) ORDER BY [Total Sales] DESC"
+        )
+        result = self._validate(dax, plan=plan)
+        assert "dax_top_n_sort_direction_mismatch" in result.errors
+
+    def test_top_n_sort_measure_mismatch_is_rejected(self):
+        plan = _m24_plan(filters=[], top_n=3, sort="desc")
+        dax = (
+            "EVALUATE TOPN(3, SUMMARIZECOLUMNS("
+            "'Product'[Category], \"Total Sales\", [Total Sales], "
+            "\"Total Quantity\", [Total Quantity]), "
+            "[Total Quantity], DESC) ORDER BY [Total Sales] DESC"
+        )
+        result = self._validate(dax, plan=plan)
+        assert "dax_top_n_sort_measure_mismatch" in result.errors
+
+    def test_explicit_sort_requires_presentation_ordering(self):
+        plan = _m24_plan(filters=[], top_n=3, sort="desc")
+        dax = (
+            "EVALUATE TOPN(3, SUMMARIZECOLUMNS("
+            "'Product'[Category], \"Total Sales\", [Total Sales]), "
+            "[Total Sales], DESC)"
+        )
+        result = self._validate(dax, plan=plan)
+        assert "dax_presentation_ordering_missing" in result.errors
+
+    def test_ties_may_return_more_rows_than_top_n(self):
+        from backend.app.schemas.data_contracts import QueryResult
+
+        result = QueryResult(
+            semantic_model_key="local_desktop_model",
+            columns=["Category", "Total Sales"],
+            rows=[["A", 10], ["B", 9], ["C", 8], ["D", 8]],
+            row_count=4,
+            source_mode="real",
+        )
+        assert ValidationService().validate_query_result(result).is_valid

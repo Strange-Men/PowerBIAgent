@@ -2,7 +2,7 @@
 
 > **当前状态交接入口；Claude / Codex / 其他代码 Agent 必须先从仓库根目录 `AGENTS.md` 进入。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-12 | M2.5 Local Power BI Demo 正式封板候选**
+> **最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成**
 
 ---
 
@@ -12,13 +12,13 @@
 
 ## 当前阶段
 
-**M2.5 真实业务 Golden、Bad Case 与泛化回归** — ✅ 已完成；M2 Local Power BI Demo 已满足正式封板候选条件。
+**M2.6 数据问答正确性契约、Layer 3 与 Architecture Gate 加固** — ✅ 已完成。
 
 > 当前 Demo 继续复用既有 DeepSeekTurnService、TurnPipeline 与 ToolGateway，真实跑通自然语言 → DeepSeek → Intent → SemanticModelSchema → QueryPlan → DAX → Local MCP → Power BI Desktop → QueryResult → Answer。7 个 Business Golden 全部通过，其中 3 个 Prompt 未显式点名对象/组合首次成功、0 repair；20 类 Bad Case、Mock/M0—M1 回归与治理门禁均通过。`source_mode=real` 已传播至 Snapshot/Replay，幂等 Replay 不重复调用 LLM/PBI。Remote 生产化继续 Deferred。
 
 ## 上一轮
 
-**M2.4** — 现有 TurnPipeline 接入真实 Power BI（Commit `8fd5236f94ea53a72f287882e2ab46b4e556de55`，远程 CI Run #31479117658 success）。
+**M2.5** — 真实业务 Golden 回归验收与 M2 Local Demo 封板（Commit `c9af48aa80ac50657478ef9067ec05d4d72d746f`，CI Run #31554713357 success）。
 
 ## 固定封板 Tag
 
@@ -26,7 +26,7 @@
 
 ## 下一动作
 
-下一开发阶段为 **M3 固定模板报表正式渲染**。M3 不得改写 M2 的 TurnPipeline、ToolGateway、PowerBIAdapter、Semantic Grounding 或 DAX 生成边界。M2 唯一正式 Tag 只能在 M2.5 远程 CI green 后创建；Issue #124 仍为 Open，当前实机未复现不代表官方已修复；Remote 继续 Deferred，除非管理员条件具备且用户另行批准。
+下一开发阶段为 **M2.6.1 Known-answer Oracle + Real Multi-turn Harness**。只实现 Actual QueryResult 对独立 Expected Oracle 的数值比较与真实多轮 Harness；不得提前执行 M2.6.2 最终真实验收或 M3 Renderer。`m2-local-powerbi-demo-release` 已存在且保持不变。Issue #124 仍为 Open，Remote 继续 Deferred。
 
 以后 Claude / Codex / 其他代码 Agent 均以根目录 `AGENTS.md` 为仓库级入口。
 
@@ -38,6 +38,8 @@
 - **能力:** 真实 Schema Grounding → QueryPlan Layer 2 → DAX Layer 3 → Answer/ReportSpec，7 个 Business Golden、20 类 Bad Case、幂等重放与请求指纹冲突检测
 - **API:** Health 200/503、Chat 可用/不可用，Mock/DeepSeek 模式切换
 - **源模式:** Local QueryResult、Turn、Answer/Report、Snapshot、Replay 均传播 `source_mode=real`
+- **M2.6 正确性:** Real Filter 仅 `eq=SUPPORTED`；其余 Operator 均 `NOT_VERIFIED` 并受控拒绝。TopN selection 与 presentation ordering 分离验证；ties 可超过 N 行
+- **Health:** `ready` 兼容 `configuration_ready`；Health 不做实时探针，`powerbi_live_connected=false`
 
 ## 当前技术边界
 
@@ -45,6 +47,7 @@
 - Adapter 内部使用 `connection_operations`、五类 Schema 工具的 `List` / `Get` 与 `dax_query_operations Execute`；业务层仍只有 Schema 与 DAX Execute 两类抽象能力
 - 任何 Local / Remote MCP SDK 只能位于 PowerBIAdapter 边界之后；Service/API/LLM 不得直接调用 MCP；Real 失败不得回退 Mock
 - M2.1—M2.5 只沿现有 Adapter/控制面完成 Local Demo 验证；会话持久化属 M4，报表正式渲染属 M3，React 属 M5
+- `local_mcp.py` 职责冻结为 Provider / protocol Adapter；M3/M4/M5 默认不得修改，Renderer/Memory/UI 逻辑不得进入
 
 ## 运行命令
 
@@ -82,6 +85,8 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ## 未完成事项
 
+- M2.6.1: Known-answer 数值 Oracle、Real Multi-turn Harness
+- M2.6.2: DeepSeek + Local MCP + Desktop 最终真实数值与多轮验收、M0—M2 hardened 最终封板
 - M3: 报表正式渲染管线、报表资源 ID
 - M4: 会话持久化、搜索、最近对话
 - M5: React 前端
@@ -92,6 +97,7 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 | Tag | Commit | 说明 |
 |-----|--------|------|
 | `m1.7.2-m0-m1正式封板` | `23d8ddb` | M0—M1 正式封板基线 |
+| `m2-local-powerbi-demo-release` | `c9af48a` | M2.5 Local Demo 正式封板基线；保持不变 |
 | `m1-deepseek-pipeline-release` | `a926b5e` | M1 DeepSeek 全链路封板 |
 | `m0.4.1-foundation-release` | `1f967b0` | M0.4.1 封板 |
 | `m0.4-foundation-release` | `d5c1634` | M0.4 封板 |
@@ -99,6 +105,7 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 ## 近期变更摘要
 
 - M2.5: 7 个真实 Business Golden、3 个未点名对象/组合、20 类 Bad Case、`gc_012` 人工真实基线与 full regression 完成；未新增业务词典、完整 Parser 或主架构
+- M2.6: eq Filter field/operator/value、TopN/Sort 语义、Architecture ownership 与 Health 真实性加固；未实现数值 Oracle 或 Real Multi-turn
 - M2.4: Local Provider 注入现有 DeepSeekTurnService / TurnPipeline；Layer 2/3、Answer provenance、real Snapshot/Replay 与三个真实自然语言 Case 完成候选
 - M2.3: 通过 ToolGateway → LocalMCPPowerBIAdapter 真实执行固定 DAX 并获取 row data；QueryResult、错误与截断边界已标准化，当前实机未复现 Issue #124
 - M2.2: 通过 ToolGateway → LocalMCPPowerBIAdapter 单次只读会话真实读取并标准化 Schema；Measure 与基础模型关系已可用于 Semantic Grounding
@@ -116,4 +123,4 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ---
 
-*最后更新：2026-08-12 | M2.5 Local Power BI Demo 正式封板候选；下一阶段 M3*
+*最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成；下一阶段 M2.6.1*

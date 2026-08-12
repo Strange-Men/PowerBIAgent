@@ -46,8 +46,9 @@ async def health(request: Request, response: Response, settings: Settings = Depe
 
     Mock 模式完整可用 → 200、ready=true。
     DeepSeek+Mock 模式 Key 已配置 → 200、ready=true。
-    DeepSeek+Local 模式 Key 与只读 Local 配置完整 → 200、ready=true。
+    DeepSeek+Local 模式 Key 与只读 Local 配置完整 → 200、configuration_ready=true。
     Remote MCP 模式 → 503、powerbi_remote_mcp_not_implemented。
+    ready 为兼容字段，等同 configuration_ready；不代表 Desktop 实时在线。
     不调用 LLM、启动 npx 或连接 Power BI Desktop。不输出 Key 信息。
     """
     ready = settings.is_real_ready
@@ -76,6 +77,8 @@ async def health(request: Request, response: Response, settings: Settings = Depe
     return HealthResponse(
         status=status,
         ready=ready,
+        configuration_ready=ready,
+        powerbi_live_connected=False,
         reasons=reasons,
         app_name=settings.app_name,
         app_env=settings.app_env.value,

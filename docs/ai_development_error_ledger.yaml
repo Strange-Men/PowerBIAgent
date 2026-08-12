@@ -3,11 +3,43 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-12 | M2.5
+# 最后更新：2026-08-12 | M2.6
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: GOV-260-001
+  title: Enum 与 Prompt 暴露能力但真实链缺少确定性验证
+  category: GOV
+  first_detected_version: M2.6
+  symptom: Filter Operator Enum 暴露多种操作，但旧 Layer 3 只验证字段出现；TopN 选择与最终排序也未分离，未验证能力可能被误写为 Supported
+  local_evidence: ValidationService M2.5 基线只检查 Filter field 引用；Business Golden 曾使用 row_count <= top_n
+  authoritative_sources:
+  - title: M2.6 数据问答正确性契约
+    reason: 真实能力只能在 QueryPlan、Prompt、Layer 2/3、测试和 Real 证据形成闭环后标为 SUPPORTED
+  root_cause: 结构契约、生成提示与验收证据之间缺少统一 capability truthfulness 门禁
+  failed_attempts:
+  - 以 Enum 存在或字段出现在 DAX 中代替 operator/value 语义证明
+  repair_attempt_count: 1
+  final_fix: 建立 Filter Capability Matrix；Real 仅 eq=SUPPORTED，其余 NOT_VERIFIED 受控拒绝；Layer 3 比较 field/operator/value 与 extra filter，并拆分 TopN selection / presentation ordering
+  regression_tests:
+  - backend/tests/unit/test_validation_fixes.py
+  - backend/tests/unit/test_dax_service.py
+  - backend/tests/unit/test_query_plan_service.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - Enum 存在即宣称真实支持
+  - 使用 row_count <= top_n 作为通用 TopN 正确性标准
+  prevention_rules:
+  - 未形成可确定验证闭环的 Operator 必须标记 NOT_VERIFIED 并在 Real 路径受控拒绝
+  - TopN selection 与 presentation ordering 必须独立验证
+  related_adr: ADR-005
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-12'
+    action: mitigation
+    version: M2.6
 - id: TX-001
   title: Service 直接写 Memory
   category: TX

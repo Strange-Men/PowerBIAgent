@@ -12,6 +12,9 @@ from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
     DAXRequest,
+    FILTER_OPERATOR_CAPABILITIES,
+    FilterCapabilityStatus,
+    FilterOperator,
     QueryPlan,
     QueryResult,
     ReportSpec,
@@ -119,6 +122,7 @@ class ValidationService:
         all_measures = schema.get_all_measures()
         if enforce_semantic_grounding:
             errors.extend(self._validate_query_plan_semantics(plan, schema))
+            errors.extend(self._validate_real_query_capabilities(plan))
         else:
             for m in plan.measures:
                 if m not in all_measures and m not in all_columns:
@@ -143,7 +147,37 @@ class ValidationService:
                     " 不在模板白名单中"
                 )
 
-        return ValidationResult(valid=len(errors) == 0, errors=errors)
+        error_code = None
+        if errors:
+            error_code = (
+                "filter_operator_not_verified"
+                if any("filter_operator_not_verified" in error for error in errors)
+                else "query_plan_validation_failed"
+            )
+        return ValidationResult(
+            valid=len(errors) == 0,
+            errors=errors,
+            error_code=error_code,
+        )
+
+    @staticmethod
+    def _validate_real_query_capabilities(plan: QueryPlan) -> list[str]:
+        """真实路径只放行已有确定性验证能力的 QueryPlan 语义。"""
+        errors: list[str] = []
+        for query_filter in plan.filters:
+            if (
+                FILTER_OPERATOR_CAPABILITIES[query_filter.operator]
+                != FilterCapabilityStatus.SUPPORTED
+            ):
+                errors.append(
+                    "query_plan_filter_operator_not_verified: "
+                    f"Operator '{query_filter.operator.value}' is NOT_VERIFIED"
+                )
+        if plan.top_n is not None and plan.sort is None:
+            errors.append("query_plan_top_n_sort_required")
+        if plan.sort is not None and len(plan.measures) != 1:
+            errors.append("query_plan_sort_measure_not_verifiable")
+        return errors
 
     @staticmethod
     def _validate_query_plan_semantics(
@@ -348,6 +382,9 @@ class ValidationService:
                     f"dax_missing_query_plan_filter: Filter field '{query_filter.field}' is not referenced"
                 )
 
+        errors.extend(self._validate_filter_consistency(dax_request.dax, plan))
+        errors.extend(self._validate_topn_sort_consistency(dax_request.dax, plan))
+
         errors.extend(
             self._validate_summarizecolumns_consistency(
                 dax_request.dax,
@@ -360,6 +397,130 @@ class ValidationService:
             errors=errors,
             error_code="dax_semantic_consistency_failed" if errors else None,
         )
+
+    @classmethod
+    def _validate_filter_consistency(cls, dax: str, plan: QueryPlan) -> list[str]:
+        expected = {
+            (item.field, item.operator, cls._canonical_filter_value(item.value))
+            for item in plan.filters
+        }
+        observed: set[tuple[str, FilterOperator, tuple[str, str]]] = set()
+        unverifiable = False
+
+        for name, arguments in cls._function_argument_lists(
+            dax, {"FILTER", "TREATAS"}
+        ):
+            parsed: tuple[str, FilterOperator, tuple[str, str]] | None = None
+            if name == "FILTER" and len(arguments) == 2:
+                match = re.fullmatch(
+                    r"\s*(?:'[^']+'|[A-Za-z_]\w*)\[([^\]]+)\]\s*"
+                    r"(=|<>|>=|<=|>|<)\s*(.*?)\s*",
+                    arguments[1],
+                    re.DOTALL,
+                )
+                operators = {
+                    "=": FilterOperator.EQ, "<>": FilterOperator.NE,
+                    ">": FilterOperator.GT, ">=": FilterOperator.GTE,
+                    "<": FilterOperator.LT, "<=": FilterOperator.LTE,
+                }
+                if match:
+                    value = cls._canonical_filter_value(match.group(3), dax=True)
+                    if value is not None:
+                        parsed = (match.group(1), operators[match.group(2)], value)
+            elif name == "TREATAS" and len(arguments) == 2:
+                value_match = re.fullmatch(r"\{\s*(.*?)\s*\}", arguments[0])
+                field = cls._qualified_column_name(arguments[1])
+                if value_match and field:
+                    value = cls._canonical_filter_value(
+                        value_match.group(1), dax=True
+                    )
+                    if value is not None:
+                        parsed = (field, FilterOperator.EQ, value)
+            if parsed is None:
+                unverifiable = True
+            else:
+                observed.add(parsed)
+
+        if unverifiable:
+            return ["dax_filter_structure_not_verifiable"]
+        if expected != observed:
+            errors: list[str] = []
+            if observed - expected:
+                errors.append("dax_filter_extra_or_changed")
+            if expected - observed:
+                errors.append("dax_filter_operator_or_value_mismatch")
+            return errors
+        return []
+
+    @staticmethod
+    def _canonical_filter_value(
+        value: Any, *, dax: bool = False
+    ) -> tuple[str, str] | None:
+        if dax:
+            literal = str(value).strip()
+            if re.fullmatch(r'"(?:[^"\\]|\\.|"")*"', literal):
+                return "string", literal[1:-1].replace('""', '"')
+            if literal.upper() in {"TRUE", "TRUE()", "FALSE", "FALSE()"}:
+                return "bool", str(literal.upper().startswith("TRUE")).lower()
+            if re.fullmatch(r"-?\d+(?:\.\d+)?", literal):
+                return "number", str(float(literal))
+            return None
+        if isinstance(value, bool):
+            return "bool", str(value).lower()
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return "number", str(float(value))
+        return "string", str(value)
+
+    @classmethod
+    def _validate_topn_sort_consistency(cls, dax: str, plan: QueryPlan) -> list[str]:
+        errors: list[str] = []
+        topn_calls = [
+            arguments
+            for name, arguments in cls._function_argument_lists(dax, {"TOPN"})
+            if name == "TOPN"
+        ]
+        if plan.top_n is None:
+            if topn_calls:
+                errors.append("dax_unplanned_top_n")
+        elif len(topn_calls) != 1 or len(topn_calls[0]) < 4:
+            errors.append("dax_top_n_structure_not_verifiable")
+        else:
+            arguments = topn_calls[0]
+            if arguments[0].strip() != str(plan.top_n):
+                errors.append("dax_top_n_value_mismatch")
+            measure = re.fullmatch(r"\s*\[([^\]]+)\]\s*", arguments[2])
+            if measure is None or measure.group(1) != plan.measures[0]:
+                errors.append("dax_top_n_sort_measure_mismatch")
+            if arguments[3].strip().lower() != plan.sort:
+                errors.append("dax_top_n_sort_direction_mismatch")
+
+        order_match = re.search(r"\bORDER\s+BY\s+(.+?)\s*$", dax, re.IGNORECASE)
+        if plan.sort is None:
+            if order_match:
+                errors.append("dax_unplanned_presentation_ordering")
+        elif order_match is None:
+            errors.append("dax_presentation_ordering_missing")
+        else:
+            order_items = cls._split_top_level_arguments(order_match.group(1))
+            if len(order_items) != 1:
+                errors.append("dax_presentation_ordering_not_verifiable")
+            else:
+                item_match = re.fullmatch(
+                    r"\s*(.*?)\s+(ASC|DESC)\s*",
+                    order_items[0],
+                    re.IGNORECASE | re.DOTALL,
+                )
+                if item_match is None:
+                    errors.append("dax_presentation_ordering_not_verifiable")
+                else:
+                    measure = re.fullmatch(
+                        r"\s*\[([^\]]+)\]\s*", item_match.group(1)
+                    )
+                    if measure is None or measure.group(1) != plan.measures[0]:
+                        errors.append("dax_presentation_sort_measure_mismatch")
+                    if item_match.group(2).lower() != plan.sort:
+                        errors.append("dax_presentation_sort_direction_mismatch")
+        return errors
 
     @classmethod
     def _validate_summarizecolumns_consistency(
@@ -375,7 +536,9 @@ class ValidationService:
         name/expression pairs while respecting quotes and nested delimiters.
         """
         errors: list[str] = []
-        for arguments in cls._summarizecolumns_argument_lists(dax):
+        for _, arguments in cls._function_argument_lists(
+            dax, {"SUMMARIZECOLUMNS"}
+        ):
             first_name_index = next(
                 (
                     index
@@ -422,14 +585,20 @@ class ValidationService:
         return list(dict.fromkeys(errors))
 
     @classmethod
-    def _summarizecolumns_argument_lists(cls, dax: str) -> list[list[str]]:
-        calls: list[list[str]] = []
-        for match in re.finditer(r"\bSUMMARIZECOLUMNS\s*\(", dax, re.IGNORECASE):
+    def _function_argument_lists(
+        cls, dax: str, names: set[str]
+    ) -> list[tuple[str, list[str]]]:
+        calls: list[tuple[str, list[str]]] = []
+        pattern = r"\b(" + "|".join(sorted(names)) + r")\s*\("
+        for match in re.finditer(pattern, dax, re.IGNORECASE):
             opening = match.end() - 1
             closing = cls._matching_parenthesis(dax, opening)
             if closing is None:
                 continue
-            calls.append(cls._split_top_level_arguments(dax[opening + 1:closing]))
+            calls.append((
+                match.group(1).upper(),
+                cls._split_top_level_arguments(dax[opening + 1:closing]),
+            ))
         return calls
 
     @staticmethod

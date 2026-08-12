@@ -126,7 +126,7 @@ def _filters_match(actual: Any, expected: list[tuple[str, str]]) -> bool:
     actual_pairs = {
         (str(item.get("field")), str(item.get("value")))
         for item in actual
-        if isinstance(item, dict)
+        if isinstance(item, dict) and item.get("operator") == "eq"
     }
     return actual_pairs == expected_pairs
 
@@ -147,6 +147,13 @@ def _dax_shape_matches(dax: str, case: dict[str, Any]) -> bool:
         return False
     if case["sort"] == "desc" and re.search(r"\bDESC\b", dax, re.IGNORECASE) is None:
         return False
+    if case["sort"] is not None:
+        order_pattern = (
+            rf"\bORDER\s+BY\s+\[{re.escape(case['measure'])}\]\s+"
+            rf"{case['sort']}\s*$"
+        )
+        if re.search(order_pattern, dax, re.IGNORECASE) is None:
+            return False
     return True
 
 
@@ -321,10 +328,6 @@ async def _run_smoke(selected_case: str | None = None) -> int:
                     query_result is not None
                     and query_result.source_mode == "real"
                     and query_result.error is None
-                    and (
-                        case["top_n"] is None
-                        or query_result.row_count <= case["top_n"]
-                    )
                 )
                 answer_provenance_pass = bool(
                     answer is not None

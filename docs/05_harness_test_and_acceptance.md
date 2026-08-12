@@ -1,6 +1,6 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M2.5 四层语义验收、Business Golden 与 Bad Case 已完成
+> **状态：** M2.6 正确性契约、Layer 3 与 Architecture Gate 加固完成
 > **关联 ADR：** ADR-004
 > **当前基线：** pytest 1210 passed、Golden Cases 11 passed / 1 manual-real skipped、安全扫描 PASS
 > **真实 Business Golden：** 7/7 passed；最终完整 Smoke 28 次 LLM 调用、0 repair
@@ -130,6 +130,20 @@ Fake MCP 离线覆盖正常/空/截断、DAX/timeout/permission/connection/MCP p
 
 **✅ M2.4 已实现。** 在 `DAXSafetyValidator` 之上确定性检查模型 key、Measure/Dimension/Filter 引用；只有 QueryPlan.dimensions 可成为 group-by，Filter 字段不会自动成为维度；`SUMMARIZECOLUMNS` 强制 group-by → filter table → name/expression 对的顺序并拒绝不成对参数。未增加第二个 LLM Judge 或完整 DAX AST Parser。
 
+### M2.6 Filter / TopN / Sort Correctness Contract
+
+Filter Capability Matrix 只使用 `SUPPORTED` / `NOT_VERIFIED`：
+
+| Operator | QueryPlan 契约 | Prompt | Layer 3 | Fake/Mock | Real 证据 | 状态 |
+|---|---|---|---|---|---|---|
+| `eq` | 有 | 明确 | field/operator/value 与 extra filter 可验证 | 有 | M2.4/2.5 eq Case | `SUPPORTED` |
+| `ne` / `gt` / `gte` / `lt` / `lte` | Enum 有 | Real 不输出 | 未形成已验收可靠链 | 兼容 | 无 | `NOT_VERIFIED` |
+| `in` / `not_in` / `contains` | Enum 有 | Real 不输出 | 未形成已验收可靠链 | 兼容 | 无 | `NOT_VERIFIED` |
+
+Real semantic validation 仅放行 `eq`；其余 Operator 在进入 Power BI 前以 `filter_operator_not_verified` 受控失败。Layer 3 只识别直接字面量相等谓词与单值 `TREATAS`，不对无法可靠解释的 DAX 猜测。Mock 旧路径不启用该 Real capability gate。
+
+TopN selection 与 presentation ordering 是两个契约：TOPN 必须匹配 QueryPlan 的 N、单一 Measure 与方向；显式 sort 另要求查询末尾 `ORDER BY [Measure] ASC|DESC`。第 N 名 ties 允许结果超过 N 行，因此 Golden 不再以 `row_count <= top_n` 为正确性标准。
+
 ### Layer 4 — Business Golden Verification（M2.5）
 
 **✅ M2.5 已完成。** 通过正式 `create_app → /api/v1/chat → DeepSeekTurnService → TurnPipeline → ToolGateway → LocalMCPPowerBIAdapter` 运行 7 个真实 Business Golden：总销售额、总数量、Category Filter、按 Category 看销售额、Top 3 Product 销售额、按 Product 看总数量、Top 3 Category 总数量。逐 Case 与最终完整 Smoke 均 7/7 通过；每个 Case 同时核对 Intent、model key、Measure、Dimension、Filter、sort/top_n、Layer 2、Layer 3、真实 QueryResult、Answer provenance 与 Memory commit。
@@ -163,6 +177,12 @@ Fake MCP 离线覆盖正常/空/截断、DAX/timeout/permission/connection/MCP p
 
 ## 六、未来验收项（M1.4—M5）
 
+### M2.6.1 Known-answer / Real Multi-turn 成功契约（未实现）
+
+- Known-answer：Actual QueryResult 必须与独立 Expected Oracle 比较；DAX 字符串、Measure 名、字段出现或 HTTP 200 均不足以证明数值正确。
+- 单 Turn：Intent、QueryPlan、Filter/operator/value、Layer 2、Layer 3、QueryResult Oracle、Answer provenance、Memory、`source_mode=real` 与 Real→Mock=0 必须全部 PASS。
+- Conversation：所有 Turn 全部成功才 PASS。M2.6 只固化契约，不实现 Oracle、Real Multi-turn 或真实调用。
+
 ### M1.4 验收
 
 - Answer 数据真实性：AnswerSpec.answer 内容与 QueryResult 数据一致
@@ -182,4 +202,4 @@ Fake MCP 离线覆盖正常/空/截断、DAX/timeout/permission/connection/MCP p
 
 ---
 
-*最后更新：2026-08-12 | M2.5 四层语义验收、Business Golden 与 Bad Case 完成*
+*最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成*

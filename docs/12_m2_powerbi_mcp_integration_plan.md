@@ -1,6 +1,6 @@
 # 12 — M2 真实 Power BI MCP 统一接入计划
 
-> **状态：** M2.5 真实业务验收完成；M2 Local Power BI Demo 正式封板候选
+> **状态：** M2.6 正确性契约与架构治理加固完成
 > **官方资料查询日期：** 2026-08-11
 > **边界：** 当前 Demo 使用 Local MCP + Power BI Desktop；Remote MCP 作为 ADR-006 生产化路径延后。二者只能替换 PowerBIAdapter 后的 Provider。
 
@@ -27,6 +27,8 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 - **M2.2：** 获取并保留真实 Semantic Model 的 Schema、Measure 与可用业务语义信息。
 - **M2.4：** 对 QueryPlan 的业务指标映射及 DAX 与已验证 QueryPlan 的一致性施加确定性约束。
 - **M2.5：** 通过现有 Harness / Golden 体系核对真实业务口径与 Power BI 结果。
+- **M2.6：** 对可验证 eq Filter 的 field/operator/value、TopN selection、presentation ordering 与架构 ownership 建立确定性契约。
+- **M2.6.1（未实现）：** Actual QueryResult 对独立 Expected Oracle；Real Multi-turn 仅在全 Turn 契约通过时 PASS。
 
 永久正确性链为 `Schema / Measure / 明确业务定义 → QueryPlan → DAX → QueryResult`；禁止变成“用户问题 → LLM 猜业务含义 → DAX”。
 
@@ -95,7 +97,7 @@ API → TurnService → TurnPipeline → Intent → ToolGateway
 
 ### Settings
 
-版本为 M2.5；Local 配置使用 friendly `local_desktop_model` key，不接受端口、数据库名、PBIX 路径或连接串作为业务输入。DeepSeek + Local 配置就绪时 Chat 可用；Remote 历史配置保留且仍不可用。
+版本为 M2.6；Local 配置使用 friendly `local_desktop_model` key，不接受端口、数据库名、PBIX 路径或连接串作为业务输入。DeepSeek + Local 的 `ready/configuration_ready` 只代表配置具备创建 Service 的条件，不代表 Desktop 实时在线；真实连接由 Turn/Smoke 验证。Remote 历史配置保留且仍不可用。
 
 ## 5. M2.0—M2.5 当前 Demo 路线
 
@@ -128,6 +130,10 @@ Remote 生产化不塞入当前 M2.1—M2.5 Demo 路线；管理员前置条件�
 ## 6. 每轮 M2 防偏移门禁
 
 每轮修改生产代码前必须确认：职责属于已有模块、复用 PowerBIAdapter、业务 Power BI 调用经过 ToolGateway、TurnPipeline 仍是控制面。出现第二套 Real Pipeline、Service/API/LLM 直连 MCP、LLM 自主调用工具、Real → Mock 回退或提前开发 M3/M4/M5时立即停止。
+
+Architecture Gate 使用 AST + ownership 检查：MCP SDK 与 raw `call_tool` 只能位于 `backend/app/powerbi/**`；Application 不得直调 Adapter 的 Schema/DAX 业务方法；禁止平行生产 Pipeline/Service；Provider 不得反向依赖 QueryPlan、Answer、Report、Memory 或 TurnPipeline。行为 truth tests 补充 ToolGateway 仍为唯一业务入口。
+
+`backend/app/powerbi/local_mcp.py` 职责冻结为 Local Provider / protocol Adapter。M3/M4/M5 默认不得修改；只有 Microsoft MCP Preview 兼容变化、Local Provider Bug 或 Provider 协议/响应问题允许修改，且 Renderer/Memory/UI 逻辑不得进入。
 
 ## 7. 测试与验收边界
 
@@ -196,6 +202,13 @@ Tenant 管理员启用 Remote MCP Preview、同 Tenant Entra App、委托权限�
 - **外部风险：** Microsoft Issue #124 仍为 Open，当前实机未复现不代表已修复；Preview 版本或参数变化后仍须重新 Smoke。Remote 生产化继续 Deferred，Local 路线仅证明 Demo 能力。
 - **封板边界：** M2 能力限定为“当前 Local MCP + Power BI Desktop Demo 路线下，通过真实 Schema Grounding 和确定性 Harness 完成受控自然语言数据问答”，不是生产级通用 Power BI Copilot，也不承诺支持所有 DAX 或任意 Power BI 模型。
 
+## 14. M2.6 正确性与治理契约
+
+- **Filter：** `eq=SUPPORTED`；`ne/gt/gte/lt/lte/in/not_in/contains=NOT_VERIFIED`。Real 路径未验证 Operator 在 Layer 2 受控拒绝；Layer 3 对 eq 的 field/operator/value 与额外业务 Filter 做确定性比较。
+- **TopN/Sort：** TOPN 只证明 selection，末尾 `ORDER BY` 才证明显式 presentation ordering；N、单一 Measure 与方向必须一致，ties 允许超过 N 行。
+- **Health：** 兼容 `ready` 等同 `configuration_ready`；Health 不做持续或即时 Desktop 探针，`powerbi_live_connected=false`。
+- **后续契约：** M2.6.1 必须使用独立 Expected Oracle 比较 Actual QueryResult，并要求每个 Real Turn 的全链契约与 Conversation 全 Turn 成功；当前尚未实现。
+
 ---
 
-*最后更新：2026-08-12 | M2.5 Local Power BI Demo 正式封板候选；Remote Deferred，M3 下一阶段*
+*最后更新：2026-08-12 | M2.6 正确性契约与架构治理加固完成；下一阶段 M2.6.1*
