@@ -280,6 +280,8 @@ class AnswerSpec(BaseModel):
     semantic_model_key: str = ""
     source_mode: str = "mock"
     generated_at: Optional[datetime] = None
+    verified_fact_set_id: str = ""
+    fact_ids: list[str] = Field(default_factory=list)
 
 
 # =============================================================================
@@ -322,6 +324,8 @@ class ReportSpec(BaseModel):
     filters: list[StructuredFilter] = Field(default_factory=list)
     generated_at: Optional[datetime] = None
     source_mode: str = "mock"
+    verified_fact_set_id: str = ""
+    fact_ids: list[str] = Field(default_factory=list)
 
 
 # =============================================================================

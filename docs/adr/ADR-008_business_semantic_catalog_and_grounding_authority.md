@@ -24,6 +24,8 @@ Canonical QueryPlan 的业务事实只来自以下权威数据：
 
 Glossary 是业务定义数据，不是 Prompt example。加载时必须校验 model key、runtime 对象存在性、对象类型、表归属、隐藏状态、alias 非空与 alias 冲突。未知、隐藏或类型错误对象拒绝加载；冲突 alias 不得静默选择。
 
+Friendly `semantic_model_key` 不能单独证明当前 Desktop 模型身份。Glossary 还必须绑定由 visible tables、columns/types、measures/types/expressions 与 active relationship endpoints 稳定排序、规范序列化后计算的 SHA-256 `schema_fingerprint`。端口、路径、session ID、业务行数据与展示 description 不进入 fingerprint。key 或 fingerprint 不匹配必须 fail closed。
+
 ### 2. Intent 与 QueryPlan LLM 的权限
 
 Intent 继续负责任务分类和基础语言提取，`detected_measures`、`detected_dimensions`、`detected_filters` 只允许作为当前输入中的 weak signal 或 diagnostic，不是 canonical semantic authority。
@@ -54,6 +56,12 @@ Grounding 只回答当前用户明确表达的语义；StateTransition 只把 Gr
 - Filter：`KEEP` / `ADD` / `REPLACE_SAME_FIELD` / `REMOVE` / `CLEAR`。
 
 当前明确且已 Ground 的语义优先于 committed state；未提及的槽位从 committed state 继承。`AMBIGUOUS`、`UNRESOLVED`、clarification、QueryPlan/DAX/QueryResult failure 均不得提交或污染后续轮次。
+
+### 4.1 多轮 clarification 的非提交上下文
+
+一次澄清可以只补齐一个已权威解析的 slot。未完成链使用 Repository 内、由 TurnPipeline 统一读写的 `PendingClarificationContext`，只保存 chain identity、已解析 slots、missing slots、固定 analysis intent、model/fingerprint 与 provenance；它没有 `MemoryStatus`、DAX、QueryResult 或 commit evidence，不能进入 committed version chain，也不能作为可执行 QueryPlan。
+
+槽位优先级固定为 current explicit grounded semantic > pending clarified semantic > 允许继承时的 last successful committed semantic。只有 missing slots 为空才形成完整 Grounded Delta 进入正常 Layer 2/执行链，且仍须完整成功后才能提交正式 Memory。歧义、未解析 member、下游失败、明确放弃或不兼容请求均不得把 pending 误提交或污染 last successful state。
 
 ### 5. 验收边界与后续验证职责
 

@@ -7,6 +7,7 @@ import pytest
 from backend.app.memory.models import (
     MemoryCommitEvidence,
     MemoryStatus,
+    PendingClarificationContext,
     RuntimeDataMode,
     StructuredWorkMemory,
 )
@@ -580,3 +581,48 @@ class TestNoDirectCommit:
     def test_memory_has_no_public_bump_version(self):
         mem = StructuredWorkMemory()
         assert not hasattr(mem, "bump_version")
+
+
+class TestPendingClarificationRepository:
+    @pytest.mark.asyncio
+    async def test_pending_context_is_separate_from_committed_memory(self, repo):
+        pending = PendingClarificationContext(
+            conversation_id="clarification-only",
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint="a" * 64,
+            measures=["Total Sales"],
+            missing_slots=["dimension"],
+            runtime_mode=RuntimeDataMode.REAL,
+            last_request_id="clarify-2",
+        )
+        await repo.save_pending_clarification(pending, RuntimeDataMode.REAL)
+
+        stored = await repo.get_pending_clarification(
+            "clarification-only", RuntimeDataMode.REAL
+        )
+        assert stored == pending
+        assert await repo.get_latest_committed(
+            "clarification-only", RuntimeDataMode.REAL
+        ) is None
+        assert not await repo.request_exists("clarify-2", RuntimeDataMode.REAL)
+
+    @pytest.mark.asyncio
+    async def test_pending_context_is_mode_isolated_and_clearable(self, repo):
+        pending = PendingClarificationContext(
+            conversation_id="mode-isolated",
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint="b" * 64,
+            missing_slots=["measure"],
+            runtime_mode=RuntimeDataMode.REAL,
+            last_request_id="clarify-1",
+        )
+        await repo.save_pending_clarification(pending, RuntimeDataMode.REAL)
+        assert await repo.get_pending_clarification(
+            "mode-isolated", RuntimeDataMode.MOCK
+        ) is None
+        assert await repo.clear_pending_clarification(
+            "mode-isolated", RuntimeDataMode.REAL
+        )
+        assert await repo.get_pending_clarification(
+            "mode-isolated", RuntimeDataMode.REAL
+        ) is None

@@ -166,7 +166,7 @@ conversations:
           expected_source_mode: real
 
   - id: conversation_e_clarification
-    description: Ambiguous best metric requires clarification before execution.
+    description: Underspecified ranking is completed one authoritative slot per clarification turn.
     conversation_id: m261-conversation-e
     turns:
       - turn_id: e1
@@ -179,9 +179,22 @@ conversations:
           expected_memory_commit: false
           expected_inheritance: none
           expected_tool_sequence: []
+          expected_pending_missing_slots: [measure, dimension]
       - turn_id: e2
         message: "按销售额"
         request_id: m261-e-2
+        fixture_key: partial_sales_clarification
+        expected:
+          expected_intent: clarification
+          expected_terminal_state: clarification_required
+          expected_memory_commit: false
+          expected_inheritance: none
+          expected_tool_sequence: []
+          expected_pending_missing_slots: [dimension]
+          expected_pending_measures: ["Total Sales"]
+      - turn_id: e3
+        message: "按产品"
+        request_id: m261-e-3
         fixture_key: top_product_sales_after_clarification
         expected:
           expected_intent: data_question

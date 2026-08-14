@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M2.6.2 Business Semantic Grounding Foundation 已通过 Semantic Real Gate
+> **状态：** M2.6.3 Deterministic Execution & Verified Facts 已完成开发分支验收候选
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -56,7 +56,7 @@ M2 真实 Power BI MCP 与数据问答
   M2.6 正确性契约与架构治理加固                  ✅ 已完成
   M2.6.1 Known-answer Oracle + Real Multi-turn   ✅ 已完成（离线固化）
   M2.6.2 Business Semantic Grounding Foundation  ✅ 已完成
-  M2.6.3 Deterministic DAX / Verified FactSet     ⬜ 未开始
+  M2.6.3 Deterministic DAX / Verified FactSet     ✅ 已完成候选
   M2.6.4 最终 hardened release gate               ⬜ 未开始
 
 MVP 功能阶段 (后续)
@@ -556,7 +556,7 @@ Real Filter 能力按真实性矩阵治理：`eq=SUPPORTED`，`ne/gt/gte/lt/lte/
 
 **状态：** ✅ 已完成离线固化。
 
-在 Harness/Test 层建立不依赖 LLM、当前 DAX、Answer 或 Actual QueryResult 反向生成 Expected 的独立 Oracle，支持 scalar/grouped/ordered 与 TopN ties，并以严格显式 numeric tolerance 比较。固化 8 个 Known-answer Case（2 个 holdout）、6 个 Conversation / 15 Turn 及唯一离线 Runner；通过正式 Chat API 的 Fake/Mock 路径验证 Filter refinement、Dimension switch、Filter replacement、Metric switch、Clarification、失败 Turn Memory 完整性与严格 all-turn PASS 评分。真实 baseline 仅允许 local-only；本轮真实 DeepSeek、Local MCP、Desktop 调用均为 0。
+在 Harness/Test 层建立不依赖 LLM、当前 DAX、Answer 或 Actual QueryResult 反向生成 Expected 的独立 Oracle，支持 scalar/grouped/ordered 与 TopN ties，并以严格显式 numeric tolerance 比较。当前正式基线为 8 个 Known-answer Case（2 个 holdout）、6 个 Conversation / 16 Turn 及唯一离线 Runner；M2.6.3 经治理更正了欠指定 conversation_e：e1/e2 为 partial clarification，e3 补齐 Product 后才执行，禁止语义猜测。通过正式 Chat API 的 Fake/Mock 路径验证 Filter refinement、Dimension switch、Filter replacement、Metric switch、Clarification、失败 Turn Memory 完整性与严格 all-turn PASS 评分。
 
 ### M2.6.2｜Business Semantic Grounding Foundation
 
@@ -566,7 +566,19 @@ Real Filter 能力按真实性矩阵治理：`eq=SUPPORTED`，`ne/gt/gte/lt/lte/
 
 验收边界固定为 `Natural Language → Canonical QueryPlan → Layer 2`。DeepSeek + Local MCP + Desktop 的 Real Semantic Matrix 已覆盖 Measure、Dimension、Filter Field、runtime member、TimeRange、TopN/Sort、多轮 KEEP/REPLACE/CLEAR、歧义与失败无污染；fresh `a1 → a2 → a3` semantic regression 5/5，`source_mode=real`、Real→Mock fallback=0。DAX 偶发加入未计划的 Filter group-by 或无法验证结构化时间 filter 时仍由 Layer 3 fail-closed，属于 M2.6.3 downstream entry condition，不计入 M2.6.2 semantic correctness。
 
-**后续边界：** M2.6.3 才收口 Deterministic DAX Builder / Verified FactSet；M2.6.4 才执行 10/10 stability、完整 Blind release gate 与 hardened seal。不得提前实施 M3。
+### M2.6.3｜Deterministic Execution & Verified Facts
+
+**状态：** ✅ 已完成开发分支验收候选，待远程审计。
+
+按 ADR-009 将 Real canonical path 固定为 `Canonical QueryPlan → Deterministic DAX Builder → Independent Layer 3 → QueryResult → VerifiedFactSet → fact-bounded Answer / ReportSpec`。Real DAX LLM authority/call count 为 0；受限 grammar 只支持 Measure、Dimension、EQ Filter、resolved TimeRange、single-measure Sort/TopN，unsupported capability 继续 fail closed。`QueryPlan.dimensions` 是唯一 group-by 来源，EQ/time literal 使用固定 pattern，TopN selection 与 final ORDER BY 分别表达并独立验证。
+
+Glossary 由 friendly model key + stable runtime schema SHA-256 fingerprint 共同绑定。PendingClarificationContext 与 committed Memory 分离，只保存已权威解析但尚不足执行的 slots；current explicit > pending > 合法 committed KEEP。conversation_e 正式更正为 e1 缺 measure/dimension、e2 仅补 Total Sales 仍缺 dimension、e3 补 Product 后执行，基线为 6 Conversation / 16 Turn。
+
+VerifiedFactSet 从 Canonical QueryPlan + QueryResult 确定性构建 scalar/grouped/ranking/min-max（有直接证据时）、filter/time、row_count/truncation 与 provenance。Answer 使用 deterministic factual sentences；Report KPI/chart/table/insight 只能消费 FactSet/QueryResult，无法证明的 causal insight 省略。已知 `dax_unplanned_group_by_dimension` 与 `dax_filter_structure_not_verifiable` 在支持范围 Real acceptance 中均为 0。
+
+Fresh production E2E 通过正式 `/api/v1/chat → TurnPipeline → actual committed Memory` 执行：exact Known-answer 8/8、holdout 2/2、6/6 Conversation、16/16 Turn、成功 Real query 51、deterministic failure-recovery 1/1、`a1 → a2 → a3` 10/10，fallback=0、pollution=0。Semantic Matrix 34/34 且专项 historical 5/5。
+
+**后续边界：** M2.6.4 仅做 final hardened acceptance、docs consolidation 与 M0—M2 seal；不得把新的核心架构债或 M3 Renderer 提前带入。
 
 ---
 

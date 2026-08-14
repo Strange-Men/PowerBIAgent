@@ -1,4 +1,4 @@
-"""Pydantic Settings — M2.6.2 项目配置
+"""Pydantic Settings — M2.6.3 项目配置
 
 环境变量可覆盖所有配置项。
 Mock 模式启动不需要任何 API Key。
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M2.6.2", frozen=True)
+    version: str = Field(default="M2.6.3", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")

@@ -346,51 +346,10 @@ class ValidationService:
         plan: QueryPlan,
         schema: SemanticModelSchema,
     ) -> ValidationResult:
-        """M2.4 Layer 3：DAX 与已验证 QueryPlan 的最小确定性一致性检查。
+        """Independent fail-closed verification of the restricted M2 grammar."""
+        from backend.app.dax.verifier import RestrictedDAXVerifier
 
-        不解析完整 AST；只在 DAXSafetyValidator 已有 Schema 安全检查之上，
-        验证模型边界及 QueryPlan 的 Measure/Dimension/Filter 引用。
-        """
-        errors: list[str] = []
-        if dax_request.semantic_model_key != plan.semantic_model_key:
-            errors.append("dax_query_plan_model_mismatch")
-        if plan.semantic_model_key != schema.key:
-            errors.append("dax_schema_model_mismatch")
-
-        from backend.app.dax.safety import DAXSafetyValidator
-
-        safety_result = DAXSafetyValidator().validate(dax_request.dax, schema)
-        errors.extend(safety_result.errors)
-
-        # 双引号内容是别名/字面量，不参与对象引用匹配。
-        dax_without_strings = re.sub(r'"(?:[^"\\]|\\.)*"', " ", dax_request.dax)
-        referenced_names = set(re.findall(r"\[([^\]]+)\]", dax_without_strings))
-
-        for measure in plan.measures:
-            if measure not in referenced_names:
-                errors.append(
-                    f"dax_missing_query_plan_measure: Measure '{measure}' is not referenced"
-                )
-        for dimension in plan.dimensions:
-            if dimension not in referenced_names:
-                errors.append(
-                    f"dax_missing_query_plan_dimension: Dimension '{dimension}' is not referenced"
-                )
-        for query_filter in plan.filters:
-            if query_filter.field not in referenced_names:
-                errors.append(
-                    f"dax_missing_query_plan_filter: Filter field '{query_filter.field}' is not referenced"
-                )
-
-        errors.extend(self._validate_filter_consistency(dax_request.dax, plan))
-        errors.extend(self._validate_topn_sort_consistency(dax_request.dax, plan))
-
-        errors.extend(
-            self._validate_summarizecolumns_consistency(
-                dax_request.dax,
-                allowed_group_by=set(plan.dimensions),
-            )
-        )
+        errors = RestrictedDAXVerifier().validate(dax_request, plan, schema)
 
         return ValidationResult(
             valid=len(errors) == 0,

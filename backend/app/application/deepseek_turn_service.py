@@ -12,6 +12,7 @@ M1.6.3 更新：
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 from typing import Any, Optional
 
@@ -48,6 +49,7 @@ from backend.app.intent.deepseek_service import DeepSeekIntentService
 from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.llm.base import LLMProvider
 from backend.app.memory.models import (
+    PendingClarificationContext,
     RuntimeDataMode,
     StructuredWorkMemory,
 )
@@ -56,21 +58,33 @@ from backend.app.memory.repository import (
 )
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.query_plan.deepseek_service import DeepSeekQueryPlanService
+from backend.app.query_plan.clarification import PendingClarificationService
 from backend.app.query_plan.grounding import (
     BoundedLLMObjectSelector,
     GroundingStatus,
-    ObjectGrounder,
     SemanticGroundingService,
 )
 from backend.app.query_plan.semantic_catalog import (
     GlossaryCatalogError,
     SemanticCatalogBuilder,
-    SemanticObjectType,
 )
 from backend.app.query_plan.state_transition import StateTransitionService
+from backend.app.query_plan.template_catalog import (
+    DEFAULT_TEMPLATE_CATALOG,
+    TemplateGroundingStatus,
+)
 from backend.app.dax.deepseek_service import DeepSeekDAXService
+from backend.app.dax.builder import DAXBuildError, DeterministicDAXBuilder
 from backend.app.dax.safety import DAXSafetyValidator
 from backend.app.answer.deepseek_service import DeepSeekAnswerService
+from backend.app.facts import (
+    FactBoundedAnswerBuilder,
+    FactBoundedReportBuilder,
+    FactOutputValidator,
+    FactVerificationError,
+    VerifiedFactSet,
+    VerifiedFactSetBuilder,
+)
 from backend.app.report.deepseek_spec_service import DeepSeekReportSpecService
 from backend.app.report.mock import MockReportRenderer
 from backend.app.schemas.data_contracts import (
@@ -202,6 +216,7 @@ class DeepSeekTurnService:
         controller: Optional[TurnController] = None,
         context: Optional[dict[str, Any]] = None,
         committed: Optional[StructuredWorkMemory] = None,
+        pending_clarification: Optional[PendingClarificationContext] = None,
     ) -> dict[str, Any]:
         """Owner 执行 DeepSeek LLM 管线（控制面由共享 TurnPipeline 骨架提供）"""
 
@@ -221,6 +236,15 @@ class DeepSeekTurnService:
         )
         observed = ObservedLLMProvider(self.llm_provider, collector)
 
+        if (
+            pending_clarification is not None
+            and PendingClarificationService.should_abandon(message)
+        ):
+            await self.pipeline.clear_pending_clarification(
+                effective_conv_id, runtime_mode
+            )
+            pending_clarification = None
+
         # ── 3. 意图识别 ──
         intent_service = DeepSeekIntentService(provider=observed, max_format_repairs=1)
         intent = await intent_service.recognize(
@@ -232,9 +256,13 @@ class DeepSeekTurnService:
         trace.record("intent_classified", trace_id=trace_id, request_id=effective_req_id,
                      data_summary={"intent": intent.intent.value})
 
-        # ── 4. unsupported 早期终止；Real clarification 允许 authoritative
-        # Catalog 复核一次。Intent 不是 canonical semantic authority。
+        # ── 4. unsupported 可按产品契约早停；Real clarification 只作为
+        # linguistic diagnostic。数据/报表范围内的 canonical semantic
+        # authority 统一交给后续 Grounding，不再做 Measure-only 特判。
         if intent.intent == IntentType.UNSUPPORTED:
+            await self.pipeline.clear_pending_clarification(
+                effective_conv_id, runtime_mode
+            )
             trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
                         data_summary={"terminal_state": "unsupported"})
             return self._build_result(
@@ -246,72 +274,28 @@ class DeepSeekTurnService:
                 collector=collector,
             )
 
+        if intent.intent == IntentType.CLARIFICATION and not self.powerbi.is_mock:
+            provisional_intent = (
+                IntentType.REPORT_GENERATION
+                if report_template_key is not None
+                or any(term in message for term in ("报告", "周报", "概览", "总览"))
+                else IntentType.DATA_QUESTION
+            )
+            intent = intent.model_copy(update={
+                "intent": provisional_intent,
+                "needs_clarification": False,
+                "clarification_question": None,
+            })
+            trace.record(
+                "intent_clarification_deferred_to_grounding",
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                data_summary={"provisional_intent": provisional_intent.value},
+            )
+
         schema: SemanticModelSchema | None = None
         exec_ctx: Any = None
         controller_prepared = False
-        if intent.intent == IntentType.CLARIFICATION and not self.powerbi.is_mock:
-            controller.transition(TurnState.INTENT_CLASSIFIED)
-            controller.record_intent_valid()
-            controller.transition(TurnState.PLAN_READY)
-            controller_prepared = True
-            exec_ctx = self.pipeline.create_tool_context(
-                trace_id=trace_id,
-                request_id=effective_req_id,
-                conversation_id=effective_conv_id,
-                runtime_mode=runtime_mode,
-                intent=IntentType.DATA_QUESTION,
-                user=self._user_context,
-            )
-            try:
-                schema = await self.tool_gateway.execute(
-                    TOOL_NAME_SCHEMA,
-                    exec_ctx,
-                    SchemaInput(semantic_model_key=semantic_model_key),
-                    trace=trace,
-                    controller=controller,
-                )
-                catalog = SemanticCatalogBuilder().build(schema)
-                measure_review = ObjectGrounder(catalog).find_mentions(
-                    message, SemanticObjectType.MEASURE, "measure"
-                )
-            except GlossaryCatalogError as e:
-                controller.set_failure_reason(e.code)
-                controller.transition(TurnState.VALIDATION_FAILED)
-                return self._build_result(
-                    effective_req_id, effective_conv_id, "validation_failed",
-                    intent=intent.intent.value,
-                    error_type="semantic_catalog_invalid",
-                    trace=trace, trace_id=trace_id, is_mock=False,
-                    source_mode=self._source_mode, collector=collector,
-                )
-            except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
-                    ToolNotRegisteredError, ToolOutputValidationError) as e:
-                controller.set_failure_reason(str(e))
-                controller.transition(TurnState.TOOL_FAILED)
-                return self._build_result(
-                    effective_req_id, effective_conv_id, "tool_failed",
-                    intent=intent.intent.value, error_type=type(e).__name__,
-                    trace=trace, trace_id=trace_id, is_mock=False,
-                    source_mode=self._source_mode, collector=collector,
-                )
-            if (
-                measure_review.status == GroundingStatus.RESOLVED
-                and measure_review.canonical_object is not None
-            ):
-                intent = intent.model_copy(update={
-                    "intent": IntentType.DATA_QUESTION,
-                    "needs_clarification": False,
-                    "clarification_question": None,
-                    "detected_measures": [
-                        measure_review.canonical_object.canonical_name
-                    ],
-                })
-                trace.record(
-                    "intent_corrected_by_grounding",
-                    trace_id=trace_id,
-                    request_id=effective_req_id,
-                    data_summary={"authority": "semantic_catalog"},
-                )
 
         if intent.intent == IntentType.CLARIFICATION:
             if controller_prepared:
@@ -398,12 +382,56 @@ class DeepSeekTurnService:
                 collector=collector,
             )
 
+        template_grounding = DEFAULT_TEMPLATE_CATALOG.ground(
+            message,
+            weak_requested_template=query_plan.requested_template,
+            explicit_template_key=report_template_key,
+            required=intent.intent == IntentType.REPORT_GENERATION,
+        )
+        if template_grounding.status in {
+            TemplateGroundingStatus.AMBIGUOUS,
+            TemplateGroundingStatus.UNRESOLVED,
+            TemplateGroundingStatus.CONFIG_CONFLICT,
+        }:
+            await self.pipeline.mark_memory_failed(
+                effective_req_id,
+                runtime_mode,
+                reason=template_grounding.status.value,
+                stage="template_grounding",
+            )
+            controller.set_failure_reason(template_grounding.status.value)
+            controller.transition(TurnState.CLARIFICATION_REQUIRED)
+            return self._build_result(
+                effective_req_id,
+                effective_conv_id,
+                "clarification_required",
+                intent=intent.intent.value,
+                response_type="clarification",
+                clarification_question="请明确要使用的报表模板。",
+                trace=trace,
+                trace_id=trace_id,
+                is_mock=False,
+                source_mode=self._source_mode,
+                collector=collector,
+            )
+
         # ── 8.1 Business Semantic Grounding ──
         # QueryPlan LLM 在此仅是语言草稿；canonical semantic slots 只能由
         # validated catalog + runtime members + deterministic transition 决定。
         if not self.powerbi.is_mock:
             try:
                 catalog = SemanticCatalogBuilder().build(schema)
+                if pending_clarification is not None and (
+                    pending_clarification.semantic_model_key != semantic_model_key
+                    or pending_clarification.schema_fingerprint
+                    != catalog.schema_fingerprint
+                    or pending_clarification.runtime_mode != runtime_mode
+                    or pending_clarification.intent != intent.intent.value
+                ):
+                    await self.pipeline.clear_pending_clarification(
+                        effective_conv_id, runtime_mode
+                    )
+                    pending_clarification = None
                 grounding_service = SemanticGroundingService(
                     catalog,
                     selector=BoundedLLMObjectSelector(observed),
@@ -431,21 +459,47 @@ class DeepSeekTurnService:
                     query_plan,
                     committed,
                     _member_lookup,
+                    pending=pending_clarification,
                 )
-                if grounding.status != GroundingStatus.RESOLVED or grounding.delta is None:
+                clarification_merge = None
+                if (
+                    pending_clarification is not None
+                    or grounding.status != GroundingStatus.RESOLVED
+                    or grounding.delta is None
+                ):
+                    clarification_merge = PendingClarificationService().merge(
+                        previous=pending_clarification,
+                        outcome=grounding,
+                        user_input=message,
+                        conversation_id=effective_conv_id,
+                        request_id=effective_req_id,
+                        semantic_model_key=semantic_model_key,
+                        schema_fingerprint=catalog.schema_fingerprint,
+                        runtime_mode=runtime_mode,
+                        intent=intent.intent.value,
+                        committed=committed,
+                    )
+                if clarification_merge is not None and not clarification_merge.complete:
+                    await self.pipeline.save_pending_clarification(
+                        clarification_merge.context, runtime_mode
+                    )
                     await self.pipeline.mark_memory_failed(
                         effective_req_id,
                         runtime_mode,
-                        reason=grounding.status.value,
+                        reason="pending_clarification_incomplete",
                         stage="semantic_grounding",
                     )
-                    controller.set_failure_reason(grounding.status.value)
+                    controller.set_failure_reason("pending_clarification_incomplete")
                     controller.transition(TurnState.CLARIFICATION_REQUIRED)
                     trace.record(
                         "semantic_grounding_clarification",
                         trace_id=trace_id,
                         request_id=effective_req_id,
-                        data_summary={"status": grounding.status.value},
+                        data_summary={
+                            "status": grounding.status.value,
+                            "chain_id": clarification_merge.context.chain_id,
+                            "missing_slots": clarification_merge.context.missing_slots,
+                        },
                     )
                     return self._build_result(
                         effective_req_id,
@@ -453,18 +507,46 @@ class DeepSeekTurnService:
                         "clarification_required",
                         intent=intent.intent.value,
                         response_type="clarification",
-                        clarification_question=(
-                            grounding.clarification_question
-                            or "请明确要查询的业务对象。"
-                        ),
+                        clarification_question=clarification_merge.clarification_question,
                         trace=trace,
                         trace_id=trace_id,
                         is_mock=False,
                         source_mode=self._source_mode,
                         collector=collector,
+                        execution_audit={
+                            "pending_clarification": True,
+                            "clarification_chain_id": (
+                                clarification_merge.context.chain_id
+                            ),
+                            "missing_slots": (
+                                clarification_merge.context.missing_slots
+                            ),
+                            "resolved_slots": sorted(
+                                clarification_merge.context.slot_provenance
+                            ),
+                            "committed_memory_mutated": False,
+                            "schema_fingerprint": catalog.schema_fingerprint,
+                        },
                     )
+                transition_delta = grounding.delta
+                transition_base = committed
+                if clarification_merge is not None:
+                    if clarification_merge.executable_delta is None:
+                        raise ValueError("clarification_complete_without_delta")
+                    transition_delta = clarification_merge.executable_delta
+                    # A clarification chain owns only explicitly verified slots;
+                    # unrelated committed business slots cannot leak into it.
+                    transition_base = None
+                    await self.pipeline.clear_pending_clarification(
+                        effective_conv_id, runtime_mode
+                    )
+                if transition_delta is None:
+                    raise ValueError("semantic_grounding_delta_missing")
                 transition = StateTransitionService().merge(
-                    query_plan, grounding.delta, committed
+                    query_plan,
+                    transition_delta,
+                    transition_base,
+                    canonical_template_key=template_grounding.canonical_key,
                 )
                 query_plan = transition.query_plan
                 trace.record(
@@ -556,16 +638,30 @@ class DeepSeekTurnService:
 
         # ── 9. DAX 生成与验证 ──
         try:
-            dax_service = DeepSeekDAXService(provider=observed, max_dax_repairs=1)
-            dax_request = await dax_service.generate(
-                query_plan=query_plan, schema=schema,
-                semantic_model_key=semantic_model_key,
-                request_id=effective_req_id,
-            )
+            if self.powerbi.is_mock:
+                # Historical Mock compatibility only. Real canonical execution
+                # is exclusively plan + runtime schema -> deterministic builder.
+                dax_service = DeepSeekDAXService(
+                    provider=observed, max_dax_repairs=1
+                )
+                dax_request = await dax_service.generate(
+                    query_plan=query_plan,
+                    schema=schema,
+                    semantic_model_key=semantic_model_key,
+                    request_id=effective_req_id,
+                )
+            else:
+                dax_request = DeterministicDAXBuilder().build(
+                    query_plan,
+                    schema,
+                    request_id=effective_req_id,
+                    timeout_seconds=self.settings.powerbi_query_timeout_seconds,
+                )
         except Exception as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
-                terminal_state=TurnState.VALIDATION_FAILED, error_type=type(e).__name__,
+                terminal_state=TurnState.VALIDATION_FAILED,
+                error_type=(e.code if isinstance(e, DAXBuildError) else type(e).__name__),
                 reason=str(e), stage="dax_generation", trace_id=trace_id,
                 collector=collector,
             )
@@ -699,6 +795,38 @@ class DeepSeekTurnService:
             data_summary={"source_mode": query_result.source_mode},
         )
 
+        verified_facts: VerifiedFactSet | None = None
+        if not self.powerbi.is_mock:
+            try:
+                verified_facts = VerifiedFactSetBuilder().build(
+                    query_plan, query_result
+                )
+            except FactVerificationError as e:
+                return await self._fail_result(
+                    memory,
+                    effective_req_id,
+                    effective_conv_id,
+                    controller,
+                    trace,
+                    terminal_state=TurnState.VALIDATION_FAILED,
+                    error_type=e.code,
+                    reason=e.code,
+                    stage="verified_fact_set",
+                    trace_id=trace_id,
+                    collector=collector,
+                )
+            trace.record(
+                "verified_fact_set_built",
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                data_summary={
+                    "fact_set_id": verified_facts.fact_set_id,
+                    "fact_count": len(verified_facts.facts),
+                    "row_count": verified_facts.row_count,
+                    "truncated": verified_facts.truncated,
+                },
+            )
+
         # ── 11. 生成 Answer 或 ReportSpec ──
         answer_text: Optional[str] = None
         report_data: Optional[dict[str, Any]] = None
@@ -707,12 +835,19 @@ class DeepSeekTurnService:
         if intent.intent == IntentType.DATA_QUESTION:
             response_type = "answer"
             try:
-                answer_service = DeepSeekAnswerService(provider=observed, max_repairs=1)
-                response_obj: AnswerSpec = await answer_service.generate(
-                    user_input=message, intent=intent, query_plan=query_plan,
-                    query_result=query_result, schema=schema,
-                    request_id=effective_req_id,
-                )
+                if verified_facts is not None:
+                    response_obj = FactBoundedAnswerBuilder().build(
+                        query_plan, query_result, verified_facts
+                    )
+                else:
+                    answer_service = DeepSeekAnswerService(
+                        provider=observed, max_repairs=1
+                    )
+                    response_obj = await answer_service.generate(
+                        user_input=message, intent=intent, query_plan=query_plan,
+                        query_result=query_result, schema=schema,
+                        request_id=effective_req_id,
+                    )
             except Exception as e:
                 return await self._fail_result(
                     memory, effective_req_id, effective_conv_id, controller, trace,
@@ -723,6 +858,16 @@ class DeepSeekTurnService:
 
             answer_text = response_obj.answer
             answer_validation = self.validator.validate_answer_strict(response_obj, query_result)
+            if answer_validation.is_valid and verified_facts is not None:
+                fact_errors = FactOutputValidator().validate_answer(
+                    response_obj, verified_facts
+                )
+                if fact_errors:
+                    answer_validation = answer_validation.model_copy(update={
+                        "valid": False,
+                        "errors": [*answer_validation.errors, *fact_errors],
+                        "error_code": "answer_fact_validation_failed",
+                    })
             if not answer_validation.is_valid:
                 await self.pipeline.mark_memory_failed(
                     effective_req_id, runtime_mode,
@@ -740,14 +885,21 @@ class DeepSeekTurnService:
         else:
             response_type = "report"
             try:
-                report_service = DeepSeekReportSpecService(provider=observed, max_repairs=1)
-                report_spec: ReportSpec = await report_service.generate(
-                    user_input=message, intent=intent, query_plan=query_plan,
-                    query_result=query_result, schema=schema,
-                    template_key=report_template_key or "",
-                    allowed_templates=None,
-                    request_id=effective_req_id,
-                )
+                if verified_facts is not None:
+                    report_spec = FactBoundedReportBuilder().build(
+                        query_plan, query_result, verified_facts
+                    )
+                else:
+                    report_service = DeepSeekReportSpecService(
+                        provider=observed, max_repairs=1
+                    )
+                    report_spec = await report_service.generate(
+                        user_input=message, intent=intent, query_plan=query_plan,
+                        query_result=query_result, schema=schema,
+                        template_key=query_plan.requested_template or "",
+                        allowed_templates=None,
+                        request_id=effective_req_id,
+                    )
             except Exception as e:
                 return await self._fail_result(
                     memory, effective_req_id, effective_conv_id, controller, trace,
@@ -756,7 +908,35 @@ class DeepSeekTurnService:
                     collector=collector,
                 )
 
-            # M1.6.3: 通过 ToolGateway 渲染报表
+            report_validation = self.validator.validate_report_strict(
+                report_spec, query_result
+            )
+            if report_validation.is_valid and verified_facts is not None:
+                fact_errors = FactOutputValidator().validate_report(
+                    report_spec, verified_facts, query_result
+                )
+                if fact_errors:
+                    report_validation = report_validation.model_copy(update={
+                        "valid": False,
+                        "errors": [*report_validation.errors, *fact_errors],
+                        "error_code": "report_fact_validation_failed",
+                    })
+            if not report_validation.is_valid:
+                await self.pipeline.mark_memory_failed(
+                    effective_req_id, runtime_mode,
+                    reason=str(report_validation.errors), stage="report_validation"
+                )
+                controller.set_failure_reason(str(report_validation.errors))
+                controller.transition(TurnState.RESPONSE_FAILED)
+                return self._build_result(
+                    effective_req_id, effective_conv_id, "response_failed",
+                    intent=intent.intent.value,
+                    error_type="report_validation_failed",
+                    trace=trace, trace_id=trace_id, is_mock=False,
+                    source_mode=self._source_mode, collector=collector,
+                )
+
+            # Only a fact-validated ReportSpec may reach the renderer.
             try:
                 exec_ctx = self.pipeline.create_tool_context(
                     trace_id=trace_id,
@@ -788,21 +968,6 @@ class DeepSeekTurnService:
                 "html": rendered.html,
             }
             response_obj = report_spec
-
-            report_validation = self.validator.validate_report_strict(report_spec, query_result)
-            if not report_validation.is_valid:
-                await self.pipeline.mark_memory_failed(
-                    effective_req_id, runtime_mode,
-                    reason=str(report_validation.errors), stage="report_validation"
-                )
-                controller.set_failure_reason(str(report_validation.errors))
-                controller.transition(TurnState.RESPONSE_FAILED)
-                return self._build_result(
-                    effective_req_id, effective_conv_id, "response_failed",
-                    intent=intent.intent.value, error_type="report_validation_failed",
-                    trace=trace, trace_id=trace_id, is_mock=False,
-                    source_mode=self._source_mode, collector=collector,
-                )
             trace.record("report_spec_validated", trace_id=trace_id, request_id=effective_req_id)
 
         controller.record_response_valid()
@@ -812,7 +977,7 @@ class DeepSeekTurnService:
         memory.current_intent = intent.intent.value
         memory.analysis_goal = f"用户提问: {message}"
         memory.semantic_model_key = semantic_model_key
-        memory.report_template_key = report_template_key
+        memory.report_template_key = query_plan.requested_template
         memory.measures = query_plan.measures
         memory.dimensions = query_plan.dimensions
         memory.filters = [f.model_dump() if hasattr(f, "model_dump") else f
@@ -855,6 +1020,33 @@ class DeepSeekTurnService:
             source_mode=self._source_mode, collector=collector,
             answer_text=answer_text,
             report_data=report_data,
+            execution_audit={
+                "canonical_query_plan": query_plan.model_dump(mode="json"),
+                "deterministic_dax": not self.powerbi.is_mock,
+                "dax_fingerprint": hashlib.sha256(
+                    dax_request.dax.encode("utf-8")
+                ).hexdigest(),
+                "layer3_pass": not self.powerbi.is_mock,
+                "query_result_success": query_result.error is None,
+                "result_id": query_result.result_id,
+                "result_row_count": query_result.row_count,
+                "source_mode": query_result.source_mode,
+                "verified_fact_set_id": (
+                    verified_facts.fact_set_id if verified_facts else None
+                ),
+                "verified_fact_count": (
+                    len(verified_facts.facts) if verified_facts else 0
+                ),
+                "verified_fact_types": (
+                    sorted({item.fact_type.value for item in verified_facts.facts})
+                    if verified_facts else []
+                ),
+                "factual_validation_pass": verified_facts is not None,
+                "llm_dax_call_count": sum(
+                    item.task == "dax" for item in collector.observations
+                ),
+                "memory_version": committed_memory.memory_version,
+            },
         )
         return result
 
@@ -918,6 +1110,7 @@ class DeepSeekTurnService:
         report_data: Optional[dict[str, Any]] = None,
         clarification_question: Optional[str] = None,
         unsupported_reason: Optional[str] = None,
+        execution_audit: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         """构建统一结果字典 — 委托给共享 TurnPipeline"""
         usage: Optional[LLMUsageSummary] = None
@@ -941,6 +1134,7 @@ class DeepSeekTurnService:
             clarification_question=clarification_question,
             unsupported_reason=unsupported_reason,
             usage=usage,
+            execution_audit=execution_audit,
         )
 
     # M1.6.3.2: _build_replay 和 _save_snapshot 已移除 — 统一由 TurnPipeline.execute() 管理

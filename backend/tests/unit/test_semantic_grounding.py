@@ -7,19 +7,28 @@ from datetime import date
 import pytest
 
 from backend.app.intent.models import IntentSpec, IntentType
-from backend.app.memory.models import MemoryStatus, StructuredWorkMemory
+from backend.app.memory.models import (
+    MemoryStatus,
+    PendingClarificationContext,
+    RuntimeDataMode,
+    StructuredWorkMemory,
+)
+from backend.app.query_plan.clarification import PendingClarificationService
 from backend.app.query_plan.grounding import (
     BoundedLLMObjectSelector,
     CandidateSelection,
     GroundedSemanticDelta,
+    GroundingOutcome,
     GroundingStatus,
     MemberGrounder,
+    ObjectGroundingResult,
     ObjectGrounder,
     SemanticGroundingService,
     TimeGrounder,
 )
 from backend.app.llm.base import LLMProvider, LLMResponse
 from backend.app.query_plan.semantic_catalog import (
+    compute_schema_fingerprint,
     GlossaryCatalogError,
     SemanticCatalogBuilder,
     SemanticObjectType,
@@ -34,6 +43,7 @@ from backend.app.schemas.data_contracts import (
     ColumnSchema,
     MeasureSchema,
     QueryPlan,
+    RelationshipSchema,
     SemanticModelSchema,
     StructuredFilter,
     TableSchema,
@@ -67,6 +77,7 @@ def _glossary(**overrides):
     raw = {
         "version": 1,
         "semantic_model_key": "local_desktop_model",
+        "schema_fingerprint": compute_schema_fingerprint(_schema()),
         "measures": {
             "Total Sales": {
                 "table_name": "Sales", "object_type": "measure",
@@ -122,6 +133,52 @@ def _draft(**kwargs) -> QueryPlan:
 
 
 class TestSemanticCatalogAndObjectGrounding:
+    def test_schema_fingerprint_is_stable_across_order_and_descriptions(self):
+        schema = _schema()
+        reordered = schema.model_copy(deep=True)
+        reordered.tables[0].columns.reverse()
+        reordered.tables[0].measures.reverse()
+        reordered.tables[0].description = "display-only change"
+        reordered.tables[0].columns[0].description = "display-only change"
+        assert compute_schema_fingerprint(schema) == compute_schema_fingerprint(
+            reordered
+        )
+
+    @pytest.mark.parametrize("mutation", ["object", "type", "expression", "relationship"])
+    def test_meaningful_schema_change_changes_fingerprint(self, mutation):
+        schema = _schema()
+        changed = schema.model_copy(deep=True)
+        if mutation == "object":
+            changed.tables[0].columns[0].name = "CategoryChanged"
+        elif mutation == "type":
+            changed.tables[0].columns[0].data_type = "Int64"
+        elif mutation == "expression":
+            changed.tables[0].measures[0].expression = "SUM('Sales'[Amount])"
+        else:
+            changed.tables.append(TableSchema(
+                name="CategoryDim",
+                columns=[ColumnSchema(name="Category", data_type="String")],
+            ))
+            changed.relationships.append(RelationshipSchema(
+                from_table="Sales",
+                from_column="Category",
+                to_table="CategoryDim",
+                to_column="Category",
+                is_active=True,
+            ))
+        assert compute_schema_fingerprint(schema) != compute_schema_fingerprint(changed)
+
+    def test_wrong_schema_fingerprint_fails_closed(self):
+        glossary = _glossary(schema_fingerprint="0" * 64)
+        with pytest.raises(
+            GlossaryCatalogError, match="glossary_schema_fingerprint_mismatch"
+        ):
+            SemanticCatalogBuilder().build_from_data(_schema(), glossary)
+
+    def test_correct_schema_fingerprint_passes(self):
+        catalog = SemanticCatalogBuilder().build_from_data(_schema(), _glossary())
+        assert catalog.schema_fingerprint == compute_schema_fingerprint(_schema())
+
     def test_canonical_exact_and_unique_alias_resolve(self):
         grounder = ObjectGrounder(_catalog())
         canonical = grounder.resolve_phrase(
@@ -208,12 +265,14 @@ class TestMemberAndTimeGrounding:
 
     @pytest.mark.asyncio
     async def test_ambiguous_date_fields_require_clarification(self):
+        schema = _schema(two_dates=True)
         glossary = _glossary()
+        glossary["schema_fingerprint"] = compute_schema_fingerprint(schema)
         glossary["fields"]["ShipDate"] = {
             "table_name": "Sales", "object_type": "field", "aliases": ["发货日期"]
         }
         catalog = SemanticCatalogBuilder().build_from_data(
-            _schema(two_dates=True), glossary
+            schema, glossary
         )
 
         async def no_lookup(*_):
@@ -233,6 +292,169 @@ class TestMemberAndTimeGrounding:
 
 
 class TestGroundingAuthorityAndStateTransition:
+    @pytest.mark.asyncio
+    async def test_explicit_grouping_cue_discards_hallucinated_draft_filter(self):
+        async def no_lookup(*_):
+            raise AssertionError("grouping field must not trigger member lookup")
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "按产品看销售额",
+            _intent(detected_measures=["Total Sales"]),
+            _draft(
+                measures=["Total Sales"],
+                dimensions=["Product"],
+                filters=[StructuredFilter(field="Product", value="产品")],
+            ),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.measures == ["Total Sales"]
+        assert outcome.delta.dimensions == ["Product"]
+        assert outcome.delta.filters is None
+
+    @pytest.mark.asyncio
+    async def test_runtime_member_discovers_filter_when_weak_draft_omits_it(self):
+        calls: list[str] = []
+
+        async def lookup(field, limit):
+            calls.append(field.canonical_name)
+            assert limit == 100
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name=field.canonical_name,
+                values=["Electronics", "Furniture"],
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "Electronics 类别中销量最高的前3个产品是什么？",
+            _intent(),
+            _draft(),
+            None,
+            lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.measures == ["Total Quantity"]
+        assert outcome.delta.dimensions == ["Product"]
+        assert outcome.delta.filters == [
+            StructuredFilter(field="Category", value="Electronics")
+        ]
+        assert outcome.delta.sort == "desc"
+        assert outcome.delta.top_n == 3
+        assert calls == ["Category"]
+
+    @pytest.mark.asyncio
+    async def test_filter_role_excludes_explicit_grouping_candidate(self):
+        async def lookup(field, limit):
+            assert field.canonical_name == "Category"
+            assert limit == 100
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name="Category",
+                values=["Electronics", "Furniture"],
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "Electronics 类别中销量最高的前3个产品是什么？",
+            _intent(),
+            _draft(filters=[
+                StructuredFilter(field="Category", value="Electronics")
+            ]),
+            None,
+            lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.dimensions == ["Product"]
+        assert outcome.delta.filters == [
+            StructuredFilter(field="Category", value="Electronics")
+        ]
+
+    @pytest.mark.asyncio
+    async def test_member_only_refinement_uses_committed_single_field(self):
+        async def lookup(field, limit):
+            assert field.canonical_name == "Category"
+            assert limit == 100
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name="Category",
+                values=["Electronics", "Furniture"],
+                source_mode="real",
+            )
+
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+            dimensions=["Category"],
+        )
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "只看 Electronics",
+            _intent(),
+            _draft(),
+            committed,
+            lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.filters == [
+            StructuredFilter(field="Category", value="Electronics")
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("slot", ["dimension", "filter", "time"])
+    async def test_intent_clarification_cannot_preempt_authoritative_slots(self, slot):
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+        )
+        intent = _intent(
+            intent=IntentType.CLARIFICATION,
+            needs_clarification=True,
+            clarification_question="intent diagnostic only",
+        )
+
+        async def lookup(field, limit):
+            assert field.canonical_name == "Category"
+            assert limit == 100
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name="Category",
+                values=["Furniture"],
+                source_mode="real",
+            )
+
+        if slot == "dimension":
+            outcome = await SemanticGroundingService(_catalog()).ground(
+                "改成按产品看", intent, _draft(dimensions=["Product"]),
+                committed, lookup,
+            )
+            assert outcome.delta.dimensions == ["Product"]
+        elif slot == "filter":
+            outcome = await SemanticGroundingService(_catalog()).ground(
+                "只看 Furniture 类别",
+                intent,
+                _draft(filters=[StructuredFilter(field="Category", value="Furniture")]),
+                committed,
+                lookup,
+            )
+            assert outcome.delta.filters == [
+                StructuredFilter(field="Category", value="Furniture")
+            ]
+        else:
+            outcome = await SemanticGroundingService(
+                _catalog(), today=lambda: date(2026, 8, 13)
+            ).ground("改成今年", intent, _draft(time_range="今年"), committed, lookup)
+            assert outcome.delta.time_range.mode == TimeRangeMode.CURRENT_YEAR
+        assert outcome.status == GroundingStatus.RESOLVED
+
     @pytest.mark.asyncio
     async def test_current_measure_signal_uses_bounded_candidate_selection(self):
         class SelectorProvider(LLMProvider):
@@ -514,6 +736,20 @@ class TestGroundingAuthorityAndStateTransition:
         assert same.transitions.measure == SlotTransition.KEEP
         assert same.transitions.dimension == SlotTransition.KEEP
 
+    def test_llm_template_draft_never_crosses_state_transition(self):
+        draft = _draft(requested_template="sales_weekly")
+        without_grounding = StateTransitionService().merge(
+            draft, GroundedSemanticDelta(measures=["Total Sales"]), None
+        )
+        grounded = StateTransitionService().merge(
+            draft,
+            GroundedSemanticDelta(measures=["Total Sales"]),
+            None,
+            canonical_template_key="operating_overview",
+        )
+        assert without_grounding.query_plan.requested_template is None
+        assert grounded.query_plan.requested_template == "operating_overview"
+
     @pytest.mark.asyncio
     async def test_invented_intent_filter_value_is_not_grounded(self):
         async def no_lookup(*_):
@@ -576,3 +812,204 @@ class TestGroundingAuthorityAndStateTransition:
         )
         assert outcome.status == GroundingStatus.UNRESOLVED
         assert outcome.delta is None
+
+
+class TestPendingClarificationContract:
+    @staticmethod
+    def _resolved(role: str, canonical_name: str) -> ObjectGroundingResult:
+        object_type = (
+            SemanticObjectType.MEASURE
+            if role == "measure"
+            else SemanticObjectType.FIELD
+        )
+        canonical = next(
+            item
+            for item in _catalog().by_type(object_type)
+            if item.canonical_name == canonical_name
+        )
+        return ObjectGroundingResult(
+            status=GroundingStatus.RESOLVED,
+            role=role,
+            phrase=canonical_name,
+            canonical_object=canonical,
+            method="canonical_exact",
+        )
+
+    @staticmethod
+    def _merge(
+        previous: PendingClarificationContext | None,
+        outcome: GroundingOutcome,
+        message: str,
+        request_id: str,
+    ):
+        return PendingClarificationService().merge(
+            previous=previous,
+            outcome=outcome,
+            user_input=message,
+            conversation_id="clarification-chain",
+            request_id=request_id,
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint=compute_schema_fingerprint(_schema()),
+            runtime_mode=RuntimeDataMode.REAL,
+            intent="data_question",
+            committed=None,
+        )
+
+    def test_partial_slots_accumulate_without_becoming_executable(self):
+        first = self._merge(
+            None,
+            GroundingOutcome(status=GroundingStatus.NOT_MENTIONED),
+            "哪个表现最好？",
+            "e1",
+        )
+        assert not first.complete
+        assert first.executable_delta is None
+        assert first.context.measures == []
+        assert first.context.dimensions == []
+        assert first.context.sort == "desc"
+        assert first.context.top_n == 1
+        assert first.context.missing_slots == ["measure", "dimension"]
+
+        second = self._merge(
+            first.context,
+            GroundingOutcome(
+                status=GroundingStatus.RESOLVED,
+                delta=GroundedSemanticDelta(measures=["Total Sales"]),
+                object_results=[self._resolved("measure", "Total Sales")],
+            ),
+            "按销售额",
+            "e2",
+        )
+        assert not second.complete
+        assert second.executable_delta is None
+        assert second.context.chain_id == first.context.chain_id
+        assert second.context.measures == ["Total Sales"]
+        assert second.context.missing_slots == ["dimension"]
+
+        third = self._merge(
+            second.context,
+            GroundingOutcome(
+                status=GroundingStatus.RESOLVED,
+                delta=GroundedSemanticDelta(dimensions=["Product"]),
+                object_results=[self._resolved("dimension", "Product")],
+            ),
+            "按产品",
+            "e3",
+        )
+        assert third.complete
+        assert third.context.missing_slots == []
+        assert third.executable_delta is not None
+        assert third.executable_delta.measures == ["Total Sales"]
+        assert third.executable_delta.dimensions == ["Product"]
+        assert third.executable_delta.sort == "desc"
+        assert third.executable_delta.top_n == 1
+
+    def test_current_explicit_semantic_overrides_pending_slot(self):
+        previous = PendingClarificationContext(
+            conversation_id="clarification-chain",
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint=compute_schema_fingerprint(_schema()),
+            measures=["Total Sales"],
+            missing_slots=["dimension"],
+            runtime_mode=RuntimeDataMode.REAL,
+            last_request_id="before",
+        )
+        merged = self._merge(
+            previous,
+            GroundingOutcome(
+                status=GroundingStatus.RESOLVED,
+                delta=GroundedSemanticDelta(
+                    measures=["Total Quantity"], dimensions=["Product"]
+                ),
+                object_results=[
+                    self._resolved("measure", "Total Quantity"),
+                    self._resolved("dimension", "Product"),
+                ],
+            ),
+            "改成按产品看销量",
+            "override",
+        )
+        assert merged.complete
+        assert merged.context.measures == ["Total Quantity"]
+        assert merged.context.dimensions == ["Product"]
+
+    def test_ambiguity_remains_non_executable(self):
+        previous = PendingClarificationContext(
+            conversation_id="clarification-chain",
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint=compute_schema_fingerprint(_schema()),
+            measures=["Total Sales"],
+            dimensions=["Product"],
+            sort="desc",
+            top_n=1,
+            missing_slots=["dimension"],
+            runtime_mode=RuntimeDataMode.REAL,
+            last_request_id="before",
+        )
+        ambiguous = ObjectGroundingResult(
+            status=GroundingStatus.AMBIGUOUS,
+            role="dimension",
+            phrase="产品还是类别",
+            candidate_ids=("field:Sales.Product", "field:Sales.Category"),
+            method="multiple_signals",
+        )
+        merged = self._merge(
+            previous,
+            GroundingOutcome(
+                status=GroundingStatus.AMBIGUOUS,
+                object_results=[ambiguous],
+                clarification_question="请明确唯一维度。",
+            ),
+            "按产品还是类别",
+            "ambiguous",
+        )
+        assert not merged.complete
+        assert merged.executable_delta is None
+        assert merged.context.dimensions == []
+        assert merged.context.missing_slots == ["dimension"]
+
+        next_partial = self._merge(
+            merged.context,
+            GroundingOutcome(
+                status=GroundingStatus.RESOLVED,
+                delta=GroundedSemanticDelta(measures=["Total Quantity"]),
+                object_results=[self._resolved("measure", "Total Quantity")],
+            ),
+            "改成销量",
+            "after-ambiguous",
+        )
+        assert not next_partial.complete
+        assert next_partial.context.measures == ["Total Quantity"]
+        assert next_partial.context.dimensions == []
+        assert next_partial.context.missing_slots == ["dimension"]
+
+    def test_standalone_scalar_question_discards_unfinished_ranking(self):
+        previous = PendingClarificationContext(
+            conversation_id="clarification-chain",
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint=compute_schema_fingerprint(_schema()),
+            sort="desc",
+            top_n=1,
+            missing_slots=["measure", "dimension"],
+            runtime_mode=RuntimeDataMode.REAL,
+            last_request_id="ranking",
+        )
+        merged = self._merge(
+            previous,
+            GroundingOutcome(
+                status=GroundingStatus.RESOLVED,
+                delta=GroundedSemanticDelta(measures=["Total Sales"]),
+                object_results=[self._resolved("measure", "Total Sales")],
+            ),
+            "总销售额是多少？",
+            "independent-scalar",
+        )
+        assert merged.complete
+        assert merged.context.measures == ["Total Sales"]
+        assert merged.context.dimensions == []
+        assert merged.context.sort is None
+        assert merged.context.top_n is None
+
+    def test_explicit_abandonment_terms_are_narrow(self):
+        assert PendingClarificationService.should_abandon("取消澄清，重新开始")
+        assert not PendingClarificationService.should_abandon("按产品")

@@ -4,13 +4,13 @@
 
 PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent MVP。
 
-核心链路：用户自然语言提问 → React 极简对话页面 → FastAPI 后端 → 确定性 TurnPipeline 编排（意图识别 → QueryPlan → DAX → Answer → ReportSpec）→ DeepSeek（受控结构化 LLM 调用）→ Power BI MCP → Power BI 语义模型 → 数据问答或固定模板静态 HTML 报表。
+核心链路：用户自然语言提问 → FastAPI → 确定性 TurnPipeline → Semantic Grounding → Canonical QueryPlan → Deterministic DAX → Power BI MCP → QueryResult → VerifiedFactSet → fact-bounded Answer / ReportSpec。
 
 ## 当前状态
 
-**M2.6.1 Known-answer 独立数值 Oracle 与多轮 Harness/Test Set 离线固化完成。**
+**M2.6.3 Deterministic Execution & Verified Facts 已完成开发分支候选。**
 
-> M0—M1 已正式封板，M2 Local Demo 已由固定 Tag `m2-local-powerbi-demo-release` 封板。M2.6.1 在 Harness/Test 边界建立独立数值 Oracle、8 个 Known-answer Case（2 个 holdout）与 6 组/15 Turn 多轮 MiniSuite，并完成 Fake/Mock 离线验收。真实 expected baseline 仅允许保存在 Git 忽略的 `local_state/`。本轮未调用 DeepSeek、Local MCP 或 Desktop；M2.6.2 最终真实数值与多轮验收尚未执行，Remote MCP 继续 Deferred。
+> M0—M1 已正式封板，M2 Local Demo Tag 保持不变。M2.6.3 已将 Real DAX authority 收口为受限确定性 Builder + Independent Layer 3，并建立 VerifiedFactSet factual boundary；正式多轮基线经 clarification contract 治理更正为 6 Conversation / 16 Turn。开发分支通过真实 production Memory E2E，Remote MCP 继续 Deferred，待远程审计后再决定合入 main。
 
 ### 幂等与并发特性
 
@@ -268,4 +268,4 @@ DeepSeek 配置由本地 `.env` 提供：
 
 ---
 
-*最后更新：2026-08-12 | M2.6.1 Oracle 与多轮 Harness 离线固化完成；下一阶段 M2.6.2*
+*最后更新：2026-08-14 | M2.6.3 Deterministic Execution & Verified Facts 开发分支候选*

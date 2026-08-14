@@ -9,6 +9,8 @@ from backend.app.harness.cases.multi_turn_runner import (
     MultiTurnBenchmarkRunner,
     TurnEvaluation,
 )
+from backend.app.harness.cases.benchmark_models import KnownAnswerCaseSpec
+from backend.app.harness.cases.production_e2e_runner import exact_known_answer_schedule
 from backend.app.query_plan import prompt as query_plan_prompt
 
 
@@ -25,12 +27,12 @@ def _conversation(summary, conversation_id: str) -> ConversationEvaluation:
     )
 
 
-def test_six_conversations_and_fifteen_turns_pass_offline(benchmark_summary):
+def test_six_conversations_and_sixteen_turns_pass_offline(benchmark_summary):
     assert benchmark_summary.passed
     assert benchmark_summary.conversations_defined == 6
     assert benchmark_summary.conversations_passed == 6
-    assert benchmark_summary.turns_defined == 15
-    assert benchmark_summary.turns_passed == 15
+    assert benchmark_summary.turns_defined == 16
+    assert benchmark_summary.turns_passed == 16
     assert benchmark_summary.deepseek_real_calls == 0
     assert benchmark_summary.local_mcp_real_calls == 0
 
@@ -64,6 +66,24 @@ def test_follow_up_after_failed_turn_inherits_last_successful_state(benchmark_su
     assert final_turn.passed
     assert final_turn.checks["inheritance"]
     assert final_turn.checks["memory_committed"]
+
+
+def test_clarification_contract_requires_both_partial_turns_before_execution(
+    benchmark_summary,
+):
+    conversation = _conversation(
+        benchmark_summary, "conversation_e_clarification"
+    )
+    by_id = {turn.turn_id: turn for turn in conversation.turns}
+    assert conversation.passed
+    assert by_id["e1"].checks["no_powerbi_execute"]
+    assert by_id["e1"].checks["no_memory_record"]
+    assert by_id["e2"].checks["no_powerbi_execute"]
+    assert by_id["e2"].checks["no_memory_record"]
+    assert by_id["e3"].checks["query_plan_measure"]
+    assert by_id["e3"].checks["query_plan_dimensions"]
+    assert by_id["e3"].checks["query_plan_sort_top_n"]
+    assert by_id["e3"].checks["memory_committed"]
 
 
 def test_conversation_scoring_requires_every_turn_to_pass():
@@ -121,3 +141,25 @@ def test_eight_known_answer_cases_include_two_prompt_holdouts():
     assert len(holdouts) == 2
     for holdout in holdouts:
         assert holdout.message not in query_plan_prompt.SYSTEM_PROMPT
+
+
+def test_real_known_answer_schedule_never_deduplicates_by_oracle_key():
+    cases = [
+        KnownAnswerCaseSpec(
+            id="exact_prompt_a",
+            message="第一个完整提示",
+            expected_measure="Total Sales",
+            oracle_key="shared_key",
+        ),
+        KnownAnswerCaseSpec(
+            id="exact_prompt_b",
+            message="第二个完整提示",
+            expected_measure="Total Sales",
+            oracle_key="shared_key",
+        ),
+    ]
+
+    scheduled = exact_known_answer_schedule(cases)
+
+    assert [item.id for item in scheduled] == ["exact_prompt_a", "exact_prompt_b"]
+    assert [item.message for item in scheduled] == ["第一个完整提示", "第二个完整提示"]

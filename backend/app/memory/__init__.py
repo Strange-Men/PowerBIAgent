@@ -4,6 +4,8 @@ from backend.app.memory.models import (
     MemoryCommitEvidence,
     MemoryCorrectionRecord,
     MemoryStatus,
+    PendingClarificationContext,
+    PendingSlotProvenance,
     RuntimeDataMode,
     StructuredWorkMemory,
 )
@@ -34,6 +36,8 @@ __all__ = [
     "MemoryPolicies",
     "MemoryRepository",
     "MemoryStatus",
+    "PendingClarificationContext",
+    "PendingSlotProvenance",
     "MemoryVersionConflictError",
     "OwnerFailedError",
     "RequestFingerprint",

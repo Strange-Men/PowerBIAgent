@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.app.intent.models import IntentSpec
 from backend.app.llm.base import LLMProvider, LLMRequest, LLMTask
-from backend.app.memory.models import StructuredWorkMemory
+from backend.app.memory.models import PendingClarificationContext, StructuredWorkMemory
 from backend.app.query_plan.semantic_catalog import (
     CatalogObject,
     SemanticCatalog,
@@ -493,6 +493,7 @@ class SemanticGroundingService:
         draft: QueryPlan,
         committed: StructuredWorkMemory | None,
         member_lookup: MemberLookup,
+        pending: PendingClarificationContext | None = None,
     ) -> GroundingOutcome:
         object_results: list[ObjectGroundingResult] = []
         member_results: list[MemberGroundingResult] = []
@@ -512,8 +513,8 @@ class SemanticGroundingService:
                 )
             elif (
                 intent.detected_measures or draft.measures
-            ) and not self._signals_only_repeat_committed_measure(
-                intent, draft, committed, user_input
+            ) and not self._signals_only_repeat_inherited_measure(
+                intent, draft, committed, pending, user_input
             ):
                 # Intent/QueryPlan remain weak signals: they may prove that the
                 # current turn expresses a measure requirement, but may not
@@ -547,7 +548,7 @@ class SemanticGroundingService:
             ):
                 disagreements.append("intent_measure_disagrees_with_grounding")
         elif measure.status == GroundingStatus.NOT_MENTIONED and not (
-            committed and committed.measures
+            (pending and pending.measures) or (committed and committed.measures)
         ):
             return self._clarification(
                 GroundingStatus.NOT_MENTIONED,
@@ -559,7 +560,8 @@ class SemanticGroundingService:
 
         raw_filters = [
             item for item in draft.filters
-            if not committed or self._value_is_current(item.value, user_input)
+            if self._value_is_current(item.value, user_input)
+            if not self._filter_is_explicit_grouping(item, user_input)
         ]
         if not raw_filters:
             raw_filters = [
@@ -571,9 +573,33 @@ class SemanticGroundingService:
                 for item in intent.detected_filters
                 if item.operator.value == FilterOperator.EQ.value
                 and self._value_is_current(item.value, user_input)
+                and not self._filter_is_explicit_grouping(item, user_input)
             ]
         grounded_filters: list[StructuredFilter] = []
         grounded_filter_ids: set[str] = set()
+        if not raw_filters:
+            (
+                discovered_filters,
+                discovered_objects,
+                discovered_members,
+                discovery_ambiguous,
+            ) = await self._discover_runtime_member_filters(
+                user_input, committed, member_lookup
+            )
+            object_results.extend(discovered_objects)
+            member_results.extend(discovered_members)
+            if discovery_ambiguous:
+                return self._clarification(
+                    GroundingStatus.AMBIGUOUS,
+                    object_results,
+                    member_results,
+                    "筛选值无法唯一匹配模型中的成员，请明确选择。",
+                    disagreements,
+                )
+            grounded_filters.extend(discovered_filters)
+            for item in discovered_objects:
+                if item.canonical_object is not None:
+                    grounded_filter_ids.add(item.canonical_object.object_id)
         for raw_filter in raw_filters:
             if raw_filter.operator != FilterOperator.EQ:
                 return self._clarification(
@@ -596,6 +622,23 @@ class SemanticGroundingService:
             mentioned_field = self.objects.find_mentions(
                 user_input, SemanticObjectType.FIELD, "filter_field"
             )
+            if mentioned_field.status == GroundingStatus.AMBIGUOUS:
+                non_grouping = [
+                    self.catalog.get(object_id)
+                    for object_id in mentioned_field.candidate_ids
+                ]
+                non_grouping = [
+                    item for item in non_grouping
+                    if item is not None
+                    and not self._field_has_dimension_cue(user_input, item)
+                ]
+                if len(non_grouping) == 1:
+                    mentioned_field = ObjectGrounder._resolved(
+                        "filter_field",
+                        user_input,
+                        non_grouping[0],
+                        "current_input_non_grouping",
+                    )
             if mentioned_field.status != GroundingStatus.NOT_MENTIONED:
                 field_result = mentioned_field
             elif draft_field_mentioned:
@@ -764,11 +807,12 @@ class SemanticGroundingService:
             intent_disagreements=disagreements,
         )
 
-    def _signals_only_repeat_committed_measure(
+    def _signals_only_repeat_inherited_measure(
         self,
         intent: IntentSpec,
         draft: QueryPlan,
         committed: StructuredWorkMemory | None,
+        pending: PendingClarificationContext | None,
         user_input: str,
     ) -> bool:
         """Detect inherited LLM echo without granting it semantic authority.
@@ -779,7 +823,12 @@ class SemanticGroundingService:
         omission only when every resolvable weak signal equals the committed
         measure and the input independently expresses another semantic slot.
         """
-        if committed is None or len(committed.measures) != 1:
+        inherited_measures = (
+            list(pending.measures)
+            if pending and pending.measures
+            else list(committed.measures) if committed else []
+        )
+        if len(inherited_measures) != 1:
             return False
         signals = [*intent.detected_measures, *draft.measures]
         if not signals:
@@ -792,7 +841,7 @@ class SemanticGroundingService:
             if result.status != GroundingStatus.RESOLVED or not result.canonical_object:
                 return False
             resolved_names.add(result.canonical_object.canonical_name)
-        if resolved_names != {committed.measures[0]}:
+        if resolved_names != {inherited_measures[0]}:
             return False
         return self._has_current_non_measure_requirement(user_input, intent, draft)
 
@@ -890,6 +939,122 @@ class SemanticGroundingService:
             return normalize_semantic_text(value) in normalize_semantic_text(user_input)
         return str(value) in user_input
 
+    def _filter_is_explicit_grouping(
+        self, item: StructuredFilter, user_input: str
+    ) -> bool:
+        """A weak draft filter cannot override an explicit grouping cue."""
+        resolved = self.objects.resolve_phrase(
+            item.field, SemanticObjectType.FIELD, "filter_field"
+        )
+        return bool(
+            resolved.status == GroundingStatus.RESOLVED
+            and resolved.canonical_object is not None
+            and self._field_has_dimension_cue(
+                user_input, resolved.canonical_object
+            )
+        )
+
+    async def _discover_runtime_member_filters(
+        self,
+        user_input: str,
+        committed: StructuredWorkMemory | None,
+        member_lookup: MemberLookup,
+    ) -> tuple[
+        list[StructuredFilter],
+        list[ObjectGroundingResult],
+        list[MemberGroundingResult],
+        bool,
+    ]:
+        """Find explicit runtime members without granting the draft authority.
+
+        Only fields mentioned in the current input, or the sole committed field
+        in a member-only refinement, are eligible.  Values must be returned by
+        the runtime member boundary and occur literally after stable text
+        normalization.  At most two bounded field lookups are allowed so the
+        production tool-call budget remains deterministic.
+        """
+        mention = self.objects.find_mentions(
+            user_input, SemanticObjectType.FIELD, "filter_field"
+        )
+        candidate_ids = list(mention.candidate_ids)
+        normalized_input = normalize_semantic_text(user_input)
+        member_only_cue = any(
+            term in normalized_input for term in ("只看", "换成", "改成")
+        )
+        if (
+            not candidate_ids
+            and committed is not None
+            and member_only_cue
+            and not self.time.is_explicit(user_input)
+        ):
+            committed_fields = {
+                str(item.get("field")) for item in committed.filters
+            }
+            if not committed_fields and len(committed.dimensions) == 1:
+                committed_fields = {committed.dimensions[0]}
+            for field_name in committed_fields:
+                resolved = self.objects.resolve_phrase(
+                    field_name, SemanticObjectType.FIELD, "filter_field"
+                )
+                candidate_ids.extend(resolved.candidate_ids)
+
+        candidates: list[CatalogObject] = []
+        seen: set[str] = set()
+        for object_id in candidate_ids:
+            obj = self.catalog.get(object_id)
+            if (
+                obj is not None
+                and obj.object_id not in seen
+                and not self._field_has_dimension_cue(user_input, obj)
+            ):
+                candidates.append(obj)
+                seen.add(obj.object_id)
+        if len(candidates) > 2:
+            return [], [], [], True
+
+        matches: list[tuple[CatalogObject, Any]] = []
+        member_results: list[MemberGroundingResult] = []
+        for field in candidates:
+            members = await member_lookup(field, 100)
+            field_matches = [
+                value
+                for value in members.values
+                if isinstance(value, str)
+                and len(normalize_semantic_text(value)) >= 2
+                and normalize_semantic_text(value) in normalized_input
+            ]
+            unique_matches: list[Any] = []
+            for value in field_matches:
+                if value not in unique_matches:
+                    unique_matches.append(value)
+            if len(unique_matches) > 1:
+                return [], [], member_results, True
+            if len(unique_matches) == 1:
+                value = unique_matches[0]
+                matches.append((field, value))
+                member_results.append(MemberGroundingResult(
+                    status=GroundingStatus.RESOLVED,
+                    field=field,
+                    requested_value=value,
+                    canonical_value=value,
+                    method="runtime_current_input_member",
+                ))
+        if len(matches) > 1:
+            return [], [], member_results, True
+
+        filters: list[StructuredFilter] = []
+        objects: list[ObjectGroundingResult] = []
+        for field, value in matches:
+            filters.append(StructuredFilter(
+                field=field.canonical_name,
+                operator=FilterOperator.EQ,
+                value=value,
+            ))
+            objects.append(ObjectGrounder._resolved(
+                "filter_field", user_input, field, "runtime_member_field"
+            ))
+        return filters, objects, member_results, False
+
     def _has_dimension_cue(
         self, user_input: str, result: ObjectGroundingResult
     ) -> bool:
@@ -911,6 +1076,16 @@ class SemanticGroundingService:
             if any(re.search(pattern, user_input, re.IGNORECASE) for pattern in patterns):
                 return True
         return False
+
+    def _field_has_dimension_cue(
+        self, user_input: str, field: CatalogObject
+    ) -> bool:
+        return self._has_dimension_cue(
+            user_input,
+            ObjectGrounder._resolved(
+                "dimension", user_input, field, "dimension_cue_candidate"
+            ),
+        )
 
     @staticmethod
     def _has_dimension_phrase_cue(user_input: str, phrase: str) -> bool:

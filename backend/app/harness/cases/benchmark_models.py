@@ -39,6 +39,11 @@ class MultiTurnExpectedSpec(BaseModel):
     expected_tool_sequence: list[str] = Field(default_factory=list)
     expected_source_mode: Literal["real"] | None = None
     expected_failure_stage: str | None = None
+    expected_pending_missing_slots: list[
+        Literal["measure", "dimension", "filter", "time", "analysis", "template"]
+    ] = Field(default_factory=list)
+    expected_pending_measures: list[str] = Field(default_factory=list)
+    expected_pending_dimensions: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -62,6 +67,12 @@ class MultiTurnExpectedSpec(BaseModel):
                 raise ValueError("clarification/unsupported cannot define oracle_key")
             if self.expected_memory_commit:
                 raise ValueError("clarification/unsupported cannot commit memory")
+        if self.expected_pending_missing_slots and (
+            self.expected_terminal_state != "clarification_required"
+        ):
+            raise ValueError(
+                "pending clarification slots require clarification_required"
+            )
         if self.expected_failure_stage and self.expected_memory_commit:
             raise ValueError("failure turn cannot commit memory")
         return self

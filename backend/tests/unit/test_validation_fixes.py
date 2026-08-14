@@ -1760,7 +1760,7 @@ class TestM24DAXQueryPlanConsistency:
         )
         result = self._validate(dax)
         assert not result.is_valid
-        assert "dax_filter_operator_or_value_mismatch" in result.errors
+        assert "dax_filter_structure_not_verifiable" in result.errors
 
     def test_extra_business_filter_is_rejected(self):
         dax = (
@@ -1778,20 +1778,19 @@ class TestM24DAXQueryPlanConsistency:
         dax = (
             "EVALUATE SUMMARIZECOLUMNS("
             "'Product'[Category], "
-            "\"Total Sales\", [Total Sales], "
-            "FILTER('Product', 'Product'[Category] = \"Electronics\"))"
+            "TREATAS({\"Electronics\"}, 'Product'[Category]), "
+            "\"Total Sales\", [Total Sales])"
         )
         result = self._validate(dax, plan=_m24_plan(dimensions=[]))
 
         assert not result.is_valid
         assert any("unplanned_group_by_dimension" in error for error in result.errors)
-        assert "dax_summarizecolumns_filter_after_name_expression" in result.errors
 
     def test_declared_dimension_is_allowed_as_group_by(self):
         dax = (
             "EVALUATE SUMMARIZECOLUMNS("
             "'Product'[Category], "
-            "FILTER('Product', 'Product'[Category] = \"Electronics\"), "
+            "TREATAS({\"Electronics\"}, 'Product'[Category]), "
             "\"Total Sales\", [Total Sales])"
         )
 
@@ -1800,7 +1799,7 @@ class TestM24DAXQueryPlanConsistency:
     def test_filter_only_column_passes_without_group_by(self):
         dax = (
             "EVALUATE SUMMARIZECOLUMNS("
-            "FILTER('Product', 'Product'[Category] = \"Electronics\"), "
+            "TREATAS({\"Electronics\"}, 'Product'[Category]), "
             "\"Total Sales\", [Total Sales])"
         )
 
@@ -1819,7 +1818,7 @@ class TestM24DAXQueryPlanConsistency:
         dax = (
             "EVALUATE SUMMARIZECOLUMNS("
             "\"Total Sales\", [Total Sales], "
-            "FILTER('Product', 'Product'[Category] = \"Electronics\"))"
+            "TREATAS({\"Electronics\"}, 'Product'[Category]))"
         )
         result = self._validate(dax, plan=_m24_plan(dimensions=[]))
 
@@ -1829,7 +1828,7 @@ class TestM24DAXQueryPlanConsistency:
     def test_name_expression_pair_must_be_complete(self):
         dax = (
             "EVALUATE SUMMARIZECOLUMNS("
-            "FILTER('Product', 'Product'[Category] = \"Electronics\"), "
+            "TREATAS({\"Electronics\"}, 'Product'[Category]), "
             "\"Total Sales\")"
         )
         result = self._validate(dax, plan=_m24_plan(dimensions=[]))
@@ -1840,7 +1839,7 @@ class TestM24DAXQueryPlanConsistency:
     def test_measure_expression_remains_required(self):
         dax = (
             "EVALUATE SUMMARIZECOLUMNS("
-            "FILTER('Product', 'Product'[Category] = \"Electronics\"), "
+            "TREATAS({\"Electronics\"}, 'Product'[Category]), "
             "\"Quantity\", [Total Quantity])"
         )
         result = self._validate(dax, plan=_m24_plan(dimensions=[]))
@@ -1857,7 +1856,7 @@ class TestM24DAXQueryPlanConsistency:
         )
         result = self._validate(dax)
         assert not result.is_valid
-        assert any("missing_query_plan_measure" in error for error in result.errors)
+        assert "dax_measure_expression_not_allowed" in result.errors
 
     def test_nonexistent_dax_object_is_rejected(self):
         dax = (

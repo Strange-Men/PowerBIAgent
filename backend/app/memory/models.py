@@ -16,12 +16,12 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from backend.app.schemas.data_contracts import TimeRangeSpec
+from backend.app.schemas.data_contracts import StructuredFilter, TimeRangeSpec
 
 
 class MemoryStatus(str, Enum):
@@ -36,6 +36,51 @@ class RuntimeDataMode(str, Enum):
     """运行数据模式 — Mock 与 Real 空间隔离"""
     MOCK = "mock"
     REAL = "real"
+
+
+PendingSemanticSlot = Literal[
+    "measure", "dimension", "filter", "time", "analysis", "template"
+]
+
+
+class PendingSlotProvenance(BaseModel):
+    """Authority record for one slot retained across clarification turns."""
+
+    request_id: str
+    authority: Literal[
+        "semantic_catalog", "runtime_member", "deterministic_analysis"
+    ]
+    source: str
+
+
+class PendingClarificationContext(BaseModel):
+    """Non-executable semantic context for an incomplete clarification chain.
+
+    This model is intentionally separate from ``StructuredWorkMemory``: it has
+    no MemoryStatus, commit evidence, DAX, result, or response fields and can
+    never enter the committed-memory version chain.
+    """
+
+    chain_id: str = Field(default_factory=lambda: str(uuid4()))
+    conversation_id: str
+    semantic_model_key: str
+    schema_fingerprint: str = Field(min_length=64, max_length=64)
+    intent: Literal["data_question", "report_generation"] = "data_question"
+    measures: list[str] = Field(default_factory=list, max_length=1)
+    dimensions: list[str] = Field(default_factory=list, max_length=1)
+    filters: list[StructuredFilter] = Field(default_factory=list)
+    time_range: Optional[TimeRangeSpec] = None
+    sort: Optional[Literal["asc", "desc"]] = None
+    top_n: Optional[int] = Field(default=None, ge=1)
+    missing_slots: list[PendingSemanticSlot] = Field(default_factory=list)
+    slot_provenance: dict[str, list[PendingSlotProvenance]] = Field(
+        default_factory=dict
+    )
+    base_committed_version: int = Field(default=0, ge=0)
+    runtime_mode: RuntimeDataMode = RuntimeDataMode.MOCK
+    last_request_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class MemoryCommitEvidence(BaseModel):

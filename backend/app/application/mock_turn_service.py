@@ -34,6 +34,7 @@ from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.llm.base import LLMRequest, LLMTask
 from backend.app.llm.mock import MockLLMProvider
 from backend.app.memory.models import (
+    PendingClarificationContext,
     RuntimeDataMode,
     StructuredWorkMemory,
 )
@@ -225,6 +226,7 @@ class MockTurnService:
         controller: Optional[TurnController] = None,
         context: Optional[dict[str, Any]] = None,
         committed: Optional[StructuredWorkMemory] = None,
+        pending_clarification: Optional[PendingClarificationContext] = None,
     ) -> dict[str, Any]:
         """Owner 执行 Mock LLM 管线（控制面由共享 TurnPipeline 骨架提供）"""
         # 确保 resolved_scenario 有效

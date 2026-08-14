@@ -2,7 +2,7 @@
 
 > **当前状态交接入口；Claude / Codex / 其他代码 Agent 必须先从仓库根目录 `AGENTS.md` 进入。**
 > **每轮结束时覆盖更新，不追加失效信息。**
-> **最后更新：2026-08-13 | M2.6.2 Business Semantic Grounding Foundation 已通过 Semantic Real Gate**
+> **最后更新：2026-08-14 | M2.6.3 Deterministic Execution & Verified Facts 开发分支验收候选**
 
 ---
 
@@ -12,9 +12,11 @@
 
 ## 当前阶段
 
-**M2.6.2 Business Semantic Grounding Foundation** — ✅ 已完成。
+**M2.6.3 Deterministic Execution & Verified Facts** — ✅ 已完成开发分支候选，待远程审计。
 
-> ADR-008 已固化 runtime schema + model-scoped glossary + runtime members + deterministic time rules 的业务语义 Source of Truth。Grounding + deterministic StateTransition 唯一决定 Canonical QueryPlan semantic slots；Intent/QueryPlan LLM 仅提供语言 weak signal。离线 targeted、full pytest、Architecture、Safety、Golden 与 6 Conversation/15 Turn 已通过；Real Semantic Matrix 与 fresh `a1 → a2 → a3` 5/5 通过，fallback=0、pollution=0。Remote 生产化继续 Deferred。
+> ADR-008/009 已固化 `Natural Language → Canonical QueryPlan → Deterministic DAX → Independent Layer 3 → QueryResult → VerifiedFactSet → fact-bounded Answer/Report`。Glossary 绑定 runtime schema fingerprint；PendingClarificationContext 与 committed Memory 分离；Real DAX LLM authority 为 0。正式 clarification contract 为 6 Conversation / 16 Turn，conversation_e 需 e1/e2/e3 三轮补齐，禁止默认 Product。Remote 生产化继续 Deferred。
+
+Fresh Real Gate：Semantic Matrix 34/34、专项 `a1 → a2 → a3` 5/5；production E2E exact Known-answer 8/8、holdout 2/2、6/6 Conversation、16/16 Turn、成功 Real query 51、failure-recovery 1/1、`a1 → a2 → a3` 10/10，fallback=0、pollution=0，两类已知 DAX blocker 均为 0。
 
 ## 上一轮
 
@@ -26,7 +28,7 @@
 
 ## 下一动作
 
-下一动作是由用户审计 M2.6.2 dirty WIP；未经另行批准不提交。M2.6.3 才处理 Deterministic DAX / Verified FactSet，包括已观测的 DAX 未计划 Filter group-by 与结构化时间 filter 不可验证问题；M2.6.4 才执行 10/10 stability、完整 Blind release gate 与 hardened seal。不得提前实施 M3 Renderer。
+下一动作是远程审计已 push 的 M2.6.3 开发分支；本轮不 merge main、不 push main、不 Tag。远程审计通过后再决定 fast-forward main。M2.6.4 只做 final hardened acceptance、docs consolidation 与 M0—M2 seal；不得提前实施 M3 Renderer。
 
 以后 Claude / Codex / 其他代码 Agent 均以根目录 `AGENTS.md` 为仓库级入口。
 
@@ -35,18 +37,20 @@
 - **LLM:** DeepSeek（真实 API）+ Mock（确定性测试）
 - **Power BI:** Mock 完整可用；Local MCP + Power BI Desktop 的 Schema、DAX、QueryResult 与 DeepSeek Chat 已真实接入；Remote MCP 未实现并因管理员条件 Deferred
 - **管线:** 确定性 TurnPipeline（ADR-005），Mock/DeepSeek 共享执行骨架
-- **能力:** 真实 Schema Grounding → QueryPlan Layer 2 → DAX Layer 3 → Answer/ReportSpec，7 个 Business Golden、20 类 Bad Case、幂等重放与请求指纹冲突检测
+- **能力:** 真实 Schema Grounding → Canonical QueryPlan → Deterministic DAX → Independent Layer 3 → VerifiedFactSet → fact-bounded Answer/ReportSpec；幂等重放与请求指纹冲突检测
 - **API:** Health 200/503、Chat 可用/不可用，Mock/DeepSeek 模式切换
 - **源模式:** Local QueryResult、Turn、Answer/Report、Snapshot、Replay 均传播 `source_mode=real`
 - **M2.6 正确性:** Real Filter 仅 `eq=SUPPORTED`；其余 Operator 均 `NOT_VERIFIED` 并受控拒绝。TopN selection 与 presentation ordering 分离验证；ties 可超过 N 行
-- **M2.6.1 离线正确性:** 独立 Oracle 支持 scalar/grouped/ordered；8 个 Case（2 holdout）与 6 Conversation/15 Turn Fake/Mock 全部 PASS；Conversation 严格要求 all-turn PASS
+- **M2.6.1/3 验收基线:** 独立 Oracle 支持 scalar/grouped/ordered；8 个 Case（2 holdout）与正式更正后的 6 Conversation/16 Turn；Conversation 严格要求 all-turn PASS
 - **M2.6.2 业务语义:** Business Catalog、Object/Member/Time Grounding、semantic slot 状态契约、deterministic StateTransition 与 Canonical QueryPlan authority 已实现；member lookup 只经 ToolGateway → PowerBIAdapter
-- **M2.6.2 验收边界:** Natural Language → Canonical QueryPlan → Layer 2；DAX/Layer 3/QueryResult 仅作 downstream observation
+- **M2.6.3 确定性执行:** Real path 不调用 LLM 生成 DAX；受限 grammar 与 Independent Layer 3 覆盖 Measure/Dimension/EQ/Time/Sort/TopN
+- **M2.6.3 事实边界:** VerifiedFactSet 是数字、排名、极值、筛选、时间和 provenance 的唯一结构化 authority；Answer/Report 不得扩写未验证事实
+- **Clarification:** Pending context 非 executable/COMMITTED state，partial slots 完整后才执行并在全链成功后提交正式 Memory
 - **Health:** `ready` 兼容 `configuration_ready`；Health 不做实时探针，`powerbi_live_connected=false`
 
 ## 当前技术边界
 
-- ADR-005 负责 TurnPipeline 总体架构；ADR-006 负责 Remote 生产化；ADR-007 负责当前 Local Demo；ADR-008 负责 Business Semantic authority，均 accepted
+- ADR-005 负责 TurnPipeline 总体架构；ADR-006 负责 Remote 生产化；ADR-007 负责当前 Local Demo；ADR-008 负责 Business Semantic authority；ADR-009 负责 Deterministic Execution / Verified Fact authority，均 accepted
 - Adapter 内部使用 `connection_operations`、五类 Schema 工具的 `List` / `Get` 与 `dax_query_operations Execute`；业务层只暴露 Schema、bounded members 与 DAX Execute 抽象能力
 - 任何 Local / Remote MCP SDK 只能位于 PowerBIAdapter 边界之后；Service/API/LLM 不得直接调用 MCP；Real 失败不得回退 Mock
 - M2.1—M2.5 只沿现有 Adapter/控制面完成 Local Demo 验证；会话持久化属 M4，报表正式渲染属 M3，React 属 M5
@@ -82,6 +86,9 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_business_golden_smoke.
 # M2.6.2 Real Semantic Gate（先打开测试 PBIX，需本地 DeepSeek 配置）
 D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_semantic_grounding_smoke.py --historical-repeats 5
 
+# M2.6.3 production E2E（exact known answers + 6/16 + a1-a2-a3 x10）
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn_smoke.py --mode real --historical-repeats 10
+
 # 人工验收 Smoke（需 .env 中 DEEPSEEK_API_KEY）
 D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\deepseek_chat_smoke.py
 
@@ -94,8 +101,7 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ## 未完成事项
 
-- M2.6.3: Deterministic DAX Builder、Verified FactSet
-- M2.6.4: 10/10 stability、完整 Blind release gate、M0—M2 hardened seal
+- M2.6.4: final hardened acceptance、docs consolidation、M0—M2 final seal
 - M3: 报表正式渲染管线、报表资源 ID
 - M4: 会话持久化、搜索、最近对话
 - M5: React 前端
@@ -115,8 +121,9 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 - M2.5: 7 个真实 Business Golden、3 个未点名对象/组合、20 类 Bad Case、`gc_012` 人工真实基线与 full regression 完成；未新增业务词典、完整 Parser 或主架构
 - M2.6: eq Filter field/operator/value、TopN/Sort 语义、Architecture ownership 与 Health 真实性加固；未实现数值 Oracle 或 Real Multi-turn
-- M2.6.1: Harness/Test 层独立 scalar/grouped/ordered Oracle、8 个 Known-answer Case（2 holdout）、6 Conversation/15 Turn 与 local-only real baseline 契约完成；只做 Fake/Mock 离线验证，真实调用为 0
+- M2.6.1: Harness/Test 层独立 scalar/grouped/ordered Oracle、8 个 Known-answer Case（2 holdout）与 local-only real baseline 契约完成；M2.6.3 将欠指定 clarification contract 正式更正为 6 Conversation/16 Turn
 - M2.6.2: ADR-008、model-scoped glossary、Object/Member/Time Grounding、semantic slot 状态契约与 deterministic StateTransition 完成；Real Semantic Matrix 与 fresh `a1 → a2 → a3` 5/5 通过，fallback=0、pollution=0
+- M2.6.3: ADR-009、schema fingerprint、PendingClarificationContext、Deterministic DAX、Independent Layer 3、VerifiedFactSet 与 factual Answer/Report boundary 完成；Real LLM DAX authority=0
 - M2.4: Local Provider 注入现有 DeepSeekTurnService / TurnPipeline；Layer 2/3、Answer provenance、real Snapshot/Replay 与三个真实自然语言 Case 完成候选
 - M2.3: 通过 ToolGateway → LocalMCPPowerBIAdapter 真实执行固定 DAX 并获取 row data；QueryResult、错误与截断边界已标准化，当前实机未复现 Issue #124
 - M2.2: 通过 ToolGateway → LocalMCPPowerBIAdapter 单次只读会话真实读取并标准化 Schema；Measure 与基础模型关系已可用于 Semantic Grounding
@@ -134,4 +141,4 @@ LLM_MODE=mock POWERBI_MODE=mock D:\Conda\envs\PBIAgent\python.exe -m pytest back
 
 ---
 
-*最后更新：2026-08-13 | M2.6.2 Business Semantic Grounding Foundation 已通过 Semantic Real Gate*
+*最后更新：2026-08-14 | M2.6.3 Deterministic Execution & Verified Facts 开发分支验收候选*

@@ -1,5 +1,6 @@
 version: 1
 semantic_model_key: local_desktop_model
+schema_fingerprint: fc71287dcc62705dd06a83616559ed457ef17b3016a64856808b5eee66c63d1c
 
 measures:
   Total Sales:

@@ -21,9 +21,16 @@ from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
 from backend.app.llm.registry import LLMProviderRegistry
 from backend.app.main import create_app
+from backend.app.memory.models import RuntimeDataMode
 from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
+from backend.app.query_plan.semantic_catalog import (
+    SemanticCatalogBuilder,
+    compute_schema_fingerprint,
+)
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
+    ColumnMembersRequest,
+    ColumnMembersResult,
     ColumnSchema,
     DAXRequest,
     MeasureSchema,
@@ -1176,6 +1183,47 @@ class _M25BusinessGoldenAdapter(_M24FakeLocalPowerBIAdapter):
         )
 
 
+def _patch_fake_runtime_glossary(monkeypatch):
+    """Bind fake Local schemas to an explicit test-only glossary fingerprint."""
+    import backend.app.application.deepseek_turn_service as turn_service_module
+
+    aliases = {
+        "Total Sales": ["销售额", "总销售额", "销售金额"],
+        "Total Quantity": ["销量", "总数量", "销售数量", "件数"],
+        "Category": ["类别", "品类"],
+        "Product": ["产品", "商品"],
+        "OrderDate": ["订单日期", "销售日期"],
+    }
+
+    class _TestCatalogBuilder:
+        def build(self, schema):
+            glossary = {
+                "version": 1,
+                "semantic_model_key": schema.key,
+                "schema_fingerprint": compute_schema_fingerprint(schema),
+                "measures": {},
+                "fields": {},
+            }
+            for table in schema.tables:
+                for measure in table.measures:
+                    glossary["measures"][measure.name] = {
+                        "table_name": table.name,
+                        "object_type": "measure",
+                        "aliases": aliases.get(measure.name, []),
+                    }
+                for column in table.columns:
+                    glossary["fields"][column.name] = {
+                        "table_name": table.name,
+                        "object_type": "field",
+                        "aliases": aliases.get(column.name, []),
+                    }
+            return SemanticCatalogBuilder().build_from_data(schema, glossary)
+
+    monkeypatch.setattr(
+        turn_service_module, "SemanticCatalogBuilder", _TestCatalogBuilder
+    )
+
+
 def _patch_m25_business_golden_composition(
     monkeypatch,
     provider: _M25BusinessGoldenProvider,
@@ -1186,6 +1234,7 @@ def _patch_m25_business_golden_composition(
     registry = LLMProviderRegistry()
     registry.register("deepseek", provider, set_default=True)
     monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+    _patch_fake_runtime_glossary(monkeypatch)
     monkeypatch.setattr(
         main_module, "LocalMCPPowerBIAdapter", _M25BusinessGoldenAdapter
     )
@@ -1206,6 +1255,7 @@ def _patch_m24_local_composition(monkeypatch, adapter_type):
     registry = LLMProviderRegistry()
     registry.register("deepseek", provider, set_default=True)
     monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+    _patch_fake_runtime_glossary(monkeypatch)
     monkeypatch.setattr(main_module, "LocalMCPPowerBIAdapter", adapter_type)
     fake_key = "test-key-not-real"
     settings = Settings(
@@ -1215,6 +1265,381 @@ def _patch_m24_local_composition(monkeypatch, adapter_type):
         deepseek_api_key=fake_key,
     )
     return main_module.create_app(settings=settings), provider
+
+
+class _PendingClarificationProvider(LLMProvider):
+    """Script language stages while leaving semantic authority to Grounding."""
+
+    def __init__(self) -> None:
+        self.active = "e1"
+        self.calls: list[LLMRequest] = []
+
+    @property
+    def provider_name(self) -> str:
+        return "deepseek"
+
+    @property
+    def is_mock(self) -> bool:
+        return False
+
+    async def generate(
+        self, request: LLMRequest, output_type: type[BaseModel]
+    ) -> LLMResponse:
+        self.calls.append(request)
+        if request.task == LLMTask.INTENT_RECOGNITION:
+            if self.active == "e1":
+                structured = IntentSpec(
+                    intent=IntentType.CLARIFICATION,
+                    confidence=0.8,
+                    normalized_question="哪个表现最好？",
+                    needs_clarification=True,
+                    clarification_question="请明确指标和维度。",
+                )
+            elif self.active == "e2":
+                structured = IntentSpec(
+                    intent=IntentType.DATA_QUESTION,
+                    confidence=0.99,
+                    normalized_question="按销售额",
+                    detected_measures=["Total Sales"],
+                )
+            elif self.active == "e3":
+                structured = IntentSpec(
+                    intent=IntentType.DATA_QUESTION,
+                    confidence=0.99,
+                    normalized_question="按产品",
+                    detected_measures=["Total Sales"],
+                    detected_dimensions=["Product"],
+                )
+            elif self.active == "override":
+                structured = IntentSpec(
+                    intent=IntentType.DATA_QUESTION,
+                    confidence=0.99,
+                    normalized_question="改成按产品看销量",
+                    detected_measures=["Total Quantity"],
+                    detected_dimensions=["Product"],
+                )
+            elif self.active == "ambiguous":
+                structured = IntentSpec(
+                    intent=IntentType.DATA_QUESTION,
+                    confidence=0.99,
+                    normalized_question="按产品还是类别",
+                    detected_measures=["Total Sales"],
+                    detected_dimensions=["Product", "Category"],
+                )
+            elif self.active in {"abandon", "unrelated"}:
+                structured = IntentSpec(
+                    intent=IntentType.DATA_QUESTION,
+                    confidence=0.99,
+                    normalized_question=(
+                        "重新开始，总销售额"
+                        if self.active == "abandon"
+                        else "总销售额是多少？"
+                    ),
+                    detected_measures=["Total Sales"],
+                )
+            else:
+                raise AssertionError(f"unknown scripted turn: {self.active}")
+        elif request.task == LLMTask.QUERY_PLAN:
+            plans = {
+                "e1": QueryPlan(
+                    normalized_question="哪个表现最好？",
+                    semantic_model_key="local_desktop_model",
+                    sort="desc",
+                    top_n=1,
+                ),
+                "e2": QueryPlan(
+                    normalized_question="按销售额",
+                    semantic_model_key="local_desktop_model",
+                    measures=["Total Sales"],
+                ),
+                # The repeated measure is only a weak draft echo.  The current
+                # utterance explicitly contributes Product; pending owns Sales.
+                "e3": QueryPlan(
+                    normalized_question="按产品",
+                    semantic_model_key="local_desktop_model",
+                    measures=["Total Sales"],
+                    dimensions=["Product"],
+                ),
+                "override": QueryPlan(
+                    normalized_question="改成按产品看销量",
+                    semantic_model_key="local_desktop_model",
+                    measures=["Total Quantity"],
+                    dimensions=["Product"],
+                ),
+                "ambiguous": QueryPlan(
+                    normalized_question="按产品还是类别",
+                    semantic_model_key="local_desktop_model",
+                    measures=["Total Sales"],
+                    dimensions=["Product", "Category"],
+                ),
+                "abandon": QueryPlan(
+                    normalized_question="重新开始，总销售额",
+                    semantic_model_key="local_desktop_model",
+                    measures=["Total Sales"],
+                ),
+                "unrelated": QueryPlan(
+                    normalized_question="总销售额是多少？",
+                    semantic_model_key="local_desktop_model",
+                    measures=["Total Sales"],
+                ),
+            }
+            structured = plans[self.active]
+        else:
+            raise AssertionError(f"unexpected LLM task: {request.task}")
+        return LLMResponse(
+            content="{}",
+            structured=structured,
+            model="fake-deepseek",
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        )
+
+
+class _PendingClarificationAdapter(_M24FakeLocalPowerBIAdapter):
+    fail_next = False
+
+    async def get_column_members(
+        self, request: ColumnMembersRequest
+    ) -> ColumnMembersResult:
+        return ColumnMembersResult(
+            semantic_model_key=request.semantic_model_key,
+            table_name=request.table_name,
+            field_name=request.field_name,
+            values=["A", "B"],
+            source_mode="real",
+        )
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.dax_calls += 1
+        if self.fail_next:
+            self.fail_next = False
+            return QueryResult(
+                semantic_model_key=request.semantic_model_key,
+                source_mode="real",
+                request_id=request.request_id,
+                error=PowerBIError(
+                    type="controlled_failure",
+                    message="focused pending clarification failure",
+                ),
+            )
+        measure = (
+            "Total Quantity" if "[Total Quantity]" in request.dax else "Total Sales"
+        )
+        if "'Sales'[Product]" in request.dax:
+            return QueryResult(
+                result_id="qr-pending-grouped",
+                semantic_model_key=request.semantic_model_key,
+                columns=["Sales[Product]", f"[{measure}]"],
+                rows=[["A", 100]],
+                row_count=1,
+                source_mode="real",
+                request_id=request.request_id,
+            )
+        return QueryResult(
+            result_id="qr-pending-scalar",
+            semantic_model_key=request.semantic_model_key,
+            columns=[f"[{measure}]"],
+            rows=[[100]],
+            row_count=1,
+            source_mode="real",
+            request_id=request.request_id,
+        )
+
+
+def _patch_pending_clarification_composition(monkeypatch):
+    import backend.app.llm.factory as llm_factory
+    import backend.app.main as main_module
+
+    provider = _PendingClarificationProvider()
+    registry = LLMProviderRegistry()
+    registry.register("deepseek", provider, set_default=True)
+    monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+    _patch_fake_runtime_glossary(monkeypatch)
+    monkeypatch.setattr(
+        main_module, "LocalMCPPowerBIAdapter", _PendingClarificationAdapter
+    )
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        deepseek_api_key="test-key-not-real",
+    )
+    return main_module.create_app(settings=settings), provider
+
+
+class TestPendingClarificationProductionPath:
+    @staticmethod
+    async def _post(client, conversation_id: str, request_id: str, message: str):
+        return await client.post(
+            "/api/v1/chat",
+            json={
+                "message": message,
+                "conversation_id": conversation_id,
+                "request_id": request_id,
+                "semantic_model_key": "local_desktop_model",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_partial_chain_executes_only_after_all_slots(self, monkeypatch):
+        app, provider = _patch_pending_clarification_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        conversation_id = "pending-chain-complete"
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                first = await self._post(client, conversation_id, "pending-e1", "哪个表现最好？")
+                assert first.status_code == 200
+                first_body = first.json()
+                assert first_body["terminal_state"] == "clarification_required"
+                assert first_body["memory_commit"] is False
+                pending = await service.pipeline.get_pending_clarification(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+                assert pending is not None
+                chain_id = pending.chain_id
+                assert pending.missing_slots == ["measure", "dimension"]
+                assert await service.pipeline.get_latest_committed_memory(
+                    conversation_id, RuntimeDataMode.REAL
+                ) is None
+
+                provider.active = "e2"
+                second = await self._post(client, conversation_id, "pending-e2", "按销售额")
+                assert second.status_code == 200
+                assert second.json()["terminal_state"] == "clarification_required"
+                pending = await service.pipeline.get_pending_clarification(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+                assert pending is not None
+                assert pending.chain_id == chain_id
+                assert pending.measures == ["Total Sales"]
+                assert pending.missing_slots == ["dimension"]
+                assert await service.pipeline.get_latest_committed_memory(
+                    conversation_id, RuntimeDataMode.REAL
+                ) is None
+
+                provider.active = "e3"
+                third = await self._post(client, conversation_id, "pending-e3", "按产品")
+                assert third.status_code == 200
+                body = third.json()
+                assert body["terminal_state"] == "completed"
+                assert body["memory_commit"] is True
+                assert body["execution_audit"]["canonical_query_plan"]["measures"] == ["Total Sales"]
+                assert body["execution_audit"]["canonical_query_plan"]["dimensions"] == ["Product"]
+                assert body["execution_audit"]["canonical_query_plan"]["top_n"] == 1
+                assert body["execution_audit"]["llm_dax_call_count"] == 0
+                assert await service.pipeline.get_pending_clarification(
+                    conversation_id, RuntimeDataMode.REAL
+                ) is None
+                committed = await service.pipeline.get_latest_committed_memory(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+                assert committed is not None
+                assert committed.request_id == "pending-e3"
+                assert committed.memory_version == 1
+
+    @pytest.mark.asyncio
+    async def test_current_explicit_slot_overrides_pending(self, monkeypatch):
+        app, provider = _patch_pending_clarification_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        conversation_id = "pending-override"
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await self._post(client, conversation_id, "override-e1", "哪个表现最好？")
+                provider.active = "e2"
+                await self._post(client, conversation_id, "override-e2", "按销售额")
+                provider.active = "override"
+                result = await self._post(
+                    client, conversation_id, "override-e3", "改成按产品看销量"
+                )
+                assert result.json()["terminal_state"] == "completed"
+                committed = await service.pipeline.get_latest_committed_memory(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+                assert committed is not None
+                assert committed.measures == ["Total Quantity"]
+                assert committed.dimensions == ["Product"]
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_or_failed_completion_never_commits(self, monkeypatch):
+        app, provider = _patch_pending_clarification_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                ambiguous_id = "pending-ambiguous"
+                await self._post(client, ambiguous_id, "ambiguous-e1", "哪个表现最好？")
+                provider.active = "e2"
+                await self._post(client, ambiguous_id, "ambiguous-e2", "按销售额")
+                provider.active = "ambiguous"
+                ambiguous = await self._post(
+                    client, ambiguous_id, "ambiguous-e3", "按产品还是类别"
+                )
+                assert ambiguous.json()["terminal_state"] == "clarification_required", ambiguous.json()
+                assert await service.pipeline.get_latest_committed_memory(
+                    ambiguous_id, RuntimeDataMode.REAL
+                ) is None
+
+                failed_id = "pending-failed"
+                provider.active = "e1"
+                await self._post(client, failed_id, "failed-e1", "哪个表现最好？")
+                provider.active = "e2"
+                await self._post(client, failed_id, "failed-e2", "按销售额")
+                provider.active = "e3"
+                service.powerbi.fail_next = True
+                failed = await self._post(client, failed_id, "failed-e3", "按产品")
+                assert failed.json()["terminal_state"] == "tool_failed"
+                assert await service.pipeline.get_latest_committed_memory(
+                    failed_id, RuntimeDataMode.REAL
+                ) is None
+
+    @pytest.mark.asyncio
+    async def test_explicit_abandonment_clears_old_pending(self, monkeypatch):
+        app, provider = _patch_pending_clarification_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        conversation_id = "pending-abandon"
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await self._post(client, conversation_id, "abandon-e1", "哪个表现最好？")
+                provider.active = "abandon"
+                result = await self._post(
+                    client, conversation_id, "abandon-e2", "重新开始，总销售额"
+                )
+                assert result.json()["terminal_state"] == "completed"
+                assert await service.pipeline.get_pending_clarification(
+                    conversation_id, RuntimeDataMode.REAL
+                ) is None
+                committed = await service.pipeline.get_latest_committed_memory(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+                assert committed is not None
+                assert committed.measures == ["Total Sales"]
+                assert committed.dimensions == []
+
+    @pytest.mark.asyncio
+    async def test_new_standalone_query_does_not_leak_old_ranking(self, monkeypatch):
+        app, provider = _patch_pending_clarification_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        conversation_id = "pending-unrelated"
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await self._post(client, conversation_id, "unrelated-e1", "哪个表现最好？")
+                provider.active = "unrelated"
+                result = await self._post(
+                    client, conversation_id, "unrelated-e2", "总销售额是多少？"
+                )
+                body = result.json()
+                assert body["terminal_state"] == "completed"
+                plan = body["execution_audit"]["canonical_query_plan"]
+                assert plan["measures"] == ["Total Sales"]
+                assert plan["dimensions"] == []
+                assert plan["sort"] is None
+                assert plan["top_n"] is None
+                assert await service.pipeline.get_pending_clarification(
+                    conversation_id, RuntimeDataMode.REAL
+                ) is None
 
 
 class TestM24DeepSeekLocalChat:
@@ -1244,6 +1669,7 @@ class TestM24DeepSeekLocalChat:
         registry = LLMProviderRegistry()
         registry.register("deepseek", provider, set_default=True)
         monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+        _patch_fake_runtime_glossary(monkeypatch)
         monkeypatch.setattr(main_module, "LocalMCPPowerBIAdapter", _M24FakeLocalPowerBIAdapter)
         app = main_module.create_app(settings=Settings(
             _env_file=None,
@@ -1297,7 +1723,11 @@ class TestM24DeepSeekLocalChat:
             assert replay.status_code == 200
             assert replay.json()["idempotent_replay"] is True
             assert replay.json()["source_mode"] == "real"
-            assert len(provider.calls) == 4
+            assert len(provider.calls) == 2
+            assert all(
+                call.task not in {LLMTask.DAX, LLMTask.ANSWER}
+                for call in provider.calls
+            )
             assert adapter.schema_calls == 1
             assert adapter.dax_calls == 1
             query_plan_prompt = next(
@@ -1305,10 +1735,15 @@ class TestM24DeepSeekLocalChat:
             )
             assert "Total Sales" in str(query_plan_prompt.messages)
             assert "local_desktop_model" in str(query_plan_prompt.messages)
-            answer_prompt = next(
-                call for call in provider.calls if call.task == LLMTask.ANSWER
-            )
-            assert '["[Total Sales]"]' in str(answer_prompt.messages)
+            assert first_data["answer"] == "Total Sales为100。"
+            audit = first_data["execution_audit"]
+            assert audit["deterministic_dax"] is True
+            assert audit["layer3_pass"] is True
+            assert audit["query_result_success"] is True
+            assert audit["verified_fact_count"] >= 2
+            assert audit["factual_validation_pass"] is True
+            assert audit["llm_dax_call_count"] == 0
+            assert audit["memory_version"] == 1
 
     @pytest.mark.asyncio
     async def test_preview_missing_rows_is_controlled_and_never_falls_back(self, monkeypatch):
@@ -1328,7 +1763,8 @@ class TestM24DeepSeekLocalChat:
             assert data["terminal_state"] == "tool_failed"
             assert data["error_type"] == "preview_row_data_missing"
             assert data["source_mode"] == "real"
-            assert len(provider.calls) == 3
+            assert len(provider.calls) == 2
+            assert all(call.task != LLMTask.DAX for call in provider.calls)
             assert adapter.dax_calls == 1
 
     @pytest.mark.asyncio
@@ -1417,7 +1853,13 @@ class TestM25BusinessGoldenOffline:
         assert f"[{dimension}]" in memory.last_dax
         assert adapter.schema_calls == 1
         assert adapter.dax_calls == 1
-        assert len(provider.calls) == 4
+        assert len(provider.calls) == 2
+        assert all(
+            call.task not in {LLMTask.DAX, LLMTask.ANSWER}
+            for call in provider.calls
+        )
+        assert data["execution_audit"]["llm_dax_call_count"] == 0
+        assert data["execution_audit"]["factual_validation_pass"] is True
 
     def test_manual_business_golden_definitions_are_generalized_and_sanitized(self):
         from scripts.manual_smoke.m2_business_golden_smoke import (

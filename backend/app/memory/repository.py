@@ -15,6 +15,7 @@ from typing import Optional
 from backend.app.memory.models import (
     MemoryCommitEvidence,
     MemoryStatus,
+    PendingClarificationContext,
     RuntimeDataMode,
     StructuredWorkMemory,
 )
@@ -80,6 +81,29 @@ class MemoryRepository(ABC):
         """检查 request_id + runtime_mode 是否已存在"""
         ...
 
+    @abstractmethod
+    async def save_pending_clarification(
+        self,
+        context: PendingClarificationContext,
+        runtime_mode: RuntimeDataMode,
+    ) -> PendingClarificationContext:
+        """Create or replace the non-committed clarification chain."""
+        ...
+
+    @abstractmethod
+    async def get_pending_clarification(
+        self, conversation_id: str, runtime_mode: RuntimeDataMode
+    ) -> Optional[PendingClarificationContext]:
+        """Read the active clarification chain for one mode-isolated conversation."""
+        ...
+
+    @abstractmethod
+    async def clear_pending_clarification(
+        self, conversation_id: str, runtime_mode: RuntimeDataMode
+    ) -> Optional[PendingClarificationContext]:
+        """Remove and return the active clarification chain, if any."""
+        ...
+
 
 class MemoryVersionConflictError(Exception):
     """乐观锁冲突异常"""
@@ -120,6 +144,9 @@ class InMemoryMemoryRepository(MemoryRepository):
         self._store: dict[str, dict[str, StructuredWorkMemory]] = {}
         # 复合键索引：(runtime_mode, request_id) → StructuredWorkMemory
         self._by_request: dict[tuple, StructuredWorkMemory] = {}
+        self._pending_clarifications: dict[
+            tuple[RuntimeDataMode, str], PendingClarificationContext
+        ] = {}
         self._lock = asyncio.Lock()
 
     def _make_key(self, request_id: str, runtime_mode: RuntimeDataMode) -> tuple:
@@ -305,6 +332,35 @@ class InMemoryMemoryRepository(MemoryRepository):
         """检查 (request_id, runtime_mode) 复合键是否已存在"""
         key = self._make_key(request_id, runtime_mode)
         return key in self._by_request
+
+    async def save_pending_clarification(
+        self,
+        context: PendingClarificationContext,
+        runtime_mode: RuntimeDataMode,
+    ) -> PendingClarificationContext:
+        async with self._lock:
+            stored = context.model_copy(
+                deep=True, update={"runtime_mode": runtime_mode}
+            )
+            self._pending_clarifications[
+                (runtime_mode, stored.conversation_id)
+            ] = stored
+            return stored.model_copy(deep=True)
+
+    async def get_pending_clarification(
+        self, conversation_id: str, runtime_mode: RuntimeDataMode
+    ) -> Optional[PendingClarificationContext]:
+        context = self._pending_clarifications.get((runtime_mode, conversation_id))
+        return context.model_copy(deep=True) if context else None
+
+    async def clear_pending_clarification(
+        self, conversation_id: str, runtime_mode: RuntimeDataMode
+    ) -> Optional[PendingClarificationContext]:
+        async with self._lock:
+            context = self._pending_clarifications.pop(
+                (runtime_mode, conversation_id), None
+            )
+            return context.model_copy(deep=True) if context else None
 
     def _get_count(self) -> int:
         """获取存储总数（测试用）"""

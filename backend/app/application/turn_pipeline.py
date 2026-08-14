@@ -32,6 +32,7 @@ from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
 from backend.app.memory.models import (
     MemoryStatus,
+    PendingClarificationContext,
     RuntimeDataMode,
     StructuredWorkMemory,
 )
@@ -168,6 +169,9 @@ class TurnPipeline:
         committed = await self.memory_repo.get_latest_committed(
             effective_conv_id, runtime_mode
         )
+        pending_clarification = await self.memory_repo.get_pending_clarification(
+            effective_conv_id, runtime_mode
+        )
 
         # 构建上下文
         context = self.context_builder.build(
@@ -200,6 +204,7 @@ class TurnPipeline:
                 controller=controller,
                 context=context,
                 committed=committed,
+                pending_clarification=pending_clarification,
                 **execute_kwargs,
             )
             await self._save_snapshot(result, runtime_mode, fingerprint_hash)
@@ -229,6 +234,7 @@ class TurnPipeline:
         clarification_question: Optional[str] = None,
         unsupported_reason: Optional[str] = None,
         usage: Optional[Any] = None,
+        execution_audit: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         """构建统一结果字典"""
 
@@ -250,6 +256,7 @@ class TurnPipeline:
             "source_mode": source_mode,
             "usage": usage,
             "allowed_tools": allowed_tools or [],
+            "execution_audit": execution_audit,
         }
 
         if answer_text is not None:
@@ -477,6 +484,33 @@ class TurnPipeline:
         这是只读操作，不涉及任何写入。
         """
         return await self.memory_repo.get_latest_committed(conversation_id, runtime_mode)
+
+    async def get_pending_clarification(
+        self,
+        conversation_id: str,
+        runtime_mode: RuntimeDataMode,
+    ) -> Optional[PendingClarificationContext]:
+        return await self.memory_repo.get_pending_clarification(
+            conversation_id, runtime_mode
+        )
+
+    async def save_pending_clarification(
+        self,
+        context: PendingClarificationContext,
+        runtime_mode: RuntimeDataMode,
+    ) -> PendingClarificationContext:
+        return await self.memory_repo.save_pending_clarification(
+            context, runtime_mode
+        )
+
+    async def clear_pending_clarification(
+        self,
+        conversation_id: str,
+        runtime_mode: RuntimeDataMode,
+    ) -> Optional[PendingClarificationContext]:
+        return await self.memory_repo.clear_pending_clarification(
+            conversation_id, runtime_mode
+        )
 
     async def request_exists_in_memory(
         self, request_id: str, runtime_mode: RuntimeDataMode

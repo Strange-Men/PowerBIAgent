@@ -810,6 +810,47 @@ class TestLocalMCPPowerBIAdapter:
         assert client.dax_calls == 1
 
     @pytest.mark.asyncio
+    async def test_execute_dax_normalizes_qualified_group_by_column_label(self):
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax=(
+                "EVALUATE SUMMARIZECOLUMNS('Sales'[Category], "
+                '"Total Sales", [Total Sales])'
+            ),
+            request_id="qualified-group",
+        )
+        payload = {
+            "success": True,
+            "data": {
+                "success": True,
+                "rowCount": 1,
+                "columns": [
+                    {"name": "Sales[Category]", "ordinal": 0},
+                    {"name": "[Total Sales]", "ordinal": 1},
+                ],
+                "rows": [
+                    {"Sales[Category]": "A", "[Total Sales]": 10},
+                ],
+            },
+        }
+
+        result = await _local_adapter(FakeLocalMCPClient(
+            dax_snapshot=_dax_snapshot(payload, request=request)
+        )).execute_dax(request)
+
+        assert result.columns == ["Category", "[Total Sales]"]
+        assert result.rows == [["A", 10]]
+
+    def test_qualified_column_normalization_rejects_collisions(self):
+        with pytest.raises(
+            LocalMCPConnectionError,
+            match="dax_normalized_column_name_collision",
+        ):
+            LocalMCPPowerBIAdapter._normalize_dax_column_names(
+                ["Sales[Category]", "Products[Category]"]
+            )
+
+    @pytest.mark.asyncio
     async def test_bounded_member_lookup_is_adapter_owned_and_real(self):
         request = ColumnMembersRequest(
             semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,

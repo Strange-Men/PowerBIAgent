@@ -359,8 +359,8 @@ entries:
   root_cause: DAX Prompt 未区分 Dimension 与 Filter 的粒度职责，Layer 3 缺少 group-by 集合和 SUMMARIZECOLUMNS 参数阶段检查
   failed_attempts:
   - 仅检查 Measure/Dimension/Filter 名称是否出现在 DAX，无法识别额外 group-by 与 filter-after-pair
-  repair_attempt_count: 1
-  final_fix: Prompt 明确 Dimension/Filter 与 SUMMARIZECOLUMNS 顺序；现有 ValidationService 增加引号和嵌套分隔符感知的最小参数检查，拒绝未计划 group-by、filter-after-pair 和不成对 name/expression
+  repair_attempt_count: 2
+  final_fix: M2.4 先以 Prompt/validator 缓解；M2.6.3 从 Real path 移除自由 DAX authority，由 DeterministicDAXBuilder 固定生成 exact dimensions group-by 与 TREATAS EQ filter，Independent Layer 3 独立验证无额外 group-by/filter
   regression_tests:
   - backend/tests/unit/test_dax_service.py
   - backend/tests/unit/test_validation_fixes.py
@@ -370,7 +370,7 @@ entries:
   prevention_rules:
   - 只有 QueryPlan.dimensions 可以成为 group-by
   - Layer 3 必须在调用 Power BI 前拒绝明显非法 SUMMARIZECOLUMNS 参数结构
-  related_adr: ADR-005
+  related_adr: ADR-009
   related_commits: []
   status: monitoring
   events:
@@ -380,6 +380,9 @@ entries:
   - date: '2026-08-11'
     action: mitigation
     version: M2.4
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.3
 - id: ERR-240-002
   title: stdio 关闭异常组掩盖已有 DAX 错误分类
   category: ERR
@@ -440,3 +443,164 @@ entries:
   - date: '2026-08-12'
     action: mitigation
     version: M2.5
+- id: GOV-263-001
+  title: 冻结多轮验收要求从欠指定澄清中猜出 Product
+  category: GOV
+  first_detected_version: M2.6.3
+  symptom: conversation_e 的 e1 只有 ranking/best 倾向，e2 只补充销售额，但旧 expected 要求 e2 直接形成 Product + Total Sales + Top1 并执行
+  local_evidence: harness/cases/multi_turn_conversations.yaml 原 e1/e2 文本；ADR-008 要求 Dimension 无唯一权威来源时 clarification，不得猜测
+  authoritative_sources:
+  - title: ADR-008 Business Semantic Catalog and Grounding Authority
+    reason: Intent/QueryPlan LLM 不拥有字段身份；信息不足时必须 clarification
+  root_cause: 冻结 fixture 把两次 partial clarification 错写成第二轮完整查询，验收数字 15 Turn 反向施压生产语义猜测
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 建立与 committed Memory 分离的 PendingClarificationContext；e1 保存 top1/desc 并缺 measure/dimension，e2 权威补齐 Total Sales 后仍缺 dimension，新增 e3“按产品”后才执行；正式基线更正为 6 Conversation / 16 Turn
+  regression_tests:
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/unit/test_memory_repository.py
+  - backend/tests/api/test_chat.py
+  - backend/tests/integration/test_multi_turn_benchmark.py
+  prohibited_patterns:
+  - 默认 Product 补齐欠指定 ranking
+  - 从 clarification/failed state 构造 committed business Memory
+  - 为保持旧 Turn 数删除其他正式 case
+  prevention_rules:
+  - partial clarification 可一次只补一个 authoritative slot
+  - frozen expected 与 semantic authority 冲突时必须记录证据后正式更正 contract
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: discovered
+    version: M2.6.3
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.3
+- id: ERR-263-001
+  title: Local MCP qualified group-by label 与 canonical QueryResult field 不一致
+  category: ERR
+  first_detected_version: M2.6.3
+  symptom: Power BI 对 base group-by column 返回 Table[Column]，而 Canonical QueryPlan、FactSet 与独立 Oracle 使用 Column，导致正确真实结果在事实/Oracle 边界无法匹配
+  local_evidence: M2.6.3 Real grouped result 返回 qualified label；LocalMCPPowerBIAdapter normalization focused regression
+  authoritative_sources:
+  - title: PowerBIAgent QueryResult canonical field contract
+    reason: Provider wire label 必须在 Adapter 边界标准化，业务层不得依赖传输展示格式
+  root_cause: Adapter 原样暴露 Power BI wire column label，缺少 qualified base-column 到 canonical runtime column 的唯一化
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Adapter 仅将唯一的 Table[Column] group-by label 标准化为 Column，Measure label 保持不变；标准化碰撞 fail closed
+  regression_tests:
+  - backend/tests/unit/test_powerbi.py
+  prohibited_patterns:
+  - 在 FactSet 或 Oracle 中特判任意 Table 前缀
+  - 标准化碰撞时选择任意 table ownership
+  prevention_rules:
+  - Provider wire shape 在 PowerBIAdapter 边界确定性标准化
+  - canonical label collision 必须 fail closed
+  related_adr: ADR-007
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: discovered
+    version: M2.6.3
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.3
+- id: ERR-263-002
+  title: Filter member 与 Dimension cue 混淆导致真实 Filter TopN grounding 失败
+  category: ERR
+  first_detected_version: M2.6.3
+  symptom: 同一输入同时包含 grouping field 与 runtime member 时，weak draft filter 或 field mentions 可能把明确 grouping field 当 filter candidate，ka8 filter+TopN 无法稳定形成 canonical filter/dimension 分工
+  local_evidence: ka8 Real focused failure；SemanticGroundingService grouping-cue exclusion 与 bounded runtime member discovery tests
+  authoritative_sources:
+  - title: ADR-008 Grounding authority
+    reason: Dimension identity 和 Filter member 必须分别由当前明确 cue 与 runtime member 证明
+  root_cause: Filter grounding 复用全量 field mentions，未先排除当前输入中明确作为 grouping 的 field，也缺少 draft-independent runtime member discovery
+  failed_attempts:
+  - 只从 QueryPlan draft filters 做 member lookup，仍会受 weak draft 字段选择影响
+  repair_attempt_count: 2
+  final_fix: 明确 grouping cue 的 field 不进入 filter candidates；最多两个字段执行 bounded runtime member discovery，只有唯一当前字面 member 命中才形成 EQ filter，多个匹配继续 clarification
+  regression_tests:
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 把 grouping field 同时默认为 filter field
+  - 无 runtime member 证据接受 draft filter value
+  prevention_rules:
+  - Dimension cue 优先排除同字段 Filter candidate
+  - member discovery 必须 bounded、runtime-backed、唯一命中
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: discovered
+    version: M2.6.3
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.3
+- id: ERR-263-003
+  title: 中文字符“第”被 Answer validator 误判为 ranking claim
+  category: ERR
+  first_detected_version: M2.6.3
+  symptom: Answer 只要包含任意“第”字就触发 ranking evidence 要求，普通非排名语句可能被 factual boundary 误拒绝
+  local_evidence: backend/tests/unit/test_validation_fixes.py factual output regression
+  authoritative_sources:
+  - title: ADR-009 factual claim boundary
+    reason: Validator 应拒绝实际排名 claim，不能用单字符造成大面积 false positive
+  root_cause: ranking detector 使用过宽 substring match，没有要求名次数字、排名词或 Top 表达
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: ranking claim 只识别 第N位、排名或 Top 形态，仍要求相应 VerifiedFactSet ranking fact
+  regression_tests:
+  - backend/tests/unit/test_validation_fixes.py
+  - backend/tests/unit/test_verified_facts.py
+  prohibited_patterns:
+  - 使用单个常见字符判断事实 claim 类型
+  prevention_rules:
+  - factual claim detection 必须使用最小可解释 grammar 并有 positive/negative tests
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: discovered
+    version: M2.6.3
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.3
+- id: ERR-263-004
+  title: Pending slot 在当前明确歧义后可能保留旧值并于后续轮泄漏
+  category: ERR
+  first_detected_version: M2.6.3
+  symptom: Pending 已保存某 measure/dimension 时，当前用户对同 slot 表达 AMBIGUOUS/UNRESOLVED，merge 会标记 missing 但保留旧值；下一轮只补其他 slot 时可能重新使用旧值
+  local_evidence: M2.6.3 final audit 的 clarification merge state transition；跨三轮 unit/API regression
+  authoritative_sources:
+  - title: ADR-008 Pending Clarification priority
+    reason: current explicit grounded semantic 或 ambiguity 必须优先于旧 pending，不能让旧值绕过 clarification
+  root_cause: Pending merge 只覆盖 RESOLVED delta，没有在当前 slot 被明确阻断时清除对应旧 pending value
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 当前 object AMBIGUOUS/UNRESOLVED/CONFIG_CONFLICT 清除对应 pending slot，unresolved member 清除同字段 pending filter；独立 scalar question 以固定语言分类丢弃未完成 ranking chain，业务身份仍只来自 Grounding
+  regression_tests:
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - missing slot 同时保留可被后续执行的旧 pending value
+  - 用旧 pending 覆盖当前明确歧义
+  prevention_rules:
+  - 当前明确阻断状态必须使同 slot 保持 non-executable，直到重新权威解析
+  - 新 standalone query 不得继承不兼容 pending analysis
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: discovered
+    version: M2.6.3
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.3

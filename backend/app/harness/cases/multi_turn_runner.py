@@ -451,6 +451,16 @@ def _offline_fixtures() -> tuple[
             clarification_question="请明确按销售额还是总数量判断。",
         )
     }
+    fixtures["partial_sales_clarification"] = {
+        IntentSpec: IntentSpec(
+            intent=IntentType.CLARIFICATION,
+            confidence=0.95,
+            normalized_question="按销售额",
+            detected_measures=["Total Sales"],
+            needs_clarification=True,
+            clarification_question="请明确要按哪个分析维度比较。",
+        )
+    }
     return fixtures, query_results
 
 

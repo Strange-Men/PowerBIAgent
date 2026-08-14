@@ -28,7 +28,7 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 11. 输出仅是语言理解草稿；measures、dimensions、filters、time_range 会由后续 Grounding 覆盖，禁止把本输出当作业务事实
 12. 不确定的字段不要猜测，宁可少选也不要虚构
 13. 只输出 JSON，不输出任何其他内容
-14. requested_template 只能输出模板内部 Key 或 null，禁止中文或自然语言
+14. requested_template 只是非权威 weak signal；不得根据自然语言自行选择模板，默认输出 null
 15. measures 只能选择 Schema 中明确列为“度量值”的对象，不能填普通数值列
 16. 用户业务指标有明确 Measure 时必须使用该 Measure，不得以裸列聚合重定义口径
 17. semantic_model_key 必须逐字等于当前 Schema 标示的 model_key，不得使用示例或历史 Key
@@ -69,12 +69,7 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 - sort：结果展示排序方向，只能为 "desc"、"asc" 或 null；有 top_n 时不得为 null
 - top_n：Top N 选择限制（正整数），无限制则为 null；第 N 名 ties 可能使结果超过 N 行
 - comparison_mode：当前必须为 null；对比语义尚未进入 Real MVP contract
-- requested_template：请求的报表模板内部 Key，只能输出以下值或 null：
-  * "sales_weekly" — 销售周报、周报、销售经营周报
-  * "satisfaction" — 满意度报告
-  * "operating_overview" — 经营概览、经营总览
-  * null — 非报表请求
-  * 严禁输出中文名称、标题、或任何不在上述列表的值
+- requested_template：非权威 weak signal；模板由 application-scoped Template Catalog 确定性解析，本字段默认 null
 - inherited_context：从已提交上下文继承的摘要（可选）
 
 ### FilterSpec 结构
@@ -181,8 +176,7 @@ REPAIR_VALIDATION_INSTRUCTION = """上一次生成的 QueryPlan 未通过 Schema
 3. measures 只能使用 Schema 中明确列为“度量值”的对象，不得使用数值列
 4. dimensions 只能使用 Schema 中真实存在的非隐藏列
 5. filters.field 只能使用 Schema 中真实存在的非隐藏列，不得使用度量值
-6. requested_template 只能输出 "sales_weekly"、"satisfaction"、"operating_overview" 或 null
-7. requested_template 严禁中文名称、标题或自然语言，只能使用内部 Key
+6. requested_template 默认输出 null，不得从用户自然语言推断模板 Key
 8. 用户业务指标必须优先映射到 Schema 中同义的现有 Measure，不得以裸列聚合重定义
 9. Schema 对象名必须原样复制，不得翻译、删除空格或改变大小写
 10. 不得虚构任何字段

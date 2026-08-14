@@ -1502,8 +1502,9 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
                 "dax_columns_or_rows_malformed",
             )
-        columns = cls._dax_column_names(raw_columns)
-        rows = cls._dax_rows(raw_rows, columns)
+        wire_columns = cls._dax_column_names(raw_columns)
+        rows = cls._dax_rows(raw_rows, wire_columns)
+        columns = cls._normalize_dax_column_names(wire_columns)
 
         declared_row_count = data.get("rowCount")
         if declared_row_count is not None and (
@@ -1554,6 +1555,27 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 )
             columns.append(name)
         return columns
+
+    @staticmethod
+    def _normalize_dax_column_names(wire_columns: list[str]) -> list[str]:
+        """Normalize runtime-qualified group-by labels to QueryResult fields.
+
+        Power BI returns base group-by columns as ``Table[Column]`` while the
+        canonical QueryPlan and independent oracle use the runtime column name
+        ``Column``.  Calculated/measure labels such as ``[Total Sales]`` remain
+        unchanged.  A collision fails closed instead of inventing ownership.
+        """
+        normalized: list[str] = []
+        for wire_name in wire_columns:
+            match = re.fullmatch(r"(?:'[^']+'|[^\[]+)\[([^\[\]]+)\]", wire_name)
+            name = match.group(1) if match else wire_name
+            if name in normalized:
+                raise LocalMCPConnectionError(
+                    LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE,
+                    "dax_normalized_column_name_collision",
+                )
+            normalized.append(name)
+        return normalized
 
     @staticmethod
     def _dax_rows(raw_rows: list[object], columns: list[str]) -> list[list[Any]]:

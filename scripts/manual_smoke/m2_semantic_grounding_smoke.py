@@ -562,6 +562,21 @@ async def _run(*, historical_repeats: int, selected_case: str | None) -> int:
                         sort_transition="REPLACE", top_n_transition="REPLACE",
                     ),
                 ),
+                (
+                    "known_filter_topn_holdout",
+                    "Electronics 类别中总数量最高的前3个产品是什么？",
+                    Expected(
+                        measure="Total Quantity", dimensions=("Product",),
+                        filters=(("Category", "Electronics"),),
+                        sort="desc", top_n=3,
+                        measure_transition="REPLACE",
+                        dimension_transition="REPLACE",
+                        filter_transition="ADD",
+                        sort_transition="REPLACE",
+                        top_n_transition="REPLACE",
+                        requires_member_lookup=True,
+                    ),
+                ),
             )
             for name, message, expected in standalone:
                 if selected_case is not None and name != selected_case:
@@ -806,6 +821,7 @@ def main() -> int:
             "time_current_month",
             "time_recent_months",
             "analysis_top_n",
+            "known_filter_topn_holdout",
             "state_sequence",
             "filter_sequence",
             "historical",

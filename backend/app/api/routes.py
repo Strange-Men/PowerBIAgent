@@ -354,4 +354,5 @@ async def chat(
         powerbi_mode=settings.powerbi_mode.value,
         source_mode=result.get("source_mode", "mock"),
         usage=usage_dict,
+        execution_audit=result.get("execution_audit"),
     )

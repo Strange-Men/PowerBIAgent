@@ -116,6 +116,10 @@ class ChatResponse(BaseModel):
                     "completion_tokens, total_tokens, duration_ms, "
                     "estimated_cost_usd, pricing_configured",
     )
+    execution_audit: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="成功 Real turn 的确定性执行与事实边界审计元数据",
+    )
     # 不新增：sidebar, workspace_layout, report_position, frontend_blocks, navigation_section
 
 

@@ -6,6 +6,8 @@ business terms, but it cannot add, unhide, or change the type of an object.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import unicodedata
 from enum import Enum
 from pathlib import Path
@@ -52,6 +54,7 @@ class CatalogObject(BaseModel):
 
 class SemanticCatalog(BaseModel):
     semantic_model_key: str
+    schema_fingerprint: str
     objects: tuple[CatalogObject, ...]
     alias_conflicts: dict[str, tuple[str, ...]] = Field(default_factory=dict)
 
@@ -99,6 +102,12 @@ class SemanticCatalogBuilder:
             raise GlossaryCatalogError("glossary_version_invalid")
         if glossary.get("semantic_model_key") != schema.key:
             raise GlossaryCatalogError("glossary_semantic_model_key_mismatch")
+        expected_fingerprint = glossary.get("schema_fingerprint")
+        if not isinstance(expected_fingerprint, str) or len(expected_fingerprint) != 64:
+            raise GlossaryCatalogError("glossary_schema_fingerprint_invalid")
+        runtime_fingerprint = compute_schema_fingerprint(schema)
+        if expected_fingerprint != runtime_fingerprint:
+            raise GlossaryCatalogError("glossary_schema_fingerprint_mismatch")
 
         objects: dict[tuple[SemanticObjectType, str, str], CatalogObject] = {}
         hidden: set[tuple[SemanticObjectType, str, str]] = set()
@@ -183,6 +192,7 @@ class SemanticCatalogBuilder:
         }
         return SemanticCatalog(
             semantic_model_key=schema.key,
+            schema_fingerprint=runtime_fingerprint,
             objects=tuple(objects.values()),
             alias_conflicts=conflicts,
         )
@@ -217,3 +227,78 @@ class SemanticCatalogBuilder:
         object_type: SemanticObjectType, table_name: str, canonical_name: str
     ) -> str:
         return f"{object_type.value}:{table_name}:{canonical_name}"
+
+
+def compute_schema_fingerprint(schema: SemanticModelSchema) -> str:
+    """Return a stable identity hash for authoritative visible model metadata.
+
+    Descriptions are intentionally excluded: they are useful language metadata,
+    but display-only edits must not detach a glossary from an otherwise identical
+    runtime model. Runtime connection/session details and business rows never
+    enter the serialization.
+    """
+
+    visible_tables = {
+        table.name: table
+        for table in schema.tables
+        if not table.is_hidden and not table.is_system_managed
+    }
+    visible_columns = {
+        (table.name, column.name)
+        for table in visible_tables.values()
+        for column in table.columns
+        if not column.is_hidden
+    }
+    payload = {
+        "tables": [
+            {
+                "name": table.name,
+                "columns": sorted(
+                    (
+                        {"name": column.name, "data_type": column.data_type}
+                        for column in table.columns
+                        if not column.is_hidden
+                    ),
+                    key=lambda item: (item["name"], item["data_type"]),
+                ),
+                "measures": sorted(
+                    (
+                        {
+                            "name": measure.name,
+                            "data_type": measure.data_type,
+                            "expression": measure.expression,
+                        }
+                        for measure in table.measures
+                        if not measure.is_hidden
+                    ),
+                    key=lambda item: (
+                        item["name"], item["data_type"], item["expression"]
+                    ),
+                ),
+            }
+            for table in sorted(visible_tables.values(), key=lambda item: item.name)
+        ],
+        "active_relationships": sorted(
+            (
+                {
+                    "from_table": relationship.from_table,
+                    "from_column": relationship.from_column,
+                    "to_table": relationship.to_table,
+                    "to_column": relationship.to_column,
+                }
+                for relationship in schema.relationships
+                if relationship.is_active
+                and (relationship.from_table, relationship.from_column)
+                in visible_columns
+                and (relationship.to_table, relationship.to_column) in visible_columns
+            ),
+            key=lambda item: (
+                item["from_table"], item["from_column"],
+                item["to_table"], item["to_column"],
+            ),
+        ),
+    }
+    canonical = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()

@@ -52,6 +52,8 @@ class StateTransitionService:
         draft: QueryPlan,
         delta: GroundedSemanticDelta,
         committed: StructuredWorkMemory | None,
+        *,
+        canonical_template_key: str | None = None,
     ) -> StateTransitionResult:
         previous_measures = list(committed.measures) if committed else []
         previous_dimensions = list(committed.dimensions) if committed else []
@@ -159,7 +161,7 @@ class StateTransitionService:
             sort=sort,
             top_n=top_n,
             comparison_mode=None,
-            requested_template=draft.requested_template,
+            requested_template=canonical_template_key,
             inherited_context=draft.inherited_context,
             is_mock=draft.is_mock,
         )
