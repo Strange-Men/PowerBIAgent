@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M2.6.4 Final Hardened Acceptance + Documentation Governance 验收候选
+> **状态：** M2.6.4 — M0—M2 ready for final seal；Final Tag 待用户授权
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 `docs/archive/m0-m2.6.3_roadmap_history.md`。
 
 ## 路线总览
@@ -9,12 +9,12 @@
 |---|---|---|
 | M0 | 仓库、契约、Harness、FastAPI 与 Mock 基础 | ✅ 已封板 |
 | M1 | DeepSeek 接入、统一 TurnPipeline、架构/安全/CI 收口 | ✅ 已封板 |
-| M2 | Local MCP + Power BI Desktop 真实数据问答与 Truth Boundary | ✅ M2.6.4 本地验收完成，待远程审计 |
+| M2 | Local MCP + Power BI Desktop 真实数据问答与 Truth Boundary | ✅ M2.6.4 hardened acceptance / remote audit 完成 |
 | M3 | 固定模板报表正式渲染与资源契约 | ⬜ 下一功能阶段 |
 | M4 | 持久化会话、搜索与最近对话 | ⬜ 未开始 |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
 
-M0—M1 正式 Tag 为 `m1.7.2-m0-m1正式封板`。M2 Local Demo Tag `m2-local-powerbi-demo-release` 保持不变；M2.6.4 不创建 Tag、不合并 `main`，先等待远程审计。
+M0—M1 正式 Tag 为 `m1.7.2-m0-m1正式封板`。M2 Local Demo Tag `m2-local-powerbi-demo-release` 保持不变；M2.6.4 Final Tag 仍为 none，只能由用户后续明确授权。
 
 ## 已封板阶段摘要
 
@@ -106,4 +106,4 @@ Real DAX LLM call count 为 0。VerifiedFactSet 是外部数字、结果顺序�
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 final hardened candidate*
+*最后更新：2026-08-14 | M2.6.4 M0—M2 ready for final seal；Final Tag pending explicit approval*

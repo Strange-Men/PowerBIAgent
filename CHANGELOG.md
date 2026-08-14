@@ -12,8 +12,8 @@
 - Bounded semantic selector 增加 Catalog metadata evidence shortlist 与 post-validation；未知、证据并列、非法 ID 或选择冲突均 fail closed
 - data/report-shaped `UNSUPPORTED` 进入 authoritative Grounding/capability check；明确 out-of-scope 请求保持 early-stop，失败不污染 Pending/Committed Memory
 - 补齐 approved 数量问法 alias；Real acceptance 观察器直接核对 ToolGateway DAX、fact-bounded output、TopN/tie safety 与 DAX/Answer LLM 零调用
-- 恢复 AGENTS/README/07/08/09/CHANGELOG 真实性，建立 `docs/index.md`、specs/milestones/archive 分层与 deterministic Documentation Governance Gate
-- 完成 M0—M2 fresh offline/Real hardened acceptance；本轮只 push 开发分支，未合并 `main`、未创建 Tag
+- 恢复 AGENTS/README/00/03/04/05/07/08/09/CHANGELOG 真实性，建立 `docs/index.md`、specs/milestones/archive 分层与 deterministic Documentation Governance Gate
+- 完成 M0—M2 fresh offline/Real hardened acceptance 与远程核心审计；长期文档已对齐 Semantic Grounding、Deterministic DAX、VerifiedFactSet 和 Pending/Committed 边界；未创建 Final Tag
 
 ---
 

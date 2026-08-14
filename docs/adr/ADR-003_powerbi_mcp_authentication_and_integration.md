@@ -6,7 +6,7 @@
 
 ---
 
-> **后续状态说明（2026-08-11）：** Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code + 独立 MSAL + 本地缓存文件的实现选择，以及自动 Fallback 设想，由 ADR-006 的官方 MCP Python SDK、Authorization Code + PKCE、受控 TokenStorage 和显式失败边界替代。本文保留为历史决策上下文。
+> **后续状态说明（2026-08-14）：** Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code + 独立 MSAL + 本地缓存文件的实现选择，以及自动 Fallback 设想，由 ADR-006 的官方 MCP Python SDK、Authorization Code + PKCE、受控 TokenStorage 和显式失败边界替代。当前 M2 Real 路径已由 ADR-007 选定为 Local MCP + Power BI Desktop，Remote MCP Deferred；下文 M2 Remote 表格与 Decision 只保留历史决策上下文，不代表当前实现状态。
 
 ## 一、Context
 

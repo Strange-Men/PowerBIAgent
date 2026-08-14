@@ -1,6 +1,6 @@
 # 02 — 技术选型与系统架构
 
-> **状态：** M2.6.4 final hardened candidate
+> **状态：** M2.6.4 — M0—M2 ready for final seal；Final Tag 待用户授权
 > **当前轮次：** M2.6.4
 > **关联 ADR：** ADR-001（已废弃）、ADR-002—ADR-009；当前以 ADR-005—ADR-009 为准
 
@@ -146,4 +146,4 @@ M1.5 全链路验收后，动态复验证实以下问题：
 
 ---
 
-*最后更新：2026-08-04 | M1.6.1 审计复验与架构定案*
+*最后更新：2026-08-14 | M2.6.4 current architecture marker；历史分层由 ADR-005—ADR-009 supersede*

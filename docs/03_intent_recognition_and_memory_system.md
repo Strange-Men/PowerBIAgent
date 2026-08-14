@@ -9,16 +9,16 @@
 
 ### 1.1 设计目标
 
-Agent 在接收用户输入后，第一步必须完成意图识别，输出结构化 IntentSpec。意图识别必须可独立测试和回归。
+Agent 在接收用户输入后，先完成可独立测试的 IntentSpec。Intent 只负责分类与语言 weak signal，不拥有 Measure、Dimension、Filter Field、runtime Member、TimeRange 或其他 canonical business semantics；这些槽位只能由 ADR-008 的 Grounding/StateTransition 确定。
 
 ### 1.2 固定四类基础意图
 
 | 意图 | 枚举值 | 说明 | 后续动作 |
 |------|--------|------|---------|
-| 数据问答 | `data_question` | 用户查询 Power BI 数据 | 进入 QueryPlan → DAX → 查询 |
-| 报表生成 | `report_generation` | 用户请求生成固定模板报表 | 进入 ReportSpec → 模板渲染 |
-| 澄清 | `clarification` | 信息不足，需要向用户确认 | 返回澄清问题，不提交记忆 |
-| 拒绝 | `unsupported` | 非法或越权要求 | 返回拒绝原因，禁止进入后续流程 |
+| 数据问答 | `data_question` | 用户查询 Power BI 数据 | 进入 authoritative Grounding → Canonical QueryPlan → deterministic execution |
+| 报表生成 | `report_generation` | 用户请求报表输出 | 先经过同一 Grounding/Fact boundary；正式模板渲染属于 M3 |
+| 澄清 | `clarification` | 信息不足，需要向用户确认 | authoritative incomplete grounding 可更新非提交 PendingClarificationContext；不执行查询、不提交正式 Memory |
+| 拒绝 | `unsupported` | 明确破坏性、越权或产品范围外请求 | 确定性 early-stop；data-shaped 请求不得仅凭 LLM 判定绕过 Grounding |
 
 ### 1.3 IntentSpec 完整 Pydantic 模型
 
@@ -54,6 +54,9 @@ class IntentSpec(BaseModel):
 - 信息不足 → clarification
 - 非法或越权要求 → unsupported
 - 明确破坏性/越权/非数据 unsupported 允许 early-stop；data/report/metric/filter/time/ranking-shaped 请求即使被 LLM 误判 unsupported，也必须进入 authoritative Grounding/capability check
+- `detected_*` 只作为当前输入的 weak signal / diagnostic，不能覆盖 Catalog、runtime metadata、runtime member lookup 或确定性时间规则
+- deterministic exact canonical / approved alias / runtime metadata match 优先；bounded LLM selector 只能返回 Catalog-owned candidate ID、`AMBIGUOUS` 或 `UNRESOLVED`
+- 候选无足够唯一区分证据、未知业务术语或非法 candidate ID 必须 fail closed / clarification，不得把“最像”提交为 canonical truth
 - 意图结果不能直接提交 committed memory
 - 只有完整成功轮次才允许提交状态
 
@@ -64,7 +67,7 @@ class IntentSpec(BaseModel):
 - `backend/app/intent/context.py` — IntentContextSnapshot（M1.2 白名单上下文提取）
 - `backend/app/intent/prompt.py` — 集中式 Prompt 构造（M1.2）
 - `backend/app/intent/deepseek_service.py` — DeepSeekIntentService（M1.2 真实实现）
-- `backend/app/query_plan/` — DeepSeekQueryPlanService（M1.3 真实实现）
+- `backend/app/query_plan/` — 历史 DeepSeek QueryPlan 草稿兼容 + 当前 Business Semantic Catalog、Grounding、StateTransition 与 Canonical QueryPlan authority
 - `backend/app/dax/` — 历史 DeepSeekDAXService（Mock compatibility）+ 当前 Real Deterministic DAX / Independent Layer 3；Real DAX LLM authority=0
 
 ### 1.6 M1.2 真实意图识别
@@ -95,11 +98,12 @@ class IntentSpec(BaseModel):
 - 修复请求不携带原始完整响应
 - 最多 2 次 LLM 调用（首次 + 1 次修复）
 
-**Mock 与真实模式隔离：**
+**Mock 与真实模式隔离及当前 Chat 状态：**
 - `DeepSeekIntentService` 不使用 `MockScenarioResolver`
 - 真实模式不调用 Mock Provider
 - Mock 模式继续完整可用（通过 `MockScenarioResolver`）
-- 完整 Chat 链路仍未开放（QueryPlan/DAX 已实现，Answer/ReportSpec 待 M1.4）
+- `/api/v1/chat` 已支持 Mock+Mock、DeepSeek+Mock 与 DeepSeek+Local MCP + Power BI Desktop；三种模式共用正式 TurnPipeline，Remote MCP 仍 Deferred
+- Real 路径在 Intent 后进入 runtime schema / Catalog Grounding；Real DAX 与 factual Answer/ReportSpec 不由 Intent LLM 或 QueryPlan LLM 决定
 
 ---
 
@@ -169,22 +173,26 @@ class IntentSpec(BaseModel):
   └─────────┘ └─────────┘
 ```
 
+#### PendingClarificationContext（独立于三态正式 Memory）
+
+多轮澄清链保存在 Repository 管理的 `PendingClarificationContext` 中，只包含 chain identity、已权威解析/仍缺失的 slots、固定意图、model/fingerprint 与 provenance。它没有 `MemoryStatus`、DAX、QueryResult 或 commit evidence，不进入 committed version chain，也不能形成可执行 QueryPlan。只有 missing slots 全部补齐后，当前明确语义才可进入正常 Grounding/StateTransition；其后仍须完整执行成功才能提交正式 Memory。
+
 ### 2.5 记忆提交机制
 
 **只有满足完整成功边界时，才能提交 committed memory。**
 
 完整成功边界至少要求：
-1. 意图有效（非 unsupported）
+1. 意图有效（非 unsupported / clarification）
 2. 请求未被拒绝
-3. 查询计划有效
-4. DAX 校验成功
-5. 工具执行成功
-6. 查询结果校验成功
-7. 最终回答或 ReportSpec 成功
+3. Grounding/StateTransition 已形成受支持的 Canonical QueryPlan
+4. Deterministic DAX 与 Independent Layer 3 成功
+5. ToolGateway / Power BI 执行成功
+6. QueryResult 与 VerifiedFactSet 构建成功
+7. fact-bounded Answer 或 ReportSpec 成功
 8. memory_version 未冲突
-9. 非 Mock 结果
+9. Mock/Real runtime space 与 `source_mode` 一致；Real 不得读取或提交 Mock 结果
 
-M0.2 已将这些准入条件固化为 `MemoryPolicies.check_commit_eligibility()`。
+`MemoryPolicies.check_commit_eligibility()` 固化基础提交准入；当前 TurnPipeline / MemoryCommitEvidence 进一步要求上述 Grounding、执行与事实链全部成功。
 
 **提交前校验：**
 - 通过 `MemoryPolicies.check_commit_eligibility()` 检查
@@ -232,38 +240,20 @@ M0.2 已将这些准入条件固化为 `MemoryPolicies.check_commit_eligibility(
 ### 2.8 实现位置
 
 - `backend/app/memory/models.py` — StructuredWorkMemory、MemoryStatus
-- `backend/app/memory/repository.py` — MemoryRepository 抽象接口
+- `backend/app/memory/models.py` — PendingClarificationContext（非 committed Memory）
+- `backend/app/memory/repository.py` — MemoryRepository 抽象接口、committed/pending 隔离存取
 - `backend/app/memory/policies.py` — MemoryPolicies 策略集合
 
 ---
 
-## 三、模块边界
+## 三、当前模块边界
 
-### M0.2 完成内容
-
-- IntentSpec 完整 Pydantic 模型（含四类意图）
-- IntentService 抽象接口
-- 四层记忆设计文档
-- StructuredWorkMemory 完整数据契约
-- 三态机制（pending/committed/failed）
-- 记忆提交准入条件（MemoryPolicies）
-- request_id 幂等 + memory_version 乐观锁
-- 上下文切换策略（模型切换、模板切换、重新开始）
-- Context Assembly 契约
-- MemoryRepository 抽象接口
-- 65 个单元测试全部通过
-
-### M0.3 边界
-
-- 在 Harness 和 TurnController 中强制执行记忆提交准入
-- Context Builder 基于契约实现
-- 实现内存 MemoryRepository
-
-### 后续轮次边界
-
-- M1+：SQLite 持久化实现
-- M3-M4：滚动摘要生成、长对话管理
+- IntentSpec、IntentService、StructuredWorkMemory、MemoryPolicies、Repository、幂等与乐观锁已经实现；TurnPipeline 是唯一写入控制面。
+- ADR-008 的 Grounding/StateTransition 是 canonical semantic slot authority；Intent 和历史 QueryPlan LLM 不能直接写入正式状态。
+- PendingClarificationContext 与 committed Memory 分离；歧义、未解析、unsupported capability 或任一下游失败均不得污染 last successful state。
+- ADR-009 要求 DAX、Layer 3、QueryResult、VerifiedFactSet 与 factual output 全部成功后才允许 commit。
+- 当前 Repository / Snapshot 为单进程实现；SQLite 或其他持久化介质、滚动摘要与长对话管理属于 M4，不在 M2 内扩展。
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 Intent/Grounding/Memory 权威边界同步*
+*最后更新：2026-08-14 | M2.6.4 Intent weak signal、Pending/Committed 与 successful commit 边界校准*

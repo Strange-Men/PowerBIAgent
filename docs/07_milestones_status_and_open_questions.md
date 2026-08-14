@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M2.6.4 final hardened candidate
+> **状态：** M2.6.4 — M0—M2 ready for final seal；Final Tag 待用户授权
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -14,7 +14,7 @@
 | M2.6.1 | 独立 Oracle、8 Case/2 holdout、正式 6 Conversation/16 Turn | ✅ 已完成 |
 | M2.6.2 | Business Semantic Catalog、Grounding、StateTransition | ✅ 已完成 |
 | M2.6.3 | Deterministic DAX、Independent Layer 3、VerifiedFactSet、Pending Clarification | ✅ 已完成 |
-| M2.6.4 | 最终技术加固、文档治理、fresh offline/Real acceptance | ✅ 本地验收完成，待远程审计 |
+| M2.6.4 | 最终技术加固、文档治理、fresh offline/Real acceptance | ✅ 完成；Final Tag 待用户授权 |
 | M3 | 固定模板报表正式渲染与资源契约 | ⬜ 下一阶段，未批准开发 |
 | M4 | 持久化会话与历史搜索 | ⬜ 未开始 |
 | M5 | React + Vite 前端与联调 | ⬜ 未开始 |
@@ -40,7 +40,6 @@
 
 | 事项 | 决策时点 |
 |---|---|
-| M2.6.4 远程审计结论与是否 fast-forward `main` | 本分支审计后 |
 | M0—M2 final Tag 名称与是否创建 | 仅用户明确批准后 |
 | M3 报表资源 ID、保存、查看与下载契约 | M3 开始前 |
 | M4 持久化介质与会话搜索策略 | M4 开始前 |
@@ -65,4 +64,4 @@
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 final hardened candidate；M3 next after audit and explicit approval*
+*最后更新：2026-08-14 | M2.6.4 M0—M2 ready for final seal；Tag / M3 均待用户明确批准*

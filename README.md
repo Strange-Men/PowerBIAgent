@@ -2,7 +2,7 @@
 
 PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并在后续阶段以固定模板生成静态 HTML 报表。
 
-当前版本：**M2.6.4 final hardened candidate**；本地 offline/Real hardened acceptance 已完成，等待远程审计。
+当前版本：**M2.6.4 — M0—M2 ready for final seal**；offline/Real hardened acceptance、远程核心审计与文档 semantic truth cleanup 已完成，Final Tag 待用户另行授权。
 
 ```text
 Natural Language
@@ -21,13 +21,13 @@ Real 路径的 DAX LLM authority/call count 为 0。LLM 不定义 canonical Meas
 
 ## 当前状态
 
-- M0—M1 已正式封板；M2 Local MCP + Power BI Desktop 真实数据问答已完成 final hardening 候选。
+- M0—M1 已正式封板；M2 Local MCP + Power BI Desktop 真实数据问答及 Truth Boundary 已完成 final hardening。
 - Business Semantic Catalog、Grounding/StateTransition、PendingClarificationContext、Deterministic DAX、Independent Layer 3 与 VerifiedFactSet 已实现。
 - TopN boundary ties 可超过 N；Answer 只表达 QueryResult `result_position`，不把 row index 写成严格 business rank。
 - Bounded LLM selector 只能选择 Catalog-owned、metadata-backed shortlist ID；无唯一证据必须 clarification。
 - data/report-shaped 请求不会仅因 Intent LLM 的 `UNSUPPORTED` 绕过 Grounding；明确破坏性、越权、任意代码与非数据请求仍 early-stop。
 - Remote MCP 生产化 Deferred。下一功能阶段是 M3 Renderer，但当前分支不进入 M3/M4/M5。
-- `dev/m2.6.4-final-hardening` 只等待远程审计；不合并 `main`，不创建 Tag。
+- M2.6.4 远程核心审计与 final documentation truth cleanup 已通过；不创建 Tag。
 
 幂等规则：相同 `request_id` + 相同请求重放且不重复执行；相同 ID + 不同内容返回 HTTP 409；并发同 ID 只有一个 Owner 执行。
 
@@ -151,4 +151,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 final hardened candidate*
+*最后更新：2026-08-14 | M2.6.4 M0—M2 ready for final seal；Final Tag=none*

@@ -1,8 +1,8 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M1.4.1 真实性验证加固已完成，契约持续有效
+> **状态：** M2.6.4 factual boundary 已校准；M1 生成描述仅作历史兼容
 > **目标：** 定义前端组合回答的产品目标与数据契约
-> **重要：** 本文档描述未来 M5 前端展示目标，当前 API 仍以 AnswerSpec + QueryResult + ReportSpec 为基础
+> **重要：** 本文档描述未来 M5 前端展示目标。当前 Real API 以 Canonical QueryPlan → QueryResult → VerifiedFactSet → fact-bounded AnswerSpec / ReportSpec 为事实边界
 
 ---
 
@@ -14,11 +14,12 @@
 
 ## 二、当前已有契约
 
-M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contracts.py`）：
+当前已实现的相关数据契约与 factual artifact：
 
 | 模型 | 职责 |
 |------|------|
 | `QueryResult` | DAX 查询结果（columns, rows, row_count, source_mode） |
+| `VerifiedFactSet` | 对外数字、结果顺序、极值、筛选、时间与 provenance 的唯一事实 authority |
 | `AnswerSpec` | 自然语言回答（answer, summary, metrics, evidence） |
 | `ReportSpec` | 结构化报表描述（title, template_key, kpis, charts, tables） |
 | `RenderedReport` | 报表渲染结果（report_id, template_key, html） |
@@ -27,9 +28,8 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 
 | 边界 | 说明 |
 |------|------|
-| **M1.3.2** | 只固化产品目标，不修改 Python 模型，不创建 Envelope |
-| **M1.4** | 继续使用现有 AnswerSpec、QueryResult、ReportSpec |
-| **M1.5/M5** | 确定是否需要统一消息 Envelope |
+| **M1.3.2—M1.4** | 历史契约来源；自由 LLM factual generation 已被 ADR-009 supersede |
+| **M2.6.4** | Real Answer/Report 只能消费 VerifiedFactSet / QueryResult 可证明事实 |
 | **M5** | 前端根据本文档实现组合回答渲染 |
 
 **当前不创建**：统一 `AssistantMessageEnvelope`、消息块列表模型、新 API。
@@ -49,7 +49,7 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 
 ### 数据来源
 
-`AnswerSpec.answer` — 由 LLM 基于 QueryResult 生成。
+`AnswerSpec.answer` — 当前 Real 路径由 deterministic fact-bounded builder 基于 VerifiedFactSet 构造。
 
 ### 用途
 
@@ -61,8 +61,8 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 
 ### 安全约束
 
-- 内容由 LLM 驱动的 DeepSeek Provider 生成
-- 内容由 ValidationService 校验
+- 任何数值、结果顺序、极值、筛选或时间陈述必须由 VerifiedFactSet 证明
+- 不允许生成未经验证的严格排名、趋势、因果或外部事实
 - 不允许包含可执行代码
 
 ## 五、metrics — 指标摘要块
@@ -84,18 +84,18 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 
 ### 数据来源
 
-`AnswerSpec.metrics` + `QueryResult`
+`AnswerSpec.metrics` + `VerifiedFactSet` + `QueryResult`
 
 ### 规则
 
-- 数值必须来自 QueryResult
-- 不允许 LLM 自行计算无法验证的指标
+- 数值必须可追溯到 VerifiedFactSet / QueryResult
+- 不允许 LLM 自行计算或猜测无法验证的指标
 - 不在前端设计成大量彩色 KPI 仪表盘
 - 使用克制、轻量形式展示（如文本标签+数值）
 
 ### 概念性 JSON 示意
 
-> ⚠️ **目标示意，当前未实现，不是现有 API 响应。**
+> ⚠️ **未来目标示意，当前未实现，不是现有 API 响应。** 其中“同比增长”不代表 M2 comparison grammar 已支持。
 
 ```json
 {
@@ -131,7 +131,7 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 
 ### 规则
 
-- LLM 只负责解释或选择展示范围，不得虚构行列
+- 表格只能投影 QueryResult 的实际字段与 rows，不得虚构或补算行列
 - columns 必须与 QueryResult.columns 一致
 - rows 必须与 QueryResult.rows 一致
 - truncated 必须与 QueryResult.truncated 一致
@@ -253,9 +253,9 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 
 1. 表格数据必须来自 QueryResult
 2. 图表数据必须来自 QueryResult
-3. 指标数据必须来自 QueryResult
-4. LLM 只负责解释和选择展示范围
-5. 不允许 LLM 虚构行列、数值或指标
+3. 指标与文字 factual claims 必须由 VerifiedFactSet 证明
+4. 展示层不得扩大 FactSet / QueryResult 的事实范围
+5. 不允许 LLM 虚构行列、数值、排名、趋势、因果或外部事实
 
 ### source_mode
 
@@ -272,9 +272,9 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 
 所有数据必须标注其来源语义模型。跨模型数据不得混合在同一回答中（MVP 不支持跨模型查询）。
 
-## 十、QueryResult 事实来源
+## 十、VerifiedFactSet / QueryResult 事实来源
 
-`QueryResult` 是表格和图表数据的唯一事实来源。
+`QueryResult` 是表格和图表 rows 的数据来源；`VerifiedFactSet` 是文字、指标、结果顺序、极值、筛选、时间与 provenance 的唯一对外 factual claim authority。
 
 | QueryResult 字段 | 对应内容块 |
 |-----------------|-----------|
@@ -289,7 +289,7 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 
 ## 十一、AnswerSpec 职责
 
-`AnswerSpec` 负责自然语言层面的回答：
+`AnswerSpec` 负责自然语言层面的回答，但 Real factual content 只能由 fact-bounded builder 从 VerifiedFactSet 构造：
 
 | AnswerSpec 字段 | 对应内容块 |
 |----------------|-----------|
@@ -302,7 +302,7 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 
 ## 十二、ReportSpec 职责
 
-`ReportSpec` 负责结构化报表描述：
+`ReportSpec` 负责结构化报表描述；Real KPI、chart fields、table projection 与 insight 必须受 VerifiedFactSet / QueryResult 约束：
 
 | ReportSpec 字段 | 对应内容块 |
 |----------------|-----------|
@@ -326,9 +326,9 @@ M1.3.2 当前已实现的 Python 数据契约（`backend/app/schemas/data_contra
 
 未来 M3 正式报表资源接口将使用 report_id 提供查看和下载。
 
-## 十四、M1.4 实施边界
+## 十四、M1.4 历史实施边界
 
-M1.4 将完成：
+以下内容记录当时的 M1 实现范围，不是当前 Real authority：
 
 - 真实 DeepSeek Answer 生成（基于 Mock QueryResult）
 - 真实 DeepSeek ReportSpec 生成（基于 Mock QueryResult）
@@ -391,7 +391,7 @@ M5 将完成：
 
 1. 表格字段与 QueryResult.columns 一致
 2. 图表字段与 QueryResult.columns 一致
-3. 指标值可追溯到 QueryResult
+3. 指标值与文字事实可追溯到 VerifiedFactSet / QueryResult
 4. source_mode 与数据层一致
 5. 报表引用由后端生成
 6. 模型权限和模板权限
@@ -402,4 +402,4 @@ DeepSeek 提供语言模型能力，不是数据来源。M1 的 QueryPlan/DAX/An
 
 ---
 
-*创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
+*最后更新：2026-08-14 | M2.6.4 VerifiedFactSet factual boundary 校准*

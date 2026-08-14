@@ -89,4 +89,4 @@
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 documentation governance*
+*最后更新：2026-08-14 | M2.6.4 documentation governance + semantic truth cleanup*

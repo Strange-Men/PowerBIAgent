@@ -1,11 +1,11 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v1.0
-> **修订日期：** 2026-07-31
+> **修订版本：** v1.1
+> **修订日期：** 2026-08-14
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** M0.1 仓库初始化与文档基线 — 生成正式 PRD
-> **当前确认状态：** 已确认，后续 M0 轮次可更新细化和补充
+> **本轮修订范围：** M2.6.4 semantic truth cleanup；区分长期产品目标与当前 M2 已验证能力
+> **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
 
@@ -23,14 +23,25 @@ Power BI 数据分析 Agent MVP（PowerBIAgent）
 
 完成一套可运行、可验证的 MVP，证明以下链路可行：
 
+当前 M2 已验证的数据问答链为：
+
+```text
+Natural Language
+→ Intent（语言 weak signal）
+→ Runtime Schema / Semantic Catalog
+→ Semantic Grounding
+→ deterministic StateTransition
+→ Canonical QueryPlan
+→ Deterministic DAX
+→ Independent Layer 3
+→ Power BI
+→ QueryResult
+→ VerifiedFactSet
+→ fact-bounded Answer / ReportSpec
+→ successful Memory commit
 ```
-用户自然语言提问
-→ DeepSeek 理解需求
-→ Agent 调用 Power BI MCP
-→ 查询 Power BI 语义模型
-→ 返回可信的数据答案
-→ 根据固定模板生成静态 HTML 报表
-```
+
+固定模板静态 HTML 报表属于 M3 产品目标，不是 M2 已完成能力。
 
 MVP 主要供公司内部少量人员使用，暂不处理复杂客户权限和多租户问题。
 
@@ -42,7 +53,7 @@ MVP 主要供公司内部少量人员使用，暂不处理复杂客户权限和�
 
 ### 5.1 数据问答
 
-用户选择 Power BI 语义模型后，输入自然语言问题：
+用户选择 Power BI 语义模型后，输入自然语言问题。以下是长期产品场景示例：
 
 - "本月销售额是多少？"
 - "各区域销售额排名如何？"
@@ -50,13 +61,15 @@ MVP 主要供公司内部少量人员使用，暂不处理复杂客户权限和�
 
 Agent 查询真实数据，返回文字结论和数据表格。
 
+> **当前 M2 能力边界：** 已验证 grammar 仅包含 Measure、Dimension、`EQ` Filter、可确定解析的 TimeRange、single-measure Sort/TopN。M2 可安全处理“总销售额是多少”“按 Category 看销售额”“销售额最高的前 3 个 Product”等受限问题；TopN 只表达 QueryResult 顺序，不制造严格 business rank。“最近六个月销售趋势”“同比/环比”“哪个区域下降最多”、非 `EQ` Filter、任意 DAX、因果分析与通用趋势推断仍是未来产品能力，不得视为 M2 已实现。
+
 ### 5.2 多轮追问
 
 用户可以继续输入：
 
 - "只看华南。"
 - "改成今年的数据。"
-- "哪个区域下降最多？"
+- "哪个区域下降最多？"（未来 comparison/trend 能力，M2 不宣称支持）
 
 系统继承当前会话中的语义模型、指标、时间范围和筛选条件。
 
@@ -131,27 +144,26 @@ FastAPI
 ### 主要模块
 
 1. **API 层** — 接收前端请求和返回结果
-2. **Agent 编排层** — 控制完整业务流程（会话状态读取、意图识别、工具选择、查询生成、结果处理、回答/报表生成）
-3. **LLM Provider 层** — 通过统一接口封装模型调用。**当前正式用户模型只有 DeepSeek**。Mock LLM 仅用于开发和测试，不作为正式用户模型展示。GPT-5.6 未接入。通过统一 Provider 接口封装，后期可扩展其他模型
+2. **Agent 编排层** — TurnPipeline 控制状态读取、Intent、authoritative Grounding、确定性执行、事实构建、输出与成功提交
+3. **LLM Provider 层** — 通过统一接口封装模型调用。**当前正式用户模型只有 DeepSeek**。Intent/语言草稿是 weak signal；bounded selector 只能在 Catalog-owned、metadata-backed candidate ID 中受限选择。LLM 不拥有 canonical business semantics、Real DAX 或外部事实。Mock LLM 仅用于开发和测试，不作为正式用户模型展示
 4. **Power BI MCP Adapter** — 连接 Power BI MCP，获取语义模型结构，执行 DAX 查询，处理异常
-5. **Memory 模块** — 保存当前会话中的语义模型、意图、指标、维度、时间范围、筛选条件、DAX、查询结果摘要。切换语义模型时清空旧模型相关上下文
-6. **报表生成模块** — LLM 生成结构化 ReportSpec，后端校验后使用固定模板生成静态 HTML
+5. **Memory 模块** — 只在 Grounding、DAX、Layer 3、Power BI、FactSet 与 factual output 全链成功后提交当前分析状态；PendingClarificationContext 与 committed Memory 分离
+6. **报表生成模块** — 当前 M2 的 ReportSpec 受 VerifiedFactSet / QueryResult 事实边界约束；M3 才实现固定模板静态 HTML 的正式渲染与资源契约
 
 ### 单 Agent 执行流程
 
 ```
-接收用户请求
-→ 读取会话状态
-→ 判断数据问答或报表生成
-→ 获取 Power BI 语义模型结构
-→ 生成查询计划
-→ 生成并校验 DAX
-→ 通过 Power BI MCP 执行查询
-→ 校验查询结果
-→ 生成文字答案或 ReportSpec
-→ 固定模板渲染 HTML
-→ 保存会话和 Trace
-→ 返回前端
+接收用户请求并读取 last successful committed state
+→ Intent 分类与语言 weak signal
+→ ToolGateway 获取 runtime schema / bounded members
+→ Semantic Grounding；歧义或未解析时 clarification / fail closed
+→ deterministic StateTransition 形成 Canonical QueryPlan
+→ Deterministic DAX + Independent Layer 3
+→ ToolGateway → PowerBIAdapter → Power BI
+→ QueryResult → VerifiedFactSet
+→ fact-bounded Answer / ReportSpec
+→ 仅完整成功后提交 Memory / Snapshot
+→ 返回 API
 ```
 
 ## 八、Agent 工具
@@ -172,7 +184,7 @@ MVP Harness 用于限制 Agent 行为、防止开发偏移，并持续验证数�
 
 ### 9.1 结构化输出约束
 
-LLM 关键输出必须符合固定 Pydantic 结构：IntentSpec、QueryPlan、DAX、AnswerSpec、ReportSpec
+跨阶段产物必须符合固定 Pydantic 结构。Intent/语言草稿可以来自受控 LLM；Real Canonical QueryPlan 由 Grounding/StateTransition 确定，DAX 由普通代码确定性构造，VerifiedFactSet 与 factual Answer/ReportSpec 不接受 LLM 虚构数值、排名、因果或外部事实。Real DAX LLM authority/call count 为 0。
 
 ### 9.2 工具白名单
 
@@ -188,7 +200,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 ### 9.4 Golden Cases
 
-约 20-30 个固定测试问题，覆盖：单指标查询、区域排名、时间趋势、多条件筛选、连续追问、空数据、错误字段、DAX 执行失败、销售周报生成、满意度报告生成。
+当前仓库保留 12 个 Golden 定义案例（11 个离线可运行，1 个 Real-only 按设计跳过），并有 8 个 Known-answer Case（含 2 个 holdout）与 6 Conversation / 16 Turn 多轮契约。未实现的 comparison、通用趋势或正式 Renderer 场景只能作为未来验收目标，不能计入 M2 PASS。
 
 每次修改 Prompt、Agent、MCP Adapter 或报表模块后执行回归测试。
 
@@ -200,17 +212,17 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 | 接口 | 说明 |
 |------|------|
-| `GET /api/health` | 检查后端、DeepSeek 和 Power BI MCP 连接状态 |
+| `GET /health` | 检查当前运行模式的配置就绪状态；不把它描述为 Desktop 实时在线探测 |
 | `GET /api/semantic-models` | 返回可选择的 Power BI 语义模型 |
 | `GET /api/report-templates` | 返回可选择的固定报表模板 |
-| `POST /api/chat` | 接收用户问题并返回文字答案、表格或报表结果 |
+| `POST /api/v1/chat` | 已实现；Mock+Mock、DeepSeek+Mock、DeepSeek+Local MCP 共用正式 TurnPipeline |
 | `GET /api/reports/{report_id}` | 预览或下载已生成报表 |
 
 ## 十一、MVP 开发阶段
 
 1. **M0 开发准备** ✅ 已完成 — 仓库、文档、Agent 架构设计、数据接入验证、项目骨架
 2. **M1 真实 DeepSeek 接入** ✅ 已完成并封板 — LLM Provider、Intent/QueryPlan 与统一 TurnPipeline；历史 LLM DAX/Answer 保留 Mock compatibility
-3. **M2 真实 Power BI MCP 与数据问答** 🔄 M2.6.4 final candidate — Local MCP、Business Semantic Grounding、Deterministic DAX、VerifiedFactSet 与 hardened acceptance；Remote Deferred
+3. **M2 真实 Power BI MCP 与数据问答** ✅ M2.6.4 — M0—M2 ready for final seal；Local MCP、Business Semantic Grounding、Deterministic DAX、VerifiedFactSet 与 hardened acceptance 已完成；Remote Deferred；Final Tag 待用户另行授权
 4. **M3 报表生成闭环** ⬜ 未开始 — ReportSpec 正式渲染、报表资源 ID、查看/下载
 5. **M4 多轮记忆完善** ⬜ 未开始 — 会话历史、最近对话、搜索聊天、会话持久化
 6. **M5 React 前端与联调** ⬜ 未开始 — 极简对话页面、接口联调、响应式、视觉验收
@@ -241,12 +253,14 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 | LLM | 真实 LLM 只有 DeepSeek；必须提供 Mock LLM |
 | 记忆系统 | 核心卖点，必须包含结构化工作记忆和可靠提交机制 |
 | Power BI MCP | 后端统一接入，网页用户不配置 MCP |
-| 报表 | 固定模板，LLM 输出 ReportSpec，程序渲染 HTML |
+| 报表 | M2 ReportSpec 不得越过 VerifiedFactSet；M3 再实现固定模板 HTML 正式渲染 |
 | Harness | MVP 轻量控制面 |
 | 前端 | 等待后端跑通后正式开发 |
 | Conda | `D:\Conda`，环境名 `PBIAgent`，Python 3.11 |
 
 ## 十四、验收标准
+
+以下是完整 MVP 的跨阶段成功标准；M2.6.4 只对真实 Power BI 数据问答、Truth Boundary、多轮状态与离线/Real hardened gates 负责。固定模板 Renderer 属于 M3，持久化会话属于 M4，React 页面属于 M5。
 
 MVP 达到以下条件即可视为成功：
 
@@ -276,4 +290,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
+*修订日期：2026-08-14 | M2.6.4 长期产品目标与当前 Truth Boundary 校准*

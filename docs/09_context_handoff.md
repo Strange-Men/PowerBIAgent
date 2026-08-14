@@ -5,11 +5,11 @@
 
 ## 当前阶段
 
-**M2.6.4 Final Hardened Acceptance + Documentation Governance** — 本地 hardened acceptance 已完成，等待 GPT 远程审计。
+**M2.6.4 — M0—M2 ready for final seal**。offline/Real hardened acceptance、GPT 远程核心审计与长期文档 semantic truth cleanup 已通过；Final Tag 仍待用户明确授权。
 
-远程正式基线：`origin/main = ab9c6a6fba2e0cf9919c1366d37f8c6beb1f5e32`。当前工作分支为 `dev/m2.6.4-final-hardening`；本轮完成后只 push 该分支，等待 GPT 远程审计，不合并 `main`，不创建 Tag。
+M2.6.4 开发起点：`origin/main = ab9c6a6fba2e0cf9919c1366d37f8c6beb1f5e32`。交付源分支为 `dev/m2.6.4-final-hardening`；只有 fresh gates 全绿且仍可纯 fast-forward 时才按用户授权更新 `main`。Final Tag 仍为 none。
 
-下一功能阶段是 M3 固定模板报表正式渲染，但远程审计和用户明确批准前不得进入 M3；M4/M5 与 Remote MCP 同样未获本轮授权。
+下一功能阶段是 M3 固定模板报表正式渲染，但必须等待本轮 main CI 绿色后由用户另行明确批准；M4/M5 与 Remote MCP 同样未获授权。
 
 ## 当前架构与 Truth Boundary
 
@@ -94,8 +94,8 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 
 ## 下一步
 
-白名单暂存、提交 `M2.6.4_M0-M2最终加固与文档治理`，push `dev/m2.6.4-final-hardening`，核对远端 SHA 与 CI 触发状态，然后停止并等待 GPT 远程审计。
+M2.6.4 main CI 绿色后停止开发。后续只等待用户明确决定是否创建 M0—M2 Final Tag，或另行批准进入 M3；不得自行打 Tag、开发 Remote MCP 或提前进入 M3/M4/M5。
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 final hardened candidate*
+*最后更新：2026-08-14 | M2.6.4 M0—M2 ready for final seal；Final Tag=none*

@@ -13,14 +13,14 @@
 
 | 方法 | 路径 | 说明 | 状态 |
 |------|------|------|------|
-| `GET` | `/health` | 健康检查（Mock 200 / DeepSeek 503） | ✅ M0.4 |
-| `POST` | `/api/v1/chat` | 非流式对话接口（当前仅 Mock 可用） | ✅ M0.4 |
+| `GET` | `/health` | 当前运行模式配置就绪检查；不调用 LLM、不启动 MCP、不探测 Desktop 在线状态 | ✅ Mock / DeepSeek+Mock / DeepSeek+Local 配置 |
+| `POST` | `/api/v1/chat` | 非流式对话接口；Mock+Mock、DeepSeek+Mock、DeepSeek+Local MCP 共用 TurnPipeline | ✅ Real M2 链已验证 |
 
 ### 计划中的接口（PRD 定义，尚未实现）
 
 | 方法 | 路径 | 说明 | 目标轮次 |
 |------|------|------|---------|
-| `GET` | `/api/semantic-models` | 返回可选 Power BI 语义模型列表 | M2+ |
+| `GET` | `/api/semantic-models` | 返回可选 Power BI 语义模型列表 | 后续 UI/API 阶段（未批准） |
 | `GET` | `/api/report-templates` | 返回可选固定报表模板列表 | M3+ |
 | `GET` | `/api/reports/{report_id}` | 预览或下载已生成报表 | M3+ |
 
@@ -28,9 +28,9 @@
 
 ---
 
-## 一、PowerBIAdapter 设计
+## 二、PowerBIAdapter 设计
 
-### 1.1 接口（`backend/app/powerbi/base.py`）
+### 2.1 接口（`backend/app/powerbi/base.py`）
 
 | 方法 | 说明 |
 |------|------|
@@ -40,19 +40,26 @@
 | `normalize_result(raw)` | 标准化原始响应 |
 | `normalize_error(raw)` | 标准化原始错误 |
 
-### 1.2 MockPowerBIAdapter（`backend/app/powerbi/mock.py`）
+### 2.2 MockPowerBIAdapter（`backend/app/powerbi/mock.py`）
 
 - 从 `harness/fixtures/` 加载 Mock Schema 和 QueryResult
 - 不依赖网络和 Microsoft 账号
 - 严格匹配 scenario_key，未知场景明确失败
 - 支持模拟：正常数据、空数据、超时、无权限、DAX 错误、超大结果
 
-### 1.3 RemoteMCPPowerBIAdapter（`backend/app/powerbi/remote_mcp.py`）
+### 2.3 RemoteMCPPowerBIAdapter（`backend/app/powerbi/remote_mcp.py`）
 
-- M0.3 仅骨架，所有真实调用标记 `NotImplementedError("TODO: M2")`
+- Deferred production skeleton；当前不作为 M2 Real 主路径，真实调用仍明确 `NotImplementedError`
 - 配置边界完整：Server URL、Tenant ID、Client ID、超时、重试
 
-## 二、OAuth 认证风险（ADR-003）
+### 2.4 LocalMCPPowerBIAdapter（`backend/app/powerbi/local_mcp.py`）
+
+- 当前 M2 Real Provider：只读 stdio Local MCP + Power BI Desktop
+- 只负责 Provider / protocol Adapter；上层仍是 TurnPipeline → ToolGateway → PowerBIAdapter 的唯一控制面
+- 已真实验证 schema、DAX、QueryResult、production Chat 与 committed Memory；Real 失败不回退 Mock
+- Remote MCP 只有外部管理员/授权条件具备且用户重新批准后才恢复开发
+
+## 三、OAuth 认证风险（ADR-003/ADR-006，Remote Deferred）
 
 ### 关键发现
 
@@ -61,62 +68,70 @@
 3. **需要 Power BI 管理员启用 Tenant 设置**
 4. **早期 2026 年有 Remote MCP 端点中断报告**
 
-### 授权流程
+### 未来 Remote 授权流程
 
-- M2: MSAL device code flow + 本地 token 缓存
-- Token 获取、刷新和存储由 Adapter 内部管理
+- 仅在重新批准的 Remote production stage 按 ADR-006 实现；不属于当前 M2 Local 链
+- Token 获取、刷新和存储必须隔离在 Adapter 边界内
 - 不暴露 Token 到 Agent 或业务层
 
-## 三、核心数据契约（`backend/app/schemas/data_contracts.py`）
+## 四、核心数据契约与事实边界
 
-### 3.1 契约职责总览
+### 4.1 契约职责总览
 
 | 模型 | 职责 | 数据来源 |
 |------|------|---------|
-| **QueryResult** | 表格和图表数据的事实来源。包含 columns、rows、row_count、source_mode 等。内置一致性校验（row_count vs rows 长度、每行字段 vs columns 数量） | Power BI MCP（当前 Mock） |
-| **AnswerSpec** | 自然语言答案、摘要、指标和证据。负责直接回答用户问题、给出总结、说明筛选条件。answer 字段为必填核心文本 | LLM 基于 QueryResult 生成 |
-| **ReportSpec** | 结构化报表描述。包含 title、template_key、kpis (KPISpec)、charts (ChartSpec)、tables (TableSpec)、insights 等。禁止任意 HTML/JS/外部脚本 | LLM 基于 QueryResult 和模板生成 |
+| **Canonical QueryPlan** | 当前 Turn 的唯一执行语义；只消费 runtime schema、model-scoped Catalog、runtime members、deterministic time 与 successful committed state | Grounding + deterministic StateTransition |
+| **QueryResult** | Power BI 返回的结构化结果与 provenance 边界；包含 columns、rows、row_count、source_mode 等并做形状一致性校验 | Mock 或 Local MCP + Desktop，经 ToolGateway |
+| **VerifiedFactSet** | 数值、结果顺序、极值、筛选、时间与 provenance 的唯一对外 factual claim authority | Canonical QueryPlan + QueryResult 确定性构建 |
+| **AnswerSpec** | 自然语言答案、摘要、指标和证据 | Real 由 FactBoundedAnswerBuilder 消费 VerifiedFactSet；不得自由生成事实 |
+| **ReportSpec** | 结构化报表描述；禁止任意 HTML/JS/外部脚本 | Real 只允许 VerifiedFactSet / QueryResult 可证明的 KPI、字段、rows 与 insight |
 | **RenderedReport** | 报表渲染结果。包含 report_id、template_key、html 等。未来提供报表资源查看和下载引用 | Report Renderer 基于 ReportSpec 渲染 |
 
-### 3.2 QueryPlan
+### 4.2 QueryPlan
 normalized_question, semantic_model_key, measures, dimensions, filters (StructuredFilter), time_range, sort, top_n, comparison_mode, requested_template, inherited_context, is_mock
 
-### 3.3 DAXRequest
+Real QueryPlan 的上述 canonical slots 只能由 Grounding/StateTransition 写入。Intent 与历史 QueryPlan LLM 输出只是语言 weak signal / compatibility 草稿，不能覆盖 object type、table ownership、schema fingerprint、member values 或时间边界。当前 M2 grammar 仅支持 Measure、Dimension、`EQ` Filter、resolved TimeRange、single-measure Sort/TopN；comparison、非 `EQ` operator 与通用 DAX fail closed。
+
+### 4.3 DAXRequest
 semantic_model_key, dax, max_rows, timeout_seconds, request_id, is_mock
 
-### 3.4 QueryResult — 数据事实来源
+### 4.4 QueryResult — Power BI 结果边界
 result_id, semantic_model_key, columns, rows, row_count, execution_time_ms, source_mode, request_id, error (PowerBIError), truncated
 
 内置一致性校验：row_count vs rows 长度、每行字段 vs columns 数量。
 
 **关键规则：**
-- 表格和图表数据必须来自 QueryResult
-- LLM 只负责解释或选择展示范围，不得虚构行列
+- QueryResult 是 VerifiedFactSet 的输入，不等于“任何自然语言结论均已获证明”
+- 表格和图表数据必须引用 QueryResult 的实际字段与 rows
 - source_mode 表示数据来源，不能因为使用真实 DeepSeek 就把 Mock QueryResult 标为 real
 
-### 3.5 AnswerSpec — 自然语言回答
+### 4.5 VerifiedFactSet — 对外事实 authority
+
+VerifiedFactSet 由 Canonical QueryPlan + QueryResult 确定性构建，绑定 result/model/source、字段、row reference/aggregation、filter、time、row count、truncation 与 plan semantics。数值不得来自 LLM arithmetic 或 Answer text 反解析；TopN 只证明 QueryResult `result_position`，不把 row index 扩写成严格 business rank。无法证明的 comparison、因果、趋势或外部事实不生成。
+
+### 4.6 AnswerSpec — 自然语言回答
 answer, summary, metrics, evidence, filters, semantic_model_key, source_mode, generated_at
 
 **关键规则：**
-- answer 字段为自然语言结论，由 LLM 基于 QueryResult 生成
-- metrics 展示少量关键指标，数值必须来自 QueryResult
+- Real answer 由 deterministic fact-bounded builder 从 VerifiedFactSet 构造；DAX/Answer LLM authority 与调用数均为 0
+- metrics、排序/极值、筛选与时间陈述必须来自 VerifiedFactSet
 - AnswerSpec 负责文字结论、摘要和指标，不承载完整表格数据
 - 表格数据直接来自 QueryResult，图表的数据事实来源也是 QueryResult
-- 不允许 LLM 自行计算无法验证的指标
+- 不允许 LLM 猜测数值、排名、因果、趋势或外部事实
 - evidence 提供数据来源追溯
 - source_mode 与 QueryResult.source_mode 应一致
 
-### 3.6 ReportSpec — 结构化报表
+### 4.7 ReportSpec — 结构化报表
 title, template_key, summary, kpis (KPISpec), charts (ChartSpec), tables (TableSpec), insights, data_source, filters, generated_at, source_mode
 
-禁止任意 HTML、JavaScript、外部脚本、未登记模板、不存在字段。
+Real ReportSpec 的 KPI、chart fields、table projection 与 insight 必须受 VerifiedFactSet / QueryResult 约束；无法证明的 insight 省略。禁止任意 HTML、JavaScript、外部脚本、未登记模板、不存在字段。正式 Renderer 与报表资源属于 M3。
 
-### 3.7 UserContext
+### 4.8 UserContext
 user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-## 三-A、前端组合回答目标（未来 M5，当前不实现）
+## 五、前端组合回答目标（未来 M5，当前不实现）
 
 > **本节描述未来前端组合回答的产品目标，不代表当前 API 已经支持。**
 
@@ -126,8 +141,8 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 | 类型 | 说明 | 数据来源 |
 |------|------|---------|
-| `text` | 自然语言结论、总结、筛选说明、空数据提示、截断提示 | AnswerSpec.answer |
-| `metrics` | 少量关键指标（数值来自 QueryResult，不允许 LLM 虚构） | QueryResult / AnswerSpec.metrics |
+| `text` | 自然语言结论、总结、筛选说明、空数据提示、截断提示 | fact-bounded AnswerSpec.answer |
+| `metrics` | 少量关键指标（必须由 VerifiedFactSet 证明） | VerifiedFactSet / AnswerSpec.metrics |
 | `table` | title、columns、rows、row_count、truncated、source_mode | QueryResult |
 | `chart` | type (bar/line/pie/scatter)、title、x_field、y_field、series、data_reference | QueryResult |
 | `report_attachment` | report_id、title、format、view_reference、download_reference、source_mode | RenderedReport |
@@ -145,33 +160,36 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 | 能力 | 当前状态 | 目标轮次 |
 |------|---------|---------|
-| 统一前端消息 Envelope | ❌ 不存在 | M1.5/M5 确定 |
-| AnswerSpec + QueryResult | ✅ 已实现 | — |
+| 统一前端消息 Envelope | ❌ 不存在 | M5 确定 |
+| VerifiedFactSet + AnswerSpec + QueryResult | ✅ 已实现 | — |
 | ReportSpec + RenderedReport | ✅ Mock 可运行 | M3 正式渲染 |
-| 表格展示 | ✅ AnswerSpec 可携带 | M5 前端渲染 |
+| 表格数据契约 | ✅ QueryResult 可用 | M5 前端渲染 |
 | 图表展示 | ❌ 当前无 | M5 前端渲染 |
 | 报表查看/下载 | ❌ 当前无 | M3 报表资源 |
 | LLM 生成 HTML/JS | ❌ 永久禁止 | — |
 
-## 四、只读 DAX 安全
+## 六、只读 DAX 安全与执行 authority
 
-- 仅允许：EVALUATE、DEFINE + EVALUATE
+- Real DAX 只由 DeterministicDAXBuilder 从 Canonical QueryPlan + runtime schema 构造；LLM authority/call count 为 0
+- Independent Layer 3 在执行前独立证明 exact Measure/group-by/EQ/time/TopN/ORDER BY 与无额外业务语义
+- 安全层仅允许：EVALUATE、DEFINE + EVALUATE
 - 禁止：SQL、写操作、跨模型引用、Python/Shell/PowerShell/JavaScript
 - 安全边界来自：ToolGateway、ValidationService、semantic_model_key 白名单、Schema 字段验证、最大行数、超时、最大重试
 
-## 五、M0.3/M2/M3 边界
+## 七、M0.3/M2/M3 边界
 
 | 项目 | M0.3 | M2 | M3 |
 |------|------|----|----|
 | PowerBIAdapter 接口 | ✅ | — | — |
 | MockPowerBIAdapter | ✅ 可运行 | — | — |
-| Remote Adapter | ✅ 骨架 | ✅ 真实连接 | — |
+| Local MCP Adapter | — | ✅ Desktop Real 链 | — |
+| Remote Adapter | ✅ 骨架 | ⏸ Deferred | 仅另行批准的 production stage |
 | API 数据契约 | ✅ 全部 Pydantic | — | — |
-| OAuth/Token | ✅ 设计文档 | ✅ 实现 | — |
+| OAuth/Token | ✅ 设计文档 | ⏸ 未实现；Local 不需要 | 仅 Remote 重新批准后 |
 | 真实 DAX 查询 | ❌ | ✅ | — |
 | ReportSpec Schema | ✅ 完整 | — | — |
 | 生产报表模板/HTML | ❌ | ❌ | ✅ |
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 current Provider/API authority marker*
+*最后更新：2026-08-14 | M2.6.4 Local Provider、deterministic execution 与 VerifiedFactSet 契约校准*

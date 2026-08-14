@@ -12,7 +12,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M2 Local MCP + Power BI Desktop 真实链已完成，Remote MCP 生产化继续 Deferred。
 - M2.6.2 已建立 Business Semantic Grounding；M2.6.3 已建立 Deterministic DAX、Independent Layer 3 与 VerifiedFactSet。
-- 最终正确性收口、文档治理和本地 hardened acceptance 已完成；远程审计前不合并 `main`、不创建 Tag。
+- 最终正确性收口、文档治理、semantic truth cleanup、offline/Real hardened acceptance 与远程核心审计已完成；M0—M2 已 ready for final seal，但不得自行创建 Tag。
 - 下一功能阶段是 M3 固定模板报表正式渲染；本轮不得进入 M3/M4/M5。
 
 当前真实主链：
@@ -68,7 +68,7 @@ Real DAX LLM authority 为 0。LLM 只保留意图/语言草稿、Catalog-owned 
 - 详细修复证据、两次修复上限、Secret、Commit、Tag 规则见 `CLAUDE.md`。
 - 禁止 force push、`git reset --hard`、`git add .`、`git add -A`。
 - 只用明确白名单暂存；`.env`、Token、PBIX、真实业务输出与 `local_state/` 永不提交。
-- 文档与版本必须在 Commit 前完成；本轮不 merge `main`，不创建 Tag。
+- 文档与版本必须在 Commit 前完成；`main` 只允许在用户明确授权、fresh gates 全绿且可纯 fast-forward 时更新；不创建 Tag。
 
 ## 文档治理
 
@@ -80,4 +80,4 @@ Real DAX LLM authority 为 0。LLM 只保留意图/语言草稿、Catalog-owned 
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 final hardened candidate*
+*最后更新：2026-08-14 | M2.6.4 M0—M2 ready for final seal；Tag 待用户另行授权*
