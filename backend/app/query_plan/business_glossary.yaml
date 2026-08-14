@@ -1,0 +1,39 @@
+version: 1
+semantic_model_key: local_desktop_model
+
+measures:
+  Total Sales:
+    table_name: Sales
+    object_type: measure
+    aliases:
+      - 销售额
+      - 总销售额
+      - 销售金额
+  Total Quantity:
+    table_name: Sales
+    object_type: measure
+    aliases:
+      - 销量
+      - 总数量
+      - 销售数量
+      - 件数
+
+fields:
+  Category:
+    table_name: Sales
+    object_type: field
+    aliases:
+      - 类别
+      - 品类
+  Product:
+    table_name: Sales
+    object_type: field
+    aliases:
+      - 产品
+      - 商品
+  OrderDate:
+    table_name: Sales
+    object_type: field
+    aliases:
+      - 订单日期
+      - 销售日期

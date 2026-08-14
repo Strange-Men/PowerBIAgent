@@ -144,6 +144,30 @@ class TestIntentSpecValid:
         assert spec.inherited_context is not None
         assert "销售额" in spec.inherited_context
 
+    def test_structured_inherited_context_is_ignored(self):
+        """LLM diagnostics cannot become an alternate semantic state channel."""
+        spec = IntentSpec(
+            intent=IntentType.DATA_QUESTION,
+            confidence=0.93,
+            normalized_question="只看华南",
+            inherited_context={"measures": ["销售额"]},  # type: ignore[arg-type]
+        )
+
+        assert spec.inherited_context is None
+
+    def test_structured_detected_time_is_ignored(self):
+        spec = IntentSpec(
+            intent=IntentType.DATA_QUESTION,
+            confidence=0.93,
+            normalized_question="改成今年",
+            detected_time_range={  # type: ignore[arg-type]
+                "date_field": "InventedDate",
+                "mode": "current_year",
+            },
+        )
+
+        assert spec.detected_time_range is None
+
 
 class TestIntentSpecCrossField:
     """跨字段一致性规则测试"""

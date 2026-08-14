@@ -11,6 +11,8 @@ from typing import Any, Optional
 
 from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
 from backend.app.schemas.data_contracts import (
+    ColumnMembersRequest,
+    ColumnMembersResult,
     DAXRequest,
     PowerBIError,
     QueryResult,
@@ -34,6 +36,12 @@ class MockPowerBIAdapter(PowerBIAdapter):
         self._delay = delay
         self._schemas: dict[str, dict[str, Any]] = {}
         self._query_results: dict[str, dict[str, Any]] = {}
+        self._member_values: dict[tuple[str, str, str], list[Any]] = {
+            ("mock_sales_model", "Sales", "Region"): ["华南", "华北", "华东"],
+            ("mock_sales_model", "Sales", "ProductCategory"): [
+                "Electronics", "Furniture"
+            ],
+        }
         self._loaded = False
         self._load()
 
@@ -113,6 +121,21 @@ class MockPowerBIAdapter(PowerBIAdapter):
         result.request_id = request.request_id or result.request_id
         result.semantic_model_key = request.semantic_model_key
         return result
+
+    async def get_column_members(
+        self, request: ColumnMembersRequest
+    ) -> ColumnMembersResult:
+        values = self._member_values.get(
+            (request.semantic_model_key, request.table_name, request.field_name), []
+        )
+        return ColumnMembersResult(
+            semantic_model_key=request.semantic_model_key,
+            table_name=request.table_name,
+            field_name=request.field_name,
+            values=values[:request.limit],
+            truncated=len(values) > request.limit,
+            source_mode="mock",
+        )
 
     async def execute_fixture(self, dax_request: DAXRequest, fixture_key: str) -> QueryResult:
         """内部方法：以指定 fixture_key 执行 Mock DAX 查询

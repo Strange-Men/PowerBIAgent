@@ -173,11 +173,16 @@ class DeepSeekQueryPlanService:
                 "QueryPlan 生成失败"
             ) from e
 
-        # 4. Schema 验证（首次生成或格式修复后）
+        # 4. Schema 验证（首次生成或格式修复后）。Real Semantic Grounding
+        # 路径中的 QueryPlan 只是语言草稿；canonical slots 会在 catalog/member
+        # grounding 与 deterministic merge 后统一执行严格 Layer2。
+        if enforce_semantic_grounding:
+            return plan.model_copy(update={"semantic_model_key": effective_model_key})
+
         val_result = validation.validate_query_plan(
             plan,
             schema,
-            enforce_semantic_grounding=enforce_semantic_grounding,
+            enforce_semantic_grounding=False,
         )
         if not val_result.is_valid:
             if repair_used:
@@ -215,7 +220,7 @@ class DeepSeekQueryPlanService:
             val_result = validation.validate_query_plan(
                 plan,
                 schema,
-                enforce_semantic_grounding=enforce_semantic_grounding,
+                enforce_semantic_grounding=False,
             )
             if not val_result.is_valid:
                 raise QueryPlanError(

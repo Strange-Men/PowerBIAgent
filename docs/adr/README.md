@@ -30,6 +30,7 @@
 | ADR-005 | [确定性 TurnPipeline 与受控 LLM 调用架构](ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md) | accepted | 2026-08-04 |
 | ADR-006 | [真实 Power BI Remote MCP 生产接入架构](ADR-006_remote_powerbi_mcp_production_integration.md) | accepted | 2026-08-11 |
 | ADR-007 | [Demo 阶段使用 Local Power BI MCP 验证真实流程](ADR-007_local_mcp_demo_validation_path.md) | accepted | 2026-08-11 |
+| ADR-008 | [Business Semantic Catalog and Grounding Authority](ADR-008_business_semantic_catalog_and_grounding_authority.md) | accepted | 2026-08-13 |
 
 ## ADR 详情
 
@@ -59,10 +60,14 @@ Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code�
 
 正式正文见 [ADR-007 独立文件](ADR-007_local_mcp_demo_validation_path.md)。管理员前置条件暂不可得时，Demo 先通过 Local MCP + Power BI Desktop 验证真实链路；ADR-006 Remote 生产化方案保持 accepted，Local / Remote 只替换 Adapter 后的 Provider。
 
+### ADR-008 — Business Semantic Catalog and Grounding Authority
+
+正式正文见 [ADR-008 独立文件](ADR-008_business_semantic_catalog_and_grounding_authority.md)。核心决策：runtime schema + model-scoped glossary + runtime members + deterministic time rules 是业务语义 Source of Truth；Grounding 是 canonical semantic authority；StateTransition 只负责确定性状态变化；Intent 与 QueryPlan LLM 不拥有 canonical business truth。
+
 ### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面
 
 Execution、Tooling、Context、Lifecycle、Observability、Verification、Governance 七层职责。无 Docker/LangGraph/OpenTelemetry。
 
 ---
 
-*最后更新：2026-08-11 | M2.1 ADR-007 Local Demo 路径决策*
+*最后更新：2026-08-13 | M2.6.2 ADR-008 Business Semantic Grounding 决策*

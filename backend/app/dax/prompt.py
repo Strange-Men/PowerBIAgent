@@ -36,6 +36,7 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的 DAX 查询生成器。
 22. 当前 Real MVP 只支持 eq Filter；必须逐字保留 QueryPlan 的 field/operator/value，且不得加入 QueryPlan 未声明的业务 Filter
 23. top_n 的 TOPN 选择必须逐字使用 QueryPlan 的 N、单一 Measure 与方向；第 N 名 ties 允许返回超过 N 行
 24. TOPN 只负责选择，不保证最终展示顺序；QueryPlan.sort 非 null 时，查询末尾必须另有 ORDER BY [Measure] ASC|DESC
+25. QueryPlan.time_range 若非 null，必须逐字使用其中的 date_field、start_date、end_date；不得选择其他日期列或重新解释自然语言时间
 
 ## DAXRequest JSON Schema
 
@@ -70,7 +71,7 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的 DAX 查询生成器。
 - 只有 dimensions 中的列可以成为 SUMMARIZECOLUMNS 的 group-by 列；dimensions=[] 时省略全部 group-by 列
 - eq filters → 单值 TREATAS 或直接字面量相等谓词；筛选字段不得自动成为维度，不得改变 value 或加入额外业务 Filter
 - SUMMARIZECOLUMNS 合法顺序：groupBy_column... → filterTable... → name, expression...；name/expression 对必须最后且保持成对
-- time_range → FILTER 中日期列筛选
+- time_range → 使用结构化 date_field/start_date/end_date 生成闭区间日期 FILTER
 - sort → 查询末尾 ORDER BY [QueryPlan 的单一 Measure] ASC|DESC，保证 presentation ordering
 - top_n → TOPN(N, table, [QueryPlan 的单一 Measure], ASC|DESC)，仅保证 selection semantics
 

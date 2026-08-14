@@ -243,7 +243,10 @@ class DeepSeekDAXService:
             ]
             parts.append(f"筛选条件：{'; '.join(filter_strs)}")
         if plan.time_range:
-            parts.append(f"时间范围：{plan.time_range}")
+            if hasattr(plan.time_range, "model_dump_json"):
+                parts.append(f"结构化时间范围：{plan.time_range.model_dump_json()}")
+            else:
+                parts.append(f"时间范围：{plan.time_range}")
         if plan.sort:
             parts.append(f"排序：{plan.sort}")
         if plan.top_n:

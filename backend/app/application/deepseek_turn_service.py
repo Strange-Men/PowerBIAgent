@@ -36,6 +36,7 @@ from backend.app.harness.runtime.tool_gateway import (
 )
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
 from backend.app.harness.tool_registry import (
+    TOOL_NAME_MEMBERS,
     SchemaInput,
     TOOL_NAME_DAX,
     TOOL_NAME_RENDER,
@@ -55,6 +56,18 @@ from backend.app.memory.repository import (
 )
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.query_plan.deepseek_service import DeepSeekQueryPlanService
+from backend.app.query_plan.grounding import (
+    BoundedLLMObjectSelector,
+    GroundingStatus,
+    ObjectGrounder,
+    SemanticGroundingService,
+)
+from backend.app.query_plan.semantic_catalog import (
+    GlossaryCatalogError,
+    SemanticCatalogBuilder,
+    SemanticObjectType,
+)
+from backend.app.query_plan.state_transition import StateTransitionService
 from backend.app.dax.deepseek_service import DeepSeekDAXService
 from backend.app.dax.safety import DAXSafetyValidator
 from backend.app.answer.deepseek_service import DeepSeekAnswerService
@@ -62,6 +75,8 @@ from backend.app.report.deepseek_spec_service import DeepSeekReportSpecService
 from backend.app.report.mock import MockReportRenderer
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
+    ColumnMembersRequest,
+    ColumnMembersResult,
     DAXRequest,
     QueryPlan,
     QueryResult,
@@ -217,19 +232,8 @@ class DeepSeekTurnService:
         trace.record("intent_classified", trace_id=trace_id, request_id=effective_req_id,
                      data_summary={"intent": intent.intent.value})
 
-        # ── 4. clarification / unsupported 早期终止 ──
-        if intent.intent == IntentType.CLARIFICATION:
-            trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
-                        data_summary={"terminal_state": "clarification_required"})
-            return self._build_result(
-                effective_req_id, effective_conv_id, "clarification_required",
-                intent=intent.intent.value, response_type="clarification",
-                clarification_question=intent.clarification_question,
-                trace=trace, trace_id=trace_id, is_mock=False,
-                source_mode=self._source_mode,
-                collector=collector,
-            )
-
+        # ── 4. unsupported 早期终止；Real clarification 允许 authoritative
+        # Catalog 复核一次。Intent 不是 canonical semantic authority。
         if intent.intent == IntentType.UNSUPPORTED:
             trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
                         data_summary={"terminal_state": "unsupported"})
@@ -237,6 +241,87 @@ class DeepSeekTurnService:
                 effective_req_id, effective_conv_id, "unsupported",
                 intent=intent.intent.value, response_type="unsupported",
                 unsupported_reason=intent.unsupported_reason,
+                trace=trace, trace_id=trace_id, is_mock=False,
+                source_mode=self._source_mode,
+                collector=collector,
+            )
+
+        schema: SemanticModelSchema | None = None
+        exec_ctx: Any = None
+        controller_prepared = False
+        if intent.intent == IntentType.CLARIFICATION and not self.powerbi.is_mock:
+            controller.transition(TurnState.INTENT_CLASSIFIED)
+            controller.record_intent_valid()
+            controller.transition(TurnState.PLAN_READY)
+            controller_prepared = True
+            exec_ctx = self.pipeline.create_tool_context(
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                conversation_id=effective_conv_id,
+                runtime_mode=runtime_mode,
+                intent=IntentType.DATA_QUESTION,
+                user=self._user_context,
+            )
+            try:
+                schema = await self.tool_gateway.execute(
+                    TOOL_NAME_SCHEMA,
+                    exec_ctx,
+                    SchemaInput(semantic_model_key=semantic_model_key),
+                    trace=trace,
+                    controller=controller,
+                )
+                catalog = SemanticCatalogBuilder().build(schema)
+                measure_review = ObjectGrounder(catalog).find_mentions(
+                    message, SemanticObjectType.MEASURE, "measure"
+                )
+            except GlossaryCatalogError as e:
+                controller.set_failure_reason(e.code)
+                controller.transition(TurnState.VALIDATION_FAILED)
+                return self._build_result(
+                    effective_req_id, effective_conv_id, "validation_failed",
+                    intent=intent.intent.value,
+                    error_type="semantic_catalog_invalid",
+                    trace=trace, trace_id=trace_id, is_mock=False,
+                    source_mode=self._source_mode, collector=collector,
+                )
+            except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
+                    ToolNotRegisteredError, ToolOutputValidationError) as e:
+                controller.set_failure_reason(str(e))
+                controller.transition(TurnState.TOOL_FAILED)
+                return self._build_result(
+                    effective_req_id, effective_conv_id, "tool_failed",
+                    intent=intent.intent.value, error_type=type(e).__name__,
+                    trace=trace, trace_id=trace_id, is_mock=False,
+                    source_mode=self._source_mode, collector=collector,
+                )
+            if (
+                measure_review.status == GroundingStatus.RESOLVED
+                and measure_review.canonical_object is not None
+            ):
+                intent = intent.model_copy(update={
+                    "intent": IntentType.DATA_QUESTION,
+                    "needs_clarification": False,
+                    "clarification_question": None,
+                    "detected_measures": [
+                        measure_review.canonical_object.canonical_name
+                    ],
+                })
+                trace.record(
+                    "intent_corrected_by_grounding",
+                    trace_id=trace_id,
+                    request_id=effective_req_id,
+                    data_summary={"authority": "semantic_catalog"},
+                )
+
+        if intent.intent == IntentType.CLARIFICATION:
+            if controller_prepared:
+                controller.transition(TurnState.CLARIFICATION_REQUIRED)
+            trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
+                        data_summary={"terminal_state": "clarification_required"})
+            return self._build_result(
+                effective_req_id, effective_conv_id, "clarification_required",
+                intent=intent.intent.value, response_type="clarification",
+                clarification_question=intent.clarification_question,
                 trace=trace, trace_id=trace_id, is_mock=False,
                 source_mode=self._source_mode,
                 collector=collector,
@@ -258,13 +343,16 @@ class DeepSeekTurnService:
         )
 
         # ── 6. TurnController — M1.6.3.1: 由 TurnPipeline 提供 ──
-        controller.transition(TurnState.INTENT_CLASSIFIED)
-        controller.record_intent_valid()
+        if not controller_prepared:
+            controller.transition(TurnState.INTENT_CLASSIFIED)
+            controller.record_intent_valid()
 
         # ── 7. 通过 ToolGateway 获取 Schema ──
-        controller.transition(TurnState.PLAN_READY)
+        if not controller_prepared:
+            controller.transition(TurnState.PLAN_READY)
         try:
-            exec_ctx = self.pipeline.create_tool_context(
+            if exec_ctx is None:
+                exec_ctx = self.pipeline.create_tool_context(
                 trace_id=trace_id,
                 request_id=effective_req_id,
                 conversation_id=effective_conv_id,
@@ -272,14 +360,15 @@ class DeepSeekTurnService:
                 intent=intent.intent,
                 user=self._user_context,
             )
-            schema_input = SchemaInput(semantic_model_key=semantic_model_key)
-            schema: SemanticModelSchema = await self.tool_gateway.execute(
-                TOOL_NAME_SCHEMA,
-                exec_ctx,
-                schema_input,
-                trace=trace,
-                controller=controller,
-            )
+            if schema is None:
+                schema_input = SchemaInput(semantic_model_key=semantic_model_key)
+                schema = await self.tool_gateway.execute(
+                    TOOL_NAME_SCHEMA,
+                    exec_ctx,
+                    schema_input,
+                    trace=trace,
+                    controller=controller,
+                )
         except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
                 ToolNotRegisteredError, ToolOutputValidationError) as e:
             return await self._fail_result(
@@ -308,6 +397,138 @@ class DeepSeekTurnService:
                 reason=str(e), stage="query_plan_generation", trace_id=trace_id,
                 collector=collector,
             )
+
+        # ── 8.1 Business Semantic Grounding ──
+        # QueryPlan LLM 在此仅是语言草稿；canonical semantic slots 只能由
+        # validated catalog + runtime members + deterministic transition 决定。
+        if not self.powerbi.is_mock:
+            try:
+                catalog = SemanticCatalogBuilder().build(schema)
+                grounding_service = SemanticGroundingService(
+                    catalog,
+                    selector=BoundedLLMObjectSelector(observed),
+                )
+
+                async def _member_lookup(
+                    field: Any, limit: int
+                ) -> ColumnMembersResult:
+                    return await self.tool_gateway.execute(
+                        TOOL_NAME_MEMBERS,
+                        exec_ctx,
+                        ColumnMembersRequest(
+                            semantic_model_key=semantic_model_key,
+                            table_name=field.table_name,
+                            field_name=field.canonical_name,
+                            limit=limit,
+                        ),
+                        trace=trace,
+                        controller=controller,
+                    )
+
+                grounding = await grounding_service.ground(
+                    message,
+                    intent,
+                    query_plan,
+                    committed,
+                    _member_lookup,
+                )
+                if grounding.status != GroundingStatus.RESOLVED or grounding.delta is None:
+                    await self.pipeline.mark_memory_failed(
+                        effective_req_id,
+                        runtime_mode,
+                        reason=grounding.status.value,
+                        stage="semantic_grounding",
+                    )
+                    controller.set_failure_reason(grounding.status.value)
+                    controller.transition(TurnState.CLARIFICATION_REQUIRED)
+                    trace.record(
+                        "semantic_grounding_clarification",
+                        trace_id=trace_id,
+                        request_id=effective_req_id,
+                        data_summary={"status": grounding.status.value},
+                    )
+                    return self._build_result(
+                        effective_req_id,
+                        effective_conv_id,
+                        "clarification_required",
+                        intent=intent.intent.value,
+                        response_type="clarification",
+                        clarification_question=(
+                            grounding.clarification_question
+                            or "请明确要查询的业务对象。"
+                        ),
+                        trace=trace,
+                        trace_id=trace_id,
+                        is_mock=False,
+                        source_mode=self._source_mode,
+                        collector=collector,
+                    )
+                transition = StateTransitionService().merge(
+                    query_plan, grounding.delta, committed
+                )
+                query_plan = transition.query_plan
+                trace.record(
+                    "semantic_grounding_resolved",
+                    trace_id=trace_id,
+                    request_id=effective_req_id,
+                    data_summary={
+                        "authority": "semantic_catalog",
+                        "intent_disagreement_count": len(
+                            grounding.intent_disagreements
+                        ),
+                        "measure_transition": transition.transitions.measure.value,
+                        "dimension_transition": transition.transitions.dimension.value,
+                        "time_transition": transition.transitions.time.value,
+                        "sort_transition": transition.transitions.sort.value,
+                        "top_n_transition": transition.transitions.top_n.value,
+                        "filter_transitions": [
+                            item.value for item in transition.transitions.filters
+                        ],
+                    },
+                )
+            except GlossaryCatalogError as e:
+                return await self._fail_result(
+                    memory,
+                    effective_req_id,
+                    effective_conv_id,
+                    controller,
+                    trace,
+                    terminal_state=TurnState.VALIDATION_FAILED,
+                    error_type="semantic_catalog_invalid",
+                    reason=e.code,
+                    stage="semantic_catalog",
+                    trace_id=trace_id,
+                    collector=collector,
+                )
+            except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
+                    ToolNotRegisteredError, ToolOutputValidationError) as e:
+                return await self._fail_result(
+                    memory,
+                    effective_req_id,
+                    effective_conv_id,
+                    controller,
+                    trace,
+                    terminal_state=TurnState.TOOL_FAILED,
+                    error_type=type(e).__name__,
+                    reason=str(e),
+                    stage="member_grounding",
+                    trace_id=trace_id,
+                    collector=collector,
+                )
+            except Exception as e:
+                return await self._fail_result(
+                    memory,
+                    effective_req_id,
+                    effective_conv_id,
+                    controller,
+                    trace,
+                    terminal_state=TurnState.VALIDATION_FAILED,
+                    error_type="semantic_grounding_failed",
+                    reason=type(e).__name__,
+                    stage="semantic_grounding",
+                    trace_id=trace_id,
+                    collector=collector,
+                )
 
         # QueryPlan 验证
         plan_validation = self.validator.validate_query_plan(

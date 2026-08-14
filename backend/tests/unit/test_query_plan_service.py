@@ -715,6 +715,26 @@ class TestValidationServiceIntegration:
         assert "choices" not in msg.lower()
         assert len(msg) < 500
 
+    @pytest.mark.asyncio
+    async def test_real_grounding_draft_does_not_own_canonical_objects(self):
+        provider = FakeProvider(is_mock=False)
+        provider.enqueue_success(_make_plan(
+            semantic_model_key="llm-invented-model",
+            measures=["LLM Invented Measure"],
+            dimensions=["LLM Invented Dimension"],
+        ))
+        svc = _make_svc(provider)
+        draft = await svc.generate(
+            "销售额",
+            _make_intent(),
+            _make_schema(),
+            semantic_model_key="mock_sales_model",
+            enforce_semantic_grounding=True,
+        )
+        assert draft.semantic_model_key == "mock_sales_model"
+        assert draft.measures == ["LLM Invented Measure"]
+        assert len(provider.calls) == 1
+
 
 # ══════════════════════════════════════════════════════════════════
 # M1.4-A QueryPlan 模型 Key 权威性测试

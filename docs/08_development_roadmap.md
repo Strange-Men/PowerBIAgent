@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M2.6.1 Known-answer Oracle 与 Multi-turn Harness 离线固化完成；下一阶段 M2.6.2
+> **状态：** M2.6.2 Business Semantic Grounding Foundation 已通过 Semantic Real Gate
 > **更新频率：** 每轮结束时更新完成状态
 
 ---
@@ -55,7 +55,9 @@ M2 真实 Power BI MCP 与数据问答
   M2.5 真实全链路验收与封板候选                  ✅ 已完成
   M2.6 正确性契约与架构治理加固                  ✅ 已完成
   M2.6.1 Known-answer Oracle + Real Multi-turn   ✅ 已完成（离线固化）
-  M2.6.2 最终真实数值与多轮验收                  ⬜ 未开始
+  M2.6.2 Business Semantic Grounding Foundation  ✅ 已完成
+  M2.6.3 Deterministic DAX / Verified FactSet     ⬜ 未开始
+  M2.6.4 最终 hardened release gate               ⬜ 未开始
 
 MVP 功能阶段 (后续)
   M3 报表生成闭环                   ⬜
@@ -556,11 +558,15 @@ Real Filter 能力按真实性矩阵治理：`eq=SUPPORTED`，`ne/gt/gte/lt/lte/
 
 在 Harness/Test 层建立不依赖 LLM、当前 DAX、Answer 或 Actual QueryResult 反向生成 Expected 的独立 Oracle，支持 scalar/grouped/ordered 与 TopN ties，并以严格显式 numeric tolerance 比较。固化 8 个 Known-answer Case（2 个 holdout）、6 个 Conversation / 15 Turn 及唯一离线 Runner；通过正式 Chat API 的 Fake/Mock 路径验证 Filter refinement、Dimension switch、Filter replacement、Metric switch、Clarification、失败 Turn Memory 完整性与严格 all-turn PASS 评分。真实 baseline 仅允许 local-only；本轮真实 DeepSeek、Local MCP、Desktop 调用均为 0。
 
-### M2.6.2｜最终真实数值与多轮验收
+### M2.6.2｜Business Semantic Grounding Foundation
 
-**状态：** ⬜ 未开始。DeepSeek + Local MCP + Desktop 的最终真实数值与多轮验收，以及 M0—M2 hardened 最终封板，只属于本阶段。
+**状态：** ✅ 已完成。
 
-**下一阶段：** M2.6.2；只执行 DeepSeek + Local MCP + Desktop 的真实数值/多轮最终验收与 M0—M2 hardened 封板，不得提前实施 M3。
+已按 ADR-008 建立 model-scoped Business Glossary、runtime object/member grounding、结构化 TimeRange、semantic slot `NOT_MENTIONED / RESOLVED / AMBIGUOUS / UNRESOLVED / EXPLICIT_CLEAR` 契约及 deterministic StateTransition。Intent/QueryPlan LLM 只保留语言 weak signal；Grounding + StateTransition 是 Canonical QueryPlan semantic slots 的唯一 authority。Real member lookup 只经 ToolGateway → PowerBIAdapter，且 read-only、bounded、失败不回退 Mock。
+
+验收边界固定为 `Natural Language → Canonical QueryPlan → Layer 2`。DeepSeek + Local MCP + Desktop 的 Real Semantic Matrix 已覆盖 Measure、Dimension、Filter Field、runtime member、TimeRange、TopN/Sort、多轮 KEEP/REPLACE/CLEAR、歧义与失败无污染；fresh `a1 → a2 → a3` semantic regression 5/5，`source_mode=real`、Real→Mock fallback=0。DAX 偶发加入未计划的 Filter group-by 或无法验证结构化时间 filter 时仍由 Layer 3 fail-closed，属于 M2.6.3 downstream entry condition，不计入 M2.6.2 semantic correctness。
+
+**后续边界：** M2.6.3 才收口 Deterministic DAX Builder / Verified FactSet；M2.6.4 才执行 10/10 stability、完整 Blind release gate 与 hardened seal。不得提前实施 M3。
 
 ---
 

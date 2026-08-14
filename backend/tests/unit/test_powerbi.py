@@ -34,6 +34,7 @@ from backend.app.powerbi.local_mcp import (
 )
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.schemas.data_contracts import (
+    ColumnMembersRequest,
     DAXRequest,
     SemanticModelSchema,
     UserContext,
@@ -809,6 +810,60 @@ class TestLocalMCPPowerBIAdapter:
         assert client.dax_calls == 1
 
     @pytest.mark.asyncio
+    async def test_bounded_member_lookup_is_adapter_owned_and_real(self):
+        request = ColumnMembersRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            table_name="Products",
+            field_name="Category",
+            limit=2,
+        )
+        payload = {
+            "success": True,
+            "operation": "Execute",
+            "data": {
+                "success": True,
+                "rowCount": 3,
+                "columns": [{"name": "[MemberValue]", "ordinal": 0}],
+                "rows": [
+                    {"[MemberValue]": "A"},
+                    {"[MemberValue]": "B"},
+                    {"[MemberValue]": "C"},
+                ],
+            },
+        }
+        client = FakeLocalMCPClient(
+            schema_snapshot=_schema_snapshot(),
+            dax_snapshot=_dax_snapshot(payload),
+        )
+        result = await _local_adapter(client).get_column_members(request)
+
+        assert result.values == ["A", "B"]
+        assert result.truncated is True
+        assert result.source_mode == "real"
+        assert client.schema_calls == 1
+        assert client.dax_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_member_lookup_rejects_unbounded_or_unknown_field_before_dax(self):
+        with pytest.raises(ValueError):
+            ColumnMembersRequest(
+                semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+                table_name="Products",
+                field_name="Category",
+                limit=201,
+            )
+
+        client = FakeLocalMCPClient(schema_snapshot=_schema_snapshot())
+        with pytest.raises(PowerBIAdapterError, match="visible runtime column"):
+            await _local_adapter(client).get_column_members(ColumnMembersRequest(
+                semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+                table_name="Products",
+                field_name="Unknown",
+                limit=10,
+            ))
+        assert client.dax_calls == 0
+
+    @pytest.mark.asyncio
     async def test_execute_dax_maps_empty_and_truncated_results(self):
         empty_request = DAXRequest(
             semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
@@ -1064,6 +1119,7 @@ class TestLocalMCPPowerBIAdapter:
         assert client.dax_calls == 1
         assert gateway.list_tools() == [
             "get_semantic_model_schema",
+            "get_column_members",
             "execute_dax",
             "render_report",
         ]

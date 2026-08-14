@@ -11,6 +11,7 @@ from typing import Any, Mapping, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from backend.app.intent.models import FilterSpec
+from backend.app.schemas.data_contracts import TimeRangeSpec
 
 
 class IntentContextSnapshot(BaseModel):
@@ -26,7 +27,9 @@ class IntentContextSnapshot(BaseModel):
     measures: list[str] = Field(default_factory=list, description="已提交的指标列表")
     dimensions: list[str] = Field(default_factory=list, description="已提交的维度列表")
     filters: list[FilterSpec] = Field(default_factory=list, description="已提交的筛选条件")
-    time_range: Optional[str] = Field(default=None, description="已提交的时间范围")
+    time_range: Optional[TimeRangeSpec | str] = Field(
+        default=None, description="已提交的时间范围"
+    )
     clarification_pending: bool = Field(default=False, description="是否待澄清")
     clarification_question: Optional[str] = Field(default=None, description="待澄清问题")
 
@@ -42,7 +45,7 @@ class IntentContextSnapshot(BaseModel):
         object.__setattr__(self, "dimensions", [d for d in self.dimensions if d.strip()])
         if self.current_intent is not None:
             object.__setattr__(self, "current_intent", self.current_intent.strip() or None)
-        if self.time_range is not None:
+        if isinstance(self.time_range, str):
             object.__setattr__(self, "time_range", self.time_range.strip() or None)
         return self
 

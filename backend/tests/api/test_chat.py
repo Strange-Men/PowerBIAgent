@@ -979,7 +979,11 @@ class _M24FakeLocalPowerBIAdapter(PowerBIAdapter):
             key="local_desktop_model",
             tables=[TableSchema(
                 name="Sales",
-                columns=[ColumnSchema(name="Category", data_type="string")],
+                columns=[
+                    ColumnSchema(name="Category", data_type="string"),
+                    ColumnSchema(name="Product", data_type="string"),
+                    ColumnSchema(name="OrderDate", data_type="datetime"),
+                ],
                 measures=[
                     MeasureSchema(name="Total Sales", data_type="decimal"),
                     MeasureSchema(name="Total Quantity", data_type="int64"),
@@ -1144,6 +1148,7 @@ class _M25BusinessGoldenAdapter(_M24FakeLocalPowerBIAdapter):
                 columns=[
                     ColumnSchema(name="Category", data_type="string"),
                     ColumnSchema(name="Product", data_type="string"),
+                    ColumnSchema(name="OrderDate", data_type="datetime"),
                 ],
                 measures=[
                     MeasureSchema(name="Total Sales", data_type="decimal"),
@@ -1213,6 +1218,55 @@ def _patch_m24_local_composition(monkeypatch, adapter_type):
 
 
 class TestM24DeepSeekLocalChat:
+    @pytest.mark.asyncio
+    async def test_catalog_alias_can_correct_intent_clarification(self, monkeypatch):
+        class ClarifyingProvider(_M24ScriptedDeepSeekProvider):
+            async def generate(self, request, output_type):
+                if request.task == LLMTask.INTENT_RECOGNITION:
+                    self.calls.append(request)
+                    return LLMResponse(
+                        content="{}",
+                        structured=IntentSpec(
+                            intent=IntentType.CLARIFICATION,
+                            confidence=0.7,
+                            normalized_question="销售额是多少？",
+                            needs_clarification=True,
+                            clarification_question="请明确指标。",
+                        ),
+                        model="fake-deepseek",
+                    )
+                return await super().generate(request, output_type)
+
+        import backend.app.llm.factory as llm_factory
+        import backend.app.main as main_module
+
+        provider = ClarifyingProvider()
+        registry = LLMProviderRegistry()
+        registry.register("deepseek", provider, set_default=True)
+        monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+        monkeypatch.setattr(main_module, "LocalMCPPowerBIAdapter", _M24FakeLocalPowerBIAdapter)
+        app = main_module.create_app(settings=Settings(
+            _env_file=None,
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.LOCAL_MCP,
+            deepseek_api_key="test-key-not-real",
+        ))
+
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": "销售额是多少？",
+                    "request_id": "intent-grounding-correction",
+                })
+        body = response.json()
+        assert body["terminal_state"] == "completed"
+        assert body["intent"] == "data_question"
+        assert body["tool_sequence"] == [
+            "get_semantic_model_schema", "execute_dax"
+        ]
+
     @pytest.mark.asyncio
     async def test_local_chat_and_replay_use_one_pipeline_without_reexecution(self, monkeypatch):
         app, provider = _patch_m24_local_composition(

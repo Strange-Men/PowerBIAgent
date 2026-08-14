@@ -110,6 +110,25 @@ class IntentSpec(BaseModel):
             raise ValueError("normalized_question must not be blank or whitespace-only")
         return v
 
+    @field_validator("inherited_context", mode="before")
+    @classmethod
+    def ignore_structured_inherited_context(cls, value: Any) -> Any:
+        """Keep LLM-owned inheritance diagnostics out of semantic state.
+
+        Some providers describe the supplied committed context as an object even
+        though this field is only an optional display summary.  Authoritative
+        inheritance is loaded independently from committed Memory, so accepting
+        that object as state would create a second semantic authority.  Ignore
+        non-string diagnostics deterministically instead.
+        """
+        return value if value is None or isinstance(value, str) else None
+
+    @field_validator("detected_time_range", mode="before")
+    @classmethod
+    def ignore_structured_detected_time_range(cls, value: Any) -> Any:
+        """Intent time output is diagnostic, never the canonical time contract."""
+        return value if value is None or isinstance(value, str) else None
+
     model_config = {"extra": "forbid"}
 
     @model_validator(mode="after")

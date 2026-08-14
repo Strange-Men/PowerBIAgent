@@ -239,6 +239,18 @@ class TestTurnController:
         ctrl.transition(TurnState.RESPONSE_READY)
         assert ctrl.can_commit_memory
 
+    def test_post_query_dax_validation_can_fail_closed(self):
+        ctrl = TurnController(HarnessConfig())
+        ctrl.transition(TurnState.CONTEXT_READY)
+        ctrl.transition(TurnState.INTENT_CLASSIFIED)
+        ctrl.transition(TurnState.PLAN_READY)
+        ctrl.transition(TurnState.QUERY_VALIDATED)
+
+        ctrl.transition(TurnState.VALIDATION_FAILED)
+
+        assert ctrl.is_terminal
+        assert not ctrl.can_commit_memory
+
     def test_build_commit_evidence(self):
         ctrl = TurnController(HarnessConfig())
         ctrl.record_intent_valid()

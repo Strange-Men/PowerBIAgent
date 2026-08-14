@@ -153,7 +153,7 @@ class TestTurnPipelineShared:
         )
         deepseek_tools = set(deepseek_svc.tool_gateway.list_tools())
 
-        # 两者都必须包含相同的三个白名单工具
+        # 两者都必须包含相同的四个白名单工具
         assert mock_tools == set(DEFAULT_TOOL_NAMES)
         assert deepseek_tools == set(DEFAULT_TOOL_NAMES)
         assert mock_tools == deepseek_tools

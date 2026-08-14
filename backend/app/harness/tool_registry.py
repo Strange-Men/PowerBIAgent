@@ -1,6 +1,7 @@
 """共享默认工具注册入口 — M1.6.2
 
-集中注册三个白名单工具：get_semantic_model_schema、execute_dax、render_report。
+集中注册四个白名单工具：get_semantic_model_schema、get_column_members、
+execute_dax、render_report。
 工具超时和重试次数从 HarnessConfig 读取，不再写死。
 MockTurnService 和 DeepSeekTurnService 统一使用此入口。
 """
@@ -15,6 +16,8 @@ from backend.app.harness.runtime.tool_gateway import ToolGateway, ToolSpec
 from backend.app.intent.models import IntentType
 from backend.app.memory.models import RuntimeDataMode
 from backend.app.schemas.data_contracts import (
+    ColumnMembersRequest,
+    ColumnMembersResult,
     DAXRequest,
     QueryResult,
     RenderedReport,
@@ -28,12 +31,18 @@ class SchemaInput(BaseModel):
     semantic_model_key: str = "mock_sales_model"
 
 
-# ── 三个白名单工具名称 ──
+# ── 四个白名单工具名称 ──
 TOOL_NAME_SCHEMA = "get_semantic_model_schema"
+TOOL_NAME_MEMBERS = "get_column_members"
 TOOL_NAME_DAX = "execute_dax"
 TOOL_NAME_RENDER = "render_report"
 
-DEFAULT_TOOL_NAMES = [TOOL_NAME_SCHEMA, TOOL_NAME_DAX, TOOL_NAME_RENDER]
+DEFAULT_TOOL_NAMES = [
+    TOOL_NAME_SCHEMA,
+    TOOL_NAME_MEMBERS,
+    TOOL_NAME_DAX,
+    TOOL_NAME_RENDER,
+]
 
 
 def register_default_tools(
@@ -42,7 +51,7 @@ def register_default_tools(
     report_renderer: Any,
     config: HarnessConfig,
 ) -> None:
-    """向 ToolGateway 注册三个标准白名单工具
+    """向 ToolGateway 注册四个标准白名单工具
 
     Args:
         gateway: 要注册工具的 ToolGateway 实例
@@ -70,7 +79,28 @@ def register_default_tools(
         handler=_get_schema,
     ))
 
-    # ── 2. execute_dax ──
+    # ── 2. get_column_members ──
+    get_members = powerbi_adapter.get_column_members
+
+    async def _get_members(
+        input_data: ColumnMembersRequest,
+    ) -> ColumnMembersResult:
+        return await get_members(input_data)
+
+    gateway.register(ToolSpec(
+        name=TOOL_NAME_MEMBERS,
+        description="读取 Power BI 字段的有界成员值",
+        input_model=ColumnMembersRequest,
+        output_model=ColumnMembersResult,
+        timeout_seconds=float(config.powerbi_query_timeout_seconds),
+        max_retries=config.max_powerbi_retries,
+        read_only=True,
+        allowed_intents=[IntentType.DATA_QUESTION, IntentType.REPORT_GENERATION],
+        supported_modes=[RuntimeDataMode.MOCK, RuntimeDataMode.REAL],
+        handler=_get_members,
+    ))
+
+    # ── 3. execute_dax ──
     execute_dax_fn = powerbi_adapter.execute_dax
 
     async def _execute_dax(input_data: DAXRequest) -> QueryResult:
@@ -89,7 +119,7 @@ def register_default_tools(
         handler=_execute_dax,
     ))
 
-    # ── 3. render_report ──
+    # ── 4. render_report ──
     render_fn = report_renderer.render
 
     async def _render_report(input_data: ReportSpec) -> RenderedReport:
@@ -120,7 +150,7 @@ def create_default_tool_gateway(
     report_renderer: Any,
     config: HarnessConfig,
 ) -> ToolGateway:
-    """创建并返回已注册三个白名单工具的 ToolGateway
+    """创建并返回已注册四个白名单工具的 ToolGateway
 
     这是 MockTurnService 获取 ToolGateway 的首选方式。
     """

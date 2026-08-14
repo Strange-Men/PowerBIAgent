@@ -24,6 +24,8 @@ from pydantic import ValidationError
 
 from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
 from backend.app.schemas.data_contracts import (
+    ColumnMembersRequest,
+    ColumnMembersResult,
     DAXRequest,
     ColumnSchema,
     HierarchySchema,
@@ -1302,6 +1304,73 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
             "dax_execute_failed",
         ))
         return self._query_error_result(request, error)
+
+    async def get_column_members(
+        self, request: ColumnMembersRequest
+    ) -> ColumnMembersResult:
+        """Execute one adapter-owned, bounded, read-only distinct-member DAX."""
+        if request.semantic_model_key != self._semantic_model_key:
+            raise PowerBIAdapterError(
+                "Semantic model key is not configured for Local MCP",
+                provider=self.PROVIDER_NAME,
+                error_type=LocalMCPErrorCategory.DAX_ERROR.value,
+            )
+        schema = await self.get_semantic_model_schema(request.semantic_model_key)
+        table = next(
+            (
+                item for item in schema.tables
+                if item.name == request.table_name
+                and not item.is_hidden
+                and not item.is_system_managed
+            ),
+            None,
+        )
+        if table is None or not any(
+            item.name == request.field_name and not item.is_hidden
+            for item in table.columns
+        ):
+            raise PowerBIAdapterError(
+                "Member lookup field is not a visible runtime column",
+                provider=self.PROVIDER_NAME,
+                error_type=LocalMCPErrorCategory.DAX_ERROR.value,
+            )
+
+        table_name = request.table_name.replace("'", "''")
+        field_name = request.field_name.replace("]", "]]")
+        dax_request = DAXRequest(
+            semantic_model_key=request.semantic_model_key,
+            dax=(
+                f"EVALUATE TOPN({request.limit + 1}, "
+                f"DISTINCT(SELECTCOLUMNS('{table_name}', "
+                f'\"MemberValue\", \'{table_name}\'[{field_name}])), '
+                f"[MemberValue], ASC)"
+            ),
+            max_rows=request.limit + 1,
+            timeout_seconds=min(int(self._timeout), 300),
+        )
+        query_result = await self.execute_dax(dax_request)
+        if query_result.error is not None:
+            raise PowerBIAdapterError(
+                "Local MCP bounded member lookup failed",
+                provider=self.PROVIDER_NAME,
+                retryable=query_result.error.retryable,
+                error_type=query_result.error.type,
+            )
+        if len(query_result.columns) != 1:
+            raise PowerBIAdapterError(
+                "Local MCP bounded member lookup returned an invalid shape",
+                provider=self.PROVIDER_NAME,
+                error_type=LocalMCPErrorCategory.DAX_MALFORMED_RESPONSE.value,
+            )
+        raw_values = [row[0] for row in query_result.rows]
+        return ColumnMembersResult(
+            semantic_model_key=request.semantic_model_key,
+            table_name=request.table_name,
+            field_name=request.field_name,
+            values=raw_values[:request.limit],
+            truncated=len(raw_values) > request.limit,
+            source_mode="real",
+        )
 
     async def normalize_result(self, raw: object) -> QueryResult:
         if not isinstance(raw, LocalMCPDAXSnapshot):

@@ -4,7 +4,7 @@
 UserContext、SemanticModelSchema、PowerBIError 等。
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Any, Literal, Optional
 
@@ -49,6 +49,35 @@ class StructuredFilter(BaseModel):
     field: str = Field(..., min_length=1)
     operator: FilterOperator = Field(default=FilterOperator.EQ)
     value: Any = Field(...)  # 允许数字、布尔、日期字符串和文本
+
+
+class TimeRangeMode(str, Enum):
+    """可确定解释的时间范围模式。"""
+
+    CURRENT_MONTH = "current_month"
+    CURRENT_YEAR = "current_year"
+    RECENT_MONTHS = "recent_months"
+    EXPLICIT_RANGE = "explicit_range"
+
+
+class TimeRangeSpec(BaseModel):
+    """已绑定 runtime 日期列的结构化时间范围。"""
+
+    date_field: str = Field(..., min_length=1)
+    start_date: date
+    end_date: date
+    mode: TimeRangeMode
+    grain: Literal["day", "month", "year"] = "day"
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "TimeRangeSpec":
+        if self.start_date > self.end_date:
+            raise ValueError("time range start_date must not exceed end_date")
+        return self
+
+    def to_context_text(self) -> str:
+        """Stable JSON text for legacy downstream prompt-context contracts."""
+        return self.model_dump_json()
 
 
 # =============================================================================
@@ -136,13 +165,43 @@ class QueryPlan(BaseModel):
     measures: list[str] = Field(default_factory=list)
     dimensions: list[str] = Field(default_factory=list)
     filters: list[StructuredFilter] = Field(default_factory=list)
-    time_range: Optional[str] = None
+    # QueryPlan 仍是 LLM 语言草稿契约，因此暂时兼容旧字符串输入；Real
+    # 执行前必须转换为 CanonicalQueryPlan，后者只接受 TimeRangeSpec。
+    time_range: Optional[TimeRangeSpec | str] = None
     sort: Optional[Literal["asc", "desc"]] = None
     top_n: Optional[int] = Field(default=None, ge=1)
     comparison_mode: Optional[str] = None
     requested_template: Optional[str] = None
     inherited_context: Optional[str] = None
     is_mock: bool = False
+
+
+class CanonicalQueryPlan(QueryPlan):
+    """Grounding + StateTransition 唯一可产出的执行 QueryPlan。"""
+
+    time_range: Optional[TimeRangeSpec] = None
+    comparison_mode: None = None
+    grounding_authority: Literal["semantic_catalog"] = "semantic_catalog"
+
+
+class ColumnMembersRequest(BaseModel):
+    """经 ToolGateway 执行的有界只读成员查询。"""
+
+    semantic_model_key: str = Field(..., min_length=1)
+    table_name: str = Field(..., min_length=1)
+    field_name: str = Field(..., min_length=1)
+    limit: int = Field(default=100, ge=1, le=200)
+
+
+class ColumnMembersResult(BaseModel):
+    """标准化列成员，不暴露底层 DAX 或 MCP 响应。"""
+
+    semantic_model_key: str
+    table_name: str
+    field_name: str
+    values: list[Any] = Field(default_factory=list)
+    truncated: bool = False
+    source_mode: Literal["mock", "real"] = "mock"
 
 
 # =============================================================================
@@ -291,5 +350,10 @@ class UserContext(BaseModel):
         default_factory=lambda: ["sales_weekly", "satisfaction", "operating_overview"]
     )
     allowed_tools: list[str] = Field(
-        default_factory=lambda: ["get_semantic_model_schema", "execute_dax", "render_report"]
+        default_factory=lambda: [
+            "get_semantic_model_schema",
+            "get_column_members",
+            "execute_dax",
+            "render_report",
+        ]
     )

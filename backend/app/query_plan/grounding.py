@@ -1,0 +1,979 @@
+"""Business object, member, time, and analysis grounding.
+
+This module may interpret language, but canonical identities can only be
+returned by mapping a bounded candidate ID back to the validated catalog or a
+member returned by the Power BI adapter boundary.
+"""
+
+from __future__ import annotations
+
+import calendar
+import re
+from collections.abc import Awaitable, Callable
+from datetime import date
+from enum import Enum
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from backend.app.intent.models import IntentSpec
+from backend.app.llm.base import LLMProvider, LLMRequest, LLMTask
+from backend.app.memory.models import StructuredWorkMemory
+from backend.app.query_plan.semantic_catalog import (
+    CatalogObject,
+    SemanticCatalog,
+    SemanticObjectType,
+    normalize_semantic_text,
+)
+from backend.app.schemas.data_contracts import (
+    ColumnMembersResult,
+    FilterOperator,
+    QueryPlan,
+    StructuredFilter,
+    TimeRangeMode,
+    TimeRangeSpec,
+)
+
+
+class GroundingStatus(str, Enum):
+    NOT_MENTIONED = "NOT_MENTIONED"
+    RESOLVED = "RESOLVED"
+    AMBIGUOUS = "AMBIGUOUS"
+    UNRESOLVED = "UNRESOLVED"
+    EXPLICIT_CLEAR = "EXPLICIT_CLEAR"
+    CONFIG_CONFLICT = "CONFIG_CONFLICT"
+
+
+class ObjectGroundingResult(BaseModel):
+    status: GroundingStatus
+    role: Literal["measure", "dimension", "filter_field", "date_field"]
+    phrase: str = ""
+    canonical_object: CatalogObject | None = None
+    candidate_ids: tuple[str, ...] = ()
+    method: str = ""
+
+    model_config = ConfigDict(frozen=True)
+
+
+class MemberGroundingResult(BaseModel):
+    status: GroundingStatus
+    field: CatalogObject
+    requested_value: Any
+    canonical_value: Any = None
+    method: str = ""
+
+    model_config = ConfigDict(frozen=True)
+
+
+class GroundedSemanticDelta(BaseModel):
+    measures: list[str] | None = None
+    dimensions: list[str] | None = None
+    filters: list[StructuredFilter] | None = None
+    remove_filter_fields: list[str] = Field(default_factory=list)
+    clear_filters: bool = False
+    time_range: TimeRangeSpec | None = None
+    time_specified: bool = False
+    clear_time: bool = False
+    sort: Literal["asc", "desc"] | None = None
+    sort_specified: bool = False
+    clear_sort: bool = False
+    top_n: int | None = Field(default=None, ge=1)
+    top_n_specified: bool = False
+    clear_top_n: bool = False
+
+
+class GroundingOutcome(BaseModel):
+    status: GroundingStatus
+    delta: GroundedSemanticDelta | None = None
+    object_results: list[ObjectGroundingResult] = Field(default_factory=list)
+    member_results: list[MemberGroundingResult] = Field(default_factory=list)
+    clarification_question: str | None = None
+    intent_disagreements: list[str] = Field(default_factory=list)
+
+
+class CandidateSelection(BaseModel):
+    outcome: Literal["RESOLVED", "AMBIGUOUS", "UNRESOLVED"]
+    candidate_id: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_selection(self) -> "CandidateSelection":
+        if self.outcome == "RESOLVED" and not self.candidate_id:
+            raise ValueError("RESOLVED selection requires candidate_id")
+        if self.outcome != "RESOLVED" and self.candidate_id is not None:
+            raise ValueError("non-resolved selection cannot include candidate_id")
+        return self
+
+
+class BoundedLLMObjectSelector:
+    """One-shot selection over code-owned candidate IDs."""
+
+    def __init__(self, provider: LLMProvider):
+        self._provider = provider
+
+    async def select(
+        self,
+        phrase: str,
+        user_input: str,
+        candidates: tuple[CatalogObject, ...],
+        committed_context: str = "",
+    ) -> ObjectGroundingResult:
+        candidate_lines = "\n".join(
+            f"- candidate_id={item.object_id}; canonical_name={item.canonical_name}; "
+            f"description={item.description or '（无）'}; aliases={list(item.aliases)}"
+            for item in candidates
+        )
+        messages = [{
+            "role": "system",
+            "content": (
+                "你只负责在给定候选中选择用户明确指向的一个对象。"
+                "不得生成对象名、DAX、QueryPlan 或业务定义。只输出一个 JSON 对象，"
+                "JSON 必须符合结构："
+                '{"outcome":"RESOLVED|AMBIGUOUS|UNRESOLVED",'
+                '"candidate_id":"候选ID或null"}。没有充分唯一依据时必须返回 '
+                "AMBIGUOUS 或 UNRESOLVED。"
+            ),
+        }, {
+            "role": "user",
+            "content": (
+                f"当前短语：{phrase}\n当前输入：{user_input}\n"
+                f"必要的已提交上下文：{committed_context or '（无）'}\n"
+                f"候选：\n{candidate_lines}"
+            ),
+        }]
+        response = await self._provider.generate(
+            LLMRequest(messages=messages, task=LLMTask.SEMANTIC_SELECTION),
+            CandidateSelection,
+        )
+        selection = response.structured
+        if not isinstance(selection, CandidateSelection):
+            return ObjectGroundingResult(
+                status=GroundingStatus.UNRESOLVED,
+                role="measure",
+                phrase=phrase,
+                method="bounded_llm_invalid",
+            )
+        candidate_map = {item.object_id: item for item in candidates}
+        if selection.outcome == "RESOLVED":
+            selected = candidate_map.get(selection.candidate_id or "")
+            if selected is None:
+                return ObjectGroundingResult(
+                    status=GroundingStatus.UNRESOLVED,
+                    role="measure",
+                    phrase=phrase,
+                    method="bounded_llm_unknown_candidate",
+                )
+            return ObjectGroundingResult(
+                status=GroundingStatus.RESOLVED,
+                role="measure",
+                phrase=phrase,
+                canonical_object=selected,
+                candidate_ids=tuple(candidate_map),
+                method="bounded_llm",
+            )
+        return ObjectGroundingResult(
+            status=GroundingStatus(selection.outcome),
+            role="measure",
+            phrase=phrase,
+            candidate_ids=tuple(candidate_map),
+            method="bounded_llm",
+        )
+
+
+class ObjectGrounder:
+    def __init__(
+        self,
+        catalog: SemanticCatalog,
+        selector: BoundedLLMObjectSelector | None = None,
+    ):
+        self.catalog = catalog
+        self.selector = selector
+
+    def resolve_phrase(
+        self,
+        phrase: str,
+        object_type: SemanticObjectType,
+        role: Literal["measure", "dimension", "filter_field", "date_field"],
+    ) -> ObjectGroundingResult:
+        normalized = normalize_semantic_text(phrase)
+        if not normalized:
+            return ObjectGroundingResult(
+                status=GroundingStatus.NOT_MENTIONED,
+                role=role,
+                phrase="",
+                method="empty_phrase",
+            )
+        objects = self.catalog.by_type(object_type)
+
+        canonical = [
+            obj for obj in objects
+            if normalize_semantic_text(obj.canonical_name) == normalized
+        ]
+        if len(canonical) == 1:
+            return self._resolved(role, phrase, canonical[0], "canonical_exact")
+        if len(canonical) > 1:
+            return self._ambiguous(role, phrase, canonical, "canonical_conflict")
+
+        conflict_ids = self.catalog.alias_conflicts.get(normalized)
+        if conflict_ids:
+            return ObjectGroundingResult(
+                status=GroundingStatus.CONFIG_CONFLICT,
+                role=role,
+                phrase=phrase,
+                candidate_ids=conflict_ids,
+                method="alias_conflict",
+            )
+        aliases = [
+            obj for obj in objects
+            if normalized in {normalize_semantic_text(alias) for alias in obj.aliases}
+        ]
+        if len(aliases) == 1:
+            return self._resolved(role, phrase, aliases[0], "alias_exact")
+        if len(aliases) > 1:
+            return self._ambiguous(role, phrase, aliases, "alias_conflict")
+
+        descriptions = [
+            obj for obj in objects
+            if obj.description
+            and normalize_semantic_text(obj.description) == normalized
+        ]
+        if len(descriptions) == 1:
+            return self._resolved(role, phrase, descriptions[0], "description_exact")
+        if len(descriptions) > 1:
+            return self._ambiguous(role, phrase, descriptions, "description_conflict")
+        return ObjectGroundingResult(
+            status=GroundingStatus.UNRESOLVED,
+            role=role,
+            phrase=phrase,
+            method="deterministic_no_match",
+        )
+
+    def find_mentions(
+        self,
+        text: str,
+        object_type: SemanticObjectType,
+        role: Literal["measure", "dimension", "filter_field", "date_field"],
+    ) -> ObjectGroundingResult:
+        normalized_text = normalize_semantic_text(text)
+        matched: dict[str, CatalogObject] = {}
+        conflict_ids: set[str] = set()
+        matched_terms: list[str] = []
+        for obj in self.catalog.by_type(object_type):
+            terms = (obj.canonical_name, *obj.aliases)
+            for term in terms:
+                normalized_term = normalize_semantic_text(term)
+                if normalized_term and normalized_term in normalized_text:
+                    conflict_ids.update(
+                        self.catalog.alias_conflicts.get(normalized_term, ())
+                    )
+                    matched[obj.object_id] = obj
+                    matched_terms.append(term)
+        if conflict_ids:
+            return ObjectGroundingResult(
+                status=GroundingStatus.CONFIG_CONFLICT,
+                role=role,
+                phrase=text,
+                candidate_ids=tuple(sorted(conflict_ids)),
+                method="mentioned_alias_conflict",
+            )
+        if len(matched) == 1:
+            return self._resolved(
+                role, ", ".join(matched_terms), next(iter(matched.values())),
+                "current_input_mention",
+            )
+        if len(matched) > 1:
+            return self._ambiguous(
+                role, text, tuple(matched.values()), "multiple_current_mentions"
+            )
+        return ObjectGroundingResult(
+            status=GroundingStatus.NOT_MENTIONED,
+            role=role,
+            phrase="",
+            method="no_current_mention",
+        )
+
+    async def select_bounded(
+        self,
+        phrase: str,
+        user_input: str,
+        object_type: SemanticObjectType,
+        role: Literal["measure", "dimension", "filter_field", "date_field"],
+        committed_context: str = "",
+    ) -> ObjectGroundingResult:
+        if self.selector is None:
+            return ObjectGroundingResult(
+                status=GroundingStatus.UNRESOLVED, role=role, phrase=phrase
+            )
+        result = await self.selector.select(
+            phrase, user_input, self.catalog.by_type(object_type), committed_context
+        )
+        return result.model_copy(update={"role": role})
+
+    @staticmethod
+    def _resolved(
+        role: Literal["measure", "dimension", "filter_field", "date_field"],
+        phrase: str,
+        obj: CatalogObject,
+        method: str,
+    ) -> ObjectGroundingResult:
+        return ObjectGroundingResult(
+            status=GroundingStatus.RESOLVED,
+            role=role,
+            phrase=phrase,
+            canonical_object=obj,
+            candidate_ids=(obj.object_id,),
+            method=method,
+        )
+
+    @staticmethod
+    def _ambiguous(
+        role: Literal["measure", "dimension", "filter_field", "date_field"],
+        phrase: str,
+        objects: tuple[CatalogObject, ...] | list[CatalogObject],
+        method: str,
+    ) -> ObjectGroundingResult:
+        return ObjectGroundingResult(
+            status=GroundingStatus.AMBIGUOUS,
+            role=role,
+            phrase=phrase,
+            candidate_ids=tuple(obj.object_id for obj in objects),
+            method=method,
+        )
+
+
+class MemberGrounder:
+    @staticmethod
+    def resolve(
+        field: CatalogObject,
+        requested_value: Any,
+        members: ColumnMembersResult,
+    ) -> MemberGroundingResult:
+        exact = [value for value in members.values if value == requested_value]
+        if len(exact) == 1:
+            return MemberGroundingResult(
+                status=GroundingStatus.RESOLVED,
+                field=field,
+                requested_value=requested_value,
+                canonical_value=exact[0],
+                method="runtime_exact",
+            )
+        if len(exact) > 1:
+            return MemberGroundingResult(
+                status=GroundingStatus.AMBIGUOUS,
+                field=field,
+                requested_value=requested_value,
+                method="runtime_duplicate_exact",
+            )
+        if isinstance(requested_value, str):
+            normalized = normalize_semantic_text(requested_value)
+            matches = [
+                value for value in members.values
+                if isinstance(value, str)
+                and normalize_semantic_text(value) == normalized
+            ]
+            if len(matches) == 1:
+                return MemberGroundingResult(
+                    status=GroundingStatus.RESOLVED,
+                    field=field,
+                    requested_value=requested_value,
+                    canonical_value=matches[0],
+                    method="runtime_normalized",
+                )
+            if len(matches) > 1:
+                return MemberGroundingResult(
+                    status=GroundingStatus.AMBIGUOUS,
+                    field=field,
+                    requested_value=requested_value,
+                    method="runtime_normalized_ambiguous",
+                )
+        return MemberGroundingResult(
+            status=GroundingStatus.UNRESOLVED,
+            field=field,
+            requested_value=requested_value,
+            method="runtime_no_match",
+        )
+
+
+class TimeGrounder:
+    _RECENT_MONTHS = re.compile(r"最近\s*(\d+)\s*个?月")
+    _ISO_DATE = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2})(?!\d)")
+
+    def __init__(self, today: Callable[[], date] = date.today):
+        self._today = today
+
+    def ground(
+        self, user_input: str, date_field: CatalogObject | None
+    ) -> TimeRangeSpec | None:
+        if date_field is None:
+            return None
+        today = self._today()
+        if "本月" in user_input:
+            return TimeRangeSpec(
+                date_field=date_field.canonical_name,
+                start_date=today.replace(day=1),
+                end_date=today.replace(
+                    day=calendar.monthrange(today.year, today.month)[1]
+                ),
+                mode=TimeRangeMode.CURRENT_MONTH,
+                grain="month",
+            )
+        if "今年" in user_input:
+            return TimeRangeSpec(
+                date_field=date_field.canonical_name,
+                start_date=date(today.year, 1, 1),
+                end_date=date(today.year, 12, 31),
+                mode=TimeRangeMode.CURRENT_YEAR,
+                grain="year",
+            )
+        recent = self._RECENT_MONTHS.search(user_input)
+        if recent:
+            count = int(recent.group(1))
+            if count < 1:
+                return None
+            month_index = today.year * 12 + today.month - count
+            start_year, zero_month = divmod(month_index, 12)
+            start_month = zero_month + 1
+            return TimeRangeSpec(
+                date_field=date_field.canonical_name,
+                start_date=date(start_year, start_month, 1),
+                end_date=today.replace(
+                    day=calendar.monthrange(today.year, today.month)[1]
+                ),
+                mode=TimeRangeMode.RECENT_MONTHS,
+                grain="month",
+            )
+        dates = self._ISO_DATE.findall(user_input)
+        if len(dates) == 2:
+            try:
+                start, end = (date.fromisoformat(item) for item in dates)
+                return TimeRangeSpec(
+                    date_field=date_field.canonical_name,
+                    start_date=start,
+                    end_date=end,
+                    mode=TimeRangeMode.EXPLICIT_RANGE,
+                )
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
+    def is_explicit(cls, user_input: str) -> bool:
+        return bool(
+            "本月" in user_input
+            or "今年" in user_input
+            or cls._RECENT_MONTHS.search(user_input)
+            or len(cls._ISO_DATE.findall(user_input)) == 2
+        )
+
+
+MemberLookup = Callable[[CatalogObject, int], Awaitable[ColumnMembersResult]]
+
+
+class SemanticGroundingService:
+    """Orchestrate grounding without owning Turn or Memory writes."""
+
+    _TOP_N = re.compile(r"(?:前|top\s*)(\d+)", re.IGNORECASE)
+
+    def __init__(
+        self,
+        catalog: SemanticCatalog,
+        *,
+        selector: BoundedLLMObjectSelector | None = None,
+        today: Callable[[], date] = date.today,
+    ):
+        self.catalog = catalog
+        self.objects = ObjectGrounder(catalog, selector)
+        self.time = TimeGrounder(today)
+
+    async def ground(
+        self,
+        user_input: str,
+        intent: IntentSpec,
+        draft: QueryPlan,
+        committed: StructuredWorkMemory | None,
+        member_lookup: MemberLookup,
+    ) -> GroundingOutcome:
+        object_results: list[ObjectGroundingResult] = []
+        member_results: list[MemberGroundingResult] = []
+        disagreements: list[str] = []
+        delta = GroundedSemanticDelta()
+
+        measure = self.objects.find_mentions(
+            user_input, SemanticObjectType.MEASURE, "measure"
+        )
+        if measure.status == GroundingStatus.NOT_MENTIONED:
+            weak_measure_phrases = self._current_weak_phrases(
+                [*intent.detected_measures, *draft.measures], user_input
+            )
+            if weak_measure_phrases:
+                measure = self._resolve_unique_weak(
+                    weak_measure_phrases, SemanticObjectType.MEASURE, "measure"
+                )
+            elif (
+                intent.detected_measures or draft.measures
+            ) and not self._signals_only_repeat_committed_measure(
+                intent, draft, committed, user_input
+            ):
+                # Intent/QueryPlan remain weak signals: they may prove that the
+                # current turn expresses a measure requirement, but may not
+                # provide the canonical identity.  The identity must still be
+                # selected from catalog-owned candidate IDs.
+                measure = ObjectGroundingResult(
+                    status=GroundingStatus.UNRESOLVED,
+                    role="measure",
+                    phrase=user_input,
+                    method="current_linguistic_measure_signal",
+                )
+        if measure.status == GroundingStatus.UNRESOLVED:
+            measure = await self.objects.select_bounded(
+                measure.phrase,
+                user_input,
+                SemanticObjectType.MEASURE,
+                "measure",
+            )
+        object_results.append(measure)
+        if self._requires_clarification(measure):
+            return self._clarification(
+                measure.status, object_results, member_results,
+                "请明确您要查询的业务指标。", disagreements,
+            )
+        if measure.status == GroundingStatus.RESOLVED and measure.canonical_object:
+            delta.measures = [measure.canonical_object.canonical_name]
+            if (
+                intent.detected_measures
+                and measure.canonical_object.canonical_name
+                not in intent.detected_measures
+            ):
+                disagreements.append("intent_measure_disagrees_with_grounding")
+        elif measure.status == GroundingStatus.NOT_MENTIONED and not (
+            committed and committed.measures
+        ):
+            return self._clarification(
+                GroundingStatus.NOT_MENTIONED,
+                object_results,
+                member_results,
+                "请明确您要查询的业务指标。",
+                disagreements,
+            )
+
+        raw_filters = [
+            item for item in draft.filters
+            if not committed or self._value_is_current(item.value, user_input)
+        ]
+        if not raw_filters:
+            raw_filters = [
+                StructuredFilter(
+                    field=item.field,
+                    operator=FilterOperator(item.operator.value),
+                    value=item.value,
+                )
+                for item in intent.detected_filters
+                if item.operator.value == FilterOperator.EQ.value
+                and self._value_is_current(item.value, user_input)
+            ]
+        grounded_filters: list[StructuredFilter] = []
+        grounded_filter_ids: set[str] = set()
+        for raw_filter in raw_filters:
+            if raw_filter.operator != FilterOperator.EQ:
+                return self._clarification(
+                    GroundingStatus.UNRESOLVED, object_results, member_results,
+                    "当前仅支持等值筛选，请改为明确的等值条件。", disagreements,
+                )
+            draft_field = self.objects.resolve_phrase(
+                raw_filter.field, SemanticObjectType.FIELD, "filter_field"
+            )
+            draft_field_mentioned = any(
+                normalize_semantic_text(term) in normalize_semantic_text(user_input)
+                for term in (
+                    raw_filter.field,
+                    *(
+                        draft_field.canonical_object.aliases
+                        if draft_field.canonical_object else ()
+                    ),
+                )
+            )
+            mentioned_field = self.objects.find_mentions(
+                user_input, SemanticObjectType.FIELD, "filter_field"
+            )
+            if mentioned_field.status != GroundingStatus.NOT_MENTIONED:
+                field_result = mentioned_field
+            elif draft_field_mentioned:
+                # Unknown phrases are current requirements too; preserve their
+                # UNRESOLVED status instead of treating them as omission.
+                field_result = draft_field
+            elif (
+                committed
+                and committed.filters
+                and len({str(item.get("field")) for item in committed.filters}) == 1
+            ):
+                committed_field = str(committed.filters[0].get("field"))
+                field_result = self.objects.resolve_phrase(
+                    committed_field,
+                    SemanticObjectType.FIELD,
+                    "filter_field",
+                )
+            elif committed and len(committed.dimensions) == 1:
+                # A member-only refinement may use the sole committed grouping
+                # field as its bounded field candidate.  The value is still
+                # accepted only after runtime member lookup; multiple dimensions
+                # remain ambiguous and never reach execution.
+                field_result = self.objects.resolve_phrase(
+                    committed.dimensions[0],
+                    SemanticObjectType.FIELD,
+                    "filter_field",
+                )
+            else:
+                field_result = ObjectGroundingResult(
+                    status=GroundingStatus.NOT_MENTIONED,
+                    role="filter_field",
+                    method="filter_field_not_mentioned",
+                )
+            object_results.append(field_result)
+            if self._requires_clarification(field_result) or not field_result.canonical_object:
+                return self._clarification(
+                    field_result.status, object_results, member_results,
+                    "请明确要筛选的字段。", disagreements,
+                )
+            field = field_result.canonical_object
+            grounded_filter_ids.add(field.object_id)
+            members = await member_lookup(field, 100)
+            member = MemberGrounder.resolve(field, raw_filter.value, members)
+            member_results.append(member)
+            if member.status != GroundingStatus.RESOLVED:
+                return self._clarification(
+                    member.status, object_results, member_results,
+                    "筛选值无法唯一匹配模型中的成员，请明确选择。", disagreements,
+                )
+            grounded_filters.append(StructuredFilter(
+                field=field.canonical_name,
+                operator=FilterOperator.EQ,
+                value=member.canonical_value,
+            ))
+        if grounded_filters:
+            delta.filters = grounded_filters
+
+        current_dimension = self.objects.find_mentions(
+            user_input, SemanticObjectType.FIELD, "dimension"
+        )
+        weak_dimension_phrases = self._current_weak_phrases(
+            [*intent.detected_dimensions, *draft.dimensions], user_input
+        )
+        dimension_requested = self._has_dimension_cue(
+            user_input, current_dimension
+        ) or any(
+            self._has_dimension_phrase_cue(user_input, phrase)
+            for phrase in weak_dimension_phrases
+        )
+        if dimension_requested:
+            dimension = current_dimension
+            if dimension.status == GroundingStatus.AMBIGUOUS and grounded_filter_ids:
+                remaining = [
+                    self.catalog.get(item)
+                    for item in dimension.candidate_ids
+                    if item not in grounded_filter_ids
+                ]
+                remaining = [item for item in remaining if item is not None]
+                if len(remaining) == 1:
+                    dimension = ObjectGrounder._resolved(
+                        "dimension", user_input, remaining[0], "current_input_non_filter"
+                    )
+            if dimension.status == GroundingStatus.NOT_MENTIONED:
+                dimension = self._resolve_unique_weak(
+                    weak_dimension_phrases,
+                    SemanticObjectType.FIELD,
+                    "dimension",
+                )
+            if dimension.status == GroundingStatus.UNRESOLVED:
+                dimension = await self.objects.select_bounded(
+                    dimension.phrase,
+                    user_input,
+                    SemanticObjectType.FIELD,
+                    "dimension",
+                )
+            object_results.append(dimension)
+            if self._requires_clarification(dimension) or not dimension.canonical_object:
+                return self._clarification(
+                    dimension.status, object_results, member_results,
+                    "请明确分析维度。", disagreements,
+                )
+            delta.dimensions = [dimension.canonical_object.canonical_name]
+        else:
+            object_results.append(ObjectGroundingResult(
+                status=GroundingStatus.NOT_MENTIONED,
+                role="dimension",
+                method="no_dimension_requirement",
+            ))
+
+        if self.time.is_explicit(user_input):
+            date_fields = tuple(
+                obj for obj in self.catalog.by_type(SemanticObjectType.FIELD)
+                if "date" in obj.data_type.casefold() or "time" in obj.data_type.casefold()
+            )
+            if len(date_fields) != 1:
+                candidates = tuple(item.object_id for item in date_fields)
+                date_result = ObjectGroundingResult(
+                    status=(
+                        GroundingStatus.AMBIGUOUS
+                        if len(date_fields) > 1 else GroundingStatus.UNRESOLVED
+                    ),
+                    role="date_field",
+                    phrase=user_input,
+                    candidate_ids=candidates,
+                    method="date_field_cardinality",
+                )
+                object_results.append(date_result)
+                return self._clarification(
+                    date_result.status, object_results, member_results,
+                    "请明确要使用的日期字段。", disagreements,
+                )
+            date_result = ObjectGrounder._resolved(
+                "date_field", user_input, date_fields[0], "unique_runtime_date_field"
+            )
+            object_results.append(date_result)
+            time_range = self.time.ground(user_input, date_fields[0])
+            if time_range is None:
+                return self._clarification(
+                    GroundingStatus.UNRESOLVED, object_results, member_results,
+                    "时间范围无法确定，请提供明确日期。", disagreements,
+                )
+            delta.time_range = time_range
+            delta.time_specified = True
+
+        self._ground_analysis(user_input, draft, delta)
+        if delta.clear_time:
+            object_results.append(ObjectGroundingResult(
+                status=GroundingStatus.EXPLICIT_CLEAR,
+                role="date_field",
+                method="explicit_time_clear",
+            ))
+        current_comparison = any(
+            term in normalize_semantic_text(user_input)
+            for term in ("同比", "环比", "对比", "比较")
+        )
+        if current_comparison:
+            return self._clarification(
+                GroundingStatus.UNRESOLVED, object_results, member_results,
+                "当前尚未支持该对比口径，请改为单一时间范围查询。", disagreements,
+            )
+        return GroundingOutcome(
+            status=GroundingStatus.RESOLVED,
+            delta=delta,
+            object_results=object_results,
+            member_results=member_results,
+            intent_disagreements=disagreements,
+        )
+
+    def _signals_only_repeat_committed_measure(
+        self,
+        intent: IntentSpec,
+        draft: QueryPlan,
+        committed: StructuredWorkMemory | None,
+        user_input: str,
+    ) -> bool:
+        """Detect inherited LLM echo without granting it semantic authority.
+
+        Intent and the draft often repeat the committed measure on a filter-,
+        dimension-, time-, or analysis-only follow-up.  That repetition is not
+        evidence that the current input mentioned a measure.  It is treated as
+        omission only when every resolvable weak signal equals the committed
+        measure and the input independently expresses another semantic slot.
+        """
+        if committed is None or len(committed.measures) != 1:
+            return False
+        signals = [*intent.detected_measures, *draft.measures]
+        if not signals:
+            return False
+        resolved_names: set[str] = set()
+        for phrase in signals:
+            result = self.objects.resolve_phrase(
+                phrase, SemanticObjectType.MEASURE, "measure"
+            )
+            if result.status != GroundingStatus.RESOLVED or not result.canonical_object:
+                return False
+            resolved_names.add(result.canonical_object.canonical_name)
+        if resolved_names != {committed.measures[0]}:
+            return False
+        return self._has_current_non_measure_requirement(user_input, intent, draft)
+
+    def _has_current_non_measure_requirement(
+        self, user_input: str, intent: IntentSpec, draft: QueryPlan
+    ) -> bool:
+        current_filters = [
+            item for item in draft.filters
+            if self._value_is_current(item.value, user_input)
+        ] or [
+            item for item in intent.detected_filters
+            if self._value_is_current(item.value, user_input)
+        ]
+        dimension = self.objects.find_mentions(
+            user_input, SemanticObjectType.FIELD, "dimension"
+        )
+        weak_dimensions = self._current_weak_phrases(
+            [*intent.detected_dimensions, *draft.dimensions], user_input
+        )
+        dimension_requested = self._has_dimension_cue(
+            user_input, dimension
+        ) or any(
+            self._has_dimension_phrase_cue(user_input, phrase)
+            for phrase in weak_dimensions
+        )
+        normalized = normalize_semantic_text(user_input)
+        explicit_clear = any(term in normalized for term in (
+            "清除筛选", "取消筛选", "不限条件",
+            "清除时间", "取消时间", "不限时间",
+            "取消top", "不限前", "清除排名",
+        ))
+        return bool(
+            current_filters
+            or dimension_requested
+            or self.time.is_explicit(user_input)
+            or self._TOP_N.search(user_input)
+            or explicit_clear
+        )
+
+    def _resolve_unique_weak(
+        self,
+        phrases: list[str],
+        object_type: SemanticObjectType,
+        role: Literal["measure", "dimension", "filter_field", "date_field"],
+    ) -> ObjectGroundingResult:
+        resolved: dict[str, ObjectGroundingResult] = {}
+        conflicts: list[ObjectGroundingResult] = []
+        for phrase in phrases:
+            item = self.objects.resolve_phrase(phrase, object_type, role)
+            if item.status == GroundingStatus.RESOLVED and item.canonical_object:
+                resolved[item.canonical_object.object_id] = item
+            elif item.status in {
+                GroundingStatus.AMBIGUOUS, GroundingStatus.CONFIG_CONFLICT
+            }:
+                conflicts.append(item)
+        if conflicts:
+            return conflicts[0]
+        if len(resolved) == 1:
+            return next(iter(resolved.values()))
+        if len(resolved) > 1:
+            return ObjectGroundingResult(
+                status=GroundingStatus.AMBIGUOUS,
+                role=role,
+                phrase=", ".join(phrases),
+                candidate_ids=tuple(resolved),
+                method="weak_signal_disagreement",
+            )
+        return ObjectGroundingResult(
+            status=(
+                GroundingStatus.UNRESOLVED
+                if phrases else GroundingStatus.NOT_MENTIONED
+            ),
+            role=role,
+            phrase=", ".join(phrases),
+            method=(
+                "weak_signal_unresolved" if phrases else "no_current_weak_signal"
+            ),
+        )
+
+    @staticmethod
+    def _current_weak_phrases(phrases: list[str], user_input: str) -> list[str]:
+        normalized_input = normalize_semantic_text(user_input)
+        current: list[str] = []
+        seen: set[str] = set()
+        for phrase in phrases:
+            normalized = normalize_semantic_text(phrase)
+            if normalized and normalized in normalized_input and normalized not in seen:
+                current.append(phrase)
+                seen.add(normalized)
+        return current
+
+    @staticmethod
+    def _value_is_current(value: Any, user_input: str) -> bool:
+        if isinstance(value, str):
+            return normalize_semantic_text(value) in normalize_semantic_text(user_input)
+        return str(value) in user_input
+
+    def _has_dimension_cue(
+        self, user_input: str, result: ObjectGroundingResult
+    ) -> bool:
+        candidate_ids = result.candidate_ids
+        terms: list[str] = []
+        for candidate_id in candidate_ids:
+            obj = self.catalog.get(candidate_id)
+            if obj is not None:
+                terms.extend((obj.canonical_name, *obj.aliases))
+        for term in terms:
+            escaped = re.escape(term)
+            patterns = (
+                rf"按\s*{escaped}",
+                rf"各\s*{escaped}",
+                rf"每(?:个)?\s*{escaped}",
+                rf"前\s*\d+\s*个?\s*{escaped}",
+                rf"{escaped}\s*(?:排名|排行|分组|分别)",
+            )
+            if any(re.search(pattern, user_input, re.IGNORECASE) for pattern in patterns):
+                return True
+        return False
+
+    @staticmethod
+    def _has_dimension_phrase_cue(user_input: str, phrase: str) -> bool:
+        escaped = re.escape(phrase)
+        return any(re.search(pattern, user_input, re.IGNORECASE) for pattern in (
+            rf"按\s*{escaped}",
+            rf"各\s*{escaped}",
+            rf"每(?:个)?\s*{escaped}",
+            rf"{escaped}\s*(?:排名|排行|分组|分别)",
+        ))
+
+    @classmethod
+    def _ground_analysis(
+        cls, user_input: str, draft: QueryPlan, delta: GroundedSemanticDelta
+    ) -> None:
+        match = cls._TOP_N.search(user_input)
+        if match:
+            delta.top_n = int(match.group(1))
+            delta.top_n_specified = True
+        if any(term in user_input for term in ("最高", "最大", "最多")):
+            delta.sort = "desc"
+            delta.sort_specified = True
+        elif any(term in user_input for term in ("最低", "最小", "最少")):
+            delta.sort = "asc"
+            delta.sort_specified = True
+        elif match and draft.sort in {"asc", "desc"}:
+            delta.sort = draft.sort
+            delta.sort_specified = True
+
+        normalized = normalize_semantic_text(user_input)
+        if any(term in normalized for term in ("清除筛选", "取消筛选", "不限条件")):
+            delta.clear_filters = True
+            delta.filters = None
+        if any(term in normalized for term in ("清除时间", "取消时间", "不限时间")):
+            delta.clear_time = True
+            delta.time_range = None
+            delta.time_specified = False
+        if any(term in normalized for term in ("取消top", "不限前", "清除排名")):
+            delta.clear_top_n = True
+            delta.clear_sort = True
+            delta.top_n = None
+            delta.sort = None
+
+    @staticmethod
+    def _requires_clarification(result: ObjectGroundingResult) -> bool:
+        return result.status in {
+            GroundingStatus.AMBIGUOUS,
+            GroundingStatus.UNRESOLVED,
+            GroundingStatus.CONFIG_CONFLICT,
+        }
+
+    @staticmethod
+    def _clarification(
+        status: GroundingStatus,
+        object_results: list[ObjectGroundingResult],
+        member_results: list[MemberGroundingResult],
+        question: str,
+        disagreements: list[str],
+    ) -> GroundingOutcome:
+        return GroundingOutcome(
+            status=status,
+            object_results=object_results,
+            member_results=member_results,
+            clarification_question=question,
+            intent_disagreements=disagreements,
+        )

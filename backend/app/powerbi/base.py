@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 from backend.app.schemas.data_contracts import (
+    ColumnMembersRequest,
+    ColumnMembersResult,
     DAXRequest,
     PowerBIError,
     QueryResult,
@@ -49,6 +51,16 @@ class PowerBIAdapter(ABC):
             PowerBIAdapterError: 模型不存在、权限不足或连接失败
         """
         ...
+
+    async def get_column_members(
+        self, request: ColumnMembersRequest
+    ) -> ColumnMembersResult:
+        """读取一个已验证列的有界 distinct member values。"""
+        raise PowerBIAdapterError(
+            "Bounded member lookup is not implemented by this provider",
+            provider=self.provider_name,
+            error_type="member_lookup_not_supported",
+        )
 
     @abstractmethod
     async def execute_dax(self, request: DAXRequest) -> QueryResult:

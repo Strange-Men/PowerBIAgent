@@ -21,6 +21,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from backend.app.schemas.data_contracts import TimeRangeSpec
+
 
 class MemoryStatus(str, Enum):
     """记忆状态三态机制"""
@@ -112,7 +114,9 @@ class StructuredWorkMemory(BaseModel):
     measures: list[str] = Field(default_factory=list, description="指标列表")
     dimensions: list[str] = Field(default_factory=list, description="维度列表")
     filters: list[dict] = Field(default_factory=list, description="筛选条件")
-    time_range: Optional[str] = Field(default=None, description="时间范围")
+    time_range: Optional[TimeRangeSpec | str] = Field(
+        default=None, description="结构化时间范围；旧 Mock 字符串仅作兼容"
+    )
     sort: Optional[str] = Field(default=None, description="排序方式")
     top_n: Optional[int] = Field(default=None, ge=1, description="Top N 限制")
     comparison_mode: Optional[str] = Field(default=None, description="对比模式")

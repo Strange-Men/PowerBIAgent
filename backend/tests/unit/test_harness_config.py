@@ -5,7 +5,7 @@
 - from_settings() 所有配置字段正确映射
 - DeepSeek 配置 llm_mode=DEEPSEEK 且 is_mock=False
 - main lifespan 向两种 TurnService 传入正确 HarnessConfig
-- 共享工具注册只包含三个白名单工具
+- 共享工具注册只包含四个白名单工具
 - ToolSpec 的超时与重试来自 HarnessConfig
 """
 
@@ -22,6 +22,7 @@ from backend.app.harness.models import HarnessConfig
 from backend.app.harness.tool_registry import (
     DEFAULT_TOOL_NAMES,
     TOOL_NAME_DAX,
+    TOOL_NAME_MEMBERS,
     TOOL_NAME_RENDER,
     TOOL_NAME_SCHEMA,
     SchemaInput,
@@ -166,9 +167,9 @@ class TestMainLifespanConfig:
         assert service.config is config
         assert service.config.llm_mode == LLMMode.MOCK
         assert service.config.is_mock is True
-        # 工具网关的 tools 应为 3 个
+        # 工具网关包含 schema/member/DAX/render 四个受控工具
         tools = service.tool_gateway.list_tools()
-        assert len(tools) == 3
+        assert len(tools) == 4
         assert set(tools) == set(DEFAULT_TOOL_NAMES)
 
     @pytest.mark.anyio
@@ -257,7 +258,7 @@ class TestMainLifespanConfig:
             assert service.config.llm_mode == LLMMode.MOCK
             assert service.config.is_mock is True
             tools = service.tool_gateway.list_tools()
-            assert len(tools) == 3
+            assert len(tools) == 4
             assert set(tools) == set(DEFAULT_TOOL_NAMES)
 
     @pytest.mark.anyio
@@ -318,7 +319,7 @@ class TestMainLifespanConfig:
 
                         # M1.6.3: 验证 ToolGateway 来自 create_default_tool_gateway
                         tools = service.tool_gateway.list_tools()
-                        assert len(tools) == 3
+                        assert len(tools) == 4
                         assert set(tools) == set(DEFAULT_TOOL_NAMES)
 
                         # M1.6.3.1: 验证 ContextBuilder 由 TurnPipeline 统一管理
@@ -366,20 +367,25 @@ class TestMainLifespanConfig:
 # ──────────────────────────────────────────────
 
 class TestSharedToolRegistry:
-    """共享工具注册只包含三个白名单工具"""
+    """共享工具注册只包含四个白名单工具"""
 
-    def test_default_tool_names_exactly_three(self):
-        """DEFAULT_TOOL_NAMES 恰好包含三个白名单工具"""
-        assert len(DEFAULT_TOOL_NAMES) == 3
-        assert DEFAULT_TOOL_NAMES == [TOOL_NAME_SCHEMA, TOOL_NAME_DAX, TOOL_NAME_RENDER]
+    def test_default_tool_names_exactly_four(self):
+        """DEFAULT_TOOL_NAMES 恰好包含四个白名单工具"""
+        assert len(DEFAULT_TOOL_NAMES) == 4
+        assert DEFAULT_TOOL_NAMES == [
+            TOOL_NAME_SCHEMA,
+            TOOL_NAME_MEMBERS,
+            TOOL_NAME_DAX,
+            TOOL_NAME_RENDER,
+        ]
 
-    def test_create_default_tool_gateway_registers_three_tools(self, mock_adapters):
-        """create_default_tool_gateway 注册恰好三个工具"""
+    def test_create_default_tool_gateway_registers_four_tools(self, mock_adapters):
+        """create_default_tool_gateway 注册恰好四个工具"""
         powerbi, renderer = mock_adapters
         config = HarnessConfig()
         gateway = create_default_tool_gateway(powerbi, renderer, config)
         tools = gateway.list_tools()
-        assert len(tools) == 3
+        assert len(tools) == 4
         assert set(tools) == set(DEFAULT_TOOL_NAMES)
 
     def test_register_default_tools_idempotent_reject(self, mock_adapters):

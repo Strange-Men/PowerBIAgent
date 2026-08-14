@@ -140,7 +140,11 @@ class DeepSeekAnswerService:
             measures=query_plan.measures,
             dimensions=query_plan.dimensions,
             filters_summary=self._build_filters_summary(query_plan),
-            time_range=query_plan.time_range or "",
+            time_range=(
+                query_plan.time_range.to_context_text()
+                if hasattr(query_plan.time_range, "to_context_text")
+                else query_plan.time_range or ""
+            ),
         )
 
         # ── 构建验证服务 ──
