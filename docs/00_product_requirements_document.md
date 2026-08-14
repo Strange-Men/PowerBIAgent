@@ -1,6 +1,6 @@
 # 00 — 产品需求文档 (PRD)
 
-> **原始 PRD 文件路径：** `PRD.md`（项目根目录）
+> **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
 > **修订版本：** v1.0
 > **修订日期：** 2026-07-31
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
@@ -209,8 +209,8 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 ## 十一、MVP 开发阶段
 
 1. **M0 开发准备** ✅ 已完成 — 仓库、文档、Agent 架构设计、数据接入验证、项目骨架
-2. **M1 真实 DeepSeek 接入** 🔄 进行中（M1.0—M1.3.2 已完成，M1.4—M1.5 待完成）— LLM Provider 接口、DeepSeek 意图识别/QueryPlan/DAX 生成、前端视觉与契约固化、全链路验收
-3. **M2 真实 Power BI MCP 与数据问答** ⬜ 未开始 — MCP 连接、DAX 执行、数据问答闭环
+2. **M1 真实 DeepSeek 接入** ✅ 已完成并封板 — LLM Provider、Intent/QueryPlan 与统一 TurnPipeline；历史 LLM DAX/Answer 保留 Mock compatibility
+3. **M2 真实 Power BI MCP 与数据问答** 🔄 M2.6.4 final candidate — Local MCP、Business Semantic Grounding、Deterministic DAX、VerifiedFactSet 与 hardened acceptance；Remote Deferred
 4. **M3 报表生成闭环** ⬜ 未开始 — ReportSpec 正式渲染、报表资源 ID、查看/下载
 5. **M4 多轮记忆完善** ⬜ 未开始 — 会话历史、最近对话、搜索聊天、会话持久化
 6. **M5 React 前端与联调** ⬜ 未开始 — 极简对话页面、接口联调、响应式、视觉验收

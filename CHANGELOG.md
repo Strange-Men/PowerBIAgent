@@ -4,6 +4,41 @@
 
 ---
 
+## [M2.6.4] — 2026-08-14
+
+### M0—M2 最终加固与文档治理
+
+- TopN facts 改为显式 `result_position` / QueryResult order，ties 与 truncated 结果不再生成严格 business rank；保持 boundary ties 可超过 N
+- Bounded semantic selector 增加 Catalog metadata evidence shortlist 与 post-validation；未知、证据并列、非法 ID 或选择冲突均 fail closed
+- data/report-shaped `UNSUPPORTED` 进入 authoritative Grounding/capability check；明确 out-of-scope 请求保持 early-stop，失败不污染 Pending/Committed Memory
+- 补齐 approved 数量问法 alias；Real acceptance 观察器直接核对 ToolGateway DAX、fact-bounded output、TopN/tie safety 与 DAX/Answer LLM 零调用
+- 恢复 AGENTS/README/07/08/09/CHANGELOG 真实性，建立 `docs/index.md`、specs/milestones/archive 分层与 deterministic Documentation Governance Gate
+- 完成 M0—M2 fresh offline/Real hardened acceptance；本轮只 push 开发分支，未合并 `main`、未创建 Tag
+
+---
+
+## [M2.6.3] — 2026-08-14
+
+### Deterministic Execution & Verified Facts
+
+- Real Canonical QueryPlan 只经 Deterministic DAX Builder；Independent Layer 3 独立验证 exact group-by、EQ/time、TopN/ORDER BY 与无额外业务语义，Real DAX LLM calls=0
+- 建立 VerifiedFactSet factual authority，Answer/Report 只消费可追溯的数字、结果顺序、极值、筛选、时间、rows 与 provenance
+- PendingClarificationContext 与 committed Memory 分离，partial clarification 完整后才执行并在全链成功后提交
+- 正式多轮 contract 更正为 6 Conversation / 16 Turn，禁止从欠指定 ranking 默认 Product；`dax_unplanned_group_by_dimension` 与 `dax_filter_structure_not_verifiable` 收口为 0
+
+---
+
+## [M2.6.2] — 2026-08-13
+
+### Business Semantic Grounding
+
+- 建立 model-scoped Business Semantic Catalog，并以 friendly model key + runtime schema fingerprint 绑定
+- Grounding 成为 Measure/Dimension/Filter Field/runtime Member/Time 的 canonical authority；Intent/QueryPlan LLM 只保留 weak signal
+- 结构化 semantic slot 状态与 deterministic StateTransition 支持 KEEP/REPLACE/CLEAR 及 Filter ADD/REPLACE/REMOVE
+- Canonical QueryPlan 只能消费 runtime schema、approved glossary、bounded member values 与固定时间边界；歧义或未解析必须 clarification
+
+---
+
 ## [M2.6.1] — 2026-08-12
 
 ### Known-answer 独立数值 Oracle 与多轮 Harness 固化

@@ -208,7 +208,7 @@ Tag 名称的描述部分必须全部使用中文，禁止使用英文描述。
 4. 已确认 ADR
 5. 正式设计文档
 6. docs/09_context_handoff.md 中的当前状态
-7. 原始 PRD.md（仅作历史参考，不直接指导开发）
+7. `docs/archive/original/PRD.md`（仅作历史参考，不直接指导开发）
 8. Claude 的可逆默认假设
 
 **重要：** 原始 PRD 与正式 PRD 冲突时，以正式 PRD 为准。不修改原始 PRD。

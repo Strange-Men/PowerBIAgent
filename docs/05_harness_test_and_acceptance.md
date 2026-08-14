@@ -1,6 +1,6 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M2.6.1 Known-answer Oracle 与 Multi-turn Harness/Test Set 离线固化完成
+> **状态：** M2.6.4 final hardened candidate；M2.6.1—M2.6.3 契约已校准为 8 Case / 2 holdout / 6 Conversation / 16 Turn
 > **关联 ADR：** ADR-004
 > **当前基线：** pytest 1272 passed、Golden Cases 11 passed / 1 manual-real skipped、安全扫描 PASS
 > **真实 Business Golden：** 7/7 passed；最终完整 Smoke 28 次 LLM 调用、0 repair
@@ -158,7 +158,7 @@ TopN selection 与 presentation ordering 是两个契约：TOPN 必须匹配 Que
 
 ### Real Multi-turn Harness/Test Set（M2.6.1）
 
-**✅ 已完成 Fake/Mock 离线固化；真实执行未开始。** `harness/cases/multi_turn_conversations.yaml` 定义 6 个 Conversation、15 个 Turn，覆盖 Filter refinement、Dimension switch + TopN、Filter replacement、Metric switch、Clarification 及失败 Turn Memory 完整性。Runner 复用正式 `create_app → /api/v1/chat`，同一 Conversation 使用同一 `conversation_id`、不同 `request_id`，上下文只由上一成功 Turn 正常 commit 形成，不直接写 Memory Repository。
+**✅ 已完成 Fake/Mock 离线固化并在 M2.6.3 接通真实执行。** `harness/cases/multi_turn_conversations.yaml` 定义 6 个 Conversation、16 个 Turn；conversation_e 使用 e1/e2 partial clarification、e3 补齐 Product 后才执行，禁止默认 Product。Runner 复用正式 `create_app → /api/v1/chat`，同一 Conversation 使用同一 `conversation_id`、不同 `request_id`，上下文只由上一成功 Turn 正常 commit 形成，不直接写 Memory Repository。
 
 数据 Turn 的正式 M2.6.2 成功契约同时要求 semantic expectation、Layer 2、Layer 3、Oracle、Answer provenance、Memory、`source_mode=real` 与 Real→Mock=0；Clarification 不执行 Power BI 且不 commit；失败 Turn 必须停在预期阶段、不 commit、不污染上一成功状态。Conversation 使用严格 `all(turn.passed)`，任一 Turn 或 Oracle 失败都会使整组失败，最终真实封板要求 6/6。
 
@@ -168,8 +168,8 @@ TopN selection 与 presentation ordering 是两个契约：TOPN 必须匹配 Que
 # Fake/Mock 离线执行
 D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn_smoke.py --mode offline
 
-# M2.6.1 仅校验 local-only baseline 配置，不执行真实调用
-D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn_smoke.py --mode real
+# M2.6.3+ production Real E2E（需 DeepSeek + Local MCP + Desktop）
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn_smoke.py --mode real --historical-repeats 10
 ```
 
 ### Layer 4 — Business Golden Verification（M2.5）
@@ -189,7 +189,7 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 | test_intent.py | IntentSpec + FilterSpec + 跨字段规则 + 真实 Intent |
 | test_llm.py | Mock LLM + Fixture + Registry + DeepSeek Provider |
 | test_memory.py | 状态 + 版本语义 + 幂等 + 准入 + Mock 空间 + Correction |
-| test_agent_framework.py | AgentRuntime + PydanticAI Smoke |
+| test_agent_framework.py | 统一 TurnPipeline 与已删除 AgentRuntime/PydanticAI 防回归 |
 | test_powerbi.py | Mock Adapter 全部场景 |
 | test_harness.py | ToolGateway + ContextBuilder + TurnController + Trace + Validation |
 | test_memory_repository.py | 版本 + 证据验证 + 隔离 + 原子性 + 失败审计 |
@@ -201,18 +201,18 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 | test_dax.py | DAX 表—归属验证测试 |
 | test_repository_safety.py | 仓库安全（26 测试） |
 | test_known_answer_oracle.py | scalar/grouped/ordered、容差、TopN ties、local-only baseline 与独立 Expected 边界 |
-| test_multi_turn_benchmark.py | 6 Conversation / 15 Turn、Memory 完整性、Oracle 与严格全 Turn 评分 |
+| test_multi_turn_benchmark.py | 6 Conversation / 16 Turn、Pending/Committed Memory、Oracle 与严格全 Turn 评分 |
 
 ---
 
 ## 六、未来验收项（M1.4—M5）
 
-### M2.6.2 Known-answer / Real Multi-turn 最终验收（未执行）
+### M2.6.4 Known-answer / Real Multi-turn hardened acceptance
 
 - 使用 local-only 真实 PBIX baseline，通过 DeepSeek + Local MCP + Desktop 运行同一套 8 Case / 6 Conversation 契约。
 - 单 Turn：Intent、QueryPlan、Filter/operator/value、Layer 2、Layer 3、QueryResult Oracle、Answer provenance、Memory、`source_mode=real` 与 Real→Mock=0 必须全部 PASS。
 - Conversation：所有 Turn 全部成功才 PASS；只有 6/6 才允许 M0—M2 hardened 最终封板。
-- M2.6.1 的 Fake/Mock 通过不等同于真实数值、多轮或 Desktop 验收通过。
+- Fake/Mock 通过不等同于真实数值、多轮或 Desktop 验收；每轮 final evidence 必须 fresh 执行，不复用历史 PASS 数字。
 
 ### M1.4 验收
 
@@ -233,4 +233,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 
 ---
 
-*最后更新：2026-08-12 | M2.6.1 Oracle 与多轮 Harness 离线固化完成*
+*最后更新：2026-08-14 | M2.6.4 acceptance contract truth restore*

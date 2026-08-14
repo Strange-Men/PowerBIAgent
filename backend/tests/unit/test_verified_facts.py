@@ -72,7 +72,7 @@ def test_grouped_facts_and_result_set_extrema_are_deterministic():
     assert (minimum.value, minimum.source_rows) == (10, [0])
 
 
-def test_topn_ranking_preserves_query_result_order():
+def test_topn_without_ties_exposes_result_order_not_business_rank():
     plan = _plan(dimensions=["Category"], sort="desc", top_n=2)
     result = _result(
         ["[Category]", "[Total Sales]"], [["B", 20], ["A", 10]]
@@ -80,10 +80,76 @@ def test_topn_ranking_preserves_query_result_order():
     facts = VerifiedFactSetBuilder().build(plan, result)
     ranking = facts.by_type(FactType.RANKING)[0]
     assert ranking.value == {
-        "top_n": 2, "direction": "desc", "measure": "Total Sales"
+        "top_n": 2,
+        "direction": "desc",
+        "measure": "Total Sales",
+        "position_semantics": "query_result_order",
+        "complete": True,
     }
-    assert [item["position"] for item in ranking.values] == [1, 2]
+    assert [item["result_position"] for item in ranking.values] == [1, 2]
+    assert all("semantic_rank" not in item for item in ranking.values)
     assert [item["value"] for item in ranking.values] == [20, 10]
+
+
+def test_topn_boundary_ties_may_exceed_n_without_strict_rank_claim():
+    plan = _plan(dimensions=["Category"], sort="desc", top_n=2)
+    result = _result(
+        ["[Category]", "[Total Sales]"],
+        [["A", 100], ["B", 90], ["C", 90]],
+    )
+    ranking = VerifiedFactSetBuilder().build(plan, result).by_type(
+        FactType.RANKING
+    )[0]
+
+    assert len(ranking.values) == 3
+    assert [item["result_position"] for item in ranking.values] == [1, 2, 3]
+    assert [item["value"] for item in ranking.values] == [100, 90, 90]
+    assert all("semantic_rank" not in item for item in ranking.values)
+
+
+def test_topn_multiple_equal_values_are_only_result_positions():
+    plan = _plan(dimensions=["Category"], sort="desc", top_n=2)
+    result = _result(
+        ["[Category]", "[Total Sales]"],
+        [["A", 100], ["B", 100], ["C", 100]],
+    )
+    ranking = VerifiedFactSetBuilder().build(plan, result).by_type(
+        FactType.RANKING
+    )[0]
+
+    assert [item["result_position"] for item in ranking.values] == [1, 2, 3]
+    assert all("semantic_rank" not in item for item in ranking.values)
+
+
+def test_truncated_topn_marks_ordered_result_incomplete():
+    plan = _plan(dimensions=["Category"], sort="desc", top_n=2)
+    result = _result(
+        ["[Category]", "[Total Sales]"],
+        [["A", 100], ["B", 90]],
+        truncated=True,
+    )
+    ranking = VerifiedFactSetBuilder().build(plan, result).by_type(
+        FactType.RANKING
+    )[0]
+
+    assert ranking.value["complete"] is False
+    assert ranking.operation == "ordered_topn_result_projection"
+
+
+def test_fact_bounded_topn_answer_uses_result_items_for_ties():
+    plan = _plan(dimensions=["Category"], sort="desc", top_n=2)
+    result = _result(
+        ["[Category]", "[Total Sales]"],
+        [["A", 100], ["B", 100], ["C", 90]],
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    answer = FactBoundedAnswerBuilder().build(plan, result, facts)
+
+    assert "结果第1项" in answer.answer
+    assert "结果第2项" in answer.answer
+    assert "第1位" not in answer.answer
+    assert "第2位" not in answer.answer
+    assert FactOutputValidator().validate_answer(answer, facts) == []
 
 
 def test_filter_time_and_metadata_provenance():

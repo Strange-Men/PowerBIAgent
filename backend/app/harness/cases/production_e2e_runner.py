@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from httpx import ASGITransport, AsyncClient
@@ -23,6 +24,7 @@ from backend.app.harness.cases.benchmark_models import (
 from backend.app.harness.cases.multi_turn_runner import MultiTurnBenchmarkRunner
 from backend.app.harness.oracles.known_answer import BaselineSource
 from backend.app.harness.tool_registry import TOOL_NAME_DAX
+from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
 from backend.app.main import create_app
 from backend.app.memory.models import (
     MemoryStatus,
@@ -31,6 +33,26 @@ from backend.app.memory.models import (
     StructuredWorkMemory,
 )
 from backend.app.schemas.data_contracts import DAXRequest, PowerBIError, QueryResult
+
+
+class _TaskCountingProvider(LLMProvider):
+    """Observe task kinds without retaining prompts or model responses."""
+
+    def __init__(self, inner: LLMProvider):
+        self._inner = inner
+        self.task_counts = {task: 0 for task in LLMTask}
+
+    @property
+    def provider_name(self) -> str:
+        return self._inner.provider_name
+
+    @property
+    def is_mock(self) -> bool:
+        return self._inner.is_mock
+
+    async def generate(self, request: LLMRequest, output_type: type) -> LLMResponse:
+        self.task_counts[request.task] += 1
+        return await self._inner.generate(request, output_type)
 
 
 def exact_known_answer_schedule(
@@ -86,9 +108,15 @@ class ProductionE2ERunner:
         historical_results: list[dict[str, Any]] = []
         deterministic_failure_gates = 0
         real_query_successes = 0
+        top_n_known_executed = 0
+        top_n_known_passed = 0
+        top_n_boundary_ties_observed = 0
+        top_n_tie_answers_truth_safe = 0
 
         async with app.router.lifespan_context(app):
             service = app.state.turn_service
+            observed_provider = _TaskCountingProvider(service.llm_provider)
+            service.llm_provider = observed_provider
             original_gateway_execute = service.tool_gateway.execute
             dax_tool = service.tool_gateway.get_tool(TOOL_NAME_DAX)
             original_dax_handler = dax_tool.handler
@@ -236,6 +264,17 @@ class ProductionE2ERunner:
                     )
                     passed, oracle_code = self._evaluate_success(item, case)
                     real_query_successes += passed
+                    if case.expected_top_n is not None:
+                        top_n_known_executed += 1
+                        top_n_known_passed += passed
+                        tie_observed = passed and _topn_boundary_tie_observed(
+                            item["query_result"], case
+                        )
+                        if tie_observed:
+                            top_n_boundary_ties_observed += 1
+                            top_n_tie_answers_truth_safe += (
+                                _strict_rank_claim_absent(item["body"].get("answer"))
+                            )
                     known_results.append(
                         {
                             "case": case.id,
@@ -380,6 +419,11 @@ class ProductionE2ERunner:
             and all(item["passed"] for item in historical_results)
             and fallback_count == 0
             and pollution_count == 0
+            and top_n_known_executed > 0
+            and top_n_known_passed == top_n_known_executed
+            and top_n_tie_answers_truth_safe == top_n_boundary_ties_observed
+            and observed_provider.task_counts[LLMTask.DAX] == 0
+            and observed_provider.task_counts[LLMTask.ANSWER] == 0
             and all(count == 0 for count in known_error_counts.values()),
             "status": "pass",
             "known_exact_executed": len(known_results),
@@ -394,12 +438,21 @@ class ProductionE2ERunner:
             "turns_passed": sum(item["passed"] for item in conversation_turns),
             "successful_real_query_turns": real_query_successes,
             "deterministic_failure_recovery_gates": deterministic_failure_gates,
+            "top_n_known_cases_executed": top_n_known_executed,
+            "top_n_known_cases_passed": top_n_known_passed,
+            "top_n_boundary_tie_cases_observed": top_n_boundary_ties_observed,
+            "top_n_tie_answers_truth_safe": top_n_tie_answers_truth_safe,
             "historical_a1_a2_a3": (
                 f"{sum(item['passed'] for item in historical_results)}/"
                 f"{len(historical_results)}"
             ),
             "fallback_count": fallback_count,
             "state_pollution_count": pollution_count,
+            "llm_task_counts": {
+                task.value: observed_provider.task_counts[task] for task in LLMTask
+            },
+            "dax_llm_calls": observed_provider.task_counts[LLMTask.DAX],
+            "answer_llm_calls": observed_provider.task_counts[LLMTask.ANSWER],
             "known_dax_error_counts": known_error_counts,
             "known_cases": known_results,
             "conversations": conversation_results,
@@ -546,3 +599,36 @@ def _same_committed(
         and before.last_query_plan == after.last_query_plan
         and before.last_query_result_id == after.last_query_result_id
     )
+
+
+def _topn_boundary_tie_observed(
+    result: QueryResult | None,
+    expected: KnownAnswerCaseSpec,
+) -> bool:
+    """Detect an observed rows-beyond-N boundary tie without exposing values."""
+
+    top_n = expected.expected_top_n
+    metric = f"[{expected.expected_measure}]"
+    if (
+        result is None
+        or top_n is None
+        or len(result.rows) <= top_n
+        or metric not in result.columns
+    ):
+        return False
+    metric_index = result.columns.index(metric)
+    try:
+        boundary = Decimal(str(result.rows[top_n - 1][metric_index]))
+        return any(
+            Decimal(str(row[metric_index])) == boundary
+            for row in result.rows[top_n:]
+        )
+    except (InvalidOperation, IndexError, TypeError, ValueError):
+        return False
+
+
+def _strict_rank_claim_absent(answer: Any) -> bool:
+    """A tied TopN answer may describe result order, never strict semantic rank."""
+
+    text = str(answer or "")
+    return bool(text) and re.search(r"第\s*\d+\s*位|排名|位居", text) is None

@@ -47,6 +47,9 @@ from backend.app.harness.tool_registry import (
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.deepseek_service import DeepSeekIntentService
 from backend.app.intent.models import IntentSpec, IntentType
+from backend.app.intent.unsupported_policy import (
+    should_defer_unsupported_to_grounding,
+)
 from backend.app.llm.base import LLMProvider
 from backend.app.memory.models import (
     PendingClarificationContext,
@@ -260,19 +263,43 @@ class DeepSeekTurnService:
         # linguistic diagnostic。数据/报表范围内的 canonical semantic
         # authority 统一交给后续 Grounding，不再做 Measure-only 特判。
         if intent.intent == IntentType.UNSUPPORTED:
-            await self.pipeline.clear_pending_clarification(
-                effective_conv_id, runtime_mode
-            )
-            trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
-                        data_summary={"terminal_state": "unsupported"})
-            return self._build_result(
-                effective_req_id, effective_conv_id, "unsupported",
-                intent=intent.intent.value, response_type="unsupported",
-                unsupported_reason=intent.unsupported_reason,
-                trace=trace, trace_id=trace_id, is_mock=False,
-                source_mode=self._source_mode,
-                collector=collector,
-            )
+            if should_defer_unsupported_to_grounding(
+                message,
+                intent,
+                committed=committed,
+                pending=pending_clarification,
+                report_template_key=report_template_key,
+            ):
+                provisional_intent = (
+                    IntentType.REPORT_GENERATION
+                    if report_template_key is not None
+                    or any(term in message for term in ("报告", "周报", "概览", "总览"))
+                    else IntentType.DATA_QUESTION
+                )
+                intent = intent.model_copy(update={
+                    "intent": provisional_intent,
+                    "unsupported_reason": None,
+                })
+                trace.record(
+                    "intent_unsupported_deferred_to_grounding",
+                    trace_id=trace_id,
+                    request_id=effective_req_id,
+                    data_summary={"provisional_intent": provisional_intent.value},
+                )
+            else:
+                await self.pipeline.clear_pending_clarification(
+                    effective_conv_id, runtime_mode
+                )
+                trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
+                            data_summary={"terminal_state": "unsupported"})
+                return self._build_result(
+                    effective_req_id, effective_conv_id, "unsupported",
+                    intent=intent.intent.value, response_type="unsupported",
+                    unsupported_reason=intent.unsupported_reason,
+                    trace=trace, trace_id=trace_id, is_mock=False,
+                    source_mode=self._source_mode,
+                    collector=collector,
+                )
 
         if intent.intent == IntentType.CLARIFICATION and not self.powerbi.is_mock:
             provisional_intent = (
@@ -461,6 +488,42 @@ class DeepSeekTurnService:
                     _member_lookup,
                     pending=pending_clarification,
                 )
+                if not grounding.pending_eligible:
+                    await self.pipeline.clear_pending_clarification(
+                        effective_conv_id, runtime_mode
+                    )
+                    await self.pipeline.mark_memory_failed(
+                        effective_req_id,
+                        runtime_mode,
+                        reason="semantic_capability_unsupported",
+                        stage="semantic_grounding",
+                    )
+                    controller.set_failure_reason("semantic_capability_unsupported")
+                    controller.transition(TurnState.CLARIFICATION_REQUIRED)
+                    trace.record(
+                        "semantic_capability_unsupported",
+                        trace_id=trace_id,
+                        request_id=effective_req_id,
+                        data_summary={"status": grounding.status.value},
+                    )
+                    return self._build_result(
+                        effective_req_id,
+                        effective_conv_id,
+                        "clarification_required",
+                        intent=intent.intent.value,
+                        response_type="clarification",
+                        clarification_question=grounding.clarification_question,
+                        trace=trace,
+                        trace_id=trace_id,
+                        is_mock=False,
+                        source_mode=self._source_mode,
+                        collector=collector,
+                        execution_audit={
+                            "pending_clarification": False,
+                            "committed_memory_mutated": False,
+                            "schema_fingerprint": catalog.schema_fingerprint,
+                        },
+                    )
                 clarification_merge = None
                 if (
                     pending_clarification is not None

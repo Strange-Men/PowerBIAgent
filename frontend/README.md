@@ -37,8 +37,8 @@
 ## 前端规范文档
 
 - `docs/01_product_scope_and_frontend_skeleton.md` — 产品范围与前端骨架
-- `docs/10_frontend_visual_and_interaction_spec.md` — 正式视觉与交互规范
-- `docs/11_structured_answer_contract.md` — 结构化组合回答契约
+- `docs/specs/10_frontend_visual_and_interaction_spec.md` — 正式视觉与交互规范
+- `docs/specs/11_structured_answer_contract.md` — 结构化组合回答契约
 
 ## 当前目录约束
 

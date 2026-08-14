@@ -38,6 +38,7 @@ from backend.app.schemas.data_contracts import (
     QueryPlan,
     QueryResult,
     SemanticModelSchema,
+    StructuredFilter,
     TableSchema,
 )
 
@@ -962,6 +963,68 @@ class _M24ScriptedDeepSeekProvider(LLMProvider):
         )
 
 
+class _UnsupportedRoutingProvider(_M24ScriptedDeepSeekProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.active = "normal"
+
+    async def generate(
+        self,
+        request: LLMRequest,
+        output_type: type[BaseModel],
+    ) -> LLMResponse:
+        self.calls.append(request)
+        if request.task == LLMTask.INTENT_RECOGNITION:
+            messages = {
+                "normal": "总销售额是多少？",
+                "unknown": "客户幸福指数是多少？",
+                "comparison": "销售额同比去年如何？",
+                "filter": "销售额中类别包含 Furniture",
+                "non_data": "帮我写一首诗",
+            }
+            structured = IntentSpec(
+                intent=IntentType.UNSUPPORTED,
+                confidence=0.7,
+                normalized_question=messages[self.active],
+                unsupported_reason="scripted false-or-true unsupported",
+            )
+        elif request.task == LLMTask.QUERY_PLAN:
+            if self.active == "unknown":
+                structured = QueryPlan(
+                    normalized_question="客户幸福指数是多少？",
+                    semantic_model_key="local_desktop_model",
+                )
+            elif self.active == "filter":
+                structured = QueryPlan(
+                    normalized_question="销售额中类别包含 Furniture",
+                    semantic_model_key="local_desktop_model",
+                    measures=["Total Sales"],
+                    filters=[StructuredFilter(
+                        field="Category",
+                        operator="contains",
+                        value="Furniture",
+                    )],
+                )
+            else:
+                structured = QueryPlan(
+                    normalized_question=(
+                        "销售额同比去年如何？"
+                        if self.active == "comparison"
+                        else "总销售额是多少？"
+                    ),
+                    semantic_model_key="local_desktop_model",
+                    measures=["Total Sales"],
+                )
+        else:
+            raise AssertionError(f"unexpected LLM task: {request.task}")
+        return LLMResponse(
+            content="{}",
+            structured=structured,
+            model="fake-deepseek",
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        )
+
+
 class _M24FakeLocalPowerBIAdapter(PowerBIAdapter):
     def __init__(self, **_: object) -> None:
         self.schema_calls = 0
@@ -1189,7 +1252,7 @@ def _patch_fake_runtime_glossary(monkeypatch):
 
     aliases = {
         "Total Sales": ["销售额", "总销售额", "销售金额"],
-        "Total Quantity": ["销量", "总数量", "销售数量", "件数"],
+        "Total Quantity": ["销量", "总数量", "销售数量", "件数", "多少件"],
         "Category": ["类别", "品类"],
         "Product": ["产品", "商品"],
         "OrderDate": ["订单日期", "销售日期"],
@@ -1263,6 +1326,27 @@ def _patch_m24_local_composition(monkeypatch, adapter_type):
         llm_mode=LLMMode.DEEPSEEK,
         powerbi_mode=PowerBIMode.LOCAL_MCP,
         deepseek_api_key=fake_key,
+    )
+    return main_module.create_app(settings=settings), provider
+
+
+def _patch_unsupported_routing_composition(monkeypatch):
+    import backend.app.llm.factory as llm_factory
+    import backend.app.main as main_module
+
+    provider = _UnsupportedRoutingProvider()
+    registry = LLMProviderRegistry()
+    registry.register("deepseek", provider, set_default=True)
+    monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+    _patch_fake_runtime_glossary(monkeypatch)
+    monkeypatch.setattr(
+        main_module, "LocalMCPPowerBIAdapter", _M24FakeLocalPowerBIAdapter
+    )
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        deepseek_api_key="test-key-not-real",
     )
     return main_module.create_app(settings=settings), provider
 
@@ -1643,6 +1727,46 @@ class TestPendingClarificationProductionPath:
 
 
 class TestM24DeepSeekLocalChat:
+    @pytest.mark.asyncio
+    async def test_unsupported_intent_routing_and_memory_boundaries(self, monkeypatch):
+        app, provider = _patch_unsupported_routing_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        cases = (
+            ("normal", "总销售额是多少？", "completed"),
+            ("unknown", "客户幸福指数是多少？", "clarification_required"),
+            ("comparison", "销售额同比去年如何？", "clarification_required"),
+            ("filter", "销售额中类别包含 Furniture", "clarification_required"),
+            ("non_data", "帮我写一首诗", "unsupported"),
+        )
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                for active, message, terminal_state in cases:
+                    provider.active = active
+                    conversation_id = f"unsupported-routing-{active}"
+                    response = await client.post("/api/v1/chat", json={
+                        "message": message,
+                        "conversation_id": conversation_id,
+                        "request_id": f"unsupported-routing-{active}-request",
+                    })
+                    body = response.json()
+                    assert response.status_code == 200, body
+                    assert body["terminal_state"] == terminal_state, body
+                    committed = await service.pipeline.get_latest_committed_memory(
+                        conversation_id, RuntimeDataMode.REAL
+                    )
+                    if active == "normal":
+                        assert committed is not None
+                        assert body["intent"] == "data_question"
+                    else:
+                        assert committed is None
+                    if active in {"comparison", "filter", "non_data"}:
+                        assert await service.pipeline.get_pending_clarification(
+                            conversation_id, RuntimeDataMode.REAL
+                        ) is None
+
     @pytest.mark.asyncio
     async def test_catalog_alias_can_correct_intent_clarification(self, monkeypatch):
         class ClarifyingProvider(_M24ScriptedDeepSeekProvider):

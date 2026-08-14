@@ -1,111 +1,71 @@
 # PowerBIAgent — Power BI 数据分析 Agent MVP
 
-## 项目简介
+PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并在后续阶段以固定模板生成静态 HTML 报表。
 
-PowerBIAgent 是供公司内部少量人员使用的 Power BI 数据分析 Agent MVP。
+当前版本：**M2.6.4 final hardened candidate**；本地 offline/Real hardened acceptance 已完成，等待远程审计。
 
-核心链路：用户自然语言提问 → FastAPI → 确定性 TurnPipeline → Semantic Grounding → Canonical QueryPlan → Deterministic DAX → Power BI MCP → QueryResult → VerifiedFactSet → fact-bounded Answer / ReportSpec。
+```text
+Natural Language
+→ FastAPI / TurnPipeline
+→ Semantic Grounding
+→ Canonical QueryPlan
+→ Deterministic DAX
+→ Independent Layer 3
+→ Power BI MCP
+→ QueryResult
+→ VerifiedFactSet
+→ fact-bounded Answer / ReportSpec
+```
+
+Real 路径的 DAX LLM authority/call count 为 0。LLM 不定义 canonical Measure、Dimension、Member、Time、DAX、QueryResult 或外部事实；VerifiedFactSet 是数值、结果顺序、极值、筛选、时间与 provenance 的唯一事实 authority。
 
 ## 当前状态
 
-**M2.6.3 Deterministic Execution & Verified Facts 已完成开发分支候选。**
+- M0—M1 已正式封板；M2 Local MCP + Power BI Desktop 真实数据问答已完成 final hardening 候选。
+- Business Semantic Catalog、Grounding/StateTransition、PendingClarificationContext、Deterministic DAX、Independent Layer 3 与 VerifiedFactSet 已实现。
+- TopN boundary ties 可超过 N；Answer 只表达 QueryResult `result_position`，不把 row index 写成严格 business rank。
+- Bounded LLM selector 只能选择 Catalog-owned、metadata-backed shortlist ID；无唯一证据必须 clarification。
+- data/report-shaped 请求不会仅因 Intent LLM 的 `UNSUPPORTED` 绕过 Grounding；明确破坏性、越权、任意代码与非数据请求仍 early-stop。
+- Remote MCP 生产化 Deferred。下一功能阶段是 M3 Renderer，但当前分支不进入 M3/M4/M5。
+- `dev/m2.6.4-final-hardening` 只等待远程审计；不合并 `main`，不创建 Tag。
 
-> M0—M1 已正式封板，M2 Local Demo Tag 保持不变。M2.6.3 已将 Real DAX authority 收口为受限确定性 Builder + Independent Layer 3，并建立 VerifiedFactSet factual boundary；正式多轮基线经 clarification contract 治理更正为 6 Conversation / 16 Turn。开发分支通过真实 production Memory E2E，Remote MCP 继续 Deferred，待远程审计后再决定合入 main。
+幂等规则：相同 `request_id` + 相同请求重放且不重复执行；相同 ID + 不同内容返回 HTTP 409；并发同 ID 只有一个 Owner 执行。
 
-### 幂等与并发特性
+## 开发环境
 
-- **相同 request_id + 相同请求**：幂等重放，不重复执行 LLM/工具/Memory
-- **相同 request_id + 不同请求**：HTTP 409 `request_id_conflict`
-- **并发相同 request_id**：仅一个请求执行（Owner），其余等待重放（Waiter）
-- **并发不同 request_id**：正常独立执行
-
-> **限制：** 当前快照和并发防重仅保证单进程 Service 实例。分布式幂等将在后续基础设施阶段处理。
-
-## 开发环境准备
-
-### Conda 环境
-
-本机 Conda 安装目录：`D:\Conda`
-
-#### 检查 Conda
-
-```powershell
-D:\Conda\Scripts\conda.exe --version
-```
-
-#### 创建 PBIAgent 环境
+要求 Windows、Python 3.11；本仓库固定 Conda 环境名为 `PBIAgent`。
 
 ```powershell
 D:\Conda\Scripts\conda.exe create -n PBIAgent python=3.11 -y
-```
-
-#### 激活 PBIAgent 环境
-
-```powershell
-# 推荐：直接使用环境中的 Python
-D:\Conda\envs\PBIAgent\python.exe --version
-```
-
-#### 安装项目依赖
-
-```powershell
-# 仅安装运行依赖
-D:\Conda\envs\PBIAgent\python.exe -m pip install -e .
-
-# 安装开发和测试依赖
 D:\Conda\envs\PBIAgent\python.exe -m pip install -e ".[dev]"
 ```
 
-核心依赖：FastAPI、Uvicorn、pydantic-settings、httpx、官方 MCP Python SDK（版本已锁定，见 pyproject.toml）。
-
-### M2 Local MCP 外部前置
-
-- Windows 与 Power BI Desktop；运行 Smoke 前需打开一个测试 PBIX。
-- Node.js 20+（包含 npm / npx）。
-- Local Server 的 M2.1—M2.5 实机验证固定版本为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，项目以 stdio 和 `--readonly` 启动。
-- Local Demo 不要求 Tenant ID、Client ID、Redirect URI 或 Microsoft Token。
-
-### 环境变量
-
-项目使用 `.env` 文件和环境变量配置。Mock 模式启动不需要任何 API Key。
-
-#### 创建本地 .env
+Mock 模式无需 API Key。需要真实 DeepSeek 时，由用户本人创建本地配置：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-然后：
-- `.env` 由用户本人本地填写真实 API Key
-- `.env` 禁止提交（已在 `.gitignore` 中排除）
-- Claude / Codex / 其他代码 Agent 和自动化工具不得读取 `.env` 内容
-- DeepSeek API Key 只在后端运行时使用
-- 前端永远不保存模型 API Key
+`.env`、Token、PBIX、真实业务输出和 `local_state/` 禁止提交；代码 Agent 不读取 `.env` 内容。Provider Secret 永不进入前端。
 
-#### 环境变量说明
+主要配置：
 
 | 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `APP_ENV` | `development` | 运行环境 (development/test/production) |
-| `LLM_MODE` | `mock` | LLM 模式 (mock/deepseek) |
-| `POWERBI_MODE` | `mock` | Power BI 模式 (mock/local_mcp/remote_mcp)；Local 可接现有 Chat，Remote 仍不可用 |
-| `POWERBI_LOCAL_SEMANTIC_MODEL_KEY` | `local_desktop_model` | Local Desktop 模型的 friendly key；不接受端口或连接串 |
-| `HOST` | `127.0.0.1` | 监听地址 |
-| `PORT` | `8000` | 监听端口 |
+|---|---|---|
+| `LLM_MODE` | `mock` | `mock` / `deepseek` |
+| `POWERBI_MODE` | `mock` | `mock` / `local_mcp`；`remote_mcp` 仍 Deferred |
+| `POWERBI_LOCAL_SEMANTIC_MODEL_KEY` | `local_desktop_model` | Local friendly model key |
+| `HOST` | `127.0.0.1` | 后端监听地址 |
+| `PORT` | `8000` | 后端监听端口 |
 
-### 启动应用
+## 启动与接口
 
 ```powershell
 D:\Conda\envs\PBIAgent\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
-```
-
-### 健康检查
-
-```powershell
 curl http://127.0.0.1:8000/health
 ```
 
-响应示例：
+Health 示例：
 
 ```json
 {
@@ -113,159 +73,82 @@ curl http://127.0.0.1:8000/health
   "ready": true,
   "configuration_ready": true,
   "powerbi_live_connected": false,
-  "reasons": [],
-  "app_name": "PowerBIAgent",
-  "app_env": "development",
-  "version": "M2.6.1",
+  "version": "M2.6.4",
   "llm_mode": "mock",
-  "powerbi_mode": "mock",
-  "harness_mode": "strict",
-  "timestamp": "2026-07-31T07:03:23Z"
+  "powerbi_mode": "mock"
 }
 ```
 
-`ready` 为兼容字段，等同 `configuration_ready`；两者只说明配置可创建当前运行模式，不代表 Power BI Desktop 此刻实时连接正常。真实连接仍由实际 Turn 或人工 Smoke 验证。
+`ready` 等同 `configuration_ready`，只说明当前配置可创建运行模式，不代表 Power BI Desktop 实时在线。真实连接由实际 Turn 或人工 Smoke 验证。
 
-### M2.1 Local MCP 人工 Smoke
-
-先在 Power BI Desktop 打开测试 PBIX，再运行：
+对话接口：
 
 ```powershell
-D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\powerbi_local_mcp_connection_smoke.py
+curl -X POST http://127.0.0.1:8000/api/v1/chat `
+  -H "Content-Type: application/json" `
+  -d '{"message":"本月销售额是多少？"}'
 ```
 
-Smoke 只做协议、工具发现与 Desktop 连接，不读取完整 Schema、不执行 DAX、不调用 DeepSeek。
+## Local MCP 前置
 
-### M2.2 Local MCP Schema 人工 Smoke
+- Windows + 已打开测试 PBIX 的 Power BI Desktop。
+- Node.js 20+；Local Server 固定实机基线为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，以 stdio + `--readonly` 启动。
+- Local Demo 不要求 Tenant ID、Client ID 或 Microsoft Token。
+- 业务层只能经 TurnPipeline → ToolGateway → PowerBIAdapter；不得直接调用 MCP。
 
-先在 Power BI Desktop 打开本地测试 PBIX，再运行：
-
-```powershell
-D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\powerbi_local_mcp_schema_smoke.py
-```
-
-Smoke 经 ToolGateway → LocalMCPPowerBIAdapter 读取真实 Schema，只输出脱敏计数与固定预期字段检查；不打印完整 Schema、Measure expression、连接信息或业务数据，不执行 DAX，不调用 DeepSeek。
-
-### M2.3 Local MCP DAX 人工 Smoke
-
-先在 Power BI Desktop 打开本地测试 PBIX，再运行：
+## 验证命令
 
 ```powershell
-D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\powerbi_local_mcp_dax_smoke.py
-```
+# Full offline regression
+D:\Conda\envs\PBIAgent\python.exe -m pytest backend\tests -q
+D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 
-Smoke 经 ToolGateway → LocalMCPPowerBIAdapter 执行固定 `ROW` 与两个 Demo Measure 查询，只输出行数、固定值校验和 `source_mode` 标志；不打印连接信息、原始 MCP 响应或业务数值，不调用 DeepSeek。
+# Deterministic gates
+D:\Conda\envs\PBIAgent\python.exe scripts\check_architecture_gate.py
+D:\Conda\envs\PBIAgent\python.exe scripts\check_repository_safety.py
+D:\Conda\envs\PBIAgent\python.exe scripts\check_ai_error_ledger.py
+D:\Conda\envs\PBIAgent\python.exe scripts\check_documentation_governance.py
 
-### M2.4 DeepSeek + Local Power BI Chat 人工 Smoke
-
-先在 Power BI Desktop 打开本地测试 PBIX，并在本地 `.env` 配置 DeepSeek，再运行：
-
-```powershell
-D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\deepseek_local_powerbi_chat_smoke.py
-```
-
-Smoke 复用正式 API、DeepSeekTurnService、TurnPipeline 与 ToolGateway，验证总销售额、总数量和带类别筛选的销售额三个真实 Case；输出经过脱敏，不打印 DAX、业务值、连接信息或 Secret。本地临时 Trace 位于系统临时目录，不进入 Git。
-
-### M2.5 Business Golden 人工 Smoke
-
-先在 Power BI Desktop 打开本地测试 PBIX，并在本地 `.env` 配置 DeepSeek，再运行：
-
-```powershell
-D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_business_golden_smoke.py
-```
-
-Smoke 通过正式 Chat API 验证 7 个真实业务 Case，覆盖 Measure、Dimension、Filter、Top N/Sort 与 Schema 泛化；输出仅包含 Case 成败、契约匹配、Layer 3、source mode、Answer provenance 和调用/修复计数，不打印 DAX、业务数值、Prompt、原始响应、连接信息或 PBIX 路径。`gc_012_real_baseline` 由该人工 Smoke 提供真实基线，通用 CI 仍只运行 Mock/Fake。
-
-### M2.6.1 Known-answer / Multi-turn 离线 Harness
-
-```powershell
+# Known-answer / multi-turn offline
 D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn_smoke.py --mode offline
 ```
 
-该 Runner 复用正式 `create_app → /api/v1/chat` 路径，以 Fake/Mock 虚构数据验证 8 个 Known-answer Case、2 个 holdout 及 6 组/15 Turn Conversation。`--mode real` 在 M2.6.1 只校验 `local_state/m2_known_answers.yaml` 是否存在且覆盖完整，始终不执行真实调用；真实执行仅属于 M2.6.2。真实数值不得提交、推送或写入公开 fixture/Trace。
-
-### 对话接口
+真实 M2 hardened acceptance（需用户本地 DeepSeek 配置并打开测试 PBIX）：
 
 ```powershell
-curl -X POST http://127.0.0.1:8000/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "本月销售额是多少？"}'
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_semantic_grounding_smoke.py --historical-repeats 5
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn_smoke.py --mode real --historical-repeats 10
 ```
 
-响应示例：
+旧的分层 Local 连接/Schema/DAX/Chat/Business Golden Smoke 仍位于 `scripts/manual_smoke/`，仅在对应 Provider 诊断时按需执行。真实输出必须保持脱敏且不进入 Git。
 
-```json
-{
-  "request_id": "...",
-  "conversation_id": "...",
-  "terminal_state": "completed",
-  "intent": "data_question",
-  "response_type": "answer",
-  "answer": "本月销售额约为 1,250 万元，较上月增长 8.3%...",
-  "tool_sequence": ["get_semantic_model_schema", "execute_dax"],
-  "memory_commit": true,
-  "trace_id": "...",
-  "is_mock": true,
-  "idempotent_replay": false,
-  "replayed_request_id": null
-}
-```
+## 里程碑边界
 
-### 运行测试
+| 层级 | 当前状态 |
+|---|---|
+| FastAPI / TurnPipeline / ToolGateway | ✅ 统一确定性控制面 |
+| DeepSeek + Mock LLM | ✅ 共用 Provider 边界；Real DAX authority=0 |
+| Power BI | ✅ Local Desktop；Remote Deferred |
+| Semantic Grounding / Clarification | ✅ Canonical authority + Pending/Committed 分离 |
+| VerifiedFactSet / factual output | ✅ 事实边界 |
+| 正式 HTML Renderer | ⬜ M3 |
+| 持久化会话 | ⬜ M4 |
+| React + Vite UI | ⬜ M5 |
 
-```powershell
-# 全量测试
-D:\Conda\envs\PBIAgent\python.exe -m pytest backend/tests -q
+## 文档入口
 
-# Golden Cases
-D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
-
-# 仓库安全检查（提交前必须执行）
-D:\Conda\envs\PBIAgent\python.exe scripts/check_repository_safety.py
-
-# 人工验收 Smoke（需 .env 中配置 DEEPSEEK_API_KEY，项目根目录执行）
-D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\deepseek_chat_smoke.py
-```
-### DeepSeek 配置
-
-DeepSeek 配置由本地 `.env` 提供：
-- `LLM_MODE=deepseek` — 启用 DeepSeek 模式
-- `DEEPSEEK_API_KEY=<your_key_here>` — API Key（仅后端使用）
-- `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1` — API 地址
-- `DEEPSEEK_MODEL=deepseek-chat` — 模型名称
-
-代码 Agent 不读取 `.env`。Key 只在后端运行时使用。Smoke 输出经过脱敏。
-`httpx` 属于运行依赖。
-
-## 技术栈
-
-| 层级 | 技术 | 状态 |
-|------|------|------|
-| 前端 | React + Vite | 骨架已确认，开发延后 (M5) |
-| 后端 | FastAPI | ✅ M0.4 最小骨架已完成 |
-| Agent | 确定性 TurnPipeline | ✅ M1.6.3 统一执行骨架 |
-| LLM | DeepSeek + Mock LLM | ✅ Mock 可运行；DeepSeek Chat 全链路已封板 (M1.5) |
-| 数据 | Power BI MCP | ✅ Local Desktop Demo 已完成 Business Golden 与 Bad Case 封板候选；Remote Deferred |
-| 记忆 | 结构化工作记忆 | ✅ M0.2-M0.3.2 完整实现 |
-| 报表 | 固定模板 HTML | ✅ Mock 可运行；真实渲染延后 (M3) |
-| Harness | MVP 轻量控制面 | ✅ M2.6.1 独立 Oracle + 6 组多轮 MiniSuite 离线通过 |
-
-## 文档导航
-
-| 文档 | 说明 |
-|------|------|
-| `AGENTS.md` | Claude / Codex / 其他代码 Agent 的仓库级入口与架构边界 |
-| `PROJECT_CHARTER.md` | 项目北极星，不可静默修改的核心约束 |
-| `CLAUDE.md` | 通用代码 Agent 开发协议、Commit/Tag 规则、冷启动协议 |
-| `docs/00_product_requirements_document.md` | 正式 PRD |
-| `docs/08_development_roadmap.md` | 完整开发路线 |
-| `docs/09_context_handoff.md` | 最新交接入口 |
-| `docs/adr/` | 架构决策记录 |
-
-## 许可证
+- `AGENTS.md`：代码 Agent 仓库入口、铁律与 Cold Start。
+- `docs/index.md`：Documentation Map 与 P0—P3 阅读优先级。
+- `PROJECT_CHARTER.md`：项目北极星。
+- `docs/00_product_requirements_document.md`：正式唯一 PRD。
+- `docs/08_development_roadmap.md`：精简路线。
+- `docs/09_context_handoff.md`：当前状态与下一步。
+- `docs/adr/`：长期架构决策。
+- `docs/specs/`、`docs/milestones/`：专项规范和阶段计划。
+- `docs/archive/`：默认不读的历史资料。
 
 专有软件，公司内部使用。
 
 ---
 
-*最后更新：2026-08-14 | M2.6.3 Deterministic Execution & Verified Facts 开发分支候选*
+*最后更新：2026-08-14 | M2.6.4 final hardened candidate*

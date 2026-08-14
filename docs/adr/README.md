@@ -33,6 +33,8 @@
 | ADR-008 | [Business Semantic Catalog and Grounding Authority](ADR-008_business_semantic_catalog_and_grounding_authority.md) | accepted | 2026-08-13 |
 | ADR-009 | [Deterministic Query Execution and Verified Fact Authority](ADR-009_deterministic_query_execution_and_verified_fact_authority.md) | accepted | 2026-08-14 |
 
+当前开发最重要的 active 决策为 ADR-005—ADR-009：ADR-005 约束统一控制面，ADR-006/007 分别约束 Deferred Remote 与当前 Local Provider，ADR-008/009 分别约束 canonical business semantics 与 deterministic execution / VerifiedFactSet。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
+
 ## ADR 详情
 
 ### ADR-001 — Agent 框架选择 ⚠️ SUPERSEDED
@@ -75,4 +77,4 @@ Execution、Tooling、Context、Lifecycle、Observability、Verification、Gover
 
 ---
 
-*最后更新：2026-08-14 | M2.6.3 ADR-009 Deterministic Execution / Verified Facts 决策*
+*最后更新：2026-08-14 | M2.6.4 active/superseded 状态复核；未新增 ADR*

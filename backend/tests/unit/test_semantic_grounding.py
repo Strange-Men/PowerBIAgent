@@ -192,6 +192,19 @@ class TestSemanticCatalogAndObjectGrounding:
         assert alias.status == GroundingStatus.RESOLVED
         assert alias.canonical_object.canonical_name == "Total Quantity"
 
+    def test_approved_quantity_question_alias_is_deterministic_mention(self):
+        glossary = _glossary()
+        glossary["measures"]["Total Quantity"]["aliases"].append("多少件")
+        result = ObjectGrounder(_catalog(glossary)).find_mentions(
+            "总共卖了多少件商品？",
+            SemanticObjectType.MEASURE,
+            "measure",
+        )
+
+        assert result.status == GroundingStatus.RESOLVED
+        assert result.canonical_object.canonical_name == "Total Quantity"
+        assert result.method == "current_input_mention"
+
     def test_wrong_model_key_and_unknown_object_rejected(self):
         wrong = _glossary(semantic_model_key="wrong")
         with pytest.raises(
@@ -221,6 +234,156 @@ class TestSemanticCatalogAndObjectGrounding:
         )
         assert result.status == GroundingStatus.NOT_MENTIONED
         assert result.canonical_object is None
+
+    @pytest.mark.asyncio
+    async def test_two_similar_measures_remain_ambiguous_despite_selector(self):
+        glossary = _glossary()
+        glossary["measures"]["Total Sales"]["aliases"] = ["净销售额"]
+        glossary["measures"]["Total Quantity"]["aliases"] = ["净销售量"]
+        provider = _SelectionProvider("measure:Sales:Total Sales")
+
+        result = await ObjectGrounder(
+            _catalog(glossary), BoundedLLMObjectSelector(provider)
+        ).select_bounded(
+            "净销售指标",
+            "净销售指标",
+            SemanticObjectType.MEASURE,
+            "measure",
+        )
+
+        assert result.status == GroundingStatus.AMBIGUOUS
+        assert result.method == "bounded_llm_evidence_tie"
+        assert provider.calls == 0
+
+    @pytest.mark.asyncio
+    async def test_two_similar_dimensions_remain_ambiguous(self):
+        glossary = _glossary()
+        glossary["fields"]["Category"]["aliases"] = ["产品分类名称"]
+        glossary["fields"]["Product"]["aliases"] = ["产品分类编码"]
+        provider = _SelectionProvider("field:Sales:Category")
+
+        result = await ObjectGrounder(
+            _catalog(glossary), BoundedLLMObjectSelector(provider)
+        ).select_bounded(
+            "产品分类分析",
+            "按产品分类分析",
+            SemanticObjectType.FIELD,
+            "dimension",
+        )
+
+        assert result.status == GroundingStatus.AMBIGUOUS
+        assert provider.calls == 0
+
+    @pytest.mark.asyncio
+    async def test_unknown_phrase_never_receives_forced_catalog_choice(self):
+        provider = _SelectionProvider("measure:Sales:Total Sales")
+        result = await ObjectGrounder(
+            _catalog(), BoundedLLMObjectSelector(provider)
+        ).select_bounded(
+            "客户幸福指数",
+            "客户幸福指数是多少",
+            SemanticObjectType.MEASURE,
+            "measure",
+        )
+
+        assert result.status == GroundingStatus.UNRESOLVED
+        assert result.method == "bounded_llm_no_metadata_evidence"
+        assert provider.calls == 0
+
+    @pytest.mark.asyncio
+    async def test_partial_alias_evidence_can_bound_selection(self):
+        glossary = _glossary()
+        glossary["measures"]["Total Sales"]["aliases"] = ["净销售额"]
+        provider = _SelectionProvider("measure:Sales:Total Sales")
+        catalog = _catalog(glossary)
+
+        result = await ObjectGrounder(
+            catalog, BoundedLLMObjectSelector(provider)
+        ).select_bounded(
+            "净销售表现",
+            "净销售表现如何",
+            SemanticObjectType.MEASURE,
+            "measure",
+        )
+
+        assert result.status == GroundingStatus.RESOLVED
+        assert result.canonical_object == catalog.get("measure:Sales:Total Sales")
+        assert result.canonical_object.object_type == SemanticObjectType.MEASURE
+        assert result.canonical_object.table_name == "Sales"
+        assert provider.calls == 1
+
+    @pytest.mark.asyncio
+    async def test_selector_invalid_id_is_unresolved(self):
+        glossary = _glossary()
+        glossary["measures"]["Total Sales"]["aliases"] = ["净销售额"]
+        provider = _SelectionProvider("measure:Other:Ghost")
+
+        result = await ObjectGrounder(
+            _catalog(glossary), BoundedLLMObjectSelector(provider)
+        ).select_bounded(
+            "净销售表现",
+            "净销售表现如何",
+            SemanticObjectType.MEASURE,
+            "measure",
+        )
+
+        assert result.status == GroundingStatus.UNRESOLVED
+        assert result.method == "bounded_llm_unknown_candidate"
+
+    @pytest.mark.asyncio
+    async def test_exact_alias_wins_without_selector_call(self):
+        provider = _SelectionProvider("measure:Sales:Total Sales")
+        result = ObjectGrounder(
+            _catalog(), BoundedLLMObjectSelector(provider)
+        ).resolve_phrase("销量", SemanticObjectType.MEASURE, "measure")
+
+        assert result.status == GroundingStatus.RESOLVED
+        assert result.canonical_object.canonical_name == "Total Quantity"
+        assert provider.calls == 0
+
+    @pytest.mark.asyncio
+    async def test_selector_cannot_override_stronger_metadata_candidate(self):
+        glossary = _glossary()
+        glossary["measures"]["Total Sales"]["aliases"] = ["净销售额"]
+        glossary["measures"]["Total Quantity"]["aliases"] = ["净销售量"]
+        provider = _SelectionProvider("measure:Sales:Total Quantity")
+
+        result = await ObjectGrounder(
+            _catalog(glossary), BoundedLLMObjectSelector(provider)
+        ).select_bounded(
+            "净销售额表现",
+            "净销售额表现",
+            SemanticObjectType.MEASURE,
+            "measure",
+        )
+
+        assert result.status == GroundingStatus.AMBIGUOUS
+        assert result.method == "bounded_llm_conflicts_with_metadata_evidence"
+
+
+class _SelectionProvider(LLMProvider):
+    def __init__(self, candidate_id: str):
+        self.candidate_id = candidate_id
+        self.calls = 0
+
+    @property
+    def provider_name(self):
+        return "selector-adversarial"
+
+    @property
+    def is_mock(self):
+        return False
+
+    async def generate(self, request, output_type):
+        self.calls += 1
+        assert output_type is CandidateSelection
+        return LLMResponse(
+            content="{}",
+            structured=CandidateSelection(
+                outcome="RESOLVED", candidate_id=self.candidate_id
+            ),
+            model="selector-adversarial",
+        )
 
 
 class TestMemberAndTimeGrounding:
@@ -468,13 +631,13 @@ class TestGroundingAuthorityAndStateTransition:
 
             async def generate(self, request, output_type):
                 assert output_type is CandidateSelection
-                assert "Total Quantity" in str(request.messages)
+                assert "Total Sales" in str(request.messages)
                 assert "JSON" in str(request.messages)
                 return LLMResponse(
                     content="{}",
                     structured=CandidateSelection(
                         outcome="RESOLVED",
-                        candidate_id="measure:Sales:Total Quantity",
+                        candidate_id="measure:Sales:Total Sales",
                     ),
                     model="selector-fake",
                 )
@@ -482,19 +645,62 @@ class TestGroundingAuthorityAndStateTransition:
         async def no_lookup(*_):
             raise AssertionError("member lookup should not run")
 
+        glossary = _glossary()
+        glossary["measures"]["Total Sales"]["aliases"] = ["净销售额"]
         outcome = await SemanticGroundingService(
-            _catalog(),
+            _catalog(glossary),
             selector=BoundedLLMObjectSelector(SelectorProvider()),
         ).ground(
-            "总共卖了多少件商品",
-            _intent(detected_measures=["销售件数"]),
-            _draft(measures=["Total Quantity"]),
+            "净销售表现如何",
+            _intent(detected_measures=["净销售表现"]),
+            _draft(measures=["Total Sales"]),
             None,
             no_lookup,
         )
         assert outcome.status == GroundingStatus.RESOLVED
-        assert outcome.delta.measures == ["Total Quantity"]
+        assert outcome.delta.measures == ["Total Sales"]
         assert outcome.object_results[0].method == "bounded_llm"
+
+    @pytest.mark.asyncio
+    async def test_unsupported_comparison_is_non_persistable_clarification(self):
+        async def no_lookup(*_):
+            raise AssertionError("member lookup should not run")
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "销售额同比去年如何",
+            _intent(detected_measures=["Total Sales"]),
+            _draft(measures=["Total Sales"]),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.UNRESOLVED
+        assert outcome.pending_eligible is False
+        assert "尚未支持" in outcome.clarification_question
+
+    @pytest.mark.asyncio
+    async def test_unsupported_filter_operator_is_non_persistable(self):
+        async def no_lookup(*_):
+            raise AssertionError("unsupported operator must stop before member lookup")
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "销售额中类别包含 Furniture",
+            _intent(detected_measures=["Total Sales"]),
+            _draft(
+                measures=["Total Sales"],
+                filters=[StructuredFilter(
+                    field="Category",
+                    operator="contains",
+                    value="Furniture",
+                )],
+            ),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.UNRESOLVED
+        assert outcome.pending_eligible is False
+        assert "仅支持等值筛选" in outcome.clarification_question
 
     @pytest.mark.asyncio
     async def test_current_grounding_wins_over_wrong_intent(self):

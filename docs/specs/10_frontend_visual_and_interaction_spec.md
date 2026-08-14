@@ -3,8 +3,8 @@
 > **状态：** M1.3.2 正式固化
 > **目标阶段：** M5 React 前端开发时使用
 > **视觉参考：**
-> ![已有对话与组合回答参考](assets/frontend/整体01.png)
-> ![新聊天欢迎态与菜单参考](assets/frontend/整体02.png)
+> ![已有对话与组合回答参考](../assets/frontend/整体01.png)
+> ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
 
 ---
 

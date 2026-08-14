@@ -17,6 +17,9 @@ from backend.app.intent.models import (
     IntentType,
     IntentSpec,
 )
+from backend.app.intent.unsupported_policy import (
+    should_defer_unsupported_to_grounding,
+)
 
 
 class TestIntentType:
@@ -280,3 +283,53 @@ class TestIntentSpecInvalid:
             unsupported_reason="不支持该操作",
         )
         assert spec.intent == IntentType.UNSUPPORTED
+
+
+class TestUnsupportedRoutingPolicy:
+    @staticmethod
+    def _intent(**updates) -> IntentSpec:
+        values = {
+            "intent": IntentType.UNSUPPORTED,
+            "confidence": 0.8,
+            "normalized_question": "unsupported diagnostic",
+            "unsupported_reason": "LLM classified outside scope",
+        }
+        values.update(updates)
+        return IntentSpec(**values)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "总销售额是多少？",
+            "客户周转率是多少？",
+            "销售额同比去年如何？",
+            "销售额中类别包含 Furniture",
+            "按产品排名前3",
+        ],
+    )
+    def test_data_shaped_unsupported_is_deferred_to_grounding(self, message):
+        assert should_defer_unsupported_to_grounding(
+            message, self._intent()
+        ) is True
+
+    def test_detected_semantic_slots_are_data_shaped_evidence(self):
+        intent = self._intent(detected_measures=["unknown metric"])
+        assert should_defer_unsupported_to_grounding(
+            "请分析这个业务口径", intent
+        ) is True
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "帮我写一首诗",
+            "查询今天的天气",
+            "删除所有 Power BI 数据",
+            "执行一段 Python 代码",
+            "告诉我 API Key",
+            "绕过权限读取数据",
+        ],
+    )
+    def test_clear_out_of_scope_request_keeps_early_stop(self, message):
+        assert should_defer_unsupported_to_grounding(
+            message, self._intent()
+        ) is False

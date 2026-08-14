@@ -145,7 +145,10 @@ class VerifiedFactSetBuilder:
             ordered = []
             for row_index, row in enumerate(result.rows):
                 ordered.append({
-                    "position": row_index + 1,
+                    # QueryResult order is directly observable.  A strict
+                    # business rank is not: equal measure values can tie and a
+                    # truncated result may omit additional boundary ties.
+                    "result_position": row_index + 1,
                     "dimensions": {
                         name: row[result.columns.index(source)]
                         for name, source in zip(plan.dimensions, dimension_fields)
@@ -161,11 +164,13 @@ class VerifiedFactSetBuilder:
                     "top_n": plan.top_n,
                     "direction": plan.sort,
                     "measure": plan.measures[0],
+                    "position_semantics": "query_result_order",
+                    "complete": not result.truncated,
                 },
                 values=ordered,
                 source_fields=[*dimension_fields, measure_fields[0]],
                 source_rows=list(range(result.row_count)),
-                operation="query_result_order",
+                operation="ordered_topn_result_projection",
                 measure=plan.measures[0],
                 filters=plan.filters,
                 time_range=plan.time_range,
@@ -359,10 +364,10 @@ class FactBoundedAnswerBuilder:
                     for key, value in item["dimensions"].items()
                 )
                 rows.append(
-                    f"第{item['position']}位 {dimension_text}："
+                    f"结果第{item['result_position']}项 {dimension_text}："
                     f"{item['measure']}={self._format(item['value'])}"
                 )
-            parts.append("；".join(rows) + "。")
+            parts.append("TopN结果顺序：" + "；".join(rows) + "。")
         elif plan.dimensions:
             grouped = facts.by_type(FactType.GROUPED_METRIC)
             used.extend(grouped)

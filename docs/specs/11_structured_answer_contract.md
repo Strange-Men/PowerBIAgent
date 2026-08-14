@@ -398,7 +398,7 @@ M5 将完成：
 
 ### DeepSeek 是模型能力
 
-DeepSeek 提供的是 LLM 能力（意图识别、QueryPlan 生成、DAX 生成、Answer 生成、ReportSpec 生成），不是数据来源。source_mode 不能因为使用真实 DeepSeek 而被标记为 real。
+DeepSeek 提供语言模型能力，不是数据来源。M1 的 QueryPlan/DAX/Answer/ReportSpec 生成描述是历史兼容契约；当前 Real 路径只保留 Intent/语言草稿/受限候选选择，DAX 与 factual Answer/Report 由 ADR-009 的确定性 Builder/VerifiedFactSet 控制。source_mode 不能因为使用真实 DeepSeek 而被标记为 real。
 
 ---
 

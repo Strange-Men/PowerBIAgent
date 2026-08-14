@@ -1,7 +1,7 @@
 # 04 — Power BI MCP 与 API 契约
 
-> **状态：** M1.3.2 核对并更新
-> **关联 ADR：** ADR-003
+> **状态：** M2.6.4 路径校准；早期 Remote/LLM DAX 描述以 ADR-006—ADR-009 为准
+> **关联 ADR：** ADR-003（partially superseded）、ADR-005—ADR-009
 > **API 源码：** `backend/app/api/routes.py`、`backend/app/main.py`
 > **数据契约源码：** `backend/app/schemas/data_contracts.py`
 
@@ -174,4 +174,4 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-*最后更新：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
+*最后更新：2026-08-14 | M2.6.4 current Provider/API authority marker*

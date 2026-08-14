@@ -18,6 +18,7 @@ measures:
       - 总数量
       - 销售数量
       - 件数
+      - 多少件
 
 fields:
   Category:

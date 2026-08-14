@@ -89,6 +89,7 @@ class GroundingOutcome(BaseModel):
     member_results: list[MemberGroundingResult] = Field(default_factory=list)
     clarification_question: str | None = None
     intent_disagreements: list[str] = Field(default_factory=list)
+    pending_eligible: bool = True
 
 
 class CandidateSelection(BaseModel):
@@ -305,10 +306,99 @@ class ObjectGrounder:
             return ObjectGroundingResult(
                 status=GroundingStatus.UNRESOLVED, role=role, phrase=phrase
             )
-        result = await self.selector.select(
-            phrase, user_input, self.catalog.by_type(object_type), committed_context
+        candidates, unique_best_id = self._evidence_candidates(
+            user_input, object_type
         )
+        if not candidates:
+            return ObjectGroundingResult(
+                status=GroundingStatus.UNRESOLVED,
+                role=role,
+                phrase=phrase,
+                method="bounded_llm_no_metadata_evidence",
+            )
+        if unique_best_id is None:
+            return ObjectGroundingResult(
+                status=GroundingStatus.AMBIGUOUS,
+                role=role,
+                phrase=phrase,
+                candidate_ids=tuple(item.object_id for item in candidates),
+                method="bounded_llm_evidence_tie",
+            )
+        result = await self.selector.select(
+            phrase, user_input, candidates, committed_context
+        )
+        if (
+            result.status == GroundingStatus.RESOLVED
+            and result.canonical_object is not None
+            and result.canonical_object.object_id != unique_best_id
+        ):
+            return ObjectGroundingResult(
+                status=GroundingStatus.AMBIGUOUS,
+                role=role,
+                phrase=phrase,
+                candidate_ids=tuple(item.object_id for item in candidates),
+                method="bounded_llm_conflicts_with_metadata_evidence",
+            )
         return result.model_copy(update={"role": role})
+
+    def _evidence_candidates(
+        self,
+        user_input: str,
+        object_type: SemanticObjectType,
+    ) -> tuple[tuple[CatalogObject, ...], str | None]:
+        """Return a metadata-backed shortlist and its unique strongest ID.
+
+        Exact canonical names and approved aliases are resolved before this
+        method.  The selector is therefore limited to conservative partial
+        metadata evidence; an unknown phrase never receives the whole catalog
+        as a forced-choice menu.  Equal strongest evidence remains ambiguous.
+        """
+
+        normalized_input = normalize_semantic_text(user_input)
+        scored: list[tuple[tuple[int, float], CatalogObject]] = []
+        for obj in self.catalog.by_type(object_type):
+            best = (0, 0.0)
+            for term in (obj.canonical_name, *obj.aliases, obj.description or ""):
+                normalized_term = normalize_semantic_text(term)
+                if not normalized_term:
+                    continue
+                common = self._longest_common_substring(
+                    normalized_input, normalized_term
+                )
+                minimum = 3 if self._contains_cjk(normalized_term) else 4
+                ratio = common / len(normalized_term)
+                if common >= minimum and ratio >= 0.5:
+                    best = max(best, (common, ratio))
+            if best[0] > 0:
+                scored.append((best, obj))
+        if not scored:
+            return (), None
+        scored.sort(key=lambda item: (item[0], item[1].object_id), reverse=True)
+        best_score = scored[0][0]
+        best_ids = [obj.object_id for score, obj in scored if score == best_score]
+        return (
+            tuple(obj for _, obj in scored),
+            best_ids[0] if len(best_ids) == 1 else None,
+        )
+
+    @staticmethod
+    def _contains_cjk(value: str) -> bool:
+        return any("\u4e00" <= char <= "\u9fff" for char in value)
+
+    @staticmethod
+    def _longest_common_substring(left: str, right: str) -> int:
+        if not left or not right:
+            return 0
+        previous = [0] * (len(right) + 1)
+        longest = 0
+        for left_char in left:
+            current = [0]
+            for index, right_char in enumerate(right, start=1):
+                value = previous[index - 1] + 1 if left_char == right_char else 0
+                current.append(value)
+                longest = max(longest, value)
+            previous = current
+        return longest
 
     @staticmethod
     def _resolved(
@@ -605,6 +695,7 @@ class SemanticGroundingService:
                 return self._clarification(
                     GroundingStatus.UNRESOLVED, object_results, member_results,
                     "当前仅支持等值筛选，请改为明确的等值条件。", disagreements,
+                    pending_eligible=False,
                 )
             draft_field = self.objects.resolve_phrase(
                 raw_filter.field, SemanticObjectType.FIELD, "filter_field"
@@ -798,6 +889,7 @@ class SemanticGroundingService:
             return self._clarification(
                 GroundingStatus.UNRESOLVED, object_results, member_results,
                 "当前尚未支持该对比口径，请改为单一时间范围查询。", disagreements,
+                pending_eligible=False,
             )
         return GroundingOutcome(
             status=GroundingStatus.RESOLVED,
@@ -1144,6 +1236,8 @@ class SemanticGroundingService:
         member_results: list[MemberGroundingResult],
         question: str,
         disagreements: list[str],
+        *,
+        pending_eligible: bool = True,
     ) -> GroundingOutcome:
         return GroundingOutcome(
             status=status,
@@ -1151,4 +1245,5 @@ class SemanticGroundingService:
             member_results=member_results,
             clarification_question=question,
             intent_disagreements=disagreements,
+            pending_eligible=pending_eligible,
         )

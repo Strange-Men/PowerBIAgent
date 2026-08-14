@@ -21,8 +21,8 @@
 用户自然语言提问
 → React 极简对话页面
 → FastAPI 后端
-→ 确定性 TurnPipeline（意图识别 → QueryPlan → DAX → Answer → ReportSpec）
-→ DeepSeek（受控结构化 LLM 调用）
+→ 确定性 TurnPipeline（Intent → Grounding → Canonical QueryPlan → Deterministic DAX → VerifiedFactSet）
+→ DeepSeek（受控语言理解与结构化草稿；不拥有 Real DAX/Fact authority）
 → Power BI MCP
 → Power BI 语义模型
 → 数据问答或固定模板静态 HTML 报表
@@ -32,7 +32,7 @@
 
 - 自然语言对话式数据查询
 - 确定性 TurnPipeline 生命周期控制（非自主 Agent 循环）
-- 受控 LLM 结构化调用（Intent → QueryPlan → DAX → Answer → ReportSpec）
+- 受控 LLM 语言理解与结构化草稿；Real 执行与外部事实由普通代码确定性控制
 - 结构化工作记忆与可靠提交机制
 - 固定模板安全报表生成
 - Power BI MCP 后端统一接入
@@ -47,7 +47,7 @@
 
 - 使用 FastAPI
 - 采用确定性 TurnPipeline 控制对话生命周期（非自主 Agent 循环）
-- LLM 仅负责受约束的结构化生成（Intent、QueryPlan、DAX、Answer、ReportSpec）
+- LLM 仅负责受约束的 Intent、语言草稿与 Catalog-owned bounded selection；Real DAX 与 factual Answer/Report 由 Deterministic Builder + VerifiedFactSet 控制
 - 通过统一 Provider 接口封装 LLM 调用，Mock 与 DeepSeek 共享同一执行骨架
 - ToolGateway 是 Power BI 和 Renderer 的唯一调用入口
 - **不使用 LangGraph**
@@ -58,10 +58,10 @@
 ## 七、确定性管线原则
 
 - 整个对话生命周期由确定性 TurnPipeline 控制（非 LLM 自主决策）
-- TurnPipeline 按固定阶段顺序执行：Intent → QueryPlan → DAX → Answer → ReportSpec
+- TurnPipeline 按固定阶段顺序执行：Intent → Grounding → Canonical QueryPlan → Deterministic DAX → QueryResult → VerifiedFactSet → Answer/ReportSpec
 - 管线拥有明确工具白名单
 - 管线不执行任意 Python、Shell、PowerShell、SQL、JavaScript 或自由 HTML
-- LLM 在管线中仅作为结构化生成器，不控制流程分支或工具调用
+- LLM 在管线中不控制流程分支、工具调用、Real DAX 或外部事实
 
 ## 八、意图识别要求
 
@@ -139,13 +139,13 @@
 4. 已确认 ADR
 5. 正式设计文档
 6. docs/09_context_handoff.md 中的当前状态
-7. 原始 PRD.md（仅作历史参考，不直接指导开发）
+7. `docs/archive/original/PRD.md`（仅作历史参考，不直接指导开发）
 8. Claude 的可逆默认假设
 
 文件之间出现冲突时，按优先级处理；无法判断时记录到待确认事项；不得静默改变产品方向。
 
-**重要：** 原始 PRD（`PRD.md`）已降级为历史参考。正式 PRD（`docs/00_product_requirements_document.md`）是当前需求基线。原始 PRD 与正式 PRD 冲突时，以正式 PRD 为准。不修改原始 PRD。
+**重要：** 原始 PRD（`docs/archive/original/PRD.md`）已降级为历史参考。正式 PRD（`docs/00_product_requirements_document.md`）是当前唯一需求基线。原始 PRD 与正式 PRD 冲突时，以正式 PRD 为准。不修改原始 PRD。
 
 ---
 
-*最后更新：2026-08-04 | M1.6.1 审计复验与架构定案*
+*最后更新：2026-08-14 | M2.6.4 Truth Boundary 与 PRD 路径同步*

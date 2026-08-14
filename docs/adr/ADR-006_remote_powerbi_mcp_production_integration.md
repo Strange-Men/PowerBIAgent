@@ -3,7 +3,7 @@
 - **状态：** accepted
 - **日期：** 2026-08-11
 - **决策者：** PowerBIAgent 项目组
-- **证据基线：** `docs/12_m2_powerbi_mcp_integration_plan.md` 的 Remote 生产化证据基线
+- **证据基线：** `docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md` 的 Remote 生产化证据基线
 
 ---
 

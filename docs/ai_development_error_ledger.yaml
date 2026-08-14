@@ -3,11 +3,221 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-12 | M2.6
+# 最后更新：2026-08-14 | M2.6.4
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-264-001
+  title: TopN QueryResult 行位置被写成严格业务名次
+  category: ERR
+  first_detected_version: M2.6.4
+  symptom: VerifiedFactSet 使用 row_index + 1 的 position，FactBoundedAnswer 再输出第N位；ties 时会制造 QueryResult 未证明的严格名次
+  local_evidence: backend/app/facts/verified.py M2.6.3 基线与 ties focused regression
+  authoritative_sources:
+  - title: Microsoft Learn TOPN function
+    url: https://learn.microsoft.com/en-us/dax/topn-function-dax
+    reason: TOPN 边界 ties 可超过 N 且函数自身不保证结果排序
+  root_cause: result order 与 semantic business rank 未在事实模型和外部文本中区分
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 只输出 result_position、position_semantics=query_result_order 与 complete 标志；Answer 改为 TopN 结果项，不声称第N位
+  regression_tests:
+  - backend/tests/unit/test_verified_facts.py
+  prohibited_patterns:
+  - 直接把 row_index + 1 命名为业务 rank
+  - ties 时输出不同严格名次
+  prevention_rules:
+  - QueryResult order 只能声明为 result position
+  - truncated 或 ties 不得扩写未证明排名
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.4
+- id: ERR-264-002
+  title: Bounded selector 可在低证据全量候选中选错真实对象
+  category: ERR
+  first_detected_version: M2.6.4
+  symptom: selector 虽不能发明 ID，但 deterministic no-match 时曾收到同类型完整 Catalog，未知术语也可能被强制选成某个真实对象
+  local_evidence: backend/app/query_plan/grounding.py M2.6.3 select_bounded 全量 by_type 调用
+  authoritative_sources:
+  - title: ADR-008 Grounding authority
+    reason: LLM 只能做 bounded disambiguation，不能把低证据选择变为 canonical truth
+  root_cause: candidate ID 边界存在，但缺少调用前 metadata evidence shortlist 和调用后证据一致性检查
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 只向 selector 提供保守 metadata evidence shortlist；无候选 UNRESOLVED、最强证据并列 AMBIGUOUS、非法 ID UNRESOLVED、与唯一最强证据冲突 AMBIGUOUS
+  regression_tests:
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 把同类型完整 Catalog 作为未知短语 forced-choice 菜单
+  - selector 覆盖 exact canonical 或 approved alias
+  prevention_rules:
+  - object type、table ownership、schema fingerprint 与 member authority 不得由 selector 修改
+  - 无唯一区分证据必须 clarification
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.4
+- id: ERR-264-003
+  title: Intent UNSUPPORTED 可让 data-shaped 请求绕过 Grounding
+  category: ERR
+  first_detected_version: M2.6.4
+  symptom: DeepSeekTurnService 对所有 UNSUPPORTED 直接早停，正常数据问题误分类后不获取 authoritative schema 或执行 capability check
+  local_evidence: backend/app/application/deepseek_turn_service.py M2.6.3 early-stop 分支与 API adversarial regression
+  authoritative_sources:
+  - title: ADR-008 Grounding authority
+    reason: data-shaped canonical semantics 只能由 Grounding/capability boundary 决定
+  - title: Python iterator glossary
+    url: https://docs.python.org/3/glossary.html#term-iterator
+    reason: 首次修复的 generator pattern 集合被一次迭代耗尽，必须使用可重复遍历容器
+  root_cause: Intent classification 被误当作数据能力终审；首次修复另把 deterministic pattern 常量误建为一次性 generator
+  failed_attempts:
+  - 首次路由策略使用 generator 保存 out-of-scope patterns，参数化多次调用后 iterator 耗尽，明确越权请求错误落入 Grounding
+  repair_attempt_count: 2
+  final_fix: 明确 out-of-scope patterns 使用 tuple；其余 data/report/metric/filter/time/ranking-shaped UNSUPPORTED 提升为 provisional intent 后进入现有 Grounding，capability rejection 清除 pending 且不 commit
+  regression_tests:
+  - backend/tests/unit/test_intent.py
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 对所有 LLM UNSUPPORTED 无条件早停
+  - 用一次性 iterator 保存跨请求策略常量
+  prevention_rules:
+  - 明确非数据/破坏性请求保留廉价 early-stop
+  - data-shaped 请求必须进入 Grounding/capability check 且失败不污染 Memory
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.4
+- id: GOV-264-001
+  title: Documentation Gate 首版扫描被忽略的 local_state/node_modules
+  category: GOV
+  first_detected_version: M2.6.4
+  symptom: Gate 首跑报告 113 个本地依赖 README 断链，全部来自被忽略的 local_state/node_modules，不属于仓库文档
+  local_evidence: scripts/check_documentation_governance.py 首次 focused run 输出
+  authoritative_sources:
+  - title: M2.6.4 Documentation Governance scope
+    reason: Gate 只治理仓库文档与本轮新增文件，不读取或验证 ignored local state
+  root_cause: Markdown 遍历使用无边界 rglob，未排除 ignored build/runtime artifact 目录
+  failed_attempts:
+  - 首版直接遍历仓库工作目录全部 Markdown
+  repair_attempt_count: 2
+  final_fix: 统一 repository Markdown iterator 排除 .git、.pytest_cache、local_state 与 node_modules，同时继续覆盖 tracked 和本轮 untracked docs
+  regression_tests:
+  - backend/tests/unit/test_documentation_governance.py
+  prohibited_patterns:
+  - 文档门禁扫描 ignored local state 或第三方 node_modules
+  prevention_rules:
+  - governance scope 必须与仓库可提交文档边界一致
+  related_adr: null
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.4
+- id: ERR-264-004
+  title: Bounded selector 收紧后已知数量问法缺少 approved alias
+  category: ERR
+  first_detected_version: M2.6.4
+  issue_signature: ka_002_total_quantity:actual_query_result_missing
+  first_wrong_stage: semantic_grounding
+  symptom: Fresh Real E2E 中“总共卖了多少件商品”被导向 clarification，Known-answer 仅 7/8
+  local_evidence: production E2E ka_002 首次失败；聚焦 Real total_quantity 修复后 measure、Layer3、QueryResult 与 Answer 全部通过
+  authoritative_sources:
+  - title: ADR-008 Business Semantic authority
+    reason: 常用业务问法只能由 approved alias 等权威证据确定，不能恢复全 Catalog forced choice
+  root_cause: 词表有“件数”但无语法问法“多少件”；低证据 selector 正确 fail closed 后该正式用例失去 deterministic mention
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在 model-scoped glossary 增加通用 approved alias“多少件”，保留 selector evidence shortlist 与未知术语 fail closed
+  regression_tests:
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 为单个 case 恢复同类型全 Catalog forced choice
+  - 硬编码完整 utterance 或修改 expected
+  prevention_rules:
+  - 已批准的稳定语法变体进入 glossary；未知短语仍需证据或 clarification
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.4
+- id: GOV-264-002
+  title: M2.5 Business Golden 观察器仍假设 LLM DAX/Answer 与固定两项工具序列
+  category: GOV
+  first_detected_version: M2.6.4
+  issue_signature: total_quantity:legacy_smoke_false_negative
+  first_wrong_stage: acceptance_observer
+  symptom: 生产查询已 completed，但旧 Smoke 因 DAX/Answer LLM 对象为零及合法 member lookup 报 layer3/tool_sequence failure
+  local_evidence: total_quantity 聚焦 Real 连续暴露 stale LLM capture 与 stale exact tool sequence
+  authoritative_sources:
+  - title: ADR-008 / ADR-009
+    reason: Real 可经 ToolGateway 做 bounded member lookup；DAX 与 fact-bounded Answer 不再由 LLM 生成
+  root_cause: M2.5 观察器未随 M2.6.2/3 Truth Boundary 更新
+  failed_attempts:
+  - 首次改为捕获实际 DAX/Answer validation 后，旧 exact 两项 tool sequence 仍把合法 member lookup 判错
+  repair_attempt_count: 2
+  final_fix: 从 ToolGateway 与 validator 捕获 actual DAX/Answer；只允许 schema→零或多个 member lookup→DAX，并要求 DAX/Answer LLM 调用为零
+  regression_tests:
+  - scripts/manual_smoke/m2_business_golden_smoke.py
+  prohibited_patterns:
+  - 以 LLM structured DAX/Answer 缺失判定 Real 失败
+  - 把 bounded member lookup 当成绕过 ToolGateway
+  prevention_rules:
+  - Smoke 观察当前 authority boundary，不建立第二套 expected 生成链
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.4
+- id: GOV-264-003
+  title: Real tie 门禁错误依赖当前 PBIX 数据分布
+  category: GOV
+  first_detected_version: M2.6.4
+  issue_signature: top_n_boundary_tie_cases_observed:0
+  first_wrong_stage: acceptance_summary
+  symptom: 8/8 Known-answer、3/3 Real TopN 和全部 Truth counters 通过，但新增 gate 因当前数据没有 boundary tie 将整套验收判失败
+  local_evidence: Fresh Production E2E 显示 3 个 TopN 均 PASS、boundary tie observed=0
+  authoritative_sources:
+  - title: Microsoft Learn TOPN function
+    url: https://learn.microsoft.com/en-us/dax/topn-function-dax
+    reason: ties 可使结果超过 N，但并非每个数据集或每次 TopN 都必须出现 ties
+  root_cause: 将“实现必须正确处理 ties”误写成“外部真实数据必须包含 tie”
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Real gate 要求全部 TopN/Oracle 通过；若观测到 tie 则 Answer 必须 truth-safe；固定 tie/no-tie/truncated tests 不依赖数据分布
+  regression_tests:
+  - backend/tests/unit/test_verified_facts.py
+  - backend/tests/integration/test_multi_turn_benchmark.py
+  prohibited_patterns:
+  - 为制造 PASS 修改 PBIX、expected 或真实值
+  - 把某次样本必须出现 tie 当作 TOPN 契约
+  prevention_rules:
+  - 数据分布无关的语义边界用 deterministic fixtures；Real 数据存在的 case 用 Oracle 验证
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-14'
+    action: mitigation
+    version: M2.6.4
 - id: GOV-260-001
   title: Enum 与 Prompt 暴露能力但真实链缺少确定性验证
   category: GOV

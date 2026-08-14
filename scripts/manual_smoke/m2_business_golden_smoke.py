@@ -131,6 +131,18 @@ def _filters_match(actual: Any, expected: list[tuple[str, str]]) -> bool:
     return actual_pairs == expected_pairs
 
 
+def _tool_sequence_matches(actual: Any) -> bool:
+    """Allow only the grounded Real query path, including bounded lookups."""
+
+    return bool(
+        isinstance(actual, list)
+        and len(actual) >= 2
+        and actual[0] == "get_semantic_model_schema"
+        and actual[-1] == "execute_dax"
+        and all(item == "get_column_members" for item in actual[1:-1])
+    )
+
+
 def _dax_shape_matches(dax: str, case: dict[str, Any]) -> bool:
     if f"[{case['measure']}]" not in dax:
         return False
@@ -161,11 +173,10 @@ async def _run_smoke(selected_case: str | None = None) -> int:
     from httpx import ASGITransport, AsyncClient
 
     from backend.app.config.settings import LLMMode, PowerBIMode, Settings
-    from backend.app.harness.validators.validation_service import ValidationService
     from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
     from backend.app.main import create_app
     from backend.app.memory.models import MemoryStatus, RuntimeDataMode
-    from backend.app.schemas.data_contracts import QueryResult
+    from backend.app.schemas.data_contracts import DAXRequest, QueryResult
 
     class _CapturingProvider(LLMProvider):
         def __init__(self, inner: LLMProvider):
@@ -229,9 +240,12 @@ async def _run_smoke(selected_case: str | None = None) -> int:
 
         layer2_results: list[Any] = []
         layer3_results: list[Any] = []
+        answer_results: list[Any] = []
+        dax_requests: list[DAXRequest] = []
         query_results: list[QueryResult] = []
         validate_layer2 = service.validator.validate_query_plan
         validate_layer3 = service.validator.validate_dax_query_plan_consistency
+        validate_answer = service.validator.validate_answer_strict
         gateway_execute = service.tool_gateway.execute
 
         def _capture_layer2(*args: Any, **kwargs: Any) -> Any:
@@ -244,7 +258,15 @@ async def _run_smoke(selected_case: str | None = None) -> int:
             layer3_results.append(result)
             return result
 
+        def _capture_answer(*args: Any, **kwargs: Any) -> Any:
+            result = validate_answer(*args, **kwargs)
+            answer_results.append(result)
+            return result
+
         async def _capture_tool(*args: Any, **kwargs: Any) -> Any:
+            input_data = args[2] if len(args) >= 3 else kwargs.get("input_data")
+            if isinstance(input_data, DAXRequest):
+                dax_requests.append(input_data.model_copy(deep=True))
             result = await gateway_execute(*args, **kwargs)
             if isinstance(result, QueryResult):
                 query_results.append(result)
@@ -252,6 +274,7 @@ async def _run_smoke(selected_case: str | None = None) -> int:
 
         service.validator.validate_query_plan = _capture_layer2
         service.validator.validate_dax_query_plan_consistency = _capture_layer3
+        service.validator.validate_answer_strict = _capture_answer
         service.tool_gateway.execute = _capture_tool
 
         cases = tuple(
@@ -266,6 +289,8 @@ async def _run_smoke(selected_case: str | None = None) -> int:
                 }
                 layer2_start = len(layer2_results)
                 layer3_start = len(layer3_results)
+                answer_start = len(answer_results)
+                dax_start = len(dax_requests)
                 result_start = len(query_results)
                 request_id = f"m2.5-business-golden-{case['case']}"
                 response = await client.post("/api/v1/chat", json={
@@ -283,16 +308,18 @@ async def _run_smoke(selected_case: str | None = None) -> int:
                 plans = provider.structured_by_task[LLMTask.QUERY_PLAN][
                     starts[LLMTask.QUERY_PLAN]:
                 ]
-                dax_requests = provider.structured_by_task[LLMTask.DAX][
+                llm_dax_requests = provider.structured_by_task[LLMTask.DAX][
                     starts[LLMTask.DAX]:
                 ]
-                answers = provider.structured_by_task[LLMTask.ANSWER][
+                llm_answers = provider.structured_by_task[LLMTask.ANSWER][
                     starts[LLMTask.ANSWER]:
                 ]
                 case_query_results = query_results[result_start:]
                 plan = plans[-1] if plans else None
-                dax_request = dax_requests[-1] if dax_requests else None
-                answer = answers[-1] if answers else None
+                dax_request = dax_requests[-1] if len(dax_requests) > dax_start else None
+                answer_result = (
+                    answer_results[-1] if len(answer_results) > answer_start else None
+                )
                 query_result = case_query_results[-1] if case_query_results else None
 
                 measure_match = bool(
@@ -330,34 +357,38 @@ async def _run_smoke(selected_case: str | None = None) -> int:
                     and query_result.error is None
                 )
                 answer_provenance_pass = bool(
-                    answer is not None
+                    body.get("answer")
+                    and answer_result is not None
+                    and answer_result.is_valid
                     and query_result is not None
-                    and ValidationService().validate_answer_strict(
-                        answer, query_result
-                    ).is_valid
+                    and not llm_answers
                 )
                 usage = body.get("usage") or {}
-                passed = all((
-                    response.status_code == 200,
-                    body.get("terminal_state") == "completed",
-                    body.get("intent") == "data_question",
-                    body.get("source_mode") == "real",
-                    body.get("tool_sequence") == [
-                        "get_semantic_model_schema",
-                        "execute_dax",
-                    ],
-                    body.get("memory_commit") is True,
-                    memory is not None,
-                    memory is not None
-                    and memory.state_status == MemoryStatus.COMMITTED,
-                    measure_match,
-                    dimension_match,
-                    filter_match,
-                    layer2_pass,
-                    layer3_pass,
-                    query_result_pass,
-                    answer_provenance_pass,
-                ))
+                checks = {
+                    "http_200": response.status_code == 200,
+                    "terminal_completed": body.get("terminal_state") == "completed",
+                    "intent_data_question": body.get("intent") == "data_question",
+                    "source_real": body.get("source_mode") == "real",
+                    "tool_sequence": _tool_sequence_matches(
+                        body.get("tool_sequence")
+                    ),
+                    "memory_commit": body.get("memory_commit") is True,
+                    "memory_exists": memory is not None,
+                    "memory_committed": (
+                        memory is not None
+                        and memory.state_status == MemoryStatus.COMMITTED
+                    ),
+                    "measure": measure_match,
+                    "dimension_sort_topn": dimension_match,
+                    "filter": filter_match,
+                    "layer2": layer2_pass,
+                    "layer3": layer3_pass,
+                    "query_result": query_result_pass,
+                    "answer_provenance": answer_provenance_pass,
+                    "dax_llm_zero": not llm_dax_requests,
+                    "answer_llm_zero": not llm_answers,
+                }
+                passed = all(checks.values())
                 results.append({
                     "case": case["case"],
                     "passed": passed,
@@ -368,6 +399,10 @@ async def _run_smoke(selected_case: str | None = None) -> int:
                     "layer3_pass": layer3_pass,
                     "source_mode": body.get("source_mode", ""),
                     "answer_provenance_pass": answer_provenance_pass,
+                    "failed_checks": [
+                        name for name, check_passed in checks.items()
+                        if not check_passed
+                    ],
                     "call_count": int(usage.get("call_count", 0)),
                     "repair_count": int(usage.get("repair_count", 0)),
                 })

@@ -1,7 +1,7 @@
 # 03 — 意图识别与记忆系统
 
-> **状态：** M1.3 真实QueryPlan与DAX生成已完成
-> **关联 ADR：** ADR-001（Agent 框架）、ADR-002（记忆系统与存储）
+> **状态：** M2.6.4；Intent 仍保留，canonical semantics 由 ADR-008 Grounding/StateTransition 决定
+> **关联 ADR：** ADR-002、ADR-005、ADR-008、ADR-009（ADR-001 已 superseded）
 
 ---
 
@@ -53,7 +53,7 @@ class IntentSpec(BaseModel):
 - "生成周报" → 可复用已验证查询上下文
 - 信息不足 → clarification
 - 非法或越权要求 → unsupported
-- unsupported 不允许进入后续查询流程
+- 明确破坏性/越权/非数据 unsupported 允许 early-stop；data/report/metric/filter/time/ranking-shaped 请求即使被 LLM 误判 unsupported，也必须进入 authoritative Grounding/capability check
 - 意图结果不能直接提交 committed memory
 - 只有完整成功轮次才允许提交状态
 
@@ -65,7 +65,7 @@ class IntentSpec(BaseModel):
 - `backend/app/intent/prompt.py` — 集中式 Prompt 构造（M1.2）
 - `backend/app/intent/deepseek_service.py` — DeepSeekIntentService（M1.2 真实实现）
 - `backend/app/query_plan/` — DeepSeekQueryPlanService（M1.3 真实实现）
-- `backend/app/dax/` — DeepSeekDAXService + DAX 安全验证（M1.3 真实实现）
+- `backend/app/dax/` — 历史 DeepSeekDAXService（Mock compatibility）+ 当前 Real Deterministic DAX / Independent Layer 3；Real DAX LLM authority=0
 
 ### 1.6 M1.2 真实意图识别
 
@@ -266,4 +266,4 @@ M0.2 已将这些准入条件固化为 `MemoryPolicies.check_commit_eligibility(
 
 ---
 
-*最后更新：2026-08-03 | M1.3 真实QueryPlan与DAX生成*
+*最后更新：2026-08-14 | M2.6.4 Intent/Grounding/Memory 权威边界同步*

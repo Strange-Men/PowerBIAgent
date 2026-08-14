@@ -10,8 +10,13 @@ from backend.app.harness.cases.multi_turn_runner import (
     TurnEvaluation,
 )
 from backend.app.harness.cases.benchmark_models import KnownAnswerCaseSpec
-from backend.app.harness.cases.production_e2e_runner import exact_known_answer_schedule
+from backend.app.harness.cases.production_e2e_runner import (
+    _strict_rank_claim_absent,
+    _topn_boundary_tie_observed,
+    exact_known_answer_schedule,
+)
 from backend.app.query_plan import prompt as query_plan_prompt
+from backend.app.schemas.data_contracts import QueryResult
 
 
 @pytest.fixture(scope="module")
@@ -108,6 +113,33 @@ def test_correct_clarification_cannot_hide_later_failure():
         "clarification-then-fail", [clarification, later_failure]
     )
     assert not scored.passed
+
+
+def test_real_acceptance_tie_observer_is_value_blind_and_rank_safe():
+    case = KnownAnswerCaseSpec(
+        id="tie",
+        message="top two",
+        expected_measure="Total Sales",
+        expected_dimensions=["Product"],
+        expected_sort="desc",
+        expected_top_n=2,
+        oracle_key="top2",
+    )
+    tied = QueryResult(
+        semantic_model_key="local_desktop_model",
+        request_id="tie",
+        source_mode="real",
+        columns=["Product", "[Total Sales]"],
+        rows=[["A", 100], ["B", 90], ["C", 90]],
+        row_count=3,
+    )
+
+    assert _topn_boundary_tie_observed(tied, case)
+    assert not _topn_boundary_tie_observed(
+        tied.model_copy(update={"rows": tied.rows[:2], "row_count": 2}), case
+    )
+    assert _strict_rank_claim_absent("TopN结果顺序：结果第1项；结果第2项")
+    assert not _strict_rank_claim_absent("A 第1位，B 第2位")
 
 
 @pytest.mark.asyncio

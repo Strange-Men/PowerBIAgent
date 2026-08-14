@@ -1,8 +1,8 @@
 # 02 — 技术选型与系统架构
 
-> **状态：** M1.6.3.1 统一管线复验与彻底收口
-> **当前轮次：** M1.6.3.1
-> **关联 ADR：** ADR-001（已废弃）、ADR-002、ADR-003、ADR-004、ADR-005
+> **状态：** M2.6.4 final hardened candidate
+> **当前轮次：** M2.6.4
+> **关联 ADR：** ADR-001（已废弃）、ADR-002—ADR-009；当前以 ADR-005—ADR-009 为准
 
 ---
 
@@ -13,8 +13,8 @@
 | 前端框架 | React + Vite | — | 已确定，M5 开发 |
 | 后端框架 | FastAPI | — | 已确定，M0.4 最小骨架 |
 | Agent 框架 | 确定性 TurnPipeline（自研） | — | ✅ M1.6.3.1 控制面真正统一，PydanticAI 已删除（ADR-001→superseded） |
-| LLM Provider | DeepSeek + Mock | — | ✅ Mock + DeepSeek Intent/QueryPlan/DAX (M1.3) |
-| Power BI | Remote MCP Server | — | M2 真实连接，M0.3 Mock |
+| LLM Provider | DeepSeek + Mock | — | ✅ Real: Intent/语言草稿/受限候选选择；Real DAX authority=0 |
+| Power BI | Local MCP + Desktop | beta.12 实机基线 | ✅ 当前 Real Demo；Remote Deferred |
 | 数据校验 | Pydantic v2 | 2.13.4 | ✅ 已锁定 |
 | 记忆存储 | Repository + 内存 | — | ✅ M0.3 InMemory 实现 |
 | 报表渲染 | Mock HTML | — | M0.3 最小实现，M3 正式 |
@@ -24,6 +24,8 @@
 | 依赖锁定 | PyYAML | 6.0.3 | ✅ M0.3 新增 |
 
 ## 二、系统架构
+
+> 下图是 M0/M1 历史分层快照，其中 Agent Runtime、Remote 主路径和 LLM DAX/Answer authority 已被 ADR-005、ADR-007、ADR-008、ADR-009 supersede。当前权威链为 `TurnPipeline → Grounding → Canonical QueryPlan → Deterministic DAX → Independent Layer 3 → QueryResult → VerifiedFactSet`。
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -75,9 +77,13 @@
 |-----|------|------|
 | ADR-001 | Agent 框架选择 — PydanticAI | superseded（M1.6.1 废弃，由 ADR-005 替代） |
 | ADR-002 | 记忆系统与存储方案 | accepted |
-| ADR-003 | Power BI MCP 认证与接入方案 | accepted |
+| ADR-003 | Power BI MCP 认证与接入方案 | partially superseded by ADR-006 |
 | ADR-004 | Harness 方案：轻量 ETCLOVG 控制面 | accepted |
 | ADR-005 | 确定性TurnPipeline与受控LLM调用架构 | accepted（M1.6.1） |
+| ADR-006 | Remote Power BI MCP 生产接入 | accepted / Deferred implementation |
+| ADR-007 | Local MCP Demo 验证路径 | accepted / active |
+| ADR-008 | Business Semantic Catalog and Grounding Authority | accepted / active |
+| ADR-009 | Deterministic Execution and Verified Fact Authority | accepted / active |
 
 ## 四、M1.6.1 架构定案（2026-08-04）
 
@@ -92,8 +98,8 @@ M1.5 全链路验收后，动态复验证实以下问题：
 ### 架构决定（本轮已确认，用户明确批准）
 
 1. **废弃并删除 PydanticAI**（ADR-001 → superseded）。AgentRuntime/MockAgentRuntime 已彻底删除，pyproject.toml 不再声明 pydantic-ai 依赖。
-2. **采用确定性 TurnPipeline 控制生命周期**。管线按固定阶段顺序执行：Intent → QueryPlan → DAX → Answer → ReportSpec，LLM 不控制流程分支。
-3. **LLM 只负责受约束的结构化生成**。DeepSeek 在管线中仅作为 Intent、QueryPlan、DAX、Answer、ReportSpec 的结构化输出生成器。
+2. **采用确定性 TurnPipeline 控制生命周期**。当前 Real 阶段顺序由 ADR-008/009 扩展为 Intent → Grounding → Canonical QueryPlan → Deterministic DAX → VerifiedFactSet → factual output，LLM 不控制流程分支。
+3. **LLM 只负责受约束语言任务**。M1 的 DAX/Answer/ReportSpec 生成描述仅保留 Mock compatibility；Real DAX 和外部事实输出已由 ADR-009 收回普通代码。
 4. **ToolGateway 是唯一调用入口**。所有 Power BI 和 Renderer 调用必须经过 ToolGateway，DeepSeek 路径已纳入。
 5. **Mock 与 DeepSeek 共享同一执行骨架**。共享 TurnPipeline 统一 ID 生成、指纹、幂等、ContextBuilder、ToolGateway、TurnController、Memory、Snapshot。只替换 Provider/Adapter/Fixture。
 

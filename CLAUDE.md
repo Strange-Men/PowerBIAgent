@@ -256,8 +256,16 @@ PowerBIAgent/
 │   ├── 07_milestones_status_and_open_questions.md
 │   ├── 08_development_roadmap.md
 │   ├── 09_context_handoff.md
+│   ├── index.md
+│   ├── ai_development_error_ledger.yaml
 │   ├── adr/
-│   └── archive/
+│   ├── specs/
+│   │   ├── 10_frontend_visual_and_interaction_spec.md
+│   │   └── 11_structured_answer_contract.md
+│   ├── milestones/
+│   │   └── m2/12_m2_powerbi_mcp_integration_plan.md
+│   ├── archive/
+│   └── assets/
 ├── frontend/
 ├── backend/
 │   ├── app/
@@ -282,7 +290,17 @@ PowerBIAgent/
 
 ---
 
-## 十二、阶段边界规则
+## 十二、文档治理规则
+
+- `docs/00`—`09` 与 `docs/index.md` 是全局主干；`docs/08_development_roadmap.md` 和 `docs/09_context_handoff.md` 路径固定。
+- 专项规范进入 `docs/specs/`；阶段计划进入 `docs/milestones/<milestone>/`；长期架构决策永远进入 `docs/adr/`；历史资料进入 `docs/archive/` 且默认不读。
+- 禁止新增 `docs/13_xxx.md`、`14_xxx.md` 等根层编号文件，除非用户明确扩充 00—09 主体系。
+- 原始 PRD 只在 `docs/archive/original/PRD.md`；正式唯一 PRD 是 `docs/00_product_requirements_document.md`。
+- 提交前执行 `python scripts/check_documentation_governance.py`。
+
+---
+
+## 十三、阶段边界规则
 
 - 当前轮只能开发用户明确批准的 Milestone。
 - M2 不得提前开发 M3 报表正式渲染、M4 持久化会话或 M5 React 前端。
@@ -294,4 +312,4 @@ PowerBIAgent/
 
 ---
 
-*最后更新：2026-08-11 | M2.0 Remote MCP 接入规划与开发路线固化*
+*最后更新：2026-08-14 | M2.6.4 文档治理与阶段边界同步*
