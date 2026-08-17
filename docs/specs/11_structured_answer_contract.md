@@ -1,6 +1,6 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M3.0 sales_report contract baseline；M1 生成描述仅作历史兼容
+> **状态：** M3.1 sales_report static HTML resource 已实现；M1 生成描述仅作历史兼容
 > **目标：** 定义前端组合回答的产品目标与数据契约
 > **重要：** 本文档描述未来 M5 前端展示目标。当前 Real API 以 Canonical QueryPlan → QueryResult → VerifiedFactSet → fact-bounded AnswerSpec / ReportSpec 为事实边界
 
@@ -22,7 +22,8 @@
 | `VerifiedFactSet` | 对外数字、结果顺序、极值、筛选、时间与 provenance 的唯一事实 authority |
 | `AnswerSpec` | 自然语言回答（answer, summary, metrics, evidence） |
 | `ReportSpec` | 结构化报表描述（title, template_key, kpis, charts, tables） |
-| `RenderedReport` | 报表渲染结果（report_id, template_key, html） |
+| `SalesReportData` | 四组 QueryResult / VerifiedFactSet 的确定性销售报表中间产物 |
+| `ReportArtifact` | repository 管理的 HTML artifact、provenance、hash 与 view/download reference |
 
 ## 三、当前与未来边界
 
@@ -30,7 +31,8 @@
 |------|------|
 | **M1.3.2—M1.4** | 历史契约来源；自由 LLM factual generation 已被 ADR-009 supersede |
 | **M2.6.4** | Real Answer/Report 只能消费 VerifiedFactSet / QueryResult 可证明事实 |
-| **M3.0** | `sales_report` TemplateContract + schema binding + deterministic ReportDataPlan；未实现 Renderer/HTML |
+| **M3.0** | `sales_report` TemplateContract + schema binding + deterministic ReportDataPlan |
+| **M3.1** | 四查询 → SalesReportData → fixed ReportSpec → static HTML → ReportArtifact/view/download |
 | **M5** | 前端根据本文档实现组合回答渲染 |
 
 **当前不创建**：统一 `AssistantMessageEnvelope`、消息块列表模型、新 API。
@@ -223,7 +225,7 @@
 
 ### 数据来源
 
-`RenderedReport` / `ReportSpec`
+`ReportArtifact` / `ReportSpec`
 
 ### 规则
 
@@ -314,18 +316,23 @@
 | tables (TableSpec) | 报表内表格 |
 | source_mode | report_attachment.source_mode |
 
-## 十三、RenderedReport 职责
+## 十三、ReportArtifact 职责
 
-`RenderedReport` 负责报表渲染结果：
+M3.1 的 `ReportArtifact` 负责后端管理的报表资源；`RenderedReport` 仅保留历史兼容模型：
 
-| RenderedReport 字段 | 对应内容块 |
+| ReportArtifact 字段 | 对应内容块 |
 |--------------------|-----------|
 | report_id | report_attachment.report_id |
 | template_key | 模板标识 |
-| html | 报表 HTML 内容 |
+| contract_version | 固定模板合同版本 |
+| semantic_model_key / schema_fingerprint | 模型 binding |
+| query_result_ids / verified_fact_set_ids | 四查询 provenance |
+| content_type / content_hash | 保存内容格式与 SHA-256 |
+| view_reference / download_reference | 后端生成的资源引用 |
+| html | 兼容字段；必须与 repository 保存的同一 Renderer 输出完全一致 |
 | source_mode | report_attachment.source_mode |
 
-未来 M3 正式报表资源接口将使用 report_id 提供查看和下载。
+正式资源接口使用 report_id 提供查看和下载；不接受客户端文件路径或外部 URL。
 
 ## 十四、M1.4 历史实施边界
 
@@ -363,13 +370,16 @@ M3.0 已确定：
 - schema/model fingerprint mismatch 或必需对象缺失时 fail closed
 - ReportDataPlan 不读取 LLM draft，每个 sub-query 复用 M2 封板执行与事实链
 
-M3.1/3.2 后续可以实现：
+M3.1 已实现：
 
-- deterministic Report Data Contract / ReportSpec 与 Fixed Renderer
-- 报表资源 ID 生成和管理
-- 查看报表接口
-- 下载 HTML 接口
-- 最近报表所需后端资源边界
+- deterministic `SalesReportData` / `ReportSpec` 与唯一 `FixedSalesReportRenderer`
+- 固定 UTF-8 static HTML；无 JavaScript、external script/CDN、自由用户 HTML
+- `ReportArtifact`、原子 `LocalReportRepository`、content hash 与 backend-owned reference
+- `GET /api/reports/{report_id}` 与 `/download`
+- Chat report 最小返回 report_id、template_key、view_reference、download_reference；html 仅为同源兼容字段
+- render/store failure 不成功提交 Memory；same request_id replay 复用同一 artifact
+
+M3.2 只在必要时用于 hardened acceptance / M3 final seal，不新增报表资源功能。“最近报表”属于后续 M4/M5 范围，M3.1 不实现列表或会话持久化。
 
 ## 十七、M5 前端渲染边界
 
@@ -410,4 +420,4 @@ DeepSeek 提供语言模型能力，不是数据来源。M1 的 QueryPlan/DAX/An
 
 ---
 
-*最后更新：2026-08-17 | M3.0 sales_report contract boundary*
+*最后更新：2026-08-17 | M3.1 sales_report static HTML resource contract*

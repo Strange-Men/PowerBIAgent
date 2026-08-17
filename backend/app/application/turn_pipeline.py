@@ -283,6 +283,11 @@ class TurnPipeline:
                 "report_id": snapshot.report.report_id,
                 "template_key": snapshot.report.template_key,
                 "html": snapshot.report.html,
+                "contract_version": snapshot.report.contract_version,
+                "view_reference": snapshot.report.view_reference,
+                "download_reference": snapshot.report.download_reference,
+                "content_type": snapshot.report.content_type,
+                "content_hash": snapshot.report.content_hash,
             }
 
         return {
@@ -322,6 +327,11 @@ class TurnPipeline:
                 report_id=rd.get("report_id", ""),
                 template_key=rd.get("template_key", ""),
                 html=rd.get("html", ""),
+                contract_version=rd.get("contract_version", ""),
+                view_reference=rd.get("view_reference", ""),
+                download_reference=rd.get("download_reference", ""),
+                content_type=rd.get("content_type", "text/html; charset=utf-8"),
+                content_hash=rd.get("content_hash", ""),
             )
 
         snapshot = TurnResultSnapshot(

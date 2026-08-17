@@ -1,4 +1,4 @@
-"""Pydantic Settings — M3.0 项目配置
+"""Pydantic Settings — M3.1 项目配置
 
 环境变量可覆盖所有配置项。
 Mock 模式启动不需要任何 API Key。
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M3.0", frozen=True)
+    version: str = Field(default="M3.1", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     # ── 资源限制 ──────────────────────────────
     request_timeout_seconds: int = Field(default=120, ge=10)
     powerbi_query_timeout_seconds: int = Field(default=30, ge=5, le=300)
-    max_tool_calls: int = Field(default=4, ge=1)
+    max_tool_calls: int = Field(default=8, ge=1)
     max_dax_repairs: int = Field(default=1, ge=0)
     max_llm_format_retries: int = Field(default=1, ge=0)
     max_powerbi_retries: int = Field(default=1, ge=0)

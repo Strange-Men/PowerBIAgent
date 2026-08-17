@@ -326,6 +326,14 @@ class ReportSpec(BaseModel):
     source_mode: str = "mock"
     verified_fact_set_id: str = ""
     fact_ids: list[str] = Field(default_factory=list)
+    # M3 fixed-report provenance.  The legacy singular fact fields above stay
+    # only for M0-M2 compatibility; sales_report is assembled from four
+    # independently verified query/fact pairs.
+    contract_version: str = ""
+    semantic_model_key: str = ""
+    schema_fingerprint: str = ""
+    query_result_ids: list[str] = Field(default_factory=list)
+    verified_fact_set_ids: list[str] = Field(default_factory=list)
 
 
 # =============================================================================

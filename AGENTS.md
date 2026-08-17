@@ -7,13 +7,14 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M3.0 Report Architecture + Sales Contract Baseline**。
+当前版本：**M3.1 Sales Report Full Generation + Static HTML + Report Resource**。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
 - M2.6.2 已建立 Business Semantic Grounding；M2.6.3 已建立 Deterministic DAX、Independent Layer 3 与 VerifiedFactSet。
-- M3.0 只固化 `sales_report` TemplateContract、M3 PBIX schema binding、fail-closed validator 与固定 ReportDataPlan；历史模板不属于 M3 production available。
-- 当前不得进入 M3.1 Renderer/HTML、M3.2 资源/API、M4/M5 或 Remote MCP；不得创建 Tag。
+- M3.0 已在 `e4b5c6c` 通过远程审计并纯 fast-forward 合入 `main`；对应 main push CI `31986207118` success。
+- M3.1 已完成 `sales_report` 四查询真实事实组装、固定 HTML、ReportArtifact repository 与查看/下载闭环；历史模板不属于 M3 production available。
+- 当前不得进入 M4/M5、Remote MCP 或新增 M3.2 功能；M3.2 仅可在必要时用于 hardened acceptance / M3 final seal；不得创建 Tag。
 
 当前真实主链：
 
@@ -25,7 +26,8 @@ Natural Language
 → Deterministic DAX → Independent Layer 3
 → ToolGateway → PowerBIAdapter → Power BI → QueryResult
 → VerifiedFactSet → deterministic Report Data Contract
-→ deterministic ReportSpec → Fixed Renderer（M3.1）→ HTML
+→ deterministic ReportSpec → Fixed Renderer → static HTML
+→ ReportArtifact → report_id / view / download
 → Memory / Snapshot
 ```
 
@@ -57,7 +59,7 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 10. `local_mcp.py` 仅负责 Local Provider/protocol Adapter；Renderer、Memory、UI 逻辑不得进入。
 11. ADR-010：M3 production template 只有 `sales_report`；TemplateContract 固定四个 sub-query 与 schema fingerprint，ReportDataPlan 不读取 LLM draft，且每个查询必须复用 M2 封板链。
 
-同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前开发 M3.1/M3.2/M4/M5、开发 Remote MCP。
+同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、新增 M3.2 功能、提前开发 M4/M5、开发 Remote MCP。
 
 ## 修改前检查
 
@@ -82,4 +84,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-17 | M3.0 sales_report contract baseline；不得进入 M3.1 或创建 Tag*
+*最后更新：2026-08-17 | M3.1 sales_report HTML resource closure；不得进入 M3.2 功能开发或创建 Tag*

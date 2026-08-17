@@ -24,7 +24,8 @@ class HarnessConfig(BaseModel):
     request_timeout_seconds: int = Field(default=120, ge=10)
     powerbi_query_timeout_seconds: int = Field(default=30, ge=5, le=300)
 
-    max_tool_calls: int = Field(default=4, ge=1)
+    # M3 sales_report requires schema + four DAX calls + render/store.
+    max_tool_calls: int = Field(default=8, ge=1)
     max_dax_repairs: int = Field(default=1, ge=0)
     max_llm_format_retries: int = Field(default=1, ge=0)
     max_powerbi_retries: int = Field(default=1, ge=0)

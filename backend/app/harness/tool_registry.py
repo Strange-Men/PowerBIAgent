@@ -6,7 +6,6 @@ execute_dax、render_report。
 MockTurnService 和 DeepSeekTurnService 统一使用此入口。
 """
 
-import uuid
 from typing import Any, Callable
 
 from pydantic import BaseModel
@@ -15,12 +14,17 @@ from backend.app.harness.models import HarnessConfig
 from backend.app.harness.runtime.tool_gateway import ToolGateway, ToolSpec
 from backend.app.intent.models import IntentType
 from backend.app.memory.models import RuntimeDataMode
+from backend.app.report.base import ReportRenderer
+from backend.app.report.resources import (
+    InMemoryReportRepository,
+    ReportArtifact,
+    ReportRepository,
+)
 from backend.app.schemas.data_contracts import (
     ColumnMembersRequest,
     ColumnMembersResult,
     DAXRequest,
     QueryResult,
-    RenderedReport,
     ReportSpec,
     SemanticModelSchema,
 )
@@ -48,16 +52,18 @@ DEFAULT_TOOL_NAMES = [
 def register_default_tools(
     gateway: ToolGateway,
     powerbi_adapter: Any,
-    report_renderer: Any,
+    report_renderer: ReportRenderer,
     config: HarnessConfig,
+    report_repository: ReportRepository | None = None,
 ) -> None:
     """向 ToolGateway 注册四个标准白名单工具
 
     Args:
         gateway: 要注册工具的 ToolGateway 实例
         powerbi_adapter: 需提供 get_semantic_model_schema(key) 和 execute_dax(dax_req)
-        report_renderer: 需提供 render(report_spec) → str (HTML)
+        report_renderer: 固定 Renderer，只提供 render(report_spec) → str (HTML)
         config: 从 Settings 构建的 HarnessConfig，驱动超时和重试
+        report_repository: 管理 report_id 与 HTML artifact；默认仅内存兼容
     """
 
     # ── 1. get_semantic_model_schema ──
@@ -121,21 +127,17 @@ def register_default_tools(
 
     # ── 4. render_report ──
     render_fn = report_renderer.render
+    repository = report_repository or InMemoryReportRepository()
 
-    async def _render_report(input_data: ReportSpec) -> RenderedReport:
+    async def _render_report(input_data: ReportSpec) -> ReportArtifact:
         html = await render_fn(input_data)
-        return RenderedReport(
-            report_id=str(uuid.uuid4()),
-            template_key=input_data.template_key,
-            html=html,
-            source_mode=input_data.source_mode,
-        )
+        return await repository.store(input_data, html)
 
     gateway.register(ToolSpec(
         name=TOOL_NAME_RENDER,
         description="渲染报表为 HTML",
         input_model=ReportSpec,
-        output_model=RenderedReport,
+        output_model=ReportArtifact,
         timeout_seconds=float(config.request_timeout_seconds),
         max_retries=0,
         read_only=True,
@@ -147,13 +149,20 @@ def register_default_tools(
 
 def create_default_tool_gateway(
     powerbi_adapter: Any,
-    report_renderer: Any,
+    report_renderer: ReportRenderer,
     config: HarnessConfig,
+    report_repository: ReportRepository | None = None,
 ) -> ToolGateway:
     """创建并返回已注册四个白名单工具的 ToolGateway
 
     这是 MockTurnService 获取 ToolGateway 的首选方式。
     """
     gateway = ToolGateway()
-    register_default_tools(gateway, powerbi_adapter, report_renderer, config)
+    register_default_tools(
+        gateway,
+        powerbi_adapter,
+        report_renderer,
+        config,
+        report_repository,
+    )
     return gateway

@@ -1,4 +1,4 @@
-"""FastAPI 应用 — M2.6
+"""FastAPI 应用 — M3.1
 
 启动命令：
     python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
@@ -23,7 +23,9 @@ from backend.app.memory.repository import InMemoryMemoryRepository
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.powerbi.local_mcp import LocalMCPPowerBIAdapter
 from backend.app.powerbi.mock import MockPowerBIAdapter
+from backend.app.report.fixed import FixedSalesReportRenderer
 from backend.app.report.mock import MockReportRenderer
+from backend.app.report.resources import LocalReportRepository
 
 
 @asynccontextmanager
@@ -48,6 +50,8 @@ async def lifespan(app: FastAPI):
     harness_config = HarnessConfig.from_settings(settings)
     turn_service = None
     _deepseek_provider = None  # 用于 shutdown 关闭
+    report_repository = LocalReportRepository()
+    app.state.report_repository = report_repository
 
     if settings.llm_mode == LLMMode.MOCK and settings.powerbi_mode == PowerBIMode.MOCK:
         # Mock + Mock: 原有 MockTurnService
@@ -55,6 +59,7 @@ async def lifespan(app: FastAPI):
             memory_repo=InMemoryMemoryRepository(),
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
+            report_repository=report_repository,
             config=harness_config,
         )
 
@@ -93,7 +98,8 @@ async def lifespan(app: FastAPI):
                 memory_repo=InMemoryMemoryRepository(),
                 llm_provider=deepseek_provider,
                 powerbi_adapter=powerbi_adapter,
-                report_renderer=MockReportRenderer(),
+                report_renderer=FixedSalesReportRenderer(),
+                report_repository=report_repository,
                 settings=settings,
                 config=harness_config,
             )
@@ -121,6 +127,7 @@ async def lifespan(app: FastAPI):
     # 清理 app.state 引用，防止跨测试污染
     app.state.turn_service = None
     app.state.mock_turn_service = None
+    app.state.report_repository = None
     app.state.settings = None
 
 

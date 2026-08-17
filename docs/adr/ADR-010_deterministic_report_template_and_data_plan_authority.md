@@ -19,7 +19,8 @@ M2 已封板 Canonical QueryPlan、Deterministic DAX、Independent Layer 3 与 V
 4. `ReportDataPlanBuilder` 只接受 registry-owned template key 与已验证 runtime schema，不接受 Intent/QueryPlan LLM draft、QueryResult、Known-answer expected 或自由查询描述。
 5. 每个 sub-query 后续必须逐个复用 M2 封板链：Canonical QueryPlan → Deterministic DAX → Independent Layer 3 → ToolGateway → PowerBIAdapter → Power BI → QueryResult → VerifiedFactSet。M3 不创建第二套 DAX、Fact、Power BI 或 Pipeline。
 6. 多个 VerifiedFactSet 之后才允许由普通代码形成 deterministic Report Data Contract 与 deterministic ReportSpec。Fixed Renderer 只消费该结构化结果，不拥有事实、HTML/CSS 选择权以外的业务 authority，也不得调用 Power BI。
-7. M3.0 只落地 contract、binding、validator、ReportDataPlan、测试与 Real smoke；Renderer/HTML 属于 M3.1，资源保存与查看/下载 API 属于 M3.2，最终 hardened acceptance 视需要进入 M3.3。
+7. M3.0 落地 contract、binding、validator、ReportDataPlan、测试与 Real smoke；M3.1 在同一闭环内完成 deterministic assembly、Fixed Renderer、原子 ReportArtifact repository 与查看/下载 API。M3.2 不再承载新功能，只在必要时用于 hardened acceptance / M3 final seal。
+8. ReportArtifact 只能引用四组已绑定 QueryResult / VerifiedFactSet 与 Fixed Renderer 的同一份 UTF-8 HTML；report_id、view/download reference、content hash 与保存路径由后端 repository 控制。任一 render/store 失败不得提交成功 Memory，同 request_id replay 复用既有 artifact。
 
 ## LLM authority
 
@@ -34,10 +35,10 @@ LLM 在 M3 可做语言理解和受限表达，但以下 authority 永久为 0�
 
 ## 后果
 
-- 正面：同一 runtime schema 始终得到相同四查询；缺对象或 fingerprint 漂移在执行前失败；M3.1/3.2 不能重新解释模板事实。
-- 负面：M3 PBIX schema 变化必须显式审核并更新 binding；M3.0 本身不产生 HTML，也不提供报表 API。
-- 运维：PBIX、Real 输出与未来 HTML acceptance 文件保持 gitignored；未来 HTML 只允许保存到 `local_state/reports/`。
+- 正面：同一 runtime schema 始终得到相同四查询与固定 HTML 结构；缺对象、事实绑定错误或 fingerprint 漂移 fail closed；Renderer/resource 不能重新解释模板事实。
+- 负面：M3 PBIX schema 变化必须显式审核并更新 binding；本地 ReportArtifact 只覆盖当前 M3 报表资源，不形成 M4 会话持久化。
+- 运维：PBIX、Real 输出与 HTML acceptance 文件保持 gitignored；HTML 只允许保存到 `local_state/reports/`。
 
 ---
 
-*最后更新：2026-08-17 | accepted*
+*最后更新：2026-08-17 | M3.1 resource closure sync；accepted decision unchanged*

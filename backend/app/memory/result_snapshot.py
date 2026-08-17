@@ -33,6 +33,11 @@ class ReportResultSnapshot(BaseModel):
     report_id: str = Field(min_length=1, description="报表唯一 ID")
     template_key: str = Field(min_length=1, description="报表模板标识")
     html: str = Field(min_length=1, description="渲染后的 HTML")
+    contract_version: str = ""
+    view_reference: str = ""
+    download_reference: str = ""
+    content_type: str = "text/html; charset=utf-8"
+    content_hash: str = ""
 
     model_config = {"frozen": True}
 

@@ -1,5 +1,13 @@
 """报表模块"""
 
+from backend.app.report.assembly import (
+    CategorySalesRow,
+    SalesReportAssemblyError,
+    SalesReportData,
+    SalesReportDataAssembler,
+    SalesReportSpecBuilder,
+    TopProductRow,
+)
 from backend.app.report.contracts import (
     M3_SALES_SCHEMA_FINGERPRINT,
     REPORT_TEMPLATE_CONTRACTS,
@@ -19,8 +27,24 @@ from backend.app.report.contracts import (
     TemplateContract,
     TemplateSchemaBinding,
 )
+from backend.app.report.fixed import FixedSalesReportRenderer
+from backend.app.report.resources import (
+    InMemoryReportRepository,
+    LocalReportRepository,
+    ReportArtifact,
+    ReportNotFoundError,
+    ReportRepository,
+    ReportResourceError,
+    ReportStorageError,
+)
 
 __all__ = [
+    "CategorySalesRow",
+    "SalesReportAssemblyError",
+    "SalesReportData",
+    "SalesReportDataAssembler",
+    "SalesReportSpecBuilder",
+    "TopProductRow",
     "M3_SALES_SCHEMA_FINGERPRINT",
     "REPORT_TEMPLATE_CONTRACTS",
     "SALES_REPORT_CONTRACT",
@@ -38,4 +62,12 @@ __all__ = [
     "ReportSchemaRequirement",
     "TemplateContract",
     "TemplateSchemaBinding",
+    "FixedSalesReportRenderer",
+    "InMemoryReportRepository",
+    "LocalReportRepository",
+    "ReportArtifact",
+    "ReportNotFoundError",
+    "ReportRepository",
+    "ReportResourceError",
+    "ReportStorageError",
 ]

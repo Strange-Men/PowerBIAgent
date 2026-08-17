@@ -56,7 +56,15 @@ class ReportResponse(BaseModel):
 
     report_id: str = Field(description="报表唯一 ID，与 Memory.last_report_id 一致")
     template_key: str = Field(description="报表模板标识")
-    html: str = Field(default="", description="渲染后的 HTML（Mock 模式返回）")
+    contract_version: str = Field(default="", description="固定模板合同版本")
+    view_reference: str = Field(default="", description="后端生成的查看引用")
+    download_reference: str = Field(default="", description="后端生成的下载引用")
+    content_type: str = Field(default="text/html; charset=utf-8")
+    content_hash: str = Field(default="", description="保存内容的 SHA-256")
+    html: str = Field(
+        default="",
+        description="兼容字段；与 repository 保存的同一 Renderer 输出完全一致",
+    )
 
 
 class ChatResponse(BaseModel):

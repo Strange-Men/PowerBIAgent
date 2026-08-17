@@ -15,6 +15,7 @@ from fastapi import Request
 from backend.app.application.mock_turn_service import MockTurnService
 from backend.app.application.turn_service_protocol import TurnServiceProtocol
 from backend.app.config.settings import Settings, get_settings
+from backend.app.report.resources import ReportRepository
 
 
 def get_turn_service(request: Request) -> TurnServiceProtocol:
@@ -57,3 +58,11 @@ def get_settings_dep(request: Request) -> Settings:
     if settings is None:
         return get_settings()
     return settings
+
+
+def get_report_repository(request: Request) -> ReportRepository:
+    """Return the app-scoped repository that exclusively owns report artifacts."""
+    repository = getattr(request.app.state, "report_repository", None)
+    if repository is None:
+        raise RuntimeError("ReportRepository not initialized")
+    return repository

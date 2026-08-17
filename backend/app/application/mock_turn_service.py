@@ -45,13 +45,14 @@ from backend.app.memory.request_fingerprint import (
     ScenarioFingerprint,
 )
 from backend.app.powerbi.mock import MockPowerBIAdapter
+from backend.app.report.base import ReportRenderer
 from backend.app.report.mock import MockReportRenderer
+from backend.app.report.resources import ReportArtifact, ReportRepository
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
     DAXRequest,
     QueryPlan,
     QueryResult,
-    RenderedReport,
     ReportSpec,
     SemanticModelSchema,
     UserContext,
@@ -81,13 +82,15 @@ class MockTurnService:
         memory_repo: Optional[InMemoryMemoryRepository] = None,
         llm_runtime: Any = None,  # M1.6.3: 向后兼容，内部提取 MockLLMProvider
         powerbi_adapter: Optional[MockPowerBIAdapter] = None,
-        report_renderer: Optional[MockReportRenderer] = None,
+        report_renderer: Optional[ReportRenderer] = None,
+        report_repository: Optional[ReportRepository] = None,
         config: Optional[HarnessConfig] = None,
         llm_provider: Optional[MockLLMProvider] = None,  # M1.6.3: 新的直接注入方式
     ):
         _repo = memory_repo or InMemoryMemoryRepository()
         self.powerbi = powerbi_adapter or MockPowerBIAdapter()
         self.report_renderer = report_renderer or MockReportRenderer()
+        self._report_repository = report_repository
         self.config = config or HarnessConfig()
 
         # M1.6.3: LLM — 优先使用直接注入的 llm_provider，否则通过 llm_runtime
@@ -123,7 +126,12 @@ class MockTurnService:
 
     def _build_tool_gateway(self) -> ToolGateway:
         """构建 ToolGateway — M1.6.2 使用共享工具注册入口，超时/重试来自 HarnessConfig"""
-        return create_default_tool_gateway(self.powerbi, self.report_renderer, self.config)
+        return create_default_tool_gateway(
+            self.powerbi,
+            self.report_renderer,
+            self.config,
+            self._report_repository,
+        )
 
     # M1.6.4: Service 不再暴露 memory_repo 属性 —
     #   只读查询必须使用 TurnPipeline 公开只读方法：
@@ -542,7 +550,7 @@ class MockTurnService:
                     intent=intent.intent,
                     user=self._user_context,
                 )
-                rendered: RenderedReport = await self.tool_gateway.execute(
+                rendered: ReportArtifact = await self.tool_gateway.execute(
                     "render_report",
                     exec_ctx,
                     report_spec,
@@ -567,6 +575,11 @@ class MockTurnService:
                 "report_id": rendered.report_id,
                 "template_key": rendered.template_key,
                 "html": rendered.html,
+                "contract_version": rendered.contract_version,
+                "view_reference": rendered.view_reference,
+                "download_reference": rendered.download_reference,
+                "content_type": rendered.content_type,
+                "content_hash": rendered.content_hash,
             }
 
         controller.record_response_valid()

@@ -1,7 +1,7 @@
 """Mock 报表渲染器 — 使用固定最小内存模板
 
 M0.3：仅生成最小静态 HTML，禁止外部脚本/JS/自由 HTML。
-M3：正式 Jinja2 模板和视觉样式。
+M3.1：正式实现位于 FixedSalesReportRenderer；本类仅保留 Mock compatibility。
 """
 
 from datetime import datetime

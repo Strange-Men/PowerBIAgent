@@ -89,7 +89,17 @@ from backend.app.facts import (
     VerifiedFactSetBuilder,
 )
 from backend.app.report.deepseek_spec_service import DeepSeekReportSpecService
-from backend.app.report.mock import MockReportRenderer
+from backend.app.report.assembly import (
+    SalesReportAssemblyError,
+    SalesReportDataAssembler,
+    SalesReportSpecBuilder,
+)
+from backend.app.report.base import ReportRenderer
+from backend.app.report.contracts import ReportContractError, ReportDataPlanBuilder
+from backend.app.report.resources import (
+    ReportArtifact,
+    ReportRepository,
+)
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
     ColumnMembersRequest,
@@ -97,7 +107,6 @@ from backend.app.schemas.data_contracts import (
     DAXRequest,
     QueryPlan,
     QueryResult,
-    RenderedReport,
     ReportSpec,
     SemanticModelSchema,
     UserContext,
@@ -123,9 +132,10 @@ class DeepSeekTurnService:
         memory_repo: InMemoryMemoryRepository,
         llm_provider: LLMProvider,
         powerbi_adapter: PowerBIAdapter,
-        report_renderer: MockReportRenderer,
+        report_renderer: ReportRenderer,
         settings: Settings,
         config: Optional[HarnessConfig] = None,
+        report_repository: ReportRepository | None = None,
     ):
         if llm_provider.is_mock:
             raise ValueError("DeepSeekTurnService 要求非 Mock LLM Provider")
@@ -133,6 +143,7 @@ class DeepSeekTurnService:
         self.llm_provider = llm_provider
         self.powerbi = powerbi_adapter
         self.report_renderer = report_renderer
+        self._report_repository = report_repository
         self.settings = settings
         # M1.6.2: 禁止回退 Mock 配置。若未显式传入 config，从自身 settings 构建。
         self.config = config if config is not None else HarnessConfig.from_settings(settings)
@@ -161,7 +172,12 @@ class DeepSeekTurnService:
 
     def _build_tool_gateway(self) -> ToolGateway:
         """构建 ToolGateway — M1.6.3 使用共享入口，与 Mock 路径完全一致"""
-        return create_default_tool_gateway(self.powerbi, self.report_renderer, self.config)
+        return create_default_tool_gateway(
+            self.powerbi,
+            self.report_renderer,
+            self.config,
+            self._report_repository,
+        )
 
     # M1.6.4: Service 不再暴露 memory_repo 属性 —
     #   只读查询必须使用 TurnPipeline 公开只读方法：
@@ -441,6 +457,22 @@ class DeepSeekTurnService:
                 trace_id=trace_id,
                 is_mock=False,
                 source_mode=self._source_mode,
+                collector=collector,
+            )
+
+        if intent.intent == IntentType.REPORT_GENERATION and not self.powerbi.is_mock:
+            return await self._execute_fixed_sales_report_turn(
+                message=message,
+                memory=memory,
+                intent=intent,
+                schema=schema,
+                template_key=template_grounding.canonical_key or "",
+                effective_req_id=effective_req_id,
+                effective_conv_id=effective_conv_id,
+                runtime_mode=runtime_mode,
+                controller=controller,
+                trace=trace,
+                trace_id=trace_id,
                 collector=collector,
             )
 
@@ -1011,7 +1043,7 @@ class DeepSeekTurnService:
                     intent=intent.intent,
                     user=self._user_context,
                 )
-                rendered: RenderedReport = await self.tool_gateway.execute(
+                rendered: ReportArtifact = await self.tool_gateway.execute(
                     TOOL_NAME_RENDER,
                     exec_ctx,
                     report_spec,
@@ -1031,6 +1063,11 @@ class DeepSeekTurnService:
                 "report_id": rendered.report_id,
                 "template_key": rendered.template_key,
                 "html": rendered.html,
+                "contract_version": rendered.contract_version,
+                "view_reference": rendered.view_reference,
+                "download_reference": rendered.download_reference,
+                "content_type": rendered.content_type,
+                "content_hash": rendered.content_hash,
             }
             response_obj = report_spec
             trace.record("report_spec_validated", trace_id=trace_id, request_id=effective_req_id)
@@ -1114,6 +1151,347 @@ class DeepSeekTurnService:
             },
         )
         return result
+
+    async def _execute_fixed_sales_report_turn(
+        self,
+        *,
+        message: str,
+        memory: StructuredWorkMemory,
+        intent: IntentSpec,
+        schema: SemanticModelSchema,
+        template_key: str,
+        effective_req_id: str,
+        effective_conv_id: str,
+        runtime_mode: RuntimeDataMode,
+        controller: TurnController,
+        trace: TraceRecorder,
+        trace_id: str,
+        collector: LLMCallCollector,
+    ) -> dict[str, Any]:
+        """Execute the fixed four-query M3 report inside the active TurnPipeline."""
+
+        try:
+            report_plan = ReportDataPlanBuilder().build(template_key, schema)
+        except ReportContractError as exc:
+            return await self._fail_result(
+                memory,
+                effective_req_id,
+                effective_conv_id,
+                controller,
+                trace,
+                terminal_state=TurnState.VALIDATION_FAILED,
+                error_type=exc.code,
+                reason=":".join((exc.code, *exc.errors)),
+                stage="report_contract",
+                trace_id=trace_id,
+                collector=collector,
+            )
+
+        dax_requests: dict[str, DAXRequest] = {}
+        try:
+            for query in report_plan.queries:
+                plan_validation = self.validator.validate_query_plan(
+                    query.query_plan,
+                    schema,
+                    enforce_semantic_grounding=True,
+                )
+                if not plan_validation.is_valid:
+                    raise SalesReportAssemblyError(
+                        "sales_report_query_plan_validation_failed"
+                    )
+                request = DeterministicDAXBuilder().build(
+                    query.query_plan,
+                    schema,
+                    request_id=(
+                        f"{effective_req_id}:report:{query.requirement_key}"
+                    ),
+                    timeout_seconds=self.settings.powerbi_query_timeout_seconds,
+                )
+                safety = DAXSafetyValidator().validate(request.dax, schema)
+                if not safety.is_valid:
+                    raise SalesReportAssemblyError(
+                        "sales_report_dax_safety_failed"
+                    )
+                layer3 = self.validator.validate_dax_query_plan_consistency(
+                    request,
+                    query.query_plan,
+                    schema,
+                )
+                if not layer3.is_valid:
+                    raise SalesReportAssemblyError(
+                        "sales_report_independent_layer3_failed"
+                    )
+                dax_requests[query.requirement_key] = request
+        except (DAXBuildError, SalesReportAssemblyError) as exc:
+            return await self._fail_result(
+                memory,
+                effective_req_id,
+                effective_conv_id,
+                controller,
+                trace,
+                terminal_state=TurnState.VALIDATION_FAILED,
+                error_type=getattr(exc, "code", type(exc).__name__),
+                reason=str(exc),
+                stage="report_query_validation",
+                trace_id=trace_id,
+                collector=collector,
+            )
+
+        controller.record_query_plan_valid()
+        controller.record_dax_valid()
+        controller.transition(TurnState.QUERY_VALIDATED)
+        trace.record(
+            "report_data_plan_validated",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={
+                "template_key": report_plan.template_key,
+                "query_count": len(report_plan.queries),
+                "schema_fingerprint": report_plan.schema_fingerprint,
+            },
+        )
+
+        exec_ctx = self.pipeline.create_tool_context(
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            conversation_id=effective_conv_id,
+            runtime_mode=runtime_mode,
+            intent=intent.intent,
+            user=self._user_context,
+        )
+        query_results: dict[str, QueryResult] = {}
+        try:
+            for query in report_plan.queries:
+                result: QueryResult = await self.tool_gateway.execute(
+                    TOOL_NAME_DAX,
+                    exec_ctx,
+                    dax_requests[query.requirement_key],
+                    trace=trace,
+                    controller=controller,
+                )
+                if result.error is not None:
+                    raise ToolExecutionError(result.error.message)
+                query_results[query.requirement_key] = result
+        except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
+                ToolNotRegisteredError, ToolOutputValidationError) as exc:
+            return await self._fail_result(
+                memory,
+                effective_req_id,
+                effective_conv_id,
+                controller,
+                trace,
+                terminal_state=TurnState.TOOL_FAILED,
+                error_type=type(exc).__name__,
+                reason=str(exc),
+                stage="report_dax_execution",
+                trace_id=trace_id,
+                collector=collector,
+            )
+
+        controller.record_tool_execution_succeeded()
+        controller.transition(TurnState.TOOL_EXECUTED)
+        fact_sets: dict[str, VerifiedFactSet] = {}
+        try:
+            for query in report_plan.queries:
+                result = query_results[query.requirement_key]
+                result_validation = self.validator.validate_query_result(
+                    result,
+                    expected_source_mode=self._source_mode,
+                )
+                if not result_validation.is_valid:
+                    raise SalesReportAssemblyError(
+                        "sales_report_query_result_validation_failed"
+                    )
+                fact_sets[query.requirement_key] = VerifiedFactSetBuilder().build(
+                    query.query_plan,
+                    result,
+                )
+            report_data_contract = SalesReportDataAssembler().build(
+                report_plan,
+                query_results,
+                fact_sets,
+            )
+        except (FactVerificationError, SalesReportAssemblyError) as exc:
+            return await self._fail_result(
+                memory,
+                effective_req_id,
+                effective_conv_id,
+                controller,
+                trace,
+                terminal_state=TurnState.VALIDATION_FAILED,
+                error_type=getattr(exc, "code", type(exc).__name__),
+                reason=str(exc),
+                stage="sales_report_data_assembly",
+                trace_id=trace_id,
+                collector=collector,
+            )
+
+        controller.record_query_result_valid()
+        controller.transition(TurnState.RESULT_VALIDATED)
+        trace.record(
+            "sales_report_data_assembled",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={
+                "query_result_ids": list(report_data_contract.query_result_ids),
+                "verified_fact_set_ids": list(
+                    report_data_contract.verified_fact_set_ids
+                ),
+                "source_mode": report_data_contract.source_mode,
+            },
+        )
+
+        try:
+            report_spec = SalesReportSpecBuilder().build(report_data_contract)
+            rendered: ReportArtifact = await self.tool_gateway.execute(
+                TOOL_NAME_RENDER,
+                exec_ctx,
+                report_spec,
+                trace=trace,
+                controller=controller,
+            )
+        except SalesReportAssemblyError as exc:
+            return await self._fail_result(
+                memory,
+                effective_req_id,
+                effective_conv_id,
+                controller,
+                trace,
+                terminal_state=TurnState.RESPONSE_FAILED,
+                error_type=exc.code,
+                reason=exc.code,
+                stage="sales_report_spec",
+                trace_id=trace_id,
+                collector=collector,
+            )
+        except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
+                ToolNotRegisteredError, ToolOutputValidationError) as exc:
+            return await self._fail_result(
+                memory,
+                effective_req_id,
+                effective_conv_id,
+                controller,
+                trace,
+                terminal_state=TurnState.RESPONSE_FAILED,
+                error_type=type(exc).__name__,
+                reason=str(exc),
+                stage="report_render_store",
+                trace_id=trace_id,
+                collector=collector,
+            )
+
+        report_response = {
+            "report_id": rendered.report_id,
+            "template_key": rendered.template_key,
+            "contract_version": rendered.contract_version,
+            "view_reference": rendered.view_reference,
+            "download_reference": rendered.download_reference,
+            "content_type": rendered.content_type,
+            "content_hash": rendered.content_hash,
+            # Compatibility only: exact same bytes as the repository artifact.
+            "html": rendered.html,
+        }
+        controller.record_response_valid()
+        controller.transition(TurnState.RESPONSE_READY)
+
+        memory.current_intent = intent.intent.value
+        memory.analysis_goal = f"用户提问: {message}"
+        memory.semantic_model_key = report_plan.semantic_model_key
+        memory.report_template_key = report_plan.template_key
+        # A fixed multi-query report must not masquerade as one inheritable
+        # user QueryPlan in the existing M2 memory slots.
+        memory.measures = []
+        memory.dimensions = []
+        memory.filters = []
+        memory.time_range = None
+        memory.sort = None
+        memory.top_n = None
+        memory.comparison_mode = None
+        memory.last_query_plan = None
+        memory.last_dax = None
+        memory.last_query_result_id = rendered.query_result_ids[-1]
+        memory.last_result_summary = "fixed sales report queries complete"
+        memory.last_report_id = rendered.report_id
+        memory.updated_at = datetime.utcnow()
+
+        evidence = controller.build_commit_evidence()
+        committed_memory, commit_error = await self.pipeline.commit_memory_safe(
+            memory,
+            evidence,
+            controller,
+            trace,
+            trace_id,
+            effective_req_id,
+            runtime_mode,
+        )
+        if commit_error is not None:
+            terminal_state = (
+                "memory_conflict"
+                if commit_error == "version_conflict"
+                else "response_failed"
+            )
+            return self._build_result(
+                effective_req_id,
+                effective_conv_id,
+                terminal_state,
+                intent=intent.intent.value,
+                error_type=commit_error,
+                trace=trace,
+                trace_id=trace_id,
+                is_mock=False,
+                source_mode=self._source_mode,
+                collector=collector,
+            )
+
+        controller.transition(TurnState.COMPLETED)
+        trace.record(
+            "request_completed",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={"terminal_state": "completed"},
+        )
+        return self._build_result(
+            effective_req_id,
+            effective_conv_id,
+            "completed",
+            intent=intent.intent.value,
+            response_type="report",
+            trace=trace,
+            trace_id=trace_id,
+            is_mock=False,
+            source_mode=self._source_mode,
+            collector=collector,
+            report_data=report_response,
+            execution_audit={
+                "canonical_query_plans": {
+                    item.requirement_key: item.query_plan.model_dump(mode="json")
+                    for item in report_plan.queries
+                },
+                "query_count": len(report_plan.queries),
+                "deterministic_dax": True,
+                "dax_fingerprints": {
+                    key: hashlib.sha256(request.dax.encode("utf-8")).hexdigest()
+                    for key, request in dax_requests.items()
+                },
+                "layer3_pass": True,
+                "query_result_ids": list(rendered.query_result_ids),
+                "verified_fact_set_ids": list(rendered.verified_fact_set_ids),
+                "source_mode": rendered.source_mode,
+                "factual_validation_pass": True,
+                "llm_dax_call_count": sum(
+                    item.task == "dax" for item in collector.observations
+                ),
+                "llm_report_data_call_count": 0,
+                "llm_report_factual_call_count": 0,
+                "renderer_llm_call_count": 0,
+                "fallback_count": 0,
+                "fake_query_result_count": 0,
+                "report_artifact_id": rendered.report_id,
+                "content_hash": rendered.content_hash,
+                "html_size_bytes": len(rendered.html.encode("utf-8")),
+                "memory_version": committed_memory.memory_version,
+            },
+        )
 
     # ── 辅助方法：结果构建委托给共享 TurnPipeline ──
 

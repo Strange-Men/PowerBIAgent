@@ -15,9 +15,14 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
-from backend.app.api.dependencies import get_mock_turn_service, get_turn_service, get_settings_dep
+from backend.app.api.dependencies import (
+    get_mock_turn_service,
+    get_report_repository,
+    get_settings_dep,
+    get_turn_service,
+)
 from backend.app.api.schemas import ChatRequest, ChatResponse, ErrorResponse, HealthResponse, ReportResponse
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
 from backend.app.llm.base import (
@@ -36,8 +41,56 @@ from backend.app.memory.request_fingerprint import (
     IdempotencyConflictError,
     IdempotencyCoordinationError,
 )
+from backend.app.report.resources import (
+    ReportNotFoundError,
+    ReportRepository,
+    ReportStorageError,
+)
 
 router = APIRouter()
+
+
+@router.get("/api/reports/{report_id}", response_class=HTMLResponse)
+async def view_report(
+    report_id: str,
+    repository: ReportRepository = Depends(get_report_repository),
+):
+    """View one repository-managed static HTML report."""
+    try:
+        artifact, html = await repository.read_html(report_id)
+    except ReportNotFoundError:
+        raise HTTPException(status_code=404, detail="report_not_found") from None
+    except ReportStorageError:
+        raise HTTPException(status_code=500, detail="report_artifact_invalid") from None
+    return HTMLResponse(
+        content=html,
+        media_type="text/html",
+        headers={"ETag": f'"{artifact.content_hash}"'},
+    )
+
+
+@router.get("/api/reports/{report_id}/download")
+async def download_report(
+    report_id: str,
+    repository: ReportRepository = Depends(get_report_repository),
+):
+    """Download one repository-managed UTF-8 HTML artifact."""
+    try:
+        artifact, html = await repository.read_html(report_id)
+    except ReportNotFoundError:
+        raise HTTPException(status_code=404, detail="report_not_found") from None
+    except ReportStorageError:
+        raise HTTPException(status_code=500, detail="report_artifact_invalid") from None
+    return Response(
+        content=html.encode("utf-8"),
+        media_type="text/html",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{artifact.report_id}.html"'
+            ),
+            "ETag": f'"{artifact.content_hash}"',
+        },
+    )
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -320,6 +373,13 @@ async def chat(
         report_response = ReportResponse(
             report_id=report_data.get("report_id", ""),
             template_key=report_data.get("template_key", ""),
+            contract_version=report_data.get("contract_version", ""),
+            view_reference=report_data.get("view_reference", ""),
+            download_reference=report_data.get("download_reference", ""),
+            content_type=report_data.get(
+                "content_type", "text/html; charset=utf-8"
+            ),
+            content_hash=report_data.get("content_hash", ""),
             html=report_data.get("html", ""),
         )
 

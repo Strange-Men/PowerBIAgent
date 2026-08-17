@@ -4,6 +4,18 @@
 
 ---
 
+## [M3.1] — 2026-08-17
+
+### 销售报表生成与 HTML 资源闭环
+
+- M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad` 经 GPT 远程审计 PASS 后纯 fast-forward 合入 `main`；`PowerBIAgent Validation` run `31986207118` 对应 main push 与同一 SHA，结论 success
+- `sales_report` 固定四查询继续逐项复用 CanonicalQueryPlan → Deterministic DAX → Independent Layer 3 → ToolGateway → PowerBIAdapter → QueryResult → VerifiedFactSet；无第二 Power BI、DAX、Fact、TurnPipeline 或 Memory 控制面
+- 新增 deterministic `SalesReportData` 与唯一固定 `ReportSpec`；KPI、Category rows、Top Product 结果位置与全部 provenance 只来自四组 QueryResult / VerifiedFactSet，任一缺失、错绑、伪造、空结果、mixed source 或 fingerprint mismatch 均 fail closed
+- 新增 `FixedSalesReportRenderer` 与固定 UTF-8 `sales_report.html`；静态 HTML 无 JavaScript、外部脚本/CDN 或自由用户 HTML，所有动态文本安全转义
+- 新增 `ReportArtifact`、原子 `LocalReportRepository`、`GET /api/reports/{report_id}` 与 `/download`；report_id 只由后端生成，路径遍历与 unknown ID 拒绝，幂等 replay 复用同一 artifact
+- Real acceptance 使用 M3 PBIX 完成 4 queries → 4 QueryResult → 4 VerifiedFactSet → SalesReportData → ReportSpec → Renderer → ReportArtifact；Total Sales / Total Quantity oracle 匹配、source real、view/download 200、保存内容 hash 一致，DAX/ReportData/Report factual/Renderer LLM authority 与 fallback/fake QueryResult 均为 0
+- 本轮不进入 M4/M5 或 Remote MCP，不新增 M3.2 功能，不提交 PBIX/HTML/local_state，不合并 main，不创建 Tag
+
 ## [M3.0] — 2026-08-17
 
 ### 销售报表合同与开发路线固化

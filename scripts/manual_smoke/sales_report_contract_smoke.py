@@ -1,7 +1,8 @@
-"""M3 sales_report contract smoke through the sealed M2 Real execution chain.
+"""M3.1 full sales_report smoke through the sealed M2 Real execution chain.
 
 Expected scalar values are mandatory CLI acceptance oracles. They are never
-used to construct QueryResult or any production artifact.
+used to construct QueryResult or any production artifact.  The final HTML,
+repository hash, acceptance copy, and view/download endpoints are also checked.
 """
 
 from __future__ import annotations
@@ -11,9 +12,9 @@ import asyncio
 import shutil
 import subprocess
 import sys
+import hashlib
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 
@@ -73,7 +74,13 @@ async def _run_smoke(
     from backend.app.intent.models import IntentType
     from backend.app.memory.models import RuntimeDataMode
     from backend.app.powerbi.local_mcp import LocalMCPPowerBIAdapter
+    from backend.app.report.assembly import (
+        SalesReportDataAssembler,
+        SalesReportSpecBuilder,
+    )
     from backend.app.report.contracts import ReportDataPlanBuilder
+    from backend.app.report.fixed import FixedSalesReportRenderer
+    from backend.app.report.resources import LocalReportRepository
     from backend.app.schemas.data_contracts import UserContext
 
     settings = Settings(
@@ -83,6 +90,7 @@ async def _run_smoke(
     )
     prerequisites_ready = (
         sys.platform == "win32"
+        and (_PROJECT_ROOT / "demo_data" / "PowerBIAgent_M3_Test.pbix").exists()
         and settings.is_powerbi_local_mcp_configured
         and shutil.which(settings.powerbi_local_mcp_executable) is not None
         and _powerbi_desktop_is_running()
@@ -100,23 +108,26 @@ async def _run_smoke(
         max_retries=0,
     )
 
-    async def _unused_renderer(_: object) -> str:
-        raise RuntimeError("renderer_not_used_in_m3_contract_smoke")
-
     config = HarnessConfig.from_settings(settings).model_copy(
-        update={"max_powerbi_retries": 0}
+        update={"max_powerbi_retries": 0, "max_tool_calls": 8}
     )
+    repository = LocalReportRepository(_PROJECT_ROOT / "local_state" / "reports")
     gateway = create_default_tool_gateway(
         adapter,
-        SimpleNamespace(render=_unused_renderer),
+        FixedSalesReportRenderer(),
         config,
+        repository,
     )
     context = ToolExecutionContext(
         intent=IntentType.REPORT_GENERATION,
         user=UserContext(
             allowed_semantic_models=[settings.powerbi_local_semantic_model_key],
             allowed_templates=["sales_report"],
-            allowed_tools=["get_semantic_model_schema", "execute_dax"],
+            allowed_tools=[
+                "get_semantic_model_schema",
+                "execute_dax",
+                "render_report",
+            ],
         ),
         runtime_mode=RuntimeDataMode.REAL,
     )
@@ -145,6 +156,8 @@ async def _run_smoke(
     )
     actual_scalars: dict[str, Decimal] = {}
     query_rows: dict[str, int] = {}
+    query_results: dict[str, Any] = {}
+    verified_fact_sets: dict[str, Any] = {}
     try:
         for query in report_plan.queries:
             request = DeterministicDAXBuilder().build(
@@ -168,6 +181,8 @@ async def _run_smoke(
             if result.error is not None or not result_validation.is_valid:
                 raise RuntimeError("query_result_validation_failed")
             facts = VerifiedFactSetBuilder().build(query.query_plan, result)
+            query_results[query.requirement_key] = result
+            verified_fact_sets[query.requirement_key] = facts
             query_rows[query.requirement_key] = result.row_count
             if query.shape.value == "scalar":
                 scalar_facts = facts.by_type(FactType.SCALAR_METRIC)
@@ -187,6 +202,88 @@ async def _run_smoke(
         })
         return 1
 
+    try:
+        report_data = SalesReportDataAssembler().build(
+            report_plan,
+            query_results,
+            verified_fact_sets,
+        )
+        report_spec = SalesReportSpecBuilder().build(report_data)
+        artifact = await gateway.execute("render_report", context, report_spec)
+        acceptance_path = await repository.export_acceptance_copy(
+            artifact.report_id
+        )
+        stored_artifact, stored_html = await repository.read_html(
+            artifact.report_id
+        )
+        stored_bytes = stored_html.encode("utf-8")
+        hash_match = (
+            hashlib.sha256(stored_bytes).hexdigest()
+            == stored_artifact.content_hash
+            == artifact.content_hash
+        )
+        managed_path = repository.root / f"{artifact.report_id}.html"
+        file_match = (
+            managed_path.is_file()
+            and acceptance_path.is_file()
+            and managed_path.read_bytes() == stored_bytes
+            and acceptance_path.read_bytes() == stored_bytes
+        )
+
+        from fastapi import FastAPI
+        import httpx
+        from backend.app.api.routes import router
+
+        api = FastAPI()
+        api.state.report_repository = repository
+        api.include_router(router)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=api),
+            base_url="http://acceptance",
+        ) as client:
+            view_response = await client.get(artifact.view_reference)
+            download_response = await client.get(artifact.download_reference)
+        view_ok = view_response.status_code == 200 and view_response.content == stored_bytes
+        download_ok = (
+            download_response.status_code == 200
+            and download_response.content == stored_bytes
+            and "attachment" in download_response.headers.get(
+                "content-disposition", ""
+            )
+        )
+
+        tracked = subprocess.run(
+            ["git", "ls-files", "--", "local_state", "*.pbix"],
+            cwd=_PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", str(acceptance_path)],
+            cwd=_PROJECT_ROOT,
+            timeout=10,
+            check=False,
+        )
+        git_safe = tracked.returncode == 0 and not tracked.stdout.strip()
+        gitignored = ignored.returncode == 0
+    except Exception as exc:
+        _print_summary({
+            "result": "FAIL",
+            "error_type": getattr(exc, "code", type(exc).__name__),
+            "schema_fingerprint": report_plan.schema_fingerprint,
+            "query_count": len(query_results),
+            "source_mode": "real",
+            "fallback_count": 0,
+            "dax_llm_calls": 0,
+            "report_data_llm_calls": 0,
+            "report_factual_llm_calls": 0,
+            "renderer_llm_calls": 0,
+            "fake_query_result_count": 0,
+        })
+        return 1
+
     total_sales = actual_scalars.get("total_sales")
     total_quantity = actual_scalars.get("total_quantity")
     scalar_oracle_match = (
@@ -197,7 +294,16 @@ async def _run_smoke(
         query_rows.get(query.requirement_key, 0) > 0
         for query in report_plan.queries
     )
-    success = scalar_oracle_match and all_queries_nonempty
+    success = (
+        scalar_oracle_match
+        and all_queries_nonempty
+        and hash_match
+        and file_match
+        and view_ok
+        and download_ok
+        and git_safe
+        and gitignored
+    )
     sales = next(table for table in schema.tables if table.name == "Sales")
     field_types = ",".join(
         f"{item.name}:{item.data_type}"
@@ -223,8 +329,22 @@ async def _run_smoke(
         "all_queries_nonempty": all_queries_nonempty,
         "source_mode": "real",
         "fallback_count": 0,
-        "llm_calls": 0,
-        "renderer_calls": 0,
+        "dax_llm_calls": 0,
+        "report_data_llm_calls": 0,
+        "report_factual_llm_calls": 0,
+        "renderer_llm_calls": 0,
+        "fake_query_result_count": 0,
+        "renderer_calls": 1,
+        "report_id": artifact.report_id,
+        "html_path": str(acceptance_path),
+        "managed_html_path": str(managed_path),
+        "html_size_bytes": len(stored_bytes),
+        "content_hash": artifact.content_hash,
+        "content_hash_match": hash_match,
+        "view_status": view_response.status_code,
+        "download_status": download_response.status_code,
+        "gitignored": gitignored,
+        "git_tracked_output_empty": git_safe,
     })
     return 0 if success else 1
 
