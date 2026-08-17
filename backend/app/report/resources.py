@@ -103,6 +103,13 @@ def _validated_html_bytes(html: str) -> bytes:
         or "javascript:" in lowered
         or "http://" in lowered
         or "https://" in lowered
+        or "<link" in lowered
+        or "<iframe" in lowered
+        or "<object" in lowered
+        or "<embed" in lowered
+        or "@import" in lowered
+        or "url(" in lowered
+        or "src=" in lowered
     ):
         raise ReportStorageError("report_html_unsafe_or_incomplete")
     return html.encode("utf-8")

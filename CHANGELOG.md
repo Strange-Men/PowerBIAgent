@@ -4,6 +4,19 @@
 
 ---
 
+## [M3.2] — 2026-08-17
+
+### 销售报表最终可视化加固与 M3 收口
+
+- M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 经 GPT 远程审计后从 M3.0 纯 fast-forward 合入 `main`；`PowerBIAgent Validation` run `31989328261` 对应同一 main push SHA，结论 success，随后安全删除本地与远程开发分支
+- `FixedSalesReportRenderer` 直接从已校验的 Category / Top Product rows 生成确定性 CSS 横条；宽度按同组绝对最大值归一化并固定半入舍入到两位小数，横条旁保留真实值与同源明细表，不增加查询、排名、趋势、因果或业务事实
+- 固定模板完成桌面与窄屏层级、KPI、横条、表格和弱化 metadata 加固；窄屏横条使用稳定 Flex 换行，无 JavaScript、CDN、外部库、网络请求或自由 HTML
+- Renderer / Repository 保存前额外拒绝 `link`、`iframe`、`object`、`embed`、`@import`、CSS `url()` 与 `src=`；Intent / QueryPlan prompt 明确 DeepSeek 仅提供弱语言信号，无模板、查询、KPI、图表事实、HTML/CSS、布局、保存路径或资源引用 authority
+- M3 PBIX Real acceptance 通过：fingerprint `d72c9dd04fcda216ffa421d84e85c01d9643e2c2db133d1661639970eb6b11ac`，四查询非空，Total Sales `500821`、Total Quantity `358`，source real，fallback/fake QueryResult 与 DAX/ReportData/Report factual/Renderer LLM calls 全为 0，view/download 200，受管 HTML 与验收副本逐字节一致
+- 最终受管 HTML 为 10,230 bytes，SHA-256 `7144438843fae9a626e6122f4b936a2ff3fe2d973dc85c6e20c644f2ede6578d`；以禁止网络/脚本的静态 Renderer 实际渲染后，桌面与 430px 窄屏视觉验收均 PASS
+- Fresh acceptance：prompt/report targeted 112、report/contract/API targeted 96、backend 1435、Golden 11 PASS/1 manual Real skip、Architecture 89、Repository Safety 198、Error Ledger 25、Documentation Governance 与 diff check 全部通过
+- M3 最终收口；不提交 PBIX/HTML/`local_state/`，不进入 M4/M5 或 Remote MCP，不创建 Tag
+
 ## [M3.1] — 2026-08-17
 
 ### 销售报表生成与 HTML 资源闭环

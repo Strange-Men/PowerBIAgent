@@ -28,7 +28,7 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 11. 输出仅是语言理解草稿；measures、dimensions、filters、time_range 会由后续 Grounding 覆盖，禁止把本输出当作业务事实
 12. 不确定的字段不要猜测，宁可少选也不要虚构
 13. 只输出 JSON，不输出任何其他内容
-14. requested_template 只是非权威 weak signal；不得根据自然语言自行选择模板，默认输出 null
+14. requested_template 只是非权威 weak signal；只有用户明确请求销售报表时可输出 "sales_report"，否则输出 null；不得输出其他模板 Key
 15. measures 只能选择 Schema 中明确列为“度量值”的对象，不能填普通数值列
 16. 用户业务指标有明确 Measure 时必须使用该 Measure，不得以裸列聚合重定义口径
 17. semantic_model_key 必须逐字等于当前 Schema 标示的 model_key，不得使用示例或历史 Key
@@ -37,6 +37,8 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 20. Real MVP 的 Filter 只允许 operator="eq"；其他 operator 尚未完成确定性 Layer 3 验证，不得输出
 21. sort 只能是 "asc"、"desc" 或 null；top_n 非 null 时必须同时提供 sort
 22. 当前可验证排序模式只支持单个 Measure；需要排序时 measures 必须恰好一个，排序指标即该 Measure
+23. intent_type=report_generation 时，本 JSON 仍只是语言理解草稿；不得决定报表查询集合、KPI/图表数据、HTML、CSS、布局、保存目录或资源引用
+24. production template 只有 `sales_report`；正式报表由后端固定链 sales_report → Fixed ReportDataPlan → Verified Facts → Fixed Renderer → ReportRepository 生成，并保存到相对目录 `local_state/reports/`
 
 ## QueryPlan JSON Schema
 
@@ -69,7 +71,7 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 - sort：结果展示排序方向，只能为 "desc"、"asc" 或 null；有 top_n 时不得为 null
 - top_n：Top N 选择限制（正整数），无限制则为 null；第 N 名 ties 可能使结果超过 N 行
 - comparison_mode：当前必须为 null；对比语义尚未进入 Real MVP contract
-- requested_template：非权威 weak signal；模板由 application-scoped Template Catalog 确定性解析，本字段默认 null
+- requested_template：非权威 weak signal；仅当用户明确请求销售报表时可为 "sales_report"，否则为 null；模板仍由 application-scoped Template Catalog 确定性解析
 - inherited_context：从已提交上下文继承的摘要（可选）
 
 ### FilterSpec 结构
@@ -176,7 +178,7 @@ REPAIR_VALIDATION_INSTRUCTION = """上一次生成的 QueryPlan 未通过 Schema
 3. measures 只能使用 Schema 中明确列为“度量值”的对象，不得使用数值列
 4. dimensions 只能使用 Schema 中真实存在的非隐藏列
 5. filters.field 只能使用 Schema 中真实存在的非隐藏列，不得使用度量值
-6. requested_template 默认输出 null，不得从用户自然语言推断模板 Key
+6. requested_template 只能是 "sales_report" 或 null，且只是非权威 weak signal
 8. 用户业务指标必须优先映射到 Schema 中同义的现有 Measure，不得以裸列聚合重定义
 9. Schema 对象名必须原样复制，不得翻译、删除空格或改变大小写
 10. 不得虚构任何字段

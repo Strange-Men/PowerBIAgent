@@ -41,6 +41,7 @@ from backend.app.report.resources import (
     ReportStorageError,
 )
 from backend.app.schemas.data_contracts import (
+    ChartSpec,
     ColumnSchema,
     DAXRequest,
     MeasureSchema,
@@ -283,13 +284,43 @@ async def test_fixed_renderer_escapes_injection_and_has_no_active_content():
     )
     html = await FixedSalesReportRenderer().render(report)
     assert "销售分析报表" in html
-    assert "按类别销售额" in html
-    assert "Top 5 产品销售额" in html
+    assert "品类销售表现" in html
+    assert "Top 5 产品销售表现" in html
+    assert 'data-chart="category_sales"' in html
+    assert 'data-chart="top_products"' in html
     assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in html
     assert "<script" not in html.casefold()
     assert "javascript:" not in html.casefold()
     assert "http://" not in html.casefold()
     assert "https://" not in html.casefold()
+
+
+@pytest.mark.asyncio
+async def test_fixed_renderer_bar_geometry_is_deterministic_and_data_bound():
+    report = SalesReportSpecBuilder().build(_assembled())
+    html = await FixedSalesReportRenderer().render(report)
+
+    assert 'data-source-value="700.25" data-bar-percent="100.00"' in html
+    assert 'data-source-value="500.25" data-bar-percent="71.44"' in html
+    assert 'data-source-value="800.0" data-bar-percent="100.00"' in html
+    assert 'data-source-value="400.5" data-bar-percent="50.06"' in html
+    assert 'style="width: 71.44%"' in html
+    assert "结果序号 1" in html
+    assert "严格业务排名" in html
+
+
+@pytest.mark.asyncio
+async def test_fixed_renderer_rejects_forged_chart_input():
+    report = SalesReportSpecBuilder().build(_assembled()).model_copy(update={
+        "charts": [ChartSpec(
+            type="bar",
+            title="伪造图表",
+            x_field="Category",
+            y_field="Forged Sales",
+        )],
+    })
+    with pytest.raises(ValueError, match="sales_report_structure_invalid"):
+        await FixedSalesReportRenderer().render(report)
 
 
 @pytest.mark.asyncio
@@ -353,6 +384,19 @@ async def test_local_repository_hash_atomic_content_and_resource_api(tmp_path):
     assert traversal.status_code == 404
     with pytest.raises(ReportNotFoundError):
         await repository.read_html("../outside")
+
+
+@pytest.mark.asyncio
+async def test_repository_rejects_external_static_resource_markup():
+    repository = InMemoryReportRepository()
+    report = SalesReportSpecBuilder().build(_assembled())
+    html = await FixedSalesReportRenderer().render(report)
+    unsafe = html.replace(
+        "</head>",
+        '<link rel="stylesheet" href="//cdn.example/report.css"></head>',
+    )
+    with pytest.raises(ReportStorageError, match="report_html_unsafe_or_incomplete"):
+        await repository.store(report, unsafe)
 
 
 class _FailingReportRepository(ReportRepository):

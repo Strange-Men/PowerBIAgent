@@ -470,6 +470,20 @@ class TestPromptRules:
         assert 'sort 只能是 "asc"、"desc" 或 null' in system
         assert "top_n 非 null 时必须同时提供 sort" in system
 
+    def test_report_prompt_preserves_backend_fixed_authority(self):
+        messages = build_query_plan_messages(
+            "生成销售分析报表",
+            "report_generation",
+            "schema text",
+            IntentContextSnapshot(),
+        )
+        system = messages[0]["content"]
+
+        assert '只有用户明确请求销售报表时可输出 "sales_report"' in system
+        assert "不得决定报表查询集合、KPI/图表数据、HTML、CSS、布局" in system
+        assert "Fixed ReportDataPlan → Verified Facts → Fixed Renderer" in system
+        assert "`local_state/reports/`" in system
+
     def test_prompt_repair_preserves_measure_and_column_identity(self):
         """Semantic repair 不得放宽 Measure/Column 身份边界。"""
         messages = build_query_plan_messages(

@@ -5,39 +5,84 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>$title</title>
   <style>
-    :root { color-scheme: light; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: #172033; background: #f4f6f9; }
+    :root { color-scheme: light; font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; color: #172033; background: #edf2f7; }
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 32px 20px; background: #f4f6f9; }
-    main { max-width: 1040px; margin: 0 auto; background: #fff; border: 1px solid #e3e7ee; border-radius: 12px; padding: 32px; box-shadow: 0 8px 28px rgba(23, 32, 51, 0.07); }
-    h1 { margin: 0 0 24px; font-size: 30px; letter-spacing: 0.02em; }
-    h2 { margin: 0 0 14px; font-size: 20px; }
-    .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 30px; }
-    .kpi { border: 1px solid #dce3ed; border-radius: 10px; padding: 20px; background: #f9fbfd; }
-    .kpi-label { display: block; color: #627087; font-size: 14px; margin-bottom: 8px; }
-    .kpi-value { display: block; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
-    section { margin-top: 28px; }
-    .table-wrap { overflow-x: auto; border: 1px solid #e0e5ec; border-radius: 8px; }
+    body { margin: 0; padding: 36px 20px; background: #edf2f7; }
+    main { max-width: 1080px; margin: 0 auto; }
+    .report-header { margin-bottom: 22px; padding: 4px 2px; }
+    .eyebrow { margin: 0 0 8px; color: #2563a9; font-size: 12px; font-weight: 700; letter-spacing: .12em; }
+    h1 { margin: 0; color: #10213a; font-size: clamp(28px, 4vw, 38px); line-height: 1.18; letter-spacing: .01em; }
+    .report-subtitle { margin: 10px 0 0; color: #66758b; font-size: 15px; }
+    .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-bottom: 24px; }
+    .kpi { position: relative; overflow: hidden; min-height: 132px; border: 1px solid #d9e3ef; border-radius: 14px; padding: 24px 26px; background: #fff; box-shadow: 0 8px 22px rgba(37, 75, 120, .06); }
+    .kpi::before { position: absolute; inset: 0 auto 0 0; width: 5px; background: #2f72b7; content: ""; }
+    .kpi-label { display: block; margin-bottom: 13px; color: #63738a; font-size: 14px; font-weight: 600; }
+    .kpi-value { display: block; color: #122844; font-size: clamp(30px, 4.2vw, 42px); font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .report-section { margin-top: 22px; border: 1px solid #dce5ef; border-radius: 14px; padding: 26px; background: #fff; box-shadow: 0 8px 22px rgba(37, 75, 120, .05); }
+    .section-header { margin-bottom: 22px; }
+    h2 { margin: 0; color: #172b47; font-size: 21px; line-height: 1.3; }
+    .section-description { margin: 7px 0 0; color: #6b788b; font-size: 13px; line-height: 1.6; }
+    .business-chart { display: grid; gap: 14px; margin-bottom: 26px; padding: 20px; border: 1px solid #e4eaf1; border-radius: 11px; background: #f8fafc; }
+    .bar-row { display: grid; grid-template-columns: minmax(150px, 230px) minmax(180px, 1fr) minmax(96px, auto); align-items: center; gap: 14px; min-width: 0; }
+    .bar-label { min-width: 0; color: #273a54; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+    .bar-name { display: block; font-weight: 600; }
+    .result-position { display: block; margin-bottom: 3px; color: #758298; font-size: 11px; font-weight: 500; }
+    .bar-track { position: relative; overflow: hidden; height: 13px; border-radius: 999px; background: #e4ebf3; }
+    .bar-fill { display: block; min-width: 4px; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2f72b7, #5b9bd5); }
+    .bar-row.negative .bar-fill { background: #bf5b5b; }
+    .bar-row.zero .bar-fill { min-width: 0; }
+    .bar-value { color: #243954; font-size: 13px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .detail-heading { margin: 0 0 10px; color: #506077; font-size: 13px; font-weight: 700; }
+    .table-wrap { overflow-x: auto; border: 1px solid #e1e7ee; border-radius: 9px; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 11px 14px; border-bottom: 1px solid #e8ecf1; text-align: left; }
-    th { background: #f3f6fa; color: #48566d; font-size: 13px; font-weight: 600; }
+    th, td { padding: 11px 14px; border-bottom: 1px solid #e8edf3; text-align: left; overflow-wrap: anywhere; }
+    th { background: #f2f6fa; color: #526078; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+    td { color: #2d3e55; font-size: 13px; }
     tbody tr:last-child td { border-bottom: 0; }
-    .number { text-align: right; font-variant-numeric: tabular-nums; }
-    footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #e5e9ef; color: #68758a; font-size: 12px; line-height: 1.8; }
-    footer span { display: inline-block; margin-right: 20px; }
-    @media (max-width: 640px) { body { padding: 12px; } main { padding: 20px; } .kpis { grid-template-columns: 1fr; } }
-    @media print { body { padding: 0; background: #fff; } main { max-width: none; border: 0; box-shadow: none; } }
+    tbody tr:nth-child(even) td { background: #fbfcfd; }
+    .number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    footer { margin-top: 22px; padding: 18px 4px 0; border-top: 1px solid #d9e1ea; color: #7a8799; font-size: 11px; line-height: 1.8; }
+    footer span { display: inline-block; margin-right: 18px; }
+    @media (max-width: 720px) {
+      body { padding: 18px 12px; }
+      .kpis { grid-template-columns: 1fr; }
+      .kpi { min-height: 112px; padding: 21px 22px; }
+      .report-section { padding: 20px 16px; }
+      .business-chart { padding: 16px 13px; }
+      .bar-row { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+      .bar-label { order: 1; flex: 1 1 0; }
+      .bar-value { order: 2; flex: 0 0 auto; }
+      .bar-track { order: 3; flex: 0 0 100%; }
+    }
+    @media print {
+      body { padding: 0; background: #fff; }
+      main { max-width: none; }
+      .kpi, .report-section { break-inside: avoid; box-shadow: none; }
+    }
   </style>
 </head>
 <body>
   <main>
-    <h1>$title</h1>
+    <header class="report-header">
+      <p class="eyebrow">POWER BI · SALES REPORT</p>
+      <h1>$title</h1>
+      <p class="report-subtitle">关键销售指标、品类表现与产品结果概览</p>
+    </header>
+
     <div class="kpis" aria-label="关键指标">
       <div class="kpi"><span class="kpi-label">总销售额</span><span class="kpi-value">$total_sales</span></div>
       <div class="kpi"><span class="kpi-label">总销量</span><span class="kpi-value">$total_quantity</span></div>
     </div>
 
-    <section>
-      <h2>按类别销售额</h2>
+    <section class="report-section">
+      <div class="section-header">
+        <h2>品类销售表现</h2>
+        <p class="section-description">横条长度按当前结果中的销售额确定性归一化；下方保留同源明细便于核对。</p>
+      </div>
+      <div class="business-chart" data-chart="category_sales" role="img" aria-label="各品类销售额横向比较图">
+        $category_bars
+      </div>
+      <p class="detail-heading">品类明细</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Category</th><th class="number">Total Sales</th></tr></thead>
@@ -46,11 +91,18 @@
       </div>
     </section>
 
-    <section>
-      <h2>Top 5 产品销售额</h2>
+    <section class="report-section">
+      <div class="section-header">
+        <h2>Top 5 产品销售表现</h2>
+        <p class="section-description">顺序沿用 QueryResult 的 result_position，仅表示结果位置，不声明严格业务排名。</p>
+      </div>
+      <div class="business-chart" data-chart="top_products" role="img" aria-label="Top 5 产品销售额横向比较图">
+        $product_bars
+      </div>
+      <p class="detail-heading">产品结果明细</p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th class="number">序号</th><th>Product</th><th class="number">Total Sales</th></tr></thead>
+          <thead><tr><th class="number">结果序号</th><th>Product</th><th class="number">Total Sales</th></tr></thead>
           <tbody>$product_rows</tbody>
         </table>
       </div>

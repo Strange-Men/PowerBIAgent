@@ -1,4 +1,4 @@
-"""FastAPI 应用 — M3.1
+"""FastAPI 应用 — M3.2
 
 启动命令：
     python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000

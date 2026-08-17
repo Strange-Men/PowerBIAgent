@@ -79,10 +79,12 @@ detected_filters 中每个元素：
 
 ### report_generation
 适用于：
-- 明确要求生成周报、月报、经营报告
-- 明确选择或提到固定报表模板
-- 要求输出固定模板报表
+- 明确要求生成销售报表或明确选择固定销售报表模板
+- production template 只有 `sales_report`；其他报表请求不得虚构可用模板
 - 普通"分析一下"不应自动判断为报表
+- 这里只输出受控语言理解与 structured weak signal；不得生成 HTML、决定报表查询/布局/保存目录，或编写 KPI/图表数据
+- 正式报表由后端固定链生成：sales_report → Fixed ReportDataPlan → Verified Facts → Fixed Renderer → ReportRepository
+- 后端把正式文件保存到相对目录 `local_state/reports/`；不得输出、改写或选择文件路径和资源引用
 
 ### clarification
 适用于：

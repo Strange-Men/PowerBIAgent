@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from html import escape
 from pathlib import Path
 from string import Template
@@ -42,6 +42,17 @@ class FixedSalesReportRenderer(ReportRenderer):
             )
             for row in report.tables[1].rows
         )
+        category_bars = self._bar_rows(
+            report.tables[0].rows,
+            label_index=0,
+            value_index=1,
+        )
+        product_bars = self._bar_rows(
+            report.tables[1].rows,
+            label_index=1,
+            value_index=2,
+            position_index=0,
+        )
         generated_at = report.generated_at
         if generated_at is None:
             raise ValueError("sales_report_generated_at_required")
@@ -49,7 +60,9 @@ class FixedSalesReportRenderer(ReportRenderer):
             title=self._text(report.title),
             total_sales=self._number(report.kpis[0].value, decimals=2),
             total_quantity=self._number(report.kpis[1].value, decimals=0),
+            category_bars=category_bars,
             category_rows=category_rows,
+            product_bars=product_bars,
             product_rows=product_rows,
             data_source=self._text(report.data_source),
             source_mode=self._text(report.source_mode),
@@ -107,7 +120,7 @@ class FixedSalesReportRenderer(ReportRenderer):
         return escape(str(value), quote=True)
 
     @staticmethod
-    def _number(value: Any, *, decimals: int) -> str:
+    def _decimal(value: Any) -> Decimal:
         if isinstance(value, bool):
             raise ValueError("sales_report_number_invalid")
         try:
@@ -116,7 +129,64 @@ class FixedSalesReportRenderer(ReportRenderer):
             raise ValueError("sales_report_number_invalid") from exc
         if not number.is_finite():
             raise ValueError("sales_report_number_invalid")
+        return number
+
+    @classmethod
+    def _number(cls, value: Any, *, decimals: int) -> str:
+        number = cls._decimal(value)
         return escape(format(number, f",.{decimals}f"), quote=True)
+
+    @classmethod
+    def _bar_rows(
+        cls,
+        rows: list[list[Any]],
+        *,
+        label_index: int,
+        value_index: int,
+        position_index: int | None = None,
+    ) -> str:
+        """Project verified table values into deterministic visual geometry."""
+
+        values = [cls._decimal(row[value_index]) for row in rows]
+        maximum = max((abs(value) for value in values), default=Decimal("0"))
+        rendered: list[str] = []
+        for row, value in zip(rows, values):
+            percent = (
+                Decimal("0")
+                if maximum == 0
+                else (abs(value) * Decimal("100") / maximum).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+            )
+            percent_text = format(percent, ".2f")
+            source_value = escape(format(value, "f"), quote=True)
+            display_value = cls._number(value, decimals=2)
+            label = cls._text(row[label_index])
+            state_class = (
+                " negative" if value < 0 else " zero" if value == 0 else ""
+            )
+            position = ""
+            if position_index is not None:
+                position_value = cls._text(row[position_index])
+                position = (
+                    '<span class="result-position">'
+                    f"结果序号 {position_value}</span>"
+                )
+            rendered.append(
+                f'<div class="bar-row{state_class}" '
+                f'data-source-value="{source_value}" '
+                f'data-bar-percent="{percent_text}" '
+                f'aria-label="{label}，销售额 {display_value}">'
+                f'<div class="bar-label">{position}'
+                f'<span class="bar-name">{label}</span></div>'
+                '<div class="bar-track" aria-hidden="true">'
+                f'<span class="bar-fill" style="width: {percent_text}%"></span>'
+                '</div>'
+                f'<div class="bar-value">{display_value}</div>'
+                '</div>'
+            )
+        return "\n".join(rendered)
 
     @staticmethod
     def _table_row(*cells: str, numeric_columns: set[int]) -> str:
@@ -136,5 +206,12 @@ class FixedSalesReportRenderer(ReportRenderer):
             or "javascript:" in lowered
             or "http://" in lowered
             or "https://" in lowered
+            or "<link" in lowered
+            or "<iframe" in lowered
+            or "<object" in lowered
+            or "<embed" in lowered
+            or "@import" in lowered
+            or "url(" in lowered
+            or "src=" in lowered
         ):
             raise ValueError("sales_report_static_html_validation_failed")

@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M3.1 — Sales Report Full Generation + Static HTML + Report Resource 已完成，等待 GPT 远程审计
+> **状态：** M3.2 — Hardened Sales Report Visual Acceptance 已完成，M3 final closure
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -10,12 +10,12 @@
 | M0—M1 | Foundation、DeepSeek、统一 TurnPipeline、Harness 与安全治理 | ✅ 已封板 |
 | M2 | Local MCP + Power BI Desktop 真实数据问答与 Truth Boundary | ✅ `m2.6.4-m0-m2-final-seal` 正式封板 |
 | M3.0 | Report Architecture + Template/DataPlan Contract | ✅ 完成、远程审计 PASS、已合入 main |
-| M3.1 | Sales Report Full Generation + Static HTML + Report Resource | ✅ 当前轮完成；等待远程审计 |
-| M3.2 | Hardened acceptance / M3 final seal（如必要） | ⬜ 不含新功能；未经批准不得进入 |
+| M3.1 | Sales Report Full Generation + Static HTML + Report Resource | ✅ 远程审计 PASS、已合入 main，CI success |
+| M3.2 | Hardened visual acceptance / M3 final closure | ✅ 完成；不含新业务能力，无 Tag |
 | M4 | 持久化会话、搜索与最近对话 | ⬜ 未开始 |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
 
-M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad` 已纯 fast-forward 合入 main，main CI run `31986207118` success。M3.1 继续使用 `dev/m3.0-report-contract`；本轮不合并 main、不创建 Tag。
+M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad` 已纯 fast-forward 合入 main，main CI run `31986207118` success。M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 经远程审计后纯 fast-forward 合入 main，main CI run `31989328261` success，开发分支已删除。M3.2 直接在 main 完成 hardened acceptance；不创建 Tag。
 
 ## 永久 M2 事实链
 
@@ -38,7 +38,7 @@ Real DAX/factual authority 不回到 LLM，Real failure 不回退 Mock。
 - 缺对象、类型、model 或 fingerprint mismatch 时不生成 partial plan。
 - M3.0 commit/push/GPT remote audit/main ff-only merge/main CI 均完成。
 
-## M3.1 — 当前完成范围
+## M3.1 — 已完成正式生成链
 
 ### 唯一正式链
 
@@ -79,9 +79,14 @@ Natural Language / Template Grounding
 
 LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual slots、DAX、KPI/rows、结果顺序、趋势、因果、Report factual truth、HTML/CSS 和 report reference 的 authority 均为 0。LLM 只保留现有受控 Intent/语言理解职责。
 
-## M3.2 — 仅在必要时
+## M3.2 — 已完成 hardened visual acceptance
 
-M3.2 不规划或开发新模板、新查询、图表、资源、API、前端或持久化功能。只有用户在 M3.1 远程审计后明确批准时，才可用于 hardened acceptance、文档最终核对和 M3 final seal；是否创建最终 Tag 仍需单独明确授权。
+M3.2 未新增模板、查询、DAX、业务语义、图表类型、资源 API、前端或持久化能力；只把 M3.1 已有 Category / Top Product `ChartSpec` 与同源 table rows 以固定 CSS 横条呈现，并完成静态安全、Real PBIX、桌面/430px 视觉、文档与 CI 收口。
+
+- 横条几何只由已验证行值按组内绝对最大值确定性归一化，实际显示值与同源表格不变。
+- 响应式布局固定为窄屏 Flex 换行；无 JavaScript、CDN、外部库或网络请求。
+- Renderer / Repository 拒绝更多外部资源载体；DeepSeek prompt 明确无报表事实、HTML/CSS、布局、保存或 reference authority。
+- M3 final closure 不创建 Tag；后续不得继续扩展 M3 或进入 M4/M5，除非用户另行明确授权。
 
 ## 永久阶段边界
 
@@ -89,8 +94,8 @@ M3.2 不规划或开发新模板、新查询、图表、资源、API、前端或
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
 - 当前报表针对 M3 PBIX 全量数据；不新增动态月份、Category filter、comparison、趋势、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
-- 未经用户批准不得进入 M3.2；不得进入 M4/M5；普通轮次不创建 Tag；禁止 force push。
+- M3 已最终收口；未经用户另行明确批准不得继续扩展 M3 或进入 M4/M5；普通轮次不创建 Tag；禁止 force push。
 
 ---
 
-*最后更新：2026-08-17 | M3.1 full sales report + static HTML resource route*
+*最后更新：2026-08-17 | M3.2 hardened visual acceptance；M3 final closure*

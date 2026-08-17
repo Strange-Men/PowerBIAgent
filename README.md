@@ -2,7 +2,7 @@
 
 PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并以固定模板生成静态 HTML 报表。
 
-当前版本：**M3.1 — Sales Report Full Generation + Static HTML + Report Resource**。M0—M2 已正式封板；M3.0 已合入 main，M3.1 已完成 `sales_report` 四查询事实组装、固定 HTML、ReportArtifact 与查看/下载闭环。
+当前版本：**M3.2 — Hardened Sales Report Visual Acceptance + M3 Final Closure**。M0—M2 已正式封板；M3.1 已合入 main，M3.2 在不增加业务能力的前提下完成 `sales_report` 确定性可视化、安全加固、真实 PBIX 与桌面/窄屏视觉验收。
 
 ```text
 Natural Language
@@ -16,7 +16,7 @@ Natural Language
 → VerifiedFactSet
 → deterministic Report Data Contract
 → deterministic ReportSpec
-→ Fixed Renderer（M3.1）→ HTML
+→ Fixed Renderer（M3.1/M3.2）→ static HTML
 ```
 
 Real 路径的 DAX LLM authority/call count 为 0。LLM 不定义 canonical Measure、Dimension、Member、Time、DAX、QueryResult 或外部事实；VerifiedFactSet 是数值、结果顺序、极值、筛选、时间与 provenance 的唯一事实 authority。
@@ -30,7 +30,7 @@ Real 路径的 DAX LLM authority/call count 为 0。LLM 不定义 canonical Meas
 - data/report-shaped 请求不会仅因 Intent LLM 的 `UNSUPPORTED` 绕过 Grounding；明确破坏性、越权、任意代码与非数据请求仍 early-stop。
 - M3 MVP 唯一 production template 为 `sales_report`；固定查询是 Total Sales、Total Quantity、Sales by Category、Product Top 5 by Total Sales。
 - M3 专用 `PowerBIAgent_M3_Test.pbix` 只用于 Local Real acceptance，不替换 M2 封板 PBIX；schema fingerprint 漂移 fail closed。
-- M3.1 固定 Renderer 无 JavaScript/CDN/自由 HTML；artifact 原子保存到 gitignored `local_state/reports/`，view/download 只接受 repository-owned report_id。M3.2 仅在必要时用于 hardened acceptance；Remote MCP、M4、M5 仍 Deferred。
+- M3.2 固定 Renderer 直接从已验证 Category / Top Product rows 生成确定性 CSS 横条并保留同源表格；无 JavaScript/CDN/外部资源/自由 HTML。artifact 原子保存到 gitignored `local_state/reports/`，view/download 只接受 repository-owned report_id。M3 已最终收口；Remote MCP、M4、M5 仍 Deferred。
 
 幂等规则：相同 `request_id` + 相同请求重放且不重复执行；相同 ID + 不同内容返回 HTTP 409；并发同 ID 只有一个 Owner 执行。
 
@@ -76,7 +76,7 @@ Health 示例：
   "ready": true,
   "configuration_ready": true,
   "powerbi_live_connected": false,
-  "version": "M3.1",
+  "version": "M3.2",
   "llm_mode": "mock",
   "powerbi_mode": "mock"
 }
@@ -143,8 +143,9 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\sales_report_contract_smo
 | Semantic Grounding / Clarification | ✅ Canonical authority + Pending/Committed 分离 |
 | VerifiedFactSet / factual output | ✅ 事实边界 |
 | `sales_report` TemplateContract / ReportDataPlan | ✅ M3.0 |
-| Fixed HTML Renderer | ✅ M3.1 |
+| Fixed HTML Renderer / deterministic CSS bars | ✅ M3.1 / M3.2 hardened |
 | Report resource / view / download API | ✅ M3.1 |
+| Real PBIX + desktop/narrow visual acceptance | ✅ M3.2 final closure |
 | 持久化会话 | ⬜ M4 |
 | React + Vite UI | ⬜ M5 |
 
@@ -164,4 +165,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\sales_report_contract_smo
 
 ---
 
-*最后更新：2026-08-17 | M3.1 sales_report static HTML resource closure*
+*最后更新：2026-08-17 | M3.2 sales_report hardened visual acceptance；M3 final closure*

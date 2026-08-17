@@ -17,6 +17,7 @@ from backend.app.intent.models import (
     IntentType,
     IntentSpec,
 )
+from backend.app.intent.prompt import SYSTEM_PROMPT as INTENT_SYSTEM_PROMPT
 from backend.app.intent.unsupported_policy import (
     should_defer_unsupported_to_grounding,
 )
@@ -40,6 +41,15 @@ class TestIntentType:
     def test_all_four_intents_present(self):
         values = {e.value for e in IntentType}
         assert values == {"data_question", "report_generation", "clarification", "unsupported"}
+
+
+class TestIntentPromptReportBoundary:
+    def test_sales_report_is_language_only_weak_signal(self):
+        assert "production template 只有 `sales_report`" in INTENT_SYSTEM_PROMPT
+        assert "不得生成 HTML" in INTENT_SYSTEM_PROMPT
+        assert "不得生成 HTML、决定报表查询/布局/保存目录" in INTENT_SYSTEM_PROMPT
+        assert "Fixed ReportDataPlan → Verified Facts → Fixed Renderer" in INTENT_SYSTEM_PROMPT
+        assert "`local_state/reports/`" in INTENT_SYSTEM_PROMPT
 
 
 class TestFilterSpec:

@@ -1,6 +1,6 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M3.1 sales_report static HTML resource 已实现；M1 生成描述仅作历史兼容
+> **状态：** M3.2 sales_report hardened visual acceptance 已完成；M1 生成描述仅作历史兼容
 > **目标：** 定义前端组合回答的产品目标与数据契约
 > **重要：** 本文档描述未来 M5 前端展示目标。当前 Real API 以 Canonical QueryPlan → QueryResult → VerifiedFactSet → fact-bounded AnswerSpec / ReportSpec 为事实边界
 
@@ -33,6 +33,7 @@
 | **M2.6.4** | Real Answer/Report 只能消费 VerifiedFactSet / QueryResult 可证明事实 |
 | **M3.0** | `sales_report` TemplateContract + schema binding + deterministic ReportDataPlan |
 | **M3.1** | 四查询 → SalesReportData → fixed ReportSpec → static HTML → ReportArtifact/view/download |
+| **M3.2** | 已有 ChartSpec / table rows → deterministic CSS bars + responsive/static safety hardened acceptance |
 | **M5** | 前端根据本文档实现组合回答渲染 |
 
 **当前不创建**：统一 `AssistantMessageEnvelope`、消息块列表模型、新 API。
@@ -379,7 +380,15 @@ M3.1 已实现：
 - Chat report 最小返回 report_id、template_key、view_reference、download_reference；html 仅为同源兼容字段
 - render/store failure 不成功提交 Memory；same request_id replay 复用同一 artifact
 
-M3.2 只在必要时用于 hardened acceptance / M3 final seal，不新增报表资源功能。“最近报表”属于后续 M4/M5 范围，M3.1 不实现列表或会话持久化。
+M3.2 已完成：
+
+- 不新增 ChartSpec 类型、查询或业务事实；固定 Renderer 只把 M3.1 已有 Category / Top Product rows 呈现为 CSS 横条，并保留逐项同源表格
+- 横条宽度按同组已验证值的绝对最大值归一化，固定半入舍入到两位小数；label、可见值、`result_position` 与 table row 仍来自同一 `ReportSpec`
+- 窄屏使用固定 Flex 换行；无 JavaScript、CDN、外部库、网络请求或 LLM 生成的 HTML/CSS
+- Renderer / Repository 保存前拒绝 `link`、`iframe`、`object`、`embed`、`@import`、`url()` 与 `src=` 等外部资源载体
+- 桌面与 430px 静态视觉验收、M3 PBIX Real smoke、完整 offline/gates 均 PASS，M3 final closure
+
+M3.2 未新增报表资源功能。“最近报表”属于后续 M4/M5 范围，M3 不实现列表或会话持久化。
 
 ## 十七、M5 前端渲染边界
 
@@ -420,4 +429,4 @@ DeepSeek 提供语言模型能力，不是数据来源。M1 的 QueryPlan/DAX/An
 
 ---
 
-*最后更新：2026-08-17 | M3.1 sales_report static HTML resource contract*
+*最后更新：2026-08-17 | M3.2 sales_report hardened visual contract；M3 final closure*
