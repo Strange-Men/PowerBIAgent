@@ -239,8 +239,12 @@ class ValidationService:
                     f"query_plan_measure_column_identity_conflict: '{measure_name}' is both Measure and Column"
                 )
 
-        def validate_column(field_name: str, role: str) -> None:
+        def validate_column(
+            field_name: str, role: str, table_hint: str | None = None
+        ) -> None:
             owners = column_tables.get(field_name, set())
+            if table_hint is not None:
+                owners = {owner for owner in owners if owner == table_hint}
             if field_name in hidden_objects and not owners:
                 errors.append(
                     f"query_plan_hidden_{role}: {role.title()} '{field_name}' is hidden"
@@ -266,8 +270,11 @@ class ValidationService:
                     f"query_plan_{role}_identity_conflict: '{field_name}' is both Column and Measure"
                 )
 
+        dimension_hints = getattr(plan, "dimension_tables", None) or {}
         for dimension in plan.dimensions:
-            validate_column(dimension, "dimension")
+            validate_column(
+                dimension, "dimension", dimension_hints.get(dimension)
+            )
         for query_filter in plan.filters:
             validate_column(query_filter.field, "filter")
 

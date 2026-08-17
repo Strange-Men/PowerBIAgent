@@ -58,8 +58,12 @@ class ReportArtifact(RenderedReport):
             not self.contract_version
             or not self.semantic_model_key
             or len(self.schema_fingerprint) != 64
-            or len(self.verified_fact_set_ids) != 4
-            or len(self.query_result_ids) != 4
+            or not self.verified_fact_set_ids
+            or not self.query_result_ids
+            or len(self.verified_fact_set_ids)
+            != len(set(self.verified_fact_set_ids))
+            or len(self.query_result_ids) != len(set(self.query_result_ids))
+            or len(self.verified_fact_set_ids) != len(self.query_result_ids)
         ):
             raise ValueError("sales_report_artifact_provenance_incomplete")
         expected_view = f"/api/reports/{self.report_id}"

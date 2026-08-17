@@ -2,6 +2,23 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M3.4] — 2026-08-17
+
+### 自适应报表规划与可视化策略
+
+- 根因修复：M3.3 仍是"固定四查询、固定两种横条"，无法根据自然语言与语义模型能力生成不同报表；M3.4 修复**报表规划能力**，不只是 HTML/CSS
+- 新增 ADR-011：固定模板 = 固定设计规则 + 允许能力目录（Design System / Allowed Section Catalog / Visualization / Layout / Theme / Security），不是固定输出内容；ADR-010 固定事实安全边界继续有效，"一个 template 永久绑定一个 fingerprint + 固定四 queries"限制被 supersede；contract version 升至 2.0
+- `capability.py` 重构为真实 schema-aware capability engine：9 个 registry-owned sections（SALES_KPI / QUANTITY_KPI / ORDERS_KPI / AOV_KPI / TIME_TREND / CATEGORY_CONTRIBUTION / REGION_COMPARISON / TOP_PRODUCTS / TOP_CUSTOMERS）；三层门控（TemplateContract 声明 + runtime schema 对象与类型 + 已验证非空事实）；缺能力 fail closed，绝不 Mock/占位/空图
+- 新增受控 Report Intent weak signal：LLM 只输出 registry-owned section ID；未知/非法 ID 丢弃；确定性 NL 匹配器是地板；"只看…"忽略 LLM 增量；单独计数 `llm_report_intent_call_count`，与事实类计数分开
+- 新增 deterministic ReportPlan / ReportPlanner：requested / resolved / unavailable sections、去重 query requirements、provenance；用户没要求的 section 不查询；零可解析 section fail closed
+- 新增 VisualizationPolicy（KPI Card / Line / Donut≤8 / Column / HBar，禁止所有 grouped→horizontal bar）、LayoutPolicy（KPI 行 → 全宽趋势 → 2 列对比/排行对）、ThemePolicy（dataviz 验证 8 色 categorical 固定顺序 + blue sequential、系统字体、间距 token）
+- `SalesReportRenderer`（原 FixedSalesReportRenderer 更名）支持 charts：KPI cards、inline SVG line/donut、CSS column/hbar；无 JS/CDN/外部资源；空 section 不输出；同一业务事实不重复展示
+- 时间趋势真实链：Power BI query → QueryResult → VerifiedFactSet；Renderer 不聚合；已验证时间点仅确定性显示排序（不创造新业务数值）；复用现有 DeterministicDAXBuilder，无第二 DAX builder
+- 最小通用扩展：`CanonicalQueryPlan.dimension_tables` / `dimension_order`（star-schema 重名列消歧，None 时 M2 行为不变），DeterministicDAXBuilder / Layer 2 / RestrictedDAXVerifier 同步支持；ChartSpec 增加结构化 `visual_type` / `business_role` / `series` / `layout_hint`
+- 测试矩阵：Simple/Rich/synthetic 三模型；5 个 NL cases（只看销售额 / 看看销售趋势 / 按区域看销售表现 / 看看头部客户 / 生成完整销售分析报表）；LLM weak-signal 边界；fact-gate 空结果 drop；全部 anti-fake 回归保留
+- Real acceptance（双模型）：Simple PBIX 完整请求解析 4 sections / 4 查询（M3 基线行为不变）；Rich PBIX（fingerprint `31505f7987133c235554bc00e7ca5ce3fd42351b08e984c0c011f48410e56157`）解析 9 sections / 9 真实查询（15 个月度趋势点、3 品类、4 区域、Top 5 产品/客户），4 种 visual；source real；DAX/ReportData/Report factual/Renderer LLM calls 与 fallback/fake QueryResult 全 0
+- Fresh acceptance：backend 1477 passed、Golden 11 PASS / 1 manual skip、Architecture / Repository Safety / Error Ledger / Documentation Governance / diff check 全部 PASS；桌面与 430px 截图已产出，程序化 DOM/几何检查 PASS，最终视觉 PASS 待用户人工确认
+
 ---
 
 ## [M3.3] — 2026-08-17

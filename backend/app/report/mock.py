@@ -1,7 +1,7 @@
 """Mock 报表渲染器 — 使用固定最小内存模板
 
 M0.3：仅生成最小静态 HTML，禁止外部脚本/JS/自由 HTML。
-M3.1：正式实现位于 FixedSalesReportRenderer；本类仅保留 Mock compatibility。
+M3.4：正式实现位于 SalesReportRenderer（design system renderer）；本类仅保留 Mock compatibility。
 """
 
 from datetime import datetime

@@ -1,4 +1,4 @@
-"""Deterministic sales report, renderer, resource, and anti-bypass tests."""
+"""Deterministic adaptive report, renderer, resource, and anti-bypass tests."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from backend.app.config.settings import LLMMode, PowerBIMode, Settings
 from backend.app.facts import FactType, VerifiedFactSet, VerifiedFactSetBuilder
 from backend.app.harness.models import HarnessConfig
 from backend.app.intent.models import IntentSpec, IntentType
-from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse
+from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
 from backend.app.memory.models import MemoryStatus, RuntimeDataMode
 from backend.app.memory.repository import InMemoryMemoryRepository
 from backend.app.powerbi.base import PowerBIAdapter
@@ -31,7 +31,8 @@ from backend.app.report.assembly import (
     SalesReportSpecBuilder,
 )
 from backend.app.report.contracts import ReportDataPlanBuilder
-from backend.app.report.fixed import FixedSalesReportRenderer
+from backend.app.report.fixed import SalesReportRenderer
+from backend.app.report.intent import ReportIntentDraft
 from backend.app.report.resources import (
     InMemoryReportRepository,
     LocalReportRepository,
@@ -51,6 +52,13 @@ from backend.app.schemas.data_contracts import (
     ReportSpec,
     SemanticModelSchema,
     TableSchema,
+)
+
+SIMPLE_KEYS = (
+    "total_sales",
+    "total_quantity",
+    "sales_by_category",
+    "top_products",
 )
 
 
@@ -82,6 +90,12 @@ def _schema() -> SemanticModelSchema:
                 ),
             ],
         )],
+    )
+
+
+def _plan():
+    return ReportDataPlanBuilder().build(
+        "sales_report", _schema(), requirement_keys=SIMPLE_KEYS
     )
 
 
@@ -127,7 +141,7 @@ def _results(
 
 
 def _facts(results: dict[str, QueryResult]) -> dict[str, VerifiedFactSet]:
-    plan = ReportDataPlanBuilder().build("sales_report", _schema())
+    plan = _plan()
     return {
         query.requirement_key: VerifiedFactSetBuilder().build(
             query.query_plan,
@@ -147,7 +161,7 @@ def _assembled(
     return SalesReportDataAssembler(
         clock=lambda: datetime(2026, 8, 17, 2, 0, tzinfo=timezone.utc)
     ).build(
-        ReportDataPlanBuilder().build("sales_report", _schema()),
+        _plan(),
         selected_results,
         selected_facts,
     )
@@ -155,32 +169,33 @@ def _assembled(
 
 def test_sales_report_data_and_spec_are_exact_fixed_projections():
     data = _assembled()
-    assert data.total_sales == 1200.5
-    assert data.total_quantity == 9
-    assert [item.category for item in data.category_sales] == ["办公用品", "家具"]
-    assert [item.result_position for item in data.top_products] == [1, 2]
-    assert [item.product for item in data.top_products] == ["产品 A", "产品 B"]
+    assert [(item.measure, item.value) for item in data.kpis] == [
+        ("Total Sales", 1200.5),
+        ("Total Quantity", 9),
+    ]
+    assert len(data.sections) == 2
+    category = next(item for item in data.sections if item.kind == "grouped")
+    assert [item.label for item in category.values] == ["办公用品", "家具"]
+    top = next(item for item in data.sections if item.kind == "top_n")
+    assert [item.result_position for item in top.values] == [1, 2]
+    assert [item.label for item in top.values] == ["产品 A", "产品 B"]
     assert data.source_mode == "real"
     assert len(data.query_result_ids) == 4
     assert len(data.verified_fact_set_ids) == 4
 
     report = SalesReportSpecBuilder().build(data)
     assert report.title == "销售分析报表"
-    assert [item.name for item in report.kpis] == ["总销售额", "总销量"]
-    assert [item.title for item in report.tables] == [
-        "按类别销售额",
-        "Top 5 产品销售额",
+    assert [(item.name, item.field) for item in report.kpis] == [
+        ("总销售额", "Total Sales"),
+        ("总销量", "Total Quantity"),
     ]
-    assert report.charts == []
+    roles = {item.business_role for item in report.charts}
+    assert roles == {"category_contribution", "top_products"}
+    assert report.tables == []
     assert report.insights == []
 
 
-@pytest.mark.parametrize("missing_key", [
-    "total_sales",
-    "total_quantity",
-    "sales_by_category",
-    "top_products",
-])
+@pytest.mark.parametrize("missing_key", SIMPLE_KEYS)
 def test_missing_required_query_fails_closed(missing_key):
     results = _results()
     facts = _facts(results)
@@ -282,11 +297,11 @@ async def test_fixed_renderer_escapes_injection_and_has_no_active_content():
     report = SalesReportSpecBuilder().build(
         _assembled(results=results, facts=_facts(results))
     )
-    html = await FixedSalesReportRenderer().render(report)
+    html = await SalesReportRenderer().render(report)
     assert "销售分析报表" in html
-    assert "品类销售表现" in html
-    assert "头部产品销售表现" in html
-    assert 'data-chart="category_sales"' in html
+    assert "品类销售贡献" in html
+    assert "Top 5 产品销售额" in html
+    assert 'data-chart="category_contribution"' in html
     assert 'data-chart="top_products"' in html
     assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in html
     assert "<script" not in html.casefold()
@@ -296,32 +311,31 @@ async def test_fixed_renderer_escapes_injection_and_has_no_active_content():
 
 
 @pytest.mark.asyncio
-async def test_fixed_renderer_bar_geometry_is_deterministic_and_data_bound():
+async def test_fixed_renderer_geometry_is_deterministic_and_data_bound():
     report = SalesReportSpecBuilder().build(_assembled())
-    html = await FixedSalesReportRenderer().render(report)
+    html = await SalesReportRenderer().render(report)
 
-    assert 'data-source-value="700.25" data-bar-percent="100.00"' in html
-    assert 'data-source-value="500.25" data-bar-percent="71.44"' in html
+    # Category (2 slices) renders as donut: percents derived from verified rows.
+    assert 'data-slice-percent="58.33"' in html
+    assert 'data-source-value="700.25"' in html
+    assert 'data-slice-percent="41.67"' in html
+    assert 'data-source-value="500.25"' in html
+    # Top products render as horizontal bars with verified geometry.
     assert 'data-source-value="800.0" data-bar-percent="100.00"' in html
     assert 'data-source-value="400.5" data-bar-percent="50.06"' in html
-    assert 'style="width: 71.44%"' in html
+    assert 'style="width: 50.06%"' in html
     assert "结果序号 1" in html
-    assert "严格业务排名" in html
+    assert "结果序号 2" in html
 
 
 @pytest.mark.asyncio
 async def test_no_duplicate_table_visual_regression():
-    """M3.3: one business question per visual — no duplicate table below bars."""
-    html = await FixedSalesReportRenderer().render(
+    """One business question per visual — no duplicate table below charts."""
+    html = await SalesReportRenderer().render(
         SalesReportSpecBuilder().build(_assembled())
     )
-    assert 'data-chart="category_sales"' in html
+    assert 'data-chart="category_contribution"' in html
     assert 'data-chart="top_products"' in html
-    # Category bars exist but no "品类明细" heading or corresponding table
-    assert '<p class="detail-heading">品类明细</p>' not in html
-    assert '<p class="detail-heading">产品结果明细</p>' not in html
-    assert "<th>Category</th>" not in html
-    assert "<th>Product</th>" not in html
     assert "<table" not in html
     # KPI still present
     assert "总销售额" in html
@@ -329,69 +343,43 @@ async def test_no_duplicate_table_visual_regression():
 
 
 @pytest.mark.asyncio
-async def test_renderer_section_capability_respects_evidence():
-    """Renderer uses section capability gates; missing evidence → no HTML."""
+async def test_renderer_rejects_incomplete_provenance():
     report = SalesReportSpecBuilder().build(_assembled())
-    html = await FixedSalesReportRenderer().render(report)
-    assert "品类销售表现" in html
-    assert "头部产品销售表现" in html
-
-    # Remove source_mode → section unavailable → bars stripped
     stripped = report.model_copy(update={"source_mode": ""})
     with pytest.raises(ValueError, match="sales_report_provenance_invalid"):
-        await FixedSalesReportRenderer().render(stripped)
+        await SalesReportRenderer().render(stripped)
+
+    short_ids = report.model_copy(update={"query_result_ids": []})
+    with pytest.raises(ValueError, match="sales_report_provenance_invalid"):
+        await SalesReportRenderer().render(short_ids)
 
 
-def test_section_capability_compute():
-    """SectionCapability gates correctly for present and absent evidence."""
-    from backend.app.report.capability import (
-        SectionKey,
-        compute_section_capabilities,
-    )
+@pytest.mark.asyncio
+async def test_renderer_rejects_unregistered_or_duplicate_sections():
+    report = SalesReportSpecBuilder().build(_assembled())
+    forged = report.model_copy(update={
+        "charts": [chart.model_copy(update={"business_role": "forged_role"})
+                   for chart in report.charts],
+    })
+    with pytest.raises(ValueError, match="sales_report_chart_role_unregistered"):
+        await SalesReportRenderer().render(forged)
 
-    # All evidence present
-    caps = compute_section_capabilities(
-        "sales_report", "real",
-        category_row_count=3, product_row_count=2,
-    )
-    assert caps[SectionKey.SALES_KPI].available is True
-    assert caps[SectionKey.CATEGORY_BREAKDOWN].available is True
-    assert caps[SectionKey.TOP_PRODUCTS].available is True
+    duplicated = report.model_copy(update={
+        "charts": [
+            report.charts[0],
+            report.charts[0].model_copy(),
+        ],
+    })
+    with pytest.raises(ValueError, match="sales_report_chart_duplicate_role"):
+        await SalesReportRenderer().render(duplicated)
 
-    # Category has 0 rows → unavailable
-    caps = compute_section_capabilities(
-        "sales_report", "real",
-        category_row_count=0, product_row_count=2,
-    )
-    assert caps[SectionKey.CATEGORY_BREAKDOWN].available is False
-
-    # No source_mode → KPI unavailable
-    caps = compute_section_capabilities(
-        "sales_report", None,
-        category_row_count=3, product_row_count=2,
-    )
-    assert caps[SectionKey.SALES_KPI].available is False
-
-    # Wrong template → all unavailable
-    caps = compute_section_capabilities(
-        "other_template", "real",
-        category_row_count=3, product_row_count=2,
-    )
-    assert caps[SectionKey.SALES_KPI].available is False
-    assert caps[SectionKey.CATEGORY_BREAKDOWN].available is False
-    assert caps[SectionKey.TOP_PRODUCTS].available is False
-
-
-def test_extension_points_never_generate_automatically():
-    """Extension point sections (defined in code but no contract) fail closed."""
-    from backend.app.report.capability import SectionKey
-
-    # Confirm extension_point IDs exist in the enum as comments but not as
-    # active production sections.  If added, they must gate to UNAVAILABLE.
-    # This test exists to catch accidental activation of a future section.
-    assert SectionKey.SALES_KPI.is_extension_point() is False
-    assert SectionKey.CATEGORY_BREAKDOWN.is_extension_point() is False
-    assert SectionKey.TOP_PRODUCTS.is_extension_point() is False
+    kpi_as_chart = report.model_copy(update={
+        "charts": [
+            report.charts[0].model_copy(update={"business_role": "sales_kpi"}),
+        ],
+    })
+    with pytest.raises(ValueError, match="sales_report_chart_role_unregistered"):
+        await SalesReportRenderer().render(kpi_as_chart)
 
 
 @pytest.mark.asyncio
@@ -402,16 +390,47 @@ async def test_fixed_renderer_rejects_forged_chart_input():
             title="伪造图表",
             x_field="Category",
             y_field="Forged Sales",
+            visual_type="line",
+            business_role="time_trend",
+            series=[],
         )],
     })
-    with pytest.raises(ValueError, match="sales_report_structure_invalid"):
-        await FixedSalesReportRenderer().render(report)
+    with pytest.raises(ValueError, match="sales_report_chart_series_empty"):
+        await SalesReportRenderer().render(report)
+
+    forged_role = SalesReportSpecBuilder().build(_assembled()).model_copy(update={
+        "charts": [ChartSpec(
+            type="bar",
+            title="伪造图表",
+            x_field="Category",
+            y_field="Total Sales",
+            visual_type="line",
+            business_role="sales_kpi",
+            series=[{"label": "x", "value": 1, "position": 1}],
+        )],
+    })
+    with pytest.raises(ValueError, match="sales_report_chart_role_unregistered"):
+        await SalesReportRenderer().render(forged_role)
+
+    forged_value = SalesReportSpecBuilder().build(_assembled()).model_copy(update={
+        "charts": [ChartSpec(
+            type="bar",
+            title="伪造图表",
+            x_field="Category",
+            y_field="Total Sales",
+            visual_type="column",
+            business_role="region_comparison",
+            series=[{"label": "华东", "value": "not-a-number", "position": 1}],
+        )],
+    })
+    with pytest.raises(ValueError, match="sales_report_number_invalid"):
+        await SalesReportRenderer().render(forged_value)
 
 
 @pytest.mark.asyncio
 async def test_fixed_renderer_rejects_non_sales_report():
     with pytest.raises(ValueError, match="sales_report_renderer_template_rejected"):
-        await FixedSalesReportRenderer().render(
+        await SalesReportRenderer().render(
             ReportSpec(title="旧模板", template_key="sales_weekly")
         )
 
@@ -429,7 +448,7 @@ def test_assembler_and_renderer_have_zero_llm_or_powerbi_authority():
         path.read_text(encoding="utf-8")
         for path in (Path("backend/app/report")).glob("*.py")
     )
-    for forbidden_oracle in ("500" + "821", "35" + "8"):
+    for forbidden_oracle in ("500" + "821", "35" + "8", "694" + "3997"):
         assert forbidden_oracle not in production_source
 
 
@@ -437,7 +456,7 @@ def test_assembler_and_renderer_have_zero_llm_or_powerbi_authority():
 async def test_local_repository_hash_atomic_content_and_resource_api(tmp_path):
     repository = LocalReportRepository(tmp_path / "local_state" / "reports")
     report = SalesReportSpecBuilder().build(_assembled())
-    html = await FixedSalesReportRenderer().render(report)
+    html = await SalesReportRenderer().render(report)
     artifact = await repository.store(report, html)
     stored_artifact, stored_html = await repository.read_html(artifact.report_id)
     content = stored_html.encode("utf-8")
@@ -475,7 +494,7 @@ async def test_local_repository_hash_atomic_content_and_resource_api(tmp_path):
 async def test_repository_rejects_external_static_resource_markup():
     repository = InMemoryReportRepository()
     report = SalesReportSpecBuilder().build(_assembled())
-    html = await FixedSalesReportRenderer().render(report)
+    html = await SalesReportRenderer().render(report)
     unsafe = html.replace(
         "</head>",
         '<link rel="stylesheet" href="//cdn.example/report.css"></head>',
@@ -506,6 +525,8 @@ class _CountingReportRepository(InMemoryReportRepository):
 
 
 class _ReportLanguageProvider(LLMProvider):
+    """Fake real provider: intent → query plan → bounded report-intent draft."""
+
     def __init__(self) -> None:
         self.calls: list[LLMRequest] = []
 
@@ -523,14 +544,22 @@ class _ReportLanguageProvider(LLMProvider):
             structured = IntentSpec(
                 intent=IntentType.REPORT_GENERATION,
                 confidence=1.0,
-                normalized_question="生成固定销售报表",
+                normalized_question="生成销售分析报表",
                 requested_template="sales_report",
             )
         elif output_type is QueryPlan:
             structured = QueryPlan(
-                normalized_question="生成固定销售报表",
+                normalized_question="生成销售分析报表",
                 semantic_model_key="local_desktop_model",
                 requested_template="sales_report",
+            )
+        elif output_type is ReportIntentDraft:
+            structured = ReportIntentDraft(
+                report_section_ids=[
+                    "sales_kpi",
+                    "quantity_kpi",
+                    "time_trend",  # unknown for the simple schema → dropped
+                ]
             )
         else:
             raise AssertionError(f"unexpected LLM output type: {output_type}")
@@ -632,7 +661,7 @@ async def test_idempotent_report_replay_reuses_one_artifact():
 
 
 @pytest.mark.asyncio
-async def test_production_turn_uses_four_real_queries_and_replays_without_rerun():
+async def test_production_turn_uses_capability_resolved_queries_and_replays():
     adapter = _RealReportAdapter()
     provider = _ReportLanguageProvider()
     repository = _CountingReportRepository()
@@ -641,21 +670,21 @@ async def test_production_turn_uses_four_real_queries_and_replays_without_rerun(
         llm_mode=LLMMode.DEEPSEEK,
         powerbi_mode=PowerBIMode.LOCAL_MCP,
         powerbi_local_semantic_model_key="local_desktop_model",
-        max_tool_calls=8,
+        max_tool_calls=16,
     )
     service = DeepSeekTurnService(
         memory_repo=InMemoryMemoryRepository(),
         llm_provider=provider,
         powerbi_adapter=adapter,
-        report_renderer=FixedSalesReportRenderer(),
+        report_renderer=SalesReportRenderer(),
         report_repository=repository,
         settings=settings,
         config=HarnessConfig.from_settings(settings),
     )
     request = {
         "message": "生成销售分析报表",
-        "conversation_id": "conv-fixed-sales-report",
-        "request_id": "req-fixed-sales-report",
+        "conversation_id": "conv-sales-report",
+        "request_id": "req-sales-report",
         "semantic_model_key": "local_desktop_model",
         "report_template_key": "sales_report",
     }
@@ -666,6 +695,33 @@ async def test_production_turn_uses_four_real_queries_and_replays_without_rerun(
     assert first["memory_commit"] is True
     assert first["source_mode"] == "real"
     assert first["execution_audit"]["query_count"] == 4
+    # Full request is the fixed default; the Simple schema resolves only the
+    # four M3-baseline capabilities (no trend/region/customer/orders/aov).
+    assert first["execution_audit"]["requested_sections"] == [
+        "sales_kpi",
+        "quantity_kpi",
+        "orders_kpi",
+        "aov_kpi",
+        "time_trend",
+        "category_contribution",
+        "region_comparison",
+        "top_products",
+        "top_customers",
+    ]
+    assert first["execution_audit"]["unavailable_sections"] == [
+        "orders_kpi",
+        "aov_kpi",
+        "time_trend",
+        "region_comparison",
+        "top_customers",
+    ]
+    assert first["execution_audit"]["resolved_sections"] == [
+        "sales_kpi",
+        "quantity_kpi",
+        "category_contribution",
+        "top_products",
+    ]
+    assert first["execution_audit"]["llm_report_intent_call_count"] == 1
     assert first["execution_audit"]["llm_dax_call_count"] == 0
     assert first["execution_audit"]["llm_report_data_call_count"] == 0
     assert first["execution_audit"]["llm_report_factual_call_count"] == 0
@@ -679,6 +735,7 @@ async def test_production_turn_uses_four_real_queries_and_replays_without_rerun(
     assert [call.task.value for call in provider.calls] == [
         "intent_recognition",
         "query_plan",
+        "report_intent",
     ]
     assert replay["idempotent_replay"] is True
     assert replay["report"]["report_id"] == first["report"]["report_id"]
@@ -698,7 +755,7 @@ def test_local_reports_and_pbix_are_not_git_tracked():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# M3.3  Multi-schema anti-fake compatibility tests
+# M3.4  Multi-schema adaptive capability tests
 # ═════════════════════════════════════════════════════════════════════════════
 
 
@@ -706,6 +763,11 @@ def _schema_b(
     *,
     has_category: bool = True,
     has_product: bool = True,
+    has_region: bool = True,
+    has_customer: bool = True,
+    has_orders: bool = True,
+    has_aov: bool = True,
+    has_date: bool = True,
 ) -> SemanticModelSchema:
     """Model B: richer schema with Date / Region / Customer columns."""
     columns = [
@@ -731,82 +793,134 @@ def _schema_b(
             data_type="Int64",
         ),
     ]
+    if has_orders:
+        measures.append(MeasureSchema(
+            name="Total Orders", expression="COUNTROWS(Sales)", data_type="Int64",
+        ))
+    if has_aov:
+        measures.append(MeasureSchema(
+            name="Average Order Value",
+            expression="DIVIDE([Total Sales],[Total Orders])",
+            data_type="Double",
+        ))
     if not has_category:
         columns = [c for c in columns if c.name != "Category"]
     if not has_product:
         columns = [c for c in columns if c.name != "Product"]
+    if not has_region:
+        columns = [c for c in columns if c.name != "Region"]
+    if not has_customer:
+        columns = [c for c in columns if c.name != "Customer"]
+    tables = [TableSchema(name="Sales", columns=columns, measures=measures)]
+    if has_date:
+        tables.append(TableSchema(
+            name="Date",
+            columns=[ColumnSchema(name="YearMonth", data_type="DateTime")],
+        ))
     return SemanticModelSchema(
         name="local_desktop_model",
         key="local_desktop_model",
-        tables=[TableSchema(name="Sales", columns=columns, measures=measures)],
+        tables=tables,
     )
 
 
-def test_model_a_facts_work_with_section_capability():
-    """Model A (current simple schema) produces all three sections."""
-    from backend.app.report.capability import (
-        SectionKey,
-        compute_section_capabilities,
-    )
+def _rich_results() -> dict[str, QueryResult]:
+    """Verified-style results for the full capability set."""
+    common = {
+        "semantic_model_key": "local_desktop_model",
+        "source_mode": "real",
+    }
+    from datetime import date
 
-    data = _assembled()
-    caps = compute_section_capabilities(
-        "sales_report", data.source_mode,
-        category_row_count=len(data.category_sales),
-        product_row_count=len(data.top_products),
-    )
-    assert caps[SectionKey.SALES_KPI].available is True
-    assert caps[SectionKey.CATEGORY_BREAKDOWN].available is True
-    assert caps[SectionKey.TOP_PRODUCTS].available is True
-    assert data.total_sales == 1200.5
-    assert data.total_quantity == 9
+    return {
+        "total_sales": QueryResult(
+            result_id="qr_ts", columns=["[Total Sales]"], rows=[[1200.5]],
+            row_count=1, **common,
+        ),
+        "total_quantity": QueryResult(
+            result_id="qr_tq", columns=["[Total Quantity]"], rows=[[9]],
+            row_count=1, **common,
+        ),
+        "total_orders": QueryResult(
+            result_id="qr_to", columns=["[Total Orders]"], rows=[[8]],
+            row_count=1, **common,
+        ),
+        "average_order_value": QueryResult(
+            result_id="qr_aov", columns=["[Average Order Value]"], rows=[[150.06]],
+            row_count=1, **common,
+        ),
+        "monthly_sales": QueryResult(
+            result_id="qr_ms",
+            columns=["Date[YearMonth]", "[Total Sales]"],
+            rows=[
+                [date(2024, 1, 1), 100.0],
+                [date(2024, 3, 1), 300.0],
+                [date(2024, 2, 1), 200.0],
+            ],
+            row_count=3,
+            **common,
+        ),
+        "sales_by_category": QueryResult(
+            result_id="qr_sc",
+            columns=["Sales[Category]", "[Total Sales]"],
+            rows=[["办公用品", 700.25], ["家具", 500.25]],
+            row_count=2,
+            **common,
+        ),
+        "sales_by_region": QueryResult(
+            result_id="qr_sr",
+            columns=["Sales[Region]", "[Total Sales]"],
+            rows=[["华东", 800.0], ["华南", 400.5]],
+            row_count=2,
+            **common,
+        ),
+        "top_products": QueryResult(
+            result_id="qr_tp",
+            columns=["Sales[Product]", "[Total Sales]"],
+            rows=[["产品 A", 800.0], ["产品 B", 400.5]],
+            row_count=2,
+            **common,
+        ),
+        "top_customers": QueryResult(
+            result_id="qr_tc",
+            columns=["Sales[Customer]", "[Total Sales]"],
+            rows=[["客户甲", 600.0], ["客户乙", 300.25]],
+            row_count=2,
+            **common,
+        ),
+    }
 
 
-def test_model_b_extra_fields_dont_auto_generate_sections():
-    """Extra schema fields (Date, Region, Customer) do not create new sections.
+def test_full_rich_assembly_produces_kpis_trend_donut_column_and_topn():
+    from backend.app.report.contracts import ReportDataPlanBuilder as Builder
 
-    The capability model only gates sections defined in TemplateContract.
-    New fields in the schema are ignored unless they appear in a contract's
-    query_requirements.
-    """
-    from backend.app.report.capability import (
-        SectionKey,
-        compute_section_capabilities,
-    )
+    rich_keys = tuple(_rich_results())
+    plan = Builder().build("sales_report", _schema_b(), requirement_keys=rich_keys)
+    facts = {
+        q.requirement_key: VerifiedFactSetBuilder().build(q.query_plan, _rich_results()[q.requirement_key])
+        for q in plan.queries
+    }
+    data = SalesReportDataAssembler(
+        clock=lambda: datetime(2026, 8, 17, 2, 0, tzinfo=timezone.utc)
+    ).build(plan, _rich_results(), facts)
+    assert len(data.kpis) == 4
+    assert len(data.sections) == 5
+    kinds = {item.kind for item in data.sections}
+    assert kinds == {"trend", "grouped", "top_n"}
+    trend = next(item for item in data.sections if item.kind == "trend")
+    # Display ordering by verified time point (2024-01, 02, 03)
+    assert [item.period for item in trend.values] == ["2024-01", "2024-02", "2024-03"]
+    assert [item.value for item in trend.values] == [100.0, 200.0, 300.0]
 
-    # Even with extra fields, only sales_report sections are gated.
-    caps = compute_section_capabilities("sales_report", "real",
-                                         category_row_count=3,
-                                         product_row_count=2)
-    # No unexpected sections auto-generated
-    assert len(caps) == 3  # Only the three defined sections
-    # The extra fields don't magically enable a "region" or "time" section
-    # because no such section key exists in the active production capability map.
-    known_keys = {SectionKey.SALES_KPI, SectionKey.CATEGORY_BREAKDOWN,
-                  SectionKey.TOP_PRODUCTS}
-    assert set(caps) == known_keys
-
-
-def test_model_c_missing_category_fails_contract_validation():
-    """Schema C: missing Category column → contract validation fails."""
-    schema_c = _schema_b(has_category=False)
-    from backend.app.report.contracts import ReportContractValidator
-    validator = ReportContractValidator()
-    result = validator.validate("sales_report", schema_c)
-    assert result.available is False
-    error_strs = " ".join(result.errors)
-    assert "Category" in error_strs
-
-
-def test_model_c_missing_product_fails_contract_validation():
-    """Schema C variant: missing Product column → contract validation fails."""
-    schema_c = _schema_b(has_product=False)
-    from backend.app.report.contracts import ReportContractValidator
-    validator = ReportContractValidator()
-    result = validator.validate("sales_report", schema_c)
-    assert result.available is False
-    error_strs = " ".join(result.errors)
-    assert "Product" in error_strs
+    spec = SalesReportSpecBuilder().build(data)
+    visuals = {item.business_role: item.visual_type for item in spec.charts}
+    assert visuals == {
+        "time_trend": "line",
+        "category_contribution": "donut",
+        "region_comparison": "column",
+        "top_products": "hbar",
+        "top_customers": "hbar",
+    }
 
 
 def test_capability_anti_fake_no_oracle_in_source():
@@ -815,9 +929,8 @@ def test_capability_anti_fake_no_oracle_in_source():
         path.read_text(encoding="utf-8")
         for path in (Path("backend/app/report")).glob("*.py")
     )
-    for forbidden in ("500" + "821", "35" + "8"):
+    for forbidden in ("500" + "821", "35" + "8", "694" + "3997"):
         assert forbidden not in production_source
-    # Check the capability module specifically for numeric oracles
     cap_source = (Path("backend/app/report/capability.py")).read_text(encoding="utf-8")
     for forbidden in ("500" + "821", "35" + "8", "expected_total"):
         assert forbidden not in cap_source

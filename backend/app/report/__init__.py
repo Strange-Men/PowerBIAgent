@@ -1,16 +1,17 @@
-"""报表模块"""
+"""报表模块 — M3.4 adaptive report planning + visualization/layout policy."""
 
 from backend.app.report.assembly import (
-    CategorySalesRow,
+    KpiValue,
     SalesReportAssemblyError,
     SalesReportData,
     SalesReportDataAssembler,
     SalesReportSpecBuilder,
-    TopProductRow,
+    SectionProjection,
+    TrendPoint,
 )
 from backend.app.report.contracts import (
-    M3_SALES_SCHEMA_FINGERPRINT,
     REPORT_TEMPLATE_CONTRACTS,
+    RequirementAvailability,
     SALES_REPORT_CONTRACT,
     ReportAvailabilityStatus,
     ReportContractError,
@@ -27,7 +28,7 @@ from backend.app.report.contracts import (
     TemplateContract,
     TemplateSchemaBinding,
 )
-from backend.app.report.fixed import FixedSalesReportRenderer
+from backend.app.report.fixed import SalesReportRenderer
 from backend.app.report.resources import (
     InMemoryReportRepository,
     LocalReportRepository,
@@ -39,14 +40,15 @@ from backend.app.report.resources import (
 )
 
 __all__ = [
-    "CategorySalesRow",
+    "KpiValue",
     "SalesReportAssemblyError",
     "SalesReportData",
     "SalesReportDataAssembler",
     "SalesReportSpecBuilder",
-    "TopProductRow",
-    "M3_SALES_SCHEMA_FINGERPRINT",
+    "SectionProjection",
+    "TrendPoint",
     "REPORT_TEMPLATE_CONTRACTS",
+    "RequirementAvailability",
     "SALES_REPORT_CONTRACT",
     "ReportAvailabilityStatus",
     "ReportContractError",
@@ -62,7 +64,7 @@ __all__ = [
     "ReportSchemaRequirement",
     "TemplateContract",
     "TemplateSchemaBinding",
-    "FixedSalesReportRenderer",
+    "SalesReportRenderer",
     "InMemoryReportRepository",
     "LocalReportRepository",
     "ReportArtifact",

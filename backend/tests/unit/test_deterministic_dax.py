@@ -187,3 +187,67 @@ def test_layer3_rejects_wrong_topn_and_raw_reaggregation():
     })
     assert "dax_top_n_value_mismatch" in _layer3(wrong_top, top_plan).errors
     assert "dax_measure_expression_not_allowed" in _layer3(raw, scalar_plan).errors
+
+
+
+def _schema_dim_duplicate() -> SemanticModelSchema:
+    """Star-schema style: dimension column duplicated, measure unique."""
+    tables = [TableSchema(
+        name="Sales",
+        columns=[
+            ColumnSchema(name="Category", data_type="string"),
+            ColumnSchema(name="Product", data_type="string"),
+            ColumnSchema(name="OrderDate", data_type="datetime"),
+            ColumnSchema(name="Quantity", data_type="int64"),
+            ColumnSchema(name="Active", data_type="boolean"),
+        ],
+        measures=[
+            MeasureSchema(name="Total Sales", expression="SUM('Sales'[Quantity])"),
+        ],
+    ), TableSchema(
+        name="DimCategory",
+        columns=[ColumnSchema(name="Category", data_type="string")],
+    )]
+    return SemanticModelSchema(name="Test", key="model", tables=tables)
+
+
+def test_dimension_table_hint_resolves_ambiguous_duplicate_column():
+    plan = _plan(
+        dimensions=["Category"],
+        dimension_tables={"Category": "Sales"},
+    )
+    schema = _schema_dim_duplicate()
+    request = _build(plan, schema)
+    assert "'Sales'[Category]" in request.dax
+    assert _layer3(request, plan, schema).is_valid
+
+
+def test_dimension_table_hint_pointing_to_wrong_table_fails_closed():
+    plan = _plan(
+        dimensions=["Category"],
+        dimension_tables={"Category": "DimCategory"},
+    )
+    schema = _schema_dim_duplicate()
+    request = _build(plan, schema)
+    assert "'DimCategory'[Category]" in request.dax
+    assert _layer3(request, plan, schema).is_valid
+    wrong = _plan(
+        dimensions=["Category"],
+        dimension_tables={"Category": "NoSuchTable"},
+    )
+    with pytest.raises(DAXBuildError, match="column_not_found_in_table"):
+        _build(wrong, schema)
+
+
+def test_hint_absent_keeps_sealed_unique_name_behavior():
+    with pytest.raises(DAXBuildError, match="ownership_ambiguous"):
+        _build(_plan(dimensions=["Category"]), _schema_dim_duplicate())
+
+
+def test_dimension_table_hint_on_metric_never_changes_measure_resolution():
+    plan = _plan(dimensions=["Category"], dimension_tables={"Category": "Sales"})
+    schema = _schema_dim_duplicate()
+    request = _build(plan, schema)
+    assert request.dax.count("[Total Sales]") == 1  # measure expression
+    assert request.dax.count('"Total Sales"') == 1  # name literal
+    assert _layer3(request, plan, schema).is_valid

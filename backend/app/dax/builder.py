@@ -50,8 +50,21 @@ class _SchemaOwnership:
             raise DAXBuildError("dax_builder_measure_ownership_ambiguous")
         return owners[0]
 
-    def column(self, name: str) -> tuple[str, ColumnSchema]:
+    def column(
+        self, name: str, *, table: str | None = None
+    ) -> tuple[str, ColumnSchema]:
+        """Resolve a column, optionally within one explicit owning table.
+
+        ``table`` is the M3.4 deterministic ownership hint for star-schema
+        duplicates (e.g. Sales[Region] vs Region[Region]).  ``None`` keeps the
+        sealed M2 unique-name resolution unchanged.
+        """
         owners = self.column_owners.get(name, [])
+        if table is not None:
+            owners = [item for item in owners if item[0] == table]
+            if not owners:
+                raise DAXBuildError("dax_builder_column_not_found_in_table")
+            return owners[0]
         if name in self.measure_owners:
             raise DAXBuildError("dax_builder_column_measure_identity_conflict")
         if not owners:
@@ -92,8 +105,13 @@ class DeterministicDAXBuilder:
         measures = [
             (name, ownership.measure(name)[0]) for name in plan.measures
         ]
+        dimension_hints = plan.dimension_tables or {}
         dimensions = [
-            (name, *ownership.column(name)) for name in plan.dimensions
+            (
+                name,
+                *ownership.column(name, table=dimension_hints.get(name)),
+            )
+            for name in plan.dimensions
         ]
 
         arguments: list[str] = [

@@ -20,6 +20,10 @@ class LLMTask(str, Enum):
     DAX = "dax"
     ANSWER = "answer"
     REPORT = "report"
+    # M3.4: 受控报表规划 weak-signal 草稿。LLM 只输出 registry-owned
+    # section ID；与 factual authority（DAX/ReportData/Report factual）
+    # 分开计数，绝不计入事实类 LLM 调用。
+    REPORT_INTENT = "report_intent"
 
 
 @dataclass

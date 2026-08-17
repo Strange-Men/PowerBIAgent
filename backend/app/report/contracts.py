@@ -1,14 +1,22 @@
-"""M3 fixed report-template and deterministic data-plan contracts.
+"""M3.4 capability-driven report template and deterministic data-plan contracts.
 
-This module owns no execution capability. It validates one runtime schema and
-emits CanonicalQueryPlan objects for the already sealed M2 execution chain.
+This module owns no execution capability.  A TemplateContract is now a fixed
+*allowed capability catalog*: fixed design rules + allowed analysis goals, not
+fixed output content (ADR-011 supersedes ADR-010's one-fingerprint / four-query
+binding).  The runtime schema decides which registered capabilities resolve;
+the deterministic planner picks the requested subset; every resolved sub-query
+still reuses the sealed M2 execution chain.
+
+Per-requirement availability is computed here from the runtime schema only.
+LLM drafts, expected values, result objects and free query descriptions
+never enter this module.
 """
 
 from __future__ import annotations
 
 from enum import Enum
 from types import MappingProxyType
-from typing import Mapping
+from typing import Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -17,11 +25,6 @@ from backend.app.query_plan.template_catalog import DEFAULT_TEMPLATE_CATALOG
 from backend.app.schemas.data_contracts import (
     CanonicalQueryPlan,
     SemanticModelSchema,
-)
-
-
-M3_SALES_SCHEMA_FINGERPRINT = (
-    "d72c9dd04fcda216ffa421d84e85c01d9643e2c2db133d1661639970eb6b11ac"
 )
 
 
@@ -42,8 +45,6 @@ class ReportAvailabilityStatus(str, Enum):
     TEMPLATE_NOT_AVAILABLE = "template_not_available"
     CONTRACT_CONFIGURATION_ERROR = "contract_configuration_error"
     SEMANTIC_MODEL_MISMATCH = "semantic_model_mismatch"
-    SCHEMA_INCOMPATIBLE = "schema_incompatible"
-    SCHEMA_FINGERPRINT_MISMATCH = "schema_fingerprint_mismatch"
 
 
 class ReportContractError(ValueError):
@@ -54,8 +55,10 @@ class ReportContractError(ValueError):
 
 
 class TemplateSchemaBinding(BaseModel):
+    """Template binding is model-scoped; capability availability is decided
+    per requirement against the runtime schema (ADR-011)."""
+
     semantic_model_key: str = Field(..., min_length=1)
-    schema_fingerprint: str = Field(..., min_length=64, max_length=64)
 
     model_config = ConfigDict(frozen=True)
 
@@ -74,8 +77,16 @@ class ReportQueryRequirement(BaseModel):
     shape: ReportQueryShape
     measures: tuple[str, ...] = Field(..., min_length=1, max_length=1)
     dimensions: tuple[str, ...] = ()
+    # M3.4: deterministic ownership hint for star-schema duplicated columns
+    # (e.g. Sales[Region] vs Region[Region]).  Single-dimension queries only.
+    dimension_table: str | None = None
+    # M3.4: display-only ordering of verified grouped rows (time points).
+    # Ordering never creates business values; it only fixes presentation order.
+    dimension_order: Literal["asc", "desc"] | None = None
     sort: str | None = None
     top_n: int | None = Field(default=None, ge=1)
+    # Objects the runtime schema must provide for this requirement to resolve.
+    required_objects: tuple[ReportSchemaRequirement, ...] = ()
 
     model_config = ConfigDict(frozen=True)
 
@@ -92,6 +103,12 @@ class ReportQueryRequirement(BaseModel):
                 raise ValueError("report_topn_requirement_invalid")
             if self.top_n is None:
                 raise ValueError("report_topn_requirement_invalid")
+        if self.dimension_table is not None and len(self.dimensions) != 1:
+            raise ValueError("report_dimension_table_requires_single_dimension")
+        if self.dimension_order is not None and (
+            self.shape != ReportQueryShape.GROUPED or not self.dimensions
+        ):
+            raise ValueError("report_dimension_order_requires_grouped_dimension")
         return self
 
 
@@ -108,7 +125,6 @@ class TemplateContract(BaseModel):
     template_key: str = Field(..., min_length=1)
     contract_version: str = Field(..., min_length=1)
     binding: TemplateSchemaBinding
-    schema_requirements: tuple[ReportSchemaRequirement, ...]
     query_requirements: tuple[ReportQueryRequirement, ...]
     metadata: ReportMetadataContract = ReportMetadataContract()
 
@@ -119,24 +135,40 @@ class TemplateContract(BaseModel):
         query_keys = [item.key for item in self.query_requirements]
         if len(query_keys) != len(set(query_keys)):
             raise ValueError("report_contract_duplicate_query_key")
-        schema_refs = {
-            (item.object_type, item.canonical_name)
-            for item in self.schema_requirements
-        }
-        if len(schema_refs) != len(self.schema_requirements):
-            raise ValueError("report_contract_duplicate_schema_requirement")
-        for query in self.query_requirements:
-            if any(
-                (ReportSchemaObjectType.MEASURE, name) not in schema_refs
-                for name in query.measures
-            ):
+        # A contract may reference one object from several requirements; only
+        # exact duplicates inside one requirement are invalid.
+        for requirement in self.query_requirements:
+            refs = {
+                (item.object_type, item.table_name, item.canonical_name)
+                for item in requirement.required_objects
+            }
+            if len(refs) != len(requirement.required_objects):
+                raise ValueError("report_contract_duplicate_schema_requirement")
+            measure_objects = {
+                item.canonical_name
+                for item in requirement.required_objects
+                if item.object_type == ReportSchemaObjectType.MEASURE
+            }
+            if any(name not in measure_objects for name in requirement.measures):
                 raise ValueError("report_contract_query_measure_not_required")
-            if any(
-                (ReportSchemaObjectType.FIELD, name) not in schema_refs
-                for name in query.dimensions
-            ):
+            field_objects = {
+                item.canonical_name
+                for item in requirement.required_objects
+                if item.object_type == ReportSchemaObjectType.FIELD
+            }
+            if any(name not in field_objects for name in requirement.dimensions):
                 raise ValueError("report_contract_query_dimension_not_required")
         return self
+
+
+class RequirementAvailability(BaseModel):
+    """Per-requirement capability resolution against one runtime schema."""
+
+    requirement_key: str
+    available: bool
+    missing: tuple[str, ...] = ()
+
+    model_config = ConfigDict(frozen=True)
 
 
 class ReportContractValidation(BaseModel):
@@ -145,6 +177,7 @@ class ReportContractValidation(BaseModel):
     runtime_schema_fingerprint: str | None = None
     errors: tuple[str, ...] = ()
     contract: TemplateContract | None = None
+    requirement_availability: tuple[RequirementAvailability, ...] = ()
 
     model_config = ConfigDict(frozen=True)
 
@@ -172,93 +205,130 @@ class ReportDataPlan(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+# ── M3.4 sales_report capability catalog ───────────────────────────────────
+# Fixed design rules + allowed analysis goals.  The runtime schema decides
+# which of these resolve; the deterministic planner selects the requested
+# subset.  No LLM draft, fingerprint gate or free query description here.
+
+_NUMERIC_SALES = ("Double", "Int64")
+_STRING = ("String",)
+_DATETIME = ("DateTime", "Date")
+
+
+def _measure(table: str, name: str, data_types: tuple[str, ...]) -> ReportSchemaRequirement:
+    return ReportSchemaRequirement(
+        object_type=ReportSchemaObjectType.MEASURE,
+        table_name=table,
+        canonical_name=name,
+        accepted_data_types=data_types,
+    )
+
+
+def _field(table: str, name: str, data_types: tuple[str, ...]) -> ReportSchemaRequirement:
+    return ReportSchemaRequirement(
+        object_type=ReportSchemaObjectType.FIELD,
+        table_name=table,
+        canonical_name=name,
+        accepted_data_types=data_types,
+    )
+
+
 SALES_REPORT_CONTRACT = TemplateContract(
     template_key="sales_report",
-    contract_version="1.0",
-    binding=TemplateSchemaBinding(
-        semantic_model_key="local_desktop_model",
-        schema_fingerprint=M3_SALES_SCHEMA_FINGERPRINT,
-    ),
-    schema_requirements=(
-        ReportSchemaRequirement(
-            object_type=ReportSchemaObjectType.FIELD,
-            table_name="Sales",
-            canonical_name="OrderID",
-            accepted_data_types=("Int64",),
-        ),
-        ReportSchemaRequirement(
-            object_type=ReportSchemaObjectType.FIELD,
-            table_name="Sales",
-            canonical_name="OrderDate",
-            accepted_data_types=("Int64",),
-        ),
-        ReportSchemaRequirement(
-            object_type=ReportSchemaObjectType.FIELD,
-            table_name="Sales",
-            canonical_name="Category",
-            accepted_data_types=("String",),
-        ),
-        ReportSchemaRequirement(
-            object_type=ReportSchemaObjectType.FIELD,
-            table_name="Sales",
-            canonical_name="Product",
-            accepted_data_types=("String",),
-        ),
-        ReportSchemaRequirement(
-            object_type=ReportSchemaObjectType.FIELD,
-            table_name="Sales",
-            canonical_name="Quantity",
-            accepted_data_types=("Int64",),
-        ),
-        ReportSchemaRequirement(
-            object_type=ReportSchemaObjectType.FIELD,
-            table_name="Sales",
-            canonical_name="UnitPrice",
-            accepted_data_types=("Double",),
-        ),
-        ReportSchemaRequirement(
-            object_type=ReportSchemaObjectType.FIELD,
-            table_name="Sales",
-            canonical_name="SalesAmount",
-            accepted_data_types=("Double",),
-        ),
-        ReportSchemaRequirement(
-            object_type=ReportSchemaObjectType.MEASURE,
-            table_name="Sales",
-            canonical_name="Total Sales",
-            accepted_data_types=("Double",),
-        ),
-        ReportSchemaRequirement(
-            object_type=ReportSchemaObjectType.MEASURE,
-            table_name="Sales",
-            canonical_name="Total Quantity",
-            accepted_data_types=("Int64",),
-        ),
-    ),
+    contract_version="2.0",
+    binding=TemplateSchemaBinding(semantic_model_key="local_desktop_model"),
     query_requirements=(
         ReportQueryRequirement(
             key="total_sales",
             shape=ReportQueryShape.SCALAR,
             measures=("Total Sales",),
+            required_objects=(
+                _measure("Sales", "Total Sales", _NUMERIC_SALES),
+            ),
         ),
         ReportQueryRequirement(
             key="total_quantity",
             shape=ReportQueryShape.SCALAR,
             measures=("Total Quantity",),
+            required_objects=(
+                _measure("Sales", "Total Quantity", _NUMERIC_SALES),
+            ),
+        ),
+        ReportQueryRequirement(
+            key="total_orders",
+            shape=ReportQueryShape.SCALAR,
+            measures=("Total Orders",),
+            required_objects=(
+                _measure("Sales", "Total Orders", _NUMERIC_SALES),
+            ),
+        ),
+        ReportQueryRequirement(
+            key="average_order_value",
+            shape=ReportQueryShape.SCALAR,
+            measures=("Average Order Value",),
+            required_objects=(
+                _measure("Sales", "Average Order Value", _NUMERIC_SALES),
+            ),
+        ),
+        ReportQueryRequirement(
+            key="monthly_sales",
+            shape=ReportQueryShape.GROUPED,
+            measures=("Total Sales",),
+            dimensions=("YearMonth",),
+            dimension_table="Date",
+            dimension_order="asc",
+            required_objects=(
+                _measure("Sales", "Total Sales", _NUMERIC_SALES),
+                _field("Date", "YearMonth", _DATETIME),
+            ),
         ),
         ReportQueryRequirement(
             key="sales_by_category",
             shape=ReportQueryShape.GROUPED,
             measures=("Total Sales",),
             dimensions=("Category",),
+            dimension_table="Sales",
+            required_objects=(
+                _measure("Sales", "Total Sales", _NUMERIC_SALES),
+                _field("Sales", "Category", _STRING),
+            ),
+        ),
+        ReportQueryRequirement(
+            key="sales_by_region",
+            shape=ReportQueryShape.GROUPED,
+            measures=("Total Sales",),
+            dimensions=("Region",),
+            dimension_table="Sales",
+            required_objects=(
+                _measure("Sales", "Total Sales", _NUMERIC_SALES),
+                _field("Sales", "Region", _STRING),
+            ),
         ),
         ReportQueryRequirement(
             key="top_products",
             shape=ReportQueryShape.ORDERED_TOP_N,
             measures=("Total Sales",),
             dimensions=("Product",),
+            dimension_table="Sales",
             sort="desc",
             top_n=5,
+            required_objects=(
+                _measure("Sales", "Total Sales", _NUMERIC_SALES),
+                _field("Sales", "Product", _STRING),
+            ),
+        ),
+        ReportQueryRequirement(
+            key="top_customers",
+            shape=ReportQueryShape.ORDERED_TOP_N,
+            measures=("Total Sales",),
+            dimensions=("Customer",),
+            dimension_table="Sales",
+            sort="desc",
+            top_n=5,
+            required_objects=(
+                _measure("Sales", "Total Sales", _NUMERIC_SALES),
+                _field("Sales", "Customer", _STRING),
+            ),
         ),
     ),
 )
@@ -270,7 +340,7 @@ REPORT_TEMPLATE_CONTRACTS: Mapping[str, TemplateContract] = MappingProxyType({
 
 
 class ReportContractValidator:
-    """Bind registry-owned templates to one exact runtime schema."""
+    """Resolve registry-owned templates and per-requirement capabilities."""
 
     def __init__(
         self,
@@ -312,78 +382,95 @@ class ReportContractValidator:
                 errors=("report_contract_semantic_model_mismatch",),
                 contract=contract,
             )
-
-        schema_errors = self._validate_schema_requirements(contract, schema)
-        if schema_errors:
-            return ReportContractValidation(
-                status=ReportAvailabilityStatus.SCHEMA_INCOMPATIBLE,
-                template_key=template_key,
-                runtime_schema_fingerprint=runtime_fingerprint,
-                errors=tuple(schema_errors),
-                contract=contract,
+        availability = tuple(
+            RequirementAvailability(
+                requirement_key=requirement.key,
+                available=self._requirement_available(requirement, schema),
+                missing=self._requirement_missing(requirement, schema),
             )
-        if runtime_fingerprint != contract.binding.schema_fingerprint:
-            return ReportContractValidation(
-                status=ReportAvailabilityStatus.SCHEMA_FINGERPRINT_MISMATCH,
-                template_key=template_key,
-                runtime_schema_fingerprint=runtime_fingerprint,
-                errors=("report_contract_schema_fingerprint_mismatch",),
-                contract=contract,
-            )
+            for requirement in contract.query_requirements
+        )
         return ReportContractValidation(
             status=ReportAvailabilityStatus.AVAILABLE,
             template_key=template_key,
             runtime_schema_fingerprint=runtime_fingerprint,
             contract=contract,
+            requirement_availability=availability,
         )
 
-    @staticmethod
-    def _validate_schema_requirements(
+    def requirement_available(
+        self,
         contract: TemplateContract,
+        requirement_key: str,
         schema: SemanticModelSchema,
-    ) -> list[str]:
-        visible_tables = {
+    ) -> bool:
+        requirement = next(
+            (item for item in contract.query_requirements if item.key == requirement_key),
+            None,
+        )
+        if requirement is None:
+            return False
+        return self._requirement_available(requirement, schema)
+
+    @staticmethod
+    def _visible_tables(schema: SemanticModelSchema) -> dict[str, object]:
+        return {
             table.name: table
             for table in schema.tables
             if not table.is_hidden and not table.is_system_managed
         }
-        errors: list[str] = []
-        for requirement in contract.schema_requirements:
-            table = visible_tables.get(requirement.table_name)
+
+    @classmethod
+    def _requirement_missing(
+        cls, requirement: ReportQueryRequirement, schema: SemanticModelSchema
+    ) -> tuple[str, ...]:
+        visible_tables = cls._visible_tables(schema)
+        missing: list[str] = []
+        for item in requirement.required_objects:
+            table = visible_tables.get(item.table_name)
             if table is None:
-                errors.append(
-                    f"report_contract_table_missing:{requirement.table_name}"
+                missing.append(
+                    f"report_contract_table_missing:{item.table_name}"
                 )
                 continue
             objects = (
                 table.columns
-                if requirement.object_type == ReportSchemaObjectType.FIELD
+                if item.object_type == ReportSchemaObjectType.FIELD
                 else table.measures
             )
             matches = [
-                item
-                for item in objects
-                if item.name == requirement.canonical_name and not item.is_hidden
+                candidate
+                for candidate in objects
+                if candidate.name == item.canonical_name and not candidate.is_hidden
             ]
             if len(matches) != 1:
-                errors.append(
+                missing.append(
                     "report_contract_object_missing_or_ambiguous:"
-                    f"{requirement.object_type.value}:"
-                    f"{requirement.table_name}.{requirement.canonical_name}"
+                    f"{item.object_type.value}:"
+                    f"{item.table_name}.{item.canonical_name}"
                 )
                 continue
-            accepted = {value.casefold() for value in requirement.accepted_data_types}
+            accepted = {
+                value.casefold() for value in item.accepted_data_types
+            }
             if matches[0].data_type.casefold() not in accepted:
-                errors.append(
+                missing.append(
                     "report_contract_data_type_mismatch:"
-                    f"{requirement.object_type.value}:"
-                    f"{requirement.table_name}.{requirement.canonical_name}"
+                    f"{item.object_type.value}:"
+                    f"{item.table_name}.{item.canonical_name}"
                 )
-        return errors
+        return tuple(missing)
+
+    @classmethod
+    def _requirement_available(
+        cls, requirement: ReportQueryRequirement, schema: SemanticModelSchema
+    ) -> bool:
+        return not cls._requirement_missing(requirement, schema)
 
 
 class ReportDataPlanBuilder:
-    """Create fixed sub-queries from TemplateContract, never from LLM output."""
+    """Create the requested deterministic sub-queries from TemplateContract,
+    never from LLM output."""
 
     def __init__(
         self,
@@ -395,11 +482,38 @@ class ReportDataPlanBuilder:
         self,
         template_key: str,
         schema: SemanticModelSchema,
+        *,
+        requirement_keys: tuple[str, ...] | None = None,
     ) -> ReportDataPlan:
         validation = self._validator.validate(template_key, schema)
         if not validation.available or validation.contract is None:
             raise ReportContractError(validation.status.value, validation.errors)
         contract = validation.contract
+
+        selected = contract.query_requirements
+        if requirement_keys is not None:
+            unknown = set(requirement_keys) - {
+                item.key for item in contract.query_requirements
+            }
+            if unknown:
+                raise ReportContractError(
+                    "report_requirement_key_unknown", tuple(sorted(unknown))
+                )
+            by_key = {item.key: item for item in contract.query_requirements}
+            selected = tuple(by_key[key] for key in requirement_keys)
+
+        failed: list[RequirementAvailability] = []
+        for item in selected:
+            resolved = self._resolved_availability(
+                validation, contract, schema, item.key
+            )
+            if not resolved.available:
+                failed.append(resolved)
+        if failed:
+            raise ReportContractError(
+                "report_requirement_unavailable",
+                tuple(f"{item.requirement_key}:{item.missing}" for item in failed),
+            )
         queries = tuple(
             ReportDataQuery(
                 requirement_key=requirement.key,
@@ -416,9 +530,15 @@ class ReportDataPlanBuilder:
                     top_n=requirement.top_n,
                     requested_template=contract.template_key,
                     is_mock=False,
+                    dimension_tables=(
+                        {requirement.dimensions[0]: requirement.dimension_table}
+                        if requirement.dimension_table is not None
+                        else None
+                    ),
+                    dimension_order=requirement.dimension_order,
                 ),
             )
-            for requirement in contract.query_requirements
+            for requirement in selected
         )
         return ReportDataPlan(
             template_key=contract.template_key,
@@ -427,4 +547,40 @@ class ReportDataPlanBuilder:
             schema_fingerprint=validation.runtime_schema_fingerprint or "",
             queries=queries,
             metadata=contract.metadata,
+        )
+
+    @staticmethod
+    def _resolved_availability(
+        validation: ReportContractValidation,
+        contract: TemplateContract,
+        schema: SemanticModelSchema,
+        requirement_key: str,
+    ) -> RequirementAvailability:
+        known = {
+            item.requirement_key: item
+            for item in validation.requirement_availability
+        }
+        if requirement_key in known:
+            return known[requirement_key]
+        requirement = next(
+            (
+                item
+                for item in contract.query_requirements
+                if item.key == requirement_key
+            ),
+            None,
+        )
+        if requirement is None:
+            return RequirementAvailability(
+                requirement_key=requirement_key, available=False,
+                missing=("report_requirement_unknown",),
+            )
+        return RequirementAvailability(
+            requirement_key=requirement_key,
+            available=ReportContractValidator._requirement_available(
+                requirement, schema
+            ),
+            missing=ReportContractValidator._requirement_missing(
+                requirement, schema
+            ),
         )

@@ -7,15 +7,16 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M3.3 Report Template V2 — Non-redundant Business Information Architecture**。
+当前版本：**M3.4 — Adaptive Report Planning + Visualization/Layout Policy**。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
 - M2.6.2 已建立 Business Semantic Grounding；M2.6.3 已建立 Deterministic DAX、Independent Layer 3 与 VerifiedFactSet。
 - M3.0 已在 `e4b5c6c` 通过远程审计并纯 fast-forward 合入 `main`；对应 main push CI `31986207118` success。
 - M3.1 已在 `fa4cc0c` 通过远程审计并纯 fast-forward 合入 `main`；对应 main push CI `31989328261` success，开发分支已删除。
-- M3.2 已完成 `sales_report` 确定性 Category / Top 5 Product CSS 横条、保留同源表格、静态 HTML 安全加固、真实 PBIX 与桌面/窄屏视觉验收；未新增查询、业务语义、资源 API 或 LLM authority。
-- M3 已最终收口；当前不得继续扩展 M3、进入 M4/M5、开发 Remote MCP 或创建 Tag，除非用户另行明确授权。
+- M3.2 已完成确定性 CSS 横条、静态安全与视觉验收；M3.3 完成 capability-aware section 去冗余布局。
+- M3.4 已完成 Adaptive Report Planning：schema-aware capability engine（9 sections）、deterministic ReportPlan、受控 Report Intent weak signal、Visualization/Layout/Theme Policy、Renderer 多 visual（KPI/Line/Donut/Column/HBar）；ADR-011 supersede ADR-010 固定四查询限制；Simple/Rich 双 PBIX Real acceptance 通过。
+- M3 未封板（无 Tag）；不得进入 M4/M5、开发 Remote MCP 或创建 Tag，除非用户另行明确授权。
 
 当前真实主链：
 
@@ -58,9 +59,10 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 8. VerifiedFactSet 是数字、结果顺序、极值、筛选、时间和 provenance 的唯一外部事实 authority；Answer/Report 不得扩写未验证排名、因果或数值。
 9. PendingClarificationContext 与 committed Memory 分离；未补齐、歧义、unsupported capability 或失败 Turn 不得提交或污染正式 Memory。
 10. `local_mcp.py` 仅负责 Local Provider/protocol Adapter；Renderer、Memory、UI 逻辑不得进入。
-11. ADR-010：M3 production template 只有 `sales_report`；TemplateContract 固定四个 sub-query 与 schema fingerprint，ReportDataPlan 不读取 LLM draft，且每个查询必须复用 M2 封板链。
+11. ADR-010：M3 production template 只有 `sales_report`；TemplateContract 固定 schema 要求，ReportDataPlan 不读取 LLM draft，且每个查询必须复用 M2 封板链。
+12. ADR-011：固定模板 = 固定设计规则 + 允许能力目录，不是固定输出内容；报表 section 由用户需求 ∩ runtime schema 能力 ∩ catalog 决定；capability.py 是 schema-aware capability engine；Report Intent weak signal 只输出 registry-owned ID 并单独计数；Visualization/Layout/Theme Policy 由普通代码决定，LLM 无图表选择 authority。
 
-同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、继续扩展 M3、提前开发 M4/M5、开发 Remote MCP。
+同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前开发 M4/M5、开发 Remote MCP；未经用户明确批准不得为 M3 创建 Tag 或封板。
 
 ## 修改前检查
 
@@ -85,4 +87,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-17 | M3.3 Report Template V2 — non-redundant capability-aware layout，无 Tag*
+*最后更新：2026-08-17 | M3.4 Adaptive Report Planning + Visualization/Layout Policy，无 Tag*

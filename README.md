@@ -2,7 +2,7 @@
 
 PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并以固定模板生成静态 HTML 报表。
 
-当前版本：**M3.3 — Report Template V2 — Non-redundant Business Information Architecture**。M0—M2 已正式封板；M3.1 已合入 main，M3.2 完成确定性可视化与视觉 hardened acceptance；M3.3 新增 SectionCapability 概念，每 section 只保留一种主要视觉表达（horizontal bar），移除同源重复表格，并完成 multi-schema anti-fake tests。
+当前版本：**M3.4 — Adaptive Report Planning + Visualization/Layout Policy**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。
 
 ```text
 Natural Language
@@ -15,8 +15,8 @@ Natural Language
 → QueryResult
 → VerifiedFactSet
 → deterministic Report Data Contract
-→ deterministic ReportSpec
-→ Fixed Renderer（M3.1/M3.2/M3.3）→ static HTML
+→ deterministic ReportSpec（VisualizationPolicy 选 visual）
+→ SalesReportRenderer（design system）→ static HTML
 ```
 
 Real 路径的 DAX LLM authority/call count 为 0。LLM 不定义 canonical Measure、Dimension、Member、Time、DAX、QueryResult 或外部事实；VerifiedFactSet 是数值、结果顺序、极值、筛选、时间与 provenance 的唯一事实 authority。
@@ -28,11 +28,11 @@ Real 路径的 DAX LLM authority/call count 为 0。LLM 不定义 canonical Meas
 - TopN boundary ties 可超过 N；Answer 只表达 QueryResult `result_position`，不把 row index 写成严格 business rank。
 - Bounded LLM selector 只能选择 Catalog-owned、metadata-backed shortlist ID；无唯一证据必须 clarification。
 - data/report-shaped 请求不会仅因 Intent LLM 的 `UNSUPPORTED` 绕过 Grounding；明确破坏性、越权、任意代码与非数据请求仍 early-stop。
-- M3 MVP 唯一 production template 为 `sales_report`；固定查询是 Total Sales、Total Quantity、Sales by Category、Product Top 5 by Total Sales。
+- M3 MVP 唯一 production template 为 `sales_report`；模板 = 固定设计规则 + 允许能力目录（9 个 registry-owned sections），查询子集由 capability 解析决定（ADR-011）。
 - M3 专用 `PowerBIAgent_M3_Test.pbix` 只用于 Local Real acceptance，不替换 M2 封板 PBIX；schema fingerprint 漂移 fail closed。
-- M3.2 固定 Renderer 直接从已验证 Category / Top Product rows 生成确定性 CSS 横条并保留同源表格；无 JavaScript/CDN/外部资源/自由 HTML。
-- M3.3 新增 SectionCapability 概念，每 section 只保留一种主要视觉表达（horizontal bar），移除同源重复表格；新增 `backend/app/report/capability.py`；multi-schema anti-fake tests 覆盖 Missing Category/Product、Extra fields 不自动生成 section。
-- artifact 原子保存到 gitignored `local_state/reports/`，view/download 只接受 repository-owned report_id。M3 已最终收口；Remote MCP、M4、M5 仍 Deferred。
+- M3.4 新增 schema-aware capability engine（9 sections）、deterministic ReportPlan、受控 Report Intent weak signal、Visualization/Layout/Theme Policy；`SalesReportRenderer` 支持 KPI cards / Line / Donut / Column / HBar；无 JavaScript/CDN/外部资源/自由 HTML；"只看销售额"产出单 KPI 最小报表，"生成完整销售分析报表"产出能力驱动 dashboard。
+- LLM 唯一新增职责：report-intent weak signal（registry-owned section ID），单独计数；DAX/ReportData/Report factual/Renderer LLM authority 仍为 0。
+- artifact 原子保存到 gitignored `local_state/reports/`，view/download 只接受 repository-owned report_id。M3 未封板（无 Tag）；Remote MCP、M4、M5 仍 Deferred。
 
 幂等规则：相同 `request_id` + 相同请求重放且不重复执行；相同 ID + 不同内容返回 HTTP 409；并发同 ID 只有一个 Owner 执行。
 

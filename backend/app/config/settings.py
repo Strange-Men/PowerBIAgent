@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M3.3", frozen=True)
+    version: str = Field(default="M3.4", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")

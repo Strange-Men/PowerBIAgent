@@ -182,6 +182,16 @@ class CanonicalQueryPlan(QueryPlan):
     time_range: Optional[TimeRangeSpec] = None
     comparison_mode: None = None
     grounding_authority: Literal["semantic_catalog"] = "semantic_catalog"
+    # M3.4: deterministic table ownership hints for dimension columns that
+    # exist in more than one visible table (star-schema duplicates such as
+    # Sales[Region] vs Region[Region]).  None = M2 unique-name resolution.
+    # Only deterministic report/grounding code may set this; the LLM draft
+    # contract (QueryPlan) does not expose it.
+    dimension_tables: Optional[dict[str, str]] = None
+    # M3.4: display-only ordering of verified grouped rows (time points).
+    # Presentation ordering never creates business values.  None = keep the
+    # verified result order.
+    dimension_order: Optional[Literal["asc", "desc"]] = None
 
 
 class ColumnMembersRequest(BaseModel):
@@ -297,11 +307,25 @@ class KPISpec(BaseModel):
 
 
 class ChartSpec(BaseModel):
-    """图表规格"""
+    """图表规格
+
+    ``type`` / ``x_field`` / ``y_field`` 保留为 M0-M2 兼容基础字段。
+    M3.4 报表路径使用以下结构化扩展（全部由确定性报表规划/装配代码
+    填充，禁止自由 HTML/CSS/可执行配置）：
+    - ``visual_type``: 确定性 VisualizationPolicy 选择的视觉类型
+      （kpi_card / line / donut / column / hbar）
+    - ``business_role``: registry-owned 业务角色（time_trend 等 section key）
+    - ``series``: 仅引用已验证 ReportData 的结构化序列
+    - ``layout_hint``: 布局策略给出的宽度提示（full / half）
+    """
     type: str = Field(..., min_length=1)  # bar, line, pie, scatter
     title: str = ""
     x_field: str = ""
     y_field: str = ""
+    visual_type: str = ""
+    business_role: str = ""
+    series: list[dict[str, Any]] = Field(default_factory=list)
+    layout_hint: str = "full"
 
 
 class TableSpec(BaseModel):

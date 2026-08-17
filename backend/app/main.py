@@ -23,7 +23,7 @@ from backend.app.memory.repository import InMemoryMemoryRepository
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.powerbi.local_mcp import LocalMCPPowerBIAdapter
 from backend.app.powerbi.mock import MockPowerBIAdapter
-from backend.app.report.fixed import FixedSalesReportRenderer
+from backend.app.report.fixed import SalesReportRenderer
 from backend.app.report.mock import MockReportRenderer
 from backend.app.report.resources import LocalReportRepository
 
@@ -98,7 +98,7 @@ async def lifespan(app: FastAPI):
                 memory_repo=InMemoryMemoryRepository(),
                 llm_provider=deepseek_provider,
                 powerbi_adapter=powerbi_adapter,
-                report_renderer=FixedSalesReportRenderer(),
+                report_renderer=SalesReportRenderer(),
                 report_repository=report_repository,
                 settings=settings,
                 config=harness_config,

@@ -85,8 +85,13 @@ class RestrictedDAXVerifier:
                 errors.append("dax_missing_query_plan_measure")
 
         expected_dimensions: list[_Ref] = []
+        # Plain QueryPlan (LLM draft contract) never carries ownership hints.
+        dimension_hints = getattr(plan, "dimension_tables", None) or {}
         for name in plan.dimensions:
+            hint = dimension_hints.get(name)
             owners = column_owners.get(name, set())
+            if hint is not None:
+                owners = {owner for owner in owners if owner == hint}
             if len(owners) != 1 or name in measure_owners:
                 errors.append("dax_dimension_ownership_not_unique")
             elif owners:

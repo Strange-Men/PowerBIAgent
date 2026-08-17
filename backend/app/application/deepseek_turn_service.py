@@ -50,7 +50,7 @@ from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.intent.unsupported_policy import (
     should_defer_unsupported_to_grounding,
 )
-from backend.app.llm.base import LLMProvider
+from backend.app.llm.base import LLMProvider, LLMTask
 from backend.app.memory.models import (
     PendingClarificationContext,
     RuntimeDataMode,
@@ -59,6 +59,16 @@ from backend.app.memory.models import (
 from backend.app.memory.repository import (
     InMemoryMemoryRepository,
 )
+from backend.app.report.capability import (
+    ANALYSIS_SECTION_ORDER,
+    KPI_SECTION_ORDER,
+    SECTION_REQUIREMENTS,
+)
+from backend.app.report.deepseek_report_intent_service import (
+    DeepSeekReportIntentService,
+)
+from backend.app.report.intent import resolve_report_intent
+from backend.app.report.plan import ReportPlanError, ReportPlanner
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.query_plan.deepseek_service import DeepSeekQueryPlanService
 from backend.app.query_plan.clarification import PendingClarificationService
@@ -461,7 +471,7 @@ class DeepSeekTurnService:
             )
 
         if intent.intent == IntentType.REPORT_GENERATION and not self.powerbi.is_mock:
-            return await self._execute_fixed_sales_report_turn(
+            return await self._execute_sales_report_turn(
                 message=message,
                 memory=memory,
                 intent=intent,
@@ -1152,7 +1162,7 @@ class DeepSeekTurnService:
         )
         return result
 
-    async def _execute_fixed_sales_report_turn(
+    async def _execute_sales_report_turn(
         self,
         *,
         message: str,
@@ -1168,11 +1178,49 @@ class DeepSeekTurnService:
         trace_id: str,
         collector: LLMCallCollector,
     ) -> dict[str, Any]:
-        """Execute the fixed four-query M3 report inside the active TurnPipeline."""
+        """Execute the adaptive M3.4 sales report inside the active TurnPipeline.
 
+        Flow: bounded report-intent weak signal → deterministic ReportPlanner
+        (requested ∩ schema capability) → resolved query requirements →
+        sealed M2 chain (plan → DAX → Layer 3 → Power BI → facts) →
+        adaptive assembly → policy-driven ReportSpec → design-system renderer.
+        """
+
+        # ── 1. Bounded report-intent weak signal (LLM, registry IDs only) ──
+        # Any failure fails closed to an empty draft; the deterministic
+        # matcher below is always the floor.  The call is observed and
+        # counted separately as llm_report_intent_call_count.
+        llm_report_intent_ids: tuple[str, ...] = ()
+        if not self.powerbi.is_mock:
+            observed_report_intent = ObservedLLMProvider(
+                self.llm_provider, collector
+            )
+            llm_report_intent_ids = await DeepSeekReportIntentService(
+                observed_report_intent,
+                max_format_repairs=0,
+            ).draft(message)
+        signal = resolve_report_intent(message, llm_draft=llm_report_intent_ids)
+        trace.record(
+            "report_intent_resolved",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={
+                "llm_used": signal.llm_used,
+                "scope_limited": signal.scope_limited,
+                "requested_sections": list(signal.requested_ids),
+                "llm_draft_ids": list(signal.llm_draft_ids),
+            },
+        )
+
+        # ── 2. Deterministic ReportPlan (capability resolution) ──
         try:
-            report_plan = ReportDataPlanBuilder().build(template_key, schema)
-        except ReportContractError as exc:
+            report_plan = ReportPlanner().plan(
+                template_key,
+                schema,
+                signal.requested_ids,
+                signal,
+            )
+        except ReportPlanError as exc:
             return await self._fail_result(
                 memory,
                 effective_req_id,
@@ -1182,14 +1230,14 @@ class DeepSeekTurnService:
                 terminal_state=TurnState.VALIDATION_FAILED,
                 error_type=exc.code,
                 reason=":".join((exc.code, *exc.errors)),
-                stage="report_contract",
+                stage="report_plan",
                 trace_id=trace_id,
                 collector=collector,
             )
 
         dax_requests: dict[str, DAXRequest] = {}
         try:
-            for query in report_plan.queries:
+            for query in report_plan.data_plan.queries:
                 plan_validation = self.validator.validate_query_plan(
                     query.query_plan,
                     schema,
@@ -1246,7 +1294,13 @@ class DeepSeekTurnService:
             request_id=effective_req_id,
             data_summary={
                 "template_key": report_plan.template_key,
-                "query_count": len(report_plan.queries),
+                "query_count": len(report_plan.data_plan.queries),
+                "resolved_sections": [
+                    item.value for item in report_plan.resolved_sections
+                ],
+                "unavailable_sections": [
+                    item.value for item in report_plan.unavailable_sections
+                ],
                 "schema_fingerprint": report_plan.schema_fingerprint,
             },
         )
@@ -1261,7 +1315,7 @@ class DeepSeekTurnService:
         )
         query_results: dict[str, QueryResult] = {}
         try:
-            for query in report_plan.queries:
+            for query in report_plan.data_plan.queries:
                 result: QueryResult = await self.tool_gateway.execute(
                     TOOL_NAME_DAX,
                     exec_ctx,
@@ -1292,7 +1346,7 @@ class DeepSeekTurnService:
         controller.transition(TurnState.TOOL_EXECUTED)
         fact_sets: dict[str, VerifiedFactSet] = {}
         try:
-            for query in report_plan.queries:
+            for query in report_plan.data_plan.queries:
                 result = query_results[query.requirement_key]
                 result_validation = self.validator.validate_query_result(
                     result,
@@ -1306,12 +1360,45 @@ class DeepSeekTurnService:
                     query.query_plan,
                     result,
                 )
-            report_data_contract = SalesReportDataAssembler().build(
-                report_plan,
-                query_results,
-                fact_sets,
+
+            # ── 3. Fact-level re-gate: sections whose requirements returned
+            # no verified rows are dropped (never rendered empty). ──
+            fact_row_counts = {
+                key: facts.row_count for key, facts in fact_sets.items()
+            }
+            still, dropped = ReportPlanner().apply_fact_evidence(
+                report_plan, schema, fact_row_counts
             )
-        except (FactVerificationError, SalesReportAssemblyError) as exc:
+            if not still:
+                raise SalesReportAssemblyError(
+                    "sales_report_no_resolved_sections"
+                )
+            remaining_keys: list[str] = []
+            for section in (*KPI_SECTION_ORDER, *ANALYSIS_SECTION_ORDER):
+                if section not in still:
+                    continue
+                for key in SECTION_REQUIREMENTS[section]:
+                    if key not in remaining_keys:
+                        remaining_keys.append(key)
+            execution_plan = ReportDataPlanBuilder().build(
+                template_key,
+                schema,
+                requirement_keys=tuple(remaining_keys),
+            )
+            filtered_results = {
+                query.requirement_key: query_results[query.requirement_key]
+                for query in execution_plan.queries
+            }
+            filtered_facts = {
+                requirement_key: fact_sets[requirement_key]
+                for requirement_key in filtered_results
+            }
+            report_data_contract = SalesReportDataAssembler().build(
+                execution_plan,
+                filtered_results,
+                filtered_facts,
+            )
+        except (FactVerificationError, SalesReportAssemblyError, ReportContractError) as exc:
             return await self._fail_result(
                 memory,
                 effective_req_id,
@@ -1338,6 +1425,7 @@ class DeepSeekTurnService:
                     report_data_contract.verified_fact_set_ids
                 ),
                 "source_mode": report_data_contract.source_mode,
+                "dropped_sections": [item.value for item in dropped],
             },
         )
 
@@ -1396,10 +1484,10 @@ class DeepSeekTurnService:
 
         memory.current_intent = intent.intent.value
         memory.analysis_goal = f"用户提问: {message}"
-        memory.semantic_model_key = report_plan.semantic_model_key
+        memory.semantic_model_key = report_plan.data_plan.semantic_model_key
         memory.report_template_key = report_plan.template_key
-        # A fixed multi-query report must not masquerade as one inheritable
-        # user QueryPlan in the existing M2 memory slots.
+        # An adaptive multi-query report must not masquerade as one
+        # inheritable user QueryPlan in the existing M2 memory slots.
         memory.measures = []
         memory.dimensions = []
         memory.filters = []
@@ -1410,7 +1498,7 @@ class DeepSeekTurnService:
         memory.last_query_plan = None
         memory.last_dax = None
         memory.last_query_result_id = rendered.query_result_ids[-1]
-        memory.last_result_summary = "fixed sales report queries complete"
+        memory.last_result_summary = "adaptive sales report queries complete"
         memory.last_report_id = rendered.report_id
         memory.updated_at = datetime.utcnow()
 
@@ -1465,9 +1553,17 @@ class DeepSeekTurnService:
             execution_audit={
                 "canonical_query_plans": {
                     item.requirement_key: item.query_plan.model_dump(mode="json")
-                    for item in report_plan.queries
+                    for item in report_plan.data_plan.queries
                 },
-                "query_count": len(report_plan.queries),
+                "requested_sections": list(signal.requested_ids),
+                "resolved_sections": [
+                    item.value for item in report_plan.resolved_sections
+                ],
+                "unavailable_sections": [
+                    item.value for item in report_plan.unavailable_sections
+                ],
+                "query_count": len(report_plan.data_plan.queries),
+                "assembled_query_count": len(execution_plan.queries),
                 "deterministic_dax": True,
                 "dax_fingerprints": {
                     key: hashlib.sha256(request.dax.encode("utf-8")).hexdigest()
@@ -1478,6 +1574,10 @@ class DeepSeekTurnService:
                 "verified_fact_set_ids": list(rendered.verified_fact_set_ids),
                 "source_mode": rendered.source_mode,
                 "factual_validation_pass": True,
+                "llm_report_intent_call_count": sum(
+                    item.task == LLMTask.REPORT_INTENT.value
+                    for item in collector.observations
+                ),
                 "llm_dax_call_count": sum(
                     item.task == "dax" for item in collector.observations
                 ),
