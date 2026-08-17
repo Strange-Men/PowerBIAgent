@@ -57,6 +57,11 @@ class TemplateCatalog:
     def allowed_keys(self) -> tuple[str, ...]:
         return tuple(item.key for item in self._definitions if item.allowed)
 
+    def get_definition(self, key: str) -> TemplateDefinition | None:
+        """Return registry metadata without granting availability."""
+
+        return self._by_key.get(key)
+
     def ground(
         self,
         user_input: str,
@@ -145,15 +150,24 @@ class TemplateCatalog:
 
 DEFAULT_TEMPLATE_CATALOG = TemplateCatalog((
     TemplateDefinition(
+        key="sales_report",
+        aliases=("销售报表", "销售报告"),
+    ),
+    # M0-M2 compatibility keys remain recognizable but are not M3 production
+    # templates. Explicit or language-based requests for them fail closed.
+    TemplateDefinition(
         key="sales_weekly",
         aliases=("销售周报", "周报", "销售经营周报"),
+        allowed=False,
     ),
     TemplateDefinition(
         key="satisfaction",
         aliases=("满意度报告",),
+        allowed=False,
     ),
     TemplateDefinition(
         key="operating_overview",
         aliases=("经营概览", "经营总览"),
+        allowed=False,
     ),
 ))

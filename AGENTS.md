@@ -7,13 +7,13 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M2.6.4 Final Hardened Acceptance + Documentation Governance**。
+当前版本：**M3.0 Report Architecture + Sales Contract Baseline**。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
-- M2 Local MCP + Power BI Desktop 真实链已完成，Remote MCP 生产化继续 Deferred。
+- M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
 - M2.6.2 已建立 Business Semantic Grounding；M2.6.3 已建立 Deterministic DAX、Independent Layer 3 与 VerifiedFactSet。
-- 最终正确性收口、文档治理、semantic truth cleanup、offline/Real hardened acceptance 与远程核心审计已完成；M0—M2 已 ready for final seal，但不得自行创建 Tag。
-- 下一功能阶段是 M3 固定模板报表正式渲染；本轮不得进入 M3/M4/M5。
+- M3.0 只固化 `sales_report` TemplateContract、M3 PBIX schema binding、fail-closed validator 与固定 ReportDataPlan；历史模板不属于 M3 production available。
+- 当前不得进入 M3.1 Renderer/HTML、M3.2 资源/API、M4/M5 或 Remote MCP；不得创建 Tag。
 
 当前真实主链：
 
@@ -24,11 +24,12 @@ Natural Language
 → Semantic Grounding + StateTransition → Canonical QueryPlan
 → Deterministic DAX → Independent Layer 3
 → ToolGateway → PowerBIAdapter → Power BI → QueryResult
-→ VerifiedFactSet → fact-bounded Answer / ReportSpec
+→ VerifiedFactSet → deterministic Report Data Contract
+→ deterministic ReportSpec → Fixed Renderer（M3.1）→ HTML
 → Memory / Snapshot
 ```
 
-Real DAX LLM authority 为 0。LLM 只保留意图/语言草稿、Catalog-owned 候选内的受限消歧和格式化职责，不拥有 canonical Measure、Dimension、Member、Time、DAX、QueryResult 或外部事实。
+Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、KPI/表格/排名/趋势/因果/事实、HTML/CSS authority 同样为 0。LLM 只保留意图/语言草稿、Catalog-owned 候选内的受限消歧和受事实约束的格式化职责。
 
 ## 权威文档顺序
 
@@ -54,8 +55,9 @@ Real DAX LLM authority 为 0。LLM 只保留意图/语言草稿、Catalog-owned 
 8. VerifiedFactSet 是数字、结果顺序、极值、筛选、时间和 provenance 的唯一外部事实 authority；Answer/Report 不得扩写未验证排名、因果或数值。
 9. PendingClarificationContext 与 committed Memory 分离；未补齐、歧义、unsupported capability 或失败 Turn 不得提交或污染正式 Memory。
 10. `local_mcp.py` 仅负责 Local Provider/protocol Adapter；Renderer、Memory、UI 逻辑不得进入。
+11. ADR-010：M3 production template 只有 `sales_report`；TemplateContract 固定四个 sub-query 与 schema fingerprint，ReportDataPlan 不读取 LLM draft，且每个查询必须复用 M2 封板链。
 
-同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前开发 M3/M4/M5、开发 Remote MCP。
+同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前开发 M3.1/M3.2/M4/M5、开发 Remote MCP。
 
 ## 修改前检查
 
@@ -80,4 +82,4 @@ Real DAX LLM authority 为 0。LLM 只保留意图/语言草稿、Catalog-owned 
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 M0—M2 ready for final seal；Tag 待用户另行授权*
+*最后更新：2026-08-17 | M3.0 sales_report contract baseline；不得进入 M3.1 或创建 Tag*

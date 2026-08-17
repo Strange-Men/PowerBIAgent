@@ -47,6 +47,7 @@
 | `docs/adr/ADR-007_local_mcp_demo_validation_path.md` | Local MCP Demo Provider 决策 | Local Provider/Smoke |
 | `docs/adr/ADR-008_business_semantic_catalog_and_grounding_authority.md` | Business Semantic authority | Grounding、Catalog、Member、Time、State |
 | `docs/adr/ADR-009_deterministic_query_execution_and_verified_fact_authority.md` | DAX/Layer3/Fact authority | 执行与外部事实边界 |
+| `docs/adr/ADR-010_deterministic_report_template_and_data_plan_authority.md` | M3 TemplateContract / ReportDataPlan authority | M3 报表合同、渲染与资源任务 |
 
 未来阶段文档放在：
 
@@ -73,7 +74,7 @@
 | DAX、Layer 3、VerifiedFactSet、Answer/Report factual boundary | 04/05 + ADR-009 |
 | Local MCP / Adapter / Smoke | 04/05 + M2 plan + ADR-006/007 |
 | 安全、Git、CI、治理脚本 | 06 + CLAUDE + 相关 gate/test |
-| M3 报表 | specs/11 + M3 milestone 文档（获批后） |
+| M3 报表 | specs/11 + ADR-010 + M3 milestone 文档（如后续需要） |
 | M5 前端 | 01 + specs/10/11（获批后） |
 
 ## 新增文档规则
@@ -89,4 +90,4 @@
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 documentation governance + semantic truth cleanup*
+*最后更新：2026-08-17 | M3.0 ADR-010 与报表合同入口同步*

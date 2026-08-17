@@ -194,7 +194,7 @@ class TestEntryBoundary:
     async def test_report_generation_proceeds(self):
         """report_generation 生成 QueryPlan"""
         provider = FakeProvider(is_mock=False)
-        provider.enqueue_success(_make_plan(requested_template="sales_weekly"))
+        provider.enqueue_success(_make_plan(requested_template="sales_report"))
         svc = _make_svc(provider)
         result = await svc.generate("生成本周周报", _make_intent(IntentType.REPORT_GENERATION), _make_schema())
         assert result is not None

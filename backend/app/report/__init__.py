@@ -1,1 +1,41 @@
 """报表模块"""
+
+from backend.app.report.contracts import (
+    M3_SALES_SCHEMA_FINGERPRINT,
+    REPORT_TEMPLATE_CONTRACTS,
+    SALES_REPORT_CONTRACT,
+    ReportAvailabilityStatus,
+    ReportContractError,
+    ReportContractValidation,
+    ReportContractValidator,
+    ReportDataPlan,
+    ReportDataPlanBuilder,
+    ReportDataQuery,
+    ReportMetadataContract,
+    ReportQueryRequirement,
+    ReportQueryShape,
+    ReportSchemaObjectType,
+    ReportSchemaRequirement,
+    TemplateContract,
+    TemplateSchemaBinding,
+)
+
+__all__ = [
+    "M3_SALES_SCHEMA_FINGERPRINT",
+    "REPORT_TEMPLATE_CONTRACTS",
+    "SALES_REPORT_CONTRACT",
+    "ReportAvailabilityStatus",
+    "ReportContractError",
+    "ReportContractValidation",
+    "ReportContractValidator",
+    "ReportDataPlan",
+    "ReportDataPlanBuilder",
+    "ReportDataQuery",
+    "ReportMetadataContract",
+    "ReportQueryRequirement",
+    "ReportQueryShape",
+    "ReportSchemaObjectType",
+    "ReportSchemaRequirement",
+    "TemplateContract",
+    "TemplateSchemaBinding",
+]

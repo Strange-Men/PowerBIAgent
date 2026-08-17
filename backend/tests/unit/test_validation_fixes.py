@@ -36,9 +36,13 @@ from backend.app.intent.models import IntentSpec, IntentType
 
 # ── Fixtures ──
 
+_LEGACY_MOCK_TEMPLATES = {
+    "sales_weekly", "satisfaction", "operating_overview"
+}
+
 @pytest.fixture
 def validation() -> ValidationService:
-    return ValidationService()
+    return ValidationService(allowed_templates=_LEGACY_MOCK_TEMPLATES)
 
 
 @pytest.fixture
@@ -118,7 +122,7 @@ class TestKpiColumnOrder:
             source_mode="mock",
             kpis=[KPISpec(name="总销售额", value=11570000, format="number", field="SalesAmount")],
         )
-        validation = ValidationService()
+        validation = ValidationService(allowed_templates=_LEGACY_MOCK_TEMPLATES)
         result2 = validation.validate_report_strict(spec, result)
         assert result2.is_valid, f"列顺序反转后应通过: {result2.errors}"
 
@@ -1357,7 +1361,7 @@ class TestQueryPlanServiceTemplateRepair:
                         semantic_model_key="mock_sales_model",
                         measures=["TotalSales"],
                         dimensions=["Region"],
-                        requested_template="sales_weekly",
+                        requested_template="sales_report",
                     )
                     return LLMResponse(
                         content="{}", structured=plan, model="test",
@@ -1385,7 +1389,7 @@ class TestQueryPlanServiceTemplateRepair:
         provider = RepairProvider()
         svc = DeepSeekQueryPlanService(provider=provider, max_format_repairs=1)
         plan = await svc.generate("销售经营周报", intent, schema, semantic_model_key="mock_sales_model")
-        assert plan.requested_template == "sales_weekly"
+        assert plan.requested_template == "sales_report"
         assert len(provider.calls) == 2, f"应为2次调用，实际{len(provider.calls)}"
 
     @pytest.mark.asyncio
@@ -1457,7 +1461,7 @@ class TestQueryPlanServiceTemplateRepair:
                     semantic_model_key="mock_sales_model",
                     measures=["TotalSales"],
                     dimensions=["Region"],
-                    requested_template="sales_weekly",
+                    requested_template="sales_report",
                 )
                 return LLMResponse(
                     content="{}", structured=plan, model="test",
@@ -1485,7 +1489,7 @@ class TestQueryPlanServiceTemplateRepair:
         provider = OneCallProvider()
         svc = DeepSeekQueryPlanService(provider=provider, max_format_repairs=1)
         plan = await svc.generate("测试", intent, schema, semantic_model_key="mock_sales_model")
-        assert plan.requested_template == "sales_weekly"
+        assert plan.requested_template == "sales_report"
         assert len(provider.calls) == 1
 
     @pytest.mark.asyncio

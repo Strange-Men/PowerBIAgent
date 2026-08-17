@@ -1,8 +1,8 @@
 # PowerBIAgent — Power BI 数据分析 Agent MVP
 
-PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并在后续阶段以固定模板生成静态 HTML 报表。
+PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并以固定模板生成静态 HTML 报表。
 
-当前版本：**M2.6.4 — M0—M2 ready for final seal**；offline/Real hardened acceptance、远程核心审计与文档 semantic truth cleanup 已完成，Final Tag 待用户另行授权。
+当前版本：**M3.0 — Report Architecture + Sales Contract Baseline**。M0—M2 已由 `m2.6.4-m0-m2-final-seal` 正式封板；M3.0 只固化 `sales_report` 数据合同、schema binding 与固定查询计划，不生成正式 HTML。
 
 ```text
 Natural Language
@@ -14,20 +14,23 @@ Natural Language
 → Power BI MCP
 → QueryResult
 → VerifiedFactSet
-→ fact-bounded Answer / ReportSpec
+→ deterministic Report Data Contract
+→ deterministic ReportSpec
+→ Fixed Renderer（M3.1）→ HTML
 ```
 
 Real 路径的 DAX LLM authority/call count 为 0。LLM 不定义 canonical Measure、Dimension、Member、Time、DAX、QueryResult 或外部事实；VerifiedFactSet 是数值、结果顺序、极值、筛选、时间与 provenance 的唯一事实 authority。
 
 ## 当前状态
 
-- M0—M1 已正式封板；M2 Local MCP + Power BI Desktop 真实数据问答及 Truth Boundary 已完成 final hardening。
+- M0—M2 已正式封板；M2 Local MCP + Power BI Desktop 真实数据问答及 Truth Boundary 保持不变。
 - Business Semantic Catalog、Grounding/StateTransition、PendingClarificationContext、Deterministic DAX、Independent Layer 3 与 VerifiedFactSet 已实现。
 - TopN boundary ties 可超过 N；Answer 只表达 QueryResult `result_position`，不把 row index 写成严格 business rank。
 - Bounded LLM selector 只能选择 Catalog-owned、metadata-backed shortlist ID；无唯一证据必须 clarification。
 - data/report-shaped 请求不会仅因 Intent LLM 的 `UNSUPPORTED` 绕过 Grounding；明确破坏性、越权、任意代码与非数据请求仍 early-stop。
-- Remote MCP 生产化 Deferred。下一功能阶段是 M3 Renderer，但当前分支不进入 M3/M4/M5。
-- M2.6.4 远程核心审计与 final documentation truth cleanup 已通过；不创建 Tag。
+- M3 MVP 唯一 production template 为 `sales_report`；固定查询是 Total Sales、Total Quantity、Sales by Category、Product Top 5 by Total Sales。
+- M3 专用 `PowerBIAgent_M3_Test.pbix` 只用于 Local Real acceptance，不替换 M2 封板 PBIX；schema fingerprint 漂移 fail closed。
+- 当前 M3.0 不实现 Renderer/HTML、report resource repository、查看/下载 API；这些分别进入 M3.1/M3.2。Remote MCP、M4、M5 仍 Deferred。
 
 幂等规则：相同 `request_id` + 相同请求重放且不重复执行；相同 ID + 不同内容返回 HTTP 409；并发同 ID 只有一个 Owner 执行。
 
@@ -73,7 +76,7 @@ Health 示例：
   "ready": true,
   "configuration_ready": true,
   "powerbi_live_connected": false,
-  "version": "M2.6.4",
+  "version": "M3.0",
   "llm_mode": "mock",
   "powerbi_mode": "mock"
 }
@@ -120,6 +123,14 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_semantic_grounding_smo
 D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn_smoke.py --mode real --historical-repeats 10
 ```
 
+M3 `sales_report` contract Real smoke（需打开 M3 专用 PBIX；oracle 值只在本地命令中提供）：
+
+```powershell
+D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\sales_report_contract_smoke.py `
+  --expected-total-sales <local-oracle> `
+  --expected-total-quantity <local-oracle>
+```
+
 旧的分层 Local 连接/Schema/DAX/Chat/Business Golden Smoke 仍位于 `scripts/manual_smoke/`，仅在对应 Provider 诊断时按需执行。真实输出必须保持脱敏且不进入 Git。
 
 ## 里程碑边界
@@ -131,7 +142,9 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 | Power BI | ✅ Local Desktop；Remote Deferred |
 | Semantic Grounding / Clarification | ✅ Canonical authority + Pending/Committed 分离 |
 | VerifiedFactSet / factual output | ✅ 事实边界 |
-| 正式 HTML Renderer | ⬜ M3 |
+| `sales_report` TemplateContract / ReportDataPlan | ✅ M3.0 |
+| Fixed HTML Renderer | ⬜ M3.1 |
+| Report resource / view / download API | ⬜ M3.2 |
 | 持久化会话 | ⬜ M4 |
 | React + Vite UI | ⬜ M5 |
 
@@ -151,4 +164,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 M0—M2 ready for final seal；Final Tag=none*
+*最后更新：2026-08-17 | M3.0 sales_report contract baseline；未进入 M3.1*

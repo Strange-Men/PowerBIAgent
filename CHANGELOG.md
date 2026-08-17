@@ -4,6 +4,20 @@
 
 ---
 
+## [M3.0] — 2026-08-17
+
+### 销售报表合同与开发路线固化
+
+- M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M3 从该 clean main 基线开始
+- M3 MVP 唯一 production template 固化为 `sales_report`；历史 `sales_weekly` / `satisfaction` / `operating_overview` 保留识别但 production availability=false
+- 新增 TemplateContract、M3 PBIX model/schema fingerprint binding、fail-closed compatibility validator 与四查询 ReportDataPlan；ReportDataPlan 不消费 LLM draft、QueryResult 或 Known-answer expected
+- 四个固定 sub-query 继续复用 CanonicalQueryPlan → Deterministic DAX → Independent Layer 3 → ToolGateway → Local MCP → QueryResult → VerifiedFactSet，没有第二 Power BI/DAX/Fact pipeline
+- 新增 ADR-010 与 `sales_report_contract_smoke.py`；M3 专用 PBIX 已验证 runtime schema、四个真实查询、scalar local oracle、`source_mode=real`、fallback/LLM/Renderer 调用均为 0
+- Fresh acceptance：targeted 19、backend 1412、Golden 11 PASS/1 manual Real skip、Architecture 86、Repository Safety 193、Error Ledger 25、Documentation Governance 与 diff check 全部通过
+- 本轮未实现正式 Renderer、HTML 文件、report resource repository、查看/下载 API，未进入 M3.1/M3.2/M4/M5，未创建 Tag
+
+---
+
 ## [M2.6.4] — 2026-08-14
 
 ### M0—M2 最终加固与文档治理

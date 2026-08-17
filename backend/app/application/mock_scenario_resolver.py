@@ -7,7 +7,7 @@ Golden Cases 和内部测试可以通过显式传入 MockScenarioSelection 跳�
 
 M1.0 修复：
 - 返回 MockScenarioResolution（含 effective_report_template_key）
-- 默认报表模板固定为 sales_weekly
+- 历史 Mock compatibility 默认报表模板固定为 sales_weekly
 - 客户端未传模板但消息包含报表关键词时，effective_report_template_key 自动填充
 """
 
@@ -29,6 +29,7 @@ class MockScenarioResolution(BaseModel):
 
 
 # 默认报表模板 — M1.0 固定
+# M0-M2 fixture compatibility only; not M3 production availability.
 DEFAULT_REPORT_TEMPLATE = "sales_weekly"
 
 

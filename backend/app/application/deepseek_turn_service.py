@@ -143,10 +143,12 @@ class DeepSeekTurnService:
         )
         self._source_mode = "mock" if powerbi_adapter.is_mock else "real"
         self._user_context = UserContext(
-            allowed_semantic_models=[self._semantic_model_key]
+            allowed_semantic_models=[self._semantic_model_key],
+            allowed_templates=list(DEFAULT_TEMPLATE_CATALOG.allowed_keys),
         )
         self.validator = ValidationService(
-            allowed_semantic_models=[self._semantic_model_key]
+            allowed_semantic_models=[self._semantic_model_key],
+            allowed_templates=DEFAULT_TEMPLATE_CATALOG.allowed_keys,
         )
         # M1.6.3: ToolGateway 统一进入 DeepSeek 管线
         self.tool_gateway = self._build_tool_gateway()
@@ -960,7 +962,7 @@ class DeepSeekTurnService:
                         user_input=message, intent=intent, query_plan=query_plan,
                         query_result=query_result, schema=schema,
                         template_key=query_plan.requested_template or "",
-                        allowed_templates=None,
+                        allowed_templates=set(DEFAULT_TEMPLATE_CATALOG.allowed_keys),
                         request_id=effective_req_id,
                     )
             except Exception as e:

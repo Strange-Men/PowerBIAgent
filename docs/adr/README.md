@@ -32,8 +32,9 @@
 | ADR-007 | [Demo 阶段使用 Local Power BI MCP 验证真实流程](ADR-007_local_mcp_demo_validation_path.md) | accepted | 2026-08-11 |
 | ADR-008 | [Business Semantic Catalog and Grounding Authority](ADR-008_business_semantic_catalog_and_grounding_authority.md) | accepted | 2026-08-13 |
 | ADR-009 | [Deterministic Query Execution and Verified Fact Authority](ADR-009_deterministic_query_execution_and_verified_fact_authority.md) | accepted | 2026-08-14 |
+| ADR-010 | [Deterministic Report Template and Data Plan Authority](ADR-010_deterministic_report_template_and_data_plan_authority.md) | accepted | 2026-08-17 |
 
-当前开发最重要的 active 决策为 ADR-005—ADR-009：ADR-005 约束统一控制面，ADR-006/007 分别约束 Deferred Remote 与当前 Local Provider，ADR-008/009 分别约束 canonical business semantics 与 deterministic execution / VerifiedFactSet。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
+当前开发最重要的 active 决策为 ADR-005—ADR-010：ADR-005 约束统一控制面，ADR-006/007 分别约束 Deferred Remote 与当前 Local Provider，ADR-008/009 分别约束 canonical business semantics 与 deterministic execution / VerifiedFactSet，ADR-010 约束 M3 TemplateContract、ReportDataPlan 与固定模板事实边界。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
 
 ## ADR 详情
 
@@ -71,10 +72,14 @@ Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code�
 
 正式正文见 [ADR-009 独立文件](ADR-009_deterministic_query_execution_and_verified_fact_authority.md)。核心决策：Real canonical path 只使用受限 Deterministic DAX Builder；Independent Layer 3 独立验证执行语义；VerifiedFactSet 是 Answer/Report factual claim 的唯一 authority。
 
+### ADR-010 — Deterministic Report Template and Data Plan Authority
+
+正式正文见 [ADR-010 独立文件](ADR-010_deterministic_report_template_and_data_plan_authority.md)。核心决策：M3 只提供 `sales_report`；TemplateContract 固定 schema binding 与四个 sub-query，ReportDataPlan 不读取 LLM draft，每个查询继续复用 M2 确定性执行与事实链。
+
 ### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面
 
 Execution、Tooling、Context、Lifecycle、Observability、Verification、Governance 七层职责。无 Docker/LangGraph/OpenTelemetry。
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 active/superseded 状态复核；未新增 ADR*
+*最后更新：2026-08-17 | M3.0 新增 ADR-010*

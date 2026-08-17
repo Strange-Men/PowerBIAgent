@@ -1,109 +1,124 @@
 # 08 — 开发路线
 
-> **状态：** M2.6.4 — M0—M2 ready for final seal；Final Tag 待用户授权
-> **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 `docs/archive/m0-m2.6.3_roadmap_history.md`。
+> **状态：** M3.0 — Report Architecture + Sales Contract Baseline 已完成；M3.1 未获授权
+> **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
 
 | Milestone | 目标 | 状态 |
 |---|---|---|
-| M0 | 仓库、契约、Harness、FastAPI 与 Mock 基础 | ✅ 已封板 |
-| M1 | DeepSeek 接入、统一 TurnPipeline、架构/安全/CI 收口 | ✅ 已封板 |
-| M2 | Local MCP + Power BI Desktop 真实数据问答与 Truth Boundary | ✅ M2.6.4 hardened acceptance / remote audit 完成 |
-| M3 | 固定模板报表正式渲染与资源契约 | ⬜ 下一功能阶段 |
+| M0—M1 | Foundation、DeepSeek、统一 TurnPipeline、Harness 与安全治理 | ✅ 已封板 |
+| M2 | Local MCP + Power BI Desktop 真实数据问答与 Truth Boundary | ✅ `m2.6.4-m0-m2-final-seal` 正式封板 |
+| M3 | 单一固定销售模板到静态 HTML 的确定性闭环 | 🟨 M3.0 完成；M3.1 未开始 |
 | M4 | 持久化会话、搜索与最近对话 | ⬜ 未开始 |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
 
-M0—M1 正式 Tag 为 `m1.7.2-m0-m1正式封板`。M2 Local Demo Tag `m2-local-powerbi-demo-release` 保持不变；M2.6.4 Final Tag 仍为 none，只能由用户后续明确授权。
+M0—M2 Final Seal 为 `m2.6.4-m0-m2-final-seal`，指向 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3 从该 clean `main` 开始；本轮不更新 `main`、不创建 Tag。
 
 ## 已封板阶段摘要
 
-### M0 — Foundation
+M0—M1 完成 Pydantic 契约、Memory/Snapshot、FastAPI、Mock/DeepSeek、确定性 TurnPipeline、ToolGateway、Harness、安全与 CI。M2 完成 Local MCP + Power BI Desktop、Business Semantic Catalog、Grounding/StateTransition、Pending Clarification、Canonical QueryPlan、Deterministic DAX、Independent Layer 3、VerifiedFactSet 与 fact-bounded Answer/Report 边界。
 
-完成 Pydantic 数据契约、结构化 Memory、ToolGateway、ETCLOVG Harness、Mock LLM/Power BI、FastAPI `/health` 与 `/api/v1/chat`、幂等与并发控制。M0 详细轮次已归档。
-
-### M1 — DeepSeek 与统一控制面
-
-完成 DeepSeek Provider、Intent/QueryPlan/历史 Mock DAX/Answer/ReportSpec 兼容链，以及 ADR-005 确定性 TurnPipeline。PydanticAI 与旧 AgentRuntime 已删除；Mock/DeepSeek 共用控制面，ToolGateway 成为唯一工具入口。安全扫描、Error Ledger、Architecture Gate、通用 CI 与 M0—M1 封板完成。
-
-### M2.0—M2.5 — Local Power BI Demo
-
-按 ADR-006/007 将 Remote 生产化 Deferred，使用 Local MCP + Power BI Desktop 逐步验证 stdio/协议/工具发现、Schema、DAX、QueryResult、现有 TurnPipeline 与 Business Golden。Local/Remote 差异始终隔离在 PowerBIAdapter 后，Real 失败不回退 Mock。
-
-### M2.6—M2.6.1 — Correctness Contract
-
-- Real Filter 仅 `eq=SUPPORTED`；其他 operator fail closed。
-- TopN selection 与 final ORDER BY 分离验证；ties 可合法超过 N。
-- 建立独立 scalar/grouped/ordered Known-answer Oracle、8 Case（2 holdout）与正式 6 Conversation / 16 Turn 多轮契约。
-
-### M2.6.2 — Business Semantic Grounding
-
-ADR-008 固化 runtime schema + model-scoped glossary + runtime member + deterministic time authority。Intent/QueryPlan LLM 降为 weak signal；Grounding + StateTransition 独占 Canonical QueryPlan slots。PendingClarificationContext 与 committed Memory 分离，partial clarification 不可执行或提交。
-
-### M2.6.3 — Deterministic Execution & Verified Facts
-
-ADR-009 固化：
+M2 的永久事实链为：
 
 ```text
 Canonical QueryPlan
 → Deterministic DAX
 → Independent Layer 3
-→ Power BI
+→ ToolGateway → PowerBIAdapter → Power BI
 → QueryResult
 → VerifiedFactSet
-→ fact-bounded Answer / ReportSpec
 ```
 
-Real DAX LLM call count 为 0。VerifiedFactSet 是外部数字、结果顺序、极值、筛选、时间与 provenance 的唯一 authority；无法证明的因果、趋势或严格排名不输出。
+Real DAX/Answer factual authority 不回到 LLM；Real failure 不回退 Mock。
 
-## 当前阶段：M2.6.4
+## 当前阶段：M3.0
 
-目标是 M0—M2 最终技术收口、文档真实性恢复、文档治理与 fresh hardened acceptance，不新增 M2 大架构。
+### 目标
 
-### 技术收口
+在任何 Renderer/HTML 开发前，先固化 M3 报表架构、唯一销售模板的数据需求、M3 专用 PBIX binding 与 fail-closed compatibility gate。
 
-- TopN ties：只把 QueryResult order 表达为 `result_position`，不把 row index 宣称为严格 business rank；保持 ties may exceed N。
-- Bounded semantic selection：exact canonical/approved alias/runtime metadata 继续 deterministic；LLM 只能在 metadata-backed Catalog shortlist 内选 ID，证据不唯一即 clarification，非法 ID 即 UNRESOLVED。
-- Intent `UNSUPPORTED`：明确破坏性/非数据请求保持廉价早停；data/report/metric/filter/time/ranking-shaped 请求必须进入现有 Grounding/capability check，失败不得污染 Memory。
+### 唯一 production template
 
-### 文档治理
+M3 MVP 只提供 `sales_report`。历史 `sales_weekly`、`satisfaction`、`operating_overview` 可以继续服务旧 Mock/test compatibility，但不得被 Catalog 或文档声明为 M3 production available。
 
-- 保留 `docs/00`—`09` 原路径；08 只做 Roadmap，09 只做当前交接。
-- 新增 `docs/index.md` 文档地图。
-- 原始 PRD 归档到 `docs/archive/original/PRD.md`；正式 PRD 唯一 SOT 为 `docs/00_product_requirements_document.md`。
-- 10/11 移入 `docs/specs/`；12 移入 `docs/milestones/m2/`。
-- 新增 deterministic Documentation Governance Gate，并纳入 CI。
+### TemplateContract 与 ReportDataPlan
 
-### Acceptance
+```text
+sales_report
+├─ total_sales
+│  └─ Measure: Total Sales
+├─ total_quantity
+│  └─ Measure: Total Quantity
+├─ sales_by_category
+│  ├─ Measure: Total Sales
+│  └─ Dimension: Category
+└─ top_products
+   ├─ Measure: Total Sales
+   ├─ Dimension: Product
+   ├─ Sort: desc
+   └─ TopN: 5
+```
 
-必须 fresh 通过 full backend pytest、Golden、Architecture、Repository Safety、Error Ledger、Documentation Governance、`git diff --check`，以及 Semantic Grounding、Clarification、Deterministic DAX、Independent Layer 3、VerifiedFactSet、fact-bounded output、ties、bounded selector、unsupported routing 的专项回归。
+TemplateContract 还固定数据来源、筛选、时间范围与生成时间 metadata，并绑定 `local_desktop_model` 与 M3 PBIX schema fingerprint。ReportDataPlanBuilder 只接受 template key + runtime schema；不接受 LLM draft、QueryResult、Known-answer expected 或自由 DAX。
 
-本轮 fresh 验收已完成：全量 backend `1397 passed`；Golden 11/11（Real 专用 case 1 个按设计跳过）；Real Semantic 34/34，production E2E Known-answer 8/8、Holdout 2/2、6 Conversation/16 Turn、`a1→a2→a3` 10/10、3/3 TopN，fallback/pollution/DAX LLM/Answer LLM 均为 0。当前 PBIX 的三个 TopN 边界未出现并列；ties truth safety 由固定 deterministic regression 覆盖，不把数据分布当作架构前提。
+### M3 Truth Boundary
 
-若 M2.6.4 暴露重大架构缺陷，停止并报告 architecture failure，不创建 M2.6.5/M2.6.6。
+```text
+Natural Language
+→ Intent / Template Grounding
+→ Semantic Grounding
+→ TemplateContract + runtime schema compatibility
+→ deterministic ReportDataPlan
+→ Canonical QueryPlan（per sub-query）
+→ Deterministic DAX → Independent Layer 3
+→ ToolGateway → PowerBIAdapter → Power BI
+→ QueryResult → VerifiedFactSet（per sub-query）
+→ deterministic Report Data Contract（M3.1）
+→ deterministic ReportSpec（M3.1）
+→ Fixed Renderer（M3.1）
+→ static HTML
+```
 
-## 后续路线
+LLM 对 template canonical key、报表查询集合、DAX、KPI/rows、排名、趋势、因果、Report factual truth、HTML/CSS 的 authority 均为 0。
 
-### M3 — 报表生成闭环
+### M3.0 Acceptance
 
-在用户明确批准后，固化报表资源 ID、查看/下载契约与固定模板渲染。Renderer 仍只能经 ToolGateway；不得改变 VerifiedFactSet 事实边界，不得把渲染逻辑放入 `local_mcp.py`。
+- unknown/legacy template fail closed；LLM wrong weak signal 不覆盖 Catalog。
+- missing Measure/Dimension/type 或 fingerprint mismatch 不产出 partial/fake plan。
+- 固定四查询可重复相等，且每项是 CanonicalQueryPlan。
+- production contract module 不导入 QueryResult、PowerBIAdapter、ToolGateway、DAX builder 或 Fact builder，不包含业务 oracle 数值。
+- Real smoke 使用 M3 专用 PBIX，经现有 M2 链执行四查询并构建 VerifiedFactSet；`source_mode=real`，fallback/LLM/Renderer=0。
+- full offline pytest、Golden、Architecture、Repository Safety、Error Ledger、Documentation Governance 与 `git diff --check` fresh 通过。
 
-### M4 — 持久化会话
+## M3 后续路线
 
-在用户明确批准后，实现持久化会话、历史搜索与最近对话；沿用 TurnPipeline 单写入者与 Pending/Committed 分离，不建立第二事务链。
+### M3.1 — Deterministic Report Assembly + Fixed Renderer
 
-### M5 — React 前端
+- 在现有 TurnPipeline 控制面内编排 ReportDataPlan 的四个 sub-query；每个查询继续独立经过 M2 执行与 FactSet 边界。
+- 由普通代码把多个 VerifiedFactSet/QueryResult 组成 deterministic Report Data Contract 与 deterministic ReportSpec。
+- 实现唯一 `sales_report` Fixed Renderer 与静态 HTML；无 JavaScript、自由 HTML、用户模板、PDF 或复杂图表框架。
+- 本地 HTML acceptance 只写 `local_state/reports/`，禁止提交。
 
-在用户明确批准后，按 `docs/specs/10_frontend_visual_and_interaction_spec.md` 使用 React + Vite 实现极简对话 UI；Provider Secret 永不进入前端。
+### M3.2 — Report Resource Contract
+
+- 实现 report resource repository、report_id、保存生命周期、查看与 HTML 下载 API。
+- API 不暴露任意路径或外部 URL；资源只引用后端生成内容。
+- 不进入 M4 persistence 或 M5 React。
+
+### M3.3 — Optional Hardened Acceptance
+
+若 M3.1/3.2 需要独立收口，则执行 Real/failure/security/HTML safety/文档治理与远程审计；不得借此扩展模板、图表或前端范围。
 
 ## 永久阶段边界
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
-- 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Harness 或 Memory/Snapshot 控制面。
-- Remote MCP 只有管理员条件具备且用户另行批准后，才按 ADR-006 恢复。
-- M3/M4/M5 必须逐阶段获得用户批准；当前阶段未验收不得提前实现。
-- 普通小轮不创建 Tag；禁止 force push。
+- 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Harness、Independent Layer 3 或 VerifiedFactSet。
+- 不扩展 M2 grammar；Report query 只能使用已封板 Measure/Dimension/EQ/resolved Time/Sort/TopN 能力。
+- M3 MVP 不做 PDF、自由 HTML、用户模板、JavaScript、动态 Power BI Report、React UI 或 Remote MCP。
+- M3.0 未验收前不得进入 M3.1；M3.1 未验收前不得进入 M3.2。
+- 普通轮次不创建 Tag；禁止 force push。
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 M0—M2 ready for final seal；Final Tag pending explicit approval*
+*最后更新：2026-08-17 | M3.0 sales_report contract + PBIX binding route*

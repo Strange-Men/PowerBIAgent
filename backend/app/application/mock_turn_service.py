@@ -54,6 +54,7 @@ from backend.app.schemas.data_contracts import (
     RenderedReport,
     ReportSpec,
     SemanticModelSchema,
+    UserContext,
 )
 
 
@@ -105,7 +106,14 @@ class MockTurnService:
         self._llm_runtime = llm_runtime
 
         self.tool_gateway = self._build_tool_gateway()
-        self.validator = ValidationService()
+        # Historical report fixtures stay isolated in Mock compatibility. They
+        # are not M3 production availability declarations.
+        self._user_context = UserContext(
+            allowed_templates=sorted(MockReportRenderer.ALLOWED_TEMPLATES)
+        )
+        self.validator = ValidationService(
+            allowed_templates=MockReportRenderer.ALLOWED_TEMPLATES
+        )
         # M1.6.3.2: Service 不持有 memory_repo/SnapshotStore —
         #   TurnPipeline 是 Memory 和 Snapshot 的唯一写入者
         self.pipeline = TurnPipeline(
@@ -320,6 +328,7 @@ class MockTurnService:
                 conversation_id=effective_conv_id,
                 runtime_mode=runtime_mode,
                 intent=intent.intent,
+                user=self._user_context,
             )
             schema_input = SchemaInput(semantic_model_key=semantic_model_key)
             schema: SemanticModelSchema = await self.tool_gateway.execute(
@@ -400,6 +409,7 @@ class MockTurnService:
                 conversation_id=effective_conv_id,
                 runtime_mode=runtime_mode,
                 intent=intent.intent,
+                user=self._user_context,
             )
             query_result: QueryResult = await self.tool_gateway.execute(
                 "execute_dax",
@@ -530,6 +540,7 @@ class MockTurnService:
                     conversation_id=effective_conv_id,
                     runtime_mode=runtime_mode,
                     intent=intent.intent,
+                    user=self._user_context,
                 )
                 rendered: RenderedReport = await self.tool_gateway.execute(
                     "render_report",

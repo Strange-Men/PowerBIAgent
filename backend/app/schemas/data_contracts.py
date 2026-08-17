@@ -351,7 +351,7 @@ class UserContext(BaseModel):
     roles: list[str] = Field(default_factory=lambda: ["viewer"])
     allowed_semantic_models: list[str] = Field(default_factory=lambda: ["mock_sales_model"])
     allowed_templates: list[str] = Field(
-        default_factory=lambda: ["sales_weekly", "satisfaction", "operating_overview"]
+        default_factory=lambda: ["sales_report"]
     )
     allowed_tools: list[str] = Field(
         default_factory=lambda: [

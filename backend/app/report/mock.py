@@ -21,6 +21,8 @@ class MockReportRenderer(ReportRenderer):
     - 不写入文件
     """
 
+    # M0-M2 test compatibility only. M3 production availability is owned by
+    # DEFAULT_TEMPLATE_CATALOG and contains only sales_report.
     ALLOWED_TEMPLATES = {"sales_weekly", "satisfaction", "operating_overview"}
 
     @property

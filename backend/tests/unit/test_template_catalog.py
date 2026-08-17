@@ -9,18 +9,18 @@ from backend.app.query_plan.template_catalog import (
 
 
 def test_canonical_key_and_approved_alias_resolve():
-    canonical = DEFAULT_TEMPLATE_CATALOG.ground("生成 sales_weekly")
-    alias = DEFAULT_TEMPLATE_CATALOG.ground("请生成销售周报")
-    assert canonical.canonical_key == "sales_weekly"
+    canonical = DEFAULT_TEMPLATE_CATALOG.ground("生成 sales_report")
+    alias = DEFAULT_TEMPLATE_CATALOG.ground("请生成销售报表")
+    assert canonical.canonical_key == "sales_report"
     assert canonical.method == "canonical_exact"
-    assert alias.canonical_key == "sales_weekly"
+    assert alias.canonical_key == "sales_report"
     assert alias.method == "approved_alias_exact"
 
 
 def test_llm_draft_cannot_define_canonical_template():
     result = DEFAULT_TEMPLATE_CATALOG.ground(
         "请生成一份报告",
-        weak_requested_template="sales_weekly",
+        weak_requested_template="satisfaction",
         required=True,
     )
     assert result.status == TemplateGroundingStatus.UNRESOLVED
@@ -32,12 +32,24 @@ def test_explicit_application_key_is_authoritative():
     result = DEFAULT_TEMPLATE_CATALOG.ground(
         "请生成报告",
         weak_requested_template="satisfaction",
-        explicit_template_key="operating_overview",
+        explicit_template_key="sales_report",
         required=True,
     )
     assert result.status == TemplateGroundingStatus.RESOLVED
-    assert result.canonical_key == "operating_overview"
+    assert result.canonical_key == "sales_report"
     assert result.weak_signal_disagrees is True
+
+
+def test_legacy_templates_are_known_but_not_m3_available():
+    assert DEFAULT_TEMPLATE_CATALOG.allowed_keys == ("sales_report",)
+    for key in ("sales_weekly", "satisfaction", "operating_overview"):
+        definition = DEFAULT_TEMPLATE_CATALOG.get_definition(key)
+        assert definition is not None
+        assert definition.allowed is False
+        result = DEFAULT_TEMPLATE_CATALOG.ground(
+            f"生成 {key}", explicit_template_key=key, required=True
+        )
+        assert result.status == TemplateGroundingStatus.UNRESOLVED
 
 
 def test_ambiguous_and_disabled_templates_fail_closed():

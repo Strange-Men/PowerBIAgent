@@ -30,6 +30,9 @@ class ReportSpecGenerationError(Exception):
 
 _MAX_ILLEGAL_FIELDS = 5
 
+# M1 standalone compatibility only. Production DeepSeekTurnService must pass
+# DEFAULT_TEMPLATE_CATALOG.allowed_keys explicitly; M3 never uses this set as
+# template availability authority.
 _DEFAULT_ALLOWED_TEMPLATES = {"sales_weekly", "satisfaction", "operating_overview"}
 
 
@@ -96,6 +99,8 @@ class DeepSeekReportSpecService:
                 "模板冲突（report_spec_template_conflict）"
             )
 
+        # The fallback is retained only for direct M1 compatibility tests.
+        # Production callers always pass a grounded explicit template.
         effective_template = explicit_template or requested_template or "sales_weekly"
         if effective_template not in allowed:
             raise ReportSpecGenerationError(

@@ -1,6 +1,6 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M2.6.4 factual boundary 已校准；M1 生成描述仅作历史兼容
+> **状态：** M3.0 sales_report contract baseline；M1 生成描述仅作历史兼容
 > **目标：** 定义前端组合回答的产品目标与数据契约
 > **重要：** 本文档描述未来 M5 前端展示目标。当前 Real API 以 Canonical QueryPlan → QueryResult → VerifiedFactSet → fact-bounded AnswerSpec / ReportSpec 为事实边界
 
@@ -30,6 +30,7 @@
 |------|------|
 | **M1.3.2—M1.4** | 历史契约来源；自由 LLM factual generation 已被 ADR-009 supersede |
 | **M2.6.4** | Real Answer/Report 只能消费 VerifiedFactSet / QueryResult 可证明事实 |
+| **M3.0** | `sales_report` TemplateContract + schema binding + deterministic ReportDataPlan；未实现 Renderer/HTML |
 | **M5** | 前端根据本文档实现组合回答渲染 |
 
 **当前不创建**：统一 `AssistantMessageEnvelope`、消息块列表模型、新 API。
@@ -355,9 +356,16 @@ M1.5/M5 可以确定：
 
 ## 十六、M3 报表资源边界
 
-M3 可以确定：
+M3.0 已确定：
 
-- ReportSpec 正式渲染管线
+- 唯一 production template 为 `sales_report`
+- TemplateContract 固定四查询及来源/筛选/时间/生成时间 metadata
+- schema/model fingerprint mismatch 或必需对象缺失时 fail closed
+- ReportDataPlan 不读取 LLM draft，每个 sub-query 复用 M2 封板执行与事实链
+
+M3.1/3.2 后续可以实现：
+
+- deterministic Report Data Contract / ReportSpec 与 Fixed Renderer
 - 报表资源 ID 生成和管理
 - 查看报表接口
 - 下载 HTML 接口
@@ -402,4 +410,4 @@ DeepSeek 提供语言模型能力，不是数据来源。M1 的 QueryPlan/DAX/An
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 VerifiedFactSet factual boundary 校准*
+*最后更新：2026-08-17 | M3.0 sales_report contract boundary*
