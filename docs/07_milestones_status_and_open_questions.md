@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M3.2 — Hardened Sales Report Visual Acceptance 已完成，M3 final closure
+> **状态：** M3.3 — Report Template V2 / Non-redundant Business Information Architecture
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -12,6 +12,7 @@
 | M3.0 | 报表架构、单一销售模板合同、M3 PBIX schema/Real baseline | ✅ commit/push/GPT remote audit PASS；已合入 main |
 | M3.1 | 真实销售报表、固定 HTML、ReportArtifact、查看/下载 | ✅ 远程审计 PASS、已合入 main，CI success |
 | M3.2 | 确定性 CSS 可视化、静态安全、Real 与视觉 hardened acceptance | ✅ 完成；M3 final closure，无 Tag |
+| **M3.3** | **报表模板V2、信息架构去冗余、capability-aware section** | ✅ **已完成** |
 | M4 | 持久化会话与历史搜索 | ⬜ 未开始 |
 | M5 | React + Vite 前端与联调 | ⬜ 未开始 |
 
@@ -32,7 +33,8 @@
 | M3 production template | ✅ 仅 `sales_report`；legacy/unknown unavailable |
 | ReportDataPlan | ✅ 全量数据固定四查询，不读 LLM draft |
 | SalesReportData / ReportSpec | ✅ 四组 QueryResult / VerifiedFactSet 确定性组装 |
-| Fixed Renderer | ✅ 固定 UTF-8 static HTML；确定性 Category / Top Product CSS 横条与同源表格；无 JS/CDN/外部资源/自由 HTML |
+| Fixed Renderer (V2) | ✅ 固定 UTF-8 static HTML；确定性 Category / Top Product CSS 横条，无同源表格重复（M3.3）；无 JS/CDN/外部资源/自由 HTML |
+| ReportCapability / SectionCapability | ✅ SectionKey: SALES_KPI / CATEGORY_BREAKDOWN / TOP_PRODUCTS；extension point: TIME_TREND / REGION_BREAKDOWN / CUSTOMER_BREAKDOWN（无 contract/facts 时 UNAVAILABLE，不生成伪造内容） |
 | ReportArtifact | ✅ report_id、provenance、content type/hash、原子本地保存 |
 | Resource API | ✅ view/download；unknown/path traversal 拒绝 |
 | Idempotency / Memory | ✅ replay 复用 report_id；render/store failure 不成功提交 Memory |
@@ -58,6 +60,15 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - 窄屏使用固定 Flex 换行保持 label/value/bar 对齐；桌面与 430px 静态渲染均经视觉检查 PASS。
 - HTML 保存前拒绝 active script、external URL 及 `link` / `iframe` / `object` / `embed` / `@import` / `url()` / `src=`。
 - DeepSeek prompt 明确只保留弱语言信号；报表 template、四查询、KPI、chart/table 事实、HTML/CSS、布局、保存与资源引用 authority 均为 0。
+
+## M3.3 Report Template V2 changes
+
+- 重构 sales_report 信息架构：每 section 回答一个独立业务问题，同一业务数据默认只展示一次；移除 Category bars 下方重复明细表、Top Product bars 下方重复明细表
+- 新增 `backend/app/report/capability.py`：SectionCapability 概念，根据 runtime schema + TemplateContract + VerifiedFactSet 确定性判断 section availability；SALES_KPI、CATEGORY_BREAKDOWN、TOP_PRODUCTS 三个可渲染 section；TIME_TREND / REGION_BREAKDOWN / CUSTOMER_BREAKDOWN 为纯 extension point
+- `FixedSalesReportRenderer` 改为 capability-aware：缺失 section 不输出 placeholder、不伪造 chart，section unavailable 时完全不出 HTML
+- 多语义模型防伪：Model A 当前 schema 所有 section 正常；Model B 多 Date/Region/Customer 字段不自动生成 section；Model C 缺 Category/Product 时 contract validation fail closed
+- 未新增业务查询、DAX、filter、template、LLM authority 或事实来源；四查询集合保持不变，PBIX 不变
+- 新增 regression tests：no duplicate visual、capability evidence gate、extension point 防自动激活
 
 ## 待确认事项
 

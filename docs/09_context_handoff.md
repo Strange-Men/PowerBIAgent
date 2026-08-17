@@ -1,11 +1,11 @@
 # 09 — 当前上下文交接
 
-> **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答“现在是什么、下一步做什么”。历史变更见 `CHANGELOG.md` 与 Git。
+> **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答”现在是什么、下一步做什么”。历史变更见 `CHANGELOG.md` 与 Git。
 > **最后更新：** 2026-08-17
 
 ## 当前阶段
 
-**M3.2 — Hardened Sales Report Visual Acceptance 已完成；M3 final closure。**
+**M3.3 — Report Template V2 / Non-redundant Business Information Architecture 已完成。**
 
 - M0—M2 Final Seal：`m2.6.4-m0-m2-final-seal` → `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。
 - M3.0：`e4b5c6c6a759cdf22c74c4d87902482563e27cad`，GPT remote audit PASS；已从 M2 seal 纯 fast-forward 合入 main。
@@ -13,6 +13,7 @@
 - M3.1：`fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57`，GPT remote audit PASS；已从 M3.0 纯 fast-forward 合入 main。
 - M3.1 main CI：`PowerBIAgent Validation` run `31989328261`，head SHA 与 M3.1 commit 一致，`success`；本地与远程开发分支已删除。
 - M3.2 直接在 `main` 完成 hardened acceptance；不创建新分支或 Tag，不进入 M4/M5/Remote MCP。
+- M3.3 在 `main` 完成 Report Template V2：section-capability 去冗余布局、capability.py 模块、multi-schema anti-fake tests；不创建 Tag。
 
 CI truth 必须分开描述：dev push 不代表 CI；当前 GitHub workflow 只覆盖 main push、PR → main 与 workflow_dispatch。本地 pytest/Golden/gates、Real Power BI smoke 与 GitHub CI 是三类独立证据。
 
@@ -57,7 +58,8 @@ TopN 只保留 `result_position` / QueryResult order；ties 可使结果超过 5
 
 - `backend/app/report/contracts.py`：TemplateContract、schema binding、validator、ReportDataPlan。
 - `backend/app/report/assembly.py`：`SalesReportDataAssembler` 与 `SalesReportSpecBuilder`；四组 FactSet 必须与 QueryResult/plan 重建结果完全一致。
-- `backend/app/report/fixed.py` + `templates/sales_report.html`：唯一 production Renderer；Category / Top Product 横条宽度由同组已验证值确定性归一化，保留实际值与同源表格；固定 HTML/CSS、UTF-8、无 JS/CDN/外部资源/自由 HTML，动态值 escape。
+- `backend/app/report/capability.py`：SectionCapability 概念，SALES_KPI / CATEGORY_BREAKDOWN / TOP_PRODUCTS 三个 section + extension point，仅根据 runtime schema + TemplateContract + VerifiedFactSet 确定性 gating，无 LLM/PowerBI authority、无 oracle。
+- `backend/app/report/fixed.py` + `templates/sales_report.html`：M3.3 capability-aware Renderer；每 section 只保留一种主要视觉表达（horizontal bar），移除了同源明细 table（不再图+表重复展示）；固定 HTML/CSS、UTF-8、无 JS/CDN/外部资源/自由 HTML，动态值 escape。
 - `backend/app/report/resources.py`：`ReportArtifact`、内存/本地 Repository、SHA-256 与原子写入；本地根目录固定 `local_state/reports/`。
 - `backend/app/application/deepseek_turn_service.py`：在同一 active TurnPipeline 内执行固定四查询；ReportData/Report factual/Renderer 不调用 LLM。
 - `backend/app/harness/tool_registry.py`：Renderer + repository store 仍封装在 `render_report` 白名单工具内。
@@ -73,6 +75,12 @@ TopN 只保留 `result_position` / QueryResult order；ties 可使结果超过 5
 - report_id 只接受 repository-owned `rpt_<uuidhex>`；任意路径与 unknown ID → 404。
 - render/store failure 返回失败并把 pending Memory 标记 FAILED；不提交成功 Memory。
 - 生产报表代码不含本地 oracle，不构造 fake QueryResult，不从 expected 构造 actual。
+
+## M3.3 multi-schema anti-fake
+
+- `backend/app/report/capability.py` 全新的 SectionCapability 模块，含 `compute_section_capabilities()`、`gate_sales_kpi()`、`gate_category_breakdown()`、`gate_top_products()`；extension point 预留 TIME_TREND / REGION_BREAKDOWN / CUSTOMER_BREAKDOWN（全部 UNAVAILABLE）
+- 新增 11 个测试：`test_no_duplicate_table_visual_regression`、`test_renderer_section_capability_respects_evidence`、`test_section_capability_compute`、`test_extension_points_never_generate_automatically`、`test_model_a_facts_work_with_section_capability`、`test_model_b_extra_fields_dont_auto_generate_sections`、`test_model_c_missing_category_fails_contract_validation`、`test_model_c_missing_product_fails_contract_validation`、`test_capability_anti_fake_no_oracle_in_source`、`test_capability_no_llm_no_powerbi`
+- 测试覆盖：duplicate visual regression、missing Category capability、missing Product capability、schema extra fields 不自动生成 section、forged FactSet fail、mixed source_mode fail、Renderer no LLM/PowerBI、no expected-as-actual、no fake QueryResult、HTML escape、report hash/view/download 不回归、idempotent replay 不回归
 
 ## M3 PBIX Real acceptance
 
@@ -121,4 +129,4 @@ M3 已最终收口。停止开发，不继续扩展 M3，不创建 Tag；只有�
 
 ---
 
-*最后更新：2026-08-17 | M3.2 hardened visual acceptance；M3 final closure，无 Tag*
+*最后更新：2026-08-17 | M3.3 Report Template V2 capability-aware non-redundant layout，无 Tag*

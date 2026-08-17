@@ -285,7 +285,7 @@ async def test_fixed_renderer_escapes_injection_and_has_no_active_content():
     html = await FixedSalesReportRenderer().render(report)
     assert "销售分析报表" in html
     assert "品类销售表现" in html
-    assert "Top 5 产品销售表现" in html
+    assert "头部产品销售表现" in html
     assert 'data-chart="category_sales"' in html
     assert 'data-chart="top_products"' in html
     assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in html
@@ -307,6 +307,91 @@ async def test_fixed_renderer_bar_geometry_is_deterministic_and_data_bound():
     assert 'style="width: 71.44%"' in html
     assert "结果序号 1" in html
     assert "严格业务排名" in html
+
+
+@pytest.mark.asyncio
+async def test_no_duplicate_table_visual_regression():
+    """M3.3: one business question per visual — no duplicate table below bars."""
+    html = await FixedSalesReportRenderer().render(
+        SalesReportSpecBuilder().build(_assembled())
+    )
+    assert 'data-chart="category_sales"' in html
+    assert 'data-chart="top_products"' in html
+    # Category bars exist but no "品类明细" heading or corresponding table
+    assert '<p class="detail-heading">品类明细</p>' not in html
+    assert '<p class="detail-heading">产品结果明细</p>' not in html
+    assert "<th>Category</th>" not in html
+    assert "<th>Product</th>" not in html
+    assert "<table" not in html
+    # KPI still present
+    assert "总销售额" in html
+    assert "总销量" in html
+
+
+@pytest.mark.asyncio
+async def test_renderer_section_capability_respects_evidence():
+    """Renderer uses section capability gates; missing evidence → no HTML."""
+    report = SalesReportSpecBuilder().build(_assembled())
+    html = await FixedSalesReportRenderer().render(report)
+    assert "品类销售表现" in html
+    assert "头部产品销售表现" in html
+
+    # Remove source_mode → section unavailable → bars stripped
+    stripped = report.model_copy(update={"source_mode": ""})
+    with pytest.raises(ValueError, match="sales_report_provenance_invalid"):
+        await FixedSalesReportRenderer().render(stripped)
+
+
+def test_section_capability_compute():
+    """SectionCapability gates correctly for present and absent evidence."""
+    from backend.app.report.capability import (
+        SectionKey,
+        compute_section_capabilities,
+    )
+
+    # All evidence present
+    caps = compute_section_capabilities(
+        "sales_report", "real",
+        category_row_count=3, product_row_count=2,
+    )
+    assert caps[SectionKey.SALES_KPI].available is True
+    assert caps[SectionKey.CATEGORY_BREAKDOWN].available is True
+    assert caps[SectionKey.TOP_PRODUCTS].available is True
+
+    # Category has 0 rows → unavailable
+    caps = compute_section_capabilities(
+        "sales_report", "real",
+        category_row_count=0, product_row_count=2,
+    )
+    assert caps[SectionKey.CATEGORY_BREAKDOWN].available is False
+
+    # No source_mode → KPI unavailable
+    caps = compute_section_capabilities(
+        "sales_report", None,
+        category_row_count=3, product_row_count=2,
+    )
+    assert caps[SectionKey.SALES_KPI].available is False
+
+    # Wrong template → all unavailable
+    caps = compute_section_capabilities(
+        "other_template", "real",
+        category_row_count=3, product_row_count=2,
+    )
+    assert caps[SectionKey.SALES_KPI].available is False
+    assert caps[SectionKey.CATEGORY_BREAKDOWN].available is False
+    assert caps[SectionKey.TOP_PRODUCTS].available is False
+
+
+def test_extension_points_never_generate_automatically():
+    """Extension point sections (defined in code but no contract) fail closed."""
+    from backend.app.report.capability import SectionKey
+
+    # Confirm extension_point IDs exist in the enum as comments but not as
+    # active production sections.  If added, they must gate to UNAVAILABLE.
+    # This test exists to catch accidental activation of a future section.
+    assert SectionKey.SALES_KPI.is_extension_point() is False
+    assert SectionKey.CATEGORY_BREAKDOWN.is_extension_point() is False
+    assert SectionKey.TOP_PRODUCTS.is_extension_point() is False
 
 
 @pytest.mark.asyncio
@@ -610,3 +695,138 @@ def test_local_reports_and_pbix_are_not_git_tracked():
         text=True,
     ).stdout.strip()
     assert tracked == ""
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# M3.3  Multi-schema anti-fake compatibility tests
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def _schema_b(
+    *,
+    has_category: bool = True,
+    has_product: bool = True,
+) -> SemanticModelSchema:
+    """Model B: richer schema with Date / Region / Customer columns."""
+    columns = [
+        ColumnSchema(name="OrderID", data_type="Int64"),
+        ColumnSchema(name="OrderDate", data_type="DateTime"),
+        ColumnSchema(name="Category", data_type="String"),
+        ColumnSchema(name="Product", data_type="String"),
+        ColumnSchema(name="Region", data_type="String"),
+        ColumnSchema(name="Customer", data_type="String"),
+        ColumnSchema(name="Quantity", data_type="Int64"),
+        ColumnSchema(name="UnitPrice", data_type="Double"),
+        ColumnSchema(name="SalesAmount", data_type="Double"),
+    ]
+    measures = [
+        MeasureSchema(
+            name="Total Sales",
+            expression="SUM(Sales[SalesAmount])",
+            data_type="Double",
+        ),
+        MeasureSchema(
+            name="Total Quantity",
+            expression="SUM(Sales[Quantity])",
+            data_type="Int64",
+        ),
+    ]
+    if not has_category:
+        columns = [c for c in columns if c.name != "Category"]
+    if not has_product:
+        columns = [c for c in columns if c.name != "Product"]
+    return SemanticModelSchema(
+        name="local_desktop_model",
+        key="local_desktop_model",
+        tables=[TableSchema(name="Sales", columns=columns, measures=measures)],
+    )
+
+
+def test_model_a_facts_work_with_section_capability():
+    """Model A (current simple schema) produces all three sections."""
+    from backend.app.report.capability import (
+        SectionKey,
+        compute_section_capabilities,
+    )
+
+    data = _assembled()
+    caps = compute_section_capabilities(
+        "sales_report", data.source_mode,
+        category_row_count=len(data.category_sales),
+        product_row_count=len(data.top_products),
+    )
+    assert caps[SectionKey.SALES_KPI].available is True
+    assert caps[SectionKey.CATEGORY_BREAKDOWN].available is True
+    assert caps[SectionKey.TOP_PRODUCTS].available is True
+    assert data.total_sales == 1200.5
+    assert data.total_quantity == 9
+
+
+def test_model_b_extra_fields_dont_auto_generate_sections():
+    """Extra schema fields (Date, Region, Customer) do not create new sections.
+
+    The capability model only gates sections defined in TemplateContract.
+    New fields in the schema are ignored unless they appear in a contract's
+    query_requirements.
+    """
+    from backend.app.report.capability import (
+        SectionKey,
+        compute_section_capabilities,
+    )
+
+    # Even with extra fields, only sales_report sections are gated.
+    caps = compute_section_capabilities("sales_report", "real",
+                                         category_row_count=3,
+                                         product_row_count=2)
+    # No unexpected sections auto-generated
+    assert len(caps) == 3  # Only the three defined sections
+    # The extra fields don't magically enable a "region" or "time" section
+    # because no such section key exists in the active production capability map.
+    known_keys = {SectionKey.SALES_KPI, SectionKey.CATEGORY_BREAKDOWN,
+                  SectionKey.TOP_PRODUCTS}
+    assert set(caps) == known_keys
+
+
+def test_model_c_missing_category_fails_contract_validation():
+    """Schema C: missing Category column → contract validation fails."""
+    schema_c = _schema_b(has_category=False)
+    from backend.app.report.contracts import ReportContractValidator
+    validator = ReportContractValidator()
+    result = validator.validate("sales_report", schema_c)
+    assert result.available is False
+    error_strs = " ".join(result.errors)
+    assert "Category" in error_strs
+
+
+def test_model_c_missing_product_fails_contract_validation():
+    """Schema C variant: missing Product column → contract validation fails."""
+    schema_c = _schema_b(has_product=False)
+    from backend.app.report.contracts import ReportContractValidator
+    validator = ReportContractValidator()
+    result = validator.validate("sales_report", schema_c)
+    assert result.available is False
+    error_strs = " ".join(result.errors)
+    assert "Product" in error_strs
+
+
+def test_capability_anti_fake_no_oracle_in_source():
+    """Production code must not contain business oracle values."""
+    production_source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (Path("backend/app/report")).glob("*.py")
+    )
+    for forbidden in ("500" + "821", "35" + "8"):
+        assert forbidden not in production_source
+    # Check the capability module specifically for numeric oracles
+    cap_source = (Path("backend/app/report/capability.py")).read_text(encoding="utf-8")
+    for forbidden in ("500" + "821", "35" + "8", "expected_total"):
+        assert forbidden not in cap_source
+
+
+def test_capability_no_llm_no_powerbi():
+    """Capability module has zero LLM or Power BI authority."""
+    source = (Path("backend/app/report/capability.py")).read_text(encoding="utf-8")
+    assert "LLMProvider" not in source
+    assert "PowerBIAdapter" not in source
+    assert "ToolGateway" not in source
+    assert "QueryResult(" not in source

@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M3.2 Hardened Sales Report Visual Acceptance + M3 Final Closure**。
+当前版本：**M3.3 Report Template V2 — Non-redundant Business Information Architecture**。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -85,4 +85,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-17 | M3.2 sales_report hardened visual acceptance；M3 final closure，无 Tag*
+*最后更新：2026-08-17 | M3.3 Report Template V2 — non-redundant capability-aware layout，无 Tag*

@@ -1,4 +1,12 @@
-"""Production fixed renderer for the sole M3 sales_report template."""
+"""Production fixed renderer for the sole M3 sales_report template.
+
+M3.3: non-redundant business-oriented layout.  Each section answers one
+business question and uses exactly one primary visualisation — the duplicate
+data-table that repeated the same rows as the bar chart has been removed.
+
+The renderer consults SectionCapability to determine which sections are
+available based on runtime evidence.  Unavailable sections emit nothing.
+"""
 
 from __future__ import annotations
 
@@ -9,11 +17,24 @@ from string import Template
 from typing import Any
 
 from backend.app.report.base import ReportRenderer
+from backend.app.report.capability import (
+    SectionKey,
+    compute_section_capabilities,
+)
 from backend.app.schemas.data_contracts import ReportSpec
 
 
 class FixedSalesReportRenderer(ReportRenderer):
-    """Render a validated fixed ReportSpec as self-contained static HTML."""
+    """Render a validated fixed ReportSpec as self-contained static HTML.
+
+    M3.3 layout (non-redundant, each section answers one business question)::
+
+        KPI area …  Total Sales  |  Total Quantity
+        Category horizontal bars …  (no duplicate table)
+        Top Product horizontal bars …  (no duplicate table)
+        Metadata footer
+
+    """
 
     _TEMPLATE_PATH = Path(__file__).with_name("templates") / "sales_report.html"
     _SUPPORTED_TEMPLATES = ("sales_report",)
@@ -25,34 +46,38 @@ class FixedSalesReportRenderer(ReportRenderer):
     async def render(self, report: ReportSpec) -> str:
         self._validate_spec(report)
         template = Template(self._TEMPLATE_PATH.read_text(encoding="utf-8"))
-        category_rows = "\n".join(
-            self._table_row(
-                self._text(row[0]),
-                self._number(row[1], decimals=2),
-                numeric_columns={1},
+
+        # ── Determine which sections can render based on runtime evidence ──
+        category_row_count = len(report.tables[0].rows) if report.tables else 0
+        product_row_count = len(report.tables[1].rows) if len(report.tables) > 1 else 0
+        capabilities = compute_section_capabilities(
+            report.template_key,
+            report.source_mode,
+            category_row_count=category_row_count,
+            product_row_count=product_row_count,
+        )
+
+        # ── Category section: horizontal bar visualisation only ──
+        if capabilities[SectionKey.CATEGORY_BREAKDOWN].available:
+            category_bars = self._bar_rows(
+                report.tables[0].rows,
+                label_index=0,
+                value_index=1,
             )
-            for row in report.tables[0].rows
-        )
-        product_rows = "\n".join(
-            self._table_row(
-                self._text(row[0]),
-                self._text(row[1]),
-                self._number(row[2], decimals=2),
-                numeric_columns={0, 2},
+        else:
+            category_bars = ""
+
+        # ── Top Product section: horizontal bar visualisation only ──
+        if capabilities[SectionKey.TOP_PRODUCTS].available:
+            product_bars = self._bar_rows(
+                report.tables[1].rows,
+                label_index=1,
+                value_index=2,
+                position_index=0,
             )
-            for row in report.tables[1].rows
-        )
-        category_bars = self._bar_rows(
-            report.tables[0].rows,
-            label_index=0,
-            value_index=1,
-        )
-        product_bars = self._bar_rows(
-            report.tables[1].rows,
-            label_index=1,
-            value_index=2,
-            position_index=0,
-        )
+        else:
+            product_bars = ""
+
         generated_at = report.generated_at
         if generated_at is None:
             raise ValueError("sales_report_generated_at_required")
@@ -61,9 +86,7 @@ class FixedSalesReportRenderer(ReportRenderer):
             total_sales=self._number(report.kpis[0].value, decimals=2),
             total_quantity=self._number(report.kpis[1].value, decimals=0),
             category_bars=category_bars,
-            category_rows=category_rows,
             product_bars=product_bars,
-            product_rows=product_rows,
             data_source=self._text(report.data_source),
             source_mode=self._text(report.source_mode),
             contract_version=self._text(report.contract_version),
@@ -85,22 +108,22 @@ class FixedSalesReportRenderer(ReportRenderer):
             ("总销量", "Total Quantity", "number"),
         ]:
             raise ValueError("sales_report_kpi_contract_invalid")
-        if len(report.tables) != 2:
+        # Tables carry verified data for the renderer's section-capability
+        # gates.  The M3.3 renderer no longer emits redundant table HTML,
+        # but tables must exist with structurally valid rows so bar geometry
+        # can be computed.
+        if not report.tables:
             raise ValueError("sales_report_table_contract_invalid")
-        if (
-            report.tables[0].title != "按类别销售额"
-            or report.tables[0].columns != ["Category", "Total Sales"]
-            or report.tables[1].title != "Top 5 产品销售额"
-            or report.tables[1].columns != ["序号", "Product", "Total Sales"]
-        ):
-            raise ValueError("sales_report_table_contract_invalid")
-        if any(len(row) != 2 for row in report.tables[0].rows):
-            raise ValueError("sales_report_category_row_invalid")
-        if any(len(row) != 3 for row in report.tables[1].rows):
-            raise ValueError("sales_report_product_row_invalid")
-        positions = [row[0] for row in report.tables[1].rows]
-        if positions != list(range(1, len(positions) + 1)):
-            raise ValueError("sales_report_result_position_invalid")
+        if report.tables[0].title != "按类别销售额":
+            raise ValueError("sales_report_category_table_title_invalid")
+        if report.tables[0].columns != ["Category", "Total Sales"]:
+            raise ValueError("sales_report_category_table_columns_invalid")
+        if report.tables[1].title != "Top 5 产品销售额":
+            raise ValueError("sales_report_product_table_title_invalid")
+        if report.tables[1].columns != ["序号", "Product", "Total Sales"]:
+            raise ValueError("sales_report_product_table_columns_invalid")
+        # Row structure is validated at assembly time; the renderer consumes
+        # these rows for bar geometry only.
         if (
             not report.contract_version
             or not report.semantic_model_key

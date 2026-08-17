@@ -5,66 +5,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>$title</title>
   <style>
-    :root { color-scheme: light; font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; color: #172033; background: #edf2f7; }
-    * { box-sizing: border-box; }
-    body { margin: 0; padding: 36px 20px; background: #edf2f7; }
-    main { max-width: 1080px; margin: 0 auto; }
-    .report-header { margin-bottom: 22px; padding: 4px 2px; }
-    .eyebrow { margin: 0 0 8px; color: #2563a9; font-size: 12px; font-weight: 700; letter-spacing: .12em; }
-    h1 { margin: 0; color: #10213a; font-size: clamp(28px, 4vw, 38px); line-height: 1.18; letter-spacing: .01em; }
-    .report-subtitle { margin: 10px 0 0; color: #66758b; font-size: 15px; }
-    .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-bottom: 24px; }
-    .kpi { position: relative; overflow: hidden; min-height: 132px; border: 1px solid #d9e3ef; border-radius: 14px; padding: 24px 26px; background: #fff; box-shadow: 0 8px 22px rgba(37, 75, 120, .06); }
-    .kpi::before { position: absolute; inset: 0 auto 0 0; width: 5px; background: #2f72b7; content: ""; }
-    .kpi-label { display: block; margin-bottom: 13px; color: #63738a; font-size: 14px; font-weight: 600; }
-    .kpi-value { display: block; color: #122844; font-size: clamp(30px, 4.2vw, 42px); font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-    .report-section { margin-top: 22px; border: 1px solid #dce5ef; border-radius: 14px; padding: 26px; background: #fff; box-shadow: 0 8px 22px rgba(37, 75, 120, .05); }
-    .section-header { margin-bottom: 22px; }
-    h2 { margin: 0; color: #172b47; font-size: 21px; line-height: 1.3; }
-    .section-description { margin: 7px 0 0; color: #6b788b; font-size: 13px; line-height: 1.6; }
-    .business-chart { display: grid; gap: 14px; margin-bottom: 26px; padding: 20px; border: 1px solid #e4eaf1; border-radius: 11px; background: #f8fafc; }
-    .bar-row { display: grid; grid-template-columns: minmax(150px, 230px) minmax(180px, 1fr) minmax(96px, auto); align-items: center; gap: 14px; min-width: 0; }
-    .bar-label { min-width: 0; color: #273a54; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+    :root { color-scheme: light; font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; color: #172033; background: #f5f7fa; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; padding: 36px 20px; background: #f5f7fa; }
+    main { max-width: 1024px; margin: 0 auto; }
+    .report-header { margin-bottom: 24px; }
+    .eyebrow { margin: 0 0 6px; color: #2b6cb0; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 0; color: #0f1e33; font-size: clamp(26px, 3.6vw, 34px); line-height: 1.2; letter-spacing: -.01em; font-weight: 700; }
+    .report-subtitle { margin: 8px 0 0; color: #5f6d80; font-size: 14px; }
+    .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .kpi { border: 1px solid #e0e6ed; border-radius: 12px; padding: 22px 24px; background: #fff; }
+    .kpi-label { display: block; margin-bottom: 10px; color: #5f6d82; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+    .kpi-value { display: block; color: #0f1e33; font-size: clamp(28px, 3.8vw, 40px); font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .report-section { margin-top: 24px; border: 1px solid #e0e6ed; border-radius: 12px; padding: 24px; background: #fff; }
+    .section-header { margin-bottom: 20px; }
+    h2 { margin: 0; color: #14273f; font-size: 19px; line-height: 1.3; font-weight: 650; }
+    .section-description { margin: 6px 0 0; color: #67748a; font-size: 13px; line-height: 1.5; }
+    .business-chart { display: grid; gap: 12px; }
+    .bar-row { display: grid; grid-template-columns: minmax(140px, 210px) minmax(160px, 1fr) minmax(90px, auto); align-items: center; gap: 12px; min-width: 0; }
+    .bar-label { min-width: 0; color: #23364f; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
     .bar-name { display: block; font-weight: 600; }
-    .result-position { display: block; margin-bottom: 3px; color: #758298; font-size: 11px; font-weight: 500; }
-    .bar-track { position: relative; overflow: hidden; height: 13px; border-radius: 999px; background: #e4ebf3; }
-    .bar-fill { display: block; min-width: 4px; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2f72b7, #5b9bd5); }
-    .bar-row.negative .bar-fill { background: #bf5b5b; }
+    .result-position { display: block; margin-bottom: 2px; color: #6f7d93; font-size: 11px; font-weight: 500; }
+    .bar-track { position: relative; overflow: hidden; height: 14px; border-radius: 999px; background: #e6ecf3; }
+    .bar-fill { display: block; min-width: 4px; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2b6cb0, #5b9bd5); }
+    .bar-row.negative .bar-fill { background: #c95b5b; }
     .bar-row.zero .bar-fill { min-width: 0; }
-    .bar-value { color: #243954; font-size: 13px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .detail-heading { margin: 0 0 10px; color: #506077; font-size: 13px; font-weight: 700; }
-    .table-wrap { overflow-x: auto; border: 1px solid #e1e7ee; border-radius: 9px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 11px 14px; border-bottom: 1px solid #e8edf3; text-align: left; overflow-wrap: anywhere; }
-    th { background: #f2f6fa; color: #526078; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
-    td { color: #2d3e55; font-size: 13px; }
-    tbody tr:last-child td { border-bottom: 0; }
-    tbody tr:nth-child(even) td { background: #fbfcfd; }
-    .number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    footer { margin-top: 22px; padding: 18px 4px 0; border-top: 1px solid #d9e1ea; color: #7a8799; font-size: 11px; line-height: 1.8; }
+    .bar-value { color: #1f334d; font-size: 13px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    footer { margin-top: 24px; padding: 16px 4px 0; border-top: 1px solid #dce2e9; color: #7a8799; font-size: 11px; line-height: 1.8; }
     footer span { display: inline-block; margin-right: 18px; }
+
     @media (max-width: 720px) {
       body { padding: 18px 12px; }
       .kpis { grid-template-columns: 1fr; }
-      .kpi { min-height: 112px; padding: 21px 22px; }
+      .kpi { padding: 18px 20px; }
       .report-section { padding: 20px 16px; }
-      .business-chart { padding: 16px 13px; }
-      .bar-row { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+      .bar-row { display: flex; flex-wrap: wrap; gap: 6px 10px; }
       .bar-label { order: 1; flex: 1 1 0; }
       .bar-value { order: 2; flex: 0 0 auto; }
       .bar-track { order: 3; flex: 0 0 100%; }
     }
+
     @media print {
       body { padding: 0; background: #fff; }
       main { max-width: none; }
-      .kpi, .report-section { break-inside: avoid; box-shadow: none; }
+      .kpi, .report-section { break-inside: avoid; }
     }
   </style>
 </head>
 <body>
   <main>
     <header class="report-header">
-      <p class="eyebrow">POWER BI · SALES REPORT</p>
+      <p class="eyebrow">Power BI · 销售报表</p>
       <h1>$title</h1>
       <p class="report-subtitle">关键销售指标、品类表现与产品结果概览</p>
     </header>
@@ -74,37 +65,23 @@
       <div class="kpi"><span class="kpi-label">总销量</span><span class="kpi-value">$total_quantity</span></div>
     </div>
 
-    <section class="report-section">
+    <section class="report-section" aria-label="品类销售表现">
       <div class="section-header">
         <h2>品类销售表现</h2>
-        <p class="section-description">横条长度按当前结果中的销售额确定性归一化；下方保留同源明细便于核对。</p>
+        <p class="section-description">销售主要由哪些品类贡献？横条长度按当前结果中的销售额确定性归一化。</p>
       </div>
       <div class="business-chart" data-chart="category_sales" role="img" aria-label="各品类销售额横向比较图">
         $category_bars
       </div>
-      <p class="detail-heading">品类明细</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Category</th><th class="number">Total Sales</th></tr></thead>
-          <tbody>$category_rows</tbody>
-        </table>
-      </div>
     </section>
 
-    <section class="report-section">
+    <section class="report-section" aria-label="头部产品销售表现">
       <div class="section-header">
-        <h2>Top 5 产品销售表现</h2>
-        <p class="section-description">顺序沿用 QueryResult 的 result_position，仅表示结果位置，不声明严格业务排名。</p>
+        <h2>头部产品销售表现</h2>
+        <p class="section-description">头部产品的贡献结构怎样？顺序沿用 QueryResult 的 result_position，不声明严格业务排名。</p>
       </div>
       <div class="business-chart" data-chart="top_products" role="img" aria-label="Top 5 产品销售额横向比较图">
         $product_bars
-      </div>
-      <p class="detail-heading">产品结果明细</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th class="number">结果序号</th><th>Product</th><th class="number">Total Sales</th></tr></thead>
-          <tbody>$product_rows</tbody>
-        </table>
       </div>
     </section>
 

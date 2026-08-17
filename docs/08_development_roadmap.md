@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M3.2 — Hardened Sales Report Visual Acceptance 已完成，M3 final closure
+> **状态：** M3.3 — Report Template V2 / Non-redundant Business Information Architecture
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -12,6 +12,7 @@
 | M3.0 | Report Architecture + Template/DataPlan Contract | ✅ 完成、远程审计 PASS、已合入 main |
 | M3.1 | Sales Report Full Generation + Static HTML + Report Resource | ✅ 远程审计 PASS、已合入 main，CI success |
 | M3.2 | Hardened visual acceptance / M3 final closure | ✅ 完成；不含新业务能力，无 Tag |
+| M3.3 | Report Template V2 / Non-redundant Business Information Architecture | ✅ 已完成 |
 | M4 | 持久化会话、搜索与最近对话 | ⬜ 未开始 |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
 
@@ -87,6 +88,15 @@ M3.2 未新增模板、查询、DAX、业务语义、图表类型、资源 API�
 - 响应式布局固定为窄屏 Flex 换行；无 JavaScript、CDN、外部库或网络请求。
 - Renderer / Repository 拒绝更多外部资源载体；DeepSeek prompt 明确无报表事实、HTML/CSS、布局、保存或 reference authority。
 - M3 final closure 不创建 Tag；后续不得继续扩展 M3 或进入 M4/M5，除非用户另行明确授权。
+
+## M3.3 — Report Template V2 / Non-redundant Information Architecture
+
+M3.3 未新增业务查询、DAX、filter、template、LLM authority 或事实来源；重构 sales_report 信息架构，引入 capability-aware section 设计。
+
+- 新增 `backend/app/report/capability.py`：SectionCapability 概念，根据 runtime schema + TemplateContract + VerifiedFactSet 确定性判断 section availability；SALES_KPI、CATEGORY_BREAKDOWN、TOP_PRODUCTS 三个可渲染 section；TIME_TREND / REGION_BREAKDOWN / CUSTOMER_BREAKDOWN 为纯 extension point，无 contract/facts 时自动 UNAVAILABLE，绝不生成占位或伪造内容
+- `FixedSalesReportRenderer` 改为 section-capability 感知渲染：每 section 只保留一种主要视觉表达（horizontal bar），移除与 bars 重复的同源明细 table；KPI、Category bars、Top Product bars 各回答独立业务问题
+- `sales_report.html` 模板重写：简化为双列 KPI → 品类 bars → 产品 bars → metadata footer；响应式窄屏 Flex 换行；无 JS/CDN/外部资源；无 `<table>` 或重复数据区域
+- 多语义模型防伪测试：Model A 当前 schema 所有 section 正常；Model B 多 Date/Region/Customer 字段不自动生成 section；Model C 缺 Category/Product 时 contract validation fail closed；production 代码验证无 oracle、无 LLM/PowerBI authority
 
 ## 永久阶段边界
 

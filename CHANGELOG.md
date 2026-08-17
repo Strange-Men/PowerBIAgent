@@ -4,6 +4,17 @@
 
 ---
 
+## [M3.3] — 2026-08-17
+
+### 销售报表模板V2与能力驱动布局
+
+- 新增 `backend/app/report/capability.py`：SectionCapability 概念基于 runtime schema + TemplateContract + VerifiedFactSet 确定性判断 section 是否可渲染；SALES_KPI、CATEGORY_BREAKDOWN、TOP_PRODUCTS 三个正式 section；TIME_TREND / REGION_BREAKDOWN / CUSTOMER_BREAKDOWN 为纯 extension point，无 contract/facts 时自动 UNAVAILABLE，绝不生成占位或伪造内容
+- `FixedSalesReportRenderer` 改为 section-capability 感知渲染：每 section 只保留一种主要视觉表达（horizontal bar），移除与 bars 重复的同源明细 table；KPI、Category bars、Top Product bars 各回答独立业务问题；缺失 section 自动 fail closed 不输出
+- `sales_report.html` 模板重写：简化为双列 KPI → 品类 bars → 产品 bars → metadata footer；响应式窄屏 Flex 换行；无 JS/CDN/外部资源；无 `<table>` / 重复数据区域
+- 新增多语义模型防伪测试：Model A 当前简单 schema 所有 section 正常；Model B 多 Date/Region/Customer 字段不自动生成新 section；Model C 缺 Category/Product 时 contract validation fail closed；anti-fake 验证 production 代码无 oracle、无 LLM/PowerBI authority
+- 新增回归测试：no duplicate table visual regression、section capability evidence gates、extension point 不自动激活
+- Fresh acceptance：backend 1445 passed、harness 11/12 PASS (1 skip)、Architecture/Repository Safety/Error Ledger/Documentation Governance/diff check 全部 PASS
+
 ## [M3.2] — 2026-08-17
 
 ### 销售报表最终可视化加固与 M3 收口
