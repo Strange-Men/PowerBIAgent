@@ -386,7 +386,7 @@ M3.2 已完成：
 - 横条宽度按同组已验证值的绝对最大值归一化，固定半入舍入到两位小数；label、可见值、`result_position` 与 table row 仍来自同一 `ReportSpec`
 - 窄屏使用固定 Flex 换行；无 JavaScript、CDN、外部库、网络请求或 LLM 生成的 HTML/CSS
 - Renderer / Repository 保存前拒绝 `link`、`iframe`、`object`、`embed`、`@import`、`url()` 与 `src=` 等外部资源载体
-- 桌面与 430px 静态视觉验收、M3 PBIX Real smoke、完整 offline/gates 均 PASS，M3 final closure
+- 桌面与 430px 静态视觉验收、M3 PBIX Real smoke、完整 offline/gates 均 PASS，M0-M3 final seal
 
 M3.2 未新增报表资源功能。“最近报表”属于后续 M4/M5 范围，M3 不实现列表或会话持久化。
 
@@ -429,4 +429,4 @@ DeepSeek 提供语言模型能力，不是数据来源。M1 的 QueryPlan/DAX/An
 
 ---
 
-*最后更新：2026-08-17 | M3.2 sales_report hardened visual contract；M3 final closure*
+*最后更新：2026-08-18 | M3.2 sales_report hardened visual contract；M0-M3 final seal*

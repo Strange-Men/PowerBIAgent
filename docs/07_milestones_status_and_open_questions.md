@@ -112,8 +112,8 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 | M0—M2 Final Seal | `m2.6.4-m0-m2-final-seal` → `70748da` |
 | M3.0 main | `e4b5c6c`；CI run `31986207118` success |
 | M3.1 main | `fa4cc0c`；CI run `31989328261` success；开发分支已删除 |
-| M3 final Tag | **none；本轮未授权且未创建** |
+| **M0—M3 Final Seal** | **`m3.4-m0-m3-final-seal` → 本轮 seal commit** |
 
 ---
 
-*最后更新：2026-08-17 | M3.4 Adaptive Report Planning + Visualization/Layout Policy*
+*最后更新：2026-08-18 | M0—M3 Final Seal — M3.4 Adaptive Report Planning + Visualization/Layout Policy*

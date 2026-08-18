@@ -17,7 +17,7 @@
 - 最小通用扩展：`CanonicalQueryPlan.dimension_tables` / `dimension_order`（star-schema 重名列消歧，None 时 M2 行为不变），DeterministicDAXBuilder / Layer 2 / RestrictedDAXVerifier 同步支持；ChartSpec 增加结构化 `visual_type` / `business_role` / `series` / `layout_hint`
 - 测试矩阵：Simple/Rich/synthetic 三模型；5 个 NL cases（只看销售额 / 看看销售趋势 / 按区域看销售表现 / 看看头部客户 / 生成完整销售分析报表）；LLM weak-signal 边界；fact-gate 空结果 drop；全部 anti-fake 回归保留
 - Real acceptance（双模型）：Simple PBIX 完整请求解析 4 sections / 4 查询（M3 基线行为不变）；Rich PBIX（fingerprint `31505f7987133c235554bc00e7ca5ce3fd42351b08e984c0c011f48410e56157`）解析 9 sections / 9 真实查询（15 个月度趋势点、3 品类、4 区域、Top 5 产品/客户），4 种 visual；source real；DAX/ReportData/Report factual/Renderer LLM calls 与 fallback/fake QueryResult 全 0
-- Fresh acceptance：backend 1477 passed、Golden 11 PASS / 1 manual skip、Architecture / Repository Safety / Error Ledger / Documentation Governance / diff check 全部 PASS；桌面与 430px 截图已产出，程序化 DOM/几何检查 PASS，最终视觉 PASS 待用户人工确认
+- Fresh acceptance：backend 1477 passed、Golden 11 PASS / 1 manual skip、Architecture / Repository Safety / Error Ledger / Documentation Governance / diff check 全部 PASS；桌面与 430px 截图已产出，程序化 DOM/几何检查 PASS，最终视觉验收用户人工确认 PASS。
 
 ---
 

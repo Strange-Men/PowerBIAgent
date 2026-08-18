@@ -13,11 +13,11 @@
 | M3.1 | Sales Report Full Generation + Static HTML + Report Resource | ✅ 远程审计 PASS、已合入 main，CI success |
 | M3.2 | Hardened visual acceptance / M3 收口阶段 | ✅ 完成，无 Tag |
 | M3.3 | Report Template V2 / Non-redundant Business Information Architecture | ✅ 已完成 |
-| **M3.4** | **Adaptive Report Planning + Visualization/Layout Policy** | ✅ **已完成**（无 Tag） |
+| **M3.4** | **Adaptive Report Planning + Visualization/Layout Policy** | ✅ **已完成** |
 | M4 | 持久化会话、搜索与最近对话 | ⬜ 未开始 |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
 
-M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad`、M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 已纯 fast-forward 合入 main，对应 main CI 均 success。M3.2 / M3.3 / M3.4 直接在 main 完成；不创建 Tag。
+M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad`、M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 已纯 fast-forward 合入 main，对应 main CI 均 success。M3.2 / M3.3 / M3.4 直接在 main 完成。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。
 
 ## 永久 M2 事实链
 
@@ -110,8 +110,8 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
-- M3 未封板（无 Tag）；未经用户另行明确批准不得进入 M4/M5；普通轮次不创建 Tag；禁止 force push。
+- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；未经用户另行明确批准不得进入 M4/M5；禁止 force push。
 
 ---
 
-*最后更新：2026-08-17 | M3.4 Adaptive Report Planning + Visualization/Layout Policy*
+*最后更新：2026-08-18 | M0—M3 Final Seal — M3.4 Adaptive Report Planning + Visualization/Layout Policy*

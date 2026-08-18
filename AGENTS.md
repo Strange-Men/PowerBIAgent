@@ -16,7 +16,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - M3.1 已在 `fa4cc0c` 通过远程审计并纯 fast-forward 合入 `main`；对应 main push CI `31989328261` success，开发分支已删除。
 - M3.2 已完成确定性 CSS 横条、静态安全与视觉验收；M3.3 完成 capability-aware section 去冗余布局。
 - M3.4 已完成 Adaptive Report Planning：schema-aware capability engine（9 sections）、deterministic ReportPlan、受控 Report Intent weak signal、Visualization/Layout/Theme Policy、Renderer 多 visual（KPI/Line/Donut/Column/HBar）；ADR-011 supersede ADR-010 固定四查询限制；Simple/Rich 双 PBIX Real acceptance 通过。
-- M3 未封板（无 Tag）；不得进入 M4/M5、开发 Remote MCP 或创建 Tag，除非用户另行明确授权。
+- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；不得进入 M4/M5 或开发 Remote MCP，除非用户另行明确授权。
 
 当前真实主链：
 
@@ -87,4 +87,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-17 | M3.4 Adaptive Report Planning + Visualization/Layout Policy，无 Tag*
+*最后更新：2026-08-18 | M0—M3 Final Seal — M3.4 Adaptive Report Planning + Visualization/Layout Policy*

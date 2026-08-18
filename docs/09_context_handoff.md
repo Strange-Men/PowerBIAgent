@@ -10,7 +10,7 @@
 - M0—M2 Final Seal：`m2.6.4-m0-m2-final-seal` → `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。
 - M3.0：`e4b5c6c6a759cdf22c74c4d87902482563e27cad`，main CI `31986207118` success。
 - M3.1：`fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57`，main CI `31989328261` success。
-- M3.2 / M3.3 直接在 `main` 完成；M3.4 在 `main` 完成 Adaptive Report Planning：schema-aware capability engine、ReportPlan、Visualization/Layout/Theme Policy、ReportSpec 图表支持、双模型 Real acceptance。不创建 Tag。
+- M3.2 / M3.3 直接在 `main` 完成；M3.4 在 `main` 完成 Adaptive Report Planning：schema-aware capability engine、ReportPlan、Visualization/Layout/Theme Policy、ReportSpec 图表支持、双模型 Real acceptance。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。
 
 CI truth 必须分开描述：dev push 不代表 CI；当前 GitHub workflow 只覆盖 main push、PR → main 与 workflow_dispatch。本地 pytest/Golden/gates、Real Power BI smoke 与 GitHub CI 是三类独立证据。
 
@@ -133,7 +133,7 @@ Simple PBIX（仅 Sales 表 + 两个 measure）完整请求解析为 4 sections 
 - Golden（`python -m backend.app.harness.cases`）：11 PASS / 1 manual Real baseline skip；0 FAIL / 0 ERROR。
 - Architecture Gate、Repository Safety、Error Ledger、Documentation Governance、`git diff --check`：PASS。
 - Real full report smoke：Simple / Rich 双模型 PASS；oracle/source/hash/API/gitignore counters 全部通过。
-- 视觉：桌面 1024px 与 430px 窄屏 headless 截图已产出（`local_state/visual/`：rich_desktop.png / rich_narrow.png / simple_desktop.png），程序化 DOM/几何检查 PASS（Rich 5 sections、4 KPI、donut sum 100%、line 15 点、无 table/script、响应式 media rules 存在；Simple 2 charts donut+hbar）；**最终视觉 PASS 待用户人工确认（本环境无法查看图像）**。
+- 视觉：桌面 1024px 与 430px 窄屏 headless 截图已产出（`local_state/visual/`：rich_desktop.png / rich_narrow.png / simple_desktop.png），程序化 DOM/几何检查 PASS（Rich 5 sections、4 KPI、donut sum 100%、line 15 点、无 table/script、响应式 media rules 存在；Simple 2 charts donut+hbar）；**用户人工视觉验收 PASS**。
 
 ## 关键命令
 
@@ -159,8 +159,8 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\sales_report_contract_smo
 
 ## 下一步
 
-M3 未封板（无 Tag）。后续轮次必须从 `AGENTS.md` Cold Start，重新取得 fresh tests/Real/CI 证据。不进入 M4/M5、不开发 Remote MCP、不创建 Tag；只有用户另行明确授权后才可继续。
+M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。后续轮次必须从 `AGENTS.md` Cold Start，重新取得 fresh tests/Real/CI 证据。不进入 M4/M5、不开发 Remote MCP；只有用户另行明确授权后才可继续。
 
 ---
 
-*最后更新：2026-08-17 | M3.4 Adaptive Report Planning + Visualization/Layout Policy，无 Tag*
+*最后更新：2026-08-18 | M0—M3 Final Seal — M3.4 Adaptive Report Planning + Visualization/Layout Policy*

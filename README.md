@@ -32,7 +32,7 @@ Real 路径的 DAX LLM authority/call count 为 0。LLM 不定义 canonical Meas
 - M3 专用 `PowerBIAgent_M3_Test.pbix` 只用于 Local Real acceptance，不替换 M2 封板 PBIX；schema fingerprint 漂移 fail closed。
 - M3.4 新增 schema-aware capability engine（9 sections）、deterministic ReportPlan、受控 Report Intent weak signal、Visualization/Layout/Theme Policy；`SalesReportRenderer` 支持 KPI cards / Line / Donut / Column / HBar；无 JavaScript/CDN/外部资源/自由 HTML；"只看销售额"产出单 KPI 最小报表，"生成完整销售分析报表"产出能力驱动 dashboard。
 - LLM 唯一新增职责：report-intent weak signal（registry-owned section ID），单独计数；DAX/ReportData/Report factual/Renderer LLM authority 仍为 0。
-- artifact 原子保存到 gitignored `local_state/reports/`，view/download 只接受 repository-owned report_id。M3 未封板（无 Tag）；Remote MCP、M4、M5 仍 Deferred。
+- artifact 原子保存到 gitignored `local_state/reports/`，view/download 只接受 repository-owned report_id。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；Remote MCP、M4、M5 仍 Deferred。
 
 幂等规则：相同 `request_id` + 相同请求重放且不重复执行；相同 ID + 不同内容返回 HTTP 409；并发同 ID 只有一个 Owner 执行。
 
@@ -78,7 +78,7 @@ Health 示例：
   "ready": true,
   "configuration_ready": true,
   "powerbi_live_connected": false,
-  "version": "M3.2",
+  "version": "M3.4",
   "llm_mode": "mock",
   "powerbi_mode": "mock"
 }
@@ -167,4 +167,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\sales_report_contract_smo
 
 ---
 
-*最后更新：2026-08-17 | M3.2 sales_report hardened visual acceptance；M3 final closure*
+*最后更新：2026-08-18 | M0—M3 Final Seal — M3.4 Adaptive Report Planning + Visualization/Layout Policy*
