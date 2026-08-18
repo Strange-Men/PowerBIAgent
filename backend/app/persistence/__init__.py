@@ -34,6 +34,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -61,6 +62,26 @@ def build_sqlite_url(settings: Settings) -> str:
     return f"sqlite+aiosqlite:///{posix}"
 
 
+def _set_sqlite_pragmas(dbapi_connection, connection_record):
+    """Apply per-connection SQLite PRAGMAs.
+
+    Called once per new DBAPI connection via the ``PoolEvents.connect``
+    event (registered through SQLAlchemy's ``event.listen``).
+
+    Per-connection PRAGMAs (applied to *every* new connection):
+    * ``foreign_keys = ON``  — FK enforcement is per-connection in SQLite
+    * ``busy_timeout = 5000`` — 5 second busy wait, bounded
+
+    Database-level PRAGMAs (persistent once set; do NOT go here):
+    * ``journal_mode = WAL`` — database-level, survives connection close.
+      Applied once by ``configure_engine()`` during startup.
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON;")
+    cursor.execute("PRAGMA busy_timeout = 5000;")
+    cursor.close()
+
+
 def create_engine(
     settings: Settings,
     *,
@@ -68,10 +89,13 @@ def create_engine(
 ) -> AsyncEngine:
     """Create a configured SQLAlchemy AsyncEngine for SQLite.
 
-    PRAGMAs applied:
-    * ``foreign_keys = ON``
-    * ``journal_mode = WAL``
-    * ``busy_timeout = 5000`` (5 seconds — bounded, not infinite)
+    PRAGMAs — applied by ``_set_sqlite_pragmas`` on **every new DBAPI
+    connection** via ``event.listen``:
+    * ``foreign_keys = ON`` (per-connection; default is OFF in SQLite)
+    * ``busy_timeout = 5000`` (per-connection)
+
+    ``journal_mode = WAL`` is database-level and persistent; it is applied
+    once by the separate ``configure_engine()`` helper.
     """
     db_url = build_sqlite_url(settings)
     engine = create_async_engine(
@@ -81,18 +105,31 @@ def create_engine(
             "check_same_thread": False,  # required for asyncio usage
         },
     )
+
+    # Attach per-connection PRAGMA handler to the underlying sync pool.
+    # SQLAlchemy's async engine wraps a sync engine internally; we listen
+    # on the sync engine's pool for the PoolEvents.connect event.
+    event.listen(engine.sync_engine, "connect", _set_sqlite_pragmas)
+
     return engine
 
 
 async def configure_engine(engine: AsyncEngine) -> None:
-    """Apply runtime PRAGMA settings to the engine.
+    """Apply database-level runtime settings to the engine.
 
     Call once after the engine is created, before first use.
+
+    ``journal_mode = WAL`` is a **database-level** setting in SQLite.
+    Once set, it persists across connection close/open and survives
+    engine restarts.  It is applied here once during startup rather
+    than on every connection.
+
+    Per-connection settings (``foreign_keys``, ``busy_timeout``) are
+    handled by ``_set_sqlite_pragmas`` attached to the engine's pool
+    event in ``create_engine()``.
     """
     async with engine.connect() as conn:
-        await conn.exec_driver_sql("PRAGMA foreign_keys = ON;")
         await conn.exec_driver_sql("PRAGMA journal_mode = WAL;")
-        await conn.exec_driver_sql("PRAGMA busy_timeout = 5000;")
         await conn.commit()
 
 

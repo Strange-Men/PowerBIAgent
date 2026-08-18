@@ -21,7 +21,7 @@
 | M4.4 | Restart/crash acceptance | ⬜ 未开始 |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
 
-M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad`、M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 已纯 fast-forward 合入 main，对应 main CI 均 success。M3.2 / M3.3 / M3.4 直接在 main 完成。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。M4.0 已在 main 完成本地持久化架构：SQLite + SQLAlchemy Async + Alembic；MemoryRepository/SnapshotRepository ABC；settings 扩展；26 新增 tests（1503 total）。
+M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad`、M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 已纯 fast-forward 合入 main，对应 main CI 均 success。M3.2 / M3.3 / M3.4 直接在 main 完成。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。M4.0 已在 main 完成本地持久化架构：SQLite + SQLAlchemy Async + Alembic；MemoryRepository/SnapshotRepository ABC；settings 扩展；26 新增 tests（1503 total）。M4.0 后续 corrective hardening：pytest-asyncio CI 兼容修复、conversation 复合 PK/FK 命名空间隔离、PRAGMA 每连接事件修正；corrective migration `01dc0d90d920`；40 持久化 tests + 全仓 1517 total。
 
 ## 永久 M2 事实链
 

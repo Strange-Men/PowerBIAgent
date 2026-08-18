@@ -28,6 +28,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     String,
     Text,
@@ -56,7 +57,12 @@ class Base(DeclarativeBase):
 
 
 class ConversationModel(Base):
-    """One conversation root."""
+    """One conversation root.
+
+    Identity: (runtime_mode, conversation_id).
+    This allows ``mock`` and ``real`` conversations to share the same
+    ``conversation_id`` while remaining fully isolated.
+    """
 
     __tablename__ = "conversations"
 
@@ -64,7 +70,7 @@ class ConversationModel(Base):
         String(64), primary_key=True, comment="UUIDv4 conversation identifier"
     )
     runtime_mode: Mapped[str] = mapped_column(
-        String(16), nullable=False, comment="mock | real"
+        String(16), primary_key=True, comment="mock | real"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False),
@@ -81,8 +87,7 @@ class ConversationModel(Base):
     )
 
     __table_args__ = (
-        # Fast lookup: conversations by runtime mode
-        {"sqlite_autoincrement": False},
+        # Composite primary key is (runtime_mode, conversation_id)
     )
 
     # Relationships
@@ -111,10 +116,7 @@ class WorkMemoryModel(Base):
         String(64), nullable=False, index=True, comment="幂等请求 ID"
     )
     conversation_id: Mapped[str] = mapped_column(
-        String(64),
-        ForeignKey("conversations.conversation_id"),
-        nullable=False,
-        index=True,
+        String(64), nullable=False, index=True,
     )
     runtime_mode: Mapped[str] = mapped_column(
         String(16), nullable=False, comment="mock | real"
@@ -175,6 +177,11 @@ class WorkMemoryModel(Base):
             "request_id",
             name="uq_work_memories_runtime_request",
         ),
+        ForeignKeyConstraint(
+            ["runtime_mode", "conversation_id"],
+            ["conversations.runtime_mode", "conversations.conversation_id"],
+            name="fk_work_memories_conv_composite",
+        ),
     )
 
 
@@ -228,6 +235,11 @@ class PendingClarificationModel(Base):
             "conversation_id",
             name="uq_pending_clarifications_runtime_conv",
         ),
+        ForeignKeyConstraint(
+            ["runtime_mode", "conversation_id"],
+            ["conversations.runtime_mode", "conversations.conversation_id"],
+            name="fk_pending_clarifications_conv_composite",
+        ),
     )
 
 
@@ -251,10 +263,7 @@ class ResultSnapshotModel(Base):
         String(16), nullable=False
     )
     conversation_id: Mapped[str] = mapped_column(
-        String(64),
-        ForeignKey("conversations.conversation_id"),
-        nullable=False,
-        index=True,
+        String(64), nullable=False, index=True,
     )
     request_fingerprint_hash: Mapped[str] = mapped_column(
         String(64), nullable=False, comment="SHA-256 request fingerprint"
@@ -284,6 +293,11 @@ class ResultSnapshotModel(Base):
             "runtime_mode",
             "request_id",
             name="uq_result_snapshots_runtime_request",
+        ),
+        ForeignKeyConstraint(
+            ["runtime_mode", "conversation_id"],
+            ["conversations.runtime_mode", "conversations.conversation_id"],
+            name="fk_result_snapshots_conv_composite",
         ),
     )
 

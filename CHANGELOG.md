@@ -26,6 +26,27 @@
 - 26 个持久化基础设施测试（engine/Alembic/ABC/serialization/constraints/PRAGMA）
 - 全仓 1503 tests passing（1477 + 26）
 
+### M4.0 Corrective Hardening — 2026-08-18
+
+**CI 修复：**
+- pytest-asyncio async fixture 兼容性修复：`@pytest.fixture` → `@pytest_asyncio.fixture`
+
+**Schema 加固：**
+- conversations 表 PK 从单列 `(conversation_id)` 改为复合 `(runtime_mode, conversation_id)`，实现 Mock/Real 命名空间隔离
+- work_memories、result_snapshots、pending_clarifications 的外键改为复合 FK `(runtime_mode, conversation_id)` 引用 conversations，防止跨命名空间错误关联
+- 新增 corrective migration `01dc0d90d920`（无历史改写）
+
+**PRAGMA 修复：**
+- foreign_keys=ON 和 busy_timeout=5000 现在通过 SQLAlchemy 连接池事件在每个新 DBAPI 连接上设置（不再只配置第一个连接）
+- journal_mode=WAL 保持在 configure_engine() 中（数据库级别，持久化）
+
+**测试新增（14 tests）：**
+- 5 个 migration 约束验证测试（复合 PK/FK、initial→head 升级）
+- 2 个 conversation 命名空间测试（同 conv_id 不同 mode 允许、同 mode 拒绝重复）
+- 4 个复合 FK 隔离测试（cross-namespace 拒绝、same-namespace 通过）
+- 3 个 PRAGMA 每连接测试（单引擎多连接、独立双引擎）
+- 全仓 1517 tests passing
+
 **注意：** M4.0 只建立 persistence foundation。生产 Memory / Snapshot 仍未正式切换 SQLite（属于 M4.1）。
 
 ## [M3.4] — 2026-08-17
