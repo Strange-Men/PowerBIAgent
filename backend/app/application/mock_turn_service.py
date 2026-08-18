@@ -45,6 +45,7 @@ from backend.app.memory.repository import (
 from backend.app.memory.request_fingerprint import (
     ScenarioFingerprint,
 )
+from backend.app.memory.result_snapshot import SnapshotRepository
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.base import ReportRenderer
 from backend.app.report.mock import MockReportRenderer
@@ -87,6 +88,7 @@ class MockTurnService:
         report_repository: Optional[ReportRepository] = None,
         config: Optional[HarnessConfig] = None,
         llm_provider: Optional[MockLLMProvider] = None,  # M1.6.3: 新的直接注入方式
+        snapshot_store: Optional[SnapshotRepository] = None,  # M4.1
     ):
         _repo = memory_repo or InMemoryMemoryRepository()
         self.powerbi = powerbi_adapter or MockPowerBIAdapter()
@@ -123,6 +125,7 @@ class MockTurnService:
         self.pipeline = TurnPipeline(
             config=self.config,
             memory_repo=_repo,
+            snapshot_store=snapshot_store,
         )
 
     def _build_tool_gateway(self) -> ToolGateway:

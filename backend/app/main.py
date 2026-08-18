@@ -1,7 +1,12 @@
-"""FastAPI 应用 — M3.2
+"""FastAPI 应用 — M4.1
 
 启动命令：
     python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+
+M4.1 更新：
+- 新增 persistence factory：Sqlite 时创建 SQLiteMemoryRepository + SQLiteSnapshotRepository
+- Memory 时使用 InMemoryMemoryRepository + ResultSnapshotStore（默认）
+- engine/repo 生命周期在 lifespan 中管理（create/dispose）
 
 M1.5 更新：
 - 根据 Settings 条件初始化 MockTurnService 或 DeepSeekTurnService
@@ -14,18 +19,68 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from backend.app.api.routes import router
 from backend.app.application.mock_turn_service import MockTurnService
-from backend.app.config.settings import LLMMode, PowerBIMode, Settings, get_settings
+from backend.app.config.settings import (
+    LLMMode,
+    PersistenceBackend,
+    PowerBIMode,
+    Settings,
+    get_settings,
+)
 from backend.app.harness.models import HarnessConfig
-from backend.app.memory.repository import InMemoryMemoryRepository
+from backend.app.memory.repository import InMemoryMemoryRepository, MemoryRepository
+from backend.app.memory.result_snapshot import ResultSnapshotStore, SnapshotRepository
+from backend.app.persistence.database import (
+    configure_engine,
+    create_engine,
+    create_session_factory,
+    dispose_engine,
+)
+from backend.app.persistence.repositories.memory import SQLiteMemoryRepository
+from backend.app.persistence.repositories.snapshot import SQLiteSnapshotRepository
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.powerbi.local_mcp import LocalMCPPowerBIAdapter
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.fixed import SalesReportRenderer
 from backend.app.report.mock import MockReportRenderer
 from backend.app.report.resources import LocalReportRepository
+
+
+# ---------------------------------------------------------------------------
+# Persistence factory
+# ---------------------------------------------------------------------------
+
+
+def _create_repos(
+    settings: Settings,
+) -> tuple[MemoryRepository, Optional[SnapshotRepository], Optional[AsyncEngine], Optional[async_sessionmaker]]:
+    """Create memory + snapshot repositories based on ``persistence_backend``.
+
+    Returns
+    -------
+    (memory_repo, snapshot_store, engine, session_factory)
+        *memory_repo* is always a ``MemoryRepository``.
+        *snapshot_store* is a ``SnapshotRepository`` (or the default if memory backend).
+        *engine* is an ``AsyncEngine`` (sqlite) or ``None``.
+        *session_factory* is an ``async_sessionmaker`` (sqlite) or ``None``.
+    """
+    if settings.persistence_backend == PersistenceBackend.SQLITE:
+        engine = create_engine(settings, echo=False)
+        # configure_engine is async — handled in lifespan
+        session_factory = create_session_factory(engine)
+        memory_repo = SQLiteMemoryRepository(session_factory=session_factory)
+        snapshot_store = SQLiteSnapshotRepository(session_factory=session_factory)
+        return memory_repo, snapshot_store, engine, session_factory
+    else:
+        return InMemoryMemoryRepository(), None, None, None
+
+
+# ---------------------------------------------------------------------------
+# Lifespan
+# ---------------------------------------------------------------------------
 
 
 @asynccontextmanager
@@ -39,7 +94,7 @@ async def lifespan(app: FastAPI):
         - DeepSeek 配置不完整: turn_service=None → Health 503
         - Remote MCP: turn_service=None → Health 503
 
-    shutdown: 清理资源（关闭 DeepSeek httpx Client 等）
+    shutdown: 清理资源（关闭 SQLite engine、DeepSeek httpx Client 等）
     """
     # Settings — 可由 create_app(settings=...) 注入，否则使用默认
     if not hasattr(app.state, "settings") or app.state.settings is None:
@@ -53,10 +108,18 @@ async def lifespan(app: FastAPI):
     report_repository = LocalReportRepository()
     app.state.report_repository = report_repository
 
+    # 初始化持久化仓库
+    memory_repo, snapshot_store, _engine, _session_factory = _create_repos(settings)
+    app.state._persistence_engine = _engine  # 保存用于 shutdown
+
+    # Configure engine if SQLite (async setup)
+    if _engine is not None:
+        await configure_engine(_engine)
+
     if settings.llm_mode == LLMMode.MOCK and settings.powerbi_mode == PowerBIMode.MOCK:
         # Mock + Mock: 原有 MockTurnService
         turn_service = MockTurnService(
-            memory_repo=InMemoryMemoryRepository(),
+            memory_repo=memory_repo,
             powerbi_adapter=MockPowerBIAdapter(),
             report_renderer=MockReportRenderer(),
             report_repository=report_repository,
@@ -95,7 +158,7 @@ async def lifespan(app: FastAPI):
                 powerbi_adapter = MockPowerBIAdapter()
 
             turn_service = DeepSeekTurnService(
-                memory_repo=InMemoryMemoryRepository(),
+                memory_repo=memory_repo,
                 llm_provider=deepseek_provider,
                 powerbi_adapter=powerbi_adapter,
                 report_renderer=SalesReportRenderer(),
@@ -124,11 +187,16 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
+    # shutdown — dispose SQLite engine（如有）
+    if _engine is not None:
+        await dispose_engine(_engine)
+
     # 清理 app.state 引用，防止跨测试污染
     app.state.turn_service = None
     app.state.mock_turn_service = None
     app.state.report_repository = None
     app.state.settings = None
+    app.state._persistence_engine = None
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:

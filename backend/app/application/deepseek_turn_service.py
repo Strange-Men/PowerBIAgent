@@ -147,6 +147,7 @@ class DeepSeekTurnService:
         settings: Settings,
         config: Optional[HarnessConfig] = None,
         report_repository: ReportRepository | None = None,
+        snapshot_store: Optional[SnapshotRepository] = None,  # M4.1
     ):
         if llm_provider.is_mock:
             raise ValueError("DeepSeekTurnService 要求非 Mock LLM Provider")
@@ -179,6 +180,7 @@ class DeepSeekTurnService:
         self.pipeline = TurnPipeline(
             config=self.config,
             memory_repo=memory_repo,
+            snapshot_store=snapshot_store,
         )
 
     def _build_tool_gateway(self) -> ToolGateway:
