@@ -124,6 +124,7 @@ async def lifespan(app: FastAPI):
             report_renderer=MockReportRenderer(),
             report_repository=report_repository,
             config=harness_config,
+            snapshot_store=snapshot_store,
         )
 
     elif (
@@ -159,6 +160,7 @@ async def lifespan(app: FastAPI):
 
             turn_service = DeepSeekTurnService(
                 memory_repo=memory_repo,
+                snapshot_store=snapshot_store,
                 llm_provider=deepseek_provider,
                 powerbi_adapter=powerbi_adapter,
                 report_renderer=SalesReportRenderer(),

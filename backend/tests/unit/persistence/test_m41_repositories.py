@@ -95,6 +95,26 @@ from backend.app.persistence.serialization import domain_to_json, json_to_domain
 # ===========================================================================
 
 
+def _create_partial_unique_index(engine):
+    """Create the partial unique index for concurrent commit invariant.
+
+    Needed in test fixtures that bypass Alembic migrations (the index
+    is normally created by migration ``ab8d7df39a02``).
+    """
+    from sqlalchemy import text as sa_text
+    import asyncio
+
+    async def _create():
+        async with engine.begin() as conn:
+            await conn.execute(sa_text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_work_memories_committed_version "
+                "ON work_memories (runtime_mode, conversation_id, memory_version) "
+                "WHERE state_status = 'committed'"
+            ))
+
+    asyncio.run(_create())
+
+
 def _tmp_db_path() -> str:
     tmp = Path(tempfile.mkdtemp()) / "test_m41.db"
     return str(tmp)
@@ -114,6 +134,14 @@ async def sqlite_repos():
     engine = create_engine(settings, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Apply the DB-level concurrent commit invariant (partial unique index)
+        # that Alembic migration ab8d7df39a02 creates.
+        from sqlalchemy import text as sa_text
+        await conn.execute(sa_text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_work_memories_committed_version "
+            "ON work_memories (runtime_mode, conversation_id, memory_version) "
+            "WHERE state_status = 'committed'"
+        ))
     await configure_engine(engine)
 
     session_factory = create_session_factory(engine)
@@ -155,6 +183,12 @@ async def engine_a():
     engine = create_engine(settings, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        from sqlalchemy import text as sa_text
+        await conn.execute(sa_text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_work_memories_committed_version "
+            "ON work_memories (runtime_mode, conversation_id, memory_version) "
+            "WHERE state_status = 'committed'"
+        ))
     await configure_engine(engine)
     yield engine, db_path
     await dispose_engine(engine)
@@ -391,18 +425,31 @@ class TestVersionConflict:
 
 
 class TestConcurrentCommit:
-    """9: concurrent same-base commit only one succeeds"""
+    """9: concurrent same-base commit — strict invariant enforcement
+
+    The business invariant is:
+    Given two PENDING memories for the same (runtime_mode, conversation_id)
+    with the same base_memory_version = N, exactly one commit() must
+    succeed (becoming N+1) and the other must raise
+    MemoryVersionConflictError (or return None if caught).
+
+    The DB-level partial unique index
+    ``ix_work_memories_committed_version`` guarantees this even under
+    concurrent SQLite WAL transactions.
+    """
 
     @pytest.mark.asyncio
-    async def test_concurrent_commits_only_one_succeeds(self, sqlite_memory, valid_evidence):
+    async def test_concurrent_commits_strict_one_succeeds(self, sqlite_memory, valid_evidence):
+        """Two concurrent same-base commits — exactly one succeeds,
+        the other fails with MemoryVersionConflictError."""
         m1 = StructuredWorkMemory(
-            conversation_id="conv-conc", request_id="req-cc1",
+            conversation_id="conv-strict", request_id="req-st1",
             current_intent="data_question", measures=["Data1"],
             runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
             base_memory_version=0,
         )
         m2 = StructuredWorkMemory(
-            conversation_id="conv-conc", request_id="req-cc2",
+            conversation_id="conv-strict", request_id="req-st2",
             current_intent="data_question", measures=["Data2"],
             runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
             base_memory_version=0,
@@ -410,24 +457,86 @@ class TestConcurrentCommit:
         await sqlite_memory.create_pending(m1, RuntimeDataMode.MOCK)
         await sqlite_memory.create_pending(m2, RuntimeDataMode.MOCK)
 
-        async def commit_safe(m):
+        async def try_commit(m):
             try:
                 return await sqlite_memory.commit(m, valid_evidence)
             except (MemoryVersionConflictError, MemoryCommitDeniedError):
                 return None
 
-        results = await asyncio.gather(
-            commit_safe(m1), commit_safe(m2)
-        )
+        results = await asyncio.gather(try_commit(m1), try_commit(m2))
         successes = [r for r in results if r is not None]
-        # At least one must succeed
-        assert len(successes) >= 1
-        # If exactly one succeeded, version must be 1
-        if len(successes) == 1:
-            latest = await sqlite_memory.get_latest_committed(
-                "conv-conc", RuntimeDataMode.MOCK
+        conflicts = [r for r in results if r is None]
+
+        # Strict invariant: exactly one success, exactly one conflict
+        assert len(successes) == 1, (
+            f"需要恰好 1 个成功提交，得到 {len(successes)}: "
+            f"{[r.request_id if r else None for r in successes]}"
+        )
+        assert len(conflicts) == 1, (
+            f"需要恰好 1 个冲突，得到 {len(conflicts)}"
+        )
+
+        # The successful commit must be N+1 (base=0 → version=1)
+        committed = successes[0]
+        assert committed.memory_version == 1
+        assert committed.base_memory_version == 0
+
+        # DB state: only one committed row for this conversation/mode at version 1
+        latest = await sqlite_memory.get_latest_committed(
+            "conv-strict", RuntimeDataMode.MOCK
+        )
+        assert latest is not None
+        assert latest.memory_version == 1
+        assert latest.state_status == MemoryStatus.COMMITTED
+
+        # The failed commit's memory must NOT be committed in DB
+        failed_req_id = m2.request_id if m1.request_id == committed.request_id else m1.request_id
+        failed_mem = await sqlite_memory.get_by_request_id(failed_req_id, RuntimeDataMode.MOCK)
+        assert failed_mem is not None
+        assert failed_mem.state_status != MemoryStatus.COMMITTED, (
+            f"memory {failed_req_id} 不能错误标记为 committed"
+        )
+
+    @pytest.mark.asyncio
+    async def test_concurrent_commits_multi_round(self, sqlite_memory, valid_evidence):
+        """Run concurrent commit test across multiple rounds to prove
+        the invariant holds under repeated concurrent access, not just
+        a single lucky scheduling order."""
+        for round_idx in range(8):
+            conv_id = f"conv-multi-r{round_idx}"
+
+            m1 = StructuredWorkMemory(
+                conversation_id=conv_id, request_id=f"req-r{round_idx}-a",
+                current_intent="data_question", measures=["A"],
+                runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+                base_memory_version=0,
             )
-            assert latest.memory_version == 1
+            m2 = StructuredWorkMemory(
+                conversation_id=conv_id, request_id=f"req-r{round_idx}-b",
+                current_intent="data_question", measures=["B"],
+                runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+                base_memory_version=0,
+            )
+            await sqlite_memory.create_pending(m1, RuntimeDataMode.MOCK)
+            await sqlite_memory.create_pending(m2, RuntimeDataMode.MOCK)
+
+            async def tc(m):
+                try:
+                    return await sqlite_memory.commit(m, valid_evidence)
+                except (MemoryVersionConflictError, MemoryCommitDeniedError):
+                    return None
+
+            results = await asyncio.gather(tc(m1), tc(m2))
+            successes = [r for r in results if r is not None]
+            conflicts = [r for r in results if r is None]
+
+            assert len(successes) == 1, (
+                f"Round {round_idx}: 需要 1 个成功，得到 {len(successes)}"
+            )
+            assert len(conflicts) == 1, (
+                f"Round {round_idx}: 需要 1 个冲突，得到 {len(conflicts)}"
+            )
+            assert successes[0].memory_version == 1
 
 
 class TestMockRealIsolation:
@@ -907,6 +1016,117 @@ class TestFactoryWiring:
         assert engine is None
         assert session_factory is None
         assert memory_repo is not None
+        assert snapshot_store is None
+
+    @pytest.mark.asyncio
+    async def test_sqlite_wiring_snapshot_store_injected(self):
+        """persistence_backend=sqlite → service.pipeline.snapshot_store
+        is isinstance(SQLiteSnapshotRepository)."""
+        import tempfile
+        from pathlib import Path
+        from backend.app.main import _create_repos
+        from backend.app.persistence.repositories.snapshot import SQLiteSnapshotRepository
+        from backend.app.memory.result_snapshot import ResultSnapshotStore
+
+        db_path = str(Path(tempfile.mkdtemp()) / "test_wiring.db")
+        settings = Settings(
+            persistence_backend=PersistenceBackend.SQLITE,
+            persistence_database_path=db_path,
+        )
+
+        engine = create_engine(settings, echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        await configure_engine(engine)
+
+        session_factory = create_session_factory(engine)
+        memory_repo = SQLiteMemoryRepository(session_factory=session_factory)
+        snapshot_store = SQLiteSnapshotRepository(session_factory=session_factory)
+
+        from backend.app.application.mock_turn_service import MockTurnService
+        from backend.app.powerbi.mock import MockPowerBIAdapter
+        from backend.app.report.mock import MockReportRenderer
+        from backend.app.harness.models import HarnessConfig
+
+        service = MockTurnService(
+            memory_repo=memory_repo,
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+            snapshot_store=snapshot_store,
+            config=HarnessConfig(),
+        )
+
+        assert isinstance(snapshot_store, SQLiteSnapshotRepository)
+        assert isinstance(service.pipeline.snapshot_store, SQLiteSnapshotRepository)
+
+        await dispose_engine(engine)
+
+    @pytest.mark.asyncio
+    async def test_memory_wiring_uses_result_snapshot_store(self):
+        """persistence_backend=memory → service uses default ResultSnapshotStore."""
+        from backend.app.memory.result_snapshot import ResultSnapshotStore
+        from backend.app.application.mock_turn_service import MockTurnService
+        from backend.app.memory.repository import InMemoryMemoryRepository
+        from backend.app.powerbi.mock import MockPowerBIAdapter
+        from backend.app.report.mock import MockReportRenderer
+        from backend.app.harness.models import HarnessConfig
+
+        service = MockTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+            config=HarnessConfig(),
+        )
+
+        assert isinstance(service.pipeline.snapshot_store, ResultSnapshotStore)
+
+    @pytest.mark.asyncio
+    async def test_snapshot_restart_recovery_via_wiring(self):
+        """SQLite snapshot survives restart when accessed through the
+        actual service/pipeline wiring path."""
+        import tempfile
+        from pathlib import Path
+        from backend.app.persistence.repositories.snapshot import SQLiteSnapshotRepository
+        from backend.app.memory.result_snapshot import TurnResultSnapshot
+
+        db_path = str(Path(tempfile.mkdtemp()) / "test_wiring_restart.db")
+        settings = Settings(
+            persistence_backend=PersistenceBackend.SQLITE,
+            persistence_database_path=db_path,
+        )
+
+        # Process A: save snapshot
+        eng1 = create_engine(settings, echo=False)
+        async with eng1.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        await configure_engine(eng1)
+        sf1 = create_session_factory(eng1)
+        snap_repo1 = SQLiteSnapshotRepository(session_factory=sf1)
+
+        snap = TurnResultSnapshot(
+            request_id="wiring-restart",
+            conversation_id="conv-wiring",
+            intent="data_question",
+            response_type="answer",
+            terminal_state="completed",
+            answer="Wiring restart survived!",
+            request_fingerprint_hash="f" * 64,
+        )
+        await snap_repo1.save(snap, RuntimeDataMode.MOCK)
+        await dispose_engine(eng1)
+
+        # Process B: read through SQLiteSnapshotRepository
+        eng2 = create_engine(settings, echo=False)
+        await configure_engine(eng2)
+        sf2 = create_session_factory(eng2)
+        snap_repo2 = SQLiteSnapshotRepository(session_factory=sf2)
+
+        retrieved = await snap_repo2.get("wiring-restart", RuntimeDataMode.MOCK)
+        assert retrieved is not None
+        assert retrieved.answer == "Wiring restart survived!"
+        assert retrieved.conversation_id == "conv-wiring"
+
+        await dispose_engine(eng2)
 
     @pytest.mark.asyncio
     async def test_temp_db_isolation(self):

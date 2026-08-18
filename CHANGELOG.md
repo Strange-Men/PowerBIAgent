@@ -2,6 +2,32 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.1] — 2026-08-18
+
+### SQLite 记忆与请求快照持久化 + 并发提交 invariant
+
+**Production wiring:**
+- `main.py` 中 `MockTurnService` 和 `DeepSeekTurnService` 现在正确注入 `snapshot_store` 参数（之前 SQLite 模式下为 `None`）
+- `persistence_backend=sqlite` → 使用 `SQLiteMemoryRepository` + `SQLiteSnapshotRepository`
+- `persistence_backend=memory` → 使用 `InMemoryMemoryRepository` + `ResultSnapshotStore`（默认）
+
+**DB 级 concurrent commit invariant:**
+- 新增 partial unique index `ix_work_memories_committed_version`：`UNIQUE(runtime_mode, conversation_id, memory_version) WHERE state_status = 'committed'`
+- 确保同一 (runtime_mode, conversation_id, memory_version) 最多只有一个 COMMITTED 行
+- `commit()` 内捕捉 `IntegrityError`/`OperationalError` 转换为 `MemoryVersionConflictError`
+- 新增 corrective migration `ab8d7df39a02`
+
+**严格并发测试：**
+- 旧测试 `len(successes) >= 1` → 严格 `assert len(successes) == 1 and len(conflicts) == 1`
+- 8 轮多轮并发验证（against SQLite WAL mode race）
+
+**测试：**
+- 新增 3 个 wiring 测试（SQLite snapshot injection、memory ResultSnapshotStore default、restart recovery via wiring）
+- 新增 2 个严格 concurrent commit 测试（single-round + 8-round multi-round）
+- 全仓 1559 tests passing
+
+**注意：** `persistence_backend` 默认仍为 `memory`，`sqlite` 提供跨重启持久化。M4.2 未开始。
+
 ## [M4.0] — 2026-08-18
 
 ### 本地持久化架构与存储基础
@@ -448,4 +474,4 @@
 
 ---
 
-*最后更新：2026-08-18 | M4.0 — Local Persistence Architecture & Storage Foundation*
+*最后更新：2026-08-18 | M4.1 — SQLite 记忆与请求快照持久化*

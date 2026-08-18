@@ -18,6 +18,7 @@ import copy
 from typing import Optional
 
 from sqlalchemy import and_, func, select, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.memory.models import (
@@ -266,7 +267,7 @@ class SQLiteMemoryRepository(MemoryRepository):
         memory: StructuredWorkMemory,
         evidence: MemoryCommitEvidence,
     ) -> StructuredWorkMemory:
-        """Atomic commit with version check.
+        """Atomic commit with version check and DB-level invariant.
 
         All within a single database transaction:
         1. Verify memory is PENDING
@@ -279,9 +280,17 @@ class SQLiteMemoryRepository(MemoryRepository):
         8. Persist commit_evidence
         9. transaction commit
 
+        The DB-level partial unique index
+        ``ix_work_memories_committed_version`` enforces that only one
+        row per (runtime_mode, conversation_id, memory_version) can be
+        COMMITTED.  If a concurrent transaction won the race, the
+        IntegrityError from the index is converted to
+        ``MemoryVersionConflictError``.
+
         Raises:
             MemoryCommitDeniedError: pending/evidence check fails
-            MemoryVersionConflictError: stale base version
+            MemoryVersionConflictError: stale base version or
+                concurrent commit conflict
         """
         runtime_mode = memory.runtime_mode
 
@@ -391,28 +400,40 @@ class SQLiteMemoryRepository(MemoryRepository):
                 evidence.version_matches = True
                 existing_domain._mark_committed(evidence)
 
-                # 8. Update the row
+                # 8. Update the row — memory_version and state_status are set
+                #    here.  The DB-level partial unique index
+                #    ``ix_work_memories_committed_version`` guarantees that
+                #    only one row per (runtime_mode, conversation_id,
+                #    memory_version) can be COMMITTED.
                 new_version = existing_domain.memory_version
                 new_payload = domain_to_json(existing_domain)
 
-                update_stmt = (
-                    update(WorkMemoryModel)
-                    .where(WorkMemoryModel.id == row.id)
-                    .values(
-                        state_status=MemoryStatus.COMMITTED.value,
-                        memory_version=new_version,
-                        base_memory_version=existing_domain.base_memory_version,
-                        payload_json=new_payload,
-                        current_intent=existing_domain.current_intent,
-                        analysis_goal=existing_domain.analysis_goal,
-                        semantic_model_key=existing_domain.semantic_model_key,
-                        report_template_key=existing_domain.report_template_key,
-                        failure_reason=existing_domain.failure_reason,
-                        failure_stage=existing_domain.failure_stage,
-                        updated_at=func.now(),
+                try:
+                    update_stmt = (
+                        update(WorkMemoryModel)
+                        .where(WorkMemoryModel.id == row.id)
+                        .values(
+                            state_status=MemoryStatus.COMMITTED.value,
+                            memory_version=new_version,
+                            base_memory_version=existing_domain.base_memory_version,
+                            payload_json=new_payload,
+                            current_intent=existing_domain.current_intent,
+                            analysis_goal=existing_domain.analysis_goal,
+                            semantic_model_key=existing_domain.semantic_model_key,
+                            report_template_key=existing_domain.report_template_key,
+                            failure_reason=existing_domain.failure_reason,
+                            failure_stage=existing_domain.failure_stage,
+                            updated_at=func.now(),
+                        )
                     )
-                )
-                await session.execute(update_stmt)
+                    await session.execute(update_stmt)
+                except (IntegrityError, OperationalError):
+                    raise MemoryVersionConflictError(
+                        f"并发提交冲突: (runtime_mode={runtime_mode.value}, "
+                        f"conversation_id={memory.conversation_id}, "
+                        f"memory_version={new_version}) 版本冲突, "
+                        f"当前 base 版本 {memory.base_memory_version} 过时"
+                    ) from None
 
             # After commit, return the domain model
             return existing_domain

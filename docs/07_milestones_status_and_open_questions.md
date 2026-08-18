@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M4.0 — Local Persistence Architecture & Storage Foundation
+> **状态：** M4.1 — SQLite 记忆与请求快照持久化
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -15,7 +15,7 @@
 | M3.3 | 报表模板V2、信息架构去冗余、capability-aware section | ✅ 已完成 |
 | **M3.4** | **自适应报表规划 + 可视化/布局策略（ADR-011）** | ✅ **已完成** |
 | **M4.0** | **本地持久化架构与存储基础：SQLite/SQLAlchemy Async/Alembic/Repository ABC** | ✅ **已完成** |
-| M4.1 | Memory/Snapshot SQLite 实现 | ⬜ 未开始 |
+| **M4.1** | **Memory/Snapshot SQLite 实现 + 并发提交 invariant** | ✅ **已完成** |
 | M4.2 | Conversation/Report recovery | ⬜ 未开始 |
 | M4.3 | Search/history API | ⬜ 未开始 |
 | M4.4 | Restart/crash acceptance | ⬜ 未开始 |
@@ -47,7 +47,7 @@
 | Idempotency / Memory | ✅ replay 复用 report_id；render/store failure 不成功提交 Memory |
 | Persistent sessions / React | ⬜ M4.1+ / M5，未提前实现 |
 | Persistence Architecture (M4.0) | ✅ ADR-012、SQLite/SQLAlchemy Async/Alembic、5 表 schema、migration 基线、Repository ABC |
-| Memory / Snapshot SQLite 实现 | ⬜ M4.1 |
+| Memory / Snapshot SQLite 实现 (M4.1) | ✅ SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring、DB 级 partial unique index 并发安全、strict concurrent commit tests |
 | Conversation/Report recovery | ⬜ M4.2 |
 | Search/History API | ⬜ M4.3 |
 
@@ -88,16 +88,10 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - 最小通用扩展：`CanonicalQueryPlan.dimension_tables` / `dimension_order`、ChartSpec 结构化字段；Simple 模型行为与 M3 基线一致
 - 双模型 Real acceptance：Simple 4 sections/4 queries；Rich 9 sections/9 queries、4 种 visual；事实类 LLM counters 全 0
 
-## M4.0 Persistence Architecture changes
+## M4.0 / M4.1 Persistence Architecture changes
 
-- 新增 ADR-012（本地持久化架构）：SQLite + SQLAlchemy Async + aiosqlite + Alembic
-- 新增  包：database.py / models.py / serialization.py
-- 数据库 schema 5 表 + UNIQUE 约束 + FK
-- Alembic 迁移基线
-- Settings 扩展 （默认 memory）
-- Repository 抽象：TurnPipeline → 、新增  ABC
-- 生产 Memory / Snapshot 仍为 InMemory（M4.1 切换）
-- 1503 tests pass（1477 + 26）
+- **M4.0**：新增 ADR-012（本地持久化架构）：SQLite + SQLAlchemy Async + aiosqlite + Alembic；`backend/app/persistence/` 包（database.py / models.py / serialization.py）；5 表 schema + UNIQUE + FK；Alembic 迁移基线；Settings 扩展（默认 memory）；Repository ABC；1517 tests。
+- **M4.1**：SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring（`main.py` → `MockTurnService`/`DeepSeekTurnService`）；DB 级 partial unique index `ix_work_memories_committed_version`（`WHERE state_status = 'committed'`）保证同 (runtime_mode, conversation_id, memory_version) 最多一个 COMMITTED 行；`commit()` 内 `IntegrityError`/`OperationalError` → `MemoryVersionConflictError`；strict concurrent commit tests（exactly-one-success + 8 轮多轮验证）；corrective migration `ab8d7df39a02`。1559 tests。
 
 ## M3.3 Report Template V2 changes
 
@@ -135,4 +129,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-18 | M4.0 — Local Persistence Architecture & Storage Foundation*
+*最后更新：2026-08-18 | M4.1 — SQLite 记忆与请求快照持久化*
