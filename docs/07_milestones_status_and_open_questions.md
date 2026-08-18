@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M4.1 — SQLite 记忆与请求快照持久化
+> **状态：** M4.1.1 — 会话创建竞态与数据库错误语义加固
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -16,6 +16,7 @@
 | **M3.4** | **自适应报表规划 + 可视化/布局策略（ADR-011）** | ✅ **已完成** |
 | **M4.0** | **本地持久化架构与存储基础：SQLite/SQLAlchemy Async/Alembic/Repository ABC** | ✅ **已完成** |
 | **M4.1** | **Memory/Snapshot SQLite 实现 + 并发提交 invariant** | ✅ **已完成** |
+| **M4.1.1** | **会话创建竞态与数据库错误语义加固** | **✅（本轮）** |
 | M4.2 | Conversation/Report recovery | ⬜ 未开始 |
 | M4.3 | Search/history API | ⬜ 未开始 |
 | M4.4 | Restart/crash acceptance | ⬜ 未开始 |
@@ -129,4 +130,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-18 | M4.1 — SQLite 记忆与请求快照持久化*
+*最后更新：2026-08-18 | M4.1.1 — 会话创建竞态与数据库错误语义加固*

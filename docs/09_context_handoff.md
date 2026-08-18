@@ -5,54 +5,37 @@
 
 ## 当前阶段
 
-**M4.1 — SQLite 记忆与请求快照持久化已完成。** M4.0 持久化架构基础上新增 SQLiteMemoryRepository 与 SQLiteSnapshotRepository production wiring，以及 concurrent commit DB 级 invariant。
+**M4.1.1 — 会话创建竞态与数据库错误语义加固已完成。** M4.1 基础上的 hardening，不改变产品版本（Settings.version 仍为 M4.1）。
 
-- **M4.0** 已建立本地持久化架构基础（SQLite + SQLAlchemy Async + aiosqlite + Alembic、5 表 schema、Repository ABC）。
-- **M4.1** 已实现 SQLiteMemoryRepository 与 SQLiteSnapshotRepository，并通过 production wiring 注入到两个 TurnService。
-- **M4.1 新增 DB 级并发提交 invariant**：`ix_work_memories_committed_version` partial unique index 保证同一 (runtime_mode, conversation_id, memory_version) 最多只有一个 COMMITTED 行。代码层 `IntegrityError`/`OperationalError` 均转换为 `MemoryVersionConflictError`。
-- 当前 `persistence_backend` 默认仍为 `memory`，与 M4.0 保持相同。
-- `persistence_backend=sqlite` 时通过 `SQLiteMemoryRepository` 与 `SQLiteSnapshotRepository` 提供跨重启持久化。
-- Report metadata recovery、Conversation history/search 尚未完成（属于 M4.2+）。
+### 变更内容
 
-### 记忆与持久化
+#### Fix A — Transaction-safe conversation root upsert
 
-- `MemoryRepository` 实现：`InMemoryMemoryRepository`（memory 后端）、`SQLiteMemoryRepository`（sqlite 后端）。
-- `SnapshotRepository` 实现：`ResultSnapshotStore`（InMemory）、`SQLiteSnapshotRepository`（sqlite 后端）。
-- `LocalReportRepository` 已将 HTML 文件写入 `local_state/reports/`，metadata 在进程内存中。
-- 生产 wiring 根据 `persistence_backend` 自动选择：memory → InMemory repos；sqlite → SQLite repos。
-- Alembic 迁移 head：`ab8d7df39a02`（新增 partial unique index）。
+- 抽取共享 `ensure_conversation` helper 至 `repositories/common.py`
+- 使用 SQLite 原生 `INSERT OR IGNORE` 代替原 `SELECT → INSERT → catch IntegrityError → expunge` 模式
+- 新方案不会污染 transaction state，并发首次插入同一 (runtime_mode, conversation_id) 时原子性 no-op
+- MemoryRepository 和 SnapshotRepository 均委托该共享 helper
 
-### 正式报表链（M3.4 不变）
+#### Fix B — 缩窄数据库错误语义映射
 
-```text
-Natural Language
-→ Intent / constrained language understanding
-→ Template grounding（sales_report）
-→ Bounded Report Intent weak signal
-→ deterministic ReportPlanner
-→ Canonical ReportPlan
-→ N × CanonicalQueryPlan（M2 密封链）
-→ N × Deterministic DAX → N × Independent Layer 3
-→ N × ToolGateway → PowerBIAdapter → Power BI
-→ N × QueryResult → N × VerifiedFactSet
-→ deterministic SalesReportData
-→ deterministic ReportSpec（KPI + charts）
-→ SalesReportRenderer → static UTF-8 HTML
-→ ReportArtifact → ReportRepository
-→ report_id / view / download
-→ Memory / Snapshot（SQLite 或 InMemory，取决于 persistence_backend）
-```
+- `commit()` 中 `IntegrityError` 仅当错误消息包含 committed-version partial unique index 的三列（runtime_mode, conversation_id, memory_version）时才转 `MemoryVersionConflictError`；其他 IntegrityError（FK、NOT NULL）re-raise
+- `OperationalError` 区分 SQLite busy/locked 条件 vs 磁盘 I/O、损坏等非锁错误；非锁错误转为 `PersistenceRepositoryError`；锁冲突时 bounded re-read 最新版本，版本过时转 `MemoryVersionConflictError`，未过时转 `PersistenceRepositoryError`
+- 新增 `PersistenceRepositoryError` 异常类（`repositories/common.py`），最小异常体系，不建立复杂层次
 
-### 测试矩阵
+#### 新增测试（9 个）
 
-- 总测试数：**1559 passed**（较 M4.0 增加 42）。
-- 新增严格 concurrent commit 测试：exactly-one-success + 8 轮多轮验证。
-- Golden：`python -m backend.app.harness.cases` — 11 PASS / 1 SKIP（Real baseline）。
-- 所有 Gates：architecture、safety、error ledger、documentation governance 全 PASS。
+- **4 个 conversation first-create race tests**：两个独立 session 同时首次创建同 conversation（不同 request_id 均成功、conversations 表 1 行）；Memory + Snapshot 同时首次创建同 conversation root；8 轮多轮验证；serial idempotent 验证
+- **5 个 error semantics tests**：committed-version unique conflict → `MemoryVersionConflictError`；unrelated IntegrityError 不吞噬；`_is_sqlite_locked` 正确识别锁/非锁消息；`_is_version_index_conflict` 正确识别三列组合；failed transaction 后后续操作正常
+
+### 架构影响
+
+- Settings.version 保持 `M4.1`（frozen field，非功能版本号）
+- 不新增 Alembic migration（schema 未变）
+- 默认 `persistence_backend` 仍为 `memory`
 
 ## M4.2 下一步
 
-M4.1 已完成 SQLite Memory/Snapshot 持久化与并发安全。后续轮次：
+后续轮次：
 
 1. **M4.2**: Conversation/Report metadata recovery（重启后重建状态）
 2. **M4.3**: 最近对话 API / 聊天搜索 API / 删除会话 API
@@ -83,4 +66,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\check_documentation_governance.py
 
 ---
 
-*最后更新：2026-08-18 | M4.1 — SQLite 记忆与请求快照持久化*
+*最后更新：2026-08-18 | M4.1.1 — 会话创建竞态与数据库错误语义加固*

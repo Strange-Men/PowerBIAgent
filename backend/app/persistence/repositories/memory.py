@@ -40,7 +40,10 @@ from backend.app.persistence.models import (
     WorkMemoryModel,
 )
 from backend.app.persistence.serialization import domain_to_json, json_to_domain
-
+from backend.app.persistence.repositories.common import (
+    PersistenceRepositoryError,
+    ensure_conversation,
+)
 
 # ---------------------------------------------------------------------------
 # Model ↔ Domain conversion helpers
@@ -114,6 +117,44 @@ def _model_to_clarification(
 
 
 # ---------------------------------------------------------------------------
+# Error-semantics helpers (M4.1.1)
+# ---------------------------------------------------------------------------
+
+
+def _is_version_index_conflict(exc: IntegrityError) -> bool:
+    """Detect whether an IntegrityError originates from the
+    committed-version partial unique index.
+
+    The index ``ix_work_memories_committed_version`` enforces:
+        UNIQUE (runtime_mode, conversation_id, memory_version)
+        WHERE state_status = 'committed'
+
+    SQLite reports::
+        UNIQUE constraint failed: work_memories.runtime_mode,
+        work_memories.conversation_id, work_memories.memory_version
+
+    We check for the presence of all three column names together
+    in the error message.  A PK violation would list different
+    columns (conversation_id, runtime_mode).
+    """
+    msg = str(exc).upper()
+    # The three columns of the partial unique index
+    c1 = "RUNTIME_MODE"
+    c2 = "CONVERSATION_ID"
+    c3 = "MEMORY_VERSION"
+    return c1 in msg and c2 in msg and c3 in msg
+
+
+def _is_sqlite_locked(exc: OperationalError) -> bool:
+    """Check if an OperationalError is a SQLite busy/locked condition."""
+    msg = str(exc).lower()
+    return any(
+        kw in msg
+        for kw in ("sqlite_busy", "sqlite_locked", "database is locked", "database table is locked")
+    )
+
+
+# ---------------------------------------------------------------------------
 # SQLiteMemoryRepository
 # ---------------------------------------------------------------------------
 
@@ -142,40 +183,13 @@ class SQLiteMemoryRepository(MemoryRepository):
         runtime_mode: RuntimeDataMode,
         session: AsyncSession,
     ) -> None:
-        """Ensure a conversation root exists — safe get-or-create.
+        """Transaction-safe conversation root creation.
 
-        Strategy: query first (fast path), then INSERT if not found.
-        The composite PK constraint provides the final invariant —
-        a concurrent transaction that inserts the same PK will cause
-        an IntegrityError, which we handle gracefully by expunging
-        the failed object from the session.
+        Delegates to the shared ``ensure_conversation`` helper which
+        uses ``INSERT OR IGNORE`` — safe under concurrent writers and
+        never poisons the current transaction.
         """
-        from sqlalchemy.exc import IntegrityError
-
-        # Fast path: check existence first
-        stmt = select(ConversationModel).where(
-            and_(
-                ConversationModel.conversation_id == conversation_id,
-                ConversationModel.runtime_mode == runtime_mode.value,
-            )
-        )
-        existing = await session.execute(stmt)
-        if existing.scalar_one_or_none() is not None:
-            return  # Already exists — nothing to do
-
-        # Insert — the PK constraint protects against race conditions
-        conv = ConversationModel(
-            conversation_id=conversation_id,
-            runtime_mode=runtime_mode.value,
-        )
-        session.add(conv)
-        try:
-            await session.flush()
-        except IntegrityError:
-            # Another transaction inserted the same row between our
-            # SELECT and INSERT — that's fine.  Expunge the failed
-            # object from the session so subsequent operations work.
-            session.expunge(conv)
+        await ensure_conversation(conversation_id, runtime_mode.value, session)
 
     # ------------------------------------------------------------------
     # MemoryRepository interface
@@ -427,13 +441,49 @@ class SQLiteMemoryRepository(MemoryRepository):
                         )
                     )
                     await session.execute(update_stmt)
-                except (IntegrityError, OperationalError):
-                    raise MemoryVersionConflictError(
-                        f"并发提交冲突: (runtime_mode={runtime_mode.value}, "
-                        f"conversation_id={memory.conversation_id}, "
-                        f"memory_version={new_version}) 版本冲突, "
-                        f"当前 base 版本 {memory.base_memory_version} 过时"
-                    ) from None
+                except IntegrityError as exc:
+                    # Only convert version-unique-constraint violations to
+                    # MemoryVersionConflictError.  Other IntegrityError
+                    # types (PK, FK, NOT NULL) are re-raised.
+                    if _is_version_index_conflict(exc):
+                        raise MemoryVersionConflictError(
+                            f"并发提交冲突: (runtime_mode={runtime_mode.value}, "
+                            f"conversation_id={memory.conversation_id}, "
+                            f"memory_version={new_version}) 版本冲突, "
+                            f"当前 base 版本 {memory.base_memory_version}"
+                        ) from exc
+                    raise
+                except OperationalError as exc:
+                    # SQLite busy/locked → bounded, deterministic handling.
+                    # Other OperationalError (disk I/O, corruption) are
+                    # wrapped as PersistenceRepositoryError.
+                    if not _is_sqlite_locked(exc):
+                        raise PersistenceRepositoryError(
+                            f"数据库错误 (非锁): {exc}"
+                        ) from exc
+                    # Locked — re-read latest version from DB within
+                    # the same (now-failed) transaction scope.
+                    # If another writer committed our version, it's a
+                    # conflict.  Otherwise it's infrastructure failure.
+                    try:
+                        latest_version = await self._get_latest_committed_version(
+                            session, memory.conversation_id, runtime_mode
+                        )
+                    except Exception:
+                        latest_version = -1
+
+                    if latest_version >= new_version:
+                        raise MemoryVersionConflictError(
+                            f"并发提交冲突 (锁): (runtime_mode={runtime_mode.value}, "
+                            f"conversation_id={memory.conversation_id}, "
+                            f"memory_version={new_version}) 版本冲突, "
+                            f"base {memory.base_memory_version}, "
+                            f"latest {latest_version}"
+                        ) from exc
+                    raise PersistenceRepositoryError(
+                        f"数据库锁冲突，但版本未过时: "
+                        f"latest={latest_version}, target={new_version}: {exc}"
+                    ) from exc
 
             # After commit, return the domain model
             return existing_domain

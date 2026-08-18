@@ -2,7 +2,7 @@
 
 PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并以固定模板生成静态 HTML 报表。
 
-当前版本：**M4.1 — SQLite 记忆与请求快照持久化**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。M4.0 建立本地持久化架构（SQLite/SQLAlchemy Async/Alembic/Repository ABC）。M4.1 实现 SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring 与 DB 级 concurrent commit invariant。
+当前版本：**M4.1.1 — 会话创建竞态与数据库错误语义加固**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。M4.0 建立本地持久化架构（SQLite/SQLAlchemy Async/Alembic/Repository ABC）。M4.1 实现 SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring 与 DB 级 concurrent commit invariant。M4.1.1 加固 conversation 创建竞态与数据库错误语义映射。
 
 ```text
 Natural Language
@@ -148,7 +148,7 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\sales_report_contract_smo
 | Fixed HTML Renderer / deterministic CSS bars | ✅ M3.1 / M3.2 hardened |
 | Report resource / view / download API | ✅ M3.1 |
 | Real PBIX + desktop/narrow visual acceptance | ✅ M3.2 final closure |
-| 持久化会话 | ✅ M4.1 — SQLite Memory/Snapshot 实现 + concurrent commit invariant |
+| 持久化会话 | ✅ M4.1 — SQLite Memory/Snapshot 实现 + concurrent commit invariant；**M4.1.1** — 会话创建竞态与错误语义加固 |
 | React + Vite UI | ⬜ M5 |
 
 ## 文档入口
@@ -167,4 +167,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\sales_report_contract_smo
 
 ---
 
-*最后更新：2026-08-18 | M4.1 — SQLite 记忆与请求快照持久化*
+*最后更新：2026-08-18 | M4.1.1 — 会话创建竞态与数据库错误语义加固*

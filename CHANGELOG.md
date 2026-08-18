@@ -28,6 +28,52 @@
 
 **注意：** `persistence_backend` 默认仍为 `memory`，`sqlite` 提供跨重启持久化。M4.2 未开始。
 
+### M4.1.1 — 会话创建竞态与数据库错误语义加固（本轮）
+
+**Fix A — Transaction-safe conversation root upsert:**
+- 抽取共享 `ensure_conversation` helper 至 `repositories/common.py`，使用 `INSERT OR IGNORE` 替代原 `SELECT → INSERT → catch IntegrityError → expunge`
+- MemoryRepository 和 SnapshotRepository 均委托该共享 helper，消除两处重复逻辑
+- 解决 flush IntegrityError 后 SQLAlchemy transaction 可能进入 failed state 的问题
+
+**Fix B — 缩窄数据库错误语义映射:**
+- `IntegrityError` 仅当确认来自 committed-version partial unique index 才转 `MemoryVersionConflictError`；其他 IntegrityError（FK、NOT NULL）re-raise
+- `OperationalError` 区分 SQLite busy/locked 条件 vs 磁盘 I/O、损坏等非锁错误；非锁错误转 `PersistenceRepositoryError`；锁冲突时 bounded re-read 最新版本再决定错误类型
+- 新增 `PersistenceRepositoryError` 异常类（最小异常体系）
+
+**新增测试（9 个）：**
+- 4 个 conversation first-create race tests（双 session 并发创建、Memory/Snapshot 交叉创建、8 轮多轮、串行幂等）
+- 5 个 error semantics tests（committed conflict、unrelated IntegrityError、_is_sqlite_locked detection、_is_version_index_conflict detection、failed tx recovery）
+
+**测试：**
+- 全仓 1568 tests passing（+9）
+- Golden 11 PASS / 1 SKIP
+
+**注意：** Settings.version 保持 `M4.1`（frozen field，非功能版本号）；不新增 Alembic migration；默认 persistence_backend 仍为 memory。
+
+### SQLite 记忆与请求快照持久化 + 并发提交 invariant
+
+**Production wiring:**
+- `main.py` 中 `MockTurnService` 和 `DeepSeekTurnService` 现在正确注入 `snapshot_store` 参数（之前 SQLite 模式下为 `None`）
+- `persistence_backend=sqlite` → 使用 `SQLiteMemoryRepository` + `SQLiteSnapshotRepository`
+- `persistence_backend=memory` → 使用 `InMemoryMemoryRepository` + `ResultSnapshotStore`（默认）
+
+**DB 级 concurrent commit invariant:**
+- 新增 partial unique index `ix_work_memories_committed_version`：`UNIQUE(runtime_mode, conversation_id, memory_version) WHERE state_status = 'committed'`
+- 确保同一 (runtime_mode, conversation_id, memory_version) 最多只有一个 COMMITTED 行
+- `commit()` 内捕捉 `IntegrityError`/`OperationalError` 转换为 `MemoryVersionConflictError`
+- 新增 corrective migration `ab8d7df39a02`
+
+**严格并发测试：**
+- 旧测试 `len(successes) >= 1` → 严格 `assert len(successes) == 1 and len(conflicts) == 1`
+- 8 轮多轮并发验证（against SQLite WAL mode race）
+
+**测试：**
+- 新增 3 个 wiring 测试（SQLite snapshot injection、memory ResultSnapshotStore default、restart recovery via wiring）
+- 新增 2 个严格 concurrent commit 测试（single-round + 8-round multi-round）
+- 全仓 1559 tests passing
+
+**注意：** `persistence_backend` 默认仍为 `memory`，`sqlite` 提供跨重启持久化。M4.2 未开始。
+
 ## [M4.0] — 2026-08-18
 
 ### 本地持久化架构与存储基础

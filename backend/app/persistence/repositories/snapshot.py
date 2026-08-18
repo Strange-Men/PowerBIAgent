@@ -30,6 +30,10 @@ from backend.app.memory.result_snapshot import (
 )
 from backend.app.persistence.models import ConversationModel, ResultSnapshotModel
 from backend.app.persistence.serialization import domain_to_json, json_to_domain
+from backend.app.persistence.repositories.common import (
+    PersistenceRepositoryError,
+    ensure_conversation,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -66,29 +70,13 @@ class SQLiteSnapshotRepository(SnapshotRepository):
         runtime_mode_value: str,
         session: AsyncSession,
     ) -> None:
-        """Deterministic get-or-create for the conversation root."""
-        from sqlalchemy.exc import IntegrityError
+        """Transaction-safe conversation root creation.
 
-        # Fast path: check existence first
-        stmt = select(ConversationModel).where(
-            and_(
-                ConversationModel.conversation_id == conversation_id,
-                ConversationModel.runtime_mode == runtime_mode_value,
-            )
-        )
-        existing = await session.execute(stmt)
-        if existing.scalar_one_or_none() is not None:
-            return
-
-        conv = ConversationModel(
-            conversation_id=conversation_id,
-            runtime_mode=runtime_mode_value,
-        )
-        session.add(conv)
-        try:
-            await session.flush()
-        except IntegrityError:
-            session.expunge(conv)
+        Delegates to the shared ``ensure_conversation`` helper which
+        uses ``INSERT OR IGNORE`` — safe under concurrent writers and
+        never poisons the current transaction.
+        """
+        await ensure_conversation(conversation_id, runtime_mode_value, session)
 
     # ------------------------------------------------------------------
     # Persistent storage

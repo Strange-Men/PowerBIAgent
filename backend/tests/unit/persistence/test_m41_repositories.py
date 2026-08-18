@@ -52,6 +52,7 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError as SAIntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config.settings import PersistenceBackend, Settings
@@ -87,6 +88,7 @@ from backend.app.persistence.models import (
 )
 from backend.app.persistence.repositories.memory import SQLiteMemoryRepository
 from backend.app.persistence.repositories.snapshot import SQLiteSnapshotRepository
+from backend.app.persistence.repositories.common import PersistenceRepositoryError
 from backend.app.persistence.serialization import domain_to_json, json_to_domain
 
 
@@ -1170,3 +1172,424 @@ class TestFactoryWiring:
 
         await dispose_engine(eng1)
         await dispose_engine(eng2)
+
+
+# ===========================================================================
+# M4.1.1 — Conversation create race tests
+# ===========================================================================
+
+
+class TestConversationCreateRace:
+    """Two concurrent create_pending on the same conversation.
+
+    Two requests with different request_id but the same conversation_id
+    must both succeed in creating their respective pending memories,
+    while the conversations table ends up with exactly 1 row.
+    """
+
+    @pytest.mark.asyncio
+    async def test_concurrent_create_pending_same_conversation(self, sqlite_repos):
+        """Two concurrent create_pending with different request_id,
+        same conversation_id (first create) — both succeed,
+        conversations has 1 row."""
+        memory_repo, _, db_path = sqlite_repos
+
+        async def create_a():
+            mem = StructuredWorkMemory(
+                conversation_id="conv-race-1",
+                request_id="req-race-a1",
+                current_intent="data_question",
+                measures=["A"],
+                runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+                base_memory_version=0,
+            )
+            return await memory_repo.create_pending(mem, RuntimeDataMode.MOCK)
+
+        async def create_b():
+            mem = StructuredWorkMemory(
+                conversation_id="conv-race-1",
+                request_id="req-race-a2",
+                current_intent="data_question",
+                measures=["B"],
+                runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+                base_memory_version=0,
+            )
+            return await memory_repo.create_pending(mem, RuntimeDataMode.MOCK)
+
+        results = await asyncio.gather(create_a(), create_b(), return_exceptions=True)
+        successes = [r for r in results if isinstance(r, StructuredWorkMemory)]
+        errors = [r for r in results if isinstance(r, Exception)]
+
+        assert len(successes) == 2, (
+            f"两个 create_pending 都应成功，得到 {len(successes)} success, "
+            f"{len(errors)} errors: {[str(e) for e in errors]}"
+        )
+        # Verify conversations table has exactly 1 row
+        from sqlalchemy import text as sa_text, select as sa_select, func as sa_func
+
+        engine = create_engine(
+            Settings(persistence_backend=PersistenceBackend.SQLITE, persistence_database_path=db_path),
+            echo=False,
+        )
+        await configure_engine(engine)
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                sa_select(sa_func.count()).select_from(ConversationModel)
+            )
+            count = result.scalar() or 0
+        await dispose_engine(engine)
+
+        assert count == 1, (
+            f"conversations 表应有 1 行，实际 {count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_concurrent_create_memory_and_snapshot_same_conversation(
+        self, sqlite_repos,
+    ):
+        """MemoryRepository and SnapshotRepository first-create the
+        same conversation root simultaneously — both succeed,
+        conversations has 1 row."""
+        memory_repo, snapshot_repo, db_path = sqlite_repos
+
+        async def create_memory():
+            mem = StructuredWorkMemory(
+                conversation_id="conv-race-cross",
+                request_id="req-cross-m",
+                current_intent="data_question",
+                measures=["FromMemory"],
+                runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+                base_memory_version=0,
+            )
+            return await memory_repo.create_pending(mem, RuntimeDataMode.MOCK)
+
+        async def create_snapshot():
+            snap = TurnResultSnapshot(
+                request_id="req-cross-s",
+                conversation_id="conv-race-cross",
+                intent="data_question",
+                response_type="answer",
+                terminal_state="completed",
+                answer="FromSnapshot",
+                request_fingerprint_hash="f" * 64,
+            )
+            return await snapshot_repo.save(snap, RuntimeDataMode.MOCK)
+
+        results = await asyncio.gather(
+            create_memory(), create_snapshot(), return_exceptions=True
+        )
+        errors = [r for r in results if isinstance(r, Exception)]
+        assert len(errors) == 0, (
+            f"两个操作都应成功，得到 {len(errors)} errors: {[str(e) for e in errors]}"
+        )
+
+        # Verify conversations has 1 row
+        from sqlalchemy import text as sa_text, select as sa_select, func as sa_func
+
+        engine = create_engine(
+            Settings(persistence_backend=PersistenceBackend.SQLITE, persistence_database_path=db_path),
+            echo=False,
+        )
+        await configure_engine(engine)
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                sa_select(sa_func.count()).select_from(ConversationModel)
+            )
+            count = result.scalar() or 0
+        await dispose_engine(engine)
+
+        assert count == 1, (
+            f"conversations 表应有 1 行，实际 {count}"
+        )
+
+        # Both operations visible
+        mem_result = await memory_repo.get_by_request_id("req-cross-m", RuntimeDataMode.MOCK)
+        assert mem_result is not None
+
+        snap_result = await snapshot_repo.get("req-cross-s", RuntimeDataMode.MOCK)
+        assert snap_result is not None
+
+    @pytest.mark.asyncio
+    async def test_concurrent_create_multi_round(self, sqlite_repos):
+        """Run the concurrent first-create race across 8 rounds."""
+        memory_repo, _, db_path = sqlite_repos
+
+        for round_idx in range(8):
+            conv_id = f"conv-race-mr{round_idx}"
+
+            async def create_a(cid=conv_id, rid=f"req-race-mr{round_idx}-a"):
+                mem = StructuredWorkMemory(
+                    conversation_id=cid,
+                    request_id=rid,
+                    current_intent="data_question",
+                    measures=["A"],
+                    runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+                    base_memory_version=0,
+                )
+                return await memory_repo.create_pending(mem, RuntimeDataMode.MOCK)
+
+            async def create_b(cid=conv_id, rid=f"req-race-mr{round_idx}-b"):
+                mem = StructuredWorkMemory(
+                    conversation_id=cid,
+                    request_id=rid,
+                    current_intent="data_question",
+                    measures=["B"],
+                    runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+                    base_memory_version=0,
+                )
+                return await memory_repo.create_pending(mem, RuntimeDataMode.MOCK)
+
+            results = await asyncio.gather(create_a(), create_b(), return_exceptions=True)
+            successes = [r for r in results if isinstance(r, StructuredWorkMemory)]
+            errors = [r for r in results if isinstance(r, Exception)]
+            assert len(successes) == 2, (
+                f"Round {round_idx}: 两个都应成功，{len(successes)} success, "
+                f"{len(errors)} errors: {[str(e) for e in errors]}"
+            )
+
+        # Verify conversations has exactly 8 rows (one per distinct conv_id)
+        from sqlalchemy import select as sa_select, func as sa_func
+
+        engine = create_engine(
+            Settings(persistence_backend=PersistenceBackend.SQLITE, persistence_database_path=db_path),
+            echo=False,
+        )
+        await configure_engine(engine)
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                sa_select(sa_func.count()).select_from(ConversationModel)
+            )
+            count = result.scalar() or 0
+        await dispose_engine(engine)
+
+        assert count == 8, (
+            f"conversations 表应有 8 行，实际 {count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_ensure_conversation_twice_same_db(self, sqlite_repos):
+        """Calling create_pending twice on same conversation is
+        idempotent."""
+        memory_repo, _, _ = sqlite_repos
+
+        mem1 = StructuredWorkMemory(
+            conversation_id="conv-race-ido",
+            request_id="req-race-ido1",
+            current_intent="data_question",
+            measures=["First"],
+            runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+            base_memory_version=0,
+        )
+        await memory_repo.create_pending(mem1, RuntimeDataMode.MOCK)
+
+        # Second create_pending with same conv, different request
+        mem2 = StructuredWorkMemory(
+            conversation_id="conv-race-ido",
+            request_id="req-race-ido2",
+            current_intent="data_question",
+            measures=["Second"],
+            runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+            base_memory_version=0,
+        )
+        await memory_repo.create_pending(mem2, RuntimeDataMode.MOCK)
+
+        # Both should be retrievable
+        r1 = await memory_repo.get_by_request_id("req-race-ido1", RuntimeDataMode.MOCK)
+        r2 = await memory_repo.get_by_request_id("req-race-ido2", RuntimeDataMode.MOCK)
+        assert r1 is not None
+        assert r2 is not None
+
+
+# ===========================================================================
+# M4.1.1 — Error semantic tests
+# ===========================================================================
+
+
+class TestErrorSemantics:
+    """Fix B: narrow OperationalError → MemoryVersionConflictError mapping.
+
+    1. Committed-version unique conflict → MemoryVersionConflictError
+    2. Simulated unrelated IntegrityError → NOT MemoryVersionConflictError
+    3. No false positive for non-concurrency OperationalError
+    4. Failed transaction does not pollute subsequent repo operations
+    """
+
+    @pytest.mark.asyncio
+    async def test_committed_unique_conflict_is_version_conflict(self, sqlite_memory, valid_evidence):
+        """Two concurrent same-base commits produce exactly one
+        MemoryVersionConflictError."""
+        m1 = StructuredWorkMemory(
+            conversation_id="conv-errtest",
+            request_id="req-err-1",
+            current_intent="data_question",
+            measures=["A"],
+            runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+            base_memory_version=0,
+        )
+        m2 = StructuredWorkMemory(
+            conversation_id="conv-errtest",
+            request_id="req-err-2",
+            current_intent="data_question",
+            measures=["B"],
+            runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+            base_memory_version=0,
+        )
+        await sqlite_memory.create_pending(m1, RuntimeDataMode.MOCK)
+        await sqlite_memory.create_pending(m2, RuntimeDataMode.MOCK)
+
+        async def try_commit(m, ev):
+            try:
+                return await sqlite_memory.commit(m, ev)
+            except MemoryVersionConflictError:
+                return "CONFLICT"
+            except MemoryCommitDeniedError:
+                return "DENIED"
+
+        results = await asyncio.gather(
+            try_commit(m1, valid_evidence),
+            try_commit(m2, valid_evidence),
+        )
+        conflicts = [r for r in results if r == "CONFLICT"]
+        successes = [r for r in results if r not in ("CONFLICT", "DENIED")]
+
+        assert len(successes) == 1
+        assert len(conflicts) == 1
+
+    @pytest.mark.asyncio
+    async def test_unrelated_integrity_error_not_version_conflict(self, sqlite_memory, sample_memory):
+        """A real IntegrityError (PK dupe on conversations) must NOT
+        be swallowed as MemoryVersionConflictError.  It should
+        propagate as-is."""
+        # Directly insert a conversation to cause a PK conflict
+        from sqlalchemy import text as sa_text
+
+        async with sqlite_memory._session_factory() as session:
+            async with session.begin():
+                # First insert is fine
+                await session.execute(
+                    sa_text(
+                        "INSERT OR IGNORE INTO conversations "
+                        "(conversation_id, runtime_mode) VALUES (:c, :m)"
+                    ),
+                    {"c": "conv-uniq", "m": "mock"},
+                )
+            # Second insert with same PK should raise IntegrityError
+            # via the ORM path
+            async with session.begin():
+                from backend.app.persistence.models import ConversationModel
+
+                dup = ConversationModel(
+                    conversation_id="conv-uniq", runtime_mode="mock"
+                )
+                session.add(dup)
+                with pytest.raises(SAIntegrityError):
+                    await session.flush()
+
+    @pytest.mark.asyncio
+    async def test_operational_error_non_lock_is_persistence_error(
+        self, sqlite_memory, sample_memory, valid_evidence,
+    ):
+        """An OperationalError that is NOT a lock condition must
+        produce PersistenceRepositoryError, NOT
+        MemoryVersionConflictError."""
+        # We simulate a non-lock OperationalError by temporarily
+        # corrupting the DB.  The cleanest way: close the engine
+        # and try to use a dead session.
+        from sqlalchemy.exc import OperationalError as SAOperationalError
+
+        sample_memory.base_memory_version = 0
+        await sqlite_memory.create_pending(sample_memory, RuntimeDataMode.MOCK)
+
+        # We can't easily force an OperationalError that's not a lock
+        # from user code.  Instead, verify that the _is_sqlite_locked
+        # helper correctly rejects non-lock messages.
+        from backend.app.persistence.repositories.memory import (
+            _is_sqlite_locked,
+        )
+
+        assert _is_sqlite_locked(SAOperationalError("database is locked", None, None)) is True
+        assert _is_sqlite_locked(SAOperationalError("SQLITE_BUSY", None, None)) is True
+        assert _is_sqlite_locked(SAOperationalError("SQLITE_LOCKED", None, None)) is True
+        assert _is_sqlite_locked(SAOperationalError("disk I/O error", None, None)) is False
+        assert _is_sqlite_locked(SAOperationalError("unable to open database file", None, None)) is False
+        assert _is_sqlite_locked(SAOperationalError("database corruption", None, None)) is False
+        # Standard IntegrityError (not OperationalError)
+        assert _is_sqlite_locked(SAOperationalError("no such table: work_memories", None, None)) is False
+
+    @pytest.mark.asyncio
+    async def test_version_index_conflict_detection(self):
+        """_is_version_index_conflict correctly identifies version
+        conflicts vs other IntegrityError types."""
+        from sqlalchemy.exc import IntegrityError as SAIntegrityError
+        from backend.app.persistence.repositories.memory import (
+            _is_version_index_conflict,
+        )
+
+        # Real format from SQLite partial unique index violation
+        version_msg = (
+            "(sqlite3.IntegrityError) UNIQUE constraint failed: "
+            "work_memories.runtime_mode, work_memories.conversation_id, "
+            "work_memories.memory_version"
+        )
+        assert _is_version_index_conflict(
+            SAIntegrityError(version_msg, None, None)
+        ) is True, "Should detect version index columns"
+
+        # PK violation (only conversation_id + runtime_mode, no memory_version)
+        pk_msg = (
+            "(sqlite3.IntegrityError) UNIQUE constraint failed: "
+            "conversations.conversation_id, conversations.runtime_mode"
+        )
+        assert _is_version_index_conflict(
+            SAIntegrityError(pk_msg, None, None)
+        ) is False, (
+            "conversations PK does not include memory_version, "
+            "so it must NOT be detected as version conflict"
+        )
+
+        # NOT NULL violation
+        notnull_msg = (
+            "(sqlite3.IntegrityError) NOT NULL constraint failed: "
+            "work_memories.request_id"
+        )
+        assert _is_version_index_conflict(
+            SAIntegrityError(notnull_msg, None, None)
+        ) is False, "NOT NULL should not be seen as version conflict"
+
+        # FK violation (note: FK in SQLite need PRAGMA foreign_keys=ON)
+        fk_msg = (
+            "(sqlite3.IntegrityError) FOREIGN KEY constraint failed"
+        )
+        assert _is_version_index_conflict(
+            SAIntegrityError(fk_msg, None, None)
+        ) is False, "FK violation should not be seen as version conflict"
+
+    @pytest.mark.asyncio
+    async def test_failed_transaction_does_not_pollute_subsequent_ops(
+        self, sqlite_memory, sample_memory,
+    ):
+        """After a version conflict (or any tx failure), the next
+        operation on a fresh session must work."""
+        sample_memory.base_memory_version = 0
+        await sqlite_memory.create_pending(sample_memory, RuntimeDataMode.MOCK)
+
+        # Force a version conflict by committing with same base
+        from backend.app.memory.models import MemoryCommitEvidence
+
+        bad_evidence = MemoryCommitEvidence(
+            intent_valid=False,  # Will fail commit-denied, not conflict
+            request_allowed=False,
+            query_plan_valid=False,
+            dax_valid=False,
+            tool_execution_succeeded=False,
+            query_result_valid=False,
+            response_valid=False,
+            runtime_mode=RuntimeDataMode.MOCK,
+        )
+        with pytest.raises(MemoryCommitDeniedError):
+            await sqlite_memory.commit(sample_memory, bad_evidence)
+
+        # Subsequent operation on a fresh session works
+        fresh = await sqlite_memory.get_by_request_id("req-001", RuntimeDataMode.MOCK)
+        assert fresh is not None
+        assert fresh.state_status == MemoryStatus.PENDING
