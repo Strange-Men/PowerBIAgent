@@ -18,6 +18,7 @@ M1.0.1 修复：
 """
 
 import asyncio
+from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Optional
 
@@ -206,7 +207,52 @@ class IdempotencyTracker:
                     ))
 
 
-class ResultSnapshotStore:
+class SnapshotRepository(ABC):
+    """Snapshot 仓库抽象接口
+
+    允许 InMemory 和 SQLite 实现共存。
+    TurnPipeline 只依赖此抽象接口。
+    """
+
+    @abstractmethod
+    async def save(self, snapshot: TurnResultSnapshot, runtime_mode) -> None:
+        """保存快照"""
+        ...
+
+    @abstractmethod
+    async def get(
+        self, request_id: str, runtime_mode
+    ) -> Optional[TurnResultSnapshot]:
+        """按 request_id + runtime_mode 获取快照"""
+        ...
+
+    @abstractmethod
+    async def exists(self, request_id: str, runtime_mode) -> bool:
+        """检查快照是否存在"""
+        ...
+
+    @abstractmethod
+    async def claim(
+        self,
+        request_id: str,
+        runtime_mode,
+        fingerprint_hash: str,
+    ) -> tuple[IdempotencyClaimStatus, Optional[asyncio.Future]]:
+        """尝试领取执行权"""
+        ...
+
+    @abstractmethod
+    async def complete(self, request_id: str, runtime_mode) -> None:
+        """Owner 完成执行"""
+        ...
+
+    @abstractmethod
+    async def abort(self, request_id: str, runtime_mode) -> None:
+        """Owner 异常终止"""
+        ...
+
+
+class ResultSnapshotStore(SnapshotRepository):
     """请求结果快照存储 — M1.0 新增
 
     职责：

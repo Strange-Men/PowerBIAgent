@@ -34,6 +34,11 @@ class HarnessMode(str, Enum):
     TEST = "test"
 
 
+class PersistenceBackend(str, Enum):
+    MEMORY = "memory"
+    SQLITE = "sqlite"
+
+
 class Settings(BaseSettings):
     """PowerBIAgent 应用配置
 
@@ -52,7 +57,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M3.4", frozen=True)
+    version: str = Field(default="M4.0", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -102,6 +107,20 @@ class Settings(BaseSettings):
     max_user_input_length: int = Field(default=2000, ge=1)
 
     # ── 只读属性 ──────────────────────────────
+
+    # ── Persistence ────────────────────────────
+    persistence_backend: PersistenceBackend = Field(
+        default=PersistenceBackend.MEMORY,
+        description="持久化后端：memory（默认）或 sqlite",
+    )
+    persistence_database_path: str = Field(
+        default="local_state/persistence/powerbiagent.db",
+        description="SQLite 数据库相对路径（persistence_backend=sqlite 时使用）",
+    )
+
+    @property
+    def is_persistence_sqlite(self) -> bool:
+        return self.persistence_backend == PersistenceBackend.SQLITE
 
     @property
     def is_mock(self) -> bool:

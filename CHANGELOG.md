@@ -2,6 +2,32 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.0] — 2026-08-18
+
+### 本地持久化架构与存储基础
+
+**新增：**
+- ADR-012：本地持久化架构决策（SQLite + SQLAlchemy Async + aiosqlite + Alembic）
+- backend/app/persistence/ 包：database.py、models.py、serialization.py
+- 数据库 schema 设计（conversations / work_memories / pending_clarifications / result_snapshots / report_artifacts）
+- Alembic 迁移初始化（backend/alembic/）
+- Settings 扩展：PersistenceBackend、persistence_database_path
+- Repository 抽象清理：TurnPipeline → MemoryRepository、新增 SnapshotRepository ABC
+- 序列化策略：Pydantic model_dump(mode="json") → JSON TEXT → model_validate()
+- PRAGMA 配置：foreign_keys=ON、journal_mode=WAL、busy_timeout=5000
+- UNIQUE(runtime_mode, request_id) 数据库约束
+
+**依赖新增：**
+- sqlalchemy==2.0.52
+- aiosqlite==0.22.1
+- alembic==1.19.1
+
+**测试：**
+- 26 个持久化基础设施测试（engine/Alembic/ABC/serialization/constraints/PRAGMA）
+- 全仓 1503 tests passing（1477 + 26）
+
+**注意：** M4.0 只建立 persistence foundation。生产 Memory / Snapshot 仍未正式切换 SQLite（属于 M4.1）。
+
 ## [M3.4] — 2026-08-17
 
 ### 自适应报表规划与可视化策略
@@ -401,4 +427,4 @@
 
 ---
 
-*最后更新：2026-08-11 | M2.0 Remote MCP 接入规划与开发路线固化*
+*最后更新：2026-08-18 | M4.0 — Local Persistence Architecture & Storage Foundation*

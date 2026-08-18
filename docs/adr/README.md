@@ -34,6 +34,7 @@
 | ADR-009 | [Deterministic Query Execution and Verified Fact Authority](ADR-009_deterministic_query_execution_and_verified_fact_authority.md) | accepted | 2026-08-14 |
 | ADR-010 | [Deterministic Report Template and Data Plan Authority](ADR-010_deterministic_report_template_and_data_plan_authority.md) | accepted（固定事实边界有效；固定四查询限制由 ADR-011 supersede） | 2026-08-17 |
 | ADR-011 | [Adaptive Report Planning and Visualization Authority](ADR-011_adaptive_report_planning_and_visualization_authority.md) | accepted | 2026-08-17 |
+| ADR-012 | [Local Persistence Architecture and Storage Foundation](ADR-012_local_persistence_architecture.md) | accepted | 2026-08-18 |
 
 当前开发最重要的 active 决策为 ADR-005—ADR-011：ADR-005 约束统一控制面，ADR-006/007 分别约束 Deferred Remote 与当前 Local Provider，ADR-008/009 分别约束 canonical business semantics 与 deterministic execution / VerifiedFactSet，ADR-010 约束 M3 固定事实边界（固定四查询限制由 ADR-011 supersede），ADR-011 约束自适应报表规划与可视化权限。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
 
@@ -81,10 +82,14 @@ Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code�
 
 正式正文见 [ADR-011 独立文件](ADR-011_adaptive_report_planning_and_visualization_authority.md)。核心决策：固定模板 = 固定设计规则 + 允许能力目录，不是固定输出内容；section 由用户需求 ∩ runtime schema 能力 ∩ allowed catalog 决定；capability engine schema-aware；Report Intent weak signal 只输出 registry-owned ID；Visualization/Layout/Theme Policy 由普通代码决定；ReportSpec 最小结构化扩展并修正 Renderer 拒绝 charts 的历史限制。
 
+### ADR-012 — Local Persistence Architecture and Storage Foundation
+
+正式正文见 [ADR-012 独立文件](ADR-012_local_persistence_architecture.md)。核心决策：SQLite + SQLAlchemy Async + aiosqlite + Alembic 技术栈；数据库是 persistence provider，不是新的 business authority；ORM 持久化模型与业务 domain model 分离；JSON TEXT 列保存结构化 payload；HTML 文件继续存在文件系统。
+
 ### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面
 
 Execution、Tooling、Context、Lifecycle、Observability、Verification、Governance 七层职责。无 Docker/LangGraph/OpenTelemetry。
 
 ---
 
-*最后更新：2026-08-17 | M3.4 新增 ADR-011*
+*最后更新：2026-08-18 | M4.0 新增 ADR-012*

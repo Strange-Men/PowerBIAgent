@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M3.4 — Adaptive Report Planning + Visualization/Layout Policy**。
+当前版本：**M4.0 — Local Persistence Architecture & Storage Foundation**。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -16,7 +16,8 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - M3.1 已在 `fa4cc0c` 通过远程审计并纯 fast-forward 合入 `main`；对应 main push CI `31989328261` success，开发分支已删除。
 - M3.2 已完成确定性 CSS 横条、静态安全与视觉验收；M3.3 完成 capability-aware section 去冗余布局。
 - M3.4 已完成 Adaptive Report Planning：schema-aware capability engine（9 sections）、deterministic ReportPlan、受控 Report Intent weak signal、Visualization/Layout/Theme Policy、Renderer 多 visual（KPI/Line/Donut/Column/HBar）；ADR-011 supersede ADR-010 固定四查询限制；Simple/Rich 双 PBIX Real acceptance 通过。
-- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；不得进入 M4/M5 或开发 Remote MCP，除非用户另行明确授权。
+- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。
+- **M4.0** 已建立本地持久化架构与存储基础：SQLite + SQLAlchemy Async + aiosqlite + Alembic 技术栈；`backend/app/persistence/` 包（database.py / models.py / serialization.py）；5 表 schema（conversations / work_memories / pending_clarifications / result_snapshots / report_artifacts）；Alembic migration 基线；`MemoryRepository` / `SnapshotRepository` ABC 抽象；TurnPipeline 不再绑定 `InMemoryMemoryRepository`；ADR-012。生产 Memory / Snapshot 仍为 InMemory（M4.1 切换）。
 
 当前真实主链：
 
@@ -87,4 +88,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-18 | M0—M3 Final Seal — M3.4 Adaptive Report Planning + Visualization/Layout Policy*
+*最后更新：2026-08-18 | M4.0 — Local Persistence Architecture & Storage Foundation*

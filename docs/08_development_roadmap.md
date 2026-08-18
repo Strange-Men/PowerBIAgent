@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M3.4 — Adaptive Report Planning + Visualization/Layout Policy
+> **状态：** M4.0 — Local Persistence Architecture & Storage Foundation
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -14,10 +14,14 @@
 | M3.2 | Hardened visual acceptance / M3 收口阶段 | ✅ 完成，无 Tag |
 | M3.3 | Report Template V2 / Non-redundant Business Information Architecture | ✅ 已完成 |
 | **M3.4** | **Adaptive Report Planning + Visualization/Layout Policy** | ✅ **已完成** |
-| M4 | 持久化会话、搜索与最近对话 | ⬜ 未开始 |
+| **M4.0** | **本地持久化架构与存储基础** | ✅ **已完成** |
+| M4.1 | Memory/Snapshot SQLite 实现 | ⬜ 未开始 |
+| M4.2 | Conversation/Report recovery | ⬜ 未开始 |
+| M4.3 | Search/history API | ⬜ 未开始 |
+| M4.4 | Restart/crash acceptance | ⬜ 未开始 |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
 
-M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad`、M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 已纯 fast-forward 合入 main，对应 main CI 均 success。M3.2 / M3.3 / M3.4 直接在 main 完成。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。
+M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad`、M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 已纯 fast-forward 合入 main，对应 main CI 均 success。M3.2 / M3.3 / M3.4 直接在 main 完成。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。M4.0 已在 main 完成本地持久化架构：SQLite + SQLAlchemy Async + Alembic；MemoryRepository/SnapshotRepository ABC；settings 扩展；26 新增 tests（1503 total）。
 
 ## 永久 M2 事实链
 
@@ -114,4 +118,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 ---
 
-*最后更新：2026-08-18 | M0—M3 Final Seal — M3.4 Adaptive Report Planning + Visualization/Layout Policy*
+*最后更新：2026-08-18 | M4.0 — Local Persistence Architecture & Storage Foundation*

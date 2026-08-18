@@ -37,7 +37,7 @@ from backend.app.memory.models import (
     StructuredWorkMemory,
 )
 from backend.app.memory.repository import (
-    InMemoryMemoryRepository,
+    MemoryRepository,
     MemoryCommitDeniedError,
     MemoryVersionConflictError,
 )
@@ -50,6 +50,7 @@ from backend.app.memory.result_snapshot import (
     IdempotencyClaimStatus,
     ReportResultSnapshot,
     ResultSnapshotStore,
+    SnapshotRepository,
     TurnResultSnapshot,
 )
 from backend.app.schemas.data_contracts import UserContext
@@ -71,8 +72,8 @@ class TurnPipeline:
     def __init__(
         self,
         config: HarnessConfig,
-        memory_repo: InMemoryMemoryRepository,
-        snapshot_store: Optional[ResultSnapshotStore] = None,
+        memory_repo: MemoryRepository,
+        snapshot_store: Optional[SnapshotRepository] = None,
     ):
         self.config = config
         self.memory_repo = memory_repo

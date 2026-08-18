@@ -2,7 +2,7 @@
 
 PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并以固定模板生成静态 HTML 报表。
 
-当前版本：**M3.4 — Adaptive Report Planning + Visualization/Layout Policy**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。
+当前版本：**M4.0 — Local Persistence Architecture & Storage Foundation**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。
 
 ```text
 Natural Language

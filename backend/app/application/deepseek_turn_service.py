@@ -58,6 +58,7 @@ from backend.app.memory.models import (
 )
 from backend.app.memory.repository import (
     InMemoryMemoryRepository,
+    MemoryRepository,
 )
 from backend.app.report.capability import (
     ANALYSIS_SECTION_ORDER,
@@ -139,7 +140,7 @@ class DeepSeekTurnService:
 
     def __init__(
         self,
-        memory_repo: InMemoryMemoryRepository,
+        memory_repo: MemoryRepository,
         llm_provider: LLMProvider,
         powerbi_adapter: PowerBIAdapter,
         report_renderer: ReportRenderer,

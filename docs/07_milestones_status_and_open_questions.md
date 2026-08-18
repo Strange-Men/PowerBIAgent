@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M3.4 — Adaptive Report Planning + Visualization/Layout Policy
+> **状态：** M4.0 — Local Persistence Architecture & Storage Foundation
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -14,7 +14,11 @@
 | M3.2 | 确定性 CSS 可视化、静态安全、Real 与视觉 hardened acceptance | ✅ 完成，无 Tag |
 | M3.3 | 报表模板V2、信息架构去冗余、capability-aware section | ✅ 已完成 |
 | **M3.4** | **自适应报表规划 + 可视化/布局策略（ADR-011）** | ✅ **已完成** |
-| M4 | 持久化会话与历史搜索 | ⬜ 未开始 |
+| **M4.0** | **本地持久化架构与存储基础：SQLite/SQLAlchemy Async/Alembic/Repository ABC** | ✅ **已完成** |
+| M4.1 | Memory/Snapshot SQLite 实现 | ⬜ 未开始 |
+| M4.2 | Conversation/Report recovery | ⬜ 未开始 |
+| M4.3 | Search/history API | ⬜ 未开始 |
+| M4.4 | Restart/crash acceptance | ⬜ 未开始 |
 | M5 | React + Vite 前端与联调 | ⬜ 未开始 |
 
 ## M3 合并与 CI truth
@@ -41,7 +45,11 @@
 | ReportArtifact | ✅ report_id、provenance、content type/hash、原子本地保存 |
 | Resource API | ✅ view/download；unknown/path traversal 拒绝 |
 | Idempotency / Memory | ✅ replay 复用 report_id；render/store failure 不成功提交 Memory |
-| Persistent sessions / React | ⬜ M4 / M5，未提前实现 |
+| Persistent sessions / React | ⬜ M4.1+ / M5，未提前实现 |
+| Persistence Architecture (M4.0) | ✅ ADR-012、SQLite/SQLAlchemy Async/Alembic、5 表 schema、migration 基线、Repository ABC |
+| Memory / Snapshot SQLite 实现 | ⬜ M4.1 |
+| Conversation/Report recovery | ⬜ M4.2 |
+| Search/History API | ⬜ M4.3 |
 
 ## `sales_report` 能力目录（M3.4）
 
@@ -80,6 +88,17 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - 最小通用扩展：`CanonicalQueryPlan.dimension_tables` / `dimension_order`、ChartSpec 结构化字段；Simple 模型行为与 M3 基线一致
 - 双模型 Real acceptance：Simple 4 sections/4 queries；Rich 9 sections/9 queries、4 种 visual；事实类 LLM counters 全 0
 
+## M4.0 Persistence Architecture changes
+
+- 新增 ADR-012（本地持久化架构）：SQLite + SQLAlchemy Async + aiosqlite + Alembic
+- 新增  包：database.py / models.py / serialization.py
+- 数据库 schema 5 表 + UNIQUE 约束 + FK
+- Alembic 迁移基线
+- Settings 扩展 （默认 memory）
+- Repository 抽象：TurnPipeline → 、新增  ABC
+- 生产 Memory / Snapshot 仍为 InMemory（M4.1 切换）
+- 1503 tests pass（1477 + 26）
+
 ## M3.3 Report Template V2 changes
 
 - 重构 sales_report 信息架构：每 section 回答一个独立业务问题，同一业务数据默认只展示一次；移除 Category bars 下方重复明细表、Top Product bars 下方重复明细表
@@ -112,8 +131,8 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 | M0—M2 Final Seal | `m2.6.4-m0-m2-final-seal` → `70748da` |
 | M3.0 main | `e4b5c6c`；CI run `31986207118` success |
 | M3.1 main | `fa4cc0c`；CI run `31989328261` success；开发分支已删除 |
-| **M0—M3 Final Seal** | **`m3.4-m0-m3-final-seal` → 本轮 seal commit** |
+| **M0—M3 Final Seal** | **`m3.4-m0-m3-final-seal` → `ff8aca23`** |
 
 ---
 
-*最后更新：2026-08-18 | M0—M3 Final Seal — M3.4 Adaptive Report Planning + Visualization/Layout Policy*
+*最后更新：2026-08-18 | M4.0 — Local Persistence Architecture & Storage Foundation*

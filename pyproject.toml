@@ -41,6 +41,11 @@ dependencies = [
     # M2.1: Power BI Local MCP 正式 stdio Client
     "mcp==2.0.0",
 
+    # M4.0: Persistence infrastructure
+    "sqlalchemy==2.0.52",
+    "aiosqlite==0.22.1",
+    "alembic==1.19.1",
+
     # Utilities
     # "python-dotenv>=1.0.0",     # M1 启用
 ]

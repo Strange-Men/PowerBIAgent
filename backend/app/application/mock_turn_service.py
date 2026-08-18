@@ -40,6 +40,7 @@ from backend.app.memory.models import (
 )
 from backend.app.memory.repository import (
     InMemoryMemoryRepository,
+    MemoryRepository,
 )
 from backend.app.memory.request_fingerprint import (
     ScenarioFingerprint,
@@ -79,7 +80,7 @@ class MockTurnService:
 
     def __init__(
         self,
-        memory_repo: Optional[InMemoryMemoryRepository] = None,
+        memory_repo: Optional[MemoryRepository] = None,
         llm_runtime: Any = None,  # M1.6.3: 向后兼容，内部提取 MockLLMProvider
         powerbi_adapter: Optional[MockPowerBIAdapter] = None,
         report_renderer: Optional[ReportRenderer] = None,
