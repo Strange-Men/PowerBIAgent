@@ -2,6 +2,34 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.2.1] — 2026-08-19
+
+### 报表元数据权威边界与会话关联收口
+
+**A — metadata-only serialization（payload_json 不再包含 HTML）:**
+- 新增 `ReportArtifactMetadata` Pydantic DTO，排除 `html` 字段
+- `payload_json` 序列化 metadata-only，HTML 只能通过 filesystem 加载
+- 遗留 payload_json 包含 HTML → fail closed（`ReportStorageError`）
+- 新增测试：直接读取 DB 确认 `<html` 不在 payload_json 中
+
+**B — relative_path 成为正式 recovery authority:**
+- `_validate_path()` 现在从 `artifact.relative_path` 定位 HTML 文件
+- 路径安全规则：拒绝绝对路径、拒绝 `..` traversal、拒绝 resolve 越界、拒绝 wrong filename
+- `relative_path` 存储简化为 `<report_id>.html`（不再含 `local_state/reports/` 前缀）
+- 新增测试：注入 `../evil.html`、绝对路径、wrong filename 全部 fail closed
+
+**C — conversation_id / request_id linkage 持久化:**
+- `ReportRepository.store()` / `ReportArtifactRepository.save()` 扩展 `conversation_id` / `request_id` 参数
+- `ReportSpec` 新增 `conversation_id` / `request_id` 可选字段
+- DeepSeekTurnService / MockTurnService 在 render 前设置 linkage 到 ReportSpec
+- 新增测试：linkage 写入 DB、重启后保持、双 conversation 隔离
+
+**Settings.version:** M4.2.1
+
+**测试:**
+- 32 tests in test_m42_recovery.py（+9 new：5 strict path + 3 linkage + 1 legacy payload）
+- 全仓 all passing
+
 ## [M4.2] — 2026-08-19
 
 ### 会话与报表元数据恢复

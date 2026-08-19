@@ -12,8 +12,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from backend.app.persistence.serialization import domain_to_json
 from backend.app.schemas.data_contracts import RenderedReport, ReportSpec
 
 if TYPE_CHECKING:
@@ -51,6 +52,9 @@ class ReportArtifact(RenderedReport):
     created_at: datetime
     view_reference: str
     download_reference: str
+    relative_path: str = ""
+    conversation_id: str | None = None
+    request_id: str | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -81,11 +85,88 @@ class ReportArtifact(RenderedReport):
         return self
 
 
+# ---------------------------------------------------------------------------
+# M4.2.1: Metadata-only DTO — payload_json stores only this, never HTML
+# ---------------------------------------------------------------------------
+
+
+class ReportArtifactMetadata(BaseModel):
+    """Metadata-only serialization contract for report_artifacts.payload_json.
+
+    Must NEVER contain ``html``.  HTML lives exclusively on the filesystem.
+    """
+
+    report_id: str
+    template_key: str
+    source_mode: str
+    generated_at: str
+    contract_version: str = ""
+    semantic_model_key: str = ""
+    schema_fingerprint: str = ""
+    verified_fact_set_ids: list[str] = Field(default_factory=list)
+    query_result_ids: list[str] = Field(default_factory=list)
+    content_type: str = REPORT_CONTENT_TYPE
+    content_hash: str
+    created_at: str
+    view_reference: str
+    download_reference: str
+    relative_path: str
+    conversation_id: str | None = None
+    request_id: str | None = None
+
+    model_config = ConfigDict(frozen=True)
+
+    @classmethod
+    def from_domain(
+        cls,
+        artifact: ReportArtifact,
+        relative_path: str,
+        *,
+        conversation_id: str | None = None,
+        request_id: str | None = None,
+    ) -> "ReportArtifactMetadata":
+        """Build metadata from a full ReportArtifact + explicit fields."""
+        return cls(
+            report_id=artifact.report_id,
+            template_key=artifact.template_key,
+            source_mode=artifact.source_mode,
+            generated_at=(
+                artifact.generated_at.isoformat()
+                if hasattr(artifact.generated_at, "isoformat")
+                else str(artifact.generated_at)
+            ),
+            contract_version=artifact.contract_version,
+            semantic_model_key=artifact.semantic_model_key,
+            schema_fingerprint=artifact.schema_fingerprint,
+            verified_fact_set_ids=list(artifact.verified_fact_set_ids),
+            query_result_ids=list(artifact.query_result_ids),
+            content_type=artifact.content_type,
+            content_hash=artifact.content_hash,
+            created_at=(
+                artifact.created_at.isoformat()
+                if hasattr(artifact.created_at, "isoformat")
+                else str(artifact.created_at)
+            ),
+            view_reference=artifact.view_reference,
+            download_reference=artifact.download_reference,
+            relative_path=relative_path,
+            conversation_id=conversation_id,
+            request_id=request_id,
+        )
+
+
 class ReportRepository(ABC):
     """Repository-owned report IDs are the only route to stored artifacts."""
 
     @abstractmethod
-    async def store(self, report: ReportSpec, html: str) -> ReportArtifact:
+    async def store(
+        self,
+        report: ReportSpec,
+        html: str,
+        *,
+        conversation_id: str | None = None,
+        request_id: str | None = None,
+    ) -> ReportArtifact:
         ...
 
     @abstractmethod
@@ -130,6 +211,9 @@ def _build_artifact(
     html: str,
     content: bytes,
     report_id: str,
+    *,
+    conversation_id: str | None = None,
+    request_id: str | None = None,
 ) -> ReportArtifact:
     created_at = datetime.now(timezone.utc)
     view_reference = f"/api/reports/{report_id}"
@@ -149,7 +233,27 @@ def _build_artifact(
         created_at=created_at,
         view_reference=view_reference,
         download_reference=f"{view_reference}/download",
+        relative_path=f"{report_id}.html",
+        conversation_id=conversation_id,
+        request_id=request_id,
     )
+
+
+def _build_metadata_json(
+    artifact: ReportArtifact,
+    relative_path: str,
+    *,
+    conversation_id: str | None = None,
+    request_id: str | None = None,
+) -> str:
+    """Build the JSON string for payload_json — metadata ONLY, no HTML."""
+    meta = ReportArtifactMetadata.from_domain(
+        artifact,
+        relative_path,
+        conversation_id=conversation_id,
+        request_id=request_id,
+    )
+    return domain_to_json(meta)
 
 
 class InMemoryReportRepository(ReportRepository):
@@ -159,11 +263,22 @@ class InMemoryReportRepository(ReportRepository):
         self._items: dict[str, tuple[ReportArtifact, bytes]] = {}
         self._lock = asyncio.Lock()
 
-    async def store(self, report: ReportSpec, html: str) -> ReportArtifact:
+    async def store(
+        self,
+        report: ReportSpec,
+        html: str,
+        *,
+        conversation_id: str | None = None,
+        request_id: str | None = None,
+    ) -> ReportArtifact:
         content = _validated_html_bytes(html)
         async with self._lock:
             report_id = self._new_id()
-            artifact = _build_artifact(report, html, content, report_id)
+            artifact = _build_artifact(
+                report, html, content, report_id,
+                conversation_id=conversation_id,
+                request_id=request_id,
+            )
             self._items[report_id] = (artifact, content)
             return artifact
 
@@ -234,12 +349,24 @@ class LocalReportRepository(ReportRepository):
             return artifact
         raise ReportNotFoundError("report_not_found")
 
-    async def store(self, report: ReportSpec, html: str) -> ReportArtifact:
+    async def store(
+        self,
+        report: ReportSpec,
+        html: str,
+        *,
+        conversation_id: str | None = None,
+        request_id: str | None = None,
+    ) -> ReportArtifact:
         content = _validated_html_bytes(html)
         async with self._lock:
             report_id = self._new_id()
-            artifact = _build_artifact(report, html, content, report_id)
-            target = self._target(report_id)
+            artifact = _build_artifact(
+                report, html, content, report_id,
+                conversation_id=conversation_id,
+                request_id=request_id,
+            )
+            relative_path = f"{report_id}.html"
+            target = (self._root / relative_path).resolve()
 
             # 1. Atomic filesystem write
             self._atomic_write(target, content)
@@ -247,7 +374,12 @@ class LocalReportRepository(ReportRepository):
             # 2. Persist metadata (best-effort — if this fails, clean up)
             if self._metadata_repo is not None:
                 try:
-                    await self._metadata_repo.save(artifact)
+                    await self._metadata_repo.save(
+                        artifact,
+                        conversation_id=conversation_id,
+                        request_id=request_id,
+                        relative_path=relative_path,
+                    )
                 except Exception:
                     # Metadata persistence failed — clean up the temp HTML
                     # to avoid orphan artifacts.  Re-raise.
@@ -283,17 +415,49 @@ class LocalReportRepository(ReportRepository):
             return artifact, html
 
     def _validate_path(self, artifact: ReportArtifact) -> Path:
-        """Validate that the artifact's relative_path is safe and the file exists.
+        """Validate and resolve the relative_path as the recovery authority.
 
-        Parses the relative_path from the metadata to locate the HTML file.
-        This is the only path that reaches the filesystem for recovery reads.
+        Security rules (M4.2.1):
+        1. relative_path must be a relative path (not absolute).
+        2. Resolved path must be inside the configured report root.
+        3. ``..`` traversal is forbidden (enforced by resolve-parent check).
+        4. Target must end with ``.html``.
+        5. Filename must match ``<report_id>.html``.
+        6. File must exist on disk.
+        7. Hash mismatch is checked by the caller after read.
+
+        Raises:
+            ReportNotFoundError: path is invalid, traversal detected, or file missing.
+            ReportStorageError: hash mismatch on read.
         """
-        # Compute target from artifact.report_id (authoritative)
-        target = (self._root / f"{artifact.report_id}.html").resolve()
-        if target.parent != self._root:
+        rp = artifact.relative_path or f"{artifact.report_id}.html"
+
+        # 1. Reject absolute paths
+        if os.path.isabs(rp):
             raise ReportNotFoundError("report_not_found")
+
+        # 2. Reject .. traversal — the resolved path must stay under root
+        try:
+            target = (self._root / rp).resolve()
+        except (OSError, ValueError):
+            raise ReportNotFoundError("report_not_found")
+
+        if not str(target).startswith(str(self._root.resolve())):
+            raise ReportNotFoundError("report_not_found")
+
+        # 3. Must be .html
+        if not target.name.endswith(".html"):
+            raise ReportNotFoundError("report_not_found")
+
+        # 4. Filename must match report_id
+        expected_name = f"{artifact.report_id}.html"
+        if target.name != expected_name:
+            raise ReportNotFoundError("report_not_found")
+
+        # 5. File must exist
         if not target.exists():
             raise ReportNotFoundError("report_not_found")
+
         return target
 
     async def export_acceptance_copy(self, report_id: str) -> Path:

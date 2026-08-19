@@ -1,4 +1,4 @@
-"""M4.2 — Conversation & Report Metadata Recovery 综合测试
+"""M4.2 / M4.2.1 — Conversation & Report Metadata Recovery & Hardening 综合测试
 
 覆盖矩阵：
 
@@ -11,27 +11,44 @@ Report Recovery（10 tests）：
   6. tampered HTML → fail closed
   7. unsafe relative_path → reject (path traversal guard)
   8. Mock/Real metadata isolation (via source_mode)
-  9. no HTML blob stored in DB
+  9. no HTML blob stored in DB（payload_json 验证）
   10. InMemoryReportArtifactRepository basic get/save
 
+M4.2.1 新增 STRICT PATH TESTS：
+  11. relative_path "../evil.html" → reject
+  12. relative_path absolute path → reject
+  13. relative_path resolves outside root → reject
+  14. relative_path wrong filename vs report_id → reject
+  15. valid relative_path passes recovery
+
+M4.2.1 新增 LINKAGE TESTS：
+  16. report stores conversation_id/request_id in DB
+  17. restart preserves linkage
+  18. two conversations produce isolated reports
+
+M4.2.1 新增 LEGACY TESTS：
+  19. old payload with html → fail closed
+
 Conversation Recovery（5 tests）：
-  11. committed Memory restart continuation
-  12. pending clarification restart continuation
-  13. Snapshot restart replay
-  14. failed Memory ignored (not part of recovery context)
-  15. Mock/Real isolation on conversation restart
+  20. committed Memory restart continuation
+  21. pending clarification restart continuation
+  22. Snapshot restart replay
+  23. failed Memory ignored (not part of recovery context)
+  24. Mock/Real isolation on conversation restart
 
 Wiring（5 tests）：
-  16. memory backend → InMemoryReportArtifactRepository
-  17. sqlite backend → SQLiteReportArtifactRepository
-  18. reuse same engine/session_factory as memory/snapshot repos
-  19. LocalReportRepository metadata_repo w/ restart path
-  20. no local_state files tracked by Git
+  25. memory backend → InMemoryReportArtifactRepository
+  26. sqlite backend → SQLiteReportArtifactRepository
+  27. reuse same engine/session_factory as memory/snapshot repos
+  28. LocalReportRepository metadata_repo w/ restart path
+  29. no local_state files tracked by Git
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -118,7 +135,6 @@ def _create_artifact() -> ReportArtifact:
 
 def _report_spec_for_artifact(artifact: ReportArtifact) -> ReportSpec:
     """Create a minimal ReportSpec that matches the artifact's provenance fields."""
-    html = artifact.html or "<!DOCTYPE html><html><body>Test</body></html>"
     return ReportSpec(
         title="Test Report",
         template_key=artifact.template_key,
@@ -129,6 +145,36 @@ def _report_spec_for_artifact(artifact: ReportArtifact) -> ReportSpec:
         schema_fingerprint=artifact.schema_fingerprint,
         verified_fact_set_ids=artifact.verified_fact_set_ids,
         query_result_ids=artifact.query_result_ids,
+    )
+
+
+def _artifact_with_relative_path(
+    relative_path: str,
+    *,
+    report_id: str | None = None,
+) -> ReportArtifact:
+    """Build an artifact with an arbitrary relative_path for injection testing."""
+    rid = report_id or "rpt_" + "b" * 32
+    view_ref = f"/api/reports/{rid}"
+    return ReportArtifact(
+        report_id=rid,
+        template_key="test",
+        html="<!DOCTYPE html><html><body>Evil</body></html>",
+        source_mode="mock",
+        generated_at="2026-08-19T00:00:00",
+        contract_version="",
+        semantic_model_key="test",
+        schema_fingerprint="b" * 64,
+        verified_fact_set_ids=["fact-e"],
+        query_result_ids=["qr-e"],
+        content_type="text/html; charset=utf-8",
+        content_hash=hashlib.sha256(
+            "<!DOCTYPE html><html><body>Evil</body></html>".encode("utf-8")
+        ).hexdigest(),
+        created_at="2026-08-19T00:00:00",
+        view_reference=view_ref,
+        download_reference=f"{view_ref}/download",
+        relative_path=relative_path,
     )
 
 
@@ -158,34 +204,9 @@ async def sqlite_report_repo():
     await dispose_engine(engine)
 
 
-# ===========================================================================
-# Fixtures — SQLite with memory + snapshot + report repos (restart tests)
-# ===========================================================================
-
-
-def _create_partial_unique_index(engine):
-    """Create the partial unique index for concurrent commit invariant."""
-    from sqlalchemy import text as sa_text
-    import asyncio
-
-    async def _create():
-        async with engine.begin() as conn:
-            await conn.execute(sa_text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS ix_work_memories_committed_version "
-                "ON work_memories (runtime_mode, conversation_id, memory_version) "
-                "WHERE state_status = 'committed'"
-            ))
-
-    asyncio.run(_create())
-
-
 @pytest_asyncio.fixture
 async def sqlite_all_repos():
-    """Create all SQLite repos (memory, snapshot, report) in one temp DB.
-
-    Yields (memory_repo, snapshot_repo, report_artifact_repo, engine.
-    engine is NOT disposed — caller must arrange dispose.
-    """
+    """Create all SQLite repos (memory, snapshot, report) in one temp DB."""
     db_path = _tmp_db_path()
     settings = Settings(
         persistence_backend=PersistenceBackend.SQLITE,
@@ -214,17 +235,9 @@ async def sqlite_all_repos():
     await dispose_engine(engine)
 
 
-# ===========================================================================
-# Fixtures — Process A / B for restart tests
-# ===========================================================================
-
-
 @pytest_asyncio.fixture
 async def engine_a():
-    """Create engine + repos for process A (restart test).
-
-    Yields (engine, db_path). Caller disposes.
-    """
+    """Create engine + repos for process A (restart test)."""
     db_path = _tmp_db_path()
     settings = Settings(
         persistence_backend=PersistenceBackend.SQLITE,
@@ -242,11 +255,6 @@ async def engine_a():
     await configure_engine(engine)
     yield engine, db_path
     await dispose_engine(engine)
-
-
-# ===========================================================================
-# Fixtures — sample memory + evidence
-# ===========================================================================
 
 
 @pytest.fixture
@@ -381,7 +389,7 @@ class TestInMemoryReportArtifactRepository:
 
 
 # ===========================================================================
-# 2-4. Report restart recovery (old report_id view/download after restart)
+# 2-4. Report restart recovery
 # ===========================================================================
 
 
@@ -398,22 +406,25 @@ class TestReportRestartRecovery:
         artifact = _create_artifact()
         await repo1.save(artifact)
 
-        # Check row count in DB
         assert await repo1._count() == 1
 
-        # Verify no HTML blob stored — relative_path must not be HTML content
+        # M4.2.1: relative_path is just <report_id>.html, payload_json has NO html
         async with sf1() as session:
             from sqlalchemy import select as sa_select
-            stmt = sa_select(ReportArtifactModel.relative_path).where(
+            stmt = sa_select(ReportArtifactModel).where(
                 ReportArtifactModel.report_id == artifact.report_id
             )
             result = await session.execute(stmt)
             row = result.scalar_one()
-            assert row is not None
-            assert "local_state/reports/" in row
-            assert row.endswith(".html")
-            # Confirm relative_path is NOT html content
-            assert "<html" not in row
+            assert row.relative_path == f"{artifact.report_id}.html"
+            assert "<html" not in row.relative_path
+
+            pj = json.loads(row.payload_json)
+            assert "report_id" in pj
+            assert "content_hash" in pj
+            # html field may exist in Pydantic serialization but must be empty
+            html_val = pj.get("html", "")
+            assert not html_val, f"payload_json contains non-empty html: {html_val[:50]}..."
 
         await dispose_engine(eng1)
 
@@ -441,7 +452,6 @@ class TestReportRestartRecovery:
         sf1 = create_session_factory(eng1)
         report_artifact_repo = SQLiteReportArtifactRepository(session_factory=sf1)
 
-        # Create a temp reports directory for process A
         reports_dir_a = Path(tempfile.mkdtemp()) / "reports"
         reports_dir_a.mkdir(parents=True, exist_ok=True)
         local_repo_a = LocalReportRepository(
@@ -456,7 +466,7 @@ class TestReportRestartRecovery:
 
         await dispose_engine(eng1)
 
-        # Process B: new engine + new LocalReportRepository on same DB + same files
+        # Process B
         settings = Settings(
             persistence_backend=PersistenceBackend.SQLITE,
             persistence_database_path=db_path,
@@ -470,7 +480,6 @@ class TestReportRestartRecovery:
             metadata_repo=report_artifact_repo_b,
         )
 
-        # View report after restart
         artifact_b, html_b = await local_repo_b.read_html(report_id)
         assert artifact_b.report_id == report_id
         assert "Hello M4.2" in html_b
@@ -478,7 +487,6 @@ class TestReportRestartRecovery:
             "<!DOCTYPE html><html><body>Hello M4.2</body></html>".encode("utf-8")
         ).hexdigest()
 
-        # Download report after restart (read_html is same path)
         get_b = await local_repo_b.get(report_id)
         assert get_b.report_id == report_id
 
@@ -486,7 +494,7 @@ class TestReportRestartRecovery:
 
 
 # ===========================================================================
-# 4-6. Content hash validation, missing file, tampered HTML
+# 4-6. Content hash validation, missing file, tampered HTML, no-HTML-in-DB
 # ===========================================================================
 
 
@@ -504,14 +512,11 @@ class TestReportFailClosed:
             metadata_repo=meta_repo,
         )
 
-        fake_id = "rpt_" + "a" * 32
-        # Manually save metadata (simulating DB state after restart)
         fake_artifact = _create_artifact()
         await meta_repo.save(fake_artifact)
 
-        # File does not exist on disk
         with pytest.raises(ReportNotFoundError):
-            await local_repo.read_html(fake_id)
+            await local_repo.read_html(fake_artifact.report_id)
 
     @pytest.mark.asyncio
     async def test_tampered_html_content_hash(self):
@@ -520,7 +525,6 @@ class TestReportFailClosed:
         reports_dir.mkdir(parents=True, exist_ok=True)
         meta_repo = InMemoryReportArtifactRepository()
 
-        # Store through the real LocalReportRepository
         local_repo = LocalReportRepository(
             root=reports_dir,
             metadata_repo=meta_repo,
@@ -530,7 +534,6 @@ class TestReportFailClosed:
         original = await local_repo.store(spec, "<!DOCTYPE html><html><body>Original</body></html>")
         report_id = original.report_id
 
-        # Tamper: overwrite the HTML file
         target = reports_dir / f"{report_id}.html"
         target.write_text("<!DOCTYPE html><html><body>TAMPERED</body></html>", encoding="utf-8")
 
@@ -538,33 +541,8 @@ class TestReportFailClosed:
             await local_repo.read_html(report_id)
 
     @pytest.mark.asyncio
-    async def test_unsafe_relative_path_rejected(self):
-        """Artifact with malicious relative_path → must not read outside root."""
-        reports_dir = Path(tempfile.mkdtemp()) / "reports"
-        reports_dir.mkdir(parents=True, exist_ok=True)
-        meta_repo = InMemoryReportArtifactRepository()
-
-        local_repo = LocalReportRepository(
-            root=reports_dir,
-            metadata_repo=meta_repo,
-        )
-
-        # Store a valid artifact
-        spec = _report_spec_for_artifact(_create_artifact())
-        artifact = await local_repo.store(spec, "<!DOCTYPE html><html><body>Safe</body></html>")
-        report_id = artifact.report_id
-
-        # The _validate_path method uses report_id → "local_state/reports/<report_id>.html"
-        # which must resolve to inside root.  The root check is target.parent != self._root.
-        # This is inherently safe — _validate_path computes the path from report_id,
-        # not from user input.  Verify by reading valid artifact.
-        result, html = await local_repo.read_html(report_id)
-        assert result.report_id == report_id
-        assert "Safe" in html
-
-    @pytest.mark.asyncio
     async def test_no_html_blob_in_db(self, sqlite_report_repo):
-        """Verify no HTML content is stored in the database."""
+        """M4.2.1: payload_json must NOT contain HTML content."""
         repo, engine, sf, db_path = sqlite_report_repo
         artifact = _create_artifact()
         await repo.save(artifact)
@@ -577,13 +555,278 @@ class TestReportFailClosed:
             result = await session.execute(stmt)
             row = result.scalar_one()
 
-            # The payload_json is the ReportArtifact JSON which *contains* html
-            # (the Pydantic model has `html` as a field inherited from RenderedReport).
-            # But the `relative_path` column must point to filesystem, not contain HTML.
-            assert row.relative_path.startswith("local_state/reports/")
-            assert row.relative_path.endswith(".html")
-            assert not row.relative_path.startswith("<!DOCTYPE")
+            # relative_path is just <report_id>.html
+            assert row.relative_path == f"{artifact.report_id}.html"
             assert "<html" not in row.relative_path
+
+            # payload_json: metadata-only, no HTML
+            pj = json.loads(row.payload_json)
+            assert "report_id" in pj
+            assert "relative_path" in pj
+            html_val = pj.get("html", "")
+            assert not html_val, "payload_json must NOT contain html content"
+            assert pj.get("relative_path") == f"{artifact.report_id}.html"
+
+
+# ===========================================================================
+# M4.2.1 — STRICT PATH TESTS
+# ===========================================================================
+
+
+class TestStrictPath:
+    """M4.2.1: relative_path must be validated as the recovery authority."""
+
+    @pytest.mark.asyncio
+    async def test_traversal_rejected(self):
+        """relative_path '../evil.html' → must reject."""
+        reports_dir = Path(tempfile.mkdtemp()) / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        meta_repo = InMemoryReportArtifactRepository()
+        local_repo = LocalReportRepository(root=reports_dir, metadata_repo=meta_repo)
+
+        # Inject artifact with traversal path via metadata repo
+        evil = _artifact_with_relative_path("../evil.html")
+        await meta_repo.save(evil)
+
+        with pytest.raises(ReportNotFoundError):
+            await local_repo.read_html(evil.report_id)
+
+    @pytest.mark.asyncio
+    async def test_absolute_path_rejected(self):
+        """relative_path as an absolute path → must reject."""
+        reports_dir = Path(tempfile.mkdtemp()) / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        meta_repo = InMemoryReportArtifactRepository()
+        local_repo = LocalReportRepository(root=reports_dir, metadata_repo=meta_repo)
+
+        if os.name == "nt":
+            evil = _artifact_with_relative_path("C:\\Windows\\win.ini")
+        else:
+            evil = _artifact_with_relative_path("/etc/passwd")
+        await meta_repo.save(evil)
+
+        with pytest.raises(ReportNotFoundError):
+            await local_repo.read_html(evil.report_id)
+
+    @pytest.mark.asyncio
+    async def test_outside_root_resolve_rejected(self):
+        """relative_path that resolves outside the report root → must reject."""
+        reports_dir = Path(tempfile.mkdtemp()) / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        meta_repo = InMemoryReportArtifactRepository()
+        local_repo = LocalReportRepository(root=reports_dir, metadata_repo=meta_repo)
+
+        # Create a symlink target outside root (simulated by deep ../ traversal)
+        evil = _artifact_with_relative_path("../../windows/evil.html" if os.name == "nt" else "../../tmp/evil.html")
+        await meta_repo.save(evil)
+
+        with pytest.raises(ReportNotFoundError):
+            await local_repo.read_html(evil.report_id)
+
+    @pytest.mark.asyncio
+    async def test_wrong_filename_rejected(self):
+        """relative_path filename does not match report_id → must reject."""
+        reports_dir = Path(tempfile.mkdtemp()) / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        meta_repo = InMemoryReportArtifactRepository()
+        local_repo = LocalReportRepository(root=reports_dir, metadata_repo=meta_repo)
+
+        wrong = _artifact_with_relative_path(
+            "wrong-report.html",
+            report_id="rpt_" + "c" * 32,
+        )
+        await meta_repo.save(wrong)
+
+        with pytest.raises(ReportNotFoundError):
+            await local_repo.read_html(wrong.report_id)
+
+    @pytest.mark.asyncio
+    async def test_valid_path_passes(self):
+        """relative_path = '<report_id>.html' → passes recovery."""
+        reports_dir = Path(tempfile.mkdtemp()) / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        meta_repo = InMemoryReportArtifactRepository()
+
+        local_repo = LocalReportRepository(root=reports_dir, metadata_repo=meta_repo)
+
+        spec = _report_spec_for_artifact(_create_artifact())
+        stored = await local_repo.store(spec, "<!DOCTYPE html><html><body>Valid</body></html>")
+        report_id = stored.report_id
+
+        # Restart: new LocalReportRepository, same metadata repo
+        local_repo_b = LocalReportRepository(root=reports_dir, metadata_repo=meta_repo)
+        artifact_b, html_b = await local_repo_b.read_html(report_id)
+        assert artifact_b.report_id == report_id
+        assert "Valid" in html_b
+
+
+# ===========================================================================
+# M4.2.1 — LINKAGE TESTS
+# ===========================================================================
+
+
+class TestConversationRequestLinkage:
+    """M4.2.1: conversation_id/request_id must be persisted in report metadata."""
+
+    @pytest.mark.asyncio
+    async def test_linkage_written_to_db(self, sqlite_report_repo):
+        """report stored with conversation_id/request_id → DB row has them."""
+        repo, engine, sf, db_path = sqlite_report_repo
+        artifact = _create_artifact()
+        await repo.save(
+            artifact,
+            conversation_id="conv-link-1",
+            request_id="req-link-1",
+        )
+
+        retrieved = await repo.get(artifact.report_id)
+        assert retrieved.conversation_id == "conv-link-1"
+        assert retrieved.request_id == "req-link-1"
+
+        async with sf() as session:
+            from sqlalchemy import select as sa_select
+            stmt = sa_select(ReportArtifactModel).where(
+                ReportArtifactModel.report_id == artifact.report_id
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one()
+            assert row.conversation_id == "conv-link-1"
+            assert row.request_id == "req-link-1"
+
+            # Also verify in payload_json
+            pj = json.loads(row.payload_json)
+            assert pj.get("conversation_id") == "conv-link-1"
+            assert pj.get("request_id") == "req-link-1"
+
+    @pytest.mark.asyncio
+    async def test_restart_preserves_linkage(self, engine_a):
+        """Process A stores with linkage; Process B reads it back."""
+        eng1, db_path = engine_a
+        sf1 = create_session_factory(eng1)
+        repo1 = SQLiteReportArtifactRepository(session_factory=sf1)
+
+        artifact = _create_artifact()
+        await repo1.save(
+            artifact,
+            conversation_id="conv-link-restart",
+            request_id="req-link-restart",
+        )
+        await dispose_engine(eng1)
+
+        settings = Settings(
+            persistence_backend=PersistenceBackend.SQLITE,
+            persistence_database_path=db_path,
+        )
+        eng2 = create_engine(settings, echo=False)
+        await configure_engine(eng2)
+        sf2 = create_session_factory(eng2)
+        repo2 = SQLiteReportArtifactRepository(session_factory=sf2)
+
+        retrieved = await repo2.get(artifact.report_id)
+        assert retrieved.conversation_id == "conv-link-restart"
+        assert retrieved.request_id == "req-link-restart"
+
+        await dispose_engine(eng2)
+
+    @pytest.mark.asyncio
+    async def test_two_conversations_isolated(self, sqlite_all_repos):
+        """Two conversations each produce reports with correct linkage."""
+        memory_repo, snapshot_repo, report_artifact_repo, engine, db_path = sqlite_all_repos
+
+        def _linked_artifact(rid: str, conv_id: str, req_id: str) -> ReportArtifact:
+            vr = f"/api/reports/{rid}"
+            return ReportArtifact(
+                report_id=rid,
+                template_key="sales_report",
+                html="",
+                source_mode="mock",
+                generated_at="2026-08-19T00:00:00",
+                contract_version="1.0",
+                semantic_model_key="test",
+                schema_fingerprint="a" * 64,
+                verified_fact_set_ids=["fact-1"],
+                query_result_ids=["qr-1"],
+                content_type="text/html; charset=utf-8",
+                content_hash="a" * 64,
+                created_at="2026-08-19T00:00:00",
+                view_reference=vr,
+                download_reference=f"{vr}/download",
+                relative_path=f"{rid}.html",
+                conversation_id=conv_id,
+                request_id=req_id,
+            )
+
+        conv_a = _linked_artifact("rpt_" + "d" * 32, "conv-a", "req-a")
+        conv_b = _linked_artifact("rpt_" + "e" * 32, "conv-b", "req-b")
+
+        await report_artifact_repo.save(conv_a)
+        await report_artifact_repo.save(conv_b)
+
+        retrieved_a = await report_artifact_repo.get(conv_a.report_id)
+        retrieved_b = await report_artifact_repo.get(conv_b.report_id)
+
+        assert retrieved_a.conversation_id == "conv-a"
+        assert retrieved_a.request_id == "req-a"
+        assert retrieved_b.conversation_id == "conv-b"
+        assert retrieved_b.request_id == "req-b"
+        assert retrieved_a.conversation_id != retrieved_b.conversation_id
+
+
+# ===========================================================================
+# M4.2.1 — LEGACY PAYLOAD HANDLING
+# ===========================================================================
+
+
+class TestLegacyPayload:
+    """M4.2.1: Legacy payload_json containing HTML must fail closed."""
+
+    @pytest.mark.asyncio
+    async def test_legacy_html_in_payload_raises(self, sqlite_report_repo):
+        """A row whose payload_json contains html → ReportStorageError."""
+        repo, engine, sf, db_path = sqlite_report_repo
+
+        # Directly insert a row with legacy payload containing HTML
+        async with sf() as session:
+            async with session.begin():
+                from sqlalchemy import text as sa_text
+                legacy_payload = json.dumps({
+                    "report_id": "rpt_ffffffffffffffffffffffffffffffff",
+                    "template_key": "sales_report",
+                    "html": "<!DOCTYPE html><html><body>LEGACY</body></html>",
+                    "source_mode": "mock",
+                    "content_hash": "a" * 64,
+                    "created_at": "2026-08-19T00:00:00",
+                })
+                await session.execute(
+                    sa_text(
+                        """INSERT INTO report_artifacts
+                        (report_id, template_key, semantic_model_key, schema_fingerprint,
+                         source_mode, content_hash, relative_path, payload_json)
+                        VALUES (:rid, 'sales_report', '', '', 'mock', :ch, 'legacy.html', :pj)"""
+                    ),
+                    {
+                        "rid": "rpt_ffffffffffffffffffffffffffffffff",
+                        "ch": "a" * 64,
+                        "pj": legacy_payload,
+                    },
+                )
+            await session.commit()
+
+        with pytest.raises(ReportStorageError, match="legacy HTML"):
+            await repo.get("rpt_ffffffffffffffffffffffffffffffff")
+
+    @pytest.mark.asyncio
+    async def test_m4_2_metadata_only_passes(self, sqlite_report_repo):
+        """M4.2.1 metadata without HTML passes reconstruction normally."""
+        repo, engine, sf, db_path = sqlite_report_repo
+        artifact = _create_artifact()
+
+        await repo.save(artifact)
+        retrieved = await repo.get(artifact.report_id)
+
+        assert retrieved.report_id == artifact.report_id
+        # html must be empty when reconstructed from DB
+        assert retrieved.html == ""
 
 
 # ===========================================================================
@@ -614,7 +857,6 @@ class TestMemoryRestartContinuation:
         await repo1.commit(mem, valid_evidence)
         await dispose_engine(eng1)
 
-        # Process B: new engine on same DB
         settings = Settings(
             persistence_backend=PersistenceBackend.SQLITE,
             persistence_database_path=db_path,
@@ -652,7 +894,6 @@ class TestMemoryRestartContinuation:
         await repo1.mark_failed("req-m42-fail-1", RuntimeDataMode.MOCK, reason="test failure")
         await dispose_engine(eng1)
 
-        # Process B
         settings = Settings(
             persistence_backend=PersistenceBackend.SQLITE,
             persistence_database_path=db_path,
@@ -663,7 +904,7 @@ class TestMemoryRestartContinuation:
         repo2 = SQLiteMemoryRepository(session_factory=sf2)
 
         latest = await repo2.get_latest_committed("conv-m42-fail", RuntimeDataMode.MOCK)
-        assert latest is None  # No committed memory = no recovery context
+        assert latest is None
 
         await dispose_engine(eng2)
 
@@ -674,7 +915,6 @@ class TestMemoryRestartContinuation:
         sf1 = create_session_factory(eng1)
         repo1 = SQLiteMemoryRepository(session_factory=sf1)
 
-        # Create MOCK committed memory
         mock_mem = StructuredWorkMemory(
             conversation_id="conv-iso",
             request_id="req-iso-mock",
@@ -687,7 +927,6 @@ class TestMemoryRestartContinuation:
         await repo1.create_pending(mock_mem, RuntimeDataMode.MOCK)
         await repo1.commit(mock_mem, valid_evidence)
 
-        # Create REAL committed memory
         real_mem = StructuredWorkMemory(
             conversation_id="conv-iso",
             request_id="req-iso-real",
@@ -711,7 +950,6 @@ class TestMemoryRestartContinuation:
         await repo1.commit(real_mem, real_evidence)
         await dispose_engine(eng1)
 
-        # Process B
         settings = Settings(
             persistence_backend=PersistenceBackend.SQLITE,
             persistence_database_path=db_path,
@@ -759,7 +997,6 @@ class TestPendingClarificationRestart:
         await repo1.save_pending_clarification(ctx, RuntimeDataMode.MOCK)
         await dispose_engine(eng1)
 
-        # Process B
         settings = Settings(
             persistence_backend=PersistenceBackend.SQLITE,
             persistence_database_path=db_path,
@@ -806,7 +1043,6 @@ class TestSnapshotRestartReplay:
         await repo1.save(snap, RuntimeDataMode.MOCK)
         await dispose_engine(eng1)
 
-        # Process B
         settings = Settings(
             persistence_backend=PersistenceBackend.SQLITE,
             persistence_database_path=db_path,
@@ -846,12 +1082,10 @@ class TestWiringIntegration:
         """SQLite report artifact repo shares engine with memory/snapshot repos."""
         memory_repo, snapshot_repo, report_artifact_repo, engine, db_path = sqlite_all_repos
 
-        # All repos share the same engine
         artifact = _create_artifact()
         await report_artifact_repo.save(artifact)
         assert await report_artifact_repo._count() == 1
 
-        # Memory repo can also operate on the same DB
         mem = StructuredWorkMemory(
             conversation_id="conv-wire",
             request_id="req-wire",
@@ -878,7 +1112,6 @@ class TestWiringIntegration:
         stored = await local_repo.store(spec, "<!DOCTYPE html><html><body>Wire OK</body></html>")
         report_id = stored.report_id
 
-        # Simulate restart: new LocalReportRepository, same metadata repo
         local_repo_b = LocalReportRepository(
             root=reports_dir,
             metadata_repo=meta_repo,
@@ -894,7 +1127,6 @@ class TestWiringIntegration:
             ["git", "ls-files", "--error-unmatch", "local_state/"],
             capture_output=True, text=True, cwd=Path(__file__).resolve().parent.parent.parent.parent,
         )
-        # Exit code 0 means tracked; non-zero means not tracked (or path doesn't exist)
         assert result.returncode != 0 or "Did not match" in result.stdout
 
     @pytest.mark.asyncio
@@ -905,10 +1137,8 @@ class TestWiringIntegration:
         artifact = _create_artifact()
         await report_artifact_repo.save(artifact)
 
-        # Dispose should succeed
         await dispose_engine(engine)
 
-        # After dispose, verify we can still open new engine on same DB
         settings = Settings(
             persistence_backend=PersistenceBackend.SQLITE,
             persistence_database_path=db_path,

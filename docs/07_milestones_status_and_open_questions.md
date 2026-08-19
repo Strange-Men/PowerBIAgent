@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M4.2 — 会话与报表元数据恢复
+> **状态：** M4.2.1 — 报表元数据权威边界与会话关联收口
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -19,7 +19,8 @@
 | **M4.1.1** | **会话创建竞态与数据库错误语义加固** | **✅ 已完成** |
 | **M4.1.2** | **SQLite Transaction Failure & Error Semantics Hardening** | **✅ 已完成** |
 | **M4.1.3** | **SQLite Lock Transaction Exit Final Hardening** | **✅ 已完成** |
-| **M4.2** | **Conversation/Report recovery（会话与报表元数据恢复）** | **✅（本轮）** |
+| **M4.2** | **Conversation/Report recovery（会话与报表元数据恢复）** | **✅ 已完成** |
+| **M4.2.1** | **Report metadata authority & linkage hardening** | **✅（本轮）** |
 | M4.3 | Search/history API | ⬜ 未开始 |
 | M4.4 | Restart/crash acceptance | ⬜ 未开始 |
 | M5 | React + Vite 前端与联调 | ⬜ 未开始 |
@@ -54,7 +55,7 @@
 | SQLite 错误语义硬化 (M4.1.1) | ✅ conversation root `INSERT OR IGNORE` 原子 upsert、`PersistenceRepositoryError`、locked/version_index 分类 helper |
 | SQLite 事务失败硬化 (M4.1.2) | ✅ failed transaction fresh-session conflict resolution、real OperationalError injection tests、infrastructure failure 与 business version conflict 严格分离 |
 | SQLite 锁事务退出最终硬化 (M4.1.3) | ✅ locked failure 必须退出原 transaction 再 fresh-session resolution、真实 SQLite lock integration test、M4.1 series final hardening |
-| Conversation/Report recovery | ⬜ M4.2 |
+| Conversation/Report recovery | ✅ M4.2 / M4.2.1 |
 | Search/History API | ⬜ M4.3 |
 
 ## `sales_report` 能力目录（M3.4）
@@ -138,4 +139,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-19 | M4.1.3 — SQLite Lock Transaction Exit Final Hardening*
+*最后更新：2026-08-19 | M4.2.1 — 报表元数据权威边界与会话关联收口*

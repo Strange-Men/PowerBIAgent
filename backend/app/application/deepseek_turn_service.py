@@ -1056,10 +1056,14 @@ class DeepSeekTurnService:
                     intent=intent.intent,
                     user=self._user_context,
                 )
+                report_spec_with_ctx = report_spec.model_copy(update={
+                    "conversation_id": effective_conv_id,
+                    "request_id": effective_req_id,
+                })
                 rendered: ReportArtifact = await self.tool_gateway.execute(
                     TOOL_NAME_RENDER,
                     exec_ctx,
-                    report_spec,
+                    report_spec_with_ctx,
                     trace=trace,
                     controller=controller,
                 )
@@ -1434,6 +1438,10 @@ class DeepSeekTurnService:
 
         try:
             report_spec = SalesReportSpecBuilder().build(report_data_contract)
+            report_spec_with_ctx = report_spec.model_copy(update={
+                "conversation_id": effective_conv_id,
+                "request_id": effective_req_id,
+            })
             rendered: ReportArtifact = await self.tool_gateway.execute(
                 TOOL_NAME_RENDER,
                 exec_ctx,

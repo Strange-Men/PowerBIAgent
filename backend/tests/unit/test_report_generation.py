@@ -519,9 +519,20 @@ class _CountingReportRepository(InMemoryReportRepository):
         super().__init__()
         self.store_count = 0
 
-    async def store(self, report: ReportSpec, html: str) -> ReportArtifact:
+    async def store(
+        self,
+        report: ReportSpec,
+        html: str,
+        *,
+        conversation_id: str | None = None,
+        request_id: str | None = None,
+    ) -> ReportArtifact:
         self.store_count += 1
-        return await super().store(report, html)
+        return await super().store(
+            report, html,
+            conversation_id=conversation_id,
+            request_id=request_id,
+        )
 
 
 class _ReportLanguageProvider(LLMProvider):

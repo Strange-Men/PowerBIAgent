@@ -19,6 +19,7 @@ Design notes
 
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 from sqlalchemy import and_, select
@@ -27,9 +28,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from backend.app.persistence.models import ReportArtifactModel
 from backend.app.persistence.serialization import domain_to_json, json_to_domain
 from backend.app.report.resources import (
+    REPORT_CONTENT_TYPE,
     ReportArtifact,
     ReportNotFoundError,
     ReportStorageError,
+    _build_metadata_json,
 )
 
 
@@ -46,7 +49,14 @@ class ReportArtifactRepository:
     persistence and recovery.
     """
 
-    async def save(self, artifact: ReportArtifact) -> None:
+    async def save(
+        self,
+        artifact: ReportArtifact,
+        *,
+        conversation_id: str | None = None,
+        request_id: str | None = None,
+        relative_path: str | None = None,
+    ) -> None:
         """Persist report metadata."""
         raise NotImplementedError
 
@@ -71,24 +81,41 @@ class ReportArtifactRepository:
 
 def _artifact_to_model_values(
     artifact: ReportArtifact,
+    *,
+    conversation_id: str | None = None,
+    request_id: str | None = None,
+    relative_path: str | None = None,
 ) -> dict:
     """Convert a ReportArtifact to column values for ReportArtifactModel.
 
-    ``conversation_id`` and ``request_id`` are nullable columns available
-    for future conversation-scoped report lookup (M4.3).  The domain model
-    does not yet carry them — they are stored as ``None``.
+    M4.2.1: payload_json stores metadata-only ``ReportArtifactMetadata``
+    (no HTML).  ``html`` is never written to the database.
+    ``conversation_id`` and ``request_id`` are written as explicit columns
+    and included in the metadata payload.
     """
+    if conversation_id is None:
+        conversation_id = artifact.conversation_id
+    if request_id is None:
+        request_id = artifact.request_id
+    if relative_path is None:
+        relative_path = f"{artifact.report_id}.html"
+    payload_json = _build_metadata_json(
+        artifact,
+        relative_path,
+        conversation_id=conversation_id,
+        request_id=request_id,
+    )
     return {
         "report_id": artifact.report_id,
-        "conversation_id": None,
-        "request_id": None,
+        "conversation_id": conversation_id,
+        "request_id": request_id,
         "template_key": artifact.template_key,
         "semantic_model_key": artifact.semantic_model_key,
         "schema_fingerprint": artifact.schema_fingerprint,
         "source_mode": artifact.source_mode,
         "content_hash": artifact.content_hash,
-        "relative_path": f"local_state/reports/{artifact.report_id}.html",
-        "payload_json": domain_to_json(artifact),
+        "relative_path": relative_path,
+        "payload_json": payload_json,
     }
 
 
@@ -99,16 +126,57 @@ def _model_to_artifact(row: ReportArtifactModel) -> ReportArtifact:
     contract_version, verified_fact_set_ids, query_result_ids etc.).
     Falls back to reconstructing from columns if payload is missing.
 
+    M4.2.1: payload_json is metadata-only (ReportArtifactMetadata).
+    Legacy payloads that contain ``html`` are rejected (fail-closed)
+    to prevent the database from being treated as the HTML authority.
+
     Raises:
-        ReportStorageError: if the stored JSON is corrupt.
+        ReportStorageError: if the stored JSON is corrupt or contains legacy HTML.
     """
     if row.payload_json:
         try:
-            return json_to_domain(ReportArtifact, row.payload_json)
+            meta_dict = json.loads(row.payload_json)
         except Exception as exc:
             raise ReportStorageError(
                 f"Report metadata corrupt for {row.report_id}: {exc}"
             ) from exc
+
+        # M4.2.1: Reject legacy payloads that contain html
+        if "html" in meta_dict and meta_dict.get("html"):
+            raise ReportStorageError(
+                f"Report metadata for {row.report_id} contains legacy HTML — "
+                "database is not the HTML authority"
+            )
+
+        # Reconstruct ReportArtifact with empty html (filesystem is authority)
+        try:
+            # Build from the metadata DTO fields — all we need for in-process use
+            artifact = ReportArtifact(
+                report_id=meta_dict["report_id"],
+                template_key=meta_dict.get("template_key", ""),
+                html="",
+                source_mode=meta_dict.get("source_mode", "mock"),
+                generated_at=meta_dict.get("generated_at", row.created_at.isoformat() if row.created_at else "2026-01-01T00:00:00"),
+                contract_version=meta_dict.get("contract_version", ""),
+                semantic_model_key=meta_dict.get("semantic_model_key", ""),
+                schema_fingerprint=meta_dict.get("schema_fingerprint", ""),
+                verified_fact_set_ids=meta_dict.get("verified_fact_set_ids", []),
+                query_result_ids=meta_dict.get("query_result_ids", []),
+                content_type=meta_dict.get("content_type", REPORT_CONTENT_TYPE),
+                content_hash=meta_dict.get("content_hash", row.content_hash),
+                created_at=meta_dict.get("created_at", row.created_at.isoformat() if row.created_at else "2026-01-01T00:00:00"),
+                view_reference=meta_dict.get("view_reference", f"/api/reports/{row.report_id}"),
+                download_reference=meta_dict.get("download_reference", f"/api/reports/{row.report_id}/download"),
+                relative_path=meta_dict.get("relative_path", row.relative_path or f"{row.report_id}.html"),
+                conversation_id=meta_dict.get("conversation_id"),
+                request_id=meta_dict.get("request_id"),
+            )
+            return artifact
+        except Exception as exc:
+            raise ReportStorageError(
+                f"Report metadata reconstruction failed for {row.report_id}: {exc}"
+            ) from exc
+
     # Fallback — minimal reconstruction from columns
     # (payload_json should always exist for modern artifacts)
     return ReportArtifact(
@@ -138,9 +206,26 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
     ) -> None:
         self._session_factory = session_factory
 
-    async def save(self, artifact: ReportArtifact) -> None:
+    async def save(
+        self,
+        artifact: ReportArtifact,
+        *,
+        conversation_id: str | None = None,
+        request_id: str | None = None,
+        relative_path: str | None = None,
+    ) -> None:
         """Insert or update report metadata in the report_artifacts table."""
-        values = _artifact_to_model_values(artifact)
+        # M4.2.1: fall back to artifact fields if kwargs not provided
+        if conversation_id is None and artifact.conversation_id:
+            conversation_id = artifact.conversation_id
+        if request_id is None and artifact.request_id:
+            request_id = artifact.request_id
+        values = _artifact_to_model_values(
+            artifact,
+            conversation_id=conversation_id,
+            request_id=request_id,
+            relative_path=relative_path,
+        )
         async with self._session_factory() as session:
             async with session.begin():
                 stmt = select(ReportArtifactModel).where(
@@ -219,7 +304,14 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
     def __init__(self) -> None:
         self._items: dict[str, ReportArtifact] = {}
 
-    async def save(self, artifact: ReportArtifact) -> None:
+    async def save(
+        self,
+        artifact: ReportArtifact,
+        *,
+        conversation_id: str | None = None,
+        request_id: str | None = None,
+        relative_path: str | None = None,
+    ) -> None:
         self._items[artifact.report_id] = artifact
 
     async def get(self, report_id: str) -> ReportArtifact:

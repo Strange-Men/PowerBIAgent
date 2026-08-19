@@ -131,7 +131,12 @@ def register_default_tools(
 
     async def _render_report(input_data: ReportSpec) -> ReportArtifact:
         html = await render_fn(input_data)
-        return await repository.store(input_data, html)
+        return await repository.store(
+            input_data,
+            html,
+            conversation_id=input_data.conversation_id,
+            request_id=input_data.request_id,
+        )
 
     gateway.register(ToolSpec(
         name=TOOL_NAME_RENDER,

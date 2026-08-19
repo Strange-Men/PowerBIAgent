@@ -358,6 +358,9 @@ class ReportSpec(BaseModel):
     schema_fingerprint: str = ""
     query_result_ids: list[str] = Field(default_factory=list)
     verified_fact_set_ids: list[str] = Field(default_factory=list)
+    # M4.2.1: Turn-linkage context for metadata persistence
+    conversation_id: Optional[str] = None
+    request_id: Optional[str] = None
 
 
 # =============================================================================
