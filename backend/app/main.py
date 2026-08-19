@@ -40,6 +40,11 @@ from backend.app.persistence.database import (
     dispose_engine,
 )
 from backend.app.persistence.repositories.memory import SQLiteMemoryRepository
+from backend.app.persistence.repositories.report_artifact import (
+    InMemoryReportArtifactRepository,
+    ReportArtifactRepository,
+    SQLiteReportArtifactRepository,
+)
 from backend.app.persistence.repositories.snapshot import SQLiteSnapshotRepository
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.powerbi.local_mcp import LocalMCPPowerBIAdapter
@@ -56,14 +61,21 @@ from backend.app.report.resources import LocalReportRepository
 
 def _create_repos(
     settings: Settings,
-) -> tuple[MemoryRepository, Optional[SnapshotRepository], Optional[AsyncEngine], Optional[async_sessionmaker]]:
-    """Create memory + snapshot repositories based on ``persistence_backend``.
+) -> tuple[
+    MemoryRepository,
+    Optional[SnapshotRepository],
+    Optional[ReportArtifactRepository],
+    Optional[AsyncEngine],
+    Optional[async_sessionmaker],
+]:
+    """Create memory + snapshot + report artifact repositories.
 
     Returns
     -------
-    (memory_repo, snapshot_store, engine, session_factory)
+    (memory_repo, snapshot_store, report_artifact_repo, engine, session_factory)
         *memory_repo* is always a ``MemoryRepository``.
         *snapshot_store* is a ``SnapshotRepository`` (or the default if memory backend).
+        *report_artifact_repo* is a ``ReportArtifactRepository`` (or in-memory default).
         *engine* is an ``AsyncEngine`` (sqlite) or ``None``.
         *session_factory* is an ``async_sessionmaker`` (sqlite) or ``None``.
     """
@@ -73,9 +85,18 @@ def _create_repos(
         session_factory = create_session_factory(engine)
         memory_repo = SQLiteMemoryRepository(session_factory=session_factory)
         snapshot_store = SQLiteSnapshotRepository(session_factory=session_factory)
-        return memory_repo, snapshot_store, engine, session_factory
+        report_artifact_repo = SQLiteReportArtifactRepository(
+            session_factory=session_factory
+        )
+        return memory_repo, snapshot_store, report_artifact_repo, engine, session_factory
     else:
-        return InMemoryMemoryRepository(), None, None, None
+        return (
+            InMemoryMemoryRepository(),
+            None,
+            InMemoryReportArtifactRepository(),
+            None,
+            None,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -105,16 +126,19 @@ async def lifespan(app: FastAPI):
     harness_config = HarnessConfig.from_settings(settings)
     turn_service = None
     _deepseek_provider = None  # 用于 shutdown 关闭
-    report_repository = LocalReportRepository()
-    app.state.report_repository = report_repository
 
-    # 初始化持久化仓库
-    memory_repo, snapshot_store, _engine, _session_factory = _create_repos(settings)
+    # 初始化持久化仓库 — must create before report_repository
+    memory_repo, snapshot_store, report_artifact_repo, _engine, _session_factory = _create_repos(settings)
     app.state._persistence_engine = _engine  # 保存用于 shutdown
 
     # Configure engine if SQLite (async setup)
     if _engine is not None:
         await configure_engine(_engine)
+
+    report_repository = LocalReportRepository(
+        metadata_repo=report_artifact_repo,
+    )
+    app.state.report_repository = report_repository
 
     if settings.llm_mode == LLMMode.MOCK and settings.powerbi_mode == PowerBIMode.MOCK:
         # Mock + Mock: 原有 MockTurnService

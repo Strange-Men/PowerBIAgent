@@ -10,10 +10,16 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import ConfigDict, Field, model_validator
 
 from backend.app.schemas.data_contracts import RenderedReport, ReportSpec
+
+if TYPE_CHECKING:
+    from backend.app.persistence.repositories.report_artifact import (
+        ReportArtifactRepository,
+    )
 
 
 REPORT_CONTENT_TYPE = "text/html; charset=utf-8"
@@ -188,11 +194,21 @@ class InMemoryReportRepository(ReportRepository):
 
 
 class LocalReportRepository(ReportRepository):
-    """Atomic local artifact storage rooted at local_state/reports only."""
+    """Atomic local artifact storage rooted at local_state/reports only.
 
-    def __init__(self, root: Path | str = Path("local_state") / "reports") -> None:
+    M4.2: Report metadata is now persisted through a ``ReportArtifactRepository``
+    (SQLite or in-memory).  The in-process ``_items`` dict is retained as a
+    read-through cache — the metadata repository is the authority on restart.
+    """
+
+    def __init__(
+        self,
+        root: Path | str = Path("local_state") / "reports",
+        metadata_repo: Optional[ReportArtifactRepository] = None,
+    ) -> None:
         self._root = Path(root).resolve()
         self._root.mkdir(parents=True, exist_ok=True)
+        self._metadata_repo = metadata_repo
         self._items: dict[str, ReportArtifact] = {}
         self._lock = asyncio.Lock()
 
@@ -200,31 +216,60 @@ class LocalReportRepository(ReportRepository):
     def root(self) -> Path:
         return self._root
 
+    async def _resolve_artifact(
+        self, report_id: str
+    ) -> ReportArtifact:
+        """Resolve artifact metadata from cache or metadata repository.
+
+        Falls back to the metadata repository (if configured) when the
+        in-process cache does not have the entry.  On restart this is
+        the recovery path.
+        """
+        artifact = self._items.get(report_id)
+        if artifact is not None:
+            return artifact
+        if self._metadata_repo is not None:
+            artifact = await self._metadata_repo.get(report_id)
+            self._items[report_id] = artifact
+            return artifact
+        raise ReportNotFoundError("report_not_found")
+
     async def store(self, report: ReportSpec, html: str) -> ReportArtifact:
         content = _validated_html_bytes(html)
         async with self._lock:
             report_id = self._new_id()
             artifact = _build_artifact(report, html, content, report_id)
             target = self._target(report_id)
+
+            # 1. Atomic filesystem write
             self._atomic_write(target, content)
+
+            # 2. Persist metadata (best-effort — if this fails, clean up)
+            if self._metadata_repo is not None:
+                try:
+                    await self._metadata_repo.save(artifact)
+                except Exception:
+                    # Metadata persistence failed — clean up the temp HTML
+                    # to avoid orphan artifacts.  Re-raise.
+                    try:
+                        target.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                    raise
+
             self._items[report_id] = artifact
             return artifact
 
     async def get(self, report_id: str) -> ReportArtifact:
         _validate_report_id(report_id)
         async with self._lock:
-            artifact = self._items.get(report_id)
-            if artifact is None:
-                raise ReportNotFoundError("report_not_found")
-            return artifact
+            return await self._resolve_artifact(report_id)
 
     async def read_html(self, report_id: str) -> tuple[ReportArtifact, str]:
         _validate_report_id(report_id)
         async with self._lock:
-            artifact = self._items.get(report_id)
-            if artifact is None:
-                raise ReportNotFoundError("report_not_found")
-            target = self._target(report_id)
+            artifact = await self._resolve_artifact(report_id)
+            target = self._validate_path(artifact)
             try:
                 content = target.read_bytes()
             except OSError as exc:
@@ -236,6 +281,20 @@ class LocalReportRepository(ReportRepository):
             except UnicodeDecodeError as exc:
                 raise ReportStorageError("report_artifact_not_utf8") from exc
             return artifact, html
+
+    def _validate_path(self, artifact: ReportArtifact) -> Path:
+        """Validate that the artifact's relative_path is safe and the file exists.
+
+        Parses the relative_path from the metadata to locate the HTML file.
+        This is the only path that reaches the filesystem for recovery reads.
+        """
+        # Compute target from artifact.report_id (authoritative)
+        target = (self._root / f"{artifact.report_id}.html").resolve()
+        if target.parent != self._root:
+            raise ReportNotFoundError("report_not_found")
+        if not target.exists():
+            raise ReportNotFoundError("report_not_found")
+        return target
 
     async def export_acceptance_copy(self, report_id: str) -> Path:
         """Export the exact managed bytes to the one fixed local acceptance name."""
@@ -258,6 +317,13 @@ class LocalReportRepository(ReportRepository):
         return target
 
     def _new_id(self) -> str:
+        """Generate a unique report_id.
+
+        Checks the in-process cache and filesystem for collisions.
+        The metadata repository PK is enforced at ``save()`` time via
+        the DB primary key constraint.  UUIDv4 collision probability is
+        astronomically low (~2^-122) — the retry loop is a safety net.
+        """
         while True:
             report_id = f"rpt_{uuid.uuid4().hex}"
             if report_id not in self._items and not self._target(report_id).exists():

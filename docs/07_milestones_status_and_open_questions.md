@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M4.1.3 — SQLite Lock Transaction Exit Final Hardening
+> **状态：** M4.2 — 会话与报表元数据恢复
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -18,8 +18,8 @@
 | **M4.1** | **Memory/Snapshot SQLite 实现 + 并发提交 invariant** | ✅ **已完成** |
 | **M4.1.1** | **会话创建竞态与数据库错误语义加固** | **✅ 已完成** |
 | **M4.1.2** | **SQLite Transaction Failure & Error Semantics Hardening** | **✅ 已完成** |
-| **M4.1.3** | **SQLite Lock Transaction Exit Final Hardening** | **✅（本轮）** |
-| M4.2 | Conversation/Report recovery | ⬜ 未开始 |
+| **M4.1.3** | **SQLite Lock Transaction Exit Final Hardening** | **✅ 已完成** |
+| **M4.2** | **Conversation/Report recovery（会话与报表元数据恢复）** | **✅（本轮）** |
 | M4.3 | Search/history API | ⬜ 未开始 |
 | M4.4 | Restart/crash acceptance | ⬜ 未开始 |
 | M5 | React + Vite 前端与联调 | ⬜ 未开始 |

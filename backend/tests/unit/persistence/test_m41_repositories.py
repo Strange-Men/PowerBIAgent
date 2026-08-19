@@ -1014,11 +1014,12 @@ class TestFactoryWiring:
         settings = Settings(persistence_backend=PersistenceBackend.MEMORY)
         # Just verify no error — InMemory repos do not touch the filesystem
         from backend.app.main import _create_repos
-        memory_repo, snapshot_store, engine, session_factory = _create_repos(settings)
+        memory_repo, snapshot_store, report_artifact_repo, engine, session_factory = _create_repos(settings)
         assert engine is None
         assert session_factory is None
         assert memory_repo is not None
         assert snapshot_store is None
+        assert report_artifact_repo is not None
 
     @pytest.mark.asyncio
     async def test_sqlite_wiring_snapshot_store_injected(self):

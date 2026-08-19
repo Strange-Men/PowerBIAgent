@@ -1,1 +1,1 @@
-"""SQLite-backed repository implementations for MemoryRepository and SnapshotRepository."""
+"""SQLite-backed repository implementations for MemoryRepository, SnapshotRepository, and ReportArtifactRepository."""

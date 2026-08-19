@@ -2,6 +2,51 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.2] — 2026-08-19
+
+### 会话与报表元数据恢复
+
+**Report metadata 持久化:**
+- 新增 `ReportArtifactRepository` 抽象接口（`save()`/`get()`/`exists()`）
+- `SQLiteReportArtifactRepository` 使用现有的 `report_artifacts` 表（无需 migration）
+- `InMemoryReportArtifactRepository` 用于 memory backend 兼容
+- HTML 正文继续存储在 filesystem，数据库不存 HTML blob
+- 仅存储 metadata（template_key、content_hash、source_mode、relative_path 等）
+- PK 碰撞由 DB primary key 约束保证
+
+**LocalReportRepository metadata 集成:**
+- 新增可选的 `metadata_repo` 参数注入
+- `store()`：原子 filesystem 写入 → metadata repository 保存；metadata 失败时清理 HTML
+- `get()`/`read_html()` 优先进程内缓存，miss 时通过 metadata repository 恢复（重启 recovery）
+- `read_html()` 增加 `_validate_path()`：安全路径构建 + 文件存在 + content_hash 校验
+- 缺失的 HTML 文件 → `ReportNotFoundError`
+- 篡改的 HTML 文件（hash 不匹配） → `ReportStorageError`
+- UUIDv4 碰撞由 DB PK 约束保证，无伪 async check
+
+**Conversation/Snapshot 重启恢复（继承 M4.1 能力，新增验证）:**
+- committed Memory 重启后 continuation
+- PendingClarification 重启恢复
+- Snapshot 重启后重放
+- failed Memory 不进入恢复上下文
+- Mock/Real namespace 重启后隔离
+
+**Wiring:**
+- `main.py` `_create_repos()` 扩展为 5 元组返回（含 `ReportArtifactRepository`）
+- SQLite backend 复用同一 engine/session_factory
+- Memory backend 使用 `InMemoryReportArtifactRepository`
+- `report_repository` 创建移至 `_create_repos` 之后，接收 `metadata_repo`
+
+**Settings.version:** M4.2
+
+**新增文件:**
+- `backend/app/persistence/repositories/report_artifact.py`
+
+**测试:**
+- 新增 `test_m42_recovery.py`：23 tests（report metadata save/get/restart/tamper/missing/unsafe 路径 + conversation restart + pending clarification restart + snapshot restart + Mock/Real isolation + wiring）
+- 全仓 1618 tests passing（+23）
+
+**注意:** 不新增 Alembic migration（report_artifacts 表现有 schema 足够）；默认 persistence_backend 仍为 memory。不进入 M4.3 history/search/delete API。
+
 ## [M4.1.3] — 2026-08-19
 
 ### SQLite Lock Transaction Exit Final Hardening

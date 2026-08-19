@@ -5,80 +5,69 @@
 
 ## 当前阶段
 
-**M4.1.3 — SQLite Lock Transaction Exit Final Hardening 已完成。**
-
-### 变更内容
-
-#### Fix A — locked failure 必须退出原 transaction 再 fresh-session resolution
-
-M4.1.2 的 `_resolve_locked_commit_failure` 虽创建新 session，但在 `async with session.begin()` 异常处理器内部被调用，此时原 SQLAlchemy session.begin() context 尚未退出，原 transaction 可能仍处于 failed/poisoned 状态。
-
-M4.1.3 重构 `commit()` 的 locked 分支：
-
-1. **在 transaction 内**：捕获 locked OperationalError 后只保存 failure context（conversation_id、runtime_mode、target_version），不调用 resolver。
-2. **让 `session.begin()` context 自然退出**：`session.begin()` 的 `__aexit__` 触发 rollback，原 transaction 完全终止。
-3. **transaction context 退出后**：`_locked_failure_ctx` 非空则调用 `_resolve_locked_commit_failure` 使用 **全新 session + 全新 transaction** 重新读取 latest committed version。
-4. resolver 始终抛出确定的 domain 异常：`MemoryVersionConflictError`（version advanced）或 `PersistenceRepositoryError`（version not advanced）。
-
-成功路径完全不变：全部在单一 transaction 内。
-
-#### Fix B — 真实 SQLite lock integration test
-
-新增 3 个测试（`TestTransactionExitBeforeReread`）：
-
-1. **`test_real_sqlite_lock_triggers_locked_path`**：两个独立 engine，Writer A 持有真实 SQLite write lock，Writer B 的 commit() 触发真实 SQLITE_BUSY → 走 locked path → PersistenceRepositoryError。释放锁后验证 memory 仍为 PENDING、无 half-commit。
-2. **`test_real_sqlite_lock_precreated_pending`**：预创建 conversation 和 pending（避免 ensure_conversation 被锁阻塞），Writer A 持有锁，B 的 UPDATE 被锁 → locked path → PersistenceRepositoryError。验证顺序正确。
-3. **`test_session_exit_sequence_proof`**：instrumented session factory + event markers 断言 locked 路径被命中、至少 2 个 distinct session（commit session + fresh reread session）、locked 后 memory 仍为 PENDING。
-
-不依赖 sleep-based 同步，使用明确的 connection/tx 生命周期控制。
-
-#### Error Handling Structure（M4.1.3 最终版）
-
-清晰保持边界：
-- **IntegrityError**：仅 committed-version unique conflict → `MemoryVersionConflictError`；其他 IntegrityError 原样抛出
-- **OperationalError A（locked/busy）**：transaction 内只保存上下文 → transaction 完全退出/rollback → **transaction 外** fresh session bounded reread → `MemoryVersionConflictError`（version conflict）或 `PersistenceRepositoryError`（version not advanced）
-- **OperationalError B（non-lock）**：disk I/O、corruption、unable to open DB → `PersistenceRepositoryError`
-
-### 架构影响
-
-- `backend/app/persistence/repositories/memory.py` `commit()` 中 locked 分支改为：捕获时只保存 context，resolver 调用移至 transaction context 退出后
-- `backend/app/persistence/repositories/common.py` `_resolve_locked_commit_failure` docstring 更新（M4.1.3 语义强化）
-- `backend/app/persistence/__init__.py` `create_engine` 新增可选的 `busy_timeout` 参数（测试缩短至 100ms，production 默认 5000ms）
-- Settings.version 更新为 `M4.1.3`
-- 不新增 Alembic migration（schema 未变）
-- 默认 `persistence_backend` 仍为 `memory`
+**M4.2 — 会话与报表元数据恢复 已完成。**
 
 ### M4.1 series FINAL PASS
 
-M4.1 系列（M4.1 → M4.1.1 → M4.1.2 → M4.1.3）全部完成：
+M4.1 系列（M4.1 → M4.1.1 → M4.1.2 → M4.1.3）全部完成。
 
-**M4.1**
-- SQLite Memory/Snapshot persistence
-- production wiring
-- restart repository proof
+### M4.2 变更内容
 
-**M4.1.1**
-- conversation root race hardening
-- narrowed error semantics
+#### A — Report metadata persistent repository
 
-**M4.1.2**
-- fresh-session resolver
-- real OperationalError injection
+新增 `ReportArtifactRepository` 抽象接口，包含 `save()`、`get()`、`exists()` 方法。`SQLiteReportArtifactRepository` 使用现有 `report_artifacts` 表（无需 migration）持久化 report metadata；`InMemoryReportArtifactRepository` 用于 memory backend 兼容。
 
-**M4.1.3**
-- transaction-exit-before-reread
-- real SQLite lock integration
+主要边界：
+- HTML 正文始终存储在 `local_state/reports/<report_id>.html`（filesystem），数据库不存储 HTML blob
+- `relative_path` 列指向 filesystem 路径，非 HTML 内容
+- 注释禁止 path traversal（路径由 report_id 固定构建）
+- UUIDv4 PK 碰撞由 DB 约束保证
 
-**M4.2：NOT STARTED**
+#### B — LocalReportRepository 持久化集成
 
-## M4.2 下一步
+- `LocalReportRepository` 新增可选的 `metadata_repo` 参数
+- `store()`：原子 filesystem 写入 → metadata repository 保存；metadata 失败时清理已写入的 HTML 文件
+- `get()` / `read_html()` 优先查询进程内 `_items` cache，miss 时通过 metadata repository 恢复（重启 recovery 路径）
+- `read_html()` 增加 `_validate_path()`：根据 report_id 安全构建目标路径，验证文件存在和 content_hash
+- 篡改后的 HTML 文件 → `ReportStorageError`（report_content_hash_mismatch）
+- 缺失 HTML 文件 → `ReportNotFoundError`
+
+#### C — Memory/Snapshot 重启恢复
+
+M4.1 已实现的 Memory/Snapshot restart recovery 路径保持不变，补充验证：
+- committed Memory 重启后续读 continuation
+- PendingClarification 重启后恢复
+- Snapshot 重启后重放
+- failed Memory 不进入恢复上下文
+- Mock/Real namespace 重启后隔离
+
+#### D — Wiring
+
+- `main.py` `_create_repos()` 扩展为 5 元组返回，包含 `ReportArtifactRepository`
+- SQLite backend：`SQLiteReportArtifactRepository` 复用同一 engine/session_factory
+- Memory backend：`InMemoryReportArtifactRepository`
+- `report_repository` 的创建移至 `_create_repos` 调用之后，接收 `metadata_repo=report_artifact_repo`
+- Settings.version → `M4.2`
+
+### 架构影响
+
+- `backend/app/persistence/repositories/report_artifact.py`（新文件）：`ReportArtifactRepository` 抽象 + `SQLiteReportArtifactRepository` + `InMemoryReportArtifactRepository`
+- `backend/app/report/resources.py` `LocalReportRepository` 改造：metadata_repo 注入、_resolve_artifact 重启恢复、_validate_path 安全路径
+- `backend/app/main.py`：`_create_repos` 返回 5 元组，wiring 顺序调整
+- `backend/app/config/settings.py`：version → M4.2
+- 不新增 Alembic migration（report_artifacts 表现有 schema 足够）
+- 默认 `persistence_backend` 仍为 `memory`
+- 不新增 tag
+
+### M4.2 PASS
+
+## M4.3 下一步
 
 后续轮次：
 
-1. **M4.2**: Conversation/Report metadata recovery（重启后重建状态）
-2. **M4.3**: 最近对话 API / 聊天搜索 API / 删除会话 API
-3. **M4.4**: Restart/crash acceptance（E2E 验证重启后状态恢复）
-4. **M5**: React + Vite 前端
+1. **M4.3**: 最近对话 API / 聊天搜索 API / 删除会话 API（NOT STARTED）
+2. **M4.4**: Restart/crash acceptance（E2E 验证重启后状态恢复）
+3. **M5**: React + Vite 前端
 
 ## 关键命令
 
