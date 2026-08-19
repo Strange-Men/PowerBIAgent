@@ -2,6 +2,34 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.2.2] — 2026-08-19
+
+### 路径与元数据一致性最终加固
+
+**A — 路径 containment 加固（FIX 1）:**
+- `_validate_path()` 替换 `str(target).startswith(str(root))` 为严格 `parent` 比较
+- sibling-prefix escape 检测：`/x/reports_evil/` 不再被当作 `/x/reports/` 的子目录
+- relative_path 必须是单层 filename（拒绝 nested directory）
+- symlink escape 检测（platform 允许时）
+- 新增测试：`../evil.html`、绝对路径、wrong filename、nested path、sibling-prefix escape、symlink escape、valid path
+
+**B — 元数据 coherence 验证（FIX 2）:**
+- 新增 `_validate_coherence()`：DB column vs payload_json 一致性验证
+- 验证 9 个关键字段：report_id、template_key、semantic_model_key、schema_fingerprint、source_mode、content_hash、relative_path、conversation_id、request_id
+- 任一冲突 → `ReportStorageError`，fail closed
+- 新增测试：payload report_id != row、content_hash mismatch、relative_path mismatch、source_mode mismatch、linkage mismatch
+
+**文档一致性:**
+- `models.py` 修正 relative_path comment 为 `<report_id>.html`、payload_json comment 为 metadata-only
+- `docs/09`：M4.2 series FINAL PASS，M4.3 NOT STARTED
+- `docs/08`：更新路线状态
+
+**Settings.version:** M4.2.2
+
+**测试:**
+- +16 tests for M4.2.2（8 path containment + 5 coherence + 3 legacy regression）
+- 全仓 all passing
+
 ## [M4.2.1] — 2026-08-19
 
 ### 报表元数据权威边界与会话关联收口

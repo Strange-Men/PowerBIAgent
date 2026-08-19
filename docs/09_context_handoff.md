@@ -5,63 +5,48 @@
 
 ## 当前阶段
 
-**M4.2.1 — 报表元数据权威边界与会话关联收口 进行中。**
+**M4.2 series FINAL PASS。**
 
-### M4.1 series FINAL PASS
+M4.2.2 — 路径与元数据一致性最终加固已完成。
 
-M4.1 系列（M4.1 → M4.1.1 → M4.1.2 → M4.1.3）全部完成。
+### M4.2 series FINAL PASS
 
-### M4.2 — 已完成
+M4.2.1 已正式完成（commit `80eea6a313b65`）。
+M4.2.2 已正式完成（路径 containment 修复 + 元数据 coherence 验证 + 文档一致性完成）。
 
-M4.2 已正式完成（commit `47ab77d3d986`，CI run `32222354610` success）。
+| 子版本 | 内容 | 状态 |
+|--------|------|------|
+| M4.2 | 会话与报表元数据恢复 | ✅ 完成 |
+| M4.2.1 | 报表元数据权威边界与会话关联收口 | ✅ 完成 |
+| **M4.2.2** | **路径与元数据一致性最终加固** | **✅ 本轮完成** |
 
-### M4.2.1 变更内容
+### M4.2.2 变更内容
 
-#### A — DB metadata-only serialization（HTML 不再进入 payload_json）
+#### A — 路径 containment 加固（FIX 1）
 
-- 新增 `ReportArtifactMetadata` Pydantic DTO：metadata-only，不包含 `html` 字段
-- `payload_json` 现在序列化 `ReportArtifactMetadata` 而非完整 `ReportArtifact`
-- `_model_to_artifact()` 重构时返回 `html=""`（filesystem 是 HTML 权威来源）
-- 对遗留 payload_json 检测到 `html` 字段非空 → fail closed（`ReportStorageError`）
-- 新增测试：直接读取 DB 确认 `<!DOCTYPE` 和 `<html` 不在 payload_json 中
+- `_validate_path()` 替换 `str(target).startswith(str(root))` 为严格 `parent` 比较
+- 新增规则：relative_path 必须是单层 filename（拒绝 nested directory）
+- 新增规则：sibling-prefix escape 检测（`/x/reports_evil/` vs `/x/reports/`）
+- 新增规则：symlink escape 检测（platform 允许时）
+- `_target()` 已正确使用 `parent` 比较，不做修改
+- 参考 Python 官方 [pathlib.Path.resolve](https://docs.python.org/3/library/pathlib.html#pathlib.Path.resolve) 文档确认跨平台行为
 
-#### B — relative_path 成为 recovery authority + 路径安全验证
+#### B — 元数据 coherence 验证（FIX 2）
 
-- `_validate_path()` 现在使用 `artifact.relative_path` 而非从 report_id 重新计算
-- 新路径安全规则：
-  1. 必须为相对路径（拒绝绝对路径）
-  2. resolve 后必须位于 report root 内
-  3. 禁止 `..` traversal（`startswith` root 检查）
-  4. filename 必须与 report_id 一致
-  5. 必须以 `.html` 结尾
-- `relative_path` 存储简化为 `<report_id>.html`（不再含 `local_state/reports/` 前缀）
-- root 本身由 `LocalReportRepository._root` 决定
-
-#### C — conversation_id / request_id linkage 持久化
-
-- `ReportRepository.store()` 扩展可选 `conversation_id` / `request_id` 参数
-- `ReportArtifactRepository.save()` 同样扩展
-- `ReportSpec` 新增可选 `conversation_id` / `request_id` 字段（通过 data contract 携带）
-- `_render_report` 工具 handler 从 `ReportSpec` 提取并传递给 store
-- `DeepSeekTurnService` 和 `MockTurnService` 在调用 render 前设置 `conversation_id` / `request_id` 到 `ReportSpec`
-- 新增测试：linkage 写入 DB、重启后保持、两个 conversation 隔离
+- 新增 `_validate_coherence()`：reconstruct 前验证 DB column 与 payload_json 一致性
+- 验证字段：report_id, template_key, semantic_model_key, schema_fingerprint, source_mode, content_hash, relative_path, conversation_id, request_id
+- DB column 与 payload 同时有值时必须严格一致
+- 任一关键字段冲突 → `ReportStorageError`，fail closed
+- 新增 `_coerce_bool_nullable()` 辅助处理空字符串与 None 对比
 
 ### 架构影响
 
-- `backend/app/schemas/data_contracts.py`：`ReportSpec` 扩展 `conversation_id` / `request_id` 可选字段
-- `backend/app/report/resources.py`：`ReportArtifactMetadata` DTO、`_build_metadata_json()`、`relative_path` 验证安全规则、`ReportArtifact` 扩展 `relative_path` / `conversation_id` / `request_id`
-- `backend/app/persistence/repositories/report_artifact.py`：`save()` 和 `_artifact_to_model_values()` 扩展参数、legacy HTML payload fail-closed 检测
-- `backend/app/harness/tool_registry.py`：`_render_report` 传递 conversation/request_id 到 store
-- `backend/app/application/deepseek_turn_service.py`、`mock_turn_service.py`：在调用 render 前设置 conversation/request_id
-- `backend/app/config/settings.py`：version → M4.2.1
-- 不新增 Alembic migration（report_artifacts 表现有 schema 足够）
+- `backend/app/report/resources.py`：`_validate_path()` 严格 Path containment、单层 filename、symlink 检测
+- `backend/app/persistence/repositories/report_artifact.py`：新增 `_validate_coherence()` / `_coerce_bool_nullable()`，`_model_to_artifact()` 恢复前执行一致性验证
+- `backend/app/persistence/models.py`：修正 comment 为当前真实 contract
+- `backend/app/config/settings.py`：version → M4.2.2
+- 不新增 Alembic migration（入侵式测试可修改 DB 验证 fail-closed，不依赖 schema change）
 - 不新增 tag
-
-## M4.2.1 当前状态
-
-```bash
-D:\Conda\envs\PBIAgent\python.exe -m pytest backend\tests\unit\persistence\test_m42_recovery.py -q --asyncio-mode=auto
-```
 
 ## M4.3 下一步
 
@@ -95,4 +80,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\check_documentation_governance.py
 
 ---
 
-*最后更新：2026-08-19 | M4.2.1 — 报表元数据权威边界与会话关联收口*
+*最后更新：2026-08-19 | M4.2.2 — 路径与元数据一致性最终加固*

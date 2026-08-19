@@ -2,7 +2,7 @@
 
 PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并以固定模板生成静态 HTML 报表。
 
-当前版本：**M4.2.1 — 报表元数据权威边界与会话关联收口**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。M4.0 建立本地持久化架构（SQLite/SQLAlchemy Async/Alembic/Repository ABC）。M4.1 series：SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring、DB 级 concurrent commit invariant、错误语义硬化。M4.2：Report metadata 正式持久化至 report_artifacts 表。M4.2.1：payload_json metadata-only（无 HTML）、relative_path 安全验证 recovery authority、conversation_id/request_id linkage 持久化。
+当前版本：**M4.2.2 — 路径与元数据一致性最终加固**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。M4.0 建立本地持久化架构（SQLite/SQLAlchemy Async/Alembic/Repository ABC）。M4.1 series：SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring、DB 级 concurrent commit invariant、错误语义硬化。M4.2：Report metadata 正式持久化至 report_artifacts 表。M4.2.1：payload_json metadata-only、relative_path 安全验证 recovery authority、conversation_id/request_id linkage 持久化。M4.2.2：路径 containment 加固（替换 startsWith 为严格 parent 比较）、元数据 coherence 验证（DB column vs payload 一致性）、文档同步。
 
 ```text
 Natural Language

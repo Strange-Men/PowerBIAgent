@@ -119,6 +119,40 @@ def _artifact_to_model_values(
     }
 
 
+def _coerce_bool_nullable(val: str | None) -> str | None:
+    """Coerce empty-string DB columns to None for comparison."""
+    return val if val else None
+
+
+def _validate_coherence(row: ReportArtifactModel, meta: dict) -> None:
+    """Verify that DB columns and payload_json agree on critical fields.
+
+    DB row is a persistence authority boundary; payload_json must not
+    silently overwrite key columns.  When a column is non-empty in both
+    locations their values *must* match exactly.
+
+    Raises:
+        ReportStorageError: on any mismatch.
+    """
+    checks = [
+        ("report_id", row.report_id, meta.get("report_id")),
+        ("template_key", row.template_key, meta.get("template_key")),
+        ("semantic_model_key", row.semantic_model_key, meta.get("semantic_model_key")),
+        ("schema_fingerprint", row.schema_fingerprint, meta.get("schema_fingerprint")),
+        ("source_mode", row.source_mode, meta.get("source_mode")),
+        ("content_hash", row.content_hash, meta.get("content_hash")),
+        ("relative_path", row.relative_path, meta.get("relative_path")),
+        ("conversation_id", _coerce_bool_nullable(row.conversation_id), meta.get("conversation_id")),
+        ("request_id", _coerce_bool_nullable(row.request_id), meta.get("request_id")),
+    ]
+    for field, row_val, payload_val in checks:
+        if row_val is not None and payload_val is not None and row_val != payload_val:
+            raise ReportStorageError(
+                f"Metadata coherence violation for {row.report_id}: "
+                f"DB column {field}={row_val!r} != payload {field}={payload_val!r}"
+            )
+
+
 def _model_to_artifact(row: ReportArtifactModel) -> ReportArtifact:
     """Reconstruct ReportArtifact from a row.
 
@@ -130,8 +164,12 @@ def _model_to_artifact(row: ReportArtifactModel) -> ReportArtifact:
     Legacy payloads that contain ``html`` are rejected (fail-closed)
     to prevent the database from being treated as the HTML authority.
 
+    M4.2.2: Before reconstruction the function validates that DB columns
+    and payload_json agree on all critical fields.  Any mismatch raises
+    ``ReportStorageError`` (fail-closed).
+
     Raises:
-        ReportStorageError: if the stored JSON is corrupt or contains legacy HTML.
+        ReportStorageError: corrupt stored data, legacy HTML, or coherence violation.
     """
     if row.payload_json:
         try:
@@ -147,6 +185,9 @@ def _model_to_artifact(row: ReportArtifactModel) -> ReportArtifact:
                 f"Report metadata for {row.report_id} contains legacy HTML — "
                 "database is not the HTML authority"
             )
+
+        # M4.2.2: DB row / payload coherence validation
+        _validate_coherence(row, meta_dict)
 
         # Reconstruct ReportArtifact with empty html (filesystem is authority)
         try:

@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M4.2.1 — 报表元数据权威边界与会话关联收口
+> **状态：** M4.2.2 — 路径与元数据一致性最终加固（已完成）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -20,7 +20,8 @@
 | **M4.1.2** | **SQLite Transaction Failure & Error Semantics Hardening** | **✅ 已完成** |
 | **M4.1.3** | **SQLite Lock Transaction Exit Final Hardening** | **✅ 已完成** |
 | **M4.2** | **Conversation/Report recovery（会话与报表元数据恢复）** | **✅ 已完成** |
-| **M4.2.1** | **Report metadata authority & linkage hardening** | **✅（本轮）** |
+| **M4.2.1** | **Report metadata authority & linkage hardening** | **✅ 已完成** |
+| **M4.2.2** | **路径与元数据一致性最终加固** | **✅ 已完成** |
 | M4.3 | Search/history API | ⬜ 未开始 |
 | M4.4 | Restart/crash acceptance | ⬜ 未开始 |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
@@ -122,4 +123,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 ---
 
-*最后更新：2026-08-18 | M4.0 — Local Persistence Architecture & Storage Foundation*
+*最后更新：2026-08-19 | M4.2.2 — 路径与元数据一致性最终加固*

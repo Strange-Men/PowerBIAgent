@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M4.2.1 — 报表元数据权威边界与会话关联收口
+> **状态：** M4.2.2 — 路径与元数据一致性最终加固（M4.2 series 完成）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -20,7 +20,8 @@
 | **M4.1.2** | **SQLite Transaction Failure & Error Semantics Hardening** | **✅ 已完成** |
 | **M4.1.3** | **SQLite Lock Transaction Exit Final Hardening** | **✅ 已完成** |
 | **M4.2** | **Conversation/Report recovery（会话与报表元数据恢复）** | **✅ 已完成** |
-| **M4.2.1** | **Report metadata authority & linkage hardening** | **✅（本轮）** |
+| **M4.2.1** | **Report metadata authority & linkage hardening** | **✅ 已完成** |
+| **M4.2.2** | **路径与元数据一致性最终加固** | **✅ 已完成** |
 | M4.3 | Search/history API | ⬜ 未开始 |
 | M4.4 | Restart/crash acceptance | ⬜ 未开始 |
 | M5 | React + Vite 前端与联调 | ⬜ 未开始 |
@@ -139,4 +140,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-19 | M4.2.1 — 报表元数据权威边界与会话关联收口*
+*最后更新：2026-08-19 | M4.2.2 — 路径与元数据一致性最终加固*

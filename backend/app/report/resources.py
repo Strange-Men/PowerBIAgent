@@ -417,13 +417,17 @@ class LocalReportRepository(ReportRepository):
     def _validate_path(self, artifact: ReportArtifact) -> Path:
         """Validate and resolve the relative_path as the recovery authority.
 
-        Security rules (M4.2.1):
+        Security rules (M4.2.2):
         1. relative_path must be a relative path (not absolute).
-        2. Resolved path must be inside the configured report root.
-        3. ``..`` traversal is forbidden (enforced by resolve-parent check).
-        4. Target must end with ``.html``.
-        5. Filename must match ``<report_id>.html``.
-        6. File must exist on disk.
+        2. ``..`` traversal and sibling-prefix escape are rejected by
+           strict parent-directory containment: the resolved path must
+           have *exactly* ``self._root`` as its parent.
+        3. Symlinks within root are allowed; a resolved path whose real
+           (symlink-resolved) parent differs from root is rejected.
+        4. relative_path must be a single filename (no directory separators
+           other than a possible leading ``./``).
+        5. The filename must be exactly ``<report_id>.html``.
+        6. The file must exist on disk.
         7. Hash mismatch is checked by the caller after read.
 
         Raises:
@@ -436,25 +440,43 @@ class LocalReportRepository(ReportRepository):
         if os.path.isabs(rp):
             raise ReportNotFoundError("report_not_found")
 
-        # 2. Reject .. traversal — the resolved path must stay under root
+        # 2. relative_path must be a single filename (no directory nesting)
+        normalized = Path(rp).as_posix()
+        # Strip optional leading ./
+        if normalized.startswith("./"):
+            normalized = normalized[2:]
+        if "/" in normalized:
+            raise ReportNotFoundError("report_not_found")
+
+        # 3. Target filename must be exactly <report_id>.html
+        expected_name = f"{artifact.report_id}.html"
+        if normalized != expected_name:
+            raise ReportNotFoundError("report_not_found")
+
+        # 4. Build resolved path and verify strict parent containment.
+        #    Unlike str.startswith, comparing Path.parent catches
+        #    sibling-prefix escape: root=/x/reports, target=/x/reports_evil/x.html
+        #    would have parent=/x/reports_evil which != /x/reports.
+        root_resolved = self._root.resolve()
         try:
-            target = (self._root / rp).resolve()
+            target = (root_resolved / normalized).resolve()
         except (OSError, ValueError):
             raise ReportNotFoundError("report_not_found")
 
-        if not str(target).startswith(str(self._root.resolve())):
+        if target.parent != root_resolved:
             raise ReportNotFoundError("report_not_found")
 
-        # 3. Must be .html
-        if not target.name.endswith(".html"):
+        # 5. Symlink escape check: if the target is a symlink, verify its
+        #    real (ultimate) parent is also the report root.
+        try:
+            real = target.resolve(strict=False)
+        except (OSError, ValueError):
             raise ReportNotFoundError("report_not_found")
+        if target.is_symlink():
+            if real.parent != root_resolved:
+                raise ReportNotFoundError("report_not_found")
 
-        # 4. Filename must match report_id
-        expected_name = f"{artifact.report_id}.html"
-        if target.name != expected_name:
-            raise ReportNotFoundError("report_not_found")
-
-        # 5. File must exist
+        # 6. File must exist
         if not target.exists():
             raise ReportNotFoundError("report_not_found")
 

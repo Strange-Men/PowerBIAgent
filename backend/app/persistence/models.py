@@ -311,7 +311,7 @@ class ReportArtifactModel(Base):
     """Persistent metadata for managed HTML report artifacts.
 
     The actual HTML content continues to live on the filesystem at
-    ``local_state/reports/<report_id>.html``.
+    ``<root>/<report_id>.html`` where root is the LocalReportRepository root.
     """
 
     __tablename__ = "report_artifacts"
@@ -341,11 +341,11 @@ class ReportArtifactModel(Base):
         String(64), nullable=False, comment="SHA-256 of stored HTML"
     )
     relative_path: Mapped[str] = mapped_column(
-        String(256), nullable=False, comment="local_state/reports/<report_id>.html"
+        String(256), nullable=False, comment="<report_id>.html relative to LocalReportRepository root"
     )
     # Structured metadata payload
     payload_json: Mapped[Optional[str]] = mapped_column(
-        Text, nullable=True, comment="ReportArtifact full payload (JSON)"
+        Text, nullable=True, comment="metadata-only ReportArtifactMetadata payload, no HTML"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False),
