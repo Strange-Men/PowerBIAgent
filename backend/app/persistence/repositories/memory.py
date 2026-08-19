@@ -454,35 +454,34 @@ class SQLiteMemoryRepository(MemoryRepository):
                         ) from exc
                     raise
                 except OperationalError as exc:
-                    # SQLite busy/locked → bounded, deterministic handling.
+                    # SQLite busy/locked → fresh-session bounded resolution.
                     # Other OperationalError (disk I/O, corruption) are
                     # wrapped as PersistenceRepositoryError.
                     if not _is_sqlite_locked(exc):
                         raise PersistenceRepositoryError(
                             f"数据库错误 (非锁): {exc}"
                         ) from exc
-                    # Locked — re-read latest version from DB within
-                    # the same (now-failed) transaction scope.
-                    # If another writer committed our version, it's a
-                    # conflict.  Otherwise it's infrastructure failure.
-                    try:
-                        latest_version = await self._get_latest_committed_version(
-                            session, memory.conversation_id, runtime_mode
-                        )
-                    except Exception:
-                        latest_version = -1
+                    # M4.1.2: Never query a (possibly) failed transaction.
+                    # Delegate to a fresh-session helper that re-reads
+                    # the latest committed version in a new transaction
+                    # and raises the authoritative domain exception.
+                    from backend.app.persistence.repositories.common import (
+                        _resolve_locked_commit_failure,
+                    )
 
-                    if latest_version >= new_version:
-                        raise MemoryVersionConflictError(
-                            f"并发提交冲突 (锁): (runtime_mode={runtime_mode.value}, "
-                            f"conversation_id={memory.conversation_id}, "
-                            f"memory_version={new_version}) 版本冲突, "
-                            f"base {memory.base_memory_version}, "
-                            f"latest {latest_version}"
-                        ) from exc
+                    await _resolve_locked_commit_failure(
+                        self._session_factory,
+                        memory.conversation_id,
+                        runtime_mode,
+                        target_version=new_version,
+                    )
+                    # _resolve_locked_commit_failure always raises one of
+                    # MemoryVersionConflictError or PersistenceRepositoryError.
+                    # This line is unreachable — keep as safety net.
                     raise PersistenceRepositoryError(
-                        f"数据库锁冲突，但版本未过时: "
-                        f"latest={latest_version}, target={new_version}: {exc}"
+                        f"Unexpected: locked commit helper returned without raising "
+                        f"for (conversation={memory.conversation_id}, "
+                        f"mode={runtime_mode.value}, target={new_version})"
                     ) from exc
 
             # After commit, return the domain model

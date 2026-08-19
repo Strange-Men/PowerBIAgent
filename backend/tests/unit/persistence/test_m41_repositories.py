@@ -1593,3 +1593,296 @@ class TestErrorSemantics:
         fresh = await sqlite_memory.get_by_request_id("req-001", RuntimeDataMode.MOCK)
         assert fresh is not None
         assert fresh.state_status == MemoryStatus.PENDING
+
+
+# ===========================================================================
+# M4.1.2 — Real OperationalError semantics & fresh-session resolution
+# ===========================================================================
+
+
+class TestRealOperationalErrorSemantics:
+    """M4.1.2: Real OperationalError injection through the repository
+    commit() path, plus fresh-session resolution tests.
+
+    Unlike M4.1.1 string-based helper classification, these tests
+    simulate real DB errors by intercepting session.execute at the
+    UPDATE statement level.
+    """
+
+    # ------------------------------------------------------------------
+    # A. Non-lock OperationalError → PersistenceRepositoryError
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_non_lock_oe_raises_persistence_error(
+        self, sqlite_memory, sample_memory, valid_evidence,
+    ):
+        """An OperationalError that is NOT a lock condition must
+        produce PersistenceRepositoryError, NOT
+        MemoryVersionConflictError.  This test injects a real
+        OperationalError("disk I/O error") at the UPDATE statement
+        inside commit()."""
+        from unittest.mock import patch
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.sql.dml import Update
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        sample_memory.base_memory_version = 0
+        await sqlite_memory.create_pending(sample_memory, RuntimeDataMode.MOCK)
+
+        original_exec = AsyncSession.execute
+
+        async def _mock_exec(self, statement, *args, **kwargs):
+            if isinstance(statement, Update):
+                raise OperationalError("disk I/O error", None, None)
+            return await original_exec(self, statement, *args, **kwargs)
+
+        with patch.object(AsyncSession, "execute", _mock_exec):
+            with pytest.raises(PersistenceRepositoryError) as exc_info:
+                await sqlite_memory.commit(sample_memory, valid_evidence)
+
+        # Must NOT be MemoryVersionConflictError
+        assert "Conflict" not in type(exc_info.value).__name__
+        assert "disk I/O" in str(exc_info.value)
+
+    # ------------------------------------------------------------------
+    # B. Locked + version advanced → MemoryVersionConflictError
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_locked_with_version_advanced_raises_version_conflict(
+        self, sqlite_memory, sample_memory, valid_evidence,
+    ):
+        """When the UPDATE raises 'database is locked' and a concurrent
+        writer has already committed version N+1, the fresh-session
+        reader detects the conflict and raises
+        MemoryVersionConflictError."""
+        from unittest.mock import patch
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.sql.dml import Update
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        sample_memory.base_memory_version = 0
+        await sqlite_memory.create_pending(sample_memory, RuntimeDataMode.MOCK)
+
+        # First, commit a valid memory to advance the version to 1
+        commit_memory = StructuredWorkMemory(
+            conversation_id=sample_memory.conversation_id,
+            request_id="req-advance",
+            current_intent="data_question",
+            measures=["First"],
+            runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+            base_memory_version=0,
+        )
+        await sqlite_memory.create_pending(commit_memory, RuntimeDataMode.MOCK)
+        await sqlite_memory.commit(commit_memory, valid_evidence)
+        # Now version is 1 for conv-001/MOCK
+
+        # Create a new pending based on the stale base=0
+        stale_memory = StructuredWorkMemory(
+            conversation_id=sample_memory.conversation_id,
+            request_id="req-locked-advanced",
+            current_intent="data_question",
+            measures=["Stale"],
+            runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+            base_memory_version=0,
+        )
+        await sqlite_memory.create_pending(stale_memory, RuntimeDataMode.MOCK)
+
+        original_exec = AsyncSession.execute
+
+        async def _locked_exec(self, statement, *args, **kwargs):
+            if isinstance(statement, Update):
+                raise OperationalError("database is locked", None, None)
+            return await original_exec(self, statement, *args, **kwargs)
+
+        # The first UPDATE (for stale_memory's commit) will fail with "locked".
+        # The fresh-session helper then reads latest_version=1 >= target_version=1,
+        # so it raises MemoryVersionConflictError.
+        with patch.object(AsyncSession, "execute", _locked_exec):
+            with pytest.raises(MemoryVersionConflictError) as exc_info:
+                await sqlite_memory.commit(stale_memory, valid_evidence)
+
+        assert "Conflict" in str(type(exc_info.value).__name__)
+
+    # ------------------------------------------------------------------
+    # C. Locked + version unchanged → PersistenceRepositoryError
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_locked_with_version_unchanged_raises_persistence_error(
+        self, sqlite_memory, sample_memory, valid_evidence,
+    ):
+        """When the UPDATE raises 'database is locked' and NO concurrent
+        writer advanced the version, the fresh-session reader detects
+        no progress and raises PersistenceRepositoryError."""
+        from unittest.mock import patch
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.sql.dml import Update
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        sample_memory.base_memory_version = 0
+        await sqlite_memory.create_pending(sample_memory, RuntimeDataMode.MOCK)
+
+        original_exec = AsyncSession.execute
+
+        async def _locked_exec(self, statement, *args, **kwargs):
+            if isinstance(statement, Update):
+                raise OperationalError("database is locked", None, None)
+            return await original_exec(self, statement, *args, **kwargs)
+
+        with patch.object(AsyncSession, "execute", _locked_exec):
+            with pytest.raises(PersistenceRepositoryError) as exc_info:
+                await sqlite_memory.commit(sample_memory, valid_evidence)
+
+        assert "Conflict" not in type(exc_info.value).__name__
+        assert "locked" in str(exc_info.value).lower() or "version not advanced" in str(exc_info.value)
+
+    # ------------------------------------------------------------------
+    # D. Fresh-session proof
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_locked_reread_uses_fresh_session(
+        self, sqlite_memory, sample_memory, valid_evidence,
+    ):
+        """After an UPDATE locked OperationalError, the version re-read
+        uses a NEW session, not the original failed session.  We prove
+        this by tracking session creation."""
+        from unittest.mock import patch
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.sql.dml import Update
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        sample_memory.base_memory_version = 0
+        await sqlite_memory.create_pending(sample_memory, RuntimeDataMode.MOCK)
+
+        # Track session creation via the factory
+        original_factory = sqlite_memory._session_factory
+        fresh_session_created = False
+        sessions_created = []
+
+        class _TrackingFactory:
+            def __call__(self, **kw):
+                session = original_factory(**kw)
+                sessions_created.append(id(session))
+                return session
+
+        sqlite_memory._session_factory = _TrackingFactory()
+
+        original_exec = AsyncSession.execute
+
+        async def _locked_exec(self, statement, *args, **kwargs):
+            if isinstance(statement, Update):
+                raise OperationalError("database is locked", None, None)
+            return await original_exec(self, statement, *args, **kwargs)
+
+        with patch.object(AsyncSession, "execute", _locked_exec):
+            with pytest.raises(PersistenceRepositoryError):
+                await sqlite_memory.commit(sample_memory, valid_evidence)
+
+        # The commit() creates one session internally.
+        # _resolve_locked_commit_failure creates another (fresh).
+        # So sessions_created should have at least 2 distinct IDs.
+        assert len(sessions_created) >= 2, (
+            f"Expected at least 2 sessions (commit + fresh reread), "
+            f"got {len(sessions_created)}"
+        )
+        assert len(set(sessions_created)) >= 2, (
+            f"Sessions must be distinct objects: {sessions_created}"
+        )
+
+    # ------------------------------------------------------------------
+    # E. DB failure does not pollute subsequent operations
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_operational_error_does_not_pollute_subsequent_ops(
+        self, sqlite_memory, sample_memory, valid_evidence,
+    ):
+        """After an OperationalError in commit(), subsequent repository
+        operations (get, create) still work on fresh sessions."""
+        from unittest.mock import patch
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.sql.dml import Update
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        sample_memory.base_memory_version = 0
+        sample_memory.conversation_id = "conv-pollute-test"
+        sample_memory.request_id = "req-pollute"
+        await sqlite_memory.create_pending(sample_memory, RuntimeDataMode.MOCK)
+
+        original_exec = AsyncSession.execute
+
+        async def _locked_exec(self, statement, *args, **kwargs):
+            if isinstance(statement, Update):
+                raise OperationalError("database is locked", None, None)
+            return await original_exec(self, statement, *args, **kwargs)
+
+        with patch.object(AsyncSession, "execute", _locked_exec):
+            with pytest.raises(PersistenceRepositoryError):
+                await sqlite_memory.commit(sample_memory, valid_evidence)
+
+        # Subsequent operation — must work with a fresh session
+        retrieved = await sqlite_memory.get_by_request_id(
+            "req-pollute", RuntimeDataMode.MOCK
+        )
+        assert retrieved is not None
+        assert retrieved.state_status == MemoryStatus.PENDING
+
+        # Can also create a new pending after the failure
+        new_memory = StructuredWorkMemory(
+            conversation_id=sample_memory.conversation_id,
+            request_id="req-pollute-2",
+            current_intent="data_question",
+            measures=["AfterFailure"],
+            runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+            base_memory_version=0,
+        )
+        created = await sqlite_memory.create_pending(new_memory, RuntimeDataMode.MOCK)
+        assert created.state_status == MemoryStatus.PENDING
+
+    # ------------------------------------------------------------------
+    # F. No half-committed memory after locked failure
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_no_half_committed_memory_after_locked(
+        self, sqlite_memory, sample_memory, valid_evidence,
+    ):
+        """After a locked OperationalError, the memory row must still
+        be in PENDING state — not half-COMMITTED."""
+        from unittest.mock import patch
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.sql.dml import Update
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        sample_memory.base_memory_version = 0
+        sample_memory.conversation_id = "conv-half"
+        sample_memory.request_id = "req-half"
+        await sqlite_memory.create_pending(sample_memory, RuntimeDataMode.MOCK)
+
+        original_exec = AsyncSession.execute
+
+        async def _locked_exec(self, statement, *args, **kwargs):
+            if isinstance(statement, Update):
+                raise OperationalError("database is locked", None, None)
+            return await original_exec(self, statement, *args, **kwargs)
+
+        with patch.object(AsyncSession, "execute", _locked_exec):
+            with pytest.raises(PersistenceRepositoryError):
+                await sqlite_memory.commit(sample_memory, valid_evidence)
+
+        # Verify the memory is still PENDING
+        retrieved = await sqlite_memory.get_by_request_id(
+            "req-half", RuntimeDataMode.MOCK
+        )
+        assert retrieved is not None
+        assert retrieved.state_status == MemoryStatus.PENDING
+        assert retrieved.memory_version == 0  # Not advanced
+
+        # Verify no committed versions exist for this conversation
+        latest = await sqlite_memory.get_latest_committed(
+            "conv-half", RuntimeDataMode.MOCK
+        )
+        assert latest is None

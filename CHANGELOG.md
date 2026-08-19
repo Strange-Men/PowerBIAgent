@@ -2,6 +2,31 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.1.2] — 2026-08-19
+
+### SQLite Transaction Failure & Error Semantics Hardening
+
+**Fix A — Locked transaction 内不继续查询:**
+- 原 `commit()` 在捕获 `OperationalError("database is locked")` 后在同一 session/transaction 中继续查询 latest version，但 transaction 在 OperationalError 后可能已进入 failed state
+- 抽取 `_resolve_locked_commit_failure` helper 至 `repositories/common.py`，使用 fresh session + fresh transaction 重新读取 latest committed version
+- `commit()` 中 locked 分支简化为 delegate，不再在 failed transaction 中 query
+
+**Fix B — 真实 OperationalError 注入测试:**
+- 通过 `unittest.mock.patch.object(AsyncSession, 'execute')` 在 UPDATE 语句层级注入真实 OperationalError
+- 6 个新测试覆盖：non-lock → PersistenceRepositoryError、locked + version advanced → MemoryVersionConflictError、locked + unchanged → PersistenceRepositoryError、fresh-session proof（≥2 distinct sessions）、failed tx recovery、no half-committed memory
+
+**Error Handling 结构硬化:**
+- IntegrityError：仅 committed-version unique conflict → `MemoryVersionConflictError`；其他 IntegrityError 原样抛出
+- OperationalError A（locked/busy）：退出原 transaction → fresh session bounded reread → 版本冲突或持久化失败
+- OperationalError B（non-lock：disk I/O、corruption、unable to open DB）：→ `PersistenceRepositoryError`
+
+**测试:**
+- 新增 6 个真实 error injection tests
+- 全仓 1574 tests passing（+6）
+- Golden 11 PASS / 1 SKIP
+
+**注意：** Settings.version 保持 `M4.1`（frozen field，非功能版本号）；不新增 Alembic migration（schema 未变）；默认 persistence_backend 仍为 memory。M4.2 未开始。
+
 ## [M4.1] — 2026-08-18
 
 ### SQLite 记忆与请求快照持久化 + 并发提交 invariant

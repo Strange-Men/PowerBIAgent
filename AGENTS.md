@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M4.1.1 — 会话创建竞态与数据库错误语义加固**。
+当前版本：**M4.1.2 — SQLite Transaction Failure & Error Semantics Hardening**。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -19,6 +19,8 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。
 - **M4.0** 已建立本地持久化架构与存储基础：SQLite + SQLAlchemy Async + aiosqlite + Alembic 技术栈；`backend/app/persistence/` 包（database.py / models.py / serialization.py）；5 表 schema（conversations / work_memories / pending_clarifications / result_snapshots / report_artifacts）；Alembic migration 基线；`MemoryRepository` / `SnapshotRepository` ABC 抽象；TurnPipeline 不再绑定 `InMemoryMemoryRepository`；ADR-012。
 - **M4.1** 已实现 `SQLiteMemoryRepository` + `SQLiteSnapshotRepository` production wiring、DB 级 partial unique index 并发提交 invariant（`ix_work_memories_committed_version`）、严格 concurrent commit 测试。`persistence_backend=sqlite` 提供跨重启持久化。默认 backend 仍为 `memory`。
+- **M4.1.1** 已实现 transaction-safe conversation root upsert、Memory/Snapshot 首次创建 race hardening、committed-version partial unique invariant、OperationalError 初步分类、`PersistenceRepositoryError` 异常类。
+- **M4.1.2** 已实现 failed transaction 后 fresh-session conflict resolution（`_resolve_locked_commit_failure` helper）、real OperationalError semantics tests（通过 `AsyncSession.execute` 注入）、infrastructure failure 与 business version conflict 严格分离。
 
 当前真实主链：
 

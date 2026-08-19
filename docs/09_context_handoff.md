@@ -1,34 +1,43 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-08-18
+> **最后更新：** 2026-08-19
 
 ## 当前阶段
 
-**M4.1.1 — 会话创建竞态与数据库错误语义加固已完成。** M4.1 基础上的 hardening，不改变产品版本（Settings.version 仍为 M4.1）。
+**M4.1.2 — SQLite Transaction Failure & Error Semantics Hardening 已完成。** M4.1.1 基础上的强制硬化，不改变产品版本（Settings.version 仍为 M4.1.2）。
 
 ### 变更内容
 
-#### Fix A — Transaction-safe conversation root upsert
+#### Fix A — Locked transaction 内不继续查询
 
-- 抽取共享 `ensure_conversation` helper 至 `repositories/common.py`
-- 使用 SQLite 原生 `INSERT OR IGNORE` 代替原 `SELECT → INSERT → catch IntegrityError → expunge` 模式
-- 新方案不会污染 transaction state，并发首次插入同一 (runtime_mode, conversation_id) 时原子性 no-op
-- MemoryRepository 和 SnapshotRepository 均委托该共享 helper
+- 原 `commit()` 在捕获 `OperationalError("database is locked")` 后，在同一 session/transaction 中继续 `_get_latest_committed_version()` 查询。  SQLAlchemy transaction 在 OperationalError 后可能已进入 failed state，此时继续 query 不可靠。
+- 修复：捕获 locked/busy 后立即退出原 transaction，委托 `_resolve_locked_commit_failure` helper 使用 **fresh session + fresh transaction** 重新读取 latest committed version。
+- 新 helper 通过 `session_factory()` 创建全新 session，纯读取不修改业务状态，返回确定的 domain 异常。
 
-#### Fix B — 缩窄数据库错误语义映射
+#### Fix B — 真实 OperationalError 注入测试
 
-- `commit()` 中 `IntegrityError` 仅当错误消息包含 committed-version partial unique index 的三列（runtime_mode, conversation_id, memory_version）时才转 `MemoryVersionConflictError`；其他 IntegrityError（FK、NOT NULL）re-raise
-- `OperationalError` 区分 SQLite busy/locked 条件 vs 磁盘 I/O、损坏等非锁错误；非锁错误转为 `PersistenceRepositoryError`；锁冲突时 bounded re-read 最新版本，版本过时转 `MemoryVersionConflictError`，未过时转 `PersistenceRepositoryError`
-- 新增 `PersistenceRepositoryError` 异常类（`repositories/common.py`），最小异常体系，不建立复杂层次
+- 当前 M4.1.1 测试只通过字符串分类验证 `_is_sqlite_locked` helper，不经过真实 `commit()` 路径。
+- 新增 6 个测试，通过 `unittest.mock.patch.object(AsyncSession, 'execute')` 在 UPDATE 语句层级注入真实 `OperationalError`：
 
-#### 新增测试（9 个）
+1. **non-lock OperationalError → PersistenceRepositoryError**：UPDATE 抛出 `OperationalError("disk I/O error")` → `_is_sqlite_locked` 返回 False → `PersistenceRepositoryError`
+2. **locked + version advanced → MemoryVersionConflictError**：UPDATE 抛出 `"database is locked"`，fresh session reread 检测到 concurrent writer 已提交 target_version → `MemoryVersionConflictError`
+3. **locked + unchanged → PersistenceRepositoryError**：UPDATE 抛出 `"database is locked"`，fresh session reread 发现版本未推进 → `PersistenceRepositoryError`
+4. **fresh-session proof**：追踪 session 创建数量，证明 locked 后 reread 使用的是新 session（≥2 distinct sessions）
+5. **failed tx recovery**：locked 失败后，后续 `get_by_request_id` 和 `create_pending` 使用 fresh session 正常工作
+6. **no half-committed memory**：locked 失败后 memory 仍为 PENDING，memory_version 未推进，无 COMMITTED 行
 
-- **4 个 conversation first-create race tests**：两个独立 session 同时首次创建同 conversation（不同 request_id 均成功、conversations 表 1 行）；Memory + Snapshot 同时首次创建同 conversation root；8 轮多轮验证；serial idempotent 验证
-- **5 个 error semantics tests**：committed-version unique conflict → `MemoryVersionConflictError`；unrelated IntegrityError 不吞噬；`_is_sqlite_locked` 正确识别锁/非锁消息；`_is_version_index_conflict` 正确识别三列组合；failed transaction 后后续操作正常
+#### Error Handling Structure
+
+清晰保持边界：
+- **IntegrityError**：仅 committed-version unique conflict → `MemoryVersionConflictError`；其他 IntegrityError 原样抛出
+- **OperationalError A（locked/busy）**：退出原 transaction → fresh session bounded reread → `MemoryVersionConflictError`（version conflict）或 `PersistenceRepositoryError`（version not advanced）
+- **OperationalError B（non-lock）**：disk I/O、corruption、unable to open DB → `PersistenceRepositoryError`
 
 ### 架构影响
 
+- `backend/app/persistence/repositories/common.py` 新增 `_resolve_locked_commit_failure` helper
+- `backend/app/persistence/repositories/memory.py` `commit()` 中 locked 分支简化为委托给 fresh-session helper
 - Settings.version 保持 `M4.1`（frozen field，非功能版本号）
 - 不新增 Alembic migration（schema 未变）
 - 默认 `persistence_backend` 仍为 `memory`
@@ -66,4 +75,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\check_documentation_governance.py
 
 ---
 
-*最后更新：2026-08-18 | M4.1.1 — 会话创建竞态与数据库错误语义加固*
+*最后更新：2026-08-19 | M4.1.2 — SQLite Transaction Failure & Error Semantics Hardening*

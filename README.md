@@ -2,7 +2,7 @@
 
 PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并以固定模板生成静态 HTML 报表。
 
-当前版本：**M4.1.1 — 会话创建竞态与数据库错误语义加固**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。M4.0 建立本地持久化架构（SQLite/SQLAlchemy Async/Alembic/Repository ABC）。M4.1 实现 SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring 与 DB 级 concurrent commit invariant。M4.1.1 加固 conversation 创建竞态与数据库错误语义映射。
+当前版本：**M4.1.2 — SQLite Transaction Failure & Error Semantics Hardening**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。M4.0 建立本地持久化架构（SQLite/SQLAlchemy Async/Alembic/Repository ABC）。M4.1 实现 SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring 与 DB 级 concurrent commit invariant。M4.1.1 加固 conversation 创建竞态与数据库错误语义映射。M4.1.2 硬化 failed transaction fresh-session conflict resolution 与真实 OperationalError 语义测试。
 
 ```text
 Natural Language
