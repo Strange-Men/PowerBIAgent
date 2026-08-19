@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M4.1.2 — SQLite Transaction Failure & Error Semantics Hardening
+> **状态：** M4.1.3 — SQLite Lock Transaction Exit Final Hardening
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -17,7 +17,8 @@
 | **M4.0** | **本地持久化架构与存储基础** | ✅ **已完成** |
 | **M4.1** | **Memory/Snapshot SQLite 实现 + 并发提交 invariant** | ✅ **已完成** |
 | **M4.1.1** | **会话创建竞态与数据库错误语义加固** | **✅ 已完成** |
-| **M4.1.2** | **SQLite Transaction Failure & Error Semantics Hardening** | **✅（本轮）** |
+| **M4.1.2** | **SQLite Transaction Failure & Error Semantics Hardening** | **✅ 已完成** |
+| **M4.1.3** | **SQLite Lock Transaction Exit Final Hardening** | **✅（本轮）** |
 | M4.2 | Conversation/Report recovery | ⬜ 未开始 |
 | M4.3 | Search/history API | ⬜ 未开始 |
 | M4.4 | Restart/crash acceptance | ⬜ 未开始 |

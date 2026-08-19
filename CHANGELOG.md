@@ -2,6 +2,35 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.1.3] — 2026-08-19
+
+### SQLite Lock Transaction Exit Final Hardening
+
+**Fix A — locked failure 必须退出原 transaction 再 fresh-session resolution:**
+- M4.1.2 的 `_resolve_locked_commit_failure` 虽创建新 session，但在 `async with session.begin()` 异常处理器内部被调用，原 transaction context 尚未退出
+- 重构：捕获 locked OperationalError 后只保存 failure context → session.begin() context 自然退出/rollback → transaction 外使用全新 session 调用 resolver
+- 成功路径完全不变，全部在单一 transaction 内
+
+**Fix B — 真实 SQLite lock integration test:**
+- `create_engine` 新增可选的 `busy_timeout` 参数（测试 100ms，production 5000ms）
+- 3 个新测试：real 2-engine SQLite lock 触发 locked path、pre-created pending 下 lock 测试、instrumented session-exit 顺序证明
+- 不依赖 sleep-based 同步，使用明确的 connection/tx 生命周期控制
+
+**Error Handling 结构硬化（M4.1.3 最终版）:**
+- IntegrityError：仅 committed-version unique conflict → `MemoryVersionConflictError`；其他 IntegrityError 原样抛出
+- OperationalError A（locked/busy）：transaction 内只保存上下文 → transaction 完全退出/rollback → transaction 外 fresh session bounded reread
+- OperationalError B（non-lock：disk I/O、corruption）：→ `PersistenceRepositoryError`
+
+**M4.1 series FINAL PASS:**
+- M4.1: SQLite Memory/Snapshot persistence + production wiring + restart proof
+- M4.1.1: conversation root race hardening + narrowed error semantics
+- M4.1.2: fresh-session resolver + real OperationalError injection
+- M4.1.3: transaction-exit-before-reread + real SQLite lock integration
+
+**Settings.version:** M4.1.3
+**测试:** 63 persistence tests passing（+3）
+**注意:** 不新增 Alembic migration（schema 未变）；默认 persistence_backend 仍为 memory。M4.2 未开始。
+
 ## [M4.1.2] — 2026-08-19
 
 ### SQLite Transaction Failure & Error Semantics Hardening

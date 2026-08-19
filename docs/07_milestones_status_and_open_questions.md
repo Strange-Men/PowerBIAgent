@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M4.1.2 — SQLite Transaction Failure & Error Semantics Hardening
+> **状态：** M4.1.3 — SQLite Lock Transaction Exit Final Hardening
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -17,7 +17,8 @@
 | **M4.0** | **本地持久化架构与存储基础：SQLite/SQLAlchemy Async/Alembic/Repository ABC** | ✅ **已完成** |
 | **M4.1** | **Memory/Snapshot SQLite 实现 + 并发提交 invariant** | ✅ **已完成** |
 | **M4.1.1** | **会话创建竞态与数据库错误语义加固** | **✅ 已完成** |
-| **M4.1.2** | **SQLite Transaction Failure & Error Semantics Hardening** | **✅（本轮）** |
+| **M4.1.2** | **SQLite Transaction Failure & Error Semantics Hardening** | **✅ 已完成** |
+| **M4.1.3** | **SQLite Lock Transaction Exit Final Hardening** | **✅（本轮）** |
 | M4.2 | Conversation/Report recovery | ⬜ 未开始 |
 | M4.3 | Search/history API | ⬜ 未开始 |
 | M4.4 | Restart/crash acceptance | ⬜ 未开始 |
@@ -50,7 +51,9 @@
 | Persistent sessions / React | ⬜ M4.1+ / M5，未提前实现 |
 | Persistence Architecture (M4.0) | ✅ ADR-012、SQLite/SQLAlchemy Async/Alembic、5 表 schema、migration 基线、Repository ABC |
 | Memory / Snapshot SQLite 实现 (M4.1) | ✅ SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring、DB 级 partial unique index 并发安全、strict concurrent commit tests |
-| SQLite 错误语义硬化 (M4.1.2) | ✅ failed transaction fresh-session conflict resolution、real OperationalError injection tests、infrastructure failure 与 business version conflict 严格分离 |
+| SQLite 错误语义硬化 (M4.1.1) | ✅ conversation root `INSERT OR IGNORE` 原子 upsert、`PersistenceRepositoryError`、locked/version_index 分类 helper |
+| SQLite 事务失败硬化 (M4.1.2) | ✅ failed transaction fresh-session conflict resolution、real OperationalError injection tests、infrastructure failure 与 business version conflict 严格分离 |
+| SQLite 锁事务退出最终硬化 (M4.1.3) | ✅ locked failure 必须退出原 transaction 再 fresh-session resolution、真实 SQLite lock integration test、M4.1 series final hardening |
 | Conversation/Report recovery | ⬜ M4.2 |
 | Search/History API | ⬜ M4.3 |
 
@@ -97,6 +100,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - **M4.1**：SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring（`main.py` → `MockTurnService`/`DeepSeekTurnService`）；DB 级 partial unique index `ix_work_memories_committed_version`（`WHERE state_status = 'committed'`）保证同 (runtime_mode, conversation_id, memory_version) 最多一个 COMMITTED 行；`commit()` 内 `IntegrityError`/`OperationalError` → `MemoryVersionConflictError`；strict concurrent commit tests（exactly-one-success + 8 轮多轮验证）；corrective migration `ab8d7df39a02`。1559 tests。
 - **M4.1.1**：conversation root `INSERT OR IGNORE` 原子 upsert、`PersistenceRepositoryError` 异常类、`_is_sqlite_locked`/`_is_version_index_conflict` 分类 helper、failed transaction 不污染后续 ops。
 - **M4.1.2**：locked/busy OperationalError 退出原 transaction → fresh session bounded reread（`_resolve_locked_commit_failure` helper）；non-lock OperationalError → `PersistenceRepositoryError`；通过 `session.execute` 拦截真实注入 OperationalError 测试（non-lock、locked+version advanced、locked+unchanged、fresh session proof、failed tx recovery、no half-committed memory）。
+- **M4.1.3**：locked failure 必须在原 transaction 退出（rollback）后再 fresh-session resolution；`commit()` 中捕获 locked 后只保存 context → `session.begin()` exit 后调用 resolver；`create_engine` 新增 `busy_timeout` 参数（测试 100ms，production 5000ms）；真实 2-engine SQLite lock integration test（Writer A hold lock → B commit hit lock → tx exit → fresh reread）、instrumented session-exit 顺序证明（`write_tx_enter → locked → write_tx_exit → fresh_session`）。M4.1 series final hardening。
 
 ## M3.3 Report Template V2 changes
 
@@ -134,4 +138,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-19 | M4.1.2 — SQLite Transaction Failure & Error Semantics Hardening*
+*最后更新：2026-08-19 | M4.1.3 — SQLite Lock Transaction Exit Final Hardening*

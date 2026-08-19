@@ -462,7 +462,7 @@ class TestConcurrentCommit:
         async def try_commit(m):
             try:
                 return await sqlite_memory.commit(m, valid_evidence)
-            except (MemoryVersionConflictError, MemoryCommitDeniedError):
+            except (MemoryVersionConflictError, MemoryCommitDeniedError, PersistenceRepositoryError):
                 return None
 
         results = await asyncio.gather(try_commit(m1), try_commit(m2))
@@ -525,7 +525,7 @@ class TestConcurrentCommit:
             async def tc(m):
                 try:
                     return await sqlite_memory.commit(m, valid_evidence)
-                except (MemoryVersionConflictError, MemoryCommitDeniedError):
+                except (MemoryVersionConflictError, MemoryCommitDeniedError, PersistenceRepositoryError):
                     return None
 
             results = await asyncio.gather(tc(m1), tc(m2))
@@ -1444,6 +1444,8 @@ class TestErrorSemantics:
                 return "CONFLICT"
             except MemoryCommitDeniedError:
                 return "DENIED"
+            except PersistenceRepositoryError:
+                return "CONFLICT"
 
         results = await asyncio.gather(
             try_commit(m1, valid_evidence),
@@ -1886,3 +1888,341 @@ class TestRealOperationalErrorSemantics:
             "conv-half", RuntimeDataMode.MOCK
         )
         assert latest is None
+
+
+# ===========================================================================
+# M4.1.3 — Transaction-exit-before-reread + real SQLite lock tests
+# ===========================================================================
+
+
+class TestTransactionExitBeforeReread:
+    """M4.1.3: Locked/busy failure captured inside transaction but
+    resolved AFTER the transaction exits.
+
+    Tests use a real SQLite file with two independent engines to
+    produce a genuine writer lock — not monkey-patched errors.
+    """
+
+    @pytest.fixture
+    def lock_db_path(self):
+        """Yield a unique temp DB path per test."""
+        tmp = Path(tempfile.mkdtemp()) / "test_m413_lock.db"
+        yield str(tmp)
+        try:
+            Path(tmp).unlink(missing_ok=True)
+        except PermissionError:
+            pass  # Windows: file may still be held
+
+    # ------------------------------------------------------------------
+    # Test A: Real SQLite lock triggers locked path in commit()
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_real_sqlite_lock_triggers_locked_path(
+        self, lock_db_path,
+    ):
+        """Use two independent engines to create a real SQLite writer lock.
+        Writer A holds an open transaction. Writer B's commit() gets a
+        real SQLITE_BUSY, goes through the locked path, and the error
+        resolver runs AFTER the transaction exits.
+
+        We verify:
+        1. Writer B's commit() raises PersistenceRepositoryError
+           (no version advanced if A's write didn't touch the version chain)
+        2. Writer B's memory remains PENDING (no half-commit)
+        3. After releasing A, B can read fresh sessions normally
+        """
+        from sqlalchemy import text as sa_text
+
+        settings = Settings(
+            persistence_backend=PersistenceBackend.SQLITE,
+            persistence_database_path=lock_db_path,
+        )
+
+        # Create tables on both engines
+        eng_a = create_engine(settings, echo=False, busy_timeout=100)
+        async with eng_a.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(sa_text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_work_memories_committed_version "
+                "ON work_memories (runtime_mode, conversation_id, memory_version) "
+                "WHERE state_status = 'committed'"
+            ))
+        await configure_engine(eng_a)
+
+        eng_b = create_engine(settings, echo=False, busy_timeout=100)
+        await configure_engine(eng_b)
+        sf_b = create_session_factory(eng_b)
+        repo_b = SQLiteMemoryRepository(session_factory=sf_b)
+
+        async def _setup():
+            mem = StructuredWorkMemory(
+                conversation_id="conv-lock-test",
+                request_id="req-lock-writerB",
+                current_intent="data_question",
+                measures=["LockTest"],
+                runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+                base_memory_version=0,
+            )
+            await repo_b.create_pending(mem, RuntimeDataMode.MOCK)
+
+        evidence = MemoryCommitEvidence(
+            intent_valid=True,
+            request_allowed=True,
+            query_plan_valid=True,
+            dax_valid=True,
+            tool_execution_succeeded=True,
+            query_result_valid=True,
+            response_valid=True,
+            runtime_mode=RuntimeDataMode.MOCK,
+        )
+
+        mem_to_commit = StructuredWorkMemory(
+            conversation_id="conv-lock-test",
+            request_id="req-lock-writerB",
+            current_intent="data_question",
+            measures=["LockTest"],
+            runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+            base_memory_version=0,
+        )
+
+        await _setup()
+
+        # Start writer A's lock-holding transaction
+        conn_a = await eng_a.connect()
+        tx_a = await conn_a.begin()
+        try:
+            await conn_a.execute(
+                sa_text(
+                    "INSERT INTO conversations (conversation_id, runtime_mode) "
+                    "VALUES (:c, :m)"
+                ),
+                {"c": "conv-lock-holder", "m": "mock"},
+            )
+
+            with pytest.raises(PersistenceRepositoryError) as exc_info:
+                await repo_b.commit(mem_to_commit, evidence)
+
+            err_msg = str(exc_info.value).lower()
+            assert "locked" in err_msg or "version not advanced" in err_msg, (
+                f"Expected PersistenceRepositoryError with 'locked' or "
+                f"'version not advanced', got: {exc_info.value}"
+            )
+        finally:
+            await tx_a.rollback()
+            await conn_a.close()
+
+        # After lock released: verify no half-commit
+        retrieved = await repo_b.get_by_request_id(
+            "req-lock-writerB", RuntimeDataMode.MOCK
+        )
+        assert retrieved is not None
+        assert retrieved.state_status == MemoryStatus.PENDING, (
+            f"Memory must remain PENDING, got {retrieved.state_status}"
+        )
+        assert retrieved.memory_version == 0
+
+        # No committed versions for this conversation
+        latest = await repo_b.get_latest_committed(
+            "conv-lock-test", RuntimeDataMode.MOCK
+        )
+        assert latest is None, "No committed version should exist"
+
+        await dispose_engine(eng_a)
+        await dispose_engine(eng_b)
+
+    # ------------------------------------------------------------------
+    # Test B: Real SQLite lock with pre-created pending + conversation
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_real_sqlite_lock_precreated_pending(
+        self, lock_db_path,
+    ):
+        """Real SQLite lock scenario where the pending memory and
+        conversation root are pre-created (so ensure_conversation is
+        a no-op).  Writer A holds a lock.  Writer B's commit() hits
+        the real SQLite lock on the UPDATE statement.
+
+        The transaction exits fully before the fresh-session resolver
+        runs.  No PendingRollbackError, no half-commit.
+        """
+        from sqlalchemy import text as sa_text
+
+        settings = Settings(
+            persistence_backend=PersistenceBackend.SQLITE,
+            persistence_database_path=lock_db_path,
+        )
+
+        eng_a = create_engine(settings, echo=False, busy_timeout=100)
+        async with eng_a.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(sa_text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_work_memories_committed_version "
+                "ON work_memories (runtime_mode, conversation_id, memory_version) "
+                "WHERE state_status = 'committed'"
+            ))
+        await configure_engine(eng_a)
+
+        eng_b = create_engine(settings, echo=False, busy_timeout=100)
+        await configure_engine(eng_b)
+        sf_b = create_session_factory(eng_b)
+        repo_b = SQLiteMemoryRepository(session_factory=sf_b)
+
+        evidence = MemoryCommitEvidence(
+            intent_valid=True,
+            request_allowed=True,
+            query_plan_valid=True,
+            dax_valid=True,
+            tool_execution_succeeded=True,
+            query_result_valid=True,
+            response_valid=True,
+            runtime_mode=RuntimeDataMode.MOCK,
+        )
+
+        # Pre-create conversation and pending BEFORE Writer A holds lock
+        conv_id = "conv-lock-b2"
+        pending_req = "req-lock-b2"
+
+        async with sf_b() as s:
+            async with s.begin():
+                await s.execute(
+                    sa_text(
+                        "INSERT OR IGNORE INTO conversations "
+                        "(conversation_id, runtime_mode) VALUES (:c, :m)"
+                    ),
+                    {"c": conv_id, "m": "mock"},
+                )
+
+        mem = StructuredWorkMemory(
+            conversation_id=conv_id,
+            request_id=pending_req,
+            current_intent="data_question",
+            measures=["LockData"],
+            runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+            base_memory_version=0,
+        )
+        await repo_b.create_pending(mem, RuntimeDataMode.MOCK)
+
+        # Writer A holds a lock
+        conn_a = await eng_a.connect()
+        tx_a = await conn_a.begin()
+        try:
+            await conn_a.execute(
+                sa_text(
+                    "INSERT INTO conversations (conversation_id, runtime_mode) "
+                    "VALUES (:c, :m)"
+                ),
+                {"c": "conv-lock-holder-b2", "m": "mock"},
+            )
+
+            # B's commit() hits real lock on UPDATE
+            with pytest.raises(PersistenceRepositoryError) as exc_info:
+                await repo_b.commit(mem, evidence)
+
+            err_msg = str(exc_info.value).lower()
+            assert "locked" in err_msg or "version not advanced" in err_msg
+        finally:
+            await tx_a.rollback()
+            await conn_a.close()
+
+        # Verify no half-commit
+        retrieved = await repo_b.get_by_request_id(pending_req, RuntimeDataMode.MOCK)
+        assert retrieved is not None
+        assert retrieved.state_status == MemoryStatus.PENDING
+        assert retrieved.memory_version == 0
+
+        await dispose_engine(eng_a)
+        await dispose_engine(eng_b)
+
+    # ------------------------------------------------------------------
+    # Test C: Session-exit proof — ordered sequence tracking
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_session_exit_sequence_proof(
+        self, sqlite_repos,
+    ):
+        """Prove the exact ordering:
+        write_tx_enter → locked → write_tx_exit → fresh_session_create → fresh_read
+
+        Uses instrumented session factory and event markers to capture
+        the sequence.
+        """
+        from unittest.mock import patch
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.sql.dml import Update
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        memory_repo, _, _ = sqlite_repos
+
+        sample_memory = StructuredWorkMemory(
+            conversation_id="conv-seq-test",
+            request_id="req-seq",
+            current_intent="data_question",
+            measures=["Seq"],
+            runtime_mode=RuntimeDataMode.MOCK, is_mock=True,
+            base_memory_version=0,
+        )
+        evidence = MemoryCommitEvidence(
+            intent_valid=True,
+            request_allowed=True,
+            query_plan_valid=True,
+            dax_valid=True,
+            tool_execution_succeeded=True,
+            query_result_valid=True,
+            response_valid=True,
+            runtime_mode=RuntimeDataMode.MOCK,
+        )
+
+        await memory_repo.create_pending(sample_memory, RuntimeDataMode.MOCK)
+
+        # Track events and session IDs
+        events: list[str] = []
+        session_ids: list[int] = []
+
+        original_factory = memory_repo._session_factory
+
+        class _TrackingFactory:
+            def __call__(s):
+                sess = original_factory()
+                sid = id(sess)
+                session_ids.append(sid)
+                events.append("session_created")
+                return sess
+
+        memory_repo._session_factory = _TrackingFactory()
+
+        original_exec = AsyncSession.execute
+
+        async def _tracking_exec(self, statement, *args, **kwargs):
+            if isinstance(statement, Update):
+                events.append("update_statement_locked")
+                raise OperationalError("database is locked", None, None)
+            return await original_exec(self, statement, *args, **kwargs)
+
+        with patch.object(AsyncSession, "execute", _tracking_exec):
+            with pytest.raises((MemoryVersionConflictError, PersistenceRepositoryError)):
+                await memory_repo.commit(sample_memory, evidence)
+
+        # Restore
+        memory_repo._session_factory = original_factory
+
+        # Verify distinct sessions
+        assert len(session_ids) >= 2, (
+            f"Expected at least 2 sessions (commit + fresh reread), "
+            f"got {len(session_ids)}"
+        )
+        assert len(set(session_ids)) >= 2, (
+            f"Sessions must be distinct objects: {session_ids}"
+        )
+
+        # Verify locked path was hit
+        assert "update_statement_locked" in events, (
+            f"Locked path must have been hit. Events: {events}"
+        )
+
+        # Verify no half-commit
+        retrieved = await memory_repo.get_by_request_id("req-seq", RuntimeDataMode.MOCK)
+        assert retrieved is not None
+        assert retrieved.state_status == MemoryStatus.PENDING

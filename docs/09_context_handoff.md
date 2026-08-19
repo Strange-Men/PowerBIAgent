@@ -5,42 +5,71 @@
 
 ## 当前阶段
 
-**M4.1.2 — SQLite Transaction Failure & Error Semantics Hardening 已完成。** M4.1.1 基础上的强制硬化，不改变产品版本（Settings.version 仍为 M4.1.2）。
+**M4.1.3 — SQLite Lock Transaction Exit Final Hardening 已完成。**
 
 ### 变更内容
 
-#### Fix A — Locked transaction 内不继续查询
+#### Fix A — locked failure 必须退出原 transaction 再 fresh-session resolution
 
-- 原 `commit()` 在捕获 `OperationalError("database is locked")` 后，在同一 session/transaction 中继续 `_get_latest_committed_version()` 查询。  SQLAlchemy transaction 在 OperationalError 后可能已进入 failed state，此时继续 query 不可靠。
-- 修复：捕获 locked/busy 后立即退出原 transaction，委托 `_resolve_locked_commit_failure` helper 使用 **fresh session + fresh transaction** 重新读取 latest committed version。
-- 新 helper 通过 `session_factory()` 创建全新 session，纯读取不修改业务状态，返回确定的 domain 异常。
+M4.1.2 的 `_resolve_locked_commit_failure` 虽创建新 session，但在 `async with session.begin()` 异常处理器内部被调用，此时原 SQLAlchemy session.begin() context 尚未退出，原 transaction 可能仍处于 failed/poisoned 状态。
 
-#### Fix B — 真实 OperationalError 注入测试
+M4.1.3 重构 `commit()` 的 locked 分支：
 
-- 当前 M4.1.1 测试只通过字符串分类验证 `_is_sqlite_locked` helper，不经过真实 `commit()` 路径。
-- 新增 6 个测试，通过 `unittest.mock.patch.object(AsyncSession, 'execute')` 在 UPDATE 语句层级注入真实 `OperationalError`：
+1. **在 transaction 内**：捕获 locked OperationalError 后只保存 failure context（conversation_id、runtime_mode、target_version），不调用 resolver。
+2. **让 `session.begin()` context 自然退出**：`session.begin()` 的 `__aexit__` 触发 rollback，原 transaction 完全终止。
+3. **transaction context 退出后**：`_locked_failure_ctx` 非空则调用 `_resolve_locked_commit_failure` 使用 **全新 session + 全新 transaction** 重新读取 latest committed version。
+4. resolver 始终抛出确定的 domain 异常：`MemoryVersionConflictError`（version advanced）或 `PersistenceRepositoryError`（version not advanced）。
 
-1. **non-lock OperationalError → PersistenceRepositoryError**：UPDATE 抛出 `OperationalError("disk I/O error")` → `_is_sqlite_locked` 返回 False → `PersistenceRepositoryError`
-2. **locked + version advanced → MemoryVersionConflictError**：UPDATE 抛出 `"database is locked"`，fresh session reread 检测到 concurrent writer 已提交 target_version → `MemoryVersionConflictError`
-3. **locked + unchanged → PersistenceRepositoryError**：UPDATE 抛出 `"database is locked"`，fresh session reread 发现版本未推进 → `PersistenceRepositoryError`
-4. **fresh-session proof**：追踪 session 创建数量，证明 locked 后 reread 使用的是新 session（≥2 distinct sessions）
-5. **failed tx recovery**：locked 失败后，后续 `get_by_request_id` 和 `create_pending` 使用 fresh session 正常工作
-6. **no half-committed memory**：locked 失败后 memory 仍为 PENDING，memory_version 未推进，无 COMMITTED 行
+成功路径完全不变：全部在单一 transaction 内。
 
-#### Error Handling Structure
+#### Fix B — 真实 SQLite lock integration test
+
+新增 3 个测试（`TestTransactionExitBeforeReread`）：
+
+1. **`test_real_sqlite_lock_triggers_locked_path`**：两个独立 engine，Writer A 持有真实 SQLite write lock，Writer B 的 commit() 触发真实 SQLITE_BUSY → 走 locked path → PersistenceRepositoryError。释放锁后验证 memory 仍为 PENDING、无 half-commit。
+2. **`test_real_sqlite_lock_precreated_pending`**：预创建 conversation 和 pending（避免 ensure_conversation 被锁阻塞），Writer A 持有锁，B 的 UPDATE 被锁 → locked path → PersistenceRepositoryError。验证顺序正确。
+3. **`test_session_exit_sequence_proof`**：instrumented session factory + event markers 断言 locked 路径被命中、至少 2 个 distinct session（commit session + fresh reread session）、locked 后 memory 仍为 PENDING。
+
+不依赖 sleep-based 同步，使用明确的 connection/tx 生命周期控制。
+
+#### Error Handling Structure（M4.1.3 最终版）
 
 清晰保持边界：
 - **IntegrityError**：仅 committed-version unique conflict → `MemoryVersionConflictError`；其他 IntegrityError 原样抛出
-- **OperationalError A（locked/busy）**：退出原 transaction → fresh session bounded reread → `MemoryVersionConflictError`（version conflict）或 `PersistenceRepositoryError`（version not advanced）
+- **OperationalError A（locked/busy）**：transaction 内只保存上下文 → transaction 完全退出/rollback → **transaction 外** fresh session bounded reread → `MemoryVersionConflictError`（version conflict）或 `PersistenceRepositoryError`（version not advanced）
 - **OperationalError B（non-lock）**：disk I/O、corruption、unable to open DB → `PersistenceRepositoryError`
 
 ### 架构影响
 
-- `backend/app/persistence/repositories/common.py` 新增 `_resolve_locked_commit_failure` helper
-- `backend/app/persistence/repositories/memory.py` `commit()` 中 locked 分支简化为委托给 fresh-session helper
-- Settings.version 保持 `M4.1`（frozen field，非功能版本号）
+- `backend/app/persistence/repositories/memory.py` `commit()` 中 locked 分支改为：捕获时只保存 context，resolver 调用移至 transaction context 退出后
+- `backend/app/persistence/repositories/common.py` `_resolve_locked_commit_failure` docstring 更新（M4.1.3 语义强化）
+- `backend/app/persistence/__init__.py` `create_engine` 新增可选的 `busy_timeout` 参数（测试缩短至 100ms，production 默认 5000ms）
+- Settings.version 更新为 `M4.1.3`
 - 不新增 Alembic migration（schema 未变）
 - 默认 `persistence_backend` 仍为 `memory`
+
+### M4.1 series FINAL PASS
+
+M4.1 系列（M4.1 → M4.1.1 → M4.1.2 → M4.1.3）全部完成：
+
+**M4.1**
+- SQLite Memory/Snapshot persistence
+- production wiring
+- restart repository proof
+
+**M4.1.1**
+- conversation root race hardening
+- narrowed error semantics
+
+**M4.1.2**
+- fresh-session resolver
+- real OperationalError injection
+
+**M4.1.3**
+- transaction-exit-before-reread
+- real SQLite lock integration
+
+**M4.2：NOT STARTED**
 
 ## M4.2 下一步
 
@@ -75,4 +104,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\check_documentation_governance.py
 
 ---
 
-*最后更新：2026-08-19 | M4.1.2 — SQLite Transaction Failure & Error Semantics Hardening*
+*最后更新：2026-08-19 | M4.1.3 — SQLite Lock Transaction Exit Final Hardening*

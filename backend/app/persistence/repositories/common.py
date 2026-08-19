@@ -1,4 +1,4 @@
-"""Shared helpers for SQLite-backed repositories — M4.1.2.
+"""Shared helpers for SQLite-backed repositories — M4.1.3.
 
 ``ensure_conversation``
     Transaction-safe deterministic conversation root upsert.
@@ -7,10 +7,11 @@
     without entering a failed-transaction state.
 
 ``_resolve_locked_commit_failure``
-    After an OperationalError (locked/busy) during commit, uses a
-    fresh session to re-read the latest committed version so the
-    caller can decide between memory-version-conflict and
-    infrastructure-failure without querying a poisoned transaction.
+    M4.1.3: This helper is called ONLY after the original transaction
+    has fully exited (rolled back).  It uses a completely fresh
+    session + transaction to re-read the latest committed version so
+    the caller can decide between memory-version-conflict and
+    infrastructure-failure.  Never called inside a failed transaction.
 
 ``PersistenceRepositoryError``
     Base exception for non-concurrency persistence failures
@@ -111,7 +112,9 @@ async def _resolve_locked_commit_failure(
 ) -> None:
     """Resolve a SQLite locked/busy OperationalError from commit().
 
-    **Never called on the original (now-failed) transaction.**
+    **M4.1.3: Guaranteed to run AFTER the original failed transaction
+    has fully exited (rolled back).**  Never called inside a poisoned
+    transaction.
 
     Opens a *fresh* session and transaction to re-read the latest
     committed version for the given (conversation_id, runtime_mode).

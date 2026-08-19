@@ -283,7 +283,12 @@ class SQLiteMemoryRepository(MemoryRepository):
     ) -> StructuredWorkMemory:
         """Atomic commit with version check and DB-level invariant.
 
-        All within a single database transaction:
+        M4.1.3: Locked/busy OperationalError is captured inside the
+        transaction but resolved AFTER the transaction exits (rolls
+        back).  This guarantees the original failed transaction fully
+        terminates before a fresh-session reader touches the DB.
+
+        Success path (all within a single database transaction):
         1. Verify memory is PENDING
         2. Verify business evidence satisfied
         3. Query latest committed version for this (conversation, mode)
@@ -307,6 +312,10 @@ class SQLiteMemoryRepository(MemoryRepository):
                 concurrent commit conflict
         """
         runtime_mode = memory.runtime_mode
+
+        # M4.1.3: locked-failure state captured inside the transaction
+        # but resolved OUTSIDE it, after rollback completes.
+        _locked_failure_ctx: Optional[dict] = None
 
         async with self._session_factory() as session:
             async with session.begin():
@@ -454,35 +463,44 @@ class SQLiteMemoryRepository(MemoryRepository):
                         ) from exc
                     raise
                 except OperationalError as exc:
-                    # SQLite busy/locked → fresh-session bounded resolution.
-                    # Other OperationalError (disk I/O, corruption) are
-                    # wrapped as PersistenceRepositoryError.
+                    # M4.1.3: ONLY capture failure context inside the
+                    # transaction — do NOT call fresh-session resolver
+                    # here.  Let the transaction roll back first.
                     if not _is_sqlite_locked(exc):
                         raise PersistenceRepositoryError(
                             f"数据库错误 (非锁): {exc}"
                         ) from exc
-                    # M4.1.2: Never query a (possibly) failed transaction.
-                    # Delegate to a fresh-session helper that re-reads
-                    # the latest committed version in a new transaction
-                    # and raises the authoritative domain exception.
-                    from backend.app.persistence.repositories.common import (
-                        _resolve_locked_commit_failure,
-                    )
+                    _locked_failure_ctx = {
+                        "conversation_id": memory.conversation_id,
+                        "runtime_mode": runtime_mode,
+                        "target_version": new_version,
+                        "original_exc": exc,
+                    }
 
-                    await _resolve_locked_commit_failure(
-                        self._session_factory,
-                        memory.conversation_id,
-                        runtime_mode,
-                        target_version=new_version,
-                    )
-                    # _resolve_locked_commit_failure always raises one of
-                    # MemoryVersionConflictError or PersistenceRepositoryError.
-                    # This line is unreachable — keep as safety net.
-                    raise PersistenceRepositoryError(
-                        f"Unexpected: locked commit helper returned without raising "
-                        f"for (conversation={memory.conversation_id}, "
-                        f"mode={runtime_mode.value}, target={new_version})"
-                    ) from exc
+            # ------------------------------------------------------------------
+            # M4.1.3: Transaction context exited (rolled back).
+            #         NOW resolve the locked failure with a fresh session.
+            # ------------------------------------------------------------------
+            if _locked_failure_ctx is not None:
+                from backend.app.persistence.repositories.common import (
+                    _resolve_locked_commit_failure,
+                )
+
+                await _resolve_locked_commit_failure(
+                    self._session_factory,
+                    _locked_failure_ctx["conversation_id"],
+                    _locked_failure_ctx["runtime_mode"],
+                    target_version=_locked_failure_ctx["target_version"],
+                )
+                # _resolve_locked_commit_failure always raises one of
+                # MemoryVersionConflictError or PersistenceRepositoryError.
+                # This line is unreachable — keep as safety net.
+                raise PersistenceRepositoryError(
+                    f"Unexpected: locked commit helper returned without raising "
+                    f"for (conversation={_locked_failure_ctx['conversation_id']}, "
+                    f"mode={_locked_failure_ctx['runtime_mode'].value}, "
+                    f"target={_locked_failure_ctx['target_version']})"
+                ) from _locked_failure_ctx["original_exc"]
 
             # After commit, return the domain model
             return existing_domain
