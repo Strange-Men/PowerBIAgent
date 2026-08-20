@@ -53,6 +53,7 @@ from backend.app.memory.result_snapshot import (
     SnapshotRepository,
     TurnResultSnapshot,
 )
+from backend.app.report.resources import ReportRepository, ReportStorageError
 from backend.app.schemas.data_contracts import UserContext
 
 
@@ -74,10 +75,12 @@ class TurnPipeline:
         config: HarnessConfig,
         memory_repo: MemoryRepository,
         snapshot_store: Optional[SnapshotRepository] = None,
+        report_repository: Optional[ReportRepository] = None,
     ):
         self.config = config
         self.memory_repo = memory_repo
         self.snapshot_store = snapshot_store or ResultSnapshotStore()
+        self.report_repository = report_repository
         self.context_builder = ContextBuilder(config)
 
     async def execute(
@@ -135,7 +138,9 @@ class TurnPipeline:
                 )
             trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
                         data_summary={"terminal_state": "duplicate"})
-            return self._build_replay(snapshot, effective_req_id, trace_id)
+            return await self._build_replay(
+                snapshot, effective_req_id, trace_id
+            )
 
         # ── Owner/Waiter 协调 ──
         for retry_attempt in range(3):
@@ -155,7 +160,9 @@ class TurnPipeline:
                 snapshot = await self.snapshot_store.get(effective_req_id, runtime_mode)
                 if snapshot is not None:
                     new_trace_id = str(uuid.uuid4())
-                    return self._build_replay(snapshot, effective_req_id, new_trace_id)
+                    return await self._build_replay(
+                        snapshot, effective_req_id, new_trace_id
+                    )
                 continue
             elif claim_status == IdempotencyClaimStatus.OWNER:
                 break
@@ -163,6 +170,28 @@ class TurnPipeline:
             raise IdempotencyCoordinationError(
                 request_id=effective_req_id,
                 detail="Unable to acquire execution right after retries",
+            )
+
+        # A durable Memory row without a terminal Snapshot is a crash witness,
+        # not a completed/idempotent response.  The process-local claim that
+        # guarded the original owner is gone after restart, so fail closed
+        # instead of re-executing possible external side effects or fabricating
+        # a terminal duplicate from partial Memory.
+        try:
+            existing_request_memory = await self.memory_repo.get_by_request_id(
+                effective_req_id, runtime_mode
+            )
+        except Exception:
+            await self.snapshot_store.abort(effective_req_id, runtime_mode)
+            raise
+        if existing_request_memory is not None:
+            await self.snapshot_store.abort(effective_req_id, runtime_mode)
+            raise IdempotencyCoordinationError(
+                request_id=effective_req_id,
+                detail=(
+                    "incomplete persisted request has Memory but no terminal "
+                    "Snapshot"
+                ),
             )
 
         # ── OWNER: 执行前准备（统一控制面） ──
@@ -271,7 +300,7 @@ class TurnPipeline:
 
         return result
 
-    def build_replay(
+    async def build_replay(
         self,
         snapshot: TurnResultSnapshot,
         request_id: str,
@@ -280,10 +309,33 @@ class TurnPipeline:
         """构建幂等重放响应"""
         report_dict: Optional[dict[str, Any]] = None
         if snapshot.report is not None:
+            html = snapshot.report.html
+            if self.report_repository is not None:
+                artifact, html = await self.report_repository.read_html(
+                    snapshot.report.report_id
+                )
+                coherent = (
+                    artifact.report_id == snapshot.report.report_id
+                    and artifact.template_key == snapshot.report.template_key
+                    and artifact.contract_version
+                    == snapshot.report.contract_version
+                    and artifact.view_reference == snapshot.report.view_reference
+                    and artifact.download_reference
+                    == snapshot.report.download_reference
+                    and artifact.content_type == snapshot.report.content_type
+                    and artifact.content_hash == snapshot.report.content_hash
+                    and artifact.source_mode == snapshot.source_mode
+                    and artifact.conversation_id == snapshot.conversation_id
+                    and artifact.request_id == snapshot.request_id
+                )
+                if not coherent:
+                    raise ReportStorageError(
+                        "report_snapshot_artifact_mismatch"
+                    )
             report_dict = {
                 "report_id": snapshot.report.report_id,
                 "template_key": snapshot.report.template_key,
-                "html": snapshot.report.html,
+                "html": html,
                 "contract_version": snapshot.report.contract_version,
                 "view_reference": snapshot.report.view_reference,
                 "download_reference": snapshot.report.download_reference,
@@ -327,7 +379,11 @@ class TurnPipeline:
             report_snapshot = ReportResultSnapshot(
                 report_id=rd.get("report_id", ""),
                 template_key=rd.get("template_key", ""),
-                html=rd.get("html", ""),
+                html=(
+                    ""
+                    if self.report_repository is not None
+                    else rd.get("html", "")
+                ),
                 contract_version=rd.get("contract_version", ""),
                 view_reference=rd.get("view_reference", ""),
                 download_reference=rd.get("download_reference", ""),

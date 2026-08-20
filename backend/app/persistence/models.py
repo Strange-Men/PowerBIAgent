@@ -112,6 +112,36 @@ class ConversationModel(Base):
 
 
 # ---------------------------------------------------------------------------
+# Conversation delete intents
+# ---------------------------------------------------------------------------
+
+
+class ConversationDeleteIntentModel(Base):
+    """Durable cleanup intent spanning SQLite metadata and report files.
+
+    The row deliberately has no foreign key to ``conversations``: it must
+    survive the transaction that deletes the conversation root.  It stores
+    only managed report IDs and deterministic delete counts, never HTML.
+    """
+
+    __tablename__ = "conversation_delete_intents"
+
+    conversation_id: Mapped[str] = mapped_column(
+        String(64), primary_key=True
+    )
+    runtime_mode: Mapped[str] = mapped_column(
+        String(16), primary_key=True
+    )
+    report_ids_json: Mapped[str] = mapped_column(Text, nullable=False)
+    deleted_counts_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Work Memories (StructuredWorkMemory)
 # ---------------------------------------------------------------------------
 

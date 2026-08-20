@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from sqlalchemy import and_, case, delete, exists, func, or_, select
@@ -30,6 +31,7 @@ from backend.app.memory.models import MemoryStatus, RuntimeDataMode
 from backend.app.memory.result_snapshot import TurnResultSnapshot
 from backend.app.persistence.models import (
     ConversationModel,
+    ConversationDeleteIntentModel,
     PendingClarificationModel,
     ReportArtifactModel,
     ResultSnapshotModel,
@@ -492,6 +494,20 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
     ) -> RepositoryDeleteResult:
         async with self._session_factory() as session:
             async with session.begin():
+                intent_result = await session.execute(
+                    select(ConversationDeleteIntentModel).where(
+                        and_(
+                            ConversationDeleteIntentModel.runtime_mode
+                            == runtime_mode.value,
+                            ConversationDeleteIntentModel.conversation_id
+                            == conversation_id,
+                        )
+                    )
+                )
+                intent = intent_result.scalar_one_or_none()
+                if intent is not None:
+                    return self._delete_result_from_intent(intent)
+
                 await self._get_conversation(session, runtime_mode, conversation_id)
                 report_result = await session.execute(
                     select(ReportArtifactModel.report_id).where(
@@ -540,12 +556,85 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                         )
                     )
                 )
-        ordered_counts = {
-            "work_memories": deleted_counts["work_memories"],
-            "result_snapshots": deleted_counts["result_snapshots"],
-            "pending_clarifications": deleted_counts["pending_clarifications"],
-            "report_artifacts": deleted_counts["report_artifacts"],
-        }
+                ordered_counts = {
+                    "work_memories": deleted_counts["work_memories"],
+                    "result_snapshots": deleted_counts["result_snapshots"],
+                    "pending_clarifications": deleted_counts[
+                        "pending_clarifications"
+                    ],
+                    "report_artifacts": deleted_counts["report_artifacts"],
+                }
+                session.add(
+                    ConversationDeleteIntentModel(
+                        runtime_mode=runtime_mode.value,
+                        conversation_id=conversation_id,
+                        report_ids_json=json.dumps(
+                            report_ids,
+                            ensure_ascii=True,
+                            separators=(",", ":"),
+                        ),
+                        deleted_counts_json=json.dumps(
+                            ordered_counts,
+                            ensure_ascii=True,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    )
+                )
+                await session.flush()
         return RepositoryDeleteResult(
             deleted_counts=ordered_counts, report_ids=report_ids
         )
+
+    @staticmethod
+    def _delete_result_from_intent(
+        intent: ConversationDeleteIntentModel,
+    ) -> RepositoryDeleteResult:
+        try:
+            report_ids = json.loads(intent.report_ids_json)
+            deleted_counts = json.loads(intent.deleted_counts_json)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ConversationHistoryCorruptionError(
+                "conversation_delete_intent_invalid"
+            ) from exc
+        expected_keys = {
+            "work_memories",
+            "result_snapshots",
+            "pending_clarifications",
+            "report_artifacts",
+        }
+        if (
+            not isinstance(report_ids, list)
+            or any(not isinstance(report_id, str) for report_id in report_ids)
+            or not isinstance(deleted_counts, dict)
+            or set(deleted_counts) != expected_keys
+            or any(
+                isinstance(count, bool)
+                or not isinstance(count, int)
+                or count < 0
+                for count in deleted_counts.values()
+            )
+        ):
+            raise ConversationHistoryCorruptionError(
+                "conversation_delete_intent_invalid"
+            )
+        return RepositoryDeleteResult(
+            deleted_counts=deleted_counts,
+            report_ids=report_ids,
+        )
+
+    async def complete_delete(
+        self, runtime_mode: RuntimeDataMode, conversation_id: str
+    ) -> None:
+        async with self._session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    delete(ConversationDeleteIntentModel).where(
+                        and_(
+                            ConversationDeleteIntentModel.runtime_mode
+                            == runtime_mode.value,
+                            ConversationDeleteIntentModel.conversation_id
+                            == conversation_id,
+                        )
+                    )
+                )

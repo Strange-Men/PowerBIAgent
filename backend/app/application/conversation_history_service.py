@@ -24,7 +24,7 @@ from backend.app.conversation.repository import (
     ReportPosition,
 )
 from backend.app.memory.models import RuntimeDataMode
-from backend.app.report.resources import ReportRepository
+from backend.app.report.resources import ReportRepository, ReportStorageError
 
 
 MAX_PAGE_SIZE = 50
@@ -306,8 +306,11 @@ class ConversationHistoryService:
         self, runtime_mode: RuntimeDataMode, conversation_id: str
     ) -> ConversationDeleteResult:
         result = await self._repository.delete(runtime_mode, conversation_id)
-        if result.report_ids and self._report_repository is not None:
+        if result.report_ids:
+            if self._report_repository is None:
+                raise ReportStorageError("report_cleanup_repository_unavailable")
             await self._report_repository.delete_html_files(result.report_ids)
+        await self._repository.complete_delete(runtime_mode, conversation_id)
         return ConversationDeleteResult(
             runtime_mode=runtime_mode,
             conversation_id=conversation_id,

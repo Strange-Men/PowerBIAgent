@@ -25,7 +25,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from backend.app.persistence.models import ConversationModel
+from backend.app.persistence.models import (
+    ConversationDeleteIntentModel,
+    ConversationModel,
+)
 
 if TYPE_CHECKING:
     from backend.app.memory.models import RuntimeDataMode
@@ -90,6 +93,21 @@ async def ensure_conversation(
                 "runtime_mode": runtime_mode_value,
             },
         )
+        delete_intent = await session.execute(
+            select(ConversationDeleteIntentModel.conversation_id).where(
+                and_(
+                    ConversationDeleteIntentModel.runtime_mode
+                    == runtime_mode_value,
+                    ConversationDeleteIntentModel.conversation_id
+                    == conversation_id,
+                )
+            )
+        )
+        if delete_intent.scalar_one_or_none() is not None:
+            raise PersistenceRepositoryError(
+                "conversation_delete_pending: "
+                f"({runtime_mode_value}, {conversation_id})"
+            )
     except OperationalError as exc:
         raise PersistenceRepositoryError(
             f"Database error while ensuring conversation "

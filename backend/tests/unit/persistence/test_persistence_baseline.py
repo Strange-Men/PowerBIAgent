@@ -203,6 +203,7 @@ datefmt = %H:%M:%S
         expected = {
             "alembic_version", "conversations", "work_memories",
             "pending_clarifications", "result_snapshots", "report_artifacts",
+            "conversation_delete_intents",
         }
         missing = expected - tables
         assert not missing, f"Tables missing after migration: {missing}"
@@ -211,7 +212,7 @@ datefmt = %H:%M:%S
         cursor = conn.execute("SELECT version_num FROM alembic_version")
         version = cursor.fetchone()[0]
         conn.close()
-        assert version is not None and len(version) > 0
+        assert version == "c8d4e6f2a109"
 
 
 # ===========================================================================
@@ -707,6 +708,42 @@ datefmt = %H:%M:%S
         assert "PRIMARY KEY (runtime_mode, conversation_id)" in ddl or \
                "PRIMARY KEY (\"runtime_mode\", \"conversation_id\")" in ddl, \
             f"Expected composite PK after upgrade in:\n{ddl}"
+
+    def test_upgrade_from_m43_to_head_adds_delete_intents(self):
+        """Upgrade the exact M4.3 schema to the M4.4 cleanup journal."""
+        tmp_db_path = _tmp_db_path()
+        posix_path = Path(tmp_db_path).resolve().as_posix()
+        project_root = Path.cwd().resolve()
+
+        self._run_alembic_upgrade(
+            tmp_db_path,
+            posix_path,
+            project_root,
+            target="f4c3a2b1907d",
+        )
+        with sqlite3.connect(tmp_db_path) as conn:
+            before = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='conversation_delete_intents'"
+            ).fetchone()
+        assert before is None
+
+        self._run_alembic_upgrade(
+            tmp_db_path,
+            posix_path,
+            project_root,
+            target="head",
+        )
+        with sqlite3.connect(tmp_db_path) as conn:
+            after = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='conversation_delete_intents'"
+            ).fetchone()
+            version = conn.execute(
+                "SELECT version_num FROM alembic_version"
+            ).fetchone()[0]
+        assert after == ("conversation_delete_intents",)
+        assert version == "c8d4e6f2a109"
 
     @staticmethod
     def _run_alembic_upgrade(

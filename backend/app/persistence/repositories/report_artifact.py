@@ -23,10 +23,13 @@ import asyncio
 import json
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from backend.app.persistence.models import ReportArtifactModel
+from backend.app.persistence.models import (
+    ConversationDeleteIntentModel,
+    ReportArtifactModel,
+)
 from backend.app.report.resources import (
     ReportArtifact,
     ReportArtifactMetadata,
@@ -330,6 +333,19 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
                 stmt = select(ReportArtifactModel).where(
                     ReportArtifactModel.report_id == artifact.report_id
                 )
+                if conversation_id is not None:
+                    deleting = await session.execute(
+                        select(ConversationDeleteIntentModel.conversation_id).where(
+                            and_(
+                                ConversationDeleteIntentModel.runtime_mode
+                                == artifact.source_mode,
+                                ConversationDeleteIntentModel.conversation_id
+                                == conversation_id,
+                            )
+                        )
+                    )
+                    if deleting.scalar_one_or_none() is not None:
+                        raise ReportStorageError("conversation_delete_pending")
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
                 if existing:

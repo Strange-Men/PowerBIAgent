@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M4.3 — 会话历史搜索与命名空间查询闭环（完成）
+> **状态：** M4.4 — Restart / Crash Acceptance & M4 Final Closure（FINAL PASS）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -24,7 +24,7 @@
 | **M4.2.2** | **路径与元数据一致性最终加固** | **✅ 已完成** |
 | **M4.2.3** | **持久化资源身份与元数据权威最终收口** | **✅ FINAL PASS** |
 | **M4.3** | **Namespace-first recent/history/search/archive/delete API** | **✅ 已完成** |
-| M4.4 | Restart/crash acceptance | ⬜ 未开始 |
+| **M4.4** | **Restart/crash acceptance + M4 backend final closure** | **✅ M4 FINAL PASS** |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
 
 M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad`、M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 已纯 fast-forward 合入 main，对应 main CI 均 success。M3.2 / M3.3 / M3.4 直接在 main 完成。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。M4.0 已在 main 完成本地持久化架构：SQLite + SQLAlchemy Async + Alembic；MemoryRepository/SnapshotRepository ABC；settings 扩展；26 新增 tests（1503 total）。M4.0 后续 corrective hardening：pytest-asyncio CI 兼容修复、conversation 复合 PK/FK 命名空间隔离、PRAGMA 每连接事件修正；corrective migration `01dc0d90d920`；40 持久化 tests + 全仓 1517 total。
@@ -42,6 +42,16 @@ Canonical QueryPlan
 
 Real DAX/factual authority 不回到 LLM，Real failure 不回退 Mock。
 
+## M4.4 — Restart / Crash Acceptance & M4 Final Closure（FINAL PASS）
+
+- Acceptance 使用临时真实 SQLite 文件与 report filesystem：runtime A 写入后 dispose engine，runtime B 使用全新 engine/session/repository/service 恢复；没有用同一 Python repository 对象冒充 restart。
+- committed Memory 及 version、terminal Snapshot replay/fingerprint conflict、recent/history/search/reports、archive/delete 与 Mock/Real 同 conversation ID 隔离均通过 restart 验收。Pending/Failed 不进入 committed context。
+- Snapshot completion boundary：durable terminal Snapshot 即使尚未 complete process-local tracker，重启后仍可 replay；只有 in-flight claim 而无 Snapshot 时不产生 completed。Memory 存在但 Snapshot 缺失表示无法安全确认外部副作用，TurnPipeline 以 `IdempotencyCoordinationError` fail closed，不重执行、不生成 terminal duplicate。
+- Report recovery boundary：新 persistent report Snapshot 只存 ID/reference/hash metadata，不存 HTML；replay 必须经 ReportRepository 从 filesystem 读取，并验证 metadata、linkage、namespace 与 content hash。验收修复了 adaptive Real report 错传未带 conversation/request context 的原 `ReportSpec`；missing/tampered HTML、corrupt metadata 或 linkage mismatch fail closed。
+- Delete recovery boundary：migration `c8d4e6f2a109` 新增 `conversation_delete_intents`。DB 删除 transaction 同时保存 exact namespace 的 report IDs/counts；HTML cleanup 成功后才 finalize。unlink/finalize failure 或中间 crash 后，全新实例可按同 namespace 重试；pending intent 阻止 namespace 复活。SQLite transaction 不被描述为可原子覆盖 filesystem。
+- Bounded guarantee：report create 的常规 metadata-save failure 会 best-effort unlink 已写 HTML；本轮未增加 durable create journal，因此不保证进程恰在 HTML rename 后、metadata commit 前退出时自动回收无引用文件。该窗口没有 metadata/Snapshot 成功态，读取仍 fail closed。
+- Fresh DB → head、M4.3 `f4c3a2b1907d` → head、backend `1681 passed, 1 skipped` 均通过。M4 FINAL PASS；M5 NOT STARTED；不创建 Tag。
+
 ## M4.3 — Conversation History / Search API（已完成）
 
 - 新增 `ConversationHistoryRepository` 抽象、SQLite 实现与 application query service；API/router 不直接访问 SQLAlchemy。SQLite 仍只是 persistence provider，不是 business/result/report factual authority。
@@ -50,7 +60,7 @@ Real DAX/factual authority 不回到 LLM，Real failure 不回退 Mock。
 - history 是结构化 persisted view：`result_snapshots` 是 terminal turn ledger，同 request committed `work_memories` 只补充 analysis/model/version fields；report history 复用 M4.2.3 strict reconstruction。DB 没有逐字 message transcript，因此 API 不生成 transcript，也不暴露 HTML/ORM/payload JSON。
 - search 不引入 FTS5；只对 committed `analysis_goal` 和 snapshot `answer` / `clarification_question` / `unsupported_reason` 做 deterministic SQLite contains query。Report HTML、DAX、任意 JSON 全文、未存储 prompt 均不在 search scope。
 - archive 为幂等逻辑隐藏：从 recent/search 排除，但 direct history/reports 继续可读。delete 为物理删除：transaction 内清理同 namespace work memory/snapshot/pending clarification/report metadata/conversation root，随后由 report repository 删除同 source_mode 的精确 HTML 文件；另一 namespace 不受影响。Unknown conversation 一致 404。
-- Migration `f4c3a2b1907d` 新增 nullable `conversations.archived_at` 与 recent/history/report namespace 复合索引；fresh DB 与 M4.2.3 schema upgrade 均通过。M4.4 NOT STARTED。
+- Migration `f4c3a2b1907d` 新增 nullable `conversations.archived_at` 与 recent/history/report namespace 复合索引；fresh DB 与 M4.2.3 schema upgrade 均通过。其 restart/crash 行为已由 M4.4 验收。
 
 ## M4.2.3 — Persistence Invariant Final Closure（已完成）
 
@@ -138,8 +148,8 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
-- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4.2 series FINAL PASS、M4.3 完成；未经用户另行明确批准不得进入 M4.4/M5；禁止 force push。
+- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS；未经用户另行明确批准不得进入 M5；禁止 force push。
 
 ---
 
-*最后更新：2026-08-20 | M4.3 — 会话历史搜索与命名空间查询闭环*
+*最后更新：2026-08-20 | M4.4 — Restart / Crash Acceptance & M4 Final Closure*

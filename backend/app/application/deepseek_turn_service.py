@@ -181,6 +181,7 @@ class DeepSeekTurnService:
             config=self.config,
             memory_repo=memory_repo,
             snapshot_store=snapshot_store,
+            report_repository=report_repository,
         )
 
     def _build_tool_gateway(self) -> ToolGateway:
@@ -1445,7 +1446,7 @@ class DeepSeekTurnService:
             rendered: ReportArtifact = await self.tool_gateway.execute(
                 TOOL_NAME_RENDER,
                 exec_ctx,
-                report_spec,
+                report_spec_with_ctx,
                 trace=trace,
                 controller=controller,
             )

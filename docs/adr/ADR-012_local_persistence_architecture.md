@@ -48,6 +48,13 @@
 
 Repository 层通过 `MemoryRepository` / `SnapshotRepository` / `ReportRepository` ABC 抽象，SQLite 实现与未来 PostgreSQL 实现共用同一接口。迁移时只需新增 driver 适配层。
 
+### 7. M4.4 restart/crash closure
+
+- terminal Snapshot 是 request replay authority；Memory row 存在但 Snapshot 缺失表示 incomplete crash witness，必须 fail closed，不能自动重执行可能已有外部副作用的请求。
+- persistent report Snapshot 只保存 report metadata/reference/hash；HTML replay 必须经 ReportRepository 从 filesystem 加载并验证。SQLite 中的兼容 HTML 字段不是 authority。
+- conversation delete 采用 durable intent：同一 SQLite transaction 保存 exact namespace 的 managed report IDs/counts 并删除 DB state；filesystem cleanup 成功后再 finalize intent。失败或 crash 后由新实例以同 namespace 幂等重试，intent 存续期间拒绝 namespace 复活。
+- 该协议明确不把 SQLite transaction 描述为可原子覆盖 filesystem；保证范围是经测试的 local single-machine 应用级 retry/recovery。
+
 ## 备选方案
 
 | 方案 | 评估结果 |
@@ -87,4 +94,4 @@ Repository 层通过 `MemoryRepository` / `SnapshotRepository` / `ReportReposito
 
 ---
 
-*最后更新：2026-08-18 | M4.0 Local Persistence Architecture*
+*最后更新：2026-08-20 | M4.4 Restart / Crash Closure*

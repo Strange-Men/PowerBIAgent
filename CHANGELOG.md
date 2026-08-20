@@ -2,6 +2,20 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.4] — 2026-08-20
+
+### 重启崩溃恢复验收与 M4 最终收口
+
+- 新增 7 个 restart/crash integration tests，全部使用临时真实 SQLite 文件与 report filesystem，并在第一套 runtime/repository/service 写入后显式 dispose，再由全新 engine/session/repository/service 恢复；覆盖 committed Memory、terminal Snapshot replay/conflict、in-flight 丢失、report recovery/corruption、history/search/archive/delete 与 Mock/Real 同 ID 隔离。
+- 明确 Snapshot crash semantics：terminal Snapshot 已保存但 process-local tracker 尚未 complete 时，重启后以 Snapshot 确定性重放且不执行工具；只有 process-local in-flight、没有 Snapshot 时不会凭空生成 completed。若同 request 已有任意 Memory 但缺 terminal Snapshot，则它是 incomplete crash witness，TurnPipeline abort 新 claim 并以 `IdempotencyCoordinationError` fail closed，不重执行可能已有外部副作用的请求，也不生成 terminal duplicate。
+- 修复 report replay authority：新持久化 `ReportResultSnapshot` 只保存 report ID/reference/hash metadata，HTML 字段为空；重启重放通过既有 `ReportRepository.read_html()` 从 filesystem 读取，并严格核对 report metadata、request/conversation linkage、source mode 与 hash。严格验收同时发现并修复 adaptive Real report 路径构造了带 context 的 `ReportSpec` 却误传原对象的问题。missing/tampered HTML、corrupt metadata 或 linkage mismatch 均 fail closed；SQLite 不成为 HTML authority。旧 snapshot 中可能存在的 HTML 仅作兼容字段，配置了 report repository 时重放不会读取该值。
+- 修复 M4.3 delete 的 DB commit → HTML unlink crash window：新增 durable `conversation_delete_intents` tombstone，在删除同 namespace DB state 的同一 SQLite transaction 内保存精确 report IDs 与删除计数；HTML cleanup 成功后才 finalize intent。unlink 失败、cleanup 后 finalize 失败或进程在两者之间退出时，全新实例以相同 `(runtime_mode, conversation_id)` 重试；pending intent 阻止该 namespace 被新 Memory/Snapshot/Report 写入复活。另一 namespace 不受影响。
+- 新增 migration `c8d4e6f2a109`；fresh DB → head 与精确 M4.3 revision `f4c3a2b1907d` → head 均验证通过。没有尝试用 SQLite transaction 原子覆盖 filesystem。
+- Fresh backend regression：`1681 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture Gate `109` Python files、Repository Safety `239` files、Error Ledger `25` entries、Documentation Governance 与 `git diff --check` 均 PASS。本轮 acceptance 不声称硬件掉电、filesystem/SQLite 自身违反 durability contract 或多进程/分布式事务保证；范围仍是 local single-machine MVP。Report create 对可观察的 metadata-save failure 继续 best-effort unlink，但未新增 durable create journal，因此不保证进程恰在 HTML rename 后、metadata commit 前退出时自动清除无引用文件；该窗口不会生成成功 metadata/Snapshot。
+- **M4 FINAL PASS；M5 NOT STARTED。** 不创建 Tag，不进入 React/Vite、Remote MCP、PostgreSQL、Redis 或分布式事务。
+
+**Settings.version:** M4.4
+
 ## [M4.3] — 2026-08-20
 
 ### 会话历史搜索与命名空间查询闭环

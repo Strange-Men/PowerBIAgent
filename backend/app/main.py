@@ -1,9 +1,9 @@
-"""FastAPI 应用 — M4.1
+"""FastAPI 应用 — M4.4
 
 启动命令：
     python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 
-M4.1 更新：
+M4 persistence wiring：
 - 新增 persistence factory：Sqlite 时创建 SQLiteMemoryRepository + SQLiteSnapshotRepository
 - Memory 时使用 InMemoryMemoryRepository + ResultSnapshotStore（默认）
 - engine/repo 生命周期在 lifespan 中管理（create/dispose）

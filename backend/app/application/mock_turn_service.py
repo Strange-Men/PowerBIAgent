@@ -126,6 +126,7 @@ class MockTurnService:
             config=self.config,
             memory_repo=_repo,
             snapshot_store=snapshot_store,
+            report_repository=report_repository,
         )
 
     def _build_tool_gateway(self) -> ToolGateway:

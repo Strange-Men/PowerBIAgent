@@ -108,3 +108,10 @@ class ConversationHistoryRepository(ABC):
     async def delete(
         self, runtime_mode: RuntimeDataMode, conversation_id: str
     ) -> RepositoryDeleteResult: ...
+
+    @abstractmethod
+    async def complete_delete(
+        self, runtime_mode: RuntimeDataMode, conversation_id: str
+    ) -> None:
+        """Clear a durable delete intent after report cleanup succeeds."""
+        ...
