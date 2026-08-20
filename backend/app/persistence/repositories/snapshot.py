@@ -11,7 +11,7 @@ Design notes
     replayed.  In-flight requests do not survive a crash (future M4.4).
 *   Fingerprint conflict detection is enforced by the UNIQUE constraint on
     ``(runtime_mode, request_id)`` combined with in-memory in-flight check.
-*   Corrupt payloads raise ``ValidationError`` (fail closed).
+*   Corrupt payloads or row/payload integrity mismatches fail closed.
 """
 
 from __future__ import annotations
@@ -146,7 +146,8 @@ class SQLiteSnapshotRepository(SnapshotRepository):
         """Retrieve a snapshot by (runtime_mode, request_id).
 
         Returns None if not found.
-        Raises ValidationError if the stored payload is corrupt (fail closed).
+        Fails closed if the stored payload is corrupt or conflicts with the
+        row's request/terminal integrity fields.
         """
         mode_value = runtime_mode.value if hasattr(runtime_mode, "value") else str(runtime_mode)
 
@@ -161,7 +162,24 @@ class SQLiteSnapshotRepository(SnapshotRepository):
             row = result.scalar_one_or_none()
             if row is None:
                 return None
-            return json_to_domain(TurnResultSnapshot, row.payload_json)
+            snapshot = json_to_domain(TurnResultSnapshot, row.payload_json)
+            integrity_fields = (
+                ("request_id", row.request_id, snapshot.request_id),
+                ("conversation_id", row.conversation_id, snapshot.conversation_id),
+                (
+                    "request_fingerprint_hash",
+                    row.request_fingerprint_hash,
+                    snapshot.request_fingerprint_hash,
+                ),
+                ("terminal_state", row.terminal_state, snapshot.terminal_state),
+                ("response_type", row.response_type, snapshot.response_type),
+            )
+            for field_name, row_value, payload_value in integrity_fields:
+                if row_value != payload_value:
+                    raise PersistenceRepositoryError(
+                        f"result_snapshot_row_payload_mismatch:{field_name}"
+                    )
+            return snapshot
 
     async def exists(
         self,

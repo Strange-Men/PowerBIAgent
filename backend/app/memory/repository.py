@@ -44,9 +44,9 @@ class MemoryRepository(ABC):
 
     @abstractmethod
     async def get_latest_committed(
-        self, conversation_id: str, runtime_mode: Optional[RuntimeDataMode] = None
+        self, conversation_id: str, runtime_mode: RuntimeDataMode
     ) -> Optional[StructuredWorkMemory]:
-        """获取会话最新 committed 记忆（按 runtime_mode 过滤）"""
+        """获取 mode-isolated 会话最新 committed 记忆"""
         ...
 
     @abstractmethod
@@ -68,10 +68,10 @@ class MemoryRepository(ABC):
 
     @abstractmethod
     async def list_by_conversation(
-        self, conversation_id: str, status: Optional[str] = None,
-        runtime_mode: Optional[RuntimeDataMode] = None, limit: int = 20
+        self, conversation_id: str, runtime_mode: RuntimeDataMode,
+        status: Optional[str] = None, limit: int = 20
     ) -> list[StructuredWorkMemory]:
-        """列出会话记忆"""
+        """列出一个 mode-isolated 会话的记忆"""
         ...
 
     @abstractmethod
@@ -141,7 +141,9 @@ class InMemoryMemoryRepository(MemoryRepository):
     """
 
     def __init__(self):
-        self._store: dict[str, dict[str, StructuredWorkMemory]] = {}
+        self._store: dict[
+            str, dict[tuple[RuntimeDataMode, str], StructuredWorkMemory]
+        ] = {}
         # 复合键索引：(runtime_mode, request_id) → StructuredWorkMemory
         self._by_request: dict[tuple, StructuredWorkMemory] = {}
         self._pending_clarifications: dict[
@@ -171,7 +173,7 @@ class InMemoryMemoryRepository(MemoryRepository):
             conv = stored.conversation_id
             if conv not in self._store:
                 self._store[conv] = {}
-            self._store[conv][stored.request_id] = stored
+            self._store[conv][key] = stored
             return copy.deepcopy(stored)
 
     async def get_by_request_id(
@@ -183,16 +185,17 @@ class InMemoryMemoryRepository(MemoryRepository):
         return copy.deepcopy(memory) if memory else None
 
     async def get_latest_committed(
-        self, conversation_id: str, runtime_mode: Optional[RuntimeDataMode] = None
+        self, conversation_id: str, runtime_mode: RuntimeDataMode
     ) -> Optional[StructuredWorkMemory]:
-        """获取会话最新 committed 记忆（按 runtime_mode 过滤）"""
+        """获取 mode-isolated 会话最新 committed 记忆"""
         conv_store = self._store.get(conversation_id, {})
         committed = [
             m for m in conv_store.values()
-            if m.state_status == MemoryStatus.COMMITTED
+            if (
+                m.state_status == MemoryStatus.COMMITTED
+                and m.runtime_mode == runtime_mode
+            )
         ]
-        if runtime_mode is not None:
-            committed = [m for m in committed if m.runtime_mode == runtime_mode]
         if not committed:
             return None
         latest = max(committed, key=lambda m: m.memory_version)
@@ -313,16 +316,18 @@ class InMemoryMemoryRepository(MemoryRepository):
             return copy.deepcopy(memory)
 
     async def list_by_conversation(
-        self, conversation_id: str, status: Optional[str] = None,
-        runtime_mode: Optional[RuntimeDataMode] = None, limit: int = 20
+        self, conversation_id: str, runtime_mode: RuntimeDataMode,
+        status: Optional[str] = None, limit: int = 20
     ) -> list[StructuredWorkMemory]:
-        """列出会话记忆（支持 runtime_mode 过滤）"""
+        """列出一个 mode-isolated 会话的记忆"""
         conv_store = self._store.get(conversation_id, {})
-        results = list(conv_store.values())
+        results = [
+            memory
+            for memory in conv_store.values()
+            if memory.runtime_mode == runtime_mode
+        ]
         if status is not None:
             results = [m for m in results if m.state_status.value == status]
-        if runtime_mode is not None:
-            results = [m for m in results if m.runtime_mode == runtime_mode]
         results.sort(key=lambda m: m.created_at, reverse=True)
         return [copy.deepcopy(m) for m in results[:limit]]
 

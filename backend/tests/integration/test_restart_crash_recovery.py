@@ -77,6 +77,8 @@ from backend.app.schemas.data_contracts import (
     PowerBIError,
     QueryResult,
     SemanticModelSchema,
+    TimeRangeMode,
+    TimeRangeSpec,
 )
 
 
@@ -246,6 +248,231 @@ def _pending_memory(
         base_memory_version=base_version,
         memory_version=0,
     )
+
+
+@pytest.mark.asyncio
+async def test_valid_committed_payload_restores_full_semantic_state_after_restart(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "complete-memory-payload.db"
+    await _create_database(db_path)
+    conversation_id = "complete-memory-payload-conversation"
+    request_id = "req-complete-memory-payload"
+
+    engine1, sf1, _, _ = await _open_runtime(db_path)
+    memory1 = SQLiteMemoryRepository(sf1)
+    pending = _pending_memory(
+        runtime_mode=RuntimeDataMode.MOCK,
+        conversation_id=conversation_id,
+        request_id=request_id,
+        base_version=0,
+    )
+    pending.dimensions = ["Category"]
+    pending.filters = [{
+        "field": "Category",
+        "operator": "eq",
+        "value": "Electronics",
+    }]
+    pending.time_range = TimeRangeSpec(
+        date_field="OrderDate",
+        start_date="2026-01-01",
+        end_date="2026-06-30",
+        mode=TimeRangeMode.EXPLICIT_RANGE,
+        grain="month",
+    )
+    pending.sort = "desc"
+    pending.top_n = 5
+    pending.last_query_plan = {
+        "semantic_model_key": "restart_model",
+        "measures": ["Total Sales"],
+        "dimensions": ["Category"],
+        "filters": pending.filters,
+        "sort": "desc",
+        "top_n": 5,
+    }
+    pending.last_dax = "EVALUATE ROW(\"Total Sales\", [Total Sales])"
+    pending.last_query_result_id = "result-complete-payload"
+    pending.last_report_id = "report-complete-payload"
+    await memory1.create_pending(pending, RuntimeDataMode.MOCK)
+    await memory1.commit(pending, _commit_evidence(RuntimeDataMode.MOCK))
+    await dispose_engine(engine1)
+
+    engine2, sf2, _, _ = await _open_runtime(db_path)
+    try:
+        recovered = await SQLiteMemoryRepository(sf2).get_latest_committed(
+            conversation_id, RuntimeDataMode.MOCK
+        )
+        assert recovered is not None
+        assert recovered.memory_version == 1
+        assert recovered.dimensions == pending.dimensions
+        assert recovered.filters == pending.filters
+        assert recovered.time_range == pending.time_range
+        assert recovered.sort == pending.sort
+        assert recovered.top_n == pending.top_n
+        assert recovered.last_query_plan == pending.last_query_plan
+        assert recovered.last_dax == pending.last_dax
+        assert recovered.last_query_result_id == pending.last_query_result_id
+        assert recovered.last_report_id == pending.last_report_id
+    finally:
+        await dispose_engine(engine2)
+
+
+@pytest.mark.asyncio
+async def test_committed_memory_row_payload_namespace_mismatch_fails_closed(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "memory-row-payload-namespace-mismatch.db"
+    await _create_database(db_path)
+    conversation_id = "memory-row-payload-namespace-conversation"
+    request_id = "req-memory-row-payload-namespace"
+
+    engine1, sf1, _, _ = await _open_runtime(db_path)
+    memory1 = SQLiteMemoryRepository(sf1)
+    seed = _pending_memory(
+        runtime_mode=RuntimeDataMode.MOCK,
+        conversation_id=conversation_id,
+        request_id=request_id,
+        base_version=0,
+    )
+    await memory1.create_pending(seed, RuntimeDataMode.MOCK)
+    await memory1.commit(seed, _commit_evidence(RuntimeDataMode.MOCK))
+    async with sf1() as session:
+        async with session.begin():
+            row = (
+                await session.execute(
+                    select(WorkMemoryModel).where(
+                        and_(
+                            WorkMemoryModel.request_id == request_id,
+                            WorkMemoryModel.runtime_mode
+                            == RuntimeDataMode.MOCK.value,
+                        )
+                    )
+                )
+            ).scalar_one()
+            payload = json.loads(row.payload_json)
+            payload["runtime_mode"] = RuntimeDataMode.REAL.value
+            await session.execute(
+                update(WorkMemoryModel)
+                .where(WorkMemoryModel.id == row.id)
+                .values(payload_json=json.dumps(payload, ensure_ascii=False))
+            )
+    await dispose_engine(engine1)
+
+    engine2, sf2, _, _ = await _open_runtime(db_path)
+    try:
+        with pytest.raises(
+            PersistenceRepositoryError,
+            match="work_memory_row_payload_mismatch:runtime_mode",
+        ):
+            await SQLiteMemoryRepository(sf2).get_latest_committed(
+                conversation_id, RuntimeDataMode.MOCK
+            )
+    finally:
+        await dispose_engine(engine2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("corrupt_payload", "expected_error", "error_match"),
+    [
+        (None, PersistenceRepositoryError, "work_memory_payload_missing"),
+        ("", PersistenceRepositoryError, "work_memory_payload_missing"),
+        ("{malformed-json", json.JSONDecodeError, None),
+        ("{}", PersistenceRepositoryError, "work_memory_payload_incomplete"),
+    ],
+    ids=["null", "empty", "malformed-json", "incomplete-json"],
+)
+async def test_missing_or_malformed_committed_payload_fails_closed_after_restart(
+    tmp_path: Path,
+    corrupt_payload: str | None,
+    expected_error: type[Exception],
+    error_match: str | None,
+) -> None:
+    db_path = tmp_path / f"corrupt-memory-payload-{corrupt_payload!r}.db"
+    await _create_database(db_path)
+    conversation_id = "corrupt-memory-payload-conversation"
+    seed_request_id = "req-corrupt-memory-payload-seed"
+    next_request_id = "req-after-memory-payload-corruption"
+
+    engine1, sf1, _, _ = await _open_runtime(db_path)
+    memory1 = SQLiteMemoryRepository(sf1)
+    seed = _pending_memory(
+        runtime_mode=RuntimeDataMode.MOCK,
+        conversation_id=conversation_id,
+        request_id=seed_request_id,
+        base_version=0,
+    )
+    seed.filters = [{
+        "field": "Category",
+        "operator": "eq",
+        "value": "Electronics",
+    }]
+    seed.top_n = 5
+    await memory1.create_pending(seed, RuntimeDataMode.MOCK)
+    await memory1.commit(seed, _commit_evidence(RuntimeDataMode.MOCK))
+    async with sf1() as session:
+        async with session.begin():
+            await session.execute(
+                update(WorkMemoryModel)
+                .where(
+                    and_(
+                        WorkMemoryModel.request_id == seed_request_id,
+                        WorkMemoryModel.runtime_mode == RuntimeDataMode.MOCK.value,
+                    )
+                )
+                .values(payload_json=corrupt_payload)
+            )
+    await dispose_engine(engine1)
+
+    engine2, sf2, _, reports2 = await _open_runtime(db_path)
+    service = _turn_service(sf2, reports2)
+    service.llm_provider.generate = AsyncMock(
+        side_effect=AssertionError("corrupt committed Memory reached Mock LLM")
+    )
+    service.powerbi.get_semantic_model_schema = AsyncMock(
+        side_effect=AssertionError("corrupt committed Memory queried schema")
+    )
+    service.powerbi.execute_dax = AsyncMock(
+        side_effect=AssertionError("corrupt committed Memory executed DAX")
+    )
+    service.tool_gateway = service._build_tool_gateway()
+
+    try:
+        raises_kwargs = {"match": error_match} if error_match else {}
+        with pytest.raises(expected_error, **raises_kwargs):
+            await service.execute(
+                message="继续分析",
+                conversation_id=conversation_id,
+                request_id=next_request_id,
+            )
+
+        assert service.llm_provider.generate.await_count == 0
+        assert service.powerbi.get_semantic_model_schema.await_count == 0
+        assert service.powerbi.execute_dax.await_count == 0
+        memory2 = SQLiteMemoryRepository(sf2)
+        assert await memory2.get_by_request_id(
+            next_request_id, RuntimeDataMode.MOCK
+        ) is None
+        assert await SQLiteSnapshotRepository(sf2).get(
+            next_request_id, RuntimeDataMode.MOCK
+        ) is None
+        async with sf2() as session:
+            rows = (
+                await session.execute(
+                    select(WorkMemoryModel).where(
+                        and_(
+                            WorkMemoryModel.conversation_id == conversation_id,
+                            WorkMemoryModel.runtime_mode
+                            == RuntimeDataMode.MOCK.value,
+                        )
+                    )
+                )
+            ).scalars().all()
+        assert [
+            (row.request_id, row.memory_version, row.state_status) for row in rows
+        ] == [(seed_request_id, 1, MemoryStatus.COMMITTED.value)]
+    finally:
+        await dispose_engine(engine2)
 
 
 @pytest.mark.asyncio
@@ -524,6 +751,71 @@ async def test_committed_memory_and_snapshot_replay_survive_real_restart(
                 conversation_id=conversation_id,
                 request_id=request_id,
             )
+    finally:
+        await dispose_engine(engine2)
+
+
+@pytest.mark.asyncio
+async def test_terminal_snapshot_row_payload_mismatch_fails_closed_on_replay(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "snapshot-row-payload-mismatch.db"
+    await _create_database(db_path)
+    conversation_id = "snapshot-row-payload-conversation"
+    request_id = "req-snapshot-row-payload"
+    message = "本月销售额是多少？"
+
+    engine1, sf1, _, reports1 = await _open_runtime(db_path)
+    completed = await _turn_service(sf1, reports1).execute(
+        message=message,
+        conversation_id=conversation_id,
+        request_id=request_id,
+    )
+    assert completed["terminal_state"] == "completed"
+    async with sf1() as session:
+        async with session.begin():
+            row = (
+                await session.execute(
+                    select(ResultSnapshotModel).where(
+                        and_(
+                            ResultSnapshotModel.request_id == request_id,
+                            ResultSnapshotModel.runtime_mode
+                            == RuntimeDataMode.MOCK.value,
+                        )
+                    )
+                )
+            ).scalar_one()
+            payload = json.loads(row.payload_json)
+            payload["conversation_id"] = "wrong-conversation"
+            await session.execute(
+                update(ResultSnapshotModel)
+                .where(ResultSnapshotModel.id == row.id)
+                .values(payload_json=json.dumps(payload, ensure_ascii=False))
+            )
+    await dispose_engine(engine1)
+
+    engine2, sf2, _, reports2 = await _open_runtime(db_path)
+    try:
+        service2 = _turn_service(sf2, reports2)
+        service2.powerbi.get_semantic_model_schema = AsyncMock(
+            side_effect=AssertionError("corrupt snapshot replay queried schema")
+        )
+        service2.powerbi.execute_dax = AsyncMock(
+            side_effect=AssertionError("corrupt snapshot replay executed DAX")
+        )
+        service2.tool_gateway = service2._build_tool_gateway()
+
+        with pytest.raises(
+            PersistenceRepositoryError,
+            match="result_snapshot_row_payload_mismatch:conversation_id",
+        ):
+            await service2.execute(
+                message=message,
+                conversation_id=conversation_id,
+                request_id=request_id,
+            )
+        assert service2.powerbi.get_semantic_model_schema.await_count == 0
+        assert service2.powerbi.execute_dax.await_count == 0
     finally:
         await dispose_engine(engine2)
 

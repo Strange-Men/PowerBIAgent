@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步（FINAL PASS）
+> **状态：** M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure（FINAL PASS）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -26,6 +26,7 @@
 | **M4.3** | **Namespace-first recent/history/search/archive/delete API** | **✅ 已完成** |
 | **M4.4** | **Restart/crash acceptance + M4 backend final closure** | **✅ M4 FINAL PASS** |
 | **M4.4.1** | **Committed Memory corruption fail-closed + README/document closure** | **✅ FINAL PASS** |
+| **M4.4.2** | **M0–M4 truth / persistence boundary final closure** | **✅ FINAL PASS** |
 | M5 | React + Vite 前端与联调 | ⬜ 未开始 |
 
 ## M3 合并与 CI truth
@@ -63,6 +64,7 @@
 | Search/History API | ✅ M4.3；structured history、bounded cursor pagination、archive/delete |
 | Restart / Crash Acceptance | ✅ M4.4；fresh engine/service recovery、terminal vs incomplete semantics、filesystem report replay、durable delete intent/retry |
 | Committed filter corruption boundary | ✅ M4.4.1；deserialize + StateTransition 双边界 fail closed，不降级为空 filter，不产生 LLM/DAX/Power BI/新 commit |
+| Truth / Persistence final closure | ✅ M4.4.2；完整 WorkMemory payload、mandatory runtime namespace、row/payload integrity、Snapshot replay 与非 legacy time corruption fail closed |
 
 ## `sales_report` 能力目录（M3.4）
 
@@ -101,7 +103,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - 最小通用扩展：`CanonicalQueryPlan.dimension_tables` / `dimension_order`、ChartSpec 结构化字段；Simple 模型行为与 M3 基线一致
 - 双模型 Real acceptance：Simple 4 sections/4 queries；Rich 9 sections/9 queries、4 种 visual；事实类 LLM counters 全 0
 
-## M4.0—M4.4.1 Persistence changes
+## M4.0—M4.4.2 Persistence changes
 
 - **M4.0**：新增 ADR-012（本地持久化架构）：SQLite + SQLAlchemy Async + aiosqlite + Alembic；`backend/app/persistence/` 包（database.py / models.py / serialization.py）；5 表 schema + UNIQUE + FK；Alembic 迁移基线；Settings 扩展（默认 memory）；Repository ABC；1517 tests。
 - **M4.1**：SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring（`main.py` → `MockTurnService`/`DeepSeekTurnService`）；DB 级 partial unique index `ix_work_memories_committed_version`（`WHERE state_status = 'committed'`）保证同 (runtime_mode, conversation_id, memory_version) 最多一个 COMMITTED 行；`commit()` 内 `IntegrityError`/`OperationalError` → `MemoryVersionConflictError`；strict concurrent commit tests（exactly-one-success + 8 轮多轮验证）；corrective migration `ab8d7df39a02`。1559 tests。
@@ -112,6 +114,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - **M4.3**：新增 SQLite `ConversationHistoryRepository` + application query service + FastAPI endpoints。Conversation 方法强制 `runtime_mode`，report history 强制 `source_mode`；recent=`updated_at DESC, conversation_id ASC`，terminal snapshot transaction touch root；history authority=result snapshot + optional committed memory + strict report metadata，不提供 transcript；search 仅查 committed `analysis_goal` 与 snapshot answer/clarification/unsupported，不引入 FTS5；archive 逻辑隐藏，delete 物理级联同 namespace DB rows/HTML。Migration `f4c3a2b1907d` 增加 `archived_at` 与复合查询索引。
 - **M4.4**：使用临时真实 SQLite/report filesystem 与 dispose → fresh engine/session/repository/service 验证 restart。terminal Snapshot 是唯一 request replay authority；Memory-without-Snapshot 是 incomplete crash witness 并 fail closed。持久化 report snapshot 不保存 HTML，重放必须从 filesystem 加载并验证 metadata/hash/linkage/namespace。delete transaction 新增 durable intent，保存精确 report IDs/counts；HTML cleanup 成功后 finalize，失败或 crash 可由新实例重试，intent 期间拒绝同 namespace 复活。Migration `c8d4e6f2a109`；fresh 与 M4.3 → head PASS；backend `1681 passed, 1 skipped`。M4 FINAL PASS，M5 NOT STARTED。
 - **M4.4.1**：committed canonical filter 在 domain deserialize 时逐项验证；StateTransition 遇到 malformed filter 抛出稳定 corruption error，不再 `continue`。真实临时 SQLite restart regression 参数化覆盖 Mock/Real，同 namespace 不生成 LLM/DAX/Power BI 调用或新 memory version，另一 namespace 合法数据继续恢复。README 重构为长期 Landing Page，状态文档同步；无 migration。M4.4.1 FINAL PASS，M5 NOT STARTED。
+- **M4.4.2**：移除 committed WorkMemory payload 缺失时的 partial column fallback；modern payload 必须完整且通过 domain validation，并与 row integrity fields 一致。Memory conversation methods 的 runtime namespace 在 ABC/InMemory/SQLite 与 production callers 中 mandatory；修复 InMemory exact-ID cross-mode overwrite。terminal Snapshot row/payload 冲突与非 legacy committed time corruption 同样 fail closed。Targeted/adjacent `607 passed`；backend `1700 passed, 1 skipped`；Golden/gates/fresh Alembic PASS；无 migration。M4.4.2 FINAL PASS，M5 NOT STARTED。
 
 ## M3.3 Report Template V2 changes
 
@@ -135,7 +138,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - Capability 目录随 runtime schema 变化；schema 变更需按能力目录重新人工 smoke（不再依赖单一 fingerprint gate）。
 - Local Modeling MCP 仍为 Preview；官方包、Desktop 或协议变化后需重新人工 smoke。
 - Report HTML 仍以 filesystem 为 authority；Snapshot 只存 replay metadata。M4.4 delete intent 只记录同 `source_mode` linkage 的精确 report_id，不跨 namespace cascade；本轮保证经测试的应用级 retry/recovery，不宣称 SQLite 可与 filesystem 原子提交或覆盖硬件掉电。
-- Committed Memory payload 的 canonical filter 若损坏会 fail closed；不得通过清空、跳过或默认“无筛选”恢复。legacy time string compatibility 未在 M4.4.1 扩大处理。
+- Committed Memory 的 modern payload 必须完整且与 row integrity fields 一致；缺失、空、malformed/incomplete/domain-invalid payload 均 fail closed，不得从 partial columns 重建或通过清空/default 扩大语义。合法 legacy time string compatibility 保持不变。
 - PBIX、真实输出、HTML 与 `local_state/` 永不提交。
 
 ## Tag 与基线
@@ -149,4 +152,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-20 | M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步*
+*最后更新：2026-08-20 | M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure*

@@ -33,8 +33,13 @@ class FilterTransition(str, Enum):
 class CommittedMemoryCorruptionError(ValueError):
     """Committed canonical state cannot be safely inherited."""
 
-    def __init__(self, filter_index: int) -> None:
-        super().__init__(f"committed_memory_filter_invalid:{filter_index}")
+    def __init__(
+        self,
+        code: str,
+        *,
+        filter_index: int | None = None,
+    ) -> None:
+        super().__init__(code)
         self.filter_index = filter_index
 
 
@@ -196,7 +201,10 @@ class StateTransitionService:
             try:
                 parsed.append(StructuredFilter.model_validate(item))
             except (TypeError, ValueError) as exc:
-                raise CommittedMemoryCorruptionError(index) from exc
+                raise CommittedMemoryCorruptionError(
+                    f"committed_memory_filter_invalid:{index}",
+                    filter_index=index,
+                ) from exc
         return parsed
 
     @staticmethod
@@ -205,8 +213,12 @@ class StateTransitionService:
     ) -> TimeRangeSpec | None:
         if committed is None or committed.time_range is None:
             return None
+        if isinstance(committed.time_range, str):
+            # Sealed legacy contract: old free-text time is non-executable.
+            return None
         try:
             return TimeRangeSpec.model_validate(committed.time_range)
-        except (TypeError, ValueError):
-            # Legacy free-text committed time cannot cross the canonical boundary.
-            return None
+        except (TypeError, ValueError) as exc:
+            raise CommittedMemoryCorruptionError(
+                "committed_memory_time_range_invalid"
+            ) from exc

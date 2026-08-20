@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步（FINAL PASS）
+> **状态：** M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure（FINAL PASS）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -26,6 +26,7 @@
 | **M4.3** | **Namespace-first recent/history/search/archive/delete API** | **✅ 已完成** |
 | **M4.4** | **Restart/crash acceptance + M4 backend final closure** | **✅ M4 FINAL PASS** |
 | **M4.4.1** | **Committed Memory corruption fail-closed + README/document closure** | **✅ FINAL PASS** |
+| **M4.4.2** | **M0–M4 truth / persistence boundary final closure** | **✅ FINAL PASS** |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
 
 M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad`、M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 已纯 fast-forward 合入 main，对应 main CI 均 success。M3.2 / M3.3 / M3.4 直接在 main 完成。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。M4.0 已在 main 完成本地持久化架构：SQLite + SQLAlchemy Async + Alembic；MemoryRepository/SnapshotRepository ABC；settings 扩展；26 新增 tests（1503 total）。M4.0 后续 corrective hardening：pytest-asyncio CI 兼容修复、conversation 复合 PK/FK 命名空间隔离、PRAGMA 每连接事件修正；corrective migration `01dc0d90d920`；40 持久化 tests + 全仓 1517 total。
@@ -42,6 +43,14 @@ Canonical QueryPlan
 ```
 
 Real DAX/factual authority 不回到 LLM，Real failure 不回退 Mock。
+
+## M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure（FINAL PASS）
+
+- SQLite committed WorkMemory 不再从 dedicated columns 做 partial reconstruction。Modern `payload_json` 必须完整覆盖 domain contract；NULL/empty/malformed/incomplete/domain-invalid 及 row/payload integrity mismatch 均在 Intent、DAX、Power BI、新 Memory commit 与 fake terminal Snapshot 前 fail closed。
+- `MemoryRepository.get_latest_committed()` / `list_by_conversation()` 的 runtime namespace 在 ABC、InMemory 与 SQLite 中 mandatory；production callers 全部显式传入，跨 Mock/Real aggregate 默认行为删除。InMemory conversation store 使用 `(runtime_mode, request_id)`，同 conversation/request ID 可在两种模式完全隔离共存。
+- Audit corrective closure：非 legacy committed time corruption 不再被 StateTransition 静默解释为空；terminal Snapshot row/payload request/conversation/fingerprint/terminal integrity mismatch 不得重放。legacy time string contract 保持不变。
+- Semantic Grounding、Deterministic DAX + Layer 3、VerifiedFactSet、deterministic Report、terminal Snapshot replay、filesystem HTML 与 durable delete intent 的既有 authority 不变。无产品功能、schema 或 migration；M5 NOT STARTED。
+- Fresh acceptance：targeted/adjacent `607 passed`；backend `1700 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；四个治理门 PASS；Alembic head 保持 `c8d4e6f2a109`，fresh DB → head 与幂等 head → head PASS。
 
 ## M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步（FINAL PASS）
 
@@ -156,8 +165,8 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
-- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.1 corrective closure FINAL PASS；未经用户另行明确批准不得进入 M5；禁止 force push。
+- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.2 truth/persistence boundary final closure FINAL PASS；未经用户另行明确批准不得进入 M5；禁止 force push。
 
 ---
 
-*最后更新：2026-08-20 | M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步*
+*最后更新：2026-08-20 | M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure*

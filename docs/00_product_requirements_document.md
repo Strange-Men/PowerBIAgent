@@ -4,7 +4,7 @@
 > **修订版本：** v1.2
 > **修订日期：** 2026-08-20
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** 仅同步 M0—M4 实现状态与 M4.4.1 corrective closure；产品需求与 North Star 不变
+> **本轮修订范围：** 仅同步 M0—M4 实现状态与 M4.4.2 truth/persistence boundary final closure；产品需求与 North Star 不变
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -41,7 +41,7 @@ Natural Language
 → successful Memory commit
 ```
 
-固定模板静态 HTML 报表已在 M3 完成并封板；M4 已完成本地持久化、恢复、history/search 与 restart/crash acceptance。M4.4.1 只做 committed Memory corruption fail-closed corrective hardening，不改变上述事实链。
+固定模板静态 HTML 报表已在 M3 完成并封板；M4 已完成本地持久化、恢复、history/search 与 restart/crash acceptance。M4.4.2 最终关闭 committed Memory 完整 payload、mandatory namespace、terminal Snapshot integrity 等 fail-closed 边界，不改变上述事实链。
 
 MVP 主要供公司内部少量人员使用，暂不处理复杂客户权限和多租户问题。
 
@@ -224,7 +224,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 2. **M1 真实 DeepSeek 接入** ✅ 已完成并封板 — LLM Provider、Intent/QueryPlan 与统一 TurnPipeline；历史 LLM DAX/Answer 保留 Mock compatibility
 3. **M2 真实 Power BI MCP 与数据问答** ✅ 已由 `m2.6.4-m0-m2-final-seal` 正式封板；Local MCP、Business Semantic Grounding、Deterministic DAX、VerifiedFactSet 与 hardened acceptance 已完成；Remote Deferred
 4. **M3 报表生成闭环** ✅ 已完成并随 M0—M3 正式封板 — `sales_report`、adaptive report planning、固定 HTML、报表资源 ID、查看/下载
-5. **M4 多轮记忆完善** ✅ M4 FINAL PASS；M4.4.1 corrective closure FINAL PASS — SQLite 会话持久化、恢复、history/search/archive/delete、restart/crash acceptance 与 committed filter corruption fail-closed
+5. **M4 多轮记忆完善** ✅ M4 FINAL PASS；M4.4.2 truth/persistence boundary final closure FINAL PASS — SQLite 会话持久化、恢复、history/search/archive/delete、restart/crash acceptance、完整 committed payload 与 mandatory namespace fail-closed
 6. **M5 React 前端与联调** ⬜ 未开始 — 极简对话页面、接口联调、响应式、视觉验收
 
 ## 十二、MVP 暂不包含
@@ -260,7 +260,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 ## 十四、验收标准
 
-以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.1 corrective closure 已完成；React 页面仍属于尚未开始的 M5。CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
+以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.2 truth/persistence boundary final closure 已完成；React 页面仍属于尚未开始的 M5。CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
 
 MVP 达到以下条件即可视为成功：
 
@@ -290,4 +290,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-20 | M4.4.1 实现状态同步；产品需求与 North Star 不变*
+*修订日期：2026-08-20 | M4.4.2 实现状态同步；产品需求与 North Star 不变*

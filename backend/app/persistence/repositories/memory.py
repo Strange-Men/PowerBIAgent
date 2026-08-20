@@ -15,6 +15,7 @@ Permanent business semantics
 from __future__ import annotations
 
 import copy
+import json
 from typing import Optional
 
 from sqlalchemy import and_, func, select, update
@@ -74,25 +75,50 @@ def _work_memory_to_model(
 def _model_to_work_memory(row: WorkMemoryModel) -> StructuredWorkMemory:
     """Reconstruct a StructuredWorkMemory from a WorkMemoryModel row.
 
-    Raises ValueError (through Pydantic) if the payload is corrupt — fail closed.
+    ``payload_json`` is the complete domain reconstruction authority.  The
+    dedicated columns are query/index/support fields and must never be used to
+    rebuild partial executable semantic state.
+
+    Raises PersistenceRepositoryError when the payload is missing, incomplete,
+    or conflicts with the row's integrity fields. JSON/Pydantic validation
+    failures propagate — all fail closed.
     """
-    if row.payload_json:
-        return json_to_domain(StructuredWorkMemory, row.payload_json)
-    # Fallback: reconstruct from columns (legacy / payload missing edge case)
-    return StructuredWorkMemory(
-        request_id=row.request_id,
-        conversation_id=row.conversation_id,
-        runtime_mode=RuntimeDataMode(row.runtime_mode),
-        state_status=MemoryStatus(row.state_status),
-        base_memory_version=row.base_memory_version,
-        memory_version=row.memory_version,
-        semantic_model_key=row.semantic_model_key,
-        report_template_key=row.report_template_key,
-        current_intent=row.current_intent,
-        analysis_goal=row.analysis_goal,
-        failure_reason=row.failure_reason,
-        failure_stage=row.failure_stage,
+    payload_json = row.payload_json
+    if payload_json is None or not payload_json.strip():
+        raise PersistenceRepositoryError("work_memory_payload_missing")
+
+    payload = json.loads(payload_json)
+    if not isinstance(payload, dict):
+        raise PersistenceRepositoryError("work_memory_payload_invalid")
+    missing_fields = sorted(
+        set(StructuredWorkMemory.model_fields).difference(payload)
     )
+    if missing_fields:
+        raise PersistenceRepositoryError(
+            "work_memory_payload_incomplete:" + ",".join(missing_fields)
+        )
+
+    memory = StructuredWorkMemory.model_validate(payload)
+    integrity_fields = (
+        ("request_id", row.request_id, memory.request_id),
+        ("conversation_id", row.conversation_id, memory.conversation_id),
+        ("runtime_mode", row.runtime_mode, memory.runtime_mode.value),
+        ("state_status", row.state_status, memory.state_status.value),
+        ("base_memory_version", row.base_memory_version, memory.base_memory_version),
+        ("memory_version", row.memory_version, memory.memory_version),
+        ("semantic_model_key", row.semantic_model_key, memory.semantic_model_key),
+        ("report_template_key", row.report_template_key, memory.report_template_key),
+        ("current_intent", row.current_intent, memory.current_intent),
+        ("analysis_goal", row.analysis_goal, memory.analysis_goal),
+        ("failure_reason", row.failure_reason, memory.failure_reason),
+        ("failure_stage", row.failure_stage, memory.failure_stage),
+    )
+    for field_name, row_value, payload_value in integrity_fields:
+        if row_value != payload_value:
+            raise PersistenceRepositoryError(
+                f"work_memory_row_payload_mismatch:{field_name}"
+            )
+    return memory
 
 
 def _clarification_to_model(
@@ -252,17 +278,14 @@ class SQLiteMemoryRepository(MemoryRepository):
     async def get_latest_committed(
         self,
         conversation_id: str,
-        runtime_mode: Optional[RuntimeDataMode] = None,
+        runtime_mode: RuntimeDataMode,
     ) -> Optional[StructuredWorkMemory]:
         async with self._session_factory() as session:
             conditions = [
                 WorkMemoryModel.conversation_id == conversation_id,
+                WorkMemoryModel.runtime_mode == runtime_mode.value,
                 WorkMemoryModel.state_status == MemoryStatus.COMMITTED.value,
             ]
-            if runtime_mode is not None:
-                conditions.append(
-                    WorkMemoryModel.runtime_mode == runtime_mode.value
-                )
 
             stmt = (
                 select(WorkMemoryModel)
@@ -389,12 +412,7 @@ class SQLiteMemoryRepository(MemoryRepository):
 
                 # 6. Reconstruct the full domain model from the stored payload
                 #    so we can merge changes from *memory* onto it.
-                if row.payload_json:
-                    existing_domain = json_to_domain(
-                        StructuredWorkMemory, row.payload_json
-                    )
-                else:
-                    existing_domain = _model_to_work_memory(row)
+                existing_domain = _model_to_work_memory(row)
 
                 # Merge analysis fields from the caller's memory
                 existing_domain.current_intent = memory.current_intent
@@ -526,10 +544,7 @@ class SQLiteMemoryRepository(MemoryRepository):
                     return None
 
                 # Reconstruct domain, mark failed, persist
-                if row.payload_json:
-                    domain = json_to_domain(StructuredWorkMemory, row.payload_json)
-                else:
-                    domain = _model_to_work_memory(row)
+                domain = _model_to_work_memory(row)
 
                 domain._mark_failed(reason=reason, stage=stage)
                 new_payload = domain_to_json(domain)
@@ -552,20 +567,17 @@ class SQLiteMemoryRepository(MemoryRepository):
     async def list_by_conversation(
         self,
         conversation_id: str,
+        runtime_mode: RuntimeDataMode,
         status: Optional[str] = None,
-        runtime_mode: Optional[RuntimeDataMode] = None,
         limit: int = 20,
     ) -> list[StructuredWorkMemory]:
         async with self._session_factory() as session:
             conditions = [
                 WorkMemoryModel.conversation_id == conversation_id,
+                WorkMemoryModel.runtime_mode == runtime_mode.value,
             ]
             if status is not None:
                 conditions.append(WorkMemoryModel.state_status == status)
-            if runtime_mode is not None:
-                conditions.append(
-                    WorkMemoryModel.runtime_mode == runtime_mode.value
-                )
 
             stmt = (
                 select(WorkMemoryModel)

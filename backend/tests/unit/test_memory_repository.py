@@ -346,12 +346,16 @@ class TestMockRealIsolation:
         await repo.create_pending(real_mem, RuntimeDataMode.REAL)
         await repo.commit(real_mem, real_ev)
 
-        all_memories = await repo.list_by_conversation("conv-filter")
-        assert len(all_memories) == 2
-
-        mock_only = await repo.list_by_conversation("conv-filter", runtime_mode=RuntimeDataMode.MOCK)
+        mock_only = await repo.list_by_conversation(
+            "conv-filter", runtime_mode=RuntimeDataMode.MOCK
+        )
+        real_only = await repo.list_by_conversation(
+            "conv-filter", runtime_mode=RuntimeDataMode.REAL
+        )
         assert len(mock_only) == 1
         assert mock_only[0].runtime_mode == RuntimeDataMode.MOCK
+        assert len(real_only) == 1
+        assert real_only[0].runtime_mode == RuntimeDataMode.REAL
 
     # ---- M0.3.2 新增：复合键跨模式共存 ----
 
@@ -390,6 +394,26 @@ class TestMockRealIsolation:
         real_retrieved = await repo.get_by_request_id("req-shared", RuntimeDataMode.REAL)
         assert real_retrieved is not None
         assert real_retrieved.runtime_mode == RuntimeDataMode.REAL
+
+        mock_latest = await repo.get_latest_committed(
+            "conv-coexist", RuntimeDataMode.MOCK
+        )
+        real_latest = await repo.get_latest_committed(
+            "conv-coexist", RuntimeDataMode.REAL
+        )
+        assert mock_latest is not None
+        assert mock_latest.measures == ["MockData"]
+        assert real_latest is not None
+        assert real_latest.measures == ["RealData"]
+
+        mock_rows = await repo.list_by_conversation(
+            "conv-coexist", runtime_mode=RuntimeDataMode.MOCK
+        )
+        real_rows = await repo.list_by_conversation(
+            "conv-coexist", runtime_mode=RuntimeDataMode.REAL
+        )
+        assert [memory.measures for memory in mock_rows] == [["MockData"]]
+        assert [memory.measures for memory in real_rows] == [["RealData"]]
 
     @pytest.mark.asyncio
     async def test_mock_cannot_see_real_record(self, repo, valid_evidence):
@@ -445,11 +469,15 @@ class TestFailedRecords:
         await repo.create_pending(sample_memory, RuntimeDataMode.MOCK)
         await repo.mark_failed("req-001", RuntimeDataMode.MOCK, reason="test fail")
 
-        all_memories = await repo.list_by_conversation("conv-001")
+        all_memories = await repo.list_by_conversation(
+            "conv-001", RuntimeDataMode.MOCK
+        )
         assert len(all_memories) == 1
         assert all_memories[0].state_status == MemoryStatus.FAILED
 
-        failed_only = await repo.list_by_conversation("conv-001", status="failed")
+        failed_only = await repo.list_by_conversation(
+            "conv-001", RuntimeDataMode.MOCK, status="failed"
+        )
         assert len(failed_only) == 1
 
 

@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
 import json
 import tempfile
 from pathlib import Path
@@ -67,6 +68,7 @@ from backend.app.memory.repository import (
     InMemoryMemoryRepository,
     MemoryCommitDeniedError,
     MemoryDuplicateError,
+    MemoryRepository,
     MemoryVersionConflictError,
 )
 from backend.app.memory.result_snapshot import (
@@ -95,6 +97,24 @@ from backend.app.persistence.serialization import domain_to_json, json_to_domain
 # ===========================================================================
 # Fixtures
 # ===========================================================================
+
+
+@pytest.mark.parametrize(
+    "repository_type",
+    [MemoryRepository, InMemoryMemoryRepository, SQLiteMemoryRepository],
+)
+@pytest.mark.parametrize(
+    "method_name",
+    ["get_latest_committed", "list_by_conversation"],
+)
+def test_conversation_scoped_memory_queries_require_runtime_mode(
+    repository_type: type,
+    method_name: str,
+) -> None:
+    signature = inspect.signature(getattr(repository_type, method_name))
+    runtime_mode = signature.parameters["runtime_mode"]
+    assert runtime_mode.annotation in (RuntimeDataMode, "RuntimeDataMode")
+    assert runtime_mode.default is inspect.Parameter.empty
 
 
 def _create_partial_unique_index(engine):

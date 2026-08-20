@@ -2,6 +2,20 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.4.2] — 2026-08-20
+
+### M0–M4 Truth / Persistence Boundary Final Closure
+
+- 移除 SQLite committed WorkMemory 的 partial column reconstruction fallback。Modern `payload_json` 现在是完整 domain reconstruction authority；NULL/empty、malformed JSON、缺少任一 `StructuredWorkMemory` 字段、Pydantic/domain validation failure 均 deterministic fail closed。
+- Dedicated columns 只保留 query/index/integrity/support 职责；完整 payload 与 row 的 request/conversation/runtime/status/version/model/template/intent/failure integrity fields 不一致时拒绝恢复，禁止损坏 canonical filter/time/sort/top_n/last_query_plan 被静默清除。
+- `MemoryRepository.get_latest_committed()` / `list_by_conversation()` 在 ABC、InMemory 与 SQLite 实现中将 `runtime_mode` 改为 mandatory；所有 production callers 显式传入 namespace，不再保留跨 Mock/Real aggregate 默认行为。
+- 修复 InMemory 同 conversation_id + 同 request_id 跨 Mock/Real 时 conversation store 覆盖问题；内部 key 改为 `(runtime_mode, request_id)`，latest/list/get 均保持 namespace 隔离。
+- 最终 boundary audit 额外收口两个 P1：非 legacy committed time state 的 process-local corruption 不再静默清空；terminal Snapshot payload 与 row 的 request/conversation/fingerprint/terminal fields 冲突时不再作为 replay authority。合法 legacy time string contract 保持不变。
+- M0—M4 Semantic/DAX/Fact/Report/Memory/Snapshot/Namespace/Filesystem authority 模型保持不变；未增加产品功能，未进入 M5。无 schema change、无 Alembic migration。
+- Fresh acceptance：targeted/adjacent `607 passed`；backend `1700 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture `109`、Repository Safety `239`、Error Ledger `25`、Documentation Governance PASS。Alembic head 保持 `c8d4e6f2a109`，fresh DB → head 与 head → head 幂等 upgrade PASS。
+
+**Settings.version:** M4.4.2
+
 ## [M4.4.1] — 2026-08-20
 
 ### Memory Corruption Fail-Closed、README 重构与文档状态同步

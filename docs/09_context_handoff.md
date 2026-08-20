@@ -5,9 +5,9 @@
 
 ## 当前阶段
 
-**M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步已完成。**
+**M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure 已完成。**
 
-M4 backend 在 M4.4 已 FINAL PASS。M4.4.1 只做 committed Memory corruption corrective hardening、README Landing Page 重构与正式状态同步；不改变 M0—M4 架构或 factual truth chain，不进入 M5。
+M4 backend 在 M4.4 已 FINAL PASS。M4.4.2 只做 committed Memory payload、repository namespace、Snapshot replay 与最终 authority audit corrective closure；不改变 M0—M4 架构或 factual truth chain，不进入 M5。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -15,6 +15,15 @@ M4 backend 在 M4.4 已 FINAL PASS。M4.4.1 只做 committed Memory corruption c
 | M4.3 | Conversation History / Search API | ✅ 完成 |
 | **M4.4** | **Restart / Crash Acceptance & M4 Final Closure** | **✅ M4 FINAL PASS** |
 | **M4.4.1** | **Memory corruption fail-closed + README/document closure** | **✅ FINAL PASS** |
+| **M4.4.2** | **M0–M4 truth / persistence boundary final closure** | **✅ FINAL PASS** |
+
+### M4.4.2 final boundary closure
+
+- 根因：SQLite `_model_to_work_memory()` 在 `payload_json` 缺失时用 dedicated columns 构造 partial `StructuredWorkMemory`；columns 不含 filters/time/sort/top_n/last_query_plan 等完整 canonical state，可能把损坏 committed state 解释为更宽查询。
+- 最终语义：modern committed WorkMemory 的完整 domain reconstruction authority 仅为 `payload_json`。NULL/empty、malformed JSON、字段不完整、domain validation failure 或 row/payload integrity mismatch 全部 fail closed；dedicated columns 仅为 query/index/integrity/support fields，不再替代 executable semantic state。无 legacy partial reconstruction contract。
+- `MemoryRepository.get_latest_committed()` / `list_by_conversation()` 的 runtime namespace 在 ABC、InMemory、SQLite 与 production callers 中 mandatory；删除跨模式 aggregate 默认行为。InMemory exact conversation/request ID 跨 Mock/Real overwrite 已由 composite conversation-store key 修复。
+- 最终 audit 发现并最小修复两个额外 P1：非 legacy committed time corruption 不再在 StateTransition 静默清空；terminal Snapshot row/payload request/conversation/fingerprint/terminal mismatch 不再通过 replay。未发现 P0；未做大重构或未来功能。
+- M0—M4 semantic/DAX/fact/report/memory/snapshot/namespace/filesystem authority 保持封板模型；Real failure 不回退 Mock，history/persistence 不成为 factual authority，report HTML 继续只从 filesystem 恢复。
 
 ### M4.4.1 corruption boundary
 
@@ -65,6 +74,15 @@ M4 backend 在 M4.4 已 FINAL PASS。M4.4.1 只做 committed Memory corruption c
 - `backend/app/config/settings.py`：version → M4.4.1。
 - M4.4.1 无 migration；M5 NOT STARTED；不新增 Tag。
 
+### M4.4.2 fresh acceptance
+
+- Payload/namespace/audit targeted + adjacent suites：`607 passed`。
+- Backend full regression：`1700 passed, 1 skipped`。
+- Golden：`11 passed, 1 manual-real skipped`；Architecture `109`、Repository Safety `239`、Error Ledger `25`、Documentation Governance PASS。
+- Alembic head 保持 `c8d4e6f2a109`；fresh DB → head 与 head → head 幂等 upgrade PASS，确认无新增 migration。
+- `backend/app/config/settings.py`：version → M4.4.2。
+- M4.4.2 FINAL PASS；M5 NOT STARTED；不新增 Tag。
+
 ## 下一步
 
 后续轮次只有用户另行批准后才可开始：
@@ -95,4 +113,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\check_documentation_governance.py
 
 ---
 
-*最后更新：2026-08-20 | M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步*
+*最后更新：2026-08-20 | M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure*

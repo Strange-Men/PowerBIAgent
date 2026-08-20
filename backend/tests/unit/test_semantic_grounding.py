@@ -986,6 +986,22 @@ class TestGroundingAuthorityAndStateTransition:
                 _draft(), GroundedSemanticDelta(), committed
             )
 
+    def test_corrupt_committed_time_range_fails_closed_before_transition(self):
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+        )
+        # Simulate process-local corruption after initial domain validation.
+        committed.time_range = {"date_field": "OrderDate"}
+
+        with pytest.raises(
+            CommittedMemoryCorruptionError,
+            match="committed_memory_time_range_invalid",
+        ):
+            StateTransitionService().merge(
+                _draft(), GroundedSemanticDelta(), committed
+            )
+
     def test_llm_template_draft_never_crosses_state_transition(self):
         draft = _draft(requested_template="sales_weekly")
         without_grounding = StateTransitionService().merge(

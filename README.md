@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步**。M4.4.1 FINAL PASS；M5 NOT STARTED。
+当前版本：**M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure**。M4.4.2 FINAL PASS；M5 NOT STARTED。
 
 ## Overview
 
@@ -140,10 +140,11 @@ Conversation API 仅在 SQLite backend 可用；namespace query parameter 必填
 - SQLite 默认路径：`local_state/persistence/powerbiagent.db`。
 - Report HTML 路径：`local_state/reports/`。
 - SQLite 保存结构化状态与 metadata；filesystem 是 HTML 唯一 authority。
+- Committed WorkMemory 只从完整 `payload_json` 恢复；缺失、空、损坏、不完整或与 DB integrity columns 冲突时 fail closed，不使用 partial column fallback。
 - 只有 terminal Snapshot 可以作为 request replay authority；Memory-without-Snapshot 必须 fail closed。
-- Mock/Real 状态按显式 namespace 隔离；history/search 不升级为事实来源。
+- Memory conversation API 与 Snapshot/request API 必须显式携带 runtime namespace；Mock/Real 状态严格隔离，history/search 不升级为事实来源。
 
-上述路径均在 Git 之外。当前 schema 由 Alembic 管理；M4.4.1 没有 schema change，也没有新增 migration。
+上述路径均在 Git 之外。当前 schema 由 Alembic 管理；M4.4.2 没有 schema change，也没有新增 migration。
 
 ## Development & Validation
 
@@ -172,7 +173,7 @@ python -m alembic upgrade head
 |---|---|
 | M0–M3 | Sealed |
 | M4 | FINAL PASS |
-| M4.4.1 | FINAL PASS — corrective hardening / documentation closure |
+| M4.4.2 | FINAL PASS — truth / persistence boundary final closure |
 | M5 | NOT STARTED |
 
 逐版本变更见 [CHANGELOG](CHANGELOG.md)。
@@ -200,4 +201,4 @@ Proprietary software for internal use.
 
 ---
 
-*最后更新：2026-08-20 | M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步*
+*最后更新：2026-08-20 | M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure*
