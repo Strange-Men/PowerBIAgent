@@ -195,26 +195,32 @@ class TurnPipeline:
             )
 
         # ── OWNER: 执行前准备（统一控制面） ──
-        # 加载 committed memory
-        committed = await self.memory_repo.get_latest_committed(
-            effective_conv_id, runtime_mode
-        )
-        pending_clarification = await self.memory_repo.get_pending_clarification(
-            effective_conv_id, runtime_mode
-        )
+        try:
+            # 加载 committed memory
+            committed = await self.memory_repo.get_latest_committed(
+                effective_conv_id, runtime_mode
+            )
+            pending_clarification = await self.memory_repo.get_pending_clarification(
+                effective_conv_id, runtime_mode
+            )
 
-        # 构建上下文
-        context = self.context_builder.build(
-            user_message=message,
-            committed_memory=committed,
-            semantic_model_key=semantic_model_key,
-            report_template_key=report_template_key,
-        )
-        trace.record("context_built", trace_id=trace_id, request_id=effective_req_id)
+            # 构建上下文
+            context = self.context_builder.build(
+                user_message=message,
+                committed_memory=committed,
+                semantic_model_key=semantic_model_key,
+                report_template_key=report_template_key,
+            )
+            trace.record(
+                "context_built", trace_id=trace_id, request_id=effective_req_id
+            )
 
-        # 创建 TurnController
-        controller = TurnController(self.config, request_id=effective_req_id)
-        controller.transition(TurnState.CONTEXT_READY)
+            # 创建 TurnController
+            controller = TurnController(self.config, request_id=effective_req_id)
+            controller.transition(TurnState.CONTEXT_READY)
+        except Exception:
+            await self.snapshot_store.abort(effective_req_id, runtime_mode)
+            raise
 
         # ── OWNER: 执行 LLM 管线 ──
         try:

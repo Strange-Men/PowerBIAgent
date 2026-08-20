@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v1.1
-> **修订日期：** 2026-08-14
+> **修订版本：** v1.2
+> **修订日期：** 2026-08-20
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** M2.6.4 semantic truth cleanup；区分长期产品目标与当前 M2 已验证能力
+> **本轮修订范围：** 仅同步 M0—M4 实现状态与 M4.4.1 corrective closure；产品需求与 North Star 不变
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -23,7 +23,7 @@ Power BI 数据分析 Agent MVP（PowerBIAgent）
 
 完成一套可运行、可验证的 MVP，证明以下链路可行：
 
-当前 M2 已验证的数据问答链为：
+当前 M0—M4 已验证的后端主链为：
 
 ```text
 Natural Language
@@ -41,7 +41,7 @@ Natural Language
 → successful Memory commit
 ```
 
-固定模板静态 HTML 报表属于 M3 产品目标，不是 M2 已完成能力。
+固定模板静态 HTML 报表已在 M3 完成并封板；M4 已完成本地持久化、恢复、history/search 与 restart/crash acceptance。M4.4.1 只做 committed Memory corruption fail-closed corrective hardening，不改变上述事实链。
 
 MVP 主要供公司内部少量人员使用，暂不处理复杂客户权限和多租户问题。
 
@@ -61,7 +61,7 @@ MVP 主要供公司内部少量人员使用，暂不处理复杂客户权限和�
 
 Agent 查询真实数据，返回文字结论和数据表格。
 
-> **当前 M2 能力边界：** 已验证 grammar 仅包含 Measure、Dimension、`EQ` Filter、可确定解析的 TimeRange、single-measure Sort/TopN。M2 可安全处理“总销售额是多少”“按 Category 看销售额”“销售额最高的前 3 个 Product”等受限问题；TopN 只表达 QueryResult 顺序，不制造严格 business rank。“最近六个月销售趋势”“同比/环比”“哪个区域下降最多”、非 `EQ` Filter、任意 DAX、因果分析与通用趋势推断仍是未来产品能力，不得视为 M2 已实现。
+> **当前已封板的数据问答能力边界：** 已验证 grammar 仅包含 Measure、Dimension、`EQ` Filter、可确定解析的 TimeRange、single-measure Sort/TopN。系统可安全处理“总销售额是多少”“按 Category 看销售额”“销售额最高的前 3 个 Product”等受限问题；TopN 只表达 QueryResult 顺序，不制造严格 business rank。“同比/环比”“哪个区域下降最多”、非 `EQ` Filter、任意 DAX、因果分析与通用趋势推断仍未实现。
 
 ### 5.2 多轮追问
 
@@ -148,7 +148,7 @@ FastAPI
 3. **LLM Provider 层** — 通过统一接口封装模型调用。**当前正式用户模型只有 DeepSeek**。Intent/语言草稿是 weak signal；bounded selector 只能在 Catalog-owned、metadata-backed candidate ID 中受限选择。LLM 不拥有 canonical business semantics、Real DAX 或外部事实。Mock LLM 仅用于开发和测试，不作为正式用户模型展示
 4. **Power BI MCP Adapter** — 连接 Power BI MCP，获取语义模型结构，执行 DAX 查询，处理异常
 5. **Memory 模块** — 只在 Grounding、DAX、Layer 3、Power BI、FactSet 与 factual output 全链成功后提交当前分析状态；PendingClarificationContext 与 committed Memory 分离
-6. **报表生成模块** — 当前 M2 的 ReportSpec 受 VerifiedFactSet / QueryResult 事实边界约束；M3 才实现固定模板静态 HTML 的正式渲染与资源契约
+6. **报表生成模块** — M3 已实现受 VerifiedFactSet / QueryResult 约束的固定模板静态 HTML 渲染与资源契约；M4 persistence 只保存状态/metadata，filesystem 继续拥有 HTML authority
 
 ### 单 Agent 执行流程
 
@@ -222,9 +222,9 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 1. **M0 开发准备** ✅ 已完成 — 仓库、文档、Agent 架构设计、数据接入验证、项目骨架
 2. **M1 真实 DeepSeek 接入** ✅ 已完成并封板 — LLM Provider、Intent/QueryPlan 与统一 TurnPipeline；历史 LLM DAX/Answer 保留 Mock compatibility
-3. **M2 真实 Power BI MCP 与数据问答** ✅ M2.6.4 — M0—M2 ready for final seal；Local MCP、Business Semantic Grounding、Deterministic DAX、VerifiedFactSet 与 hardened acceptance 已完成；Remote Deferred；Final Tag 待用户另行授权
-4. **M3 报表生成闭环** ⬜ 未开始 — ReportSpec 正式渲染、报表资源 ID、查看/下载
-5. **M4 多轮记忆完善** ⬜ 未开始 — 会话历史、最近对话、搜索聊天、会话持久化
+3. **M2 真实 Power BI MCP 与数据问答** ✅ 已由 `m2.6.4-m0-m2-final-seal` 正式封板；Local MCP、Business Semantic Grounding、Deterministic DAX、VerifiedFactSet 与 hardened acceptance 已完成；Remote Deferred
+4. **M3 报表生成闭环** ✅ 已完成并随 M0—M3 正式封板 — `sales_report`、adaptive report planning、固定 HTML、报表资源 ID、查看/下载
+5. **M4 多轮记忆完善** ✅ M4 FINAL PASS；M4.4.1 corrective closure FINAL PASS — SQLite 会话持久化、恢复、history/search/archive/delete、restart/crash acceptance 与 committed filter corruption fail-closed
 6. **M5 React 前端与联调** ⬜ 未开始 — 极简对话页面、接口联调、响应式、视觉验收
 
 ## 十二、MVP 暂不包含
@@ -260,7 +260,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 ## 十四、验收标准
 
-以下是完整 MVP 的跨阶段成功标准；M2.6.4 只对真实 Power BI 数据问答、Truth Boundary、多轮状态与离线/Real hardened gates 负责。固定模板 Renderer 属于 M3，持久化会话属于 M4，React 页面属于 M5。
+以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.1 corrective closure 已完成；React 页面仍属于尚未开始的 M5。CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
 
 MVP 达到以下条件即可视为成功：
 
@@ -290,4 +290,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-14 | M2.6.4 长期产品目标与当前 Truth Boundary 校准*
+*修订日期：2026-08-20 | M4.4.1 实现状态同步；产品需求与 North Star 不变*

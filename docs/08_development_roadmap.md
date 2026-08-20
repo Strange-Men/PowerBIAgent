@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M4.4 — Restart / Crash Acceptance & M4 Final Closure（FINAL PASS）
+> **状态：** M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步（FINAL PASS）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -25,6 +25,7 @@
 | **M4.2.3** | **持久化资源身份与元数据权威最终收口** | **✅ FINAL PASS** |
 | **M4.3** | **Namespace-first recent/history/search/archive/delete API** | **✅ 已完成** |
 | **M4.4** | **Restart/crash acceptance + M4 backend final closure** | **✅ M4 FINAL PASS** |
+| **M4.4.1** | **Committed Memory corruption fail-closed + README/document closure** | **✅ FINAL PASS** |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
 
 M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad`、M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 已纯 fast-forward 合入 main，对应 main CI 均 success。M3.2 / M3.3 / M3.4 直接在 main 完成。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。M4.0 已在 main 完成本地持久化架构：SQLite + SQLAlchemy Async + Alembic；MemoryRepository/SnapshotRepository ABC；settings 扩展；26 新增 tests（1503 total）。M4.0 后续 corrective hardening：pytest-asyncio CI 兼容修复、conversation 复合 PK/FK 命名空间隔离、PRAGMA 每连接事件修正；corrective migration `01dc0d90d920`；40 持久化 tests + 全仓 1517 total。
@@ -41,6 +42,13 @@ Canonical QueryPlan
 ```
 
 Real DAX/factual authority 不回到 LLM，Real failure 不回退 Mock。
+
+## M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步（FINAL PASS）
+
+- `StructuredWorkMemory.filters` 仍保持既有 `list[dict]` storage/legacy contract，但 domain validation 会逐项按 canonical `StructuredFilter` 校验；SQLite payload 的 malformed filter 在 fresh repository load 时 deterministic fail closed。
+- StateTransition 不再捕获 malformed committed filter 后 `continue`；进程内出现绕过初始 validation 的损坏状态时抛出稳定 `committed_memory_filter_invalid:<index>`，不得降级为空 filter 或扩大查询范围。
+- 真实临时 SQLite restart regression 同时覆盖 Mock/Real namespace：损坏 namespace 在 LLM、schema、DAX、Power BI 与新 Memory commit 前失败；合法 sibling namespace 正常恢复。legacy time string contract 保持不变。
+- 根 README 已重构为稳定 Landing Page，并在 `AGENTS.md` 固化 maintenance contract；正式 PRD、07/08/09 与 CHANGELOG 状态同步。无 schema change、无 migration；M5 NOT STARTED。
 
 ## M4.4 — Restart / Crash Acceptance & M4 Final Closure（FINAL PASS）
 
@@ -148,8 +156,8 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
-- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS；未经用户另行明确批准不得进入 M5；禁止 force push。
+- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.1 corrective closure FINAL PASS；未经用户另行明确批准不得进入 M5；禁止 force push。
 
 ---
 
-*最后更新：2026-08-20 | M4.4 — Restart / Crash Acceptance & M4 Final Closure*
+*最后更新：2026-08-20 | M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步*

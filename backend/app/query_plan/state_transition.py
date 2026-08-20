@@ -30,6 +30,14 @@ class FilterTransition(str, Enum):
     CLEAR = "CLEAR"
 
 
+class CommittedMemoryCorruptionError(ValueError):
+    """Committed canonical state cannot be safely inherited."""
+
+    def __init__(self, filter_index: int) -> None:
+        super().__init__(f"committed_memory_filter_invalid:{filter_index}")
+        self.filter_index = filter_index
+
+
 class StateTransitionRecord(BaseModel):
     measure: SlotTransition
     dimension: SlotTransition
@@ -184,11 +192,11 @@ class StateTransitionService:
         if committed is None:
             return []
         parsed: list[StructuredFilter] = []
-        for item in committed.filters:
+        for index, item in enumerate(committed.filters):
             try:
                 parsed.append(StructuredFilter.model_validate(item))
-            except (TypeError, ValueError):
-                continue
+            except (TypeError, ValueError) as exc:
+                raise CommittedMemoryCorruptionError(index) from exc
         return parsed
 
     @staticmethod

@@ -19,7 +19,7 @@ from enum import Enum
 from typing import Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from backend.app.schemas.data_contracts import StructuredFilter, TimeRangeSpec
 
@@ -203,6 +203,19 @@ class StructuredWorkMemory(BaseModel):
     commit_evidence: Optional[MemoryCommitEvidence] = Field(
         default=None, description="最近一次提交证据"
     )
+
+    @field_validator("filters")
+    @classmethod
+    def validate_canonical_filters(cls, filters: list[dict]) -> list[dict]:
+        """Reject semantically corrupt filters while preserving legacy dict shape."""
+        for index, item in enumerate(filters):
+            try:
+                StructuredFilter.model_validate(item)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"committed_memory_filter_invalid:{index}"
+                ) from exc
+        return filters
 
     def _bump_version(self) -> None:
         """递增 memory_version（仅 Repository 内部使用）"""

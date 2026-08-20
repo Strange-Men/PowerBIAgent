@@ -2,6 +2,20 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.4.1] — 2026-08-20
+
+### Memory Corruption Fail-Closed、README 重构与文档状态同步
+
+- 修复 committed Memory canonical filter 的 fail-open：`StructuredWorkMemory` 在 domain construction/SQLite deserialize 时逐项按 `StructuredFilter` 验证，malformed payload 以稳定 `committed_memory_filter_invalid:<index>` 拒绝；storage 继续保持既有 `list[dict]` shape，合法历史 filter 不变。
+- `StateTransitionService._previous_filters()` 不再捕获 malformed filter 后 `continue`；绕过初始 validation 的进程内损坏改为 `CommittedMemoryCorruptionError`，禁止清空、跳过或默认成“无筛选”。legacy time string compatibility 未扩大处理。
+- TurnPipeline 将 committed/pending load、context build 与 controller setup 纳入既有 Owner abort 保护；corruption 异常会释放 process-local claim，同一 `request_id` 重试继续立即得到相同 fail-closed，而不是变成永久 waiter。
+- 新增 StateTransition valid inheritance / Mock+Real corruption regressions，以及真实临时 SQLite dispose → fresh engine/repository/service restart regression。损坏 namespace 在 LLM、schema、DAX、Power BI 与新 Memory commit 前失败，memory version 不增长；合法 sibling namespace 正常恢复。
+- 根 `README.md` 重构为长期 Landing Page：Overview、Highlights、How It Works、Truth Boundary、Current Capabilities、Quick Start、Runtime Modes、API、Persistence、Development & Validation、Project Status、Documentation、Scope / Known Limits。只保留有代码/fresh evidence 的能力，并明确 dedicated semantic-model/report-template discovery endpoint 当前未暴露。
+- `AGENTS.md` 新增 README Maintenance Contract；正式 PRD 只同步实现状态；07/08/09 与本文件同步到 M4.4.1。无 schema change、无 Alembic migration；M5 NOT STARTED。
+- Fresh acceptance：targeted corruption `5 passed`；邻近 Memory/StateTransition/persistence/restart `190 passed`；backend `1686 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture `109`、Repository Safety `239`、Error Ledger `25`、Documentation Governance 与 `git diff --check` PASS。Alembic head 保持 `c8d4e6f2a109`，fresh DB → head 与 head → head 幂等 upgrade 均通过。
+
+**Settings.version:** M4.4.1
+
 ## [M4.4] — 2026-08-20
 
 ### 重启崩溃恢复验收与 M4 最终收口

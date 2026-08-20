@@ -5,15 +5,25 @@
 
 ## 当前阶段
 
-**M4.4 — Restart / Crash Acceptance & M4 Final Closure 已完成。**
+**M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步已完成。**
 
-M4 backend 已 FINAL PASS。M4.4 对 M4.0—M4.3 的 persistence/recovery/history 做真实 SQLite + report filesystem restart/crash acceptance，并修复三个一致性根因；不改变 M0—M3 factual truth chain。
+M4 backend 在 M4.4 已 FINAL PASS。M4.4.1 只做 committed Memory corruption corrective hardening、README Landing Page 重构与正式状态同步；不改变 M0—M4 架构或 factual truth chain，不进入 M5。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
 | M4.2 series | 会话/报表恢复与 metadata authority 最终收口 | ✅ FINAL PASS |
 | M4.3 | Conversation History / Search API | ✅ 完成 |
 | **M4.4** | **Restart / Crash Acceptance & M4 Final Closure** | **✅ M4 FINAL PASS** |
+| **M4.4.1** | **Memory corruption fail-closed + README/document closure** | **✅ FINAL PASS** |
+
+### M4.4.1 corruption boundary
+
+- 根因：`StructuredWorkMemory.filters` 接受任意 `dict`，SQLite `model_validate()` 无法识别 semantic corruption；`StateTransitionService._previous_filters()` 又捕获 canonical parse failure 后 `continue`，导致损坏 filter 被解释为空并可能扩大下一轮查询范围。
+- 修复：保持 `list[dict]` storage/legacy shape，但 domain validation 逐项调用 `StructuredFilter.model_validate()`；持久化损坏在 fresh repository load 时以 `committed_memory_filter_invalid:<index>` fail closed。StateTransition 对绕过初始 validation 的进程内损坏抛出 `CommittedMemoryCorruptionError`，禁止 skip/clear/default-empty。
+- TurnPipeline 的 committed/pending load、context build 与 controller setup 现在复用 Owner abort-on-exception 语义；同一 request_id 在 corruption 后可重复得到确定性失败，不遗留永远等待的 process-local claim。
+- 合法 committed filter 继续跨轮继承；已有 legacy time string contract 保持不变。无 persistence schema change、无 Alembic migration。
+- 新真实临时 SQLite restart regression 使用 dispose + fresh engine/repository/service，参数化覆盖 Mock/Real。同 namespace 在 LLM、schema、DAX、Power BI 与下一 memory commit 前失败，version 保持 1；另一 namespace 的合法 filter 正常恢复。
+- README 现固定为 value-first Landing Page；`AGENTS.md` 新增 README Maintenance Contract。正式 PRD 只同步实现状态，07/08/09 与 CHANGELOG 同步为 M4.4.1。
 
 ### M4.4 restart / crash authority
 
@@ -46,6 +56,15 @@ M4 backend 已 FINAL PASS。M4.4 对 M4.0—M4.3 的 persistence/recovery/histor
 - `backend/app/config/settings.py`：version → M4.4。
 - M4 FINAL PASS；不新增 Tag。
 
+### M4.4.1 fresh acceptance
+
+- Targeted corruption regression：5 passed（StateTransition 3；真实 SQLite restart 2）。
+- 邻近 Memory/StateTransition/persistence/restart：190 passed；backend full regression：1686 passed、1 skipped。
+- Golden：11 passed、1 manual-real skipped；Architecture `109`、Repository Safety `239`、Error Ledger `25`、Documentation Governance PASS。
+- Alembic head 保持 `c8d4e6f2a109`；fresh DB → head 与 head → head 幂等 upgrade PASS，确认无新增 migration。
+- `backend/app/config/settings.py`：version → M4.4.1。
+- M4.4.1 无 migration；M5 NOT STARTED；不新增 Tag。
+
 ## 下一步
 
 后续轮次只有用户另行批准后才可开始：
@@ -76,4 +95,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\check_documentation_governance.py
 
 ---
 
-*最后更新：2026-08-20 | M4.4 — Restart / Crash Acceptance & M4 Final Closure*
+*最后更新：2026-08-20 | M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步*

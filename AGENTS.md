@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M4.4 — 重启崩溃恢复验收与 M4 最终收口**。
+当前版本：**M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步**。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -26,6 +26,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M4.2.3** 已完成持久化 invariant 最终收口：modern report payload 的 7 个 authority 字段缺失或与 DB row 冲突均 fail closed；`report_id` 为 immutable resource identity，仅完整 metadata 相同可幂等 no-op；conversation report history 固定以 `(source_mode, conversation_id)` 隔离 Mock/Real。M4.2 series FINAL PASS。
 - **M4.3** 已实现 SQLite recent/history/search/archive/delete API：所有 conversation 查询/变更必须显式 `(runtime_mode, conversation_id)` namespace，report history 必须显式 `(source_mode, conversation_id)`；history 只组合 persisted result snapshot、同 request committed memory 与严格 report metadata，不声称 message transcript；search 仅覆盖 committed `analysis_goal` 与 snapshot 的 answer/clarification/unsupported 文本；archive 逻辑隐藏，delete 物理清理同 namespace DB rows 与关联 HTML。新增 migration `f4c3a2b1907d`。
 - **M4.4** 已完成真实临时 SQLite + report filesystem 的 dispose/fresh-engine restart/crash acceptance：committed Memory 与 terminal Snapshot 可恢复；Memory 存在但 Snapshot 缺失视为 incomplete crash witness 并 fail closed；持久化 report snapshot 不再保存 HTML，重放必须从 filesystem 加载并校验；conversation delete 使用 durable delete intent 跨 DB commit/HTML cleanup 窗口重试，pending intent 阻止同 namespace 复活。新增 migration `c8d4e6f2a109`。**M4 FINAL PASS；M5 NOT STARTED。**
+- **M4.4.1** 已修复 committed canonical filter 损坏被静默丢弃的 fail-open：domain 反序列化与 StateTransition 均 deterministic fail closed，发生在 LLM/DAX/Power BI/新 Memory commit 之前；合法 legacy dict filter 与 legacy time string contract 保持不变。根 README 已重构为长期 Landing Page，并同步正式状态文档。无 schema change、无 migration。**M4.4.1 FINAL PASS；M5 NOT STARTED。**
 
 当前真实主链：
 
@@ -96,6 +97,13 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 - 原始 PRD 只保留于 `docs/archive/original/PRD.md`；正式唯一 PRD 是 `docs/00_product_requirements_document.md`。
 - Archive 默认不读；不要为每个 Bug 新建 Markdown。
 
+## README Maintenance Contract
+
+1. `README.md` 是 repository landing page，不是 Changelog 或开发交接文件；保持 Overview → Highlights → How It Works → Truth Boundary → Current Capabilities → Quick Start → Runtime Modes → API → Persistence → Development & Validation → Project Status → Documentation → Scope / Known Limits 的稳定顺序，除非项目结构发生重大变化。
+2. 新 Milestone 通常只在真实产品能力变化时更新 Highlights / Current Capabilities / Project Status；启动或配置变化时更新 Quick Start / Runtime Modes。
+3. 详细版本记录进入 `CHANGELOG.md`；当前开发上下文进入 `docs/09_context_handoff.md`；路线进入 `docs/08_development_roadmap.md`；架构决策进入 `docs/adr/`。README 不重复这些正文。
+4. README 中每项 capability 必须有当前仓库代码或 fresh test evidence；禁止为“看起来高级”加入不存在的 feature、badge、benchmark、platform support 或 API。
+
 ---
 
-*最后更新：2026-08-20 | M4.4 — Restart / Crash Acceptance & M4 Final Closure*
+*最后更新：2026-08-20 | M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步*

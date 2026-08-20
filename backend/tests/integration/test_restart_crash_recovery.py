@@ -2,21 +2,30 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.application.conversation_history_service import (
     ConversationHistoryService,
 )
+from backend.app.application.deepseek_turn_service import DeepSeekTurnService
 from backend.app.application.mock_turn_service import MockTurnService
-from backend.app.config.settings import PersistenceBackend, Settings
+from backend.app.config.settings import (
+    LLMMode,
+    PersistenceBackend,
+    PowerBIMode,
+    Settings,
+)
 from backend.app.conversation.models import ConversationNotFoundError
+from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse
 from backend.app.memory.models import (
     MemoryCommitEvidence,
     MemoryStatus,
@@ -43,6 +52,7 @@ from backend.app.persistence.models import (
     ConversationModel,
     ReportArtifactModel,
     ResultSnapshotModel,
+    WorkMemoryModel,
 )
 from backend.app.persistence.repositories.conversation_history import (
     SQLiteConversationHistoryRepository,
@@ -53,6 +63,7 @@ from backend.app.persistence.repositories.report_artifact import (
     SQLiteReportArtifactRepository,
 )
 from backend.app.persistence.repositories.snapshot import SQLiteSnapshotRepository
+from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.mock import MockReportRenderer
 from backend.app.report.resources import (
@@ -61,6 +72,64 @@ from backend.app.report.resources import (
     ReportSpec,
     ReportStorageError,
 )
+from backend.app.schemas.data_contracts import (
+    DAXRequest,
+    PowerBIError,
+    QueryResult,
+    SemanticModelSchema,
+)
+
+
+class _FailIfCalledLLMProvider(LLMProvider):
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    @property
+    def provider_name(self) -> str:
+        return "deepseek"
+
+    @property
+    def is_mock(self) -> bool:
+        return False
+
+    async def generate(
+        self, request: LLMRequest, output_type: type[BaseModel]
+    ) -> LLMResponse:
+        self.call_count += 1
+        raise AssertionError("corrupt committed Memory reached the LLM")
+
+
+class _FailIfCalledPowerBIAdapter(PowerBIAdapter):
+    def __init__(self) -> None:
+        self.schema_calls = 0
+        self.dax_calls = 0
+
+    @property
+    def provider_name(self) -> str:
+        return "local_mcp"
+
+    @property
+    def is_mock(self) -> bool:
+        return False
+
+    async def health_check(self) -> bool:
+        raise AssertionError("corrupt committed Memory reached Power BI health")
+
+    async def get_semantic_model_schema(
+        self, semantic_model_key: str
+    ) -> SemanticModelSchema:
+        self.schema_calls += 1
+        raise AssertionError("corrupt committed Memory queried Power BI schema")
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.dax_calls += 1
+        raise AssertionError("corrupt committed Memory executed DAX")
+
+    async def normalize_result(self, raw: object) -> QueryResult:
+        raise AssertionError("corrupt committed Memory normalized a result")
+
+    async def normalize_error(self, raw: object) -> PowerBIError:
+        raise AssertionError("corrupt committed Memory normalized an error")
 
 
 async def _create_database(db_path: Path) -> None:
@@ -177,6 +246,181 @@ def _pending_memory(
         base_memory_version=base_version,
         memory_version=0,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_mode", [RuntimeDataMode.MOCK, RuntimeDataMode.REAL]
+)
+async def test_corrupt_committed_filter_fails_closed_after_restart_before_execution(
+    tmp_path: Path,
+    runtime_mode: RuntimeDataMode,
+) -> None:
+    db_path = tmp_path / f"corrupt-filter-{runtime_mode.value}.db"
+    await _create_database(db_path)
+    conversation_id = "shared-corrupt-filter-conversation"
+    seed_request_id = f"req-corrupt-seed-{runtime_mode.value}"
+    next_request_id = f"req-after-corruption-{runtime_mode.value}"
+    sibling_mode = (
+        RuntimeDataMode.REAL
+        if runtime_mode == RuntimeDataMode.MOCK
+        else RuntimeDataMode.MOCK
+    )
+
+    engine1, sf1, _, _ = await _open_runtime(db_path)
+    memory1 = SQLiteMemoryRepository(sf1)
+    corrupt_seed = _pending_memory(
+        runtime_mode=runtime_mode,
+        conversation_id=conversation_id,
+        request_id=seed_request_id,
+        base_version=0,
+    )
+    corrupt_seed.filters = [{
+        "field": "Category",
+        "operator": "eq",
+        "value": "Electronics",
+    }]
+    await memory1.create_pending(corrupt_seed, runtime_mode)
+    await memory1.commit(corrupt_seed, _commit_evidence(runtime_mode))
+
+    sibling = _pending_memory(
+        runtime_mode=sibling_mode,
+        conversation_id=conversation_id,
+        request_id=f"req-valid-sibling-{sibling_mode.value}",
+        base_version=0,
+    )
+    sibling.filters = [{
+        "field": "Category",
+        "operator": "eq",
+        "value": "Furniture",
+    }]
+    await memory1.create_pending(sibling, sibling_mode)
+    await memory1.commit(sibling, _commit_evidence(sibling_mode))
+
+    async with sf1() as session:
+        async with session.begin():
+            row = (
+                await session.execute(
+                    select(WorkMemoryModel).where(
+                        and_(
+                            WorkMemoryModel.request_id == seed_request_id,
+                            WorkMemoryModel.runtime_mode == runtime_mode.value,
+                        )
+                    )
+                )
+            ).scalar_one()
+            payload = json.loads(row.payload_json)
+            payload["filters"] = [{"operator": "eq"}]
+            await session.execute(
+                update(WorkMemoryModel)
+                .where(
+                    and_(
+                        WorkMemoryModel.request_id == seed_request_id,
+                        WorkMemoryModel.runtime_mode == runtime_mode.value,
+                    )
+                )
+                .values(payload_json=json.dumps(payload, ensure_ascii=False))
+            )
+    await dispose_engine(engine1)
+
+    engine2, sf2, _, reports2 = await _open_runtime(db_path)
+    llm_provider: _FailIfCalledLLMProvider | None = None
+    real_adapter: _FailIfCalledPowerBIAdapter | None = None
+    mock_llm_generate: AsyncMock | None = None
+    if runtime_mode == RuntimeDataMode.MOCK:
+        service = _turn_service(sf2, reports2)
+        mock_llm_generate = AsyncMock(
+            side_effect=AssertionError("corrupt committed Memory reached Mock LLM")
+        )
+        service.llm_provider.generate = mock_llm_generate
+        service.powerbi.get_semantic_model_schema = AsyncMock(
+            side_effect=AssertionError(
+                "corrupt committed Memory queried Mock Power BI schema"
+            )
+        )
+        service.powerbi.execute_dax = AsyncMock(
+            side_effect=AssertionError(
+                "corrupt committed Memory executed Mock DAX"
+            )
+        )
+        service.tool_gateway = service._build_tool_gateway()
+    else:
+        llm_provider = _FailIfCalledLLMProvider()
+        real_adapter = _FailIfCalledPowerBIAdapter()
+        settings = Settings(
+            _env_file=None,
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.LOCAL_MCP,
+            persistence_backend=PersistenceBackend.SQLITE,
+            persistence_database_path=str(db_path),
+            deepseek_api_key="test-key-not-real",
+            powerbi_local_semantic_model_key="restart_model",
+        )
+        service = DeepSeekTurnService(
+            memory_repo=SQLiteMemoryRepository(sf2),
+            llm_provider=llm_provider,
+            powerbi_adapter=real_adapter,
+            report_renderer=MockReportRenderer(),
+            settings=settings,
+            report_repository=reports2,
+            snapshot_store=SQLiteSnapshotRepository(sf2),
+        )
+
+    try:
+        for _ in range(2):
+            with pytest.raises(
+                ValidationError, match="committed_memory_filter_invalid"
+            ):
+                await asyncio.wait_for(
+                    service.execute(
+                        message="继续分析",
+                        conversation_id=conversation_id,
+                        request_id=next_request_id,
+                        semantic_model_key="restart_model",
+                    ),
+                    timeout=1,
+                )
+
+        if runtime_mode == RuntimeDataMode.MOCK:
+            assert mock_llm_generate is not None
+            assert mock_llm_generate.await_count == 0
+            assert service.powerbi.get_semantic_model_schema.await_count == 0
+            assert service.powerbi.execute_dax.await_count == 0
+        else:
+            assert llm_provider is not None
+            assert real_adapter is not None
+            assert llm_provider.call_count == 0
+            assert real_adapter.schema_calls == 0
+            assert real_adapter.dax_calls == 0
+
+        valid_sibling = await SQLiteMemoryRepository(sf2).get_latest_committed(
+            conversation_id, sibling_mode
+        )
+        assert valid_sibling is not None
+        assert valid_sibling.memory_version == 1
+        assert valid_sibling.filters == [{
+            "field": "Category",
+            "operator": "eq",
+            "value": "Furniture",
+        }]
+
+        async with sf2() as session:
+            rows = (
+                await session.execute(
+                    select(WorkMemoryModel).where(
+                        and_(
+                            WorkMemoryModel.conversation_id == conversation_id,
+                            WorkMemoryModel.runtime_mode == runtime_mode.value,
+                        )
+                    )
+                )
+            ).scalars().all()
+        assert [(row.request_id, row.memory_version, row.state_status) for row in rows] == [
+            (seed_request_id, 1, MemoryStatus.COMMITTED.value)
+        ]
+        assert all(row.request_id != next_request_id for row in rows)
+    finally:
+        await dispose_engine(engine2)
 
 
 @pytest.mark.asyncio

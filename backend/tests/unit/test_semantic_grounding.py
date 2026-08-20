@@ -34,6 +34,7 @@ from backend.app.query_plan.semantic_catalog import (
     SemanticObjectType,
 )
 from backend.app.query_plan.state_transition import (
+    CommittedMemoryCorruptionError,
     FilterTransition,
     SlotTransition,
     StateTransitionService,
@@ -941,6 +942,49 @@ class TestGroundingAuthorityAndStateTransition:
         )
         assert same.transitions.measure == SlotTransition.KEEP
         assert same.transitions.dimension == SlotTransition.KEEP
+
+    def test_valid_committed_filter_is_inherited(self):
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+            filters=[{
+                "field": "Category",
+                "operator": "eq",
+                "value": "Electronics",
+            }],
+        )
+
+        result = StateTransitionService().merge(
+            _draft(), GroundedSemanticDelta(), committed
+        )
+
+        assert result.query_plan.filters == [
+            StructuredFilter(field="Category", value="Electronics")
+        ]
+        assert result.transitions.filters == [FilterTransition.KEEP]
+
+    @pytest.mark.parametrize(
+        "runtime_mode", [RuntimeDataMode.MOCK, RuntimeDataMode.REAL]
+    )
+    def test_malformed_committed_filter_fails_closed_in_all_runtime_modes(
+        self, runtime_mode
+    ):
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            runtime_mode=runtime_mode,
+            measures=["Total Sales"],
+        )
+        # Simulate corruption after initial domain validation.  The transition
+        # boundary must never reinterpret this as an empty committed filter.
+        committed.filters = [{"operator": "eq"}]
+
+        with pytest.raises(
+            CommittedMemoryCorruptionError,
+            match="committed_memory_filter_invalid",
+        ):
+            StateTransitionService().merge(
+                _draft(), GroundedSemanticDelta(), committed
+            )
 
     def test_llm_template_draft_never_crosses_state_transition(self):
         draft = _draft(requested_template="sales_weekly")
