@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M4.2.2 — 路径与元数据一致性最终加固（M4.2 series 完成）
+> **状态：** M4.2.3 — 持久化资源身份与元数据权威最终收口（M4.2 series FINAL PASS）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -22,6 +22,7 @@
 | **M4.2** | **Conversation/Report recovery（会话与报表元数据恢复）** | **✅ 已完成** |
 | **M4.2.1** | **Report metadata authority & linkage hardening** | **✅ 已完成** |
 | **M4.2.2** | **路径与元数据一致性最终加固** | **✅ 已完成** |
+| **M4.2.3** | **持久化资源身份与元数据权威最终收口** | **✅ FINAL PASS** |
 | M4.3 | Search/history API | ⬜ 未开始 |
 | M4.4 | Restart/crash acceptance | ⬜ 未开始 |
 | M5 | React + Vite 前端与联调 | ⬜ 未开始 |
@@ -47,7 +48,7 @@
 | SalesReportData / ReportSpec | ✅ N 组 QueryResult / VerifiedFactSet 确定性组装；ChartSpec 结构化扩展（visual_type/business_role/series/layout_hint） |
 | Visualization / Layout / Theme Policy | ✅ KPI Card / Line / Donut≤8 / Column / HBar；KPI 行 → 全宽趋势 → 2 列对比/排行对；固定调色板与响应式 |
 | SalesReportRenderer (design system) | ✅ 固定 UTF-8 static HTML；inline SVG line/donut、CSS column/hbar；无同源表格重复；无 JS/CDN/外部资源/自由 HTML |
-| ReportArtifact | ✅ report_id、provenance、content type/hash、原子本地保存 |
+| ReportArtifact | ✅ filesystem HTML authority、required metadata contract、immutable report_id、原子本地保存 |
 | Resource API | ✅ view/download；unknown/path traversal 拒绝 |
 | Idempotency / Memory | ✅ replay 复用 report_id；render/store failure 不成功提交 Memory |
 | Persistent sessions / React | ⬜ M4.1+ / M5，未提前实现 |
@@ -57,6 +58,7 @@
 | SQLite 事务失败硬化 (M4.1.2) | ✅ failed transaction fresh-session conflict resolution、real OperationalError injection tests、infrastructure failure 与 business version conflict 严格分离 |
 | SQLite 锁事务退出最终硬化 (M4.1.3) | ✅ locked failure 必须退出原 transaction 再 fresh-session resolution、真实 SQLite lock integration test、M4.1 series final hardening |
 | Conversation/Report recovery | ✅ M4.2 / M4.2.1 |
+| Report persistence final invariants | ✅ M4.2.3；row/payload 缺失或冲突 fail closed；完整 metadata 相同才幂等；history namespace=`(source_mode, conversation_id)` |
 | Search/History API | ⬜ M4.3 |
 
 ## `sales_report` 能力目录（M3.4）
@@ -103,6 +105,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - **M4.1.1**：conversation root `INSERT OR IGNORE` 原子 upsert、`PersistenceRepositoryError` 异常类、`_is_sqlite_locked`/`_is_version_index_conflict` 分类 helper、failed transaction 不污染后续 ops。
 - **M4.1.2**：locked/busy OperationalError 退出原 transaction → fresh session bounded reread（`_resolve_locked_commit_failure` helper）；non-lock OperationalError → `PersistenceRepositoryError`；通过 `session.execute` 拦截真实注入 OperationalError 测试（non-lock、locked+version advanced、locked+unchanged、fresh session proof、failed tx recovery、no half-committed memory）。
 - **M4.1.3**：locked failure 必须在原 transaction 退出（rollback）后再 fresh-session resolution；`commit()` 中捕获 locked 后只保存 context → `session.begin()` exit 后调用 resolver；`create_engine` 新增 `busy_timeout` 参数（测试 100ms，production 5000ms）；真实 2-engine SQLite lock integration test（Writer A hold lock → B commit hit lock → tx exit → fresh reread）、instrumented session-exit 顺序证明（`write_tx_enter → locked → write_tx_exit → fresh_session`）。M4.1 series final hardening。
+- **M4.2.3**：modern ReportArtifact payload 的 7 个 authority 字段 required；linkage nullable 但 DB 有值时 payload 不得缺失；row/payload 缺失或冲突统一 fail closed。`report_id` immutable，SQLite/InMemory 仅允许完整 metadata 相同的幂等 no-op。未来 history namespace 固定为 `(source_mode, conversation_id)`；现有 schema 足够，无 migration。M4.2 series FINAL PASS，M4.3 NOT STARTED。
 
 ## M3.3 Report Template V2 changes
 
@@ -140,4 +143,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-19 | M4.2.2 — 路径与元数据一致性最终加固*
+*最后更新：2026-08-20 | M4.2.3 — 持久化资源身份与元数据权威最终收口*

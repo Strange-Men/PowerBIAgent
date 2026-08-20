@@ -1,51 +1,55 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-08-19
+> **最后更新：** 2026-08-20
 
 ## 当前阶段
 
 **M4.2 series FINAL PASS。**
 
-M4.2.2 — 路径与元数据一致性最终加固已完成。
+M4.2.3 — 持久化资源身份与元数据权威最终收口已完成。
 
 ### M4.2 series FINAL PASS
 
 M4.2.1 已正式完成（commit `80eea6a313b65`）。
-M4.2.2 已正式完成（路径 containment 修复 + 元数据 coherence 验证 + 文档一致性完成）。
+M4.2.2 已正式完成（commit `8a2ae441de70`；路径 containment + row/payload coherence）。
+M4.2.3 已完成 required metadata、immutable identity 与 Mock/Real report namespace 最终收口。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
 | M4.2 | 会话与报表元数据恢复 | ✅ 完成 |
 | M4.2.1 | 报表元数据权威边界与会话关联收口 | ✅ 完成 |
-| **M4.2.2** | **路径与元数据一致性最终加固** | **✅ 本轮完成** |
+| M4.2.2 | 路径与元数据一致性最终加固 | ✅ 完成 |
+| **M4.2.3** | **持久化资源身份与元数据权威最终收口** | **✅ 本轮 FINAL PASS** |
 
-### M4.2.2 变更内容
+### M4.2.3 变更内容
 
-#### A — 路径 containment 加固（FIX 1）
+#### A — metadata authority / missing fields
 
-- `_validate_path()` 替换 `str(target).startswith(str(root))` 为严格 `parent` 比较
-- 新增规则：relative_path 必须是单层 filename（拒绝 nested directory）
-- 新增规则：sibling-prefix escape 检测（`/x/reports_evil/` vs `/x/reports/`）
-- 新增规则：symlink escape 检测（platform 允许时）
-- `_target()` 已正确使用 `parent` 比较，不做修改
-- 参考 Python 官方 [pathlib.Path.resolve](https://docs.python.org/3/library/pathlib.html#pathlib.Path.resolve) 文档确认跨平台行为
+- `payload_json` 是 modern metadata reconstruction authority，DB dedicated columns 是 immutable integrity witness；缺少 payload 本身即 fail closed。
+- `report_id`、`template_key`、`semantic_model_key`、`schema_fingerprint`、`source_mode`、`content_hash`、`relative_path` 必须在 payload 显式存在，并与 DB columns 严格一致。
+- `conversation_id` / `request_id` nullable；DB 有值时 payload 不得缺失或冲突。
+- 不再用 `""`、`"mock"`、`None`、created_at fallback 或 derived relative path 继续恢复；统一进入 `ReportStorageError`。
 
-#### B — 元数据 coherence 验证（FIX 2）
+#### B — ReportArtifact immutable identity
 
-- 新增 `_validate_coherence()`：reconstruct 前验证 DB column 与 payload_json 一致性
-- 验证字段：report_id, template_key, semantic_model_key, schema_fingerprint, source_mode, content_hash, relative_path, conversation_id, request_id
-- DB column 与 payload 同时有值时必须严格一致
-- 任一关键字段冲突 → `ReportStorageError`，fail closed
-- 新增 `_coerce_bool_nullable()` 辅助处理空字符串与 None 对比
+- `report_id` 是 immutable resource identity。
+- SQLite / InMemory 都只允许完整 metadata 相同的幂等 no-op。
+- 任一 metadata、linkage 或 provenance 改变均返回 `report_artifact_identity_collision`，禁止 overwrite。
+
+#### C — M4.3 report namespace contract
+
+- `source_mode` 仅允许 `mock | real`。
+- future conversation → reports 查询必须使用 `(source_mode, conversation_id)`，不得只按 conversation_id 查询；Mock/Real 不能互相进入 history。
+- 现有 `report_artifacts.source_mode` + `conversation_id` 足够表达该 invariant，不新增 schema/migration；未实现 M4.3 API、search、delete、FTS5。
 
 ### 架构影响
 
-- `backend/app/report/resources.py`：`_validate_path()` 严格 Path containment、单层 filename、symlink 检测
-- `backend/app/persistence/repositories/report_artifact.py`：新增 `_validate_coherence()` / `_coerce_bool_nullable()`，`_model_to_artifact()` 恢复前执行一致性验证
-- `backend/app/persistence/models.py`：修正 comment 为当前真实 contract
-- `backend/app/config/settings.py`：version → M4.2.2
-- 不新增 Alembic migration（入侵式测试可修改 DB 验证 fail-closed，不依赖 schema change）
+- `backend/app/report/resources.py`：metadata required fields 与 `source_mode` domain validation。
+- `backend/app/persistence/repositories/report_artifact.py`：strict reconstruction contract + immutable save；SQLite/InMemory 同义。
+- `backend/tests/unit/persistence/test_report_artifact_invariants.py`：30 个真实 corruption、identity、namespace tests。
+- `backend/app/config/settings.py`：version → M4.2.3。
+- 不新增 Alembic migration；fresh DB upgrade head 必须继续通过。
 - 不新增 tag
 
 ## M4.3 下一步
@@ -80,4 +84,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\check_documentation_governance.py
 
 ---
 
-*最后更新：2026-08-19 | M4.2.2 — 路径与元数据一致性最终加固*
+*最后更新：2026-08-20 | M4.2.3 — 持久化资源身份与元数据权威最终收口*

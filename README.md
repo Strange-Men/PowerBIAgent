@@ -2,7 +2,7 @@
 
 PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并以固定模板生成静态 HTML 报表。
 
-当前版本：**M4.2.2 — 路径与元数据一致性最终加固**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。M4.0 建立本地持久化架构（SQLite/SQLAlchemy Async/Alembic/Repository ABC）。M4.1 series：SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring、DB 级 concurrent commit invariant、错误语义硬化。M4.2：Report metadata 正式持久化至 report_artifacts 表。M4.2.1：payload_json metadata-only、relative_path 安全验证 recovery authority、conversation_id/request_id linkage 持久化。M4.2.2：路径 containment 加固（替换 startsWith 为严格 parent 比较）、元数据 coherence 验证（DB column vs payload 一致性）、文档同步。
+当前版本：**M4.2.3 — 持久化资源身份与元数据权威最终收口**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。M4.0 建立本地持久化架构（SQLite/SQLAlchemy Async/Alembic/Repository ABC）。M4.1 series 完成 Memory/Snapshot production wiring、DB 级 concurrent commit invariant 与错误语义硬化。M4.2—M4.2.2 完成 Report metadata 持久化、filesystem HTML authority、linkage、路径 containment 与 row/payload coherence。M4.2.3 固定 modern metadata required-field contract、immutable `report_id` identity，以及 `(source_mode, conversation_id)` Mock/Real history namespace。M4.2 series FINAL PASS；M4.3 NOT STARTED。
 
 ```text
 Natural Language
@@ -32,7 +32,7 @@ Real 路径的 DAX LLM authority/call count 为 0。LLM 不定义 canonical Meas
 - M3 专用 `PowerBIAgent_M3_Test.pbix` 只用于 Local Real acceptance，不替换 M2 封板 PBIX；schema fingerprint 漂移 fail closed。
 - M3.4 新增 schema-aware capability engine（9 sections）、deterministic ReportPlan、受控 Report Intent weak signal、Visualization/Layout/Theme Policy；`SalesReportRenderer` 支持 KPI cards / Line / Donut / Column / HBar；无 JavaScript/CDN/外部资源/自由 HTML；"只看销售额"产出单 KPI 最小报表，"生成完整销售分析报表"产出能力驱动 dashboard。
 - LLM 唯一新增职责：report-intent weak signal（registry-owned section ID），单独计数；DAX/ReportData/Report factual/Renderer LLM authority 仍为 0。
-- artifact 原子保存到 gitignored `local_state/reports/`，view/download 只接受 repository-owned report_id。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；Remote MCP、M4、M5 仍 Deferred。
+- artifact 原子保存到 gitignored `local_state/reports/`，view/download 只接受 repository-owned report_id；HTML 以 filesystem 为唯一 authority，DB 仅保存 metadata。`report_id` 不可变：完整 metadata 相同才允许幂等 no-op，任一 metadata 不同均拒绝覆盖。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；Remote MCP、M4.3 history/search API 与 M5 均未开始。
 
 幂等规则：相同 `request_id` + 相同请求重放且不重复执行；相同 ID + 不同内容返回 HTTP 409；并发同 ID 只有一个 Owner 执行。
 
@@ -78,7 +78,7 @@ Health 示例：
   "ready": true,
   "configuration_ready": true,
   "powerbi_live_connected": false,
-  "version": "M4.2.1",
+  "version": "M4.2.3",
   "llm_mode": "mock",
   "powerbi_mode": "mock"
 }
@@ -149,6 +149,7 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\sales_report_contract_smo
 | Report resource / view / download API | ✅ M3.1 |
 | Real PBIX + desktop/narrow visual acceptance | ✅ M3.2 final closure |
 | 持久化会话 | ✅ M4.1 series — SQLite Memory/Snapshot 持久化 + concurrent commit invariant + 错误语义加固 + 事务退出顺序保证 + 真实锁集成测试 **(M4.1.3 FINAL)** |
+| 报表持久化恢复 | ✅ M4.2 series — filesystem HTML authority、严格 metadata contract、immutable identity、Mock/Real namespace **(M4.2.3 FINAL)** |
 | React + Vite UI | ⬜ M5 |
 
 ## 文档入口
@@ -167,4 +168,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\sales_report_contract_smo
 
 ---
 
-*最后更新：2026-08-19 | M4.1.3 — SQLite Lock Transaction Exit Final Hardening*
+*最后更新：2026-08-20 | M4.2.3 — 持久化资源身份与元数据权威最终收口*

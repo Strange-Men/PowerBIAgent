@@ -19,20 +19,45 @@ Design notes
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Optional
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.persistence.models import ReportArtifactModel
-from backend.app.persistence.serialization import domain_to_json, json_to_domain
 from backend.app.report.resources import (
-    REPORT_CONTENT_TYPE,
     ReportArtifact,
+    ReportArtifactMetadata,
     ReportNotFoundError,
     ReportStorageError,
     _build_metadata_json,
+)
+
+
+_REQUIRED_AUTHORITY_FIELDS = frozenset(
+    {
+        "report_id",
+        "template_key",
+        "semantic_model_key",
+        "schema_fingerprint",
+        "source_mode",
+        "content_hash",
+        "relative_path",
+    }
+)
+_LINKAGE_FIELDS = ("conversation_id", "request_id")
+_AUTHORITY_COLUMNS = (
+    "report_id",
+    "conversation_id",
+    "request_id",
+    "template_key",
+    "semantic_model_key",
+    "schema_fingerprint",
+    "source_mode",
+    "content_hash",
+    "relative_path",
 )
 
 
@@ -119,21 +144,33 @@ def _artifact_to_model_values(
     }
 
 
-def _coerce_bool_nullable(val: str | None) -> str | None:
-    """Coerce empty-string DB columns to None for comparison."""
+def _normalize_nullable_string(val: str | None) -> str | None:
+    """Normalize legacy empty linkage columns to the nullable contract."""
     return val if val else None
 
 
 def _validate_coherence(row: ReportArtifactModel, meta: dict) -> None:
     """Verify that DB columns and payload_json agree on critical fields.
 
-    DB row is a persistence authority boundary; payload_json must not
-    silently overwrite key columns.  When a column is non-empty in both
-    locations their values *must* match exactly.
+    payload_json is the modern reconstruction authority.  Dedicated DB
+    columns are immutable integrity witnesses: every authority field must be
+    present in the payload and exactly match its column.  Nullable linkage
+    may be absent only when its DB column is also null.
 
     Raises:
         ReportStorageError: on any mismatch.
     """
+    missing = sorted(_REQUIRED_AUTHORITY_FIELDS.difference(meta))
+    for field in _LINKAGE_FIELDS:
+        row_value = _normalize_nullable_string(getattr(row, field))
+        if row_value is not None and field not in meta:
+            missing.append(field)
+    if missing:
+        raise ReportStorageError(
+            f"Report metadata persistence contract missing fields for "
+            f"{row.report_id}: {', '.join(sorted(set(missing)))}"
+        )
+
     checks = [
         ("report_id", row.report_id, meta.get("report_id")),
         ("template_key", row.template_key, meta.get("template_key")),
@@ -142,23 +179,50 @@ def _validate_coherence(row: ReportArtifactModel, meta: dict) -> None:
         ("source_mode", row.source_mode, meta.get("source_mode")),
         ("content_hash", row.content_hash, meta.get("content_hash")),
         ("relative_path", row.relative_path, meta.get("relative_path")),
-        ("conversation_id", _coerce_bool_nullable(row.conversation_id), meta.get("conversation_id")),
-        ("request_id", _coerce_bool_nullable(row.request_id), meta.get("request_id")),
+        (
+            "conversation_id",
+            _normalize_nullable_string(row.conversation_id),
+            meta.get("conversation_id"),
+        ),
+        (
+            "request_id",
+            _normalize_nullable_string(row.request_id),
+            meta.get("request_id"),
+        ),
     ]
     for field, row_val, payload_val in checks:
-        if row_val is not None and payload_val is not None and row_val != payload_val:
+        if row_val != payload_val:
             raise ReportStorageError(
                 f"Metadata coherence violation for {row.report_id}: "
                 f"DB column {field}={row_val!r} != payload {field}={payload_val!r}"
             )
 
 
+def _metadata_values_match(left: dict, right: dict) -> bool:
+    """Return whether two complete metadata identities are semantically equal."""
+    if any(left[field] != right[field] for field in _AUTHORITY_COLUMNS):
+        return False
+    try:
+        return json.loads(left["payload_json"]) == json.loads(right["payload_json"])
+    except (TypeError, json.JSONDecodeError):
+        return False
+
+
+def _row_matches_values(row: ReportArtifactModel, values: dict) -> bool:
+    """Compare a validated stored row with one candidate immutable identity."""
+    _model_to_artifact(row)
+    stored = {field: getattr(row, field) for field in _AUTHORITY_COLUMNS}
+    stored["payload_json"] = row.payload_json
+    return _metadata_values_match(stored, values)
+
+
 def _model_to_artifact(row: ReportArtifactModel) -> ReportArtifact:
     """Reconstruct ReportArtifact from a row.
 
-    Prefers the payload_json for full fidelity (includes fields like
-    contract_version, verified_fact_set_ids, query_result_ids etc.).
-    Falls back to reconstructing from columns if payload is missing.
+    The modern payload_json contract is required for full-fidelity recovery
+    (contract version, provenance IDs, references, and timestamps).  Missing
+    payload or required authority fields fails closed; no business-related
+    defaults or column-derived recovery are allowed.
 
     M4.2.1: payload_json is metadata-only (ReportArtifactMetadata).
     Legacy payloads that contain ``html`` are rejected (fail-closed)
@@ -171,67 +235,61 @@ def _model_to_artifact(row: ReportArtifactModel) -> ReportArtifact:
     Raises:
         ReportStorageError: corrupt stored data, legacy HTML, or coherence violation.
     """
-    if row.payload_json:
-        try:
-            meta_dict = json.loads(row.payload_json)
-        except Exception as exc:
-            raise ReportStorageError(
-                f"Report metadata corrupt for {row.report_id}: {exc}"
-            ) from exc
+    if not row.payload_json:
+        raise ReportStorageError(
+            f"Report metadata persistence contract missing payload for {row.report_id}"
+        )
+    try:
+        meta_dict = json.loads(row.payload_json)
+    except Exception as exc:
+        raise ReportStorageError(
+            f"Report metadata corrupt for {row.report_id}: {exc}"
+        ) from exc
+    if not isinstance(meta_dict, dict):
+        raise ReportStorageError(
+            f"Report metadata persistence contract invalid for {row.report_id}"
+        )
 
-        # M4.2.1: Reject legacy payloads that contain html
-        if "html" in meta_dict and meta_dict.get("html"):
-            raise ReportStorageError(
-                f"Report metadata for {row.report_id} contains legacy HTML — "
-                "database is not the HTML authority"
-            )
+    # M4.2.1: Reject legacy payloads that contain html
+    if "html" in meta_dict and meta_dict.get("html"):
+        raise ReportStorageError(
+            f"Report metadata for {row.report_id} contains legacy HTML — "
+            "database is not the HTML authority"
+        )
 
-        # M4.2.2: DB row / payload coherence validation
-        _validate_coherence(row, meta_dict)
+    _validate_coherence(row, meta_dict)
+    try:
+        metadata = ReportArtifactMetadata.model_validate(meta_dict)
+    except Exception as exc:
+        raise ReportStorageError(
+            f"Report metadata persistence contract invalid for {row.report_id}: {exc}"
+        ) from exc
 
-        # Reconstruct ReportArtifact with empty html (filesystem is authority)
-        try:
-            # Build from the metadata DTO fields — all we need for in-process use
-            artifact = ReportArtifact(
-                report_id=meta_dict["report_id"],
-                template_key=meta_dict.get("template_key", ""),
-                html="",
-                source_mode=meta_dict.get("source_mode", "mock"),
-                generated_at=meta_dict.get("generated_at", row.created_at.isoformat() if row.created_at else "2026-01-01T00:00:00"),
-                contract_version=meta_dict.get("contract_version", ""),
-                semantic_model_key=meta_dict.get("semantic_model_key", ""),
-                schema_fingerprint=meta_dict.get("schema_fingerprint", ""),
-                verified_fact_set_ids=meta_dict.get("verified_fact_set_ids", []),
-                query_result_ids=meta_dict.get("query_result_ids", []),
-                content_type=meta_dict.get("content_type", REPORT_CONTENT_TYPE),
-                content_hash=meta_dict.get("content_hash", row.content_hash),
-                created_at=meta_dict.get("created_at", row.created_at.isoformat() if row.created_at else "2026-01-01T00:00:00"),
-                view_reference=meta_dict.get("view_reference", f"/api/reports/{row.report_id}"),
-                download_reference=meta_dict.get("download_reference", f"/api/reports/{row.report_id}/download"),
-                relative_path=meta_dict.get("relative_path", row.relative_path or f"{row.report_id}.html"),
-                conversation_id=meta_dict.get("conversation_id"),
-                request_id=meta_dict.get("request_id"),
-            )
-            return artifact
-        except Exception as exc:
-            raise ReportStorageError(
-                f"Report metadata reconstruction failed for {row.report_id}: {exc}"
-            ) from exc
-
-    # Fallback — minimal reconstruction from columns
-    # (payload_json should always exist for modern artifacts)
-    return ReportArtifact(
-        report_id=row.report_id,
-        template_key=row.template_key,
-        html="",
-        source_mode=row.source_mode,
-        generated_at=row.created_at,
-        content_type="text/html; charset=utf-8",
-        content_hash=row.content_hash,
-        created_at=row.created_at,
-        view_reference=f"/api/reports/{row.report_id}",
-        download_reference=f"/api/reports/{row.report_id}/download",
-    )
+    try:
+        return ReportArtifact(
+            report_id=metadata.report_id,
+            template_key=metadata.template_key,
+            html="",
+            source_mode=metadata.source_mode,
+            generated_at=metadata.generated_at,
+            contract_version=metadata.contract_version,
+            semantic_model_key=metadata.semantic_model_key,
+            schema_fingerprint=metadata.schema_fingerprint,
+            verified_fact_set_ids=metadata.verified_fact_set_ids,
+            query_result_ids=metadata.query_result_ids,
+            content_type=metadata.content_type,
+            content_hash=metadata.content_hash,
+            created_at=metadata.created_at,
+            view_reference=metadata.view_reference,
+            download_reference=metadata.download_reference,
+            relative_path=metadata.relative_path,
+            conversation_id=metadata.conversation_id,
+            request_id=metadata.request_id,
+        )
+    except Exception as exc:
+        raise ReportStorageError(
+            f"Report metadata reconstruction failed for {row.report_id}: {exc}"
+        ) from exc
 
 
 class SQLiteReportArtifactRepository(ReportArtifactRepository):
@@ -255,7 +313,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
         request_id: str | None = None,
         relative_path: str | None = None,
     ) -> None:
-        """Insert or update report metadata in the report_artifacts table."""
+        """Insert immutable metadata or accept an identical idempotent save."""
         # M4.2.1: fall back to artifact fields if kwargs not provided
         if conversation_id is None and artifact.conversation_id:
             conversation_id = artifact.conversation_id
@@ -275,16 +333,9 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
                 if existing:
-                    # Update all mutable columns
-                    existing.conversation_id = values["conversation_id"]
-                    existing.request_id = values["request_id"]
-                    existing.template_key = values["template_key"]
-                    existing.semantic_model_key = values["semantic_model_key"]
-                    existing.schema_fingerprint = values["schema_fingerprint"]
-                    existing.source_mode = values["source_mode"]
-                    existing.content_hash = values["content_hash"]
-                    existing.relative_path = values["relative_path"]
-                    existing.payload_json = values["payload_json"]
+                    if _row_matches_values(existing, values):
+                        return
+                    raise ReportStorageError("report_artifact_identity_collision")
                 else:
                     model = ReportArtifactModel(**values)
                     session.add(model)
@@ -344,6 +395,7 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
 
     def __init__(self) -> None:
         self._items: dict[str, ReportArtifact] = {}
+        self._lock = asyncio.Lock()
 
     async def save(
         self,
@@ -353,16 +405,44 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
         request_id: str | None = None,
         relative_path: str | None = None,
     ) -> None:
-        self._items[artifact.report_id] = artifact
+        values = _artifact_to_model_values(
+            artifact,
+            conversation_id=conversation_id,
+            request_id=request_id,
+            relative_path=relative_path,
+        )
+        canonical = artifact.model_copy(
+            update={
+                "conversation_id": values["conversation_id"],
+                "request_id": values["request_id"],
+                "relative_path": values["relative_path"],
+            }
+        )
+        async with self._lock:
+            existing = self._items.get(artifact.report_id)
+            if existing is not None:
+                existing_values = _artifact_to_model_values(
+                    existing,
+                    conversation_id=existing.conversation_id,
+                    request_id=existing.request_id,
+                    relative_path=existing.relative_path,
+                )
+                if _metadata_values_match(existing_values, values):
+                    return
+                raise ReportStorageError("report_artifact_identity_collision")
+            self._items[artifact.report_id] = canonical
 
     async def get(self, report_id: str) -> ReportArtifact:
-        artifact = self._items.get(report_id)
-        if artifact is None:
-            raise ReportNotFoundError("report_not_found")
-        return artifact
+        async with self._lock:
+            artifact = self._items.get(report_id)
+            if artifact is None:
+                raise ReportNotFoundError("report_not_found")
+            return artifact
 
     async def exists(self, report_id: str) -> bool:
-        return report_id in self._items
+        async with self._lock:
+            return report_id in self._items
 
     async def _count(self) -> int:
-        return len(self._items)
+        async with self._lock:
+            return len(self._items)

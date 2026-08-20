@@ -324,8 +324,8 @@ class TestReportArtifactRepository:
             await repo.get("rpt_" + "f" * 32)
 
     @pytest.mark.asyncio
-    async def test_save_overwrite(self, sqlite_report_repo):
-        """Saving the same report_id again should update metadata."""
+    async def test_save_collision_rejected(self, sqlite_report_repo):
+        """A report_id cannot be overwritten with different metadata."""
         repo, engine, sf, db_path = sqlite_report_repo
         artifact = _create_artifact()
 
@@ -350,12 +350,13 @@ class TestReportArtifactRepository:
             view_reference=f"/api/reports/{artifact.report_id}",
             download_reference=f"/api/reports/{artifact.report_id}/download",
         )
-        await repo.save(updated_artifact)
+        with pytest.raises(ReportStorageError, match="identity_collision"):
+            await repo.save(updated_artifact)
 
         retrieved = await repo.get(artifact.report_id)
-        assert retrieved.contract_version == "1.1"
-        assert retrieved.source_mode == "real"
-        assert retrieved.semantic_model_key == "updated_model"
+        assert retrieved.contract_version == artifact.contract_version
+        assert retrieved.source_mode == artifact.source_mode
+        assert retrieved.semantic_model_key == artifact.semantic_model_key
 
 
 class TestInMemoryReportArtifactRepository:

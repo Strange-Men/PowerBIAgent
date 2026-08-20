@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M4.2.2 — 路径与元数据一致性最终加固（已完成）
+> **状态：** M4.2.3 — 持久化资源身份与元数据权威最终收口（M4.2 series FINAL PASS）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -22,6 +22,7 @@
 | **M4.2** | **Conversation/Report recovery（会话与报表元数据恢复）** | **✅ 已完成** |
 | **M4.2.1** | **Report metadata authority & linkage hardening** | **✅ 已完成** |
 | **M4.2.2** | **路径与元数据一致性最终加固** | **✅ 已完成** |
+| **M4.2.3** | **持久化资源身份与元数据权威最终收口** | **✅ FINAL PASS** |
 | M4.3 | Search/history API | ⬜ 未开始 |
 | M4.4 | Restart/crash acceptance | ⬜ 未开始 |
 | M5 | React + Vite 极简对话前端与联调 | ⬜ 未开始 |
@@ -40,6 +41,14 @@ Canonical QueryPlan
 ```
 
 Real DAX/factual authority 不回到 LLM，Real failure 不回退 Mock。
+
+## M4.2.3 — Persistence Invariant Final Closure（已完成）
+
+- `payload_json` 是 modern metadata reconstruction authority，DB dedicated columns 是 immutable integrity witness。payload 必须显式包含 `report_id`、`template_key`、`semantic_model_key`、`schema_fingerprint`、`source_mode`、`content_hash`、`relative_path`，且与 columns 严格一致；缺失或冲突均 `ReportStorageError` fail closed，不使用默认业务值或 derived path。
+- `conversation_id` / `request_id` nullable；DB 有值时 payload 必须显式存在且一致。
+- `report_id` 是 immutable resource identity；SQLite 与 InMemory repository 语义一致：完整 metadata 相同为幂等 no-op，任一 metadata/provenance/linkage 不同为 collision，禁止 overwrite。
+- `source_mode` 仅允许 `mock | real`；M4.3 的 conversation → reports 查询必须使用 `(source_mode, conversation_id)` namespace，禁止 Mock/Real 串历史。
+- 现有 report table 已具有 `source_mode` 与 `conversation_id`，无需 Alembic migration；M4.3 API/search/delete/FTS5 均未实现。
 
 ## M3.4 — Adaptive Report Planning + Visualization/Layout Policy（已完成）
 
@@ -119,8 +128,8 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
-- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；未经用户另行明确批准不得进入 M4/M5；禁止 force push。
+- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4.2 series FINAL PASS，未经用户另行明确批准不得进入 M4.3/M5；禁止 force push。
 
 ---
 
-*最后更新：2026-08-19 | M4.2.2 — 路径与元数据一致性最终加固*
+*最后更新：2026-08-20 | M4.2.3 — 持久化资源身份与元数据权威最终收口*

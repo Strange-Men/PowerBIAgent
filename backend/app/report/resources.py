@@ -10,7 +10,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -42,6 +42,7 @@ class ReportStorageError(ReportResourceError):
 class ReportArtifact(RenderedReport):
     """Metadata and exact compatibility copy for one managed HTML artifact."""
 
+    source_mode: Literal["mock", "real"] = "mock"
     contract_version: str = ""
     semantic_model_key: str = ""
     schema_fingerprint: str = ""
@@ -98,11 +99,11 @@ class ReportArtifactMetadata(BaseModel):
 
     report_id: str
     template_key: str
-    source_mode: str
+    source_mode: Literal["mock", "real"]
     generated_at: str
     contract_version: str = ""
-    semantic_model_key: str = ""
-    schema_fingerprint: str = ""
+    semantic_model_key: str
+    schema_fingerprint: str
     verified_fact_set_ids: list[str] = Field(default_factory=list)
     query_result_ids: list[str] = Field(default_factory=list)
     content_type: str = REPORT_CONTENT_TYPE

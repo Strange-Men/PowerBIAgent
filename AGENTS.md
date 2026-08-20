@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M4.2.2 — 路径与元数据一致性最终加固**。
+当前版本：**M4.2.3 — 持久化资源身份与元数据权威最终收口**。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -22,6 +22,8 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M4.1.1** 已实现 transaction-safe conversation root upsert、Memory/Snapshot 首次创建 race hardening、committed-version partial unique invariant、OperationalError 初步分类、`PersistenceRepositoryError` 异常类。
 - **M4.1.2** 已实现 failed transaction 后 fresh-session conflict resolution（`_resolve_locked_commit_failure` helper）、real OperationalError semantics tests（通过 `AsyncSession.execute` 注入）、infrastructure failure 与 business version conflict 严格分离。
 - **M4.1.3** 已实现 locked failure 必须在原 transaction 退出后再 fresh-session resolution、真实 SQLite lock integration test、M4.1 series final hardening。
+- **M4.2** 已实现会话/报表恢复；M4.2.1 将 HTML authority 固定为 filesystem 并持久化 conversation/request linkage；M4.2.2 完成严格路径 containment 与 row/payload coherence。
+- **M4.2.3** 已完成持久化 invariant 最终收口：modern report payload 的 7 个 authority 字段缺失或与 DB row 冲突均 fail closed；`report_id` 为 immutable resource identity，仅完整 metadata 相同可幂等 no-op；未来 conversation report history 固定以 `(source_mode, conversation_id)` 隔离 Mock/Real。M4.2 series FINAL PASS；M4.3 NOT STARTED。
 
 当前真实主链：
 
@@ -92,4 +94,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-19 | M4.2.2 — 路径与元数据一致性最终加固*
+*最后更新：2026-08-20 | M4.2.3 — 持久化资源身份与元数据权威最终收口*

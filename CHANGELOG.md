@@ -2,6 +2,20 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.2.3] — 2026-08-20
+
+### 持久化资源身份与元数据权威最终收口
+
+- `payload_json` 是 modern metadata reconstruction authority，dedicated DB columns 是 immutable integrity witness；`ReportArtifactMetadata` 的 `report_id`、`template_key`、`semantic_model_key`、`schema_fingerprint`、`source_mode`、`content_hash`、`relative_path` 为 required persistence contract。payload 缺失或任一 row/payload 冲突均统一以 `ReportStorageError` fail closed，不再使用业务默认值或派生路径恢复。
+- `conversation_id` / `request_id` 保持 nullable；DB linkage 有值时 payload 必须显式存在且一致。
+- `report_id` 固定为 immutable resource identity；SQLite 与 InMemory 均只允许完整 metadata 相同的幂等 no-op，任一 metadata/provenance/linkage 不同均报 `report_artifact_identity_collision`，禁止 overwrite。
+- `source_mode` 限定为 `mock | real`；未来 conversation report history 的确定性 namespace 固定为 `(source_mode, conversation_id)`，不得跨 Mock/Real 查询。
+- 新增 30 个 corruption/identity/namespace tests，并修改旧 overwrite test 为 collision regression；全仓 1653 passed、1 skipped。
+- 现有 `report_artifacts.source_mode` + `conversation_id` schema 已足够表达 namespace；不新增 Alembic migration，不创建空 migration。
+- M4.2 series FINAL PASS；M4.3 NOT STARTED。
+
+**Settings.version:** M4.2.3
+
 ## [M4.2.2] — 2026-08-19
 
 ### 路径与元数据一致性最终加固

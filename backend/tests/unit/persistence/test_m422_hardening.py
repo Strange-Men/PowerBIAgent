@@ -364,6 +364,8 @@ class TestM422MetadataCoherence:
                 bad_payload = json.dumps({
                     "report_id": _R1,  # same as row — but we inject a different
                     "template_key": "sales_report",
+                    "semantic_model_key": "test",
+                    "schema_fingerprint": "a" * 64,
                     "source_mode": "mock",
                     "content_hash": "a" * 64,
                     "relative_path": f"{_R1}.html",
@@ -374,11 +376,12 @@ class TestM422MetadataCoherence:
                         """INSERT INTO report_artifacts
                         (report_id, template_key, semantic_model_key, schema_fingerprint,
                          source_mode, content_hash, relative_path, payload_json)
-                        VALUES (:rid, 'sales_report', 'test', 'a'*64,
+                        VALUES (:rid, 'sales_report', 'test', :sf,
                                 'mock', :ch, :rp, :pj)"""
                     ),
                     {
                         "rid": _R1,
+                        "sf": "a" * 64,
                         "ch": "a" * 64,
                         "rp": f"{_R1}.html",
                         "pj": bad_payload,
@@ -394,6 +397,8 @@ class TestM422MetadataCoherence:
                 bad_payload = json.dumps({
                     "report_id": _R1,  # payload says _R1
                     "template_key": "sales_report",
+                    "semantic_model_key": "test",
+                    "schema_fingerprint": "a" * 64,
                     "source_mode": "mock",
                     "content_hash": "a" * 64,
                     "relative_path": f"{_R1}.html",
@@ -403,11 +408,12 @@ class TestM422MetadataCoherence:
                         """INSERT INTO report_artifacts
                         (report_id, template_key, semantic_model_key, schema_fingerprint,
                          source_mode, content_hash, relative_path, payload_json)
-                        VALUES (:rid, 'sales_report', 'test', 'a'*64,
+                        VALUES (:rid, 'sales_report', 'test', :sf,
                                 'mock', :ch, :rp, :pj)"""
                     ),
                     {
                         "rid": _R2,  # row says _R2 — different!
+                        "sf": "a" * 64,
                         "ch": "a" * 64,
                         "rp": f"{_R1}.html",
                         "pj": bad_payload,
@@ -428,6 +434,8 @@ class TestM422MetadataCoherence:
                 bad_payload = json.dumps({
                     "report_id": _R2,
                     "template_key": "sales_report",
+                    "semantic_model_key": "test",
+                    "schema_fingerprint": "b" * 64,
                     "source_mode": "mock",
                     "content_hash": "b" * 64,  # payload says b*64
                     "relative_path": f"{_R2}.html",
@@ -437,11 +445,12 @@ class TestM422MetadataCoherence:
                         """INSERT INTO report_artifacts
                         (report_id, template_key, semantic_model_key, schema_fingerprint,
                          source_mode, content_hash, relative_path, payload_json)
-                        VALUES (:rid, 'sales_report', 'test', 'b'*64,
+                        VALUES (:rid, 'sales_report', 'test', :sf,
                                 'mock', :ch, :rp, :pj)"""
                     ),
                     {
                         "rid": _R2,
+                        "sf": "b" * 64,
                         "ch": "a" * 64,  # DB says a*64
                         "rp": f"{_R2}.html",
                         "pj": bad_payload,
@@ -462,6 +471,8 @@ class TestM422MetadataCoherence:
                 bad_payload = json.dumps({
                     "report_id": _R3,
                     "template_key": "sales_report",
+                    "semantic_model_key": "test",
+                    "schema_fingerprint": "c" * 64,
                     "source_mode": "mock",
                     "content_hash": "c" * 64,
                     "relative_path": "wrong_path.html",  # differs from DB column
@@ -471,11 +482,12 @@ class TestM422MetadataCoherence:
                         """INSERT INTO report_artifacts
                         (report_id, template_key, semantic_model_key, schema_fingerprint,
                          source_mode, content_hash, relative_path, payload_json)
-                        VALUES (:rid, 'sales_report', 'test', 'c'*64,
+                        VALUES (:rid, 'sales_report', 'test', :sf,
                                 'mock', :ch, :rp, :pj)"""
                     ),
                     {
                         "rid": _R3,
+                        "sf": "c" * 64,
                         "ch": "c" * 64,
                         "rp": f"{_R3}.html",  # row says correct path
                         "pj": bad_payload,  # payload says wrong_path.html
@@ -496,6 +508,8 @@ class TestM422MetadataCoherence:
                 bad_payload = json.dumps({
                     "report_id": _R4,
                     "template_key": "sales_report",
+                    "semantic_model_key": "test",
+                    "schema_fingerprint": "d" * 64,
                     "source_mode": "real",  # payload says real
                     "content_hash": "d" * 64,
                     "relative_path": f"{_R4}.html",
@@ -505,11 +519,12 @@ class TestM422MetadataCoherence:
                         """INSERT INTO report_artifacts
                         (report_id, template_key, semantic_model_key, schema_fingerprint,
                          source_mode, content_hash, relative_path, payload_json)
-                        VALUES (:rid, 'sales_report', 'test', 'd'*64,
+                        VALUES (:rid, 'sales_report', 'test', :sf,
                                 :sm, :ch, :rp, :pj)"""
                     ),
                     {
                         "rid": _R4,
+                        "sf": "d" * 64,
                         "sm": "mock",  # DB says mock
                         "ch": "d" * 64,
                         "rp": f"{_R4}.html",
@@ -531,6 +546,8 @@ class TestM422MetadataCoherence:
                 bad_payload = json.dumps({
                     "report_id": _R5,
                     "template_key": "sales_report",
+                    "semantic_model_key": "test",
+                    "schema_fingerprint": "e" * 64,
                     "source_mode": "mock",
                     "content_hash": "e" * 64,
                     "relative_path": f"{_R5}.html",
@@ -543,12 +560,13 @@ class TestM422MetadataCoherence:
                         (report_id, template_key, semantic_model_key, schema_fingerprint,
                          source_mode, content_hash, relative_path, payload_json,
                          conversation_id, request_id)
-                        VALUES (:rid, 'sales_report', 'test', 'e'*64,
+                        VALUES (:rid, 'sales_report', 'test', :sf,
                                 'mock', :ch, :rp, :pj,
                                 :conv, :req)"""
                     ),
                     {
                         "rid": _R5,
+                        "sf": "e" * 64,
                         "ch": "e" * 64,
                         "rp": f"{_R5}.html",
                         "pj": bad_payload,
