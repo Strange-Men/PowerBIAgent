@@ -2,6 +2,22 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M4.3] — 2026-08-20
+
+### 会话历史搜索与命名空间查询闭环
+
+- 新增 `ConversationHistoryRepository` / `SQLiteConversationHistoryRepository` 与 application query service；recent/history/search/archive/delete 的每个 repository 方法强制接收 `runtime_mode`，report history 强制接收 `source_mode`，不存在只按 `conversation_id` 的查询入口。
+- 新增 SQLite-only API：`GET /api/v1/conversations`、`GET /api/v1/conversations/search`、`GET .../{conversation_id}/history`、`GET .../{conversation_id}/reports`、`POST .../{conversation_id}/archive`、`DELETE .../{conversation_id}`；namespace 为必填 query parameter，page size 上限 50，opaque cursor 与查询/namespace/resource 绑定，非法 limit/cursor 显式 422。
+- history authority 是 persisted `result_snapshots`；同 request 的 committed `work_memories` 仅补充结构化分析上下文，report history 复用 M4.2.3 strict metadata reconstruction。当前 schema 不保存逐字 user/assistant message transcript，因此 API 不声称或伪造 transcript，也不返回 snapshot 中的 report HTML、ORM row 或 `payload_json`。
+- recent 按 `conversations.updated_at DESC, conversation_id ASC` 确定性排序；terminal snapshot 保存会在同一 transaction 内 touch exact `(runtime_mode, conversation_id)` root。archived conversation 默认不进入 recent/search，但仍可通过显式 namespace 读取 history/reports。
+- search 使用普通 SQLite deterministic query，不引入 FTS5；只搜索 committed `work_memories.analysis_goal` 与 snapshot JSON 中显式的 `answer` / `clarification_question` / `unsupported_reason`，不搜索 report HTML、DAX、任意 payload 全文或未存储数据。
+- archive 为幂等逻辑隐藏（`archived_at`）；delete 为同 namespace 物理删除，事务内删除 work memory、snapshot、pending clarification、同 source_mode report metadata 和 conversation root，随后由 `LocalReportRepository` 删除精确 report_id HTML。相同 conversation_id 的另一 namespace 不受影响。
+- 新增 migration `f4c3a2b1907d`：`conversations.archived_at` 与 recent/history/report namespace 复合查询索引；fresh DB → head、现有 M4.2.3 revision `ab8d7df39a02` → head 均通过。
+- 新增 20 个真实 SQLite/API tests；全仓 `1673 passed, 1 skipped`。M4.1/M4.2 persistence regressions `193 passed, 1 skipped`。
+- M4.4 restart/crash acceptance NOT STARTED；未进入 React/Vite、Remote MCP、PostgreSQL、FTS5、vector/LLM search。
+
+**Settings.version:** M4.3
+
 ## [M4.2.3] — 2026-08-20
 
 ### 持久化资源身份与元数据权威最终收口

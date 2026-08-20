@@ -14,16 +14,38 @@ M1.5 更新：
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from backend.app.api.dependencies import (
     get_mock_turn_service,
+    get_conversation_history_service,
     get_report_repository,
     get_settings_dep,
     get_turn_service,
 )
-from backend.app.api.schemas import ChatRequest, ChatResponse, ErrorResponse, HealthResponse, ReportResponse
+from backend.app.application.conversation_history_service import (
+    ConversationHistoryService,
+    InvalidConversationCursorError,
+    InvalidConversationQueryError,
+    MAX_PAGE_SIZE,
+)
+from backend.app.conversation.models import (
+    ConversationArchiveResult,
+    ConversationDeleteResult,
+    ConversationHistoryCorruptionError,
+    ConversationHistoryPage,
+    ConversationListPage,
+    ConversationNotFoundError,
+    ConversationReportPage,
+)
+from backend.app.api.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ErrorResponse,
+    HealthResponse,
+    ReportResponse,
+)
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
 from backend.app.llm.base import (
     LLMAuthenticationError,
@@ -41,6 +63,7 @@ from backend.app.memory.request_fingerprint import (
     IdempotencyConflictError,
     IdempotencyCoordinationError,
 )
+from backend.app.memory.models import RuntimeDataMode
 from backend.app.report.resources import (
     ReportNotFoundError,
     ReportRepository,
@@ -48,6 +71,17 @@ from backend.app.report.resources import (
 )
 
 router = APIRouter()
+
+
+def _raise_conversation_query_error(exc: Exception) -> None:
+    if isinstance(exc, ConversationNotFoundError):
+        raise HTTPException(status_code=404, detail="conversation_not_found") from None
+    if isinstance(exc, (InvalidConversationCursorError, InvalidConversationQueryError)):
+        detail = "invalid_cursor" if isinstance(exc, InvalidConversationCursorError) else str(exc)
+        raise HTTPException(status_code=422, detail=detail) from None
+    if isinstance(exc, (ConversationHistoryCorruptionError, ReportStorageError)):
+        raise HTTPException(status_code=500, detail="conversation_history_invalid") from None
+    raise exc
 
 
 @router.get("/api/reports/{report_id}", response_class=HTMLResponse)
@@ -93,8 +127,115 @@ async def download_report(
     )
 
 
+@router.get("/api/v1/conversations", response_model=ConversationListPage)
+async def list_recent_conversations(
+    runtime_mode: RuntimeDataMode,
+    limit: int = Query(default=20, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = Query(default=None, max_length=2048),
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+):
+    """List unarchived recent conversations in one explicit namespace."""
+    try:
+        return await service.list_recent(runtime_mode, limit=limit, cursor=cursor)
+    except Exception as exc:
+        _raise_conversation_query_error(exc)
+
+
+@router.get("/api/v1/conversations/search", response_model=ConversationListPage)
+async def search_conversations(
+    runtime_mode: RuntimeDataMode,
+    q: str = Query(min_length=1, max_length=200),
+    limit: int = Query(default=20, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = Query(default=None, max_length=2048),
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+):
+    """Search declared persisted fields; report HTML is never searched."""
+    try:
+        return await service.search(
+            runtime_mode, query=q, limit=limit, cursor=cursor
+        )
+    except Exception as exc:
+        _raise_conversation_query_error(exc)
+
+
+@router.get(
+    "/api/v1/conversations/{conversation_id}/history",
+    response_model=ConversationHistoryPage,
+)
+async def get_conversation_history(
+    conversation_id: str,
+    runtime_mode: RuntimeDataMode,
+    limit: int = Query(default=20, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = Query(default=None, max_length=2048),
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+):
+    """Return persisted structured turn history, not a message transcript."""
+    try:
+        return await service.get_history(
+            runtime_mode, conversation_id, limit=limit, cursor=cursor
+        )
+    except Exception as exc:
+        _raise_conversation_query_error(exc)
+
+
+@router.get(
+    "/api/v1/conversations/{conversation_id}/reports",
+    response_model=ConversationReportPage,
+)
+async def list_conversation_reports(
+    conversation_id: str,
+    source_mode: RuntimeDataMode,
+    limit: int = Query(default=20, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = Query(default=None, max_length=2048),
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+):
+    """List strict report metadata in ``(source_mode, conversation_id)``."""
+    try:
+        return await service.list_reports(
+            source_mode, conversation_id, limit=limit, cursor=cursor
+        )
+    except Exception as exc:
+        _raise_conversation_query_error(exc)
+
+
+@router.post(
+    "/api/v1/conversations/{conversation_id}/archive",
+    response_model=ConversationArchiveResult,
+)
+async def archive_conversation(
+    conversation_id: str,
+    runtime_mode: RuntimeDataMode,
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+):
+    """Logically archive one namespace without deleting its history/reports."""
+    try:
+        return await service.archive(runtime_mode, conversation_id)
+    except Exception as exc:
+        _raise_conversation_query_error(exc)
+
+
+@router.delete(
+    "/api/v1/conversations/{conversation_id}",
+    response_model=ConversationDeleteResult,
+)
+async def delete_conversation(
+    conversation_id: str,
+    runtime_mode: RuntimeDataMode,
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+):
+    """Physically delete one namespace and its same-namespace linked resources."""
+    try:
+        return await service.delete(runtime_mode, conversation_id)
+    except Exception as exc:
+        _raise_conversation_query_error(exc)
+
+
 @router.get("/health", response_model=HealthResponse)
-async def health(request: Request, response: Response, settings: Settings = Depends(get_settings_dep)):
+async def health(
+    request: Request,
+    response: Response,
+    settings: Settings = Depends(get_settings_dep),
+):
     """健康检查 — M1.5
 
     Mock 模式完整可用 → 200、ready=true。

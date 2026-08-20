@@ -1,0 +1,775 @@
+"""M4.3 conversation history/search SQLite integration tests.
+
+These tests deliberately exercise the real async SQLite repositories.  They
+freeze the namespace-first contract before the API/service implementation:
+conversation identity is ``(runtime_mode, conversation_id)`` and linked report
+identity is ``(source_mode, conversation_id)``.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pytest
+import pytest_asyncio
+from sqlalchemy import and_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from backend.app.application.conversation_history_service import (
+    ConversationHistoryService,
+    InvalidConversationCursorError,
+)
+from backend.app.config.settings import PersistenceBackend, Settings
+from backend.app.conversation.models import ConversationNotFoundError
+from backend.app.memory.models import MemoryStatus, RuntimeDataMode, StructuredWorkMemory
+from backend.app.memory.result_snapshot import ReportResultSnapshot, TurnResultSnapshot
+from backend.app.persistence.database import (
+    configure_engine,
+    create_engine,
+    create_session_factory,
+    dispose_engine,
+)
+from backend.app.persistence.models import (
+    Base,
+    ConversationModel,
+    PendingClarificationModel,
+    ReportArtifactModel,
+    ResultSnapshotModel,
+    WorkMemoryModel,
+)
+from backend.app.persistence.repositories.conversation_history import (
+    SQLiteConversationHistoryRepository,
+)
+from backend.app.persistence.repositories.report_artifact import (
+    SQLiteReportArtifactRepository,
+)
+from backend.app.persistence.repositories.snapshot import SQLiteSnapshotRepository
+from backend.app.persistence.serialization import domain_to_json
+from backend.app.report.resources import LocalReportRepository, ReportSpec
+
+
+UTC_BASE = datetime(2026, 8, 20, 10, 0, 0)
+
+
+@dataclass
+class HistoryEnvironment:
+    db_path: Path
+    engine: object
+    session_factory: async_sessionmaker[AsyncSession]
+    repository: SQLiteConversationHistoryRepository
+    snapshot_repository: SQLiteSnapshotRepository
+
+
+@pytest_asyncio.fixture
+async def history_env(tmp_path: Path):
+    db_path = tmp_path / "history.db"
+    settings = Settings(
+        persistence_backend=PersistenceBackend.SQLITE,
+        persistence_database_path=str(db_path),
+    )
+    engine = create_engine(settings, echo=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    await configure_engine(engine)
+    session_factory = create_session_factory(engine)
+    env = HistoryEnvironment(
+        db_path=db_path,
+        engine=engine,
+        session_factory=session_factory,
+        repository=SQLiteConversationHistoryRepository(session_factory),
+        snapshot_repository=SQLiteSnapshotRepository(session_factory),
+    )
+    yield env
+    await dispose_engine(engine)
+
+
+async def _insert_conversation(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    mode: RuntimeDataMode,
+    conversation_id: str,
+    created_at: datetime,
+    updated_at: datetime,
+    archived_at: datetime | None = None,
+) -> None:
+    async with session_factory() as session:
+        async with session.begin():
+            session.add(
+                ConversationModel(
+                    conversation_id=conversation_id,
+                    runtime_mode=mode.value,
+                    created_at=created_at,
+                    updated_at=updated_at,
+                    archived_at=archived_at,
+                )
+            )
+
+
+def _snapshot(
+    *,
+    mode: RuntimeDataMode,
+    conversation_id: str,
+    request_id: str,
+    answer: str | None = None,
+    clarification: str | None = None,
+    report_html: str | None = None,
+) -> TurnResultSnapshot:
+    if report_html is not None:
+        response_type = "report"
+        report = ReportResultSnapshot(
+            report_id=f"rpt_{hashlib.sha256(request_id.encode()).hexdigest()[:32]}",
+            template_key="sales_report",
+            html=report_html,
+        )
+    elif clarification is not None:
+        response_type = "clarification"
+        report = None
+    else:
+        response_type = "answer"
+        report = None
+        answer = answer or "stored answer"
+    return TurnResultSnapshot(
+        request_id=request_id,
+        conversation_id=conversation_id,
+        intent="data_question",
+        response_type=response_type,
+        terminal_state="completed" if response_type != "clarification" else "clarification",
+        answer=answer if response_type == "answer" else None,
+        report=report,
+        clarification_question=clarification,
+        memory_commit=response_type in {"answer", "report"},
+        final_memory_version=1 if response_type in {"answer", "report"} else None,
+        is_mock=mode == RuntimeDataMode.MOCK,
+        source_mode=mode.value,
+        request_fingerprint_hash=hashlib.sha256(request_id.encode()).hexdigest(),
+    )
+
+
+async def _insert_snapshot(
+    session_factory: async_sessionmaker[AsyncSession],
+    snapshot: TurnResultSnapshot,
+    *,
+    mode: RuntimeDataMode,
+    created_at: datetime,
+) -> None:
+    async with session_factory() as session:
+        async with session.begin():
+            session.add(
+                ResultSnapshotModel(
+                    request_id=snapshot.request_id,
+                    runtime_mode=mode.value,
+                    conversation_id=snapshot.conversation_id,
+                    request_fingerprint_hash=snapshot.request_fingerprint_hash,
+                    terminal_state=snapshot.terminal_state,
+                    response_type=snapshot.response_type,
+                    payload_json=domain_to_json(snapshot),
+                    created_at=created_at,
+                )
+            )
+
+
+async def _insert_committed_memory(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    mode: RuntimeDataMode,
+    conversation_id: str,
+    request_id: str,
+    analysis_goal: str,
+    created_at: datetime,
+) -> None:
+    memory = StructuredWorkMemory(
+        conversation_id=conversation_id,
+        request_id=request_id,
+        semantic_model_key="stored_model",
+        current_intent="data_question",
+        analysis_goal=analysis_goal,
+        state_status=MemoryStatus.COMMITTED,
+        runtime_mode=mode,
+        is_mock=mode == RuntimeDataMode.MOCK,
+        base_memory_version=0,
+        memory_version=1,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    async with session_factory() as session:
+        async with session.begin():
+            session.add(
+                WorkMemoryModel(
+                    request_id=request_id,
+                    conversation_id=conversation_id,
+                    runtime_mode=mode.value,
+                    state_status=MemoryStatus.COMMITTED.value,
+                    base_memory_version=0,
+                    memory_version=1,
+                    semantic_model_key="stored_model",
+                    current_intent="data_question",
+                    analysis_goal=analysis_goal,
+                    payload_json=domain_to_json(memory),
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+            )
+
+
+async def _seed_turn(
+    env: HistoryEnvironment,
+    *,
+    mode: RuntimeDataMode,
+    conversation_id: str,
+    request_id: str,
+    when: datetime,
+    answer: str,
+    analysis_goal: str,
+) -> None:
+    await _insert_snapshot(
+        env.session_factory,
+        _snapshot(
+            mode=mode,
+            conversation_id=conversation_id,
+            request_id=request_id,
+            answer=answer,
+        ),
+        mode=mode,
+        created_at=when,
+    )
+    await _insert_committed_memory(
+        env.session_factory,
+        mode=mode,
+        conversation_id=conversation_id,
+        request_id=request_id,
+        analysis_goal=analysis_goal,
+        created_at=when,
+    )
+
+
+async def _conversation_row(
+    env: HistoryEnvironment,
+    mode: RuntimeDataMode,
+    conversation_id: str,
+) -> ConversationModel | None:
+    async with env.session_factory() as session:
+        result = await session.execute(
+            select(ConversationModel).where(
+                and_(
+                    ConversationModel.runtime_mode == mode.value,
+                    ConversationModel.conversation_id == conversation_id,
+                )
+            )
+        )
+        return result.scalar_one_or_none()
+
+
+class TestRecentConversations:
+    @pytest.mark.asyncio
+    async def test_recent_order_is_deterministic_with_stable_tie_breaker(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        for conversation_id, updated_at in (
+            ("conv-b", UTC_BASE + timedelta(minutes=2)),
+            ("conv-a", UTC_BASE + timedelta(minutes=2)),
+            ("conv-c", UTC_BASE + timedelta(minutes=1)),
+        ):
+            await _insert_conversation(
+                history_env.session_factory,
+                mode=RuntimeDataMode.MOCK,
+                conversation_id=conversation_id,
+                created_at=UTC_BASE,
+                updated_at=updated_at,
+            )
+
+        service = ConversationHistoryService(history_env.repository)
+        first = await service.list_recent(RuntimeDataMode.MOCK, limit=2)
+        assert [item.conversation_id for item in first.items] == ["conv-a", "conv-b"]
+        assert first.next_cursor
+
+        second = await service.list_recent(
+            RuntimeDataMode.MOCK, limit=2, cursor=first.next_cursor
+        )
+        assert [item.conversation_id for item in second.items] == ["conv-c"]
+        assert second.next_cursor is None
+
+    @pytest.mark.asyncio
+    async def test_completed_snapshot_touches_conversation_activity_time(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        await _insert_conversation(
+            history_env.session_factory,
+            mode=RuntimeDataMode.MOCK,
+            conversation_id="conv-touch",
+            created_at=datetime(2000, 1, 1),
+            updated_at=datetime(2000, 1, 1),
+        )
+        await history_env.snapshot_repository.save(
+            _snapshot(
+                mode=RuntimeDataMode.MOCK,
+                conversation_id="conv-touch",
+                request_id="req-touch",
+                answer="activity",
+            ),
+            RuntimeDataMode.MOCK,
+        )
+        row = await _conversation_row(
+            history_env, RuntimeDataMode.MOCK, "conv-touch"
+        )
+        assert row is not None
+        assert row.updated_at > datetime(2000, 1, 1)
+
+
+class TestNamespaceAndHistory:
+    @pytest.mark.asyncio
+    async def test_same_conversation_id_isolated_in_recent_and_history(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        for mode in (RuntimeDataMode.MOCK, RuntimeDataMode.REAL):
+            await _insert_conversation(
+                history_env.session_factory,
+                mode=mode,
+                conversation_id="shared-conv",
+                created_at=UTC_BASE,
+                updated_at=UTC_BASE,
+            )
+            await _seed_turn(
+                history_env,
+                mode=mode,
+                conversation_id="shared-conv",
+                request_id=f"req-{mode.value}",
+                when=UTC_BASE,
+                answer=f"{mode.value} answer",
+                analysis_goal=f"用户提问: {mode.value} question",
+            )
+
+        service = ConversationHistoryService(history_env.repository)
+        mock_recent = await service.list_recent(RuntimeDataMode.MOCK, limit=20)
+        real_recent = await service.list_recent(RuntimeDataMode.REAL, limit=20)
+        assert [(x.runtime_mode, x.conversation_id) for x in mock_recent.items] == [
+            (RuntimeDataMode.MOCK, "shared-conv")
+        ]
+        assert [(x.runtime_mode, x.conversation_id) for x in real_recent.items] == [
+            (RuntimeDataMode.REAL, "shared-conv")
+        ]
+
+        mock_history = await service.get_history(
+            RuntimeDataMode.MOCK, "shared-conv", limit=20
+        )
+        real_history = await service.get_history(
+            RuntimeDataMode.REAL, "shared-conv", limit=20
+        )
+        assert [x.answer for x in mock_history.items] == ["mock answer"]
+        assert [x.answer for x in real_history.items] == ["real answer"]
+        assert mock_history.items[0].memory.analysis_goal == "用户提问: mock question"
+        assert real_history.items[0].memory.analysis_goal == "用户提问: real question"
+
+    @pytest.mark.asyncio
+    async def test_history_survives_repository_restart(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        await _insert_conversation(
+            history_env.session_factory,
+            mode=RuntimeDataMode.MOCK,
+            conversation_id="conv-restart-history",
+            created_at=UTC_BASE,
+            updated_at=UTC_BASE,
+        )
+        await _seed_turn(
+            history_env,
+            mode=RuntimeDataMode.MOCK,
+            conversation_id="conv-restart-history",
+            request_id="req-restart-history",
+            when=UTC_BASE,
+            answer="persisted answer",
+            analysis_goal="用户提问: persisted question",
+        )
+
+        await dispose_engine(history_env.engine)
+        restarted_engine = create_engine(
+            Settings(
+                persistence_backend=PersistenceBackend.SQLITE,
+                persistence_database_path=str(history_env.db_path),
+            ),
+            echo=False,
+        )
+        await configure_engine(restarted_engine)
+        try:
+            restarted = ConversationHistoryService(
+                SQLiteConversationHistoryRepository(
+                    create_session_factory(restarted_engine)
+                )
+            )
+            page = await restarted.get_history(
+                RuntimeDataMode.MOCK, "conv-restart-history", limit=20
+            )
+            assert len(page.items) == 1
+            assert page.items[0].request_id == "req-restart-history"
+            assert page.items[0].answer == "persisted answer"
+        finally:
+            await dispose_engine(restarted_engine)
+
+    @pytest.mark.asyncio
+    async def test_history_pagination_is_deterministic(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        await _insert_conversation(
+            history_env.session_factory,
+            mode=RuntimeDataMode.MOCK,
+            conversation_id="conv-history-page",
+            created_at=UTC_BASE,
+            updated_at=UTC_BASE,
+        )
+        for request_id in ("req-a", "req-b", "req-c"):
+            await _insert_snapshot(
+                history_env.session_factory,
+                _snapshot(
+                    mode=RuntimeDataMode.MOCK,
+                    conversation_id="conv-history-page",
+                    request_id=request_id,
+                    answer=request_id,
+                ),
+                mode=RuntimeDataMode.MOCK,
+                created_at=UTC_BASE,
+            )
+
+        service = ConversationHistoryService(history_env.repository)
+        first = await service.get_history(
+            RuntimeDataMode.MOCK, "conv-history-page", limit=2
+        )
+        second = await service.get_history(
+            RuntimeDataMode.MOCK,
+            "conv-history-page",
+            limit=2,
+            cursor=first.next_cursor,
+        )
+        assert [x.request_id for x in first.items] == ["req-c", "req-b"]
+        assert [x.request_id for x in second.items] == ["req-a"]
+
+
+class TestReportHistory:
+    @pytest.mark.asyncio
+    async def test_report_history_is_source_mode_scoped(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        metadata_repo = SQLiteReportArtifactRepository(history_env.session_factory)
+        for mode in (RuntimeDataMode.MOCK, RuntimeDataMode.REAL):
+            await _insert_conversation(
+                history_env.session_factory,
+                mode=mode,
+                conversation_id="shared-report-conv",
+                created_at=UTC_BASE,
+                updated_at=UTC_BASE,
+            )
+            report_repo = LocalReportRepository(
+                root=history_env.db_path.parent / f"reports-{mode.value}",
+                metadata_repo=metadata_repo,
+            )
+            await report_repo.store(
+                ReportSpec(
+                    title=f"{mode.value} report",
+                    template_key="sales_report",
+                    summary="stored",
+                    source_mode=mode.value,
+                    contract_version="1.0",
+                    semantic_model_key=f"{mode.value}_model",
+                    schema_fingerprint=("a" if mode == RuntimeDataMode.MOCK else "b") * 64,
+                    verified_fact_set_ids=[f"fact-{mode.value}"],
+                    query_result_ids=[f"query-{mode.value}"],
+                ),
+                "<!DOCTYPE html><html><body>stored</body></html>",
+                conversation_id="shared-report-conv",
+                request_id=f"req-report-{mode.value}",
+            )
+
+        service = ConversationHistoryService(history_env.repository)
+        mock_reports = await service.list_reports(
+            RuntimeDataMode.MOCK, "shared-report-conv", limit=20
+        )
+        real_reports = await service.list_reports(
+            RuntimeDataMode.REAL, "shared-report-conv", limit=20
+        )
+        assert [x.source_mode for x in mock_reports.items] == ["mock"]
+        assert [x.source_mode for x in real_reports.items] == ["real"]
+        assert mock_reports.items[0].semantic_model_key == "mock_model"
+        assert real_reports.items[0].semantic_model_key == "real_model"
+
+
+class TestSearch:
+    @pytest.mark.asyncio
+    async def test_search_is_namespace_scoped(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        for mode in (RuntimeDataMode.MOCK, RuntimeDataMode.REAL):
+            await _insert_conversation(
+                history_env.session_factory,
+                mode=mode,
+                conversation_id=f"conv-search-{mode.value}",
+                created_at=UTC_BASE,
+                updated_at=UTC_BASE,
+            )
+            await _seed_turn(
+                history_env,
+                mode=mode,
+                conversation_id=f"conv-search-{mode.value}",
+                request_id=f"req-search-{mode.value}",
+                when=UTC_BASE,
+                answer="needle answer",
+                analysis_goal="用户提问: needle question",
+            )
+
+        service = ConversationHistoryService(history_env.repository)
+        mock = await service.search(
+            RuntimeDataMode.MOCK, query="needle", limit=20
+        )
+        real = await service.search(
+            RuntimeDataMode.REAL, query="needle", limit=20
+        )
+        assert [x.conversation_id for x in mock.items] == ["conv-search-mock"]
+        assert [x.conversation_id for x in real.items] == ["conv-search-real"]
+
+    @pytest.mark.asyncio
+    async def test_search_only_uses_declared_stored_fields_not_report_html(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        await _insert_conversation(
+            history_env.session_factory,
+            mode=RuntimeDataMode.MOCK,
+            conversation_id="conv-no-fabrication",
+            created_at=UTC_BASE,
+            updated_at=UTC_BASE,
+        )
+        await _insert_snapshot(
+            history_env.session_factory,
+            _snapshot(
+                mode=RuntimeDataMode.MOCK,
+                conversation_id="conv-no-fabrication",
+                request_id="req-report-html",
+                report_html="<!DOCTYPE html><html><body>html-only-secret-term</body></html>",
+            ),
+            mode=RuntimeDataMode.MOCK,
+            created_at=UTC_BASE,
+        )
+        service = ConversationHistoryService(history_env.repository)
+        page = await service.search(
+            RuntimeDataMode.MOCK, query="html-only-secret-term", limit=20
+        )
+        assert page.items == []
+
+    @pytest.mark.asyncio
+    async def test_search_pagination_and_restart_are_stable(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        for conversation_id in ("conv-b", "conv-a", "conv-c"):
+            await _insert_conversation(
+                history_env.session_factory,
+                mode=RuntimeDataMode.MOCK,
+                conversation_id=conversation_id,
+                created_at=UTC_BASE,
+                updated_at=UTC_BASE,
+            )
+            await _seed_turn(
+                history_env,
+                mode=RuntimeDataMode.MOCK,
+                conversation_id=conversation_id,
+                request_id=f"req-{conversation_id}",
+                when=UTC_BASE,
+                answer="stable needle",
+                analysis_goal="用户提问: stable needle",
+            )
+        service = ConversationHistoryService(history_env.repository)
+        first = await service.search(
+            RuntimeDataMode.MOCK, query="needle", limit=2
+        )
+        restarted = ConversationHistoryService(
+            SQLiteConversationHistoryRepository(history_env.session_factory)
+        )
+        second = await restarted.search(
+            RuntimeDataMode.MOCK,
+            query="needle",
+            limit=2,
+            cursor=first.next_cursor,
+        )
+        assert [x.conversation_id for x in first.items] == ["conv-a", "conv-b"]
+        assert [x.conversation_id for x in second.items] == ["conv-c"]
+
+
+class TestArchiveDeleteAndErrors:
+    @pytest.mark.asyncio
+    async def test_archive_and_delete_affect_one_namespace_only(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        for mode in (RuntimeDataMode.MOCK, RuntimeDataMode.REAL):
+            await _insert_conversation(
+                history_env.session_factory,
+                mode=mode,
+                conversation_id="shared-delete",
+                created_at=UTC_BASE,
+                updated_at=UTC_BASE,
+            )
+            await _seed_turn(
+                history_env,
+                mode=mode,
+                conversation_id="shared-delete",
+                request_id=f"req-delete-{mode.value}",
+                when=UTC_BASE,
+                answer=f"delete {mode.value}",
+                analysis_goal=f"用户提问: delete {mode.value}",
+            )
+
+        service = ConversationHistoryService(history_env.repository)
+        archived = await service.archive(RuntimeDataMode.MOCK, "shared-delete")
+        assert archived.runtime_mode == RuntimeDataMode.MOCK
+        assert archived.archived_at is not None
+        assert (await service.list_recent(RuntimeDataMode.MOCK, limit=20)).items == []
+        assert [
+            x.conversation_id
+            for x in (await service.list_recent(RuntimeDataMode.REAL, limit=20)).items
+        ] == ["shared-delete"]
+        archived_history = await service.get_history(
+            RuntimeDataMode.MOCK, "shared-delete", limit=20
+        )
+        assert [x.answer for x in archived_history.items] == ["delete mock"]
+
+        deleted = await service.delete(RuntimeDataMode.MOCK, "shared-delete")
+        assert deleted.deleted is True
+        with pytest.raises(ConversationNotFoundError):
+            await service.get_history(RuntimeDataMode.MOCK, "shared-delete", limit=20)
+        real_history = await service.get_history(
+            RuntimeDataMode.REAL, "shared-delete", limit=20
+        )
+        assert [x.answer for x in real_history.items] == ["delete real"]
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_only_linked_namespace_report_html(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        for mode in (RuntimeDataMode.MOCK, RuntimeDataMode.REAL):
+            await _insert_conversation(
+                history_env.session_factory,
+                mode=mode,
+                conversation_id="shared-files",
+                created_at=UTC_BASE,
+                updated_at=UTC_BASE,
+            )
+        metadata_repo = SQLiteReportArtifactRepository(history_env.session_factory)
+        reports_root = history_env.db_path.parent / "reports"
+        report_repo = LocalReportRepository(root=reports_root, metadata_repo=metadata_repo)
+        report_ids: dict[RuntimeDataMode, str] = {}
+        for mode in (RuntimeDataMode.MOCK, RuntimeDataMode.REAL):
+            artifact = await report_repo.store(
+                ReportSpec(
+                    title="delete report",
+                    template_key="sales_report",
+                    summary="stored",
+                    source_mode=mode.value,
+                    contract_version="1.0",
+                    semantic_model_key="model",
+                    schema_fingerprint="f" * 64,
+                    verified_fact_set_ids=["fact"],
+                    query_result_ids=["query"],
+                ),
+                "<!DOCTYPE html><html><body>delete me</body></html>",
+                conversation_id="shared-files",
+                request_id=f"req-files-{mode.value}",
+            )
+            report_ids[mode] = artifact.report_id
+
+        service = ConversationHistoryService(
+            history_env.repository, report_repository=report_repo
+        )
+        await service.delete(RuntimeDataMode.MOCK, "shared-files")
+        assert not (reports_root / f"{report_ids[RuntimeDataMode.MOCK]}.html").exists()
+        assert (reports_root / f"{report_ids[RuntimeDataMode.REAL]}.html").exists()
+        real_reports = await service.list_reports(
+            RuntimeDataMode.REAL, "shared-files", limit=20
+        )
+        assert [x.report_id for x in real_reports.items] == [
+            report_ids[RuntimeDataMode.REAL]
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("operation", ["history", "reports", "archive", "delete"])
+    async def test_unknown_conversation_fails_consistently(
+        self, history_env: HistoryEnvironment, operation: str
+    ) -> None:
+        service = ConversationHistoryService(history_env.repository)
+        with pytest.raises(ConversationNotFoundError):
+            if operation == "history":
+                await service.get_history(RuntimeDataMode.MOCK, "missing", limit=20)
+            elif operation == "reports":
+                await service.list_reports(RuntimeDataMode.MOCK, "missing", limit=20)
+            elif operation == "archive":
+                await service.archive(RuntimeDataMode.MOCK, "missing")
+            else:
+                await service.delete(RuntimeDataMode.MOCK, "missing")
+
+    @pytest.mark.asyncio
+    async def test_cursor_is_bound_to_namespace_query_and_resource(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        await _insert_conversation(
+            history_env.session_factory,
+            mode=RuntimeDataMode.MOCK,
+            conversation_id="conv-cursor",
+            created_at=UTC_BASE,
+            updated_at=UTC_BASE,
+        )
+        service = ConversationHistoryService(history_env.repository)
+        page = await service.list_recent(RuntimeDataMode.MOCK, limit=1)
+        assert page.next_cursor is None
+        with pytest.raises(InvalidConversationCursorError):
+            await service.list_recent(
+                RuntimeDataMode.REAL, limit=1, cursor="not-a-valid-cursor"
+            )
+
+
+@pytest.mark.asyncio
+async def test_delete_cascades_all_sqlite_child_rows(
+    history_env: HistoryEnvironment,
+) -> None:
+    await _insert_conversation(
+        history_env.session_factory,
+        mode=RuntimeDataMode.MOCK,
+        conversation_id="conv-cascade",
+        created_at=UTC_BASE,
+        updated_at=UTC_BASE,
+    )
+    await _seed_turn(
+        history_env,
+        mode=RuntimeDataMode.MOCK,
+        conversation_id="conv-cascade",
+        request_id="req-cascade",
+        when=UTC_BASE,
+        answer="cascade",
+        analysis_goal="用户提问: cascade",
+    )
+    async with history_env.session_factory() as session:
+        async with session.begin():
+            session.add(
+                PendingClarificationModel(
+                    conversation_id="conv-cascade",
+                    runtime_mode="mock",
+                    chain_id="chain-cascade",
+                    semantic_model_key="model",
+                    schema_fingerprint="a" * 64,
+                    payload_json="{}",
+                )
+            )
+
+    service = ConversationHistoryService(history_env.repository)
+    result = await service.delete(RuntimeDataMode.MOCK, "conv-cascade")
+    assert result.deleted_counts == {
+        "work_memories": 1,
+        "result_snapshots": 1,
+        "pending_clarifications": 1,
+        "report_artifacts": 0,
+    }
+    async with history_env.session_factory() as session:
+        for model in (
+            ConversationModel,
+            WorkMemoryModel,
+            ResultSnapshotModel,
+            PendingClarificationModel,
+            ReportArtifactModel,
+        ):
+            result_rows = await session.execute(select(model))
+            assert result_rows.scalars().all() == []

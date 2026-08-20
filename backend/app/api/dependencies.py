@@ -14,6 +14,7 @@ from fastapi import Request
 
 from backend.app.application.mock_turn_service import MockTurnService
 from backend.app.application.turn_service_protocol import TurnServiceProtocol
+from backend.app.application.conversation_history_service import ConversationHistoryService
 from backend.app.config.settings import Settings, get_settings
 from backend.app.report.resources import ReportRepository
 
@@ -66,3 +67,15 @@ def get_report_repository(request: Request) -> ReportRepository:
     if repository is None:
         raise RuntimeError("ReportRepository not initialized")
     return repository
+
+
+def get_conversation_history_service(request: Request) -> ConversationHistoryService:
+    """Return the SQLite-backed M4.3 query service for this app instance."""
+    service = getattr(request.app.state, "conversation_history_service", None)
+    if service is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=503, detail="conversation_history_requires_sqlite"
+        )
+    return service

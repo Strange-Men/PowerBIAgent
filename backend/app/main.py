@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from backend.app.api.routes import router
 from backend.app.application.mock_turn_service import MockTurnService
+from backend.app.application.conversation_history_service import ConversationHistoryService
 from backend.app.config.settings import (
     LLMMode,
     PersistenceBackend,
@@ -40,6 +41,9 @@ from backend.app.persistence.database import (
     dispose_engine,
 )
 from backend.app.persistence.repositories.memory import SQLiteMemoryRepository
+from backend.app.persistence.repositories.conversation_history import (
+    SQLiteConversationHistoryRepository,
+)
 from backend.app.persistence.repositories.report_artifact import (
     InMemoryReportArtifactRepository,
     ReportArtifactRepository,
@@ -128,7 +132,13 @@ async def lifespan(app: FastAPI):
     _deepseek_provider = None  # 用于 shutdown 关闭
 
     # 初始化持久化仓库 — must create before report_repository
-    memory_repo, snapshot_store, report_artifact_repo, _engine, _session_factory = _create_repos(settings)
+    (
+        memory_repo,
+        snapshot_store,
+        report_artifact_repo,
+        _engine,
+        _session_factory,
+    ) = _create_repos(settings)
     app.state._persistence_engine = _engine  # 保存用于 shutdown
 
     # Configure engine if SQLite (async setup)
@@ -139,6 +149,13 @@ async def lifespan(app: FastAPI):
         metadata_repo=report_artifact_repo,
     )
     app.state.report_repository = report_repository
+    if _session_factory is not None:
+        app.state.conversation_history_service = ConversationHistoryService(
+            SQLiteConversationHistoryRepository(_session_factory),
+            report_repository=report_repository,
+        )
+    else:
+        app.state.conversation_history_service = None
 
     if settings.llm_mode == LLMMode.MOCK and settings.powerbi_mode == PowerBIMode.MOCK:
         # Mock + Mock: 原有 MockTurnService
@@ -221,6 +238,7 @@ async def lifespan(app: FastAPI):
     app.state.turn_service = None
     app.state.mock_turn_service = None
     app.state.report_repository = None
+    app.state.conversation_history_service = None
     app.state.settings = None
     app.state._persistence_engine = None
 

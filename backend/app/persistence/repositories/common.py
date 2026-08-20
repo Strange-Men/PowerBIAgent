@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.persistence.models import ConversationModel
@@ -95,6 +95,28 @@ async def ensure_conversation(
             f"Database error while ensuring conversation "
             f"({runtime_mode_value}, {conversation_id}): {exc}"
         ) from exc
+
+
+async def touch_conversation(
+    conversation_id: str,
+    runtime_mode_value: str,
+    session: AsyncSession,
+) -> None:
+    """Advance one exact conversation root after persisted terminal activity.
+
+    The namespace predicate is part of this shared helper so callers cannot
+    accidentally update the same ``conversation_id`` in the other mode.
+    """
+    await session.execute(
+        update(ConversationModel)
+        .where(
+            and_(
+                ConversationModel.runtime_mode == runtime_mode_value,
+                ConversationModel.conversation_id == conversation_id,
+            )
+        )
+        .values(updated_at=func.now())
+    )
 
 
 # ---------------------------------------------------------------------------

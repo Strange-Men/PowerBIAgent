@@ -2,7 +2,7 @@
 
 PowerBIAgent 面向公司内部少量业务用户，通过自然语言查询 Power BI 语义模型，并以固定模板生成静态 HTML 报表。
 
-当前版本：**M4.2.3 — 持久化资源身份与元数据权威最终收口**。M0—M2 已正式封板；M3.4 修复"固定四查询、固定两种横条"根因：报表内容由用户自然语言需求 ∩ runtime semantic capability ∩ 允许能力目录决定（ADR-011），同一模板在 Simple / Rich PBIX 上分别产生能力匹配的报表。M4.0 建立本地持久化架构（SQLite/SQLAlchemy Async/Alembic/Repository ABC）。M4.1 series 完成 Memory/Snapshot production wiring、DB 级 concurrent commit invariant 与错误语义硬化。M4.2—M4.2.2 完成 Report metadata 持久化、filesystem HTML authority、linkage、路径 containment 与 row/payload coherence。M4.2.3 固定 modern metadata required-field contract、immutable `report_id` identity，以及 `(source_mode, conversation_id)` Mock/Real history namespace。M4.2 series FINAL PASS；M4.3 NOT STARTED。
+当前版本：**M4.3 — 会话历史搜索与命名空间查询闭环**。M0—M2 已正式封板；M3.4 的 Adaptive Report Planning 保持不变。M4.0—M4.2.3 已完成 SQLite persistence、Memory/Snapshot/Report recovery 与 metadata authority 收口。M4.3 在该基础上提供 namespace-first recent/history/search/archive/delete API；conversation identity 固定为 `(runtime_mode, conversation_id)`，report history 固定为 `(source_mode, conversation_id)`。历史是 persisted snapshot + committed memory + strict report metadata 的结构化视图，不声称 message transcript。M4.4 NOT STARTED。
 
 ```text
 Natural Language
@@ -32,7 +32,7 @@ Real 路径的 DAX LLM authority/call count 为 0。LLM 不定义 canonical Meas
 - M3 专用 `PowerBIAgent_M3_Test.pbix` 只用于 Local Real acceptance，不替换 M2 封板 PBIX；schema fingerprint 漂移 fail closed。
 - M3.4 新增 schema-aware capability engine（9 sections）、deterministic ReportPlan、受控 Report Intent weak signal、Visualization/Layout/Theme Policy；`SalesReportRenderer` 支持 KPI cards / Line / Donut / Column / HBar；无 JavaScript/CDN/外部资源/自由 HTML；"只看销售额"产出单 KPI 最小报表，"生成完整销售分析报表"产出能力驱动 dashboard。
 - LLM 唯一新增职责：report-intent weak signal（registry-owned section ID），单独计数；DAX/ReportData/Report factual/Renderer LLM authority 仍为 0。
-- artifact 原子保存到 gitignored `local_state/reports/`，view/download 只接受 repository-owned report_id；HTML 以 filesystem 为唯一 authority，DB 仅保存 metadata。`report_id` 不可变：完整 metadata 相同才允许幂等 no-op，任一 metadata 不同均拒绝覆盖。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；Remote MCP、M4.3 history/search API 与 M5 均未开始。
+- artifact 原子保存到 gitignored `local_state/reports/`，view/download 只接受 repository-owned report_id；HTML 以 filesystem 为唯一 authority，DB 仅保存 metadata。`report_id` 不可变。M4.3 recent 按 `updated_at DESC, conversation_id ASC` 排序；search 只覆盖 committed `analysis_goal` 与 snapshot 的 answer/clarification/unsupported 文本，不搜索 HTML/DAX/任意 JSON 全文。archive 逻辑隐藏；delete 仅级联同 namespace DB 资源与关联 HTML。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；Remote MCP、M4.4 与 M5 均未开始。
 
 幂等规则：相同 `request_id` + 相同请求重放且不重复执行；相同 ID + 不同内容返回 HTTP 409；并发同 ID 只有一个 Owner 执行。
 
@@ -60,6 +60,8 @@ Copy-Item .env.example .env
 | `LLM_MODE` | `mock` | `mock` / `deepseek` |
 | `POWERBI_MODE` | `mock` | `mock` / `local_mcp`；`remote_mcp` 仍 Deferred |
 | `POWERBI_LOCAL_SEMANTIC_MODEL_KEY` | `local_desktop_model` | Local friendly model key |
+| `PERSISTENCE_BACKEND` | `memory` | M4.3 history/search API 需要显式设为 `sqlite` |
+| `PERSISTENCE_DATABASE_PATH` | `local_state/persistence/powerbiagent.db` | 本地 SQLite 文件，不进入 Git |
 | `HOST` | `127.0.0.1` | 后端监听地址 |
 | `PORT` | `8000` | 后端监听端口 |
 
@@ -78,7 +80,7 @@ Health 示例：
   "ready": true,
   "configuration_ready": true,
   "powerbi_live_connected": false,
-  "version": "M4.2.3",
+  "version": "M4.3",
   "llm_mode": "mock",
   "powerbi_mode": "mock"
 }
@@ -93,6 +95,19 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat `
   -H "Content-Type: application/json" `
   -d '{"message":"本月销售额是多少？"}'
 ```
+
+M4.3 会话查询接口仅在 `PERSISTENCE_BACKEND=sqlite` 时可用；namespace 参数不可省略，page size 范围为 1—50：
+
+```text
+GET    /api/v1/conversations?runtime_mode=mock&limit=20
+GET    /api/v1/conversations/search?runtime_mode=mock&q=销售额&limit=20
+GET    /api/v1/conversations/{conversation_id}/history?runtime_mode=mock&limit=20
+GET    /api/v1/conversations/{conversation_id}/reports?source_mode=mock&limit=20
+POST   /api/v1/conversations/{conversation_id}/archive?runtime_mode=mock
+DELETE /api/v1/conversations/{conversation_id}?runtime_mode=mock
+```
+
+分页 cursor 为 opaque token，并绑定 endpoint、namespace、搜索词与 conversation；不得跨查询复用。archive 后会话从 recent/search 隐藏，但 direct history/reports 仍可读取；delete 物理删除同 namespace 子记录与 linked report HTML。API 不提供逐字 transcript。
 
 ## Local MCP 前置
 
@@ -150,6 +165,7 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\sales_report_contract_smo
 | Real PBIX + desktop/narrow visual acceptance | ✅ M3.2 final closure |
 | 持久化会话 | ✅ M4.1 series — SQLite Memory/Snapshot 持久化 + concurrent commit invariant + 错误语义加固 + 事务退出顺序保证 + 真实锁集成测试 **(M4.1.3 FINAL)** |
 | 报表持久化恢复 | ✅ M4.2 series — filesystem HTML authority、严格 metadata contract、immutable identity、Mock/Real namespace **(M4.2.3 FINAL)** |
+| 会话历史与搜索 | ✅ M4.3 — namespace-first recent/structured history/search/archive/delete；SQLite-only |
 | React + Vite UI | ⬜ M5 |
 
 ## 文档入口
@@ -168,4 +184,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\sales_report_contract_smo
 
 ---
 
-*最后更新：2026-08-20 | M4.2.3 — 持久化资源身份与元数据权威最终收口*
+*最后更新：2026-08-20 | M4.3 — 会话历史搜索与命名空间查询闭环*

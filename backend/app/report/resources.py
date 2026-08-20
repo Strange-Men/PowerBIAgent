@@ -178,6 +178,15 @@ class ReportRepository(ABC):
     async def read_html(self, report_id: str) -> tuple[ReportArtifact, str]:
         ...
 
+    async def delete_html_files(self, report_ids: list[str]) -> None:
+        """Delete repository-owned HTML bytes after metadata cascade.
+
+        Conversation deletion is an M4 persistence workflow.  Implementations
+        must keep path ownership inside the report repository; callers never
+        receive or unlink arbitrary filesystem paths.
+        """
+        raise NotImplementedError
+
 
 def _validate_report_id(report_id: str) -> None:
     if not _REPORT_ID_PATTERN.fullmatch(report_id):
@@ -302,6 +311,12 @@ class InMemoryReportRepository(ReportRepository):
                 raise ReportStorageError("report_content_hash_mismatch")
             return artifact, content.decode("utf-8")
 
+    async def delete_html_files(self, report_ids: list[str]) -> None:
+        async with self._lock:
+            for report_id in report_ids:
+                _validate_report_id(report_id)
+                self._items.pop(report_id, None)
+
     def _new_id(self) -> str:
         while True:
             report_id = f"rpt_{uuid.uuid4().hex}"
@@ -414,6 +429,17 @@ class LocalReportRepository(ReportRepository):
             except UnicodeDecodeError as exc:
                 raise ReportStorageError("report_artifact_not_utf8") from exc
             return artifact, html
+
+    async def delete_html_files(self, report_ids: list[str]) -> None:
+        """Remove exact managed report files; missing files are idempotent."""
+        async with self._lock:
+            targets = [(report_id, self._target(report_id)) for report_id in report_ids]
+            try:
+                for report_id, target in targets:
+                    target.unlink(missing_ok=True)
+                    self._items.pop(report_id, None)
+            except OSError as exc:
+                raise ReportStorageError("report_artifact_delete_failed") from exc
 
     def _validate_path(self, artifact: ReportArtifact) -> Path:
         """Validate and resolve the relative_path as the recovery authority.

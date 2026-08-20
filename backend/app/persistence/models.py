@@ -29,6 +29,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     Text,
@@ -85,9 +86,20 @@ class ConversationModel(Base):
         onupdate=func.now(),
         comment="UTC last-update timestamp",
     )
+    archived_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=False),
+        nullable=True,
+        comment="UTC logical archive timestamp; null means visible",
+    )
 
     __table_args__ = (
-        # Composite primary key is (runtime_mode, conversation_id)
+        Index(
+            "ix_conversations_namespace_recent",
+            "runtime_mode",
+            "archived_at",
+            "updated_at",
+            "conversation_id",
+        ),
     )
 
     # Relationships
@@ -181,6 +193,13 @@ class WorkMemoryModel(Base):
             ["runtime_mode", "conversation_id"],
             ["conversations.runtime_mode", "conversations.conversation_id"],
             name="fk_work_memories_conv_composite",
+        ),
+        Index(
+            "ix_work_memories_namespace_history",
+            "runtime_mode",
+            "conversation_id",
+            "state_status",
+            "created_at",
         ),
     )
 
@@ -299,6 +318,13 @@ class ResultSnapshotModel(Base):
             ["conversations.runtime_mode", "conversations.conversation_id"],
             name="fk_result_snapshots_conv_composite",
         ),
+        Index(
+            "ix_result_snapshots_namespace_history",
+            "runtime_mode",
+            "conversation_id",
+            "created_at",
+            "id",
+        ),
     )
 
 
@@ -341,7 +367,9 @@ class ReportArtifactModel(Base):
         String(64), nullable=False, comment="SHA-256 of stored HTML"
     )
     relative_path: Mapped[str] = mapped_column(
-        String(256), nullable=False, comment="<report_id>.html relative to LocalReportRepository root"
+        String(256),
+        nullable=False,
+        comment="<report_id>.html relative to LocalReportRepository root",
     )
     # Structured metadata payload
     payload_json: Mapped[Optional[str]] = mapped_column(
@@ -354,6 +382,13 @@ class ReportArtifactModel(Base):
     )
 
     __table_args__ = (
+        Index(
+            "ix_report_artifacts_namespace_history",
+            "source_mode",
+            "conversation_id",
+            "created_at",
+            "report_id",
+        ),
         {"sqlite_autoincrement": False},
     )
 

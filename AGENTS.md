@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M4.2.3 — 持久化资源身份与元数据权威最终收口**。
+当前版本：**M4.3 — 会话历史搜索与命名空间查询闭环**。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -23,7 +23,8 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M4.1.2** 已实现 failed transaction 后 fresh-session conflict resolution（`_resolve_locked_commit_failure` helper）、real OperationalError semantics tests（通过 `AsyncSession.execute` 注入）、infrastructure failure 与 business version conflict 严格分离。
 - **M4.1.3** 已实现 locked failure 必须在原 transaction 退出后再 fresh-session resolution、真实 SQLite lock integration test、M4.1 series final hardening。
 - **M4.2** 已实现会话/报表恢复；M4.2.1 将 HTML authority 固定为 filesystem 并持久化 conversation/request linkage；M4.2.2 完成严格路径 containment 与 row/payload coherence。
-- **M4.2.3** 已完成持久化 invariant 最终收口：modern report payload 的 7 个 authority 字段缺失或与 DB row 冲突均 fail closed；`report_id` 为 immutable resource identity，仅完整 metadata 相同可幂等 no-op；未来 conversation report history 固定以 `(source_mode, conversation_id)` 隔离 Mock/Real。M4.2 series FINAL PASS；M4.3 NOT STARTED。
+- **M4.2.3** 已完成持久化 invariant 最终收口：modern report payload 的 7 个 authority 字段缺失或与 DB row 冲突均 fail closed；`report_id` 为 immutable resource identity，仅完整 metadata 相同可幂等 no-op；conversation report history 固定以 `(source_mode, conversation_id)` 隔离 Mock/Real。M4.2 series FINAL PASS。
+- **M4.3** 已实现 SQLite recent/history/search/archive/delete API：所有 conversation 查询/变更必须显式 `(runtime_mode, conversation_id)` namespace，report history 必须显式 `(source_mode, conversation_id)`；history 只组合 persisted result snapshot、同 request committed memory 与严格 report metadata，不声称 message transcript；search 仅覆盖 committed `analysis_goal` 与 snapshot 的 answer/clarification/unsupported 文本；archive 逻辑隐藏，delete 物理清理同 namespace DB rows 与关联 HTML。新增 migration `f4c3a2b1907d`；M4.4 NOT STARTED。
 
 当前真实主链：
 
@@ -68,6 +69,7 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 10. `local_mcp.py` 仅负责 Local Provider/protocol Adapter；Renderer、Memory、UI 逻辑不得进入。
 11. ADR-010：M3 production template 只有 `sales_report`；TemplateContract 固定 schema 要求，ReportDataPlan 不读取 LLM draft，且每个查询必须复用 M2 封板链。
 12. ADR-011：固定模板 = 固定设计规则 + 允许能力目录，不是固定输出内容；报表 section 由用户需求 ∩ runtime schema 能力 ∩ catalog 决定；capability.py 是 schema-aware capability engine；Report Intent weak signal 只输出 registry-owned ID 并单独计数；Visualization/Layout/Theme Policy 由普通代码决定，LLM 无图表选择 authority。
+13. M4.3：Repository query/mutation 必须把 namespace 作为必填参数；不得只按 `conversation_id` 查询、归档或删除；SQLite history/search 不是 business/result/report factual authority，也不得从现有 schema 伪造 transcript。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前开发 M4/M5、开发 Remote MCP；未经用户明确批准不得为 M3 创建 Tag 或封板。
 
@@ -94,4 +96,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-20 | M4.2.3 — 持久化资源身份与元数据权威最终收口*
+*最后更新：2026-08-20 | M4.3 — 会话历史搜索与命名空间查询闭环*
