@@ -36,6 +36,9 @@ export function App() {
         <Composer
           sending={app.sending}
           semanticModel={app.selectedSemanticModel}
+          semanticModelOptions={app.semanticModelOptions}
+          loadingSemanticModels={app.loadingSemanticModels}
+          semanticModelError={app.semanticModelError}
           reportTemplate={app.selectedReportTemplate}
           onSemanticModelChange={app.setSelectedSemanticModel}
           onReportTemplateChange={app.setSelectedReportTemplate}

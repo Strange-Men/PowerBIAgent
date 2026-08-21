@@ -7,6 +7,7 @@ import type {
   ConversationReportItem,
   ConversationReportPage,
   RuntimeMode,
+  SemanticModelCatalog,
 } from '../types'
 
 interface ErrorPayload {
@@ -70,13 +71,28 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
         : typeof nested?.error_type === 'string'
           ? nested.error_type
           : undefined
-    throw new ApiError(friendlyHttpError(response.status), response.status, errorType)
+    const detailType =
+      typeof payload.detail === 'string' && payload.detail.includes('_')
+        ? payload.detail
+        : undefined
+    const effectiveErrorType = errorType || detailType
+    throw new ApiError(
+      friendlyHttpError(response.status, effectiveErrorType),
+      response.status,
+      effectiveErrorType,
+    )
   }
 
   return (await response.json()) as T
 }
 
-function friendlyHttpError(status: number): string {
+function friendlyHttpError(status: number, errorType?: string): string {
+  if (errorType === 'conversation_history_requires_sqlite') {
+    return '会话持久化未启用，历史记录暂不可用。'
+  }
+  if (errorType === 'semantic_model_discovery_unavailable') {
+    return '暂时无法获取 Power BI 数据模型。'
+  }
   if (status === 404) return '请求的对话或报表已不存在。'
   if (status === 409) return '该请求与已有请求冲突，请重新发送。'
   if (status === 422) return '请求内容不完整，请检查后重试。'
@@ -85,6 +101,10 @@ function friendlyHttpError(status: number): string {
     return '分析服务暂时不可用，请稍后重试。'
   }
   return '处理请求时出现问题，请稍后重试。'
+}
+
+export async function discoverSemanticModels(): Promise<SemanticModelCatalog> {
+  return requestJson<SemanticModelCatalog>('/api/v1/semantic-models')
 }
 
 export async function sendChat(body: ChatRequest): Promise<ChatResponse> {
@@ -133,12 +153,11 @@ export async function listConversationReports(
 }
 
 export async function listRecentReports(
+  sourceMode: RuntimeMode,
   conversationIds: string[],
 ): Promise<ConversationReportItem[]> {
-  const requests = conversationIds.flatMap((conversationId) =>
-    (['real', 'mock'] as const).map((sourceMode) =>
-      listConversationReports(sourceMode, conversationId, 6),
-    ),
+  const requests = conversationIds.map((conversationId) =>
+    listConversationReports(sourceMode, conversationId, 6),
   )
   const pages = await Promise.allSettled(requests)
   const reports = pages.flatMap((result) =>

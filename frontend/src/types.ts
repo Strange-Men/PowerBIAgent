@@ -30,7 +30,25 @@ export interface ChatResponse {
   unsupported_reason: string | null
   error_type: string | null
   source_mode: RuntimeMode | ''
+  llm_mode?: string
+  powerbi_mode?: string
+  memory_commit?: boolean
   idempotent_replay: boolean
+}
+
+export interface SemanticModelOption {
+  key: string
+  display_name: string
+  source: 'mock' | 'local_desktop'
+  type: 'semantic_model'
+  available: boolean
+  connected: boolean
+}
+
+export interface SemanticModelCatalog {
+  runtime_mode: RuntimeMode
+  items: SemanticModelOption[]
+  error_type: string | null
 }
 
 export interface ConversationSummary {

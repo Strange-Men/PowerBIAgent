@@ -38,11 +38,21 @@ class TemplateGroundingResult(BaseModel):
 class TemplateCatalog:
     """Resolve only registry-owned keys and approved business terms."""
 
-    def __init__(self, definitions: tuple[TemplateDefinition, ...]):
+    def __init__(
+        self,
+        definitions: tuple[TemplateDefinition, ...],
+        *,
+        default_key: str | None = None,
+    ):
         self._definitions = definitions
         self._by_key = {item.key: item for item in definitions}
         if len(self._by_key) != len(definitions):
             raise ValueError("template_catalog_duplicate_key")
+        if default_key is not None:
+            default = self._by_key.get(default_key)
+            if default is None or not default.allowed:
+                raise ValueError("template_catalog_default_not_allowed")
+        self._default_key = default_key
 
         alias_targets: dict[str, set[str]] = {}
         for item in definitions:
@@ -88,6 +98,22 @@ class TemplateCatalog:
             )
 
         normalized_input = normalize_semantic_text(user_input)
+        disabled_mentioned = any(
+            not item.allowed
+            and (
+                normalize_semantic_text(item.key) in normalized_input
+                or any(
+                    normalize_semantic_text(alias) in normalized_input
+                    for alias in item.aliases
+                )
+            )
+            for item in self._definitions
+        )
+        if disabled_mentioned:
+            return TemplateGroundingResult(
+                status=TemplateGroundingStatus.UNRESOLVED,
+                method="disabled_template_mentioned",
+            )
         canonical_matches = {
             item.key
             for item in self._definitions
@@ -116,6 +142,17 @@ class TemplateCatalog:
         if alias_matches:
             return self._result_from_matches(
                 alias_matches, "approved_alias_exact", weak_requested_template
+            )
+
+        if required and self._default_key is not None:
+            return TemplateGroundingResult(
+                status=TemplateGroundingStatus.RESOLVED,
+                canonical_key=self._default_key,
+                candidate_keys=(self._default_key,),
+                method="backend_default_for_report_intent",
+                weak_signal_disagrees=(
+                    weak_requested_template not in (None, self._default_key)
+                ),
             )
 
         return TemplateGroundingResult(
@@ -148,26 +185,29 @@ class TemplateCatalog:
         )
 
 
-DEFAULT_TEMPLATE_CATALOG = TemplateCatalog((
-    TemplateDefinition(
-        key="sales_report",
-        aliases=("销售报表", "销售报告"),
+DEFAULT_TEMPLATE_CATALOG = TemplateCatalog(
+    (
+        TemplateDefinition(
+            key="sales_report",
+            aliases=("销售报表", "销售报告"),
+        ),
+        # M0-M2 compatibility keys remain recognizable but are not M3 production
+        # templates. Explicit or language-based requests for them fail closed.
+        TemplateDefinition(
+            key="sales_weekly",
+            aliases=("销售周报", "周报", "销售经营周报"),
+            allowed=False,
+        ),
+        TemplateDefinition(
+            key="satisfaction",
+            aliases=("满意度报告",),
+            allowed=False,
+        ),
+        TemplateDefinition(
+            key="operating_overview",
+            aliases=("经营概览", "经营总览"),
+            allowed=False,
+        ),
     ),
-    # M0-M2 compatibility keys remain recognizable but are not M3 production
-    # templates. Explicit or language-based requests for them fail closed.
-    TemplateDefinition(
-        key="sales_weekly",
-        aliases=("销售周报", "周报", "销售经营周报"),
-        allowed=False,
-    ),
-    TemplateDefinition(
-        key="satisfaction",
-        aliases=("满意度报告",),
-        allowed=False,
-    ),
-    TemplateDefinition(
-        key="operating_overview",
-        aliases=("经营概览", "经营总览"),
-        allowed=False,
-    ),
-))
+    default_key="sales_report",
+)

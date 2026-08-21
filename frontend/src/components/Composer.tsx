@@ -1,11 +1,14 @@
 import { Check, ChevronDown, Plus, Send, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { reportTemplateOptions, semanticModelOptions } from '../config'
+import { reportTemplateOptions } from '../config'
 import type { CatalogOption } from '../types'
 
 interface ComposerProps {
   sending: boolean
-  semanticModel: CatalogOption
+  semanticModel: CatalogOption | null
+  semanticModelOptions: CatalogOption[]
+  loadingSemanticModels: boolean
+  semanticModelError: string | null
   reportTemplate: CatalogOption | null
   onSemanticModelChange: (option: CatalogOption) => void
   onReportTemplateChange: (option: CatalogOption | null) => void
@@ -15,6 +18,9 @@ interface ComposerProps {
 export function Composer({
   sending,
   semanticModel,
+  semanticModelOptions,
+  loadingSemanticModels,
+  semanticModelError,
   reportTemplate,
   onSemanticModelChange,
   onReportTemplateChange,
@@ -24,7 +30,7 @@ export function Composer({
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
-  const canSend = Boolean(value.trim()) && !sending
+  const canSend = Boolean(value.trim()) && !sending && Boolean(semanticModel)
 
   useEffect(() => {
     const closeMenus = (event: MouseEvent) => {
@@ -49,7 +55,7 @@ export function Composer({
 
   const submit = async () => {
     const content = value.trim()
-    if (!content || sending) return
+    if (!content || sending || !semanticModel) return
     setValue('')
     setAddMenuOpen(false)
     setModelMenuOpen(false)
@@ -62,6 +68,14 @@ export function Composer({
         <div className="composer-popover add-menu" role="dialog" aria-label="数据与报表选项">
           <div className="menu-group">
             <span className="menu-label">数据模型</span>
+            {loadingSemanticModels ? (
+              <p className="menu-empty-state">正在获取当前 Desktop 模型…</p>
+            ) : null}
+            {!loadingSemanticModels && semanticModelOptions.length === 0 ? (
+              <p className="menu-empty-state">
+                {semanticModelError || '当前没有可用数据模型。'}
+              </p>
+            ) : null}
             {semanticModelOptions.map((option) => (
               <button
                 className="menu-option"
@@ -76,34 +90,22 @@ export function Composer({
                   <strong>{option.label}</strong>
                   <small>{option.description}</small>
                 </span>
-                {semanticModel.key === option.key ? <Check size={16} /> : null}
+                {semanticModel?.key === option.key ? <Check size={16} /> : null}
               </button>
             ))}
           </div>
           <div className="menu-divider" />
           <div className="menu-group">
             <span className="menu-label">报表模板</span>
-            <button
-              className="menu-option"
-              type="button"
-              onClick={() => {
-                onReportTemplateChange(null)
-                setAddMenuOpen(false)
-              }}
-            >
-              <span>
-                <strong>不使用模板</strong>
-                <small>仅进行数据问答</small>
-              </span>
-              {!reportTemplate ? <Check size={16} /> : null}
-            </button>
             {reportTemplateOptions.map((option) => (
               <button
                 className="menu-option"
                 key={option.key}
                 type="button"
                 onClick={() => {
-                  onReportTemplateChange(option)
+                  onReportTemplateChange(
+                    reportTemplate?.key === option.key ? null : option,
+                  )
                   setAddMenuOpen(false)
                 }}
               >
@@ -115,7 +117,9 @@ export function Composer({
               </button>
             ))}
           </div>
-          <p className="local-catalog-note">选项来自前端集中配置，当前后端无列表接口。</p>
+          <p className="local-catalog-note">
+            数据模型来自后端 Desktop discovery；模板是本地安全 catalog，仅作为本次请求 override。
+          </p>
         </div>
       ) : null}
 
@@ -187,7 +191,11 @@ export function Composer({
         </button>
       </div>
       <div className="composer-selection" aria-live="polite">
-        <span>{semanticModel.label}</span>
+        <span>
+          {loadingSemanticModels
+            ? '正在连接数据模型'
+            : semanticModel?.label || semanticModelError || '当前没有可用数据模型'}
+        </span>
         {reportTemplate ? <span>· {reportTemplate.label}</span> : null}
       </div>
     </div>

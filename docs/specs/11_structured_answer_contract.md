@@ -1,6 +1,6 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M5.1 — React 前端实现与核心联调（已完成）。动态回答原则已实现。
+> **状态：** M5.2 — 真实业务链路与前端逻辑收口已完成；M5.3 未开始。动态回答原则保持不变。
 > **目标：** 定义前端组合回答的产品目标与数据契约
 > **重要：** 本文档描述前端渲染规则。当前 Real API 以 ChatResponse（含 answer/report/clarification/unsupported 字段 + QueryResult 审计元数据）为数据来源。内容块类型是前端根据后端产物动态渲染的产物类型，不等同于中间数据模型。
 
@@ -40,9 +40,10 @@
 | **M3.2** | CSS bars + responsive/static safety hardened acceptance |
 | **M5.0** | 文档契约固化、动态回答原则确认、UI↔后端能力映射；不写 React |
 | **M5.1** | ✅ 前端已动态渲染现有 ChatResponse terminal state 与 ReportArtifact；结构化 rows/ChartSpec 缺口保持 fail-closed |
-| **M5.2** | 视觉与交互收口 |
+| **M5.2** | Real/Desktop discovery/SQLite/intent-template-model/多轮-report 真实链路与逻辑收口；正式审计结构化 rows/ChartSpec 缺口 |
+| **M5.3** | 视觉与交互最终收口；只有存在真实结构化契约时才收口表格/图表视觉 |
 
-**M5.1 决策：** 不创建新的后端统一 `AssistantMessageEnvelope` 或新 API。前端 typed adapter 直接消费现有 ChatResponse/History schema。
+**M5.1 决策继续有效：** 不为组合回答创建新的统一 `AssistantMessageEnvelope` 或 response API；前端 typed adapter 直接消费现有 ChatResponse/History schema。M5.2 新增的语义模型 discovery endpoint 只提供模型 catalog，不改变回答契约。
 
 ## 四、text — 文字内容块
 
@@ -111,7 +112,7 @@ ChatResponse 的相关字段：
 
 ### 数据来源
 
-后端 QueryResult。当前 ChatResponse 与 History 不暴露 QueryResult columns/rows，现有 `execution_audit` 只有审计元数据。M5.1 将其记录为最小契约缺口，未修改 M4 Snapshot/Persistence，也不生成空表格或假 rows。
+后端 QueryResult。当前 ChatResponse 与 History 不暴露 QueryResult columns/rows，现有 `execution_audit` 只有审计元数据。M5.2 正式审计确认：不能从 answer 或 audit metadata 反解析 rows；本轮未增加高风险 response adapter，继续只展示文字与 ReportArtifact，并明确在 M5.3 前补充真实结构化契约。不得修改 M4 Snapshot/Persistence truth semantics，也不得生成空表格或假 rows。
 
 ### 前端渲染约束
 
@@ -275,7 +276,7 @@ ChatResponse 是前端主要数据来源：
 | `report` | report_attachment | 报表附件卡片数据 |
 | `response_type` | 渲染决策 | answer/clarification/unsupported/error 决定渲染分支 |
 | `terminal_state` | 渲染决策 | completed / clarification / unsupported / error |
-| `execution_audit` | 可选调试信息 | 包含 query_result 等审计元数据，前端可提取表格数据 |
+| `execution_audit` | 可选审计元数据 | 不含 QueryResult rows，前端不得据此提取或重建表格数据 |
 | `source_mode` | 内容块属性 | “mock” / “real” |
 | `is_mock` | 内容块属性 | Mock LLM 时为 True |
 
@@ -340,4 +341,4 @@ DeepSeek 提供语言模型能力，不是数据来源。source_mode 不能因�
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-21 | M5.1 动态回答实现与结构化数据契约缺口确认*
+*最后更新：2026-08-21 | M5.2 真实链路收口与结构化数据正式审计结论*

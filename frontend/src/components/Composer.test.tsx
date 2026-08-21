@@ -1,16 +1,26 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { defaultSemanticModel, reportTemplateOptions } from '../config'
+import { reportTemplateOptions } from '../config'
+import type { CatalogOption } from '../types'
 import { Composer } from './Composer'
 
-function renderComposer() {
+const semanticModel: CatalogOption = {
+  key: 'local_desktop_model',
+  label: '当前销售模型',
+  description: '当前已连接的 Power BI Desktop 模型',
+}
+
+function renderComposer(options: CatalogOption[] = [semanticModel]) {
   const onSend = vi.fn().mockResolvedValue(undefined)
   const onSemanticModelChange = vi.fn()
   const onReportTemplateChange = vi.fn()
   render(
     <Composer
       sending={false}
-      semanticModel={defaultSemanticModel}
+      semanticModel={options[0] ?? null}
+      semanticModelOptions={options}
+      loadingSemanticModels={false}
+      semanticModelError={options.length === 0 ? '当前没有可用数据模型。' : null}
       reportTemplate={null}
       onSemanticModelChange={onSemanticModelChange}
       onReportTemplateChange={onReportTemplateChange}
@@ -27,8 +37,29 @@ describe('Composer menus and sending', () => {
 
     expect(screen.getByText('数据模型')).toBeInTheDocument()
     expect(screen.getByText('报表模板')).toBeInTheDocument()
+    expect(screen.queryByText('不使用模板')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /销售分析报告/ }))
     expect(onReportTemplateChange).toHaveBeenCalledWith(reportTemplateOptions[0])
+  })
+
+  it('allows a selected template to be cleared without creating a no-template mode', () => {
+    const onReportTemplateChange = vi.fn()
+    render(
+      <Composer
+        sending={false}
+        semanticModel={semanticModel}
+        semanticModelOptions={[semanticModel]}
+        loadingSemanticModels={false}
+        semanticModelError={null}
+        reportTemplate={reportTemplateOptions[0]}
+        onSemanticModelChange={vi.fn()}
+        onReportTemplateChange={onReportTemplateChange}
+        onSend={vi.fn().mockResolvedValue(undefined)}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '打开数据与报表选项' }))
+    fireEvent.click(screen.getByRole('button', { name: /销售分析报告/ }))
+    expect(onReportTemplateChange).toHaveBeenCalledWith(null)
   })
 
   it('keeps a real DeepSeek-only selector interaction', () => {
@@ -52,5 +83,36 @@ describe('Composer menus and sending', () => {
     expect(send).toBeEnabled()
     fireEvent.click(send)
     expect(onSend).toHaveBeenCalledWith('只看华南')
+  })
+
+  it('shows the discovery empty state and cannot send without a model', () => {
+    const { onSend } = renderComposer([])
+    fireEvent.change(screen.getByLabelText('询问你的 Power BI 数据'), {
+      target: { value: '查询销售额' },
+    })
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
+    expect(screen.getByText('当前没有可用数据模型。')).toBeInTheDocument()
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('shows a safe Desktop disconnected state without internal diagnostics', () => {
+    render(
+      <Composer
+        sending={false}
+        semanticModel={null}
+        semanticModelOptions={[]}
+        loadingSemanticModels={false}
+        semanticModelError="Power BI Desktop 未连接，请先打开一个 PBIX 文件。"
+        reportTemplate={null}
+        onSemanticModelChange={vi.fn()}
+        onReportTemplateChange={vi.fn()}
+        onSend={vi.fn().mockResolvedValue(undefined)}
+      />,
+    )
+
+    expect(
+      screen.getByText('Power BI Desktop 未连接，请先打开一个 PBIX 文件。'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/connectionstring|stack|mcp_protocol/i)).not.toBeInTheDocument()
   })
 })

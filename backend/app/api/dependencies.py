@@ -15,6 +15,9 @@ from fastapi import Request
 from backend.app.application.mock_turn_service import MockTurnService
 from backend.app.application.turn_service_protocol import TurnServiceProtocol
 from backend.app.application.conversation_history_service import ConversationHistoryService
+from backend.app.application.semantic_model_discovery_service import (
+    SemanticModelDiscoveryService,
+)
 from backend.app.config.settings import Settings, get_settings
 from backend.app.report.resources import ReportRepository
 
@@ -77,5 +80,20 @@ def get_conversation_history_service(request: Request) -> ConversationHistorySer
 
         raise HTTPException(
             status_code=503, detail="conversation_history_requires_sqlite"
+        )
+    return service
+
+
+def get_semantic_model_discovery_service(
+    request: Request,
+) -> SemanticModelDiscoveryService:
+    """Return the app-scoped read-only Desktop model discovery service."""
+    service = getattr(request.app.state, "semantic_model_discovery_service", None)
+    if service is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=503,
+            detail={"error_type": "semantic_model_discovery_unavailable"},
         )
     return service

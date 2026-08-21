@@ -24,6 +24,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from backend.app.api.routes import router
 from backend.app.application.mock_turn_service import MockTurnService
 from backend.app.application.conversation_history_service import ConversationHistoryService
+from backend.app.application.semantic_model_discovery_service import (
+    SemanticModelDiscoveryService,
+)
 from backend.app.config.settings import (
     LLMMode,
     PersistenceBackend,
@@ -157,11 +160,30 @@ async def lifespan(app: FastAPI):
     else:
         app.state.conversation_history_service = None
 
+    powerbi_adapter: PowerBIAdapter | None = None
+    if settings.powerbi_mode == PowerBIMode.LOCAL_MCP:
+        powerbi_adapter = LocalMCPPowerBIAdapter(
+            executable=settings.powerbi_local_mcp_executable,
+            package=settings.powerbi_local_mcp_package,
+            semantic_model_key=settings.powerbi_local_semantic_model_key,
+            readonly=settings.powerbi_local_mcp_readonly,
+            timeout=float(settings.request_timeout_seconds),
+            max_retries=settings.max_powerbi_retries,
+        )
+    elif settings.powerbi_mode == PowerBIMode.MOCK:
+        powerbi_adapter = MockPowerBIAdapter()
+
+    app.state.semantic_model_discovery_service = (
+        SemanticModelDiscoveryService(powerbi_adapter, settings)
+        if powerbi_adapter is not None
+        else None
+    )
+
     if settings.llm_mode == LLMMode.MOCK and settings.powerbi_mode == PowerBIMode.MOCK:
         # Mock + Mock: 原有 MockTurnService
         turn_service = MockTurnService(
             memory_repo=memory_repo,
-            powerbi_adapter=MockPowerBIAdapter(),
+            powerbi_adapter=powerbi_adapter,
             report_renderer=MockReportRenderer(),
             report_repository=report_repository,
             config=harness_config,
@@ -186,18 +208,8 @@ async def lifespan(app: FastAPI):
             deepseek_provider = registry.get("deepseek")
             _deepseek_provider = deepseek_provider
 
-            powerbi_adapter: PowerBIAdapter
-            if settings.powerbi_mode == PowerBIMode.LOCAL_MCP:
-                powerbi_adapter = LocalMCPPowerBIAdapter(
-                    executable=settings.powerbi_local_mcp_executable,
-                    package=settings.powerbi_local_mcp_package,
-                    semantic_model_key=settings.powerbi_local_semantic_model_key,
-                    readonly=settings.powerbi_local_mcp_readonly,
-                    timeout=float(settings.request_timeout_seconds),
-                    max_retries=settings.max_powerbi_retries,
-                )
-            else:
-                powerbi_adapter = MockPowerBIAdapter()
+            if powerbi_adapter is None:
+                raise RuntimeError("PowerBIAdapter not initialized")
 
             turn_service = DeepSeekTurnService(
                 memory_repo=memory_repo,
@@ -239,6 +251,7 @@ async def lifespan(app: FastAPI):
     app.state.mock_turn_service = None
     app.state.report_repository = None
     app.state.conversation_history_service = None
+    app.state.semantic_model_discovery_service = None
     app.state.settings = None
     app.state._persistence_engine = None
 

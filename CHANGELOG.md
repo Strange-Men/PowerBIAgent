@@ -2,6 +2,22 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.2] — 2026-08-21
+
+### 真实业务链路与前端逻辑收口
+
+- 统一正式路线为 M5.0 设计/契约、M5.1 React 核心实现、M5.2 Real 业务逻辑、M5.3 视觉交互最终收口；同步 PRD、scope、API、status、roadmap、handoff 与 frontend specs。
+- 新增只读 `GET /api/v1/semantic-models`，通过 `SemanticModelDiscoveryService → ToolGateway → PowerBIAdapter → Local MCP` 发现并验证当前 Desktop 模型；响应排除连接串、端口、进程号、raw MCP、DAX、schema 与 Secret。前端动态使用 catalog/runtime，无模型时禁止发送。
+- 删除“不使用模板”产品模式。`report_template_key` 仅为单次显式 override；后端 report intent 在未选择模板时使用 registry-owned 默认 `sales_report`，disabled/unknown template 继续 fail closed。
+- 修正前端运行逻辑：conversation/report 查询使用 discovery/runtime namespace，report history 不跨 source mode 聚合；Chat HTTP 200 按 terminal/error/clarification/unsupported/answer 判断业务终态；补充 Desktop、模型、DeepSeek、后端、SQLite history 与一般请求的安全错误文案。
+- 初始 503 根因确认是 `PERSISTENCE_BACKEND=memory`，不是 namespace 或 SQLite 路径；初始 Chat 200 失败根因是前端 Real/`local_desktop_model` 与后端 Mock/`mock_sales_model` 配置错配，终态为 `tool_failed/ToolPolicyDeniedError`。
+- Real acceptance 额外发现并修正两个配置绑定：当前 Desktop schema 的 glossary fingerprint 已在完整对象兼容性检查后更新；本地 `MAX_TOOL_CALLS=3` 低于 full report 的 schema + 4 DAX + render 预算，正式 Real 配置固定为 8。最终 7-turn Real conversation 全部 completed/committed，generic report 未传 template override 仍生成 `sales_report`；recent/search/history/report/view/download 与 restart recovery PASS。
+- 正式审计确认 Chat/History 不暴露 QueryResult rows/ChartSpec。本轮不从 answer/audit 反解析，不新增高风险 adapter；结构化表格/图表 response contract defer 至 M5.3 前。
+- Fresh acceptance：frontend typecheck/lint/build PASS、Vitest `21 passed`；backend `1708 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture Gate `111`、Repository Safety `270`、Error Ledger `25`、Documentation Governance 与 `git diff --check` PASS。Real Desktop 7-turn 与浏览器恢复验收 PASS。
+- 无 schema change、无 Alembic migration；未进入 M5.3，未创建 Tag。
+
+**Settings.version:** M5.2
+
 ## [M5.1] — 2026-08-21
 
 ### React 前端实现与核心联调

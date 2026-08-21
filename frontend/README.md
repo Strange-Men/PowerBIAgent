@@ -2,7 +2,7 @@
 
 ## 状态
 
-**M5.1 — React 前端实现与核心联调（已完成）。M5.2 尚未开始。**
+**M5.2 — 真实业务链路与前端逻辑收口已完成。M5.3 尚未开始。**
 
 ## 技术栈
 
@@ -30,7 +30,7 @@ npm test
 npm run build
 ```
 
-内部 runtime namespace 默认 `real`；Mock 后端联调时显式使用 `VITE_RUNTIME_MODE=mock`。可通过 `VITE_SEMANTIC_MODEL_KEY` 与 `VITE_SEMANTIC_MODEL_LABEL` 覆盖集中配置的数据模型，不在前端保存任何 Provider Secret。
+前端从后端只读语义模型 discovery 响应取得当前 runtime namespace 和可选模型；浏览器不读取 `.pbix`，也不保存任何连接信息或 Provider Secret。Mock 后端联调时可显式使用 `VITE_RUNTIME_MODE=mock` 作为请求前的保守初值，后端 discovery 结果仍是运行时 authority。
 
 ## 页面结构
 
@@ -89,9 +89,11 @@ npm run build
 打开后显示两个分组：
 
 1. **数据模型** — 映射为 chat request 的 `semantic_model_key`
-2. **报表模板** — 映射为 chat request 的 `report_template_key`
+2. **报表模板** — 仅在用户主动选择具体模板时映射为 chat request 的可选 `report_template_key` override
 
-当前没有独立 list API（`/api/semantic-models` 和 `/api/report-templates` 未实现）。M5.1 未扩大后端，而是在 `src/config.ts` 集中登记实际可用的 model/template key；UI 明确标记为本地配置，不伪装成服务器 discovery 数据。
+M5.2 使用 `GET /api/v1/semantic-models` 读取后端通过 Local MCP / 当前 Power BI Desktop 实例发现并确认可连接的模型。浏览器不能直接读取 `.pbix`；前端只展示后端返回的 safe catalog，不再内置或伪造 `Power BI 销售数据`。当前 Local Adapter 的稳定执行合同一次只连接一个 Desktop 模型，因此 UI 明确显示“当前已连接模型”；M2 封板兼容 key 只留在后端内部，不再是前端产品目录。
+
+报表模板暂时没有 discovery API，继续由 `src/config.ts` 集中维护 registry-owned catalog。当前只有 `sales_report`，展示名为“销售分析报告”。菜单不提供“不使用模板”：未选择模板只表示本次请求不传 override，普通问答、多轮分析或报表生成仍由后端 intent 自动识别；即使未显式选择，后端也可以按业务规则为 report intent 选择默认模板。
 
 #### 模型选择器
 
@@ -129,7 +131,7 @@ npm run build
 | `GET /api/v1/conversations/{id}/reports` | ✅ 已实现（必填 source_mode） | 最近报表列表 |
 | `POST /api/v1/conversations/{id}/archive` | ✅ 已实现 | 归档对话 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 | 删除对话 |
-| `GET /api/semantic-models` | ❌ 未实现 | `src/config.ts` 集中配置，不伪装服务器数据 |
+| `GET /api/v1/semantic-models` | ✅ M5.2 最小只读端点 | 动态加载当前后端可连接的 Desktop 模型与 runtime namespace |
 | `GET /api/report-templates` | ❌ 未实现 | `sales_report` 集中白名单配置 |
 | 统一 frontend envelope | ❌ 不存在 | 不新增；typed adapter 直接消费现有 ChatResponse |
 | Multi-turn Memory 显示 | ✅ 后端已实现 | 前端仅展示当前 turn 的 answer |
@@ -146,7 +148,7 @@ npm run build
 - `src/api/`：typed fetch client、namespace query 与 Chat/History → UI adapters
 - `src/components/`：Sidebar、Composer、Conversation、动态 Assistant 与 ReportAttachment
 - `src/hooks/usePowerBIAgent.ts`：当前会话、recent/search/history/reports 与发送状态
-- `src/config.ts`：无 discovery API 时唯一集中 model/template 配置
+- `src/config.ts`：模板 catalog 与 discovery 前的保守 runtime 初值；不再配置真实 Desktop 模型
 - `src/styles.css`：GPT 式桌面优先布局与基础窄屏适配
 
 现有 Chat/History schema 不暴露 QueryResult `columns/rows`、独立 metrics 或 ChartSpec。M5.1 不读取 DAX/Trace/Memory，也不从 `execution_audit` 或 answer 反解析事实；因此当前只动态渲染真实文字 terminal state 和 ReportArtifact。表格/图表保持明确契约缺口，不展示假内容。
@@ -157,8 +159,9 @@ npm run build
 |--------|------|------|
 | M5.0 | 前端设计与契约固化（本文档校准、页面结构、交互边界、动态回答原则、UI↔后端能力映射） | ✅ 已完成 |
 | M5.1 | React + Vite 实现与核心联调（Sidebar/Welcome/Chat/Composer、菜单交互、Chat/History/Search/Reports 联调、动态渲染） | ✅ 已完成 |
-| M5.2 | 视觉与交互收口（真实多轮测试、loading/error/empty/disabled、响应式、accessibility、最终视觉验收） | ⬜ 待开始 |
+| M5.2 | 真实业务链路与前端逻辑收口（Real、Desktop 模型 discovery、SQLite 会话、intent/template/model、Chat 多轮与 report 联调、最小错误态） | ✅ 已完成 |
+| M5.3 | 视觉与交互最终收口（ChatGPT 风格尺寸/间距、responsive、accessibility、loading/error/empty polish、表格/图表视觉与最终浏览器验收） | ⬜ 待开始 |
 
 ---
 
-*最后更新：2026-08-21 | M5.1 React 前端实现与核心联调*
+*最后更新：2026-08-21 | M5.2 真实业务链路与前端逻辑收口完成*

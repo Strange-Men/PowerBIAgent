@@ -19,15 +19,15 @@
 | `GET` | `/api/reports/{report_id}/download` | 下载 UTF-8 HTML | ✅ M3/M4 |
 | `GET` | `/api/v1/conversations`、`/search`、`/{id}/history`、`/{id}/reports` | namespace-first recent/search/structured history/report history | ✅ M4.3/M4.4；SQLite-only |
 | `POST/DELETE` | `/api/v1/conversations/{id}/archive`、`/api/v1/conversations/{id}` | 同 namespace 归档/删除 | ✅ M4.3/M4.4 |
+| `GET` | `/api/v1/semantic-models` | 经只读 ToolGateway → PowerBIAdapter → Local MCP 发现当前可连接 Desktop 模型；返回 safe catalog 与 runtime namespace | ✅ M5.2 最小只读 endpoint |
 
 ### 计划中的接口（PRD 定义，尚未实现）
 
 | 方法 | 路径 | 说明 | 目标轮次 |
 |------|------|------|---------|
-| `GET` | `/api/semantic-models` | 返回可选 Power BI 语义模型列表 | 后续 UI/API 阶段（未批准） |
 | `GET` | `/api/report-templates` | 返回可选固定报表模板列表 | M3+ |
 
-> **注意：** `/api/semantic-models`、`/api/report-templates` 尚未实现。M5.1 使用单一集中前端配置，不伪装为服务器 discovery 数据；报表 resource 与 conversation API 已真实实现。
+> **注意：** `/api/v1/semantic-models` 只返回 backend-owned stable key、display name、source/type、availability/connected 和 runtime namespace；不返回端口、connection string、process/file path、MCP raw payload 或 schema 业务 metadata。`/api/report-templates` 仍未实现，当前前端只维护 registry-owned `sales_report` catalog。
 
 ---
 
@@ -60,7 +60,16 @@
 - 当前 M2 Real Provider：只读 stdio Local MCP + Power BI Desktop
 - 只负责 Provider / protocol Adapter；上层仍是 TurnPipeline → ToolGateway → PowerBIAdapter 的唯一控制面
 - 已真实验证 schema、DAX、QueryResult、production Chat 与 committed Memory；Real 失败不回退 Mock
+- M5.2 Real conversation/history/report 启动必须显式使用 `LLM_MODE=deepseek`、`POWERBI_MODE=local_mcp`、`PERSISTENCE_BACKEND=sqlite`；完整 `sales_report` 的 schema + 4 DAX + render 需要 `MAX_TOOL_CALLS=8`，更低预算按控制面规则 fail closed
 - Remote MCP 只有外部管理员/授权条件具备且用户重新批准后才恢复开发
+
+### 2.5 M5.2 Desktop 模型 discovery
+
+- 浏览器不能读取 `.pbix`；模型发现只能由后端通过 `connection_operations/ListLocalInstances`、只读连接验证和 Adapter 安全映射完成
+- API 不直接调用 MCP；调用路径固定为 API → SemanticModelDiscoveryService → read-only ToolGateway → PowerBIAdapter → Local MCP
+- 当前 Local 执行合同一次只选择一个可稳定连接的 Desktop 模型，因此 catalog 只暴露“当前已连接模型”；不把同一内部 key 伪装成多个可选 PBIX
+- M2 封板兼容 key 可以继续作为后端内部执行 identity，但前端不得硬编码或用固定“销售数据”别名冒充 discovery
+- 无 Desktop/无可连接模型时返回空 items 和安全状态；不回退 Mock、不返回连接细节
 
 ## 三、OAuth 认证风险（ADR-003/ADR-006，Remote Deferred）
 
@@ -195,4 +204,4 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-*最后更新：2026-08-21 | M5.1 React 核心联调与结构化数据缺口同步*
+*最后更新：2026-08-21 | M5.2 Desktop discovery、runtime 与模板 override 边界修正*

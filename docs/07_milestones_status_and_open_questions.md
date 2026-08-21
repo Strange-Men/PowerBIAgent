@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.1 — React 前端实现与核心联调（已完成）
+> **状态：** M5.2 — 真实业务链路与前端逻辑收口已完成；M5.3 未开始
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -29,7 +29,8 @@
 | **M4.4.2** | **M0–M4 truth / persistence boundary final closure** | **✅ FINAL PASS** |
 | **M5.0** | **前端设计与契约固化（文档校准、页面结构、交互边界、动态回答原则、UI↔后端能力映射）** | **✅ 已完成** |
 | **M5.1** | **React + Vite 前端实现与核心联调** | **✅ 已完成** |
-| M5.2 | 视觉与交互收口 | ⬜ 待开始 |
+| **M5.2** | **真实业务链路与前端逻辑收口** | **✅ 已完成** |
+| M5.3 | 视觉与交互最终收口 | ⬜ 待开始 |
 
 ## M3 合并与 CI truth
 
@@ -133,7 +134,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 |---|---|
 | M5.1 状态管理 | ✅ React hooks，未引入全局状态框架 |
 | 统一前端 Envelope | ✅ M5.1 不新增；typed adapter 直接消费现有 ChatResponse/History schema |
-| 前端结构化表格/图表数据 | M5.2 前另行决定最小契约；当前 Chat/History 不暴露 QueryResult rows/ChartSpec，M5.1 不伪造 |
+| 前端结构化表格/图表数据 | M5.2 审计确认 Chat/History 不暴露 QueryResult rows/ChartSpec，未新增高风险 adapter、不从 answer/audit 反解析；明确 defer 至 M5.3 前的契约补充 |
 | Remote MCP 管理员与授权条件 | 重新批准 Remote 后 |
 
 ## 当前真实风险
@@ -156,4 +157,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-21 | M5.1 — React 前端实现与核心联调*
+*最后更新：2026-08-21 | M5.2 — 真实业务链路与前端逻辑收口完成*

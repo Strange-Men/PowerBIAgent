@@ -1,7 +1,7 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.1 — React 前端实现与核心联调（已完成）
-> **目标阶段：** M5.1 已按本规范实现核心页面；M5.2 负责另行批准后的最终视觉收口
+> **状态：** M5.2 — 真实业务链路与前端逻辑收口已完成；M5.3 未开始
+> **目标阶段：** M5.2 固化真实 runtime/model/template/persistence 逻辑；M5.3 负责最终视觉与交互收口
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -16,7 +16,7 @@
 
 ## 二、当前阶段与实施边界
 
-**当前阶段：** M5.1 — React 核心实现已完成。M5.1 保持 M0–M4 authority 不变；缺少 QueryResult rows/ChartSpec 时不伪造前端表格或图表。
+**当前阶段：** M5.2 已完成 Real、Desktop discovery、SQLite conversation、intent/template/model 与真实多轮/report 联调。M0–M4 authority 保持不变；缺少 QueryResult rows/ChartSpec 时不伪造前端表格或图表。尺寸/间距、responsive、accessibility 与状态视觉 polish 属于 M5.3。
 
 ## 三、视觉参考图片
 
@@ -109,7 +109,7 @@
 ### 8.1 顶部
 
 - 左侧：当前对话标题（可选）+ 轻量下拉箭头（可选）
-- 右上角：分享或导出入口图标（可选，M5.2 决定细节）
+- 右上角：分享或导出入口图标（可选，M5.3 决定细节）
 - **不设计复杂导航栏**
 - **不展示系统状态、模型 Token、Trace 等信息**
 
@@ -277,8 +277,11 @@
 ### 13.1 数据模型分组
 
 - 映射为 chat request 的 `semantic_model_key`
-- 实际内容来自语义模型列表
-- 当前无独立 `/api/semantic-models` 端点；M5.1 在 `src/config.ts` 集中配置并明确标记本地来源
+- 实际内容只来自 `GET /api/v1/semantic-models` 返回的 safe catalog
+- 浏览器不读取 `.pbix`；后端通过 Local MCP / Power BI Desktop 实例发现并验证连接
+- catalog 至少包含 backend-owned stable key、display name、source/type、available/connected；不得返回端口、connection string、path 或 MCP raw payload
+- 无模型时显示明确 empty state 并禁用发送，不伪造默认 PBIX
+- 当前只能稳定连接一个 Desktop 模型时显示“当前已连接模型”；不得用静态“Power BI 销售数据”冒充真实模型
 - 当前选中项应有清晰视觉状态
 - 前端不得自行生成不存在的模型
 
@@ -286,7 +289,10 @@
 
 - 映射为 chat request 的 `report_template_key`
 - 实际内容来自已登记模板白名单
-- 当前无独立 `/api/report-templates` 端点；M5.1 只集中登记 `sales_report`
+- 当前无独立 `/api/report-templates` 端点；前端集中 catalog 只登记 `sales_report`（“销售分析报告”）
+- 不显示“不使用模板”；默认未选择表示本次请求不传 override，不代表“仅问答”或“禁止报表”
+- 普通问答、多轮和 report intent 由后端自动识别；未传 override 时后端仍可选择默认模板
+- 用户主动选择的 template override 是单次请求意图，发送后回到未选择状态，避免变成粘性的“报表模式”
 - 当前选中项应有清晰视觉状态
 - 未实现或不适用于当前模型的模板必须禁用或隐藏
 
@@ -373,8 +379,8 @@
 | "查看报表"操作 | ✅ M3 resource API 已完成 | ✅ M5.1 |
 | "下载 HTML"操作 | ✅ M3 resource API 已完成 | ✅ M5.1 |
 | 多模型切换 | DeepSeek 唯一启用 | ✅ M5.1 单选交互 |
-| 响应式布局 | — | M5.2 |
-| semantic_model_key 列表 | ❌ 无独立 API | +"菜单使用集中本地配置 |
+| 响应式布局 | — | M5.3 |
+| semantic_model_key 列表 | ✅ M5.2 最小只读 API | +"菜单动态展示当前 Desktop model safe catalog |
 | report_template_key 列表 | ❌ 无独立 API | +"菜单只登记 `sales_report` |
 | 统一前端 Envelope | ❌ 不存在 | M5.1 决定不新增；typed adapter 直接消费现有 schema |
 
@@ -421,4 +427,4 @@
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-21 | M5.1 React 核心实现状态同步*
+*最后更新：2026-08-21 | M5.2 真实业务逻辑收口完成；视觉 polish 顺延 M5.3*

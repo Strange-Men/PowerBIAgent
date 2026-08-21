@@ -21,6 +21,7 @@ from backend.app.api.dependencies import (
     get_mock_turn_service,
     get_conversation_history_service,
     get_report_repository,
+    get_semantic_model_discovery_service,
     get_settings_dep,
     get_turn_service,
 )
@@ -29,6 +30,9 @@ from backend.app.application.conversation_history_service import (
     InvalidConversationCursorError,
     InvalidConversationQueryError,
     MAX_PAGE_SIZE,
+)
+from backend.app.application.semantic_model_discovery_service import (
+    SemanticModelDiscoveryService,
 )
 from backend.app.conversation.models import (
     ConversationArchiveResult,
@@ -64,6 +68,7 @@ from backend.app.memory.request_fingerprint import (
     IdempotencyCoordinationError,
 )
 from backend.app.memory.models import RuntimeDataMode
+from backend.app.powerbi.models import SemanticModelCatalog
 from backend.app.report.resources import (
     ReportNotFoundError,
     ReportRepository,
@@ -82,6 +87,16 @@ def _raise_conversation_query_error(exc: Exception) -> None:
     if isinstance(exc, (ConversationHistoryCorruptionError, ReportStorageError)):
         raise HTTPException(status_code=500, detail="conversation_history_invalid") from None
     raise exc
+
+
+@router.get("/api/v1/semantic-models", response_model=SemanticModelCatalog)
+async def discover_semantic_models(
+    service: SemanticModelDiscoveryService = Depends(
+        get_semantic_model_discovery_service
+    ),
+):
+    """Return safe models currently selectable by the frontend."""
+    return await service.discover()
 
 
 @router.get("/api/reports/{report_id}", response_class=HTMLResponse)

@@ -1,7 +1,7 @@
 # 01 — 产品范围与前端骨架
 
-> **状态：** M5.1 — React 前端实现与核心联调（已完成）。M5.2 尚未开始。
-> **下一轮细化：** M5.2 视觉与交互收口（仅另行批准后开始）
+> **状态：** M5.2 — 真实业务链路与前端逻辑收口已完成；M5.3 未开始。
+> **下一轮细化：** M5.3 视觉与交互最终收口（仅 M5.2 完成后开始）
 > **视觉参考：** `docs/assets/frontend/整体01.png`（已有对话与组合回答态）、`docs/assets/frontend/整体02.png`（新聊天欢迎态与菜单展开态）
 
 ---
@@ -106,7 +106,7 @@
 
 #### 顶部
 - 左侧显示当前对话标题（可选）+ 轻量下拉箭头（可选）
-- 右上角保留分享或导出入口图标（可选，M5.2 细节决定）
+- 右上角保留分享或导出入口图标（可选，M5.3 细节决定）
 - 不设计复杂导航栏，不展示系统状态/模型 Token/Trace
 
 #### 用户消息
@@ -161,14 +161,19 @@
 
 #### 数据模型
 - 映射为 chat request 的 `semantic_model_key`
-- 当前无独立 `/api/semantic-models` 端点；M5.1 使用 `src/config.ts` 唯一集中配置并明确标记为本地配置
+- 浏览器不能直接读取 `.pbix`；后端通过 Local MCP / 当前 Power BI Desktop 实例发现并连接模型
+- M5.2 通过只读 `GET /api/v1/semantic-models` 返回 safe catalog，前端只展示后端返回的可选模型
+- 当前 Local Adapter 一次只稳定连接一个 Desktop 模型时，明确显示“当前已连接模型”，不伪装为静态“Power BI 销售数据”
+- M2 封板兼容 `local_desktop_model` 仅是后端内部执行 key，不再作为前端产品目录配置
 - 当前选中项应有清晰状态
 - 未实现选项必须禁用或隐藏
 - 前端不得自行生成不存在的模型
 
 #### 报表模板
 - 映射为 chat request 的 `report_template_key`
-- 当前无独立 `/api/report-templates` 端点；M5.1 只集中登记 production `sales_report` 白名单
+- 当前无独立 `/api/report-templates` 端点；继续在 `src/config.ts` 集中登记 production template catalog，当前只有 `sales_report`
+- `report_template_key` 只是用户显式指定的可选 override；未选择时不传该字段
+- 菜单不提供“不使用模板”；未选择不等于“普通问答模式”，问答/多轮/报表仍由后端 intent 自动识别，report intent 可自动选择默认模板
 - 当前选中项应有清晰状态
 - 未实现或不适用于当前模型的模板必须禁用或隐藏
 
@@ -232,9 +237,10 @@
 1. **M0.1—M4：** 仅确认骨架和视觉规范，不创建 React 项目
 2. **M5.0：** ✅ 文档校准、页面结构、交互边界、动态回答原则、UI ↔ 后端能力映射
 3. **M5.1：** ✅ 已创建 React + Vite + TypeScript 项目并实现核心对话页面与 API adapters
-4. **M5.2：** 视觉与交互收口
-5. **开发阶段：** 使用 Vite dev server，代理到 FastAPI 后端
-6. **M5.1 契约结论：** 不新增统一 envelope；Chat/History 无 QueryResult rows/ChartSpec 时不伪造表格/图表
+4. **M5.2：** 真实业务链路与前端逻辑收口（Real、Desktop discovery、SQLite、intent/template/model、多轮与 report）
+5. **M5.3：** 视觉与交互最终收口（尺寸/间距、responsive、accessibility、状态 polish、最终浏览器验收）
+6. **开发阶段：** 使用 Vite dev server，代理到 FastAPI 后端
+7. **契约结论：** 不新增统一 envelope；Chat/History 无 QueryResult rows/ChartSpec 时不伪造表格/图表
 
 ---
 
@@ -251,17 +257,18 @@
 | `GET /api/v1/conversations/{id}/reports` | ✅ 已实现（必填 source_mode） | 最近报表列表 |
 | `POST /api/v1/conversations/{id}/archive` | ✅ 已实现 | 归档对话 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 | 删除对话 |
-| `GET /api/semantic-models` | ❌ 未实现 | `src/config.ts` 集中本地配置 |
+| `GET /api/v1/semantic-models` | ✅ M5.2 最小只读 endpoint | 动态加载 Desktop 模型与 backend runtime namespace |
 | `GET /api/report-templates` | ❌ 未实现 | `sales_report` 集中白名单配置 |
 | 统一 frontend envelope | ❌ 不存在 | M5.1 决定不新增；typed adapter 消费现有 schema |
 | Multi-turn Memory（后端） | ✅ 已实现 | 前端展示当前 turn 的 answer |
 
 ## 四、产品边界
 
-### M5.1 实现边界
+### M5.2 实现边界
 
-- 已实现 React 前端、动态 terminal-state/report 渲染与现有 Chat/History/Search/Reports 联调
-- 模型选择器保持 DeepSeek 唯一交互；项目/账户仅展示
+- Real 模式真实链路、Desktop/PBIX 模型 discovery、SQLite conversation 配置与联调
+- intent/template/model 产品逻辑修正，Chat 多轮与 report 真实验收，最小用户可理解错误分类
+- 模型选择器保持 DeepSeek 唯一交互；项目/账户继续仅展示
 - 不修改后端业务事实链、Snapshot/Persistence 或 Report authority
 - 没有结构化 QueryResult/ChartSpec 时不展示表格/图表
 
@@ -271,4 +278,4 @@
 
 ---
 
-*最后更新：2026-08-21 | M5.1 React 前端实现与核心联调*
+*最后更新：2026-08-21 | M5.2 真实业务链路与前端逻辑边界修正*

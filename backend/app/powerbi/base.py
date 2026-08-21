@@ -15,6 +15,7 @@ from backend.app.schemas.data_contracts import (
     QueryResult,
     SemanticModelSchema,
 )
+from backend.app.powerbi.models import SemanticModelCatalog
 
 
 class PowerBIAdapter(ABC):
@@ -60,6 +61,14 @@ class PowerBIAdapter(ABC):
             "Bounded member lookup is not implemented by this provider",
             provider=self.provider_name,
             error_type="member_lookup_not_supported",
+        )
+
+    async def discover_semantic_models(self) -> SemanticModelCatalog:
+        """Return a safe catalog of models selectable by the frontend."""
+        raise PowerBIAdapterError(
+            "Semantic model discovery is not implemented by this provider",
+            provider=self.provider_name,
+            error_type="semantic_model_discovery_not_supported",
         )
 
     @abstractmethod

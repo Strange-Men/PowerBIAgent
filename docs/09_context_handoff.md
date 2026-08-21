@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.1 — React 前端实现与核心联调（已完成）。** M0–M4 后端保持封板与 FINAL PASS；M5.1 已创建前端并接入现有 Chat/Conversation/Report 契约。M5.2 NOT STARTED。
+**M5.2 — 真实业务链路与前端逻辑收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0/M5.1/M5.2 已完成，M5.3 未开始。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -16,6 +16,34 @@
 | **M4.4.2** | **M0–M4 truth / persistence boundary final closure** | **✅ FINAL PASS** |
 | **M5.0** | **前端设计与契约固化** | **✅ 已完成** |
 | **M5.1** | **React 前端实现与核心联调** | **✅ 已完成** |
+| **M5.2** | **真实业务链路与前端逻辑收口** | **✅ 已完成** |
+| **M5.3** | **视觉与交互最终收口** | **⬜ 未开始** |
+
+### M5.2 — 完成状态与固化边界
+
+- 数据模型不是前端固定“Power BI 销售数据”别名。浏览器不能读取 `.pbix`；后端通过 Local MCP / 当前 Desktop 实例发现和连接，前端只展示只读 discovery endpoint 返回的 safe catalog。
+- `local_desktop_model` 仅保留为 M2 封板兼容的后端内部执行 identity，不再作为前端静态产品目录；当前 Local Adapter 一次只稳定连接一个模型时，UI 明确标记“当前已连接模型”。
+- `report_template_key` 是 request-level 可选 override。删除“不使用模板”产品模式；未选择时不传字段，问答/多轮/报表由后端 intent 判断，report intent 仍可自动选择默认 `sales_report`。
+- M5.2 负责 Real、Desktop discovery、SQLite conversation 配置、runtime/source namespace、真实多轮与 report、最小错误分类和结构化表格/图表契约审计。
+- M5.3 才负责尺寸/间距、responsive、accessibility、loading/error/empty polish、表格/图表视觉和最终浏览器视觉收口。
+
+### M5.2 实现与 Real acceptance
+
+- 新增 `GET /api/v1/semantic-models`：API → `SemanticModelDiscoveryService` → read-only `ToolGateway` → `PowerBIAdapter` → Local MCP。响应只有 stable key、display name、source/type、availability/connected 与 runtime namespace，不返回端口、process ID、connection string、MCP raw payload、DAX 或 schema。
+- 当前 Local execution contract 一次只选择并验证一个打开中的 Desktop 模型；前端动态加载 safe catalog，无模型时禁止发送并显示 Desktop/模型 empty state，不再伪造销售模型。
+- `TemplateCatalog` 显式配置 registry-owned 默认 `sales_report`：只有后端已识别为 `report_generation` 且用户没有 override/明确模板时才使用；普通 Chat 不受影响，disabled/unknown template 继续 fail closed。
+- Real 启动使用 `LLM_MODE=deepseek`、`POWERBI_MODE=local_mcp`、`PERSISTENCE_BACKEND=sqlite`、`MAX_TOOL_CALLS=8`。本地旧值 `MAX_TOOL_CALLS=3` 会在 full report 的第三个 DAX 前被 TurnController 拒绝；独立四查询均成功，改回正式预算后 generic report 执行 schema + 4 DAX + render 并 completed。
+- 当前 Desktop schema 与 model-scoped glossary 的旧 fingerprint 不一致；只读兼容性检查确认所有 glossary object/type/visibility 仍匹配后，仅更新 fingerprint，未放宽 Semantic Catalog authority。
+- Fresh Real 7-turn conversation 使用同一 conversation_id、不同 request_id，类别/筛选/指标切换/产品维度/Top2/未指定模板的 generic report 全部 `completed`、`memory_commit=true`、`source_mode=real`；report 自动选择 `sales_report`。recent/search/history(7 turns)/conversation report/view/download 均通过，report view/download 同源；dispose/restart 后 history/report/view 可恢复。
+- 实际浏览器确认 Desktop display name、模板 catalog（无“不使用模板”）、recent/search/history、用户可理解错误消息与 ReportArtifact 附件。未强制关闭用户正在运行的 Desktop；Desktop absent 采用 Adapter/API/frontend safe fault-injection 回归，避免丢失未保存 PBIX。
+- Chat/History 仍没有 QueryResult columns/rows、独立 metrics 或 ChartSpec。本轮不新增高风险事实 response adapter，不从 answer/audit 反解析；结构化表格/图表契约明确 defer 至 M5.3 前。
+- Fresh gates：frontend typecheck/lint/build PASS、Vitest `21 passed`；backend `1708 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture Gate `111`、Repository Safety `270`、Error Ledger `25`、Documentation Governance 与 `git diff --check` PASS。
+
+### M5.2 启动故障基线
+
+- 以仓库当前默认启动配置复现：`/health` 为 Mock+Mock ready；conversation/search 因 `persistence_backend=memory` 返回 `503 conversation_history_requires_sqlite`。数据库文件存在不等于 SQLite provider 已启用。
+- 同一配置下 Chat HTTP 200 但业务 `terminal_state=tool_failed`、`error_type=ToolPolicyDeniedError`、`memory_commit=false`；根因是前端默认 Real/`local_desktop_model` 与后端 Mock/`mock_sales_model` 不一致。HTTP 200 不是业务成功。
+- M5.2 已让前端 runtime/model 来自后端 discovery，并完成 SQLite + DeepSeek + Local MCP 的显式 Real acceptance。
 
 ### M5.1 — React 前端实现与核心联调
 
@@ -23,7 +51,7 @@
 - 已实现 AppShell、真实折叠 Sidebar、新聊天欢迎态、已有对话态、稳定底部 Composer、"+"数据模型/报表模板菜单与 DeepSeek-only 单选卡片。
 - Chat adapter 发送 `conversation_id` / `request_id` / `semantic_model_key` / `report_template_key`，动态渲染 answer、clarification、unsupported、error、empty 与真实 ReportArtifact；不展示 trace/tool/audit/Memory/DAX/usage。
 - recent/search/history/reports 已接现有 SQLite API。Conversation 请求显式 `runtime_mode`，report 请求显式 `source_mode`；History 只恢复 persisted structured result，并在 UI 明示不是逐字 transcript。
-- 项目卡片与用户账户保持纯展示。没有新增 semantic model/template discovery endpoint；实际 key 只在 `src/config.ts` 集中配置，并在菜单注明本地配置。
+- 项目卡片与用户账户保持纯展示。M5.1 当时没有 discovery endpoint；该限制已由 M5.2 的只读 semantic-model discovery supersede，模板仍在 `src/config.ts` 集中登记。
 - 报表查看/下载只使用与 `report_id` 严格一致的后端 canonical reference；无 report resource 时不显示附件。
 - 最小契约缺口：Chat/History 不暴露 QueryResult `columns/rows`、独立 metrics 或 ChartSpec，`execution_audit` 也没有可消费 rows。M5.1 不修改 M4 Snapshot/Persistence，不从 answer/audit 推导事实，因此不渲染假表格/图表。
 - Fresh gates：frontend typecheck/lint/build PASS，Vitest `13 passed`；Chrome 1600×1000 实际欢迎态检查 PASS；backend `1700 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture/Repository Safety/Error Ledger PASS。
@@ -112,7 +140,8 @@
 
 后续轮次只有用户另行批准后才可开始：
 
-1. **M5.2**: 视觉与交互收口（真实 DeepSeek + Local MCP 多轮对话测试、结构化表格/图表契约决策、响应式、accessibility、最终视觉验收）（NEXT；仅用户另行批准后开始）
+1. 在 M5.3 前补充 QueryResult/VerifiedFactSet 直接来源的结构化表格/图表 response contract；若不补充则继续不展示，不得从 answer/audit 反解析。
+2. 进入 **M5.3** 视觉与交互最终收口：尺寸/间距、responsive、accessibility、loading/error/empty polish 与最终浏览器视觉验收。
 
 ## 关键命令
 
@@ -157,4 +186,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-21 | M5.1 — React 前端实现与核心联调（已完成）*
+*最后更新：2026-08-21 | M5.2 — 真实业务链路与前端逻辑收口完成*

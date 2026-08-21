@@ -26,6 +26,7 @@ from backend.app.powerbi.local_mcp import (
     LocalMCPConnection,
     LocalMCPConnectionError,
     LocalMCPDiagnostics,
+    LocalMCPDiscoverySnapshot,
     LocalMCPDAXSnapshot,
     LocalMCPErrorCategory,
     LocalMCPPowerBIAdapter,
@@ -55,6 +56,8 @@ class FakeLocalMCPClient:
         schema_error: LocalMCPConnectionError | None = None,
         dax_snapshot: LocalMCPDAXSnapshot | None = None,
         dax_error: LocalMCPConnectionError | None = None,
+        discovery_snapshot: LocalMCPDiscoverySnapshot | None = None,
+        discovery_error: LocalMCPConnectionError | None = None,
     ) -> None:
         self.result = result
         self.error = error
@@ -62,9 +65,12 @@ class FakeLocalMCPClient:
         self.schema_error = schema_error
         self.dax_snapshot = dax_snapshot
         self.dax_error = dax_error
+        self.discovery_snapshot = discovery_snapshot
+        self.discovery_error = discovery_error
         self.calls = 0
         self.schema_calls = 0
         self.dax_calls = 0
+        self.discovery_calls = 0
 
     async def connect_and_discover(self) -> LocalMCPDiagnostics:
         self.calls += 1
@@ -79,6 +85,13 @@ class FakeLocalMCPClient:
             raise self.schema_error
         assert self.schema_snapshot is not None
         return self.schema_snapshot
+
+    async def discover_semantic_models(self) -> LocalMCPDiscoverySnapshot:
+        self.discovery_calls += 1
+        if self.discovery_error is not None:
+            raise self.discovery_error
+        assert self.discovery_snapshot is not None
+        return self.discovery_snapshot
 
     async def execute_dax(self, request: DAXRequest) -> LocalMCPDAXSnapshot:
         self.dax_calls += 1
@@ -664,6 +677,48 @@ class TestLocalMCPPowerBIAdapter:
         assert client.calls == 1
 
     @pytest.mark.asyncio
+    async def test_discovery_returns_only_safe_current_desktop_model(self):
+        client = FakeLocalMCPClient(
+            discovery_snapshot=LocalMCPDiscoverySnapshot(
+                diagnostics=_healthy_local_diagnostics(),
+                display_name="财务销售分析",
+            )
+        )
+        adapter = _local_adapter(client)
+
+        catalog = await adapter.discover_semantic_models()
+
+        assert catalog.runtime_mode == RuntimeDataMode.REAL
+        assert catalog.error_type is None
+        assert len(catalog.items) == 1
+        assert catalog.items[0].model_dump() == {
+            "key": LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            "display_name": "财务销售分析",
+            "source": "local_desktop",
+            "type": "semantic_model",
+            "available": True,
+            "connected": True,
+        }
+        assert client.discovery_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_discovery_desktop_absent_is_safe_empty_catalog(self):
+        private_marker = "C:/private/customer.pbix"
+        client = FakeLocalMCPClient(
+            discovery_error=LocalMCPConnectionError(
+                LocalMCPErrorCategory.DESKTOP_NOT_FOUND,
+                "desktop_instance_not_found",
+            )
+        )
+        adapter = _local_adapter(client)
+
+        catalog = await adapter.discover_semantic_models()
+
+        assert catalog.items == []
+        assert catalog.error_type == "powerbi_desktop_not_connected"
+        assert private_marker not in catalog.model_dump_json()
+
+    @pytest.mark.asyncio
     async def test_process_startup_failure_is_explicit(self):
         client = FakeLocalMCPClient(error=LocalMCPConnectionError(
             LocalMCPErrorCategory.MCP_STARTUP,
@@ -1226,6 +1281,19 @@ class TestLocalMCPPowerBIAdapter:
         assert PowerBILocalMCPClient._desktop_data_source(
             {"dataSource": "remote.example.com:443"}
         ) is None
+
+    def test_desktop_display_name_removes_path_extension_and_app_suffix(self):
+        instance = {
+            "parentWindowTitle": (
+                r"C:\Business\财务销售分析.pbix - Power BI Desktop"
+            ),
+            "connectionString": "Data Source=localhost:54321",
+            "processId": 12345,
+        }
+        assert PowerBILocalMCPClient._desktop_display_name(instance) == "财务销售分析"
+        assert PowerBILocalMCPClient._desktop_display_name(
+            {"connectionString": "Data Source=localhost:54321"}
+        ) == "当前已连接 Power BI Desktop 模型"
 
     def test_stdio_stderr_is_classified_without_leaking_raw_text(self):
         private_marker = "private-desktop-path-must-not-leak"

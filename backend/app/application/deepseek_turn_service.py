@@ -1332,7 +1332,19 @@ class DeepSeekTurnService:
                     controller=controller,
                 )
                 if result.error is not None:
-                    raise ToolExecutionError(result.error.message)
+                    return await self._fail_result(
+                        memory,
+                        effective_req_id,
+                        effective_conv_id,
+                        controller,
+                        trace,
+                        terminal_state=TurnState.TOOL_FAILED,
+                        error_type=result.error.type,
+                        reason=result.error.type,
+                        stage="report_dax_execution",
+                        trace_id=trace_id,
+                        collector=collector,
+                    )
                 query_results[query.requirement_key] = result
         except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
                 ToolNotRegisteredError, ToolOutputValidationError) as exc:

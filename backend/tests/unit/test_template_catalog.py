@@ -17,15 +17,22 @@ def test_canonical_key_and_approved_alias_resolve():
     assert alias.method == "approved_alias_exact"
 
 
-def test_llm_draft_cannot_define_canonical_template():
+def test_backend_default_ignores_non_catalog_llm_draft_for_report_intent():
     result = DEFAULT_TEMPLATE_CATALOG.ground(
         "请生成一份报告",
         weak_requested_template="satisfaction",
         required=True,
     )
-    assert result.status == TemplateGroundingStatus.UNRESOLVED
-    assert result.canonical_key is None
+    assert result.status == TemplateGroundingStatus.RESOLVED
+    assert result.canonical_key == "sales_report"
+    assert result.method == "backend_default_for_report_intent"
     assert result.weak_signal_disagrees is True
+
+
+def test_no_template_for_data_question_remains_not_mentioned():
+    result = DEFAULT_TEMPLATE_CATALOG.ground("查询销售额", required=False)
+    assert result.status == TemplateGroundingStatus.NOT_MENTIONED
+    assert result.canonical_key is None
 
 
 def test_explicit_application_key_is_authoritative():
@@ -50,6 +57,9 @@ def test_legacy_templates_are_known_but_not_m3_available():
             f"生成 {key}", explicit_template_key=key, required=True
         )
         assert result.status == TemplateGroundingStatus.UNRESOLVED
+    mentioned = DEFAULT_TEMPLATE_CATALOG.ground("请生成销售周报", required=True)
+    assert mentioned.status == TemplateGroundingStatus.UNRESOLVED
+    assert mentioned.method == "disabled_template_mentioned"
 
 
 def test_ambiguous_and_disabled_templates_fail_closed():
@@ -62,3 +72,13 @@ def test_ambiguous_and_disabled_templates_fail_closed():
     disabled = catalog.ground("停用模板", required=True)
     assert ambiguous.status == TemplateGroundingStatus.CONFIG_CONFLICT
     assert disabled.status == TemplateGroundingStatus.UNRESOLVED
+
+
+def test_default_must_be_registry_owned_and_allowed():
+    definitions = (TemplateDefinition(key="disabled", allowed=False),)
+    try:
+        TemplateCatalog(definitions, default_key="disabled")
+    except ValueError as exc:
+        assert str(exc) == "template_catalog_default_not_allowed"
+    else:
+        raise AssertionError("disabled default must fail closed")

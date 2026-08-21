@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
+from backend.app.powerbi.models import SemanticModelCatalog, SemanticModelOption
 from backend.app.schemas.data_contracts import (
     ColumnMembersRequest,
     ColumnMembersResult,
@@ -81,6 +82,25 @@ class MockPowerBIAdapter(PowerBIAdapter):
         if self._delay > 0:
             await asyncio.sleep(self._delay)
         return True
+
+    async def discover_semantic_models(self) -> SemanticModelCatalog:
+        """Return fixture-backed models for explicit Mock development only."""
+        if self._delay > 0:
+            await asyncio.sleep(self._delay)
+        items = [
+            SemanticModelOption(
+                key=key,
+                display_name="Mock 销售模型" if key == "mock_sales_model" else key,
+                source="mock",
+                available=True,
+                connected=True,
+            )
+            for key in sorted(self._schemas)
+        ]
+        return SemanticModelCatalog(
+            runtime_mode="mock",
+            items=items,
+        )
 
     async def get_semantic_model_schema(self, semantic_model_key: str) -> SemanticModelSchema:
         """获取 Mock 语义模型结构"""

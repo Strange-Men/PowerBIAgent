@@ -6,20 +6,52 @@ import type {
 } from '../types'
 
 const EMPTY_TEXT = '暂无符合条件的数据。你可以调整问题或筛选条件后再试。'
-const ERROR_TEXT = '这次分析没有完成，请稍后重试。'
+const ERROR_TEXT = '当前请求无法完成，请检查问题或稍后重试。'
+
+function friendlyBusinessError(response: ChatResponse): string {
+  const errorType = response.error_type || ''
+  if (errorType.startsWith('deepseek_') || errorType.startsWith('LLM')) {
+    return '语言分析服务暂不可用，请稍后重试。'
+  }
+  if (
+    response.powerbi_mode === 'local_mcp' &&
+    errorType === 'connection_error'
+  ) {
+    return 'Power BI Desktop 连接已中断，请确认 Desktop 和数据模型仍处于打开状态。'
+  }
+  if (errorType === 'ToolPolicyDeniedError' || errorType.includes('model')) {
+    return '当前选择的数据模型不可用，请重新选择已连接模型。'
+  }
+  if (
+    errorType.includes('semantic') ||
+    errorType.includes('grounding') ||
+    errorType.includes('validation')
+  ) {
+    return '当前数据模型无法支持这个问题，请调整问法或选择其他模型。'
+  }
+  return ERROR_TEXT
+}
 
 function contentForResponse(response: ChatResponse): {
   kind: AssistantMessage['kind']
   content: string
 } {
-  if (response.response_type === 'clarification' && response.clarification_question) {
+  if (
+    (response.response_type === 'clarification' ||
+      response.terminal_state.includes('clarification')) &&
+    response.clarification_question
+  ) {
     return { kind: 'clarification', content: response.clarification_question }
   }
-  if (response.response_type === 'unsupported' && response.unsupported_reason) {
+  if (
+    (response.response_type === 'unsupported' ||
+      response.terminal_state === 'unsupported') &&
+    response.unsupported_reason
+  ) {
     return { kind: 'unsupported', content: response.unsupported_reason }
   }
   if (response.error_type || response.terminal_state.includes('failed')) {
-    return { kind: 'error', content: response.answer?.trim() || ERROR_TEXT }
+    return { kind: 'error', content: friendlyBusinessError(response) }
   }
   if (response.answer?.trim()) {
     return { kind: 'answer', content: response.answer.trim() }

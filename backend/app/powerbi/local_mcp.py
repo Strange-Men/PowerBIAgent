@@ -23,6 +23,7 @@ from mcp.shared.exceptions import MCPError
 from pydantic import ValidationError
 
 from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
+from backend.app.powerbi.models import SemanticModelCatalog, SemanticModelOption
 from backend.app.schemas.data_contracts import (
     ColumnMembersRequest,
     ColumnMembersResult,
@@ -173,6 +174,9 @@ class LocalMCPConnection(Protocol):
     async def connect_and_discover(self) -> LocalMCPDiagnostics:
         ...
 
+    async def discover_semantic_models(self) -> "LocalMCPDiscoverySnapshot":
+        ...
+
     async def read_semantic_model_schema(self) -> "LocalMCPSchemaSnapshot":
         ...
 
@@ -190,6 +194,14 @@ class LocalMCPSchemaSnapshot:
     measures: tuple[dict[str, object], ...]
     relationships: tuple[dict[str, object], ...]
     hierarchies: tuple[dict[str, object], ...]
+
+
+@dataclass(frozen=True)
+class LocalMCPDiscoverySnapshot:
+    """Safe identity of the one Desktop model selected by the Local contract."""
+
+    diagnostics: LocalMCPDiagnostics
+    display_name: str
 
 
 @dataclass(frozen=True)
@@ -225,6 +237,10 @@ class PowerBILocalMCPClient:
 
     async def connect_and_discover(self) -> LocalMCPDiagnostics:
         return await self._run_session(self._discover_and_connect_desktop)
+
+    async def discover_semantic_models(self) -> LocalMCPDiscoverySnapshot:
+        """Discover and verify the current selectable Desktop model."""
+        return await self._run_session(self._discover_models_in_session)
 
     async def read_semantic_model_schema(self) -> LocalMCPSchemaSnapshot:
         """Read all supported schema objects in one stdio/Desktop connection."""
@@ -344,6 +360,27 @@ class PowerBILocalMCPClient:
             hierarchies=details["user_hierarchy_operations"],
         )
 
+    async def _discover_models_in_session(
+        self,
+        client: Client,
+        protocol: str | None,
+        tools: tuple[DiscoveredLocalTool, ...],
+    ) -> LocalMCPDiscoverySnapshot:
+        diagnostics, instance = await self._discover_and_connect_desktop_target(
+            client,
+            protocol,
+            tools,
+        )
+        if not diagnostics.healthy or instance is None:
+            raise LocalMCPConnectionError(
+                diagnostics.error_category or LocalMCPErrorCategory.DESKTOP_CONNECTION,
+                diagnostics.error_type or "desktop_connection_failed",
+            )
+        return LocalMCPDiscoverySnapshot(
+            diagnostics=diagnostics,
+            display_name=self._desktop_display_name(instance),
+        )
+
     async def _execute_dax_in_session(
         self,
         client: Client,
@@ -442,6 +479,22 @@ class PowerBILocalMCPClient:
         *,
         require_future_capabilities: bool = True,
     ) -> LocalMCPDiagnostics:
+        diagnostics, _ = await self._discover_and_connect_desktop_target(
+            client,
+            protocol,
+            tools,
+            require_future_capabilities=require_future_capabilities,
+        )
+        return diagnostics
+
+    async def _discover_and_connect_desktop_target(
+        self,
+        client: Client,
+        protocol: str | None,
+        tools: tuple[DiscoveredLocalTool, ...],
+        *,
+        require_future_capabilities: bool = True,
+    ) -> tuple[LocalMCPDiagnostics, dict[str, object] | None]:
         tool_names = {tool.name for tool in tools}
         state = {
             "server_started": True,
@@ -452,24 +505,33 @@ class PowerBILocalMCPClient:
             "readonly": self._readonly,
         }
         if not protocol:
-            return LocalMCPDiagnostics.failure(
-                LocalMCPErrorCategory.MCP_PROTOCOL,
-                "protocol_not_negotiated",
-                **state,
+            return (
+                LocalMCPDiagnostics.failure(
+                    LocalMCPErrorCategory.MCP_PROTOCOL,
+                    "protocol_not_negotiated",
+                    **state,
+                ),
+                None,
             )
         if not M2_1_ALLOWED_TOOL_NAMES.issubset(tool_names):
-            return LocalMCPDiagnostics.failure(
-                LocalMCPErrorCategory.MCP_PROTOCOL,
-                "connection_tool_missing",
-                **state,
+            return (
+                LocalMCPDiagnostics.failure(
+                    LocalMCPErrorCategory.MCP_PROTOCOL,
+                    "connection_tool_missing",
+                    **state,
+                ),
+                None,
             )
         if require_future_capabilities and (
             not state["schema_capability"] or not state["dax_capability"]
         ):
-            return LocalMCPDiagnostics.failure(
-                LocalMCPErrorCategory.MCP_PROTOCOL,
-                "required_future_capabilities_missing",
-                **state,
+            return (
+                LocalMCPDiagnostics.failure(
+                    LocalMCPErrorCategory.MCP_PROTOCOL,
+                    "required_future_capabilities_missing",
+                    **state,
+                ),
+                None,
             )
 
         list_result = await client.call_tool(
@@ -478,26 +540,35 @@ class PowerBILocalMCPClient:
             read_timeout_seconds=self._timeout_seconds,
         )
         if list_result.is_error:
-            return LocalMCPDiagnostics.failure(
-                LocalMCPErrorCategory.DESKTOP_NOT_FOUND,
-                "desktop_discovery_failed",
-                **state,
+            return (
+                LocalMCPDiagnostics.failure(
+                    LocalMCPErrorCategory.DESKTOP_NOT_FOUND,
+                    "desktop_discovery_failed",
+                    **state,
+                ),
+                None,
             )
         instances = self._find_desktop_instances(self._result_payload(list_result))
         if not instances:
-            return LocalMCPDiagnostics.failure(
-                LocalMCPErrorCategory.DESKTOP_NOT_FOUND,
-                "desktop_instance_not_found",
-                **state,
+            return (
+                LocalMCPDiagnostics.failure(
+                    LocalMCPErrorCategory.DESKTOP_NOT_FOUND,
+                    "desktop_instance_not_found",
+                    **state,
+                ),
+                None,
             )
 
         data_source = self._desktop_data_source(instances[0])
         if data_source is None:
-            return LocalMCPDiagnostics.failure(
-                LocalMCPErrorCategory.DESKTOP_CONNECTION,
-                "desktop_connection_target_missing",
-                desktop_detected=True,
-                **state,
+            return (
+                LocalMCPDiagnostics.failure(
+                    LocalMCPErrorCategory.DESKTOP_CONNECTION,
+                    "desktop_connection_target_missing",
+                    desktop_detected=True,
+                    **state,
+                ),
+                None,
             )
         connect_result = await client.call_tool(
             "connection_operations",
@@ -506,11 +577,14 @@ class PowerBILocalMCPClient:
         )
         connect_payload = self._result_payload(connect_result)
         if connect_result.is_error or self._payload_failed(connect_payload):
-            return LocalMCPDiagnostics.failure(
-                LocalMCPErrorCategory.DESKTOP_CONNECTION,
-                "desktop_connection_failed",
-                desktop_detected=True,
-                **state,
+            return (
+                LocalMCPDiagnostics.failure(
+                    LocalMCPErrorCategory.DESKTOP_CONNECTION,
+                    "desktop_connection_failed",
+                    desktop_detected=True,
+                    **state,
+                ),
+                None,
             )
 
         verification_result = await client.call_tool(
@@ -527,16 +601,22 @@ class PowerBILocalMCPClient:
             )
         )
         if not verified:
-            return LocalMCPDiagnostics.failure(
-                LocalMCPErrorCategory.DESKTOP_CONNECTION,
-                "desktop_connection_not_verified",
-                desktop_detected=True,
-                **state,
+            return (
+                LocalMCPDiagnostics.failure(
+                    LocalMCPErrorCategory.DESKTOP_CONNECTION,
+                    "desktop_connection_not_verified",
+                    desktop_detected=True,
+                    **state,
+                ),
+                None,
             )
-        return LocalMCPDiagnostics(
-            desktop_detected=True,
-            connection=True,
-            **state,
+        return (
+            LocalMCPDiagnostics(
+                desktop_detected=True,
+                connection=True,
+                **state,
+            ),
+            instances[0],
         )
 
     async def _call_schema_tool(
@@ -806,6 +886,25 @@ class PowerBILocalMCPClient:
             return None
         return candidate
 
+    @staticmethod
+    def _desktop_display_name(instance: dict[str, object]) -> str:
+        """Map Desktop identity to one bounded UI label without connection data."""
+        lowered = {str(key).lower(): value for key, value in instance.items()}
+        for field in ("parentwindowtitle", "filename", "databasename", "modelname"):
+            value = lowered.get(field)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            label = re.split(r"[\\/]", value.strip())[-1]
+            label = re.sub(
+                r"(?i)\s*-\s*Power BI Desktop(?:\s*\([^)]*\))?\s*$",
+                "",
+                label,
+            )
+            label = re.sub(r"(?i)\.pbix$", "", label).strip()
+            if label:
+                return label[:160]
+        return "当前已连接 Power BI Desktop 模型"
+
     @classmethod
     def _payload_failed(cls, payload: object) -> bool:
         if isinstance(payload, dict):
@@ -1001,6 +1100,63 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 continue
             return False
         return False
+
+    async def discover_semantic_models(self) -> SemanticModelCatalog:
+        """Return the single Desktop model supported by the current Local contract."""
+        if not self._readonly:
+            return SemanticModelCatalog(
+                runtime_mode="real",
+                error_type="powerbi_local_readonly_required",
+            )
+        try:
+            client = self._ensure_client()
+        except ValueError:
+            return SemanticModelCatalog(
+                runtime_mode="real",
+                error_type="powerbi_local_mcp_configuration_incomplete",
+            )
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                snapshot = await client.discover_semantic_models()
+                self._last_diagnostics = snapshot.diagnostics
+                return SemanticModelCatalog(
+                    runtime_mode="real",
+                    items=[
+                        SemanticModelOption(
+                            key=self._semantic_model_key,
+                            display_name=snapshot.display_name,
+                            source="local_desktop",
+                            available=True,
+                            connected=True,
+                        )
+                    ],
+                )
+            except LocalMCPConnectionError as exc:
+                self._last_diagnostics = LocalMCPDiagnostics.failure(
+                    exc.category,
+                    exc.error_type,
+                    readonly=self._readonly,
+                )
+                if (
+                    exc.category == LocalMCPErrorCategory.NETWORK
+                    and attempt < self._max_retries
+                ):
+                    await asyncio.sleep(0.25)
+                    continue
+                error_type = "semantic_model_discovery_unavailable"
+                if exc.category == LocalMCPErrorCategory.DESKTOP_NOT_FOUND:
+                    error_type = "powerbi_desktop_not_connected"
+                elif exc.category == LocalMCPErrorCategory.DESKTOP_CONNECTION:
+                    error_type = "powerbi_desktop_connection_failed"
+                return SemanticModelCatalog(
+                    runtime_mode="real",
+                    error_type=error_type,
+                )
+        return SemanticModelCatalog(
+            runtime_mode="real",
+            error_type="semantic_model_discovery_unavailable",
+        )
 
     async def get_semantic_model_schema(
         self,

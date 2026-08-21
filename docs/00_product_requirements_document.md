@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v1.3
+> **修订版本：** v1.4
 > **修订日期：** 2026-08-21
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** 同步 M5.1 React 前端实现与核心联调状态；产品需求与 North Star 不变
+> **本轮修订范围：** 修正 M5.2/M5.3、Desktop 模型 discovery 与 report template override 产品逻辑；North Star 不变
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -53,7 +53,7 @@ MVP 主要供公司内部少量人员使用，暂不处理复杂客户权限和�
 
 ### 5.1 数据问答
 
-用户选择 Power BI 语义模型后，输入自然语言问题。以下是长期产品场景示例：
+用户从后端发现的当前可连接 Power BI Desktop / PBIX 对应语义模型中选择一个模型后，输入自然语言问题。浏览器不直接读取 `.pbix`；Local MCP / PowerBIAdapter 负责发现和连接当前 Desktop 实例，前端只展示后端返回的安全模型目录。以下是长期产品场景示例：
 
 - "本月销售额是多少？"
 - "各区域销售额排名如何？"
@@ -75,7 +75,7 @@ Agent 查询真实数据，返回文字结论和数据表格。
 
 ### 5.3 报表生成
 
-用户选择报表模板（满意度报告模板、销售周报模板、经营分析模板等），输入自然语言要求，系统查询数据，通过固定模板生成静态 HTML 报表。
+普通问答、多轮分析和报表生成由后端 intent 自动识别，前端不预先决定“问答还是报表”。用户可以主动选择一个已登记固定模板作为可选 `report_template_key` override；未选择只表示不传 override，不代表“禁止生成报表”。当 intent 为报表生成时，后端仍可按业务规则选择默认模板并生成静态 HTML 报表。当前 production catalog 只有 `sales_report`（“销售分析报告”），未来可扩展多个已登记模板。
 
 ## 六、前端设计
 
@@ -213,7 +213,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 | 接口 | 说明 |
 |------|------|
 | `GET /health` | 检查当前运行模式的配置就绪状态；不把它描述为 Desktop 实时在线探测 |
-| `GET /api/semantic-models` | **未实现** — M5.1 使用集中本地配置，不伪装服务器 discovery 数据 |
+| `GET /api/v1/semantic-models` | ✅ M5.2 最小只读 discovery；通过 Adapter/Local MCP 返回当前可连接 Desktop 模型的 safe catalog，不返回连接 secret/raw payload |
 | `GET /api/report-templates` | **未实现** — M5.1 只集中登记 production `sales_report` |
 | `POST /api/v1/chat` | ✅ 已实现；Mock+Mock、DeepSeek+Mock、DeepSeek+Local MCP 共用正式 TurnPipeline |
 | `GET /api/reports/{report_id}` | ✅ 已实现；查看 repository-owned 静态 HTML |
@@ -234,7 +234,8 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 5. **M4 多轮记忆完善** ✅ M4 FINAL PASS；M4.4.2 truth/persistence boundary final closure FINAL PASS — SQLite 会话持久化、恢复、history/search/archive/delete、restart/crash acceptance、完整 committed payload 与 mandatory namespace fail-closed
 6. **M5.0 前端设计与契约固化** ✅ 已完成 — 文档校准、页面结构、交互边界、动态回答原则、UI ↔ 后端能力映射；不创建 React 项目
 7. **M5.1 React 前端实现与核心联调** ✅ 已完成 — React + Vite + TypeScript、Sidebar/Welcome/Chat/Composer、Chat/History/Search/Reports 联调、动态 terminal-state/report 渲染
-8. **M5.2 视觉与交互收口** ⬜ 未开始 — 真实多轮对话测试、loading/error/empty/disabled、响应式、accessibility、最终视觉验收
+8. **M5.2 真实业务链路与前端逻辑收口** ✅ 已完成 — Real 模式、Desktop 模型 discovery、SQLite 会话配置、intent/template/model 逻辑、真实多轮 Chat/report 与最小用户可理解错误态
+9. **M5.3 视觉与交互最终收口** ⬜ 未开始 — ChatGPT 风格尺寸/间距、responsive、accessibility、loading/error/empty polish、表格/图表视觉与最终浏览器验收
 
 ## 十二、MVP 暂不包含
 
@@ -269,7 +270,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 ## 十四、验收标准
 
-以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.2 truth/persistence boundary final closure 已完成；M5.0 文档固化与 M5.1 React 核心实现已完成，M5.2 尚未开始。CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
+以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.2 truth/persistence boundary final closure 已完成；M5.0/M5.1/M5.2 已完成，M5.3 尚未开始。CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
 
 MVP 达到以下条件即可视为成功：
 
@@ -299,4 +300,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-21 | M5.1 React 前端实现状态同步；产品需求与 North Star 不变*
+*修订日期：2026-08-21 | M5.2/M5.3 与真实产品逻辑边界修正；North Star 不变*

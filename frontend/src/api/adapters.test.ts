@@ -73,6 +73,56 @@ describe('chatResponseToMessage', () => {
     expect(message.kind).toBe('error')
     expect(message.content).not.toContain('internal_python_stack_marker')
   })
+
+  it('distinguishes Desktop and model availability failures without raw errors', () => {
+    const desktop = chatResponseToMessage(
+      response({
+        terminal_state: 'tool_failed',
+        response_type: 'error',
+        answer: null,
+        error_type: 'connection_error',
+        powerbi_mode: 'local_mcp',
+      }),
+    )
+    expect(desktop.content).toContain('Power BI Desktop')
+    expect(desktop.content).not.toContain('connection_error')
+
+    const genericToolFailure = chatResponseToMessage(
+      response({
+        terminal_state: 'tool_failed',
+        response_type: 'error',
+        answer: null,
+        error_type: 'ToolExecutionError',
+        powerbi_mode: 'local_mcp',
+      }),
+    )
+    expect(genericToolFailure.content).toContain('当前请求无法完成')
+    expect(genericToolFailure.content).not.toContain('Power BI Desktop')
+
+    const model = chatResponseToMessage(
+      response({
+        terminal_state: 'tool_failed',
+        response_type: 'error',
+        answer: null,
+        error_type: 'ToolPolicyDeniedError',
+      }),
+    )
+    expect(model.content).toContain('数据模型不可用')
+    expect(model.content).not.toContain('ToolPolicyDeniedError')
+  })
+
+  it('maps provider failures to a safe language-service message', () => {
+    const message = chatResponseToMessage(
+      response({
+        terminal_state: 'validation_failed',
+        response_type: 'error',
+        answer: null,
+        error_type: 'LLMConnectionError',
+      }),
+    )
+    expect(message.content).toContain('语言分析服务暂不可用')
+    expect(message.content).not.toContain('LLMConnectionError')
+  })
 })
 
 describe('report resource validation', () => {
