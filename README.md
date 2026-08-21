@@ -72,9 +72,32 @@ Remote MCP 继续 Deferred。M5.2 视觉与交互最终收口尚未开始。
 ### Prerequisites
 
 - Windows 本地环境。
-- Python 3.11；仓库固定 Conda 环境名为 `PBIAgent`。
+- Python 3.11；仓库固定 Conda 环境名为 `PBIAgent`（Conda 安装于 `D:\Conda`）。
 - Mock 后端不需要 API Key 或 Power BI Desktop；运行 React 前端需要 Node.js 20.19+。
 - Real Local MCP 需要 Node.js 20+、npm/npx、Power BI Desktop，以及已打开的测试 PBIX。
+
+### Conda 初始化（首次使用）
+
+PowerShell 中若 `conda activate` 后 `python` 仍指向 base 而不是 PBIAgent，说明缺少 conda PowerShell 初始化。**只需执行一次**：
+
+```powershell
+conda init powershell
+# 然后关闭并重新打开 PowerShell 窗口
+```
+
+初始化后，`conda activate` 会正确切换 Python 路径。验证方法：
+
+```powershell
+conda activate PBIAgent
+python -c "import sys; print(sys.executable)"
+# 应输出：D:\Conda\envs\PBIAgent\python.exe
+# 而非：D:\Conda\python.exe
+```
+
+**如果 `python` 路径不正确**，说明 PowerShell profile 未加载。排查步骤：
+1. 检查 profile 是否存在：`Test-Path $PROFILE`
+2. 重新打开终端（profile 只在启动时加载）
+3. 或执行 `. $PROFILE` 手动加载后重新 activate
 
 ### Install
 
@@ -89,7 +112,10 @@ conda activate PBIAgent
 
 ### Run
 
+**确认 Python 路径正确后**启动后端：
+
 ```powershell
+conda activate PBIAgent
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -112,6 +138,49 @@ curl.exe -X POST http://127.0.0.1:8000/api/v1/chat `
 ```
 
 `/health` 只验证配置是否足以创建当前 runtime，不探测 Power BI Desktop 是否在线。`DEBUG=true` 时可访问 `http://127.0.0.1:8000/docs`；关闭 debug 后 Swagger/ReDoc 不暴露。
+
+### 常见启动问题
+
+#### `No module named uvicorn`
+
+使用 `python -m uvicorn ...` 时报错，但 `conda run -n PBIAgent python -m uvicorn ...` 正常。
+**原因：** PowerShell 的 `conda activate` 未生效，Python 仍解析到 base 环境（`D:\Conda\python.exe`）。
+**解决：** 执行 `conda init powershell` 一次 → 关闭并重新打开 PowerShell → 确认 `python -c "import sys; print(sys.executable)"` 输出 `D:\Conda\envs\PBIAgent\python.exe`。
+
+作为一个一次性 workaround，也可用绝对路径直启动：
+
+```powershell
+D:\Conda\envs\PBIAgent\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+```
+
+#### `Errno 10048` / 端口 8000 已占用
+
+**原因：** 上次启动的后端进程未退出。
+**排查与关闭：**
+
+```powershell
+# 查看谁占了 8000 端口
+netstat -ano | Select-String ':8000' | Select-String 'LISTENING'
+
+# 确认是 uvicorn 进程后关闭（替换 PID 为实际值）
+Stop-Process -Id <PID> -Force
+
+# 或直接通过端口查找并关闭
+$pid = (netstat -ano | Select-String ':8000' | Select-String 'LISTENING' | ForEach-Object { $_ -split '\s+' } | Select-Object -Last 1)
+Stop-Process -Id $pid -Force
+```
+
+**注意：** `Stop-Process` 按 PID 关闭，确认 PID 对应的进程名是 `python` 且命令行含 `uvicorn` 再执行。不要误杀其他程序。
+
+#### 如何确认当前 Python 路径正确
+
+```powershell
+conda activate PBIAgent
+python -c "import sys; print(sys.executable)"
+# 期望输出：D:\Conda\envs\PBIAgent\python.exe
+```
+
+如果输出是 `D:\Conda\python.exe`，说明 activate 未生效，参照上一条执行 `conda init powershell`。
 
 ### Real Local MCP
 

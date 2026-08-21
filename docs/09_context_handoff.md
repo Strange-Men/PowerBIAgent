@@ -136,6 +136,25 @@ D:\Conda\envs\PBIAgent\python.exe scripts\check_ai_error_ledger.py
 D:\Conda\envs\PBIAgent\python.exe scripts\check_documentation_governance.py
 ```
 
+## 本地启动（PowerShell 标准流程）
+
+先执行一次 `conda init powershell`（首次使用），然后关闭并重新打开 PowerShell：
+
+```powershell
+conda activate PBIAgent
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+```
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+验证 Python 路径：`python -c "import sys; print(sys.executable)"` 应输出 `D:\Conda\envs\PBIAgent\python.exe`。
+
+常见问题见 `README.md` 的"常见启动问题"。
+
 ---
 
 *最后更新：2026-08-21 | M5.1 — React 前端实现与核心联调（已完成）*
