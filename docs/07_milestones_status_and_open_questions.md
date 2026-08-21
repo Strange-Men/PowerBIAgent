@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure（FINAL PASS）
+> **状态：** M5.0 — 前端设计与契约固化（已完成）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -27,7 +27,9 @@
 | **M4.4** | **Restart/crash acceptance + M4 backend final closure** | **✅ M4 FINAL PASS** |
 | **M4.4.1** | **Committed Memory corruption fail-closed + README/document closure** | **✅ FINAL PASS** |
 | **M4.4.2** | **M0–M4 truth / persistence boundary final closure** | **✅ FINAL PASS** |
-| M5 | React + Vite 前端与联调 | ⬜ 未开始 |
+| **M5.0** | **前端设计与契约固化（文档校准、页面结构、交互边界、动态回答原则、UI↔后端能力映射）** | **✅ 已完成** |
+| M5.1 | React + Vite 前端实现与核心联调 | ⬜ 待开始 |
+| M5.2 | 视觉与交互收口 | ⬜ 待开始 |
 
 ## M3 合并与 CI truth
 
@@ -129,7 +131,8 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 | 事项 | 决策时点 |
 |---|---|
-| M5 前端状态管理与展示范围 | M5 开始前 |
+| M5.1 状态管理与前端消息 Envelope 设计 | M5.1 开始前 |
+| 统一前端 Envelope 是否需要 | M5.1 确定 |
 | Remote MCP 管理员与授权条件 | 重新批准 Remote 后 |
 
 ## 当前真实风险
@@ -152,4 +155,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-20 | M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure*
+*最后更新：2026-08-21 | M5.0 — 前端设计与契约固化*

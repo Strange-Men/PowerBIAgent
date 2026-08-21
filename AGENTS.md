@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure**。
+当前版本：**M5.0 — 前端设计与契约固化**。M4.4.2 FINAL PASS；M5.0 文档固化已完成；M5 NOT STARTED（React 前端未开始）。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。

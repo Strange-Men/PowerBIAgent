@@ -2,6 +2,24 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.0] — 2026-08-21
+
+### 前端设计与契约固化
+
+- M5.0 只修改 Markdown 文档，未创建 React/Vite 项目、package.json、src/、CSS、TS/TSX、Python 或 DB 代码。
+- `frontend/README.md` 全面升级：从 M1.3.2 状态升级为 M5.0 文档，新增动态回答原则、左侧栏能力边界、"+“菜单映射原则、模型选择器 DeepSeek 唯一交互、后端能力到 UI 映射表、M5 路线三段、项目/账户仅展示。
+- `docs/01_product_scope_and_frontend_skeleton.md` 全面重构：AI 回答动态渲染原则、Composer 结构、模型选择器交互、”“+”菜单映射、项目/账户仅展示、后端能力映射表、禁止固定内容序列。
+- `docs/specs/10_frontend_visual_and_interaction_spec.md`：8.4 节完稿重写动态渲染规范（文字/指标/表格/图表/报表附件按需出现，非固定顺序）、模型选择器只显示 DeepSeek、后端能力到 UI 映射表、禁止固定内容序列、十八、禁止部分扩展内容固定禁止。
+- `docs/specs/11_structured_answer_contract.md`：重写为动态渲染框架、新增 frontend rendering flow concept、ChatResponse 字段映射表、场景-展示对应表、删除 M1.4/M3 历史边界（已由 ADR 和后续轮次 supersede）。
+- `docs/04_powerbi_mcp_and_api_contracts.md`：更新前端组合回答状态，确认 ChatResponse.report 已实现，统一 frontend envelope 不存在。
+- `docs/07_milestones_status_and_open_questions.md`：补充 M5.0 已完成、M5.1/M5.2 待开始状态行。
+- `docs/08_development_roadmap.md`：M5 拆分为 M5.0/M5.1/M5.2 三段路线。
+- `docs/09_context_handoff.md`：更新为 M5.0 已完成状态，下一步为 M5.1。
+- `README.md`：版本号同步为 M5.0，Project Status 增加 M5.0/M5.1/M5.2 行。
+- 本轮不创建 Tag、不 Commit、不 Push。
+
+**Settings.version:** 更新为 M5.0（与其余文档一致；版本字段随里程碑同步）
+
 ## [M4.4.2] — 2026-08-20
 
 ### M0–M4 Truth / Persistence Boundary Final Closure

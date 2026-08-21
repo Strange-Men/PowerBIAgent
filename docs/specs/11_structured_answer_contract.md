@@ -1,29 +1,33 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M3.2 sales_report hardened visual acceptance 已完成；M1 生成描述仅作历史兼容
+> **状态：** M5.0 — 前端设计与契约固化（已启动）。动态回答原则已确认。
 > **目标：** 定义前端组合回答的产品目标与数据契约
-> **重要：** 本文档描述未来 M5 前端展示目标。当前 Real API 以 Canonical QueryPlan → QueryResult → VerifiedFactSet → fact-bounded AnswerSpec / ReportSpec 为事实边界
+> **重要：** 本文档描述前端渲染规则。当前 Real API 以 ChatResponse（含 answer/report/clarification/unsupported 字段 + QueryResult 审计元数据）为数据来源。内容块类型是前端根据后端产物动态渲染的产物类型，不等同于中间数据模型。
 
 ---
 
 ## 一、文档目的
 
-定义 PowerBIAgent AI 回答的结构化组合契约。未来一条 AI 回答可以由多个内容块按顺序组成，每个内容块有明确的数据来源和渲染规则。
+定义 PowerBIAgent AI 回答的结构化组合契约。一条 AI 回答可以由多个内容块按需组合，每个内容块有明确的数据来源和渲染规则。
 
-本文档是前端渲染和 API 设计的权威参考。本文档 **不创建新的 Python 代码或 API**。
+## 二、动态回答渲染原则（核心）
 
-## 二、当前已有契约
+前端**不得**将 AI 回答固定为”文字 → 指标 → 表格 → 图表 → 报表附件”这类每次必现的序列。
 
-当前已实现的相关数据契约与 factual artifact：
+前端根据当前 Turn 的用户意图和后端实际返回产物**动态渲染**。内容块类型只是渲染的产物分类，不是后端 API 的数据结构。
 
-| 模型 | 职责 |
-|------|------|
-| `QueryResult` | DAX 查询结果（columns, rows, row_count, source_mode） |
-| `VerifiedFactSet` | 对外数字、结果顺序、极值、筛选、时间与 provenance 的唯一事实 authority |
-| `AnswerSpec` | 自然语言回答（answer, summary, metrics, evidence） |
-| `ReportSpec` | 结构化报表描述（title, template_key, kpis, charts, tables） |
-| `SalesReportData` | 四组 QueryResult / VerifiedFactSet 的确定性销售报表中间产物 |
-| `ReportArtifact` | repository 管理的 HTML artifact、provenance、hash 与 view/download reference |
+| 场景 | 可能渲染的内容 |
+|------|--------------|
+| 普通问答 | 仅有文字 |
+| 数据查询 | 文字 + 表格（数据来自后端 QueryResult） |
+| 简单数字追问 | 仅有文字或指标 |
+| 多轮追问 | 仅更新文字/表格 |
+| 比较/趋势且后端提供可视化数据 | 才显示图表 |
+| 用户要求生成报表且后端生成 ReportArtifact | 才显示 HTML 报表附件卡片 |
+| clarification | 文字（来自 ChatResponse.clarification_question） |
+| unsupported | 文字（来自 ChatResponse.unsupported_reason） |
+| error | 文字（来自 ChatResponse.error_type + answer） |
+| empty | 文字说明，不生成假表格/假图表 |
 
 ## 三、当前与未来边界
 
@@ -32,11 +36,13 @@
 | **M1.3.2—M1.4** | 历史契约来源；自由 LLM factual generation 已被 ADR-009 supersede |
 | **M2.6.4** | Real Answer/Report 只能消费 VerifiedFactSet / QueryResult 可证明事实 |
 | **M3.0** | `sales_report` TemplateContract + schema binding + deterministic ReportDataPlan |
-| **M3.1** | 四查询 → SalesReportData → fixed ReportSpec → static HTML → ReportArtifact/view/download |
-| **M3.2** | 已有 ChartSpec / table rows → deterministic CSS bars + responsive/static safety hardened acceptance |
-| **M5** | 前端根据本文档实现组合回答渲染 |
+| **M3.1** | deterministic `ReportSpec` → static HTML → `ReportArtifact` / view / download |
+| **M3.2** | CSS bars + responsive/static safety hardened acceptance |
+| **M5.0** | 文档契约固化、动态回答原则确认、UI↔后端能力映射；不写 React |
+| **M5.1** | 前端根据本文档实现动态组合回答渲染，ChatResponse 是主要数据来源 |
+| **M5.2** | 视觉与交互收口 |
 
-**当前不创建**：统一 `AssistantMessageEnvelope`、消息块列表模型、新 API。
+**当前不创建**：统一 `AssistantMessageEnvelope`、消息块列表模型、新 API。统一 frontend envelope 在 M5.1 确定。
 
 ## 四、text — 文字内容块
 
@@ -49,11 +55,18 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | content | string | 自然语言文本（必需） |
-| role | string | 固定为 "assistant" |
+| role | string | 固定为 “assistant” |
 
 ### 数据来源
 
-`AnswerSpec.answer` — 当前 Real 路径由 deterministic fact-bounded builder 基于 VerifiedFactSet 构造。
+ChatResponse 的相关字段：
+
+| 场景 | 来源字段 |
+|------|---------|
+| 正常数据回答 | `answer` |
+| clarification | `clarification_question` |
+| unsupported | `unsupported_reason` |
+| error | `answer`（已有内容）+ `error_type`（用于分类展示） |
 
 ### 用途
 
@@ -62,6 +75,9 @@
 - 说明筛选条件
 - 提示空数据
 - 提示结果被截断
+- clarification 追问
+- unsupported 原因
+- error 提示
 
 ### 安全约束
 
@@ -73,22 +89,11 @@
 
 ### 产品目标
 
-用于展示少量关键指标（如总计、平均值、增长率），以克制、轻量形式在消息中展示。
-
-### 逻辑字段
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| title | string | 指标组标题（如"关键指标"） |
-| items | list | 指标项列表 |
-| items[].label | string | 指标名称 |
-| items[].value | any | 指标值 |
-| items[].format | string | 格式：number / currency / percentage |
-| items[].source_field | string | 数据来源字段名 |
+用于展示少量关键指标（如总计、平均值），以克制、轻量形式在消息中展示。
 
 ### 数据来源
 
-`AnswerSpec.metrics` + `VerifiedFactSet` + `QueryResult`
+后端 QueryResult / VerifiedFactSet。当前 ChatResponse 不直接暴露独立 metrics 结构；指标信息从 `answer` 文字或 `execution_audit` / `usage` 元数据中提取。M5.1 联调时确定前端如何获取结构化指标。
 
 ### 规则
 
@@ -96,21 +101,7 @@
 - 不允许 LLM 自行计算或猜测无法验证的指标
 - 不在前端设计成大量彩色 KPI 仪表盘
 - 使用克制、轻量形式展示（如文本标签+数值）
-
-### 概念性 JSON 示意
-
-> ⚠️ **未来目标示意，当前未实现，不是现有 API 响应。** 其中“同比增长”不代表 M2 comparison grammar 已支持。
-
-```json
-{
-  "type": "metrics",
-  "title": "关键指标",
-  "items": [
-    {"label": "总销售额", "value": 12500000, "format": "currency", "source_field": "TotalSales"},
-    {"label": "同比增长", "value": 0.083, "format": "percentage", "source_field": "YoYGrowth"}
-  ]
-}
-```
+- 无可展示指标时不生成空指标块
 
 ## 六、table — 表格内容块
 
@@ -118,45 +109,33 @@
 
 用于在 AI 回答中直接展示结构化数据表格。
 
-### 逻辑字段
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| title | string | 表格标题 |
-| columns | list[string] | 列名列表 |
-| rows | list[list[any]] | 数据行 |
-| row_count | int | 实际行数 |
-| truncated | bool | 是否被截断 |
-| source_mode | string | 数据来源：mock / real |
-
 ### 数据来源
 
-`QueryResult`
+后端 QueryResult（通过 ChatResponse 的 `execution_audit` 或结构化元数据间接获取）。M5.1 联调时确定前端如何获取 QueryResult columns/rows。
 
-### 规则
+### 前端渲染约束
 
-- 表格只能投影 QueryResult 的实际字段与 rows，不得虚构或补算行列
-- columns 必须与 QueryResult.columns 一致
-- rows 必须与 QueryResult.rows 一致
-- truncated 必须与 QueryResult.truncated 一致
+- columns 必须与后端 QueryResult.columns 一致
+- rows 必须与后端 QueryResult.rows 一致
+- `truncated` 标志影响表格底部提示
+- 没有表格数据时不生成空表格
 
 ### 概念性 JSON 示意
 
-> ⚠️ **目标示意，当前未实现，不是现有 API 响应。**
+> ⚠️ **目标示意，当前未实现统一 envelope，不是现有 API 响应。**
 
 ```json
 {
-  "type": "table",
-  "title": "各区域销售额",
-  "columns": ["区域", "销售额(万元)", "增长率"],
-  "rows": [
-    ["华南", 456, "12.3%"],
-    ["华东", 389, "8.1%"],
-    ["华北", 312, "-3.2%"]
+  “type”: “table”,
+  “title”: “各区域销售额”,
+  “columns”: [“区域”, “销售额(万元)”],
+  “rows”: [
+    [“华南”, 456],
+    [“华东”, 389]
   ],
-  "row_count": 3,
-  "truncated": false,
-  "source_mode": "mock"
+  “row_count”: 2,
+  “truncated”: false,
+  “source_mode”: “mock”
 }
 ```
 
@@ -164,46 +143,34 @@
 
 ### 产品目标
 
-用于在 AI 回答中直接展示基础图表（柱状图、折线图、饼图、散点图）。
-
-### 逻辑字段
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| type | string | 图表类型：bar / line / pie / scatter |
-| title | string | 图表标题 |
-| x_field | string | X 轴字段名 |
-| y_field | string | Y 轴字段名 |
-| series | list[string] | 多系列字段名（可选） |
-| data_reference | string | 数据引用（指向 QueryResult.result_id） |
-| source_mode | string | 数据来源：mock / real |
+用于在 AI 回答中直接展示基础图表（柱状图、折线图、环形图）。
 
 ### 数据来源
 
-`QueryResult`
+后端 QueryResult，仅在后端提供可视化数据且是 comparison/trend 场景时渲染。
 
-### 规则
+### 前端渲染约束
 
-- type 仅允许 bar / line / pie / scatter
-- x_field 和 y_field 必须存在于 QueryResult.columns
-- 数据必须引用 QueryResult
+- type 仅允许后端支持的类型（bar/line/donut）
+- 字段必须存在于后端 QueryResult.columns
+- 数据必须引用后端数据
 - **不允许**让 LLM 生成任意前端代码
 - **不允许** HTML、JavaScript 或第三方脚本
-- 图表只是结构化描述，由前端安全渲染
+- 无可视化数据时不生成图表
 
 ### 概念性 JSON 示意
 
-> ⚠️ **目标示意，当前未实现，不是现有 API 响应。**
+> ⚠️ **目标示意，当前未实现统一 envelope，不是现有 API 响应。**
 
 ```json
 {
-  "type": "chart",
-  "type": "bar",
-  "title": "各区域销售额对比",
-  "x_field": "区域",
-  "y_field": "销售额",
-  "data_reference": "qr_a1b2c3d4",
-  "source_mode": "mock"
+  “type”: “chart”,
+  “visual_type”: “bar”,
+  “title”: “各区域销售额对比”,
+  “x_field”: “区域”,
+  “y_field”: “销售额”,
+  “data_reference”: “qr_a1b2c3d4”,
+  “source_mode”: “mock”
 }
 ```
 
@@ -213,53 +180,60 @@
 
 用于在 AI 回答中展示生成的报表附件卡片。
 
-### 逻辑字段
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| report_id | string | 报表唯一 ID |
-| title | string | 报表标题 |
-| format | string | 文件格式（如 "html"） |
-| view_reference | string | 查看报表引用（后端生成） |
-| download_reference | string | 下载报表引用（后端生成） |
-| source_mode | string | 数据来源：mock / real |
-
 ### 数据来源
 
-`ReportArtifact` / `ReportSpec`
+ChatResponse.report 字段（`ReportResponse` 对象，包含 report_id、template_key、view_reference、download_reference、content_hash 等）。
 
-### 规则
+### 展示条件
 
-- 不允许 LLM 生成任意外部 URL
+仅当 ChatResponse.report 存在（非 null）且包含有效 report_id 时显示。
+
+### 前端渲染约束
+
+- report_id 来自后端
 - view_reference 和 download_reference 由后端生成
 - 格式仅允许后端支持的格式（初始仅 HTML）
-- 正式资源接口属于 M3
+- **禁止** LLM 生成任意外部 URL
+- 后端无报表时不生成报表附件卡片
 
-### 概念性 JSON 示意
+## 九、前端实时渲染流程（概念）
 
-> ⚠️ **目标示意，当前未实现，不是现有 API 响应。**
+```
+ChatResponse 到达
+→ 解析 response_type / terminal_state
+→ 根据以下规则决定渲染内容：
 
-```json
-{
-  "type": "report_attachment",
-  "report_id": "rpt_e5f6g7h8",
-  "title": "销售分析报告",
-  "format": "html",
-  "view_reference": "/api/reports/rpt_e5f6g7h8",
-  "download_reference": "/api/reports/rpt_e5f6g7h8/download",
-  "source_mode": "mock"
-}
+response_type=”answer” + answer 有内容
+  → 渲染文字 (text)
+  → 如后端有 QueryResult 数据行 → 渲染表格 (table)
+  → 如后端有可视化数据 → 渲染图表 (chart)
+  → 如 report 字段存在 → 渲染报表附件 (report_attachment)
+
+response_type=”clarification” + clarification_question 有内容
+  → 渲染文字 (clarification_question)
+
+response_type=”unsupported” + unsupported_reason 有内容
+  → 渲染文字 (unsupported_reason)
+
+response_type=”error” 或 terminal_state=”error”
+  → 渲染文字 (answer 或 error 摘要)
+
+terminal_state=”completed” + answer 为空
+  → 渲染 “暂无数据” 文字提示
 ```
 
-## 九、数据真实性
+> 以上是前端渲染逻辑概念，不创建新的后端 API 或中间数据结构。
+
+## 十、数据真实性
 
 ### 核心原则
 
-1. 表格数据必须来自 QueryResult
-2. 图表数据必须来自 QueryResult
+1. 表格数据必须来自后端 QueryResult
+2. 图表数据必须来自后端 QueryResult
 3. 指标与文字 factual claims 必须由 VerifiedFactSet 证明
 4. 展示层不得扩大 FactSet / QueryResult 的事实范围
 5. 不允许 LLM 虚构行列、数值、排名、趋势、因果或外部事实
+6. 前端不得为了页面完整度创造 KPI、表格、图表、趋势或事实结论
 
 ### source_mode
 
@@ -267,142 +241,77 @@
 
 | 值 | 含义 |
 |----|------|
-| `"mock"` | Mock Power BI Adapter 生成的模拟数据 |
-| `"real"` | 真实 Power BI MCP 返回的数据 |
+| `”mock”` | Mock Power BI Adapter 生成的模拟数据 |
+| `”real”` | 真实 Power BI MCP 返回的数据 |
 
-**关键规则：** 不能因为使用了真实 DeepSeek Provider 就把 Mock QueryResult 标为 `"real"`。source_mode 反映的是数据层来源，而非 LLM 层来源。
+**关键规则：** 不能因为使用了真实 DeepSeek Provider 就把 Mock QueryResult 标为 `”real”`。source_mode 反映的是数据层来源，而非 LLM 层来源。
 
 ### semantic_model_key
 
 所有数据必须标注其来源语义模型。跨模型数据不得混合在同一回答中（MVP 不支持跨模型查询）。
 
-## 十、VerifiedFactSet / QueryResult 事实来源
+## 十一、当前已有后端数据模型
+
+当前已实现的相关数据契约与 factual artifact——这些是**后端数据模型**，不是前端 API 响应结构。前端通过 ChatResponse 获取展示所需信息。
+
+| 模型 | 职责 |
+|------|------|
+| `QueryResult` | DAX 查询结果（columns, rows, row_count, source_mode） |
+| `VerifiedFactSet` | 对外数字、结果顺序、极值、筛选、时间与 provenance 的唯一事实 authority |
+| `AnswerSpec` | 自然语言回答（answer, summary, metrics, evidence） |
+| `ReportSpec` | 结构化报表描述（title, template_key, kpis, charts, tables） |
+| `SalesReportData` | 查询结果/事实集的确定性销售报表中间产物 |
+| `ReportArtifact` | repository 管理的 HTML artifact、provenance、hash 与 view/download reference |
+
+## 十二、ChatResponse 与内容块映射
+
+ChatResponse 是前端主要数据来源：
+
+| ChatResponse 字段 | 对应内容块 | 说明 |
+|------------------|-----------|------|
+| `answer` | text | 主要文字内容 |
+| `clarification_question` | text | clarification 场景的文字 |
+| `unsupported_reason` | text | unsupported 场景的文字 |
+| `report` | report_attachment | 报表附件卡片数据 |
+| `response_type` | 渲染决策 | answer/clarification/unsupported/error 决定渲染分支 |
+| `terminal_state` | 渲染决策 | completed / clarification / unsupported / error |
+| `execution_audit` | 可选调试信息 | 包含 query_result 等审计元数据，前端可提取表格数据 |
+| `source_mode` | 内容块属性 | “mock” / “real” |
+| `is_mock` | 内容块属性 | Mock LLM 时为 True |
+
+## 十三、VerifiedFactSet / QueryResult 事实来源
 
 `QueryResult` 是表格和图表 rows 的数据来源；`VerifiedFactSet` 是文字、指标、结果顺序、极值、筛选、时间与 provenance 的唯一对外 factual claim authority。
 
-| QueryResult 字段 | 对应内容块 |
-|-----------------|-----------|
-| columns | table.columns / chart.x_field, chart.y_field |
-| rows | table.rows |
-| row_count | table.row_count |
-| truncated | table.truncated |
-| source_mode | table.source_mode / chart.source_mode |
-| result_id | chart.data_reference |
-| error | 错误处理 |
-| execution_time_ms | 可选展示 |
+## 十四、ReportSpec 职责
 
-## 十一、AnswerSpec 职责
+`ReportSpec` 负责结构化报表描述；Real KPI、chart fields、table projection 与 insight 必须受 VerifiedFactSet / QueryResult 约束。
 
-`AnswerSpec` 负责自然语言层面的回答，但 Real factual content 只能由 fact-bounded builder 从 VerifiedFactSet 构造：
+## 十五、ReportArtifact 职责
 
-| AnswerSpec 字段 | 对应内容块 |
-|----------------|-----------|
-| answer | text.content |
-| summary | text（摘要变体） |
-| metrics | metrics.items |
-| evidence | 数据追溯 |
-| semantic_model_key | 数据来源标识 |
-| source_mode | 数据来源模式 |
+M3.1 的 `ReportArtifact` 负责后端管理的报表资源。正式资源接口使用 report_id 提供查看和下载；不接受客户端文件路径或外部 URL。
 
-## 十二、ReportSpec 职责
+## 十六、ChatResponse 字段说明
 
-`ReportSpec` 负责结构化报表描述；Real KPI、chart fields、table projection 与 insight 必须受 VerifiedFactSet / QueryResult 约束：
+ChatResponse 是前端渲染 AI 回答的主要数据结构（见 `backend/app/api/schemas.py`）：
 
-| ReportSpec 字段 | 对应内容块 |
-|----------------|-----------|
-| title | report_attachment.title |
-| template_key | 模板标识 |
-| kpis | 报表 KPI（非对话指标） |
-| charts (ChartSpec) | 报表内图表 |
-| tables (TableSpec) | 报表内表格 |
-| source_mode | report_attachment.source_mode |
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| request_id | str | 请求 ID |
+| conversation_id | str | 会话 ID |
+| terminal_state | str | terminal state: completed / clarification / unsupported / error |
+| intent | str | 意图分类 |
+| response_type | str | 响应类型 |
+| answer | str? | 数据问答场景的文字回答 |
+| report | ReportResponse? | 报表场景的报表数据（report_id/view/download reference） |
+| clarification_question | str? | clarification 场景的追问 |
+| unsupported_reason | str? | unsupported 场景的拒绝原因 |
+| error_type | str? | 错误类型代码 |
+| is_mock | bool | LLM 是否为 Mock |
+| idempotent_replay | bool | 是否为幂等重放 |
+| source_mode | str | 数据来源（mock / real） |
 
-## 十三、ReportArtifact 职责
-
-M3.1 的 `ReportArtifact` 负责后端管理的报表资源；`RenderedReport` 仅保留历史兼容模型：
-
-| ReportArtifact 字段 | 对应内容块 |
-|--------------------|-----------|
-| report_id | report_attachment.report_id |
-| template_key | 模板标识 |
-| contract_version | 固定模板合同版本 |
-| semantic_model_key / schema_fingerprint | 模型 binding |
-| query_result_ids / verified_fact_set_ids | 四查询 provenance |
-| content_type / content_hash | 保存内容格式与 SHA-256 |
-| view_reference / download_reference | 后端生成的资源引用 |
-| html | 兼容字段；必须与 repository 保存的同一 Renderer 输出完全一致 |
-| source_mode | report_attachment.source_mode |
-
-正式资源接口使用 report_id 提供查看和下载；不接受客户端文件路径或外部 URL。
-
-## 十四、M1.4 历史实施边界
-
-以下内容记录当时的 M1 实现范围，不是当前 Real authority：
-
-- 真实 DeepSeek Answer 生成（基于 Mock QueryResult）
-- 真实 DeepSeek ReportSpec 生成（基于 Mock QueryResult）
-- Answer 和 ReportSpec 验证
-- 继续使用现有 Python 模型：AnswerSpec、QueryResult、ReportSpec、RenderedReport
-
-M1.4 不完成：
-
-- React 前端
-- 统一前端消息 Envelope
-- 真实报表下载
-- 最近报表
-- 最近对话
-- 会话搜索
-- 多模型切换
-
-## 十五、M1.5/M5 应用层边界
-
-M1.5/M5 可以确定：
-
-- 是否需要统一 `AssistantMessageEnvelope` 包装多个内容块
-- 前端如何解析和渲染不同类型的消息块
-- 前端如何区分纯文本回答和组合回答
-
-## 十六、M3 报表资源边界
-
-M3.0 已确定：
-
-- 唯一 production template 为 `sales_report`
-- TemplateContract 固定四查询及来源/筛选/时间/生成时间 metadata
-- schema/model fingerprint mismatch 或必需对象缺失时 fail closed
-- ReportDataPlan 不读取 LLM draft，每个 sub-query 复用 M2 封板执行与事实链
-
-M3.1 已实现：
-
-- deterministic `SalesReportData` / `ReportSpec` 与唯一 `FixedSalesReportRenderer`
-- 固定 UTF-8 static HTML；无 JavaScript、external script/CDN、自由用户 HTML
-- `ReportArtifact`、原子 `LocalReportRepository`、content hash 与 backend-owned reference
-- `GET /api/reports/{report_id}` 与 `/download`
-- Chat report 最小返回 report_id、template_key、view_reference、download_reference；html 仅为同源兼容字段
-- render/store failure 不成功提交 Memory；same request_id replay 复用同一 artifact
-
-M3.2 已完成：
-
-- 不新增 ChartSpec 类型、查询或业务事实；固定 Renderer 只把 M3.1 已有 Category / Top Product rows 呈现为 CSS 横条，并保留逐项同源表格
-- 横条宽度按同组已验证值的绝对最大值归一化，固定半入舍入到两位小数；label、可见值、`result_position` 与 table row 仍来自同一 `ReportSpec`
-- 窄屏使用固定 Flex 换行；无 JavaScript、CDN、外部库、网络请求或 LLM 生成的 HTML/CSS
-- Renderer / Repository 保存前拒绝 `link`、`iframe`、`object`、`embed`、`@import`、`url()` 与 `src=` 等外部资源载体
-- 桌面与 430px 静态视觉验收、M3 PBIX Real smoke、完整 offline/gates 均 PASS，M0-M3 final seal
-
-M3.2 未新增报表资源功能。“最近报表”属于后续 M4/M5 范围，M3 不实现列表或会话持久化。
-
-## 十七、M5 前端渲染边界
-
-M5 将完成：
-
-- 根据本文档契约渲染组合回答
-- 表格渲染（浅灰分隔线、舒适行距、数字对齐）
-- 图表渲染（bar/line/pie/scatter，单一蓝色，结构化字段驱动）
-- 报表附件卡片渲染
-- 输入器和"+"菜单
-- 左侧栏和欢迎态
-- 响应式适配
-
-## 十八、安全限制
+## 十七、安全限制
 
 ### 绝对禁止
 
@@ -410,23 +319,25 @@ M5 将完成：
 2. LLM 生成任意 JavaScript 代码
 3. LLM 生成第三方脚本引用
 4. LLM 生成任意外部 URL
-5. 图表使用 LLM 生成的代码（须用结构化字段）
-6. LLM 虚构数据（必须引用 QueryResult）
+5. 图表使用 LLM 生成的代码（须从后端获取数据）
+6. LLM 虚构数据（必须引用后端 QueryResult）
 7. LLM 生成前端可执行代码
+8. 前端渲染固定内容序列（每次 AI 回答都相同结构）
 
 ### 必须校验
 
-1. 表格字段与 QueryResult.columns 一致
-2. 图表字段与 QueryResult.columns 一致
+1. 表格字段与后端 columns 一致
+2. 图表字段与后端 columns 一致
 3. 指标值与文字事实可追溯到 VerifiedFactSet / QueryResult
 4. source_mode 与数据层一致
 5. 报表引用由后端生成
-6. 模型权限和模板权限
+6. 无可展示数据时不生成假空内容块
 
 ### DeepSeek 是模型能力
 
-DeepSeek 提供语言模型能力，不是数据来源。M1 的 QueryPlan/DAX/Answer/ReportSpec 生成描述是历史兼容契约；当前 Real 路径只保留 Intent/语言草稿/受限候选选择，DAX 与 factual Answer/Report 由 ADR-009 的确定性 Builder/VerifiedFactSet 控制。source_mode 不能因为使用真实 DeepSeek 而被标记为 real。
+DeepSeek 提供语言模型能力，不是数据来源。source_mode 不能因为使用真实 DeepSeek 而被标记为 real。
 
 ---
 
-*最后更新：2026-08-18 | M3.2 sales_report hardened visual contract；M0-M3 final seal*
+*创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
+*最后更新：2026-08-21 | M5.0 动态回答渲染原则、ChatResponse 映射、前端渲染流程、删除固定内容序列*

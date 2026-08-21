@@ -1,13 +1,11 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-08-20
+> **最后更新：** 2026-08-21
 
 ## 当前阶段
 
-**M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure 已完成。**
-
-M4 backend 在 M4.4 已 FINAL PASS。M4.4.2 只做 committed Memory payload、repository namespace、Snapshot replay 与最终 authority audit corrective closure；不改变 M0—M4 架构或 factual truth chain，不进入 M5。
+**M5.0 — 前端设计与契约固化（已完成）。** M0–M4 后端已全部封板并 FINAL PASS。M5.0 只修改 Markdown 文档，未创建 React/Vite 项目、package.json、src/、CSS、TS/TSX、Python 或 DB 代码。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -16,6 +14,21 @@ M4 backend 在 M4.4 已 FINAL PASS。M4.4.2 只做 committed Memory payload、re
 | **M4.4** | **Restart / Crash Acceptance & M4 Final Closure** | **✅ M4 FINAL PASS** |
 | **M4.4.1** | **Memory corruption fail-closed + README/document closure** | **✅ FINAL PASS** |
 | **M4.4.2** | **M0–M4 truth / persistence boundary final closure** | **✅ FINAL PASS** |
+| **M5.0** | **前端设计与契约固化** | **✅ 已完成** |
+
+### M5.0 — 前端设计与契约固化
+
+- M5.0 已完成以下文档固化：
+  - `frontend/README.md` — 从 M1.3.2 状态升级为 M5.0 文档，新增动态回答原则、左侧栏能力边界、"+"菜单映射原则、模型选择器 DeepSeek 唯一交互、后端能力到 UI 映射表、M5 路线三段、项目/账户仅展示
+  - `docs/01_product_scope_and_frontend_skeleton.md` — 全面重构为 M5.0 骨架规范，AI 回答动态渲染原则代替固定内容序列，Composer 结构、模型选择器交互、"+"菜单映射、项目/账户仅展示，后端能力映射表
+  - `docs/specs/10_frontend_visual_and_interaction_spec.md` — 更新动态渲染规范（8.4 节完全重写代替固定顺序）、模型选择器只显示 DeepSeek、后端能力到 UI 映射表、"+"菜单映射原则、禁止固定内容序列
+  - `docs/specs/11_structured_answer_contract.md` — 重写为动态渲染框架，删除固定内容顺序，新增 frontend rendering flow concept、ChatResponse 映射表、场景-展示对应表、删除 M1.4/M3 历史边界（已由 ADR-009 supersede）
+  - `docs/04_powerbi_mcp_and_api_contracts.md` — 同步 ChatResponse 已实现的 report 字段和前端组合回答状态
+  - `docs/07_milestones_status_and_open_questions.md` — 补充 M5.0 状态行，待确认事项标记 M5 阶段
+  - `docs/08_development_roadmap.md` — M5 拆分为 M5.0/M5.1/M5.2 三段路线
+  - `docs/09_context_handoff.md` — 标记 M5.0 已完成，下一步为 M5.1
+  - `README.md` — 同步 M5.0 状态
+  - `CHANGELOG.md` — 新增 M5.0 条目
 
 ### M4.4.2 final boundary closure
 
@@ -87,7 +100,12 @@ M4 backend 在 M4.4 已 FINAL PASS。M4.4.2 只做 committed Memory payload、re
 
 后续轮次只有用户另行批准后才可开始：
 
-1. **M5**: React + Vite 前端（NOT STARTED）
+1. **M5.1**: React + Vite 前端实现与核心联调（Sidebar/Welcome/Chat/Composer、菜单交互、Chat/History/Search/Reports 联调、动态渲染）（NEXT）
+2. **M5.2**: 视觉与交互收口（真实多轮对话测试、loading/error/empty/disabled、响应式、accessibility、最终视觉验收）
+
+---
+
+*最后更新：2026-08-21 | M5.0 — 前端设计与契约固化（已完成）*
 
 ## 关键命令
 

@@ -5,13 +5,13 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure**。M4.4.2 FINAL PASS；M5 NOT STARTED。
+当前版本：**M5.0 — 前端设计与契约固化**。M4.4.2 FINAL PASS；M5.0 文档固化已完成；M5 NOT STARTED（React 前端未开始）。
 
 ## Overview
 
 PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用户。用户用自然语言提出数据问题或报表需求；FastAPI 后端负责语义落地、受限 DAX 构造、Power BI 查询、事实验证、回答与静态 HTML 报表生成。
 
-当前产品形态是 Windows 本地单机 MVP：支持 Mock 离线开发，也支持 DeepSeek + Local MCP + Power BI Desktop 真实链。React 前端尚未开始。
+当前产品形态是 Windows 本地单机 MVP：支持 Mock 离线开发，也支持 DeepSeek + Local MCP + Power BI Desktop 真实链。React 前端在 M5.0 已完成文档契约固化，尚未开始开发。
 
 ## Highlights
 
@@ -174,7 +174,9 @@ python -m alembic upgrade head
 | M0–M3 | Sealed |
 | M4 | FINAL PASS |
 | M4.4.2 | FINAL PASS — truth / persistence boundary final closure |
-| M5 | NOT STARTED |
+| M5.0 | FINAL PASS — 前端设计与契约固化 |
+| M5.1 | NOT STARTED — React 前端实现与核心联调 |
+| M5.2 | NOT STARTED — 视觉与交互收口 |
 
 逐版本变更见 [CHANGELOG](CHANGELOG.md)。
 
@@ -201,4 +203,4 @@ Proprietary software for internal use.
 
 ---
 
-*最后更新：2026-08-20 | M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure*
+*最后更新：2026-08-21 | M5.0 — 前端设计与契约固化*

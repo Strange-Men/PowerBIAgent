@@ -131,41 +131,41 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-## 五、前端组合回答目标（未来 M5，当前不实现）
+## 五、前端组合回答（M5 渲染目标）
 
-> **本节描述未来前端组合回答的产品目标，不代表当前 API 已经支持。**
+> **本节描述 M5 前端渲染规则。** 后端 ChatResponse 已包含 answer/report/clarification/unsupported 等字段。前端根据当前 Turn 用户意图和后端实际返回产物动态渲染，不固定"文字→指标→表格→图表→报表附件"序列。
 
-### 目标形态
+### 渲染规则
 
-一条 AI 回答可由多个内容块按顺序组成，内容类型至少包括：
+一条 AI 回答可由以下内容块按需组合：
 
-| 类型 | 说明 | 数据来源 |
-|------|------|---------|
-| `text` | 自然语言结论、总结、筛选说明、空数据提示、截断提示 | fact-bounded AnswerSpec.answer |
-| `metrics` | 少量关键指标（必须由 VerifiedFactSet 证明） | VerifiedFactSet / AnswerSpec.metrics |
-| `table` | title、columns、rows、row_count、truncated、source_mode | QueryResult |
-| `chart` | type (bar/line/pie/scatter)、title、x_field、y_field、series、data_reference | QueryResult |
-| `report_attachment` | report_id、title、format、view_reference、download_reference、source_mode | RenderedReport |
+| 类型 | 说明 | 数据来源（ChatResponse 字段） |
+|------|------|------|
+| `text` | 自然语言结论、总结、筛选说明、空数据提示、截断提示 | `answer` / `clarification_question` / `unsupported_reason` |
+| `table` | columns、rows（来自后端 QueryResult） | `execution_audit` 或联调确定的序列化字段 |
+| `chart` | bar/line/donut，仅在后端提供可视化数据时 | 后端 QueryResult 的 ChartSpec |
+| `report_attachment` | report_id、title、view_reference、download_reference | `report`（ReportResponse 对象） |
 
 ### 安全限制
 
-- 图表字段必须存在于 QueryResult.columns
-- 图表数据必须引用 QueryResult，不允许 LLM 虚构
-- 图表使用结构化字段描述，**禁止** LLM 生成 HTML、JavaScript、第三方脚本或任意前端代码
+- 图表字段必须存在于后端 QueryResult.columns
+- 图表数据必须来自后端，不允许 LLM 虚构
 - 报表查看和下载引用由后端生成，**禁止** LLM 生成任意外部 URL
 - source_mode 表示数据来源，不能因使用真实 DeepSeek 而将 Mock QueryResult 标为 real
 - LLM 不得生成任意外部 URL 或可执行脚本
+- 后端无非结构化表格/可视化数据时不生成假内容
 
 ### 当前与未来边界
 
 | 能力 | 当前状态 | 目标轮次 |
 |------|---------|---------|
-| 统一前端消息 Envelope | ❌ 不存在 | M5 确定 |
-| VerifiedFactSet + AnswerSpec + QueryResult | ✅ 已实现 | — |
-| ReportSpec + RenderedReport | ✅ Mock 可运行 | M3 正式渲染 |
-| 表格数据契约 | ✅ QueryResult 可用 | M5 前端渲染 |
-| 图表展示 | ❌ 当前无 | M5 前端渲染 |
-| 报表查看/下载 | ❌ 当前无 | M3 报表资源 |
+| 统一前端消息 Envelope | ❌ 不存在 | M5.1 确定 |
+| ChatResponse（answer/report/clarification/unsupported） | ✅ 已实现 | — |
+| verified fact-bounded AnswerSpec | ✅ 已实现 | — |
+| ReportSpec + ReportArtifact + view/download | ✅ M3 已实现 | — |
+| 前端动态渲染 | ❌ 未实现 | M5.1 |
+| 图表前端渲染 | ❌ 未实现 | M5.1 |
+| 表格前端渲染 | ❌ 未实现 | M5.1 |
 | LLM 生成 HTML/JS | ❌ 永久禁止 | — |
 
 ## 六、只读 DAX 安全与执行 authority
@@ -192,4 +192,4 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 Local Provider、deterministic execution 与 VerifiedFactSet 契约校准*
+*最后更新：2026-08-21 | M5.0 前端组合回答状态同步*
