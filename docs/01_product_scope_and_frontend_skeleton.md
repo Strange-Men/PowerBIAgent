@@ -1,7 +1,7 @@
 # 01 — 产品范围与前端骨架
 
-> **状态：** M5.0 — 前端设计与契约固化（已启动）。M5.0 只修改 Markdown 文档，不创建 React 项目。
-> **下一轮细化：** M5.1 React 前端实现与核心联调
+> **状态：** M5.1 — React 前端实现与核心联调（已完成）。M5.2 尚未开始。
+> **下一轮细化：** M5.2 视觉与交互收口（仅另行批准后开始）
 > **视觉参考：** `docs/assets/frontend/整体01.png`（已有对话与组合回答态）、`docs/assets/frontend/整体02.png`（新聊天欢迎态与菜单展开态）
 
 ---
@@ -161,14 +161,14 @@
 
 #### 数据模型
 - 映射为 chat request 的 `semantic_model_key`
-- 实际内容来自后端语义模型列表；当前无独立 `/api/semantic-models` 端点，M5.1 联调时做最小适配
+- 当前无独立 `/api/semantic-models` 端点；M5.1 使用 `src/config.ts` 唯一集中配置并明确标记为本地配置
 - 当前选中项应有清晰状态
 - 未实现选项必须禁用或隐藏
 - 前端不得自行生成不存在的模型
 
 #### 报表模板
 - 映射为 chat request 的 `report_template_key`
-- 实际内容来自已登记模板白名单；当前无独立 `/api/report-templates` 端点，M5.1 联调时做最小适配
+- 当前无独立 `/api/report-templates` 端点；M5.1 只集中登记 production `sales_report` 白名单
 - 当前选中项应有清晰状态
 - 未实现或不适用于当前模型的模板必须禁用或隐藏
 
@@ -230,11 +230,11 @@
 ### 2.12 前端开发策略
 
 1. **M0.1—M4：** 仅确认骨架和视觉规范，不创建 React 项目
-2. **M5.0：** 文档校准、页面结构、交互边界、动态回答原则、UI ↔ 后端能力映射（当前阶段）
-3. **M5.1：** 创建 React + Vite 项目，实现完整对话页面
+2. **M5.0：** ✅ 文档校准、页面结构、交互边界、动态回答原则、UI ↔ 后端能力映射
+3. **M5.1：** ✅ 已创建 React + Vite + TypeScript 项目并实现核心对话页面与 API adapters
 4. **M5.2：** 视觉与交互收口
 5. **开发阶段：** 使用 Vite dev server，代理到 FastAPI 后端
-6. **M5.0 阶段不创建** package.json、src、node_modules 或任何 React 代码
+6. **M5.1 契约结论：** 不新增统一 envelope；Chat/History 无 QueryResult rows/ChartSpec 时不伪造表格/图表
 
 ---
 
@@ -251,22 +251,19 @@
 | `GET /api/v1/conversations/{id}/reports` | ✅ 已实现（必填 source_mode） | 最近报表列表 |
 | `POST /api/v1/conversations/{id}/archive` | ✅ 已实现 | 归档对话 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 | 删除对话 |
-| `GET /api/semantic-models` | ❌ 未实现 | "+"菜单数据模型列表（M5.1 适配） |
-| `GET /api/report-templates` | ❌ 未实现 | "+"菜单报表模板列表（M5.1 适配） |
-| 统一 frontend envelope | ❌ 不存在 | M5.1 确定 |
+| `GET /api/semantic-models` | ❌ 未实现 | `src/config.ts` 集中本地配置 |
+| `GET /api/report-templates` | ❌ 未实现 | `sales_report` 集中白名单配置 |
+| 统一 frontend envelope | ❌ 不存在 | M5.1 决定不新增；typed adapter 消费现有 schema |
 | Multi-turn Memory（后端） | ✅ 已实现 | 前端展示当前 turn 的 answer |
 
 ## 四、产品边界
 
-### 本轮 (M5.0) 边界
+### M5.1 实现边界
 
-- 校准文档中的前端骨架和交互规范
-- 确认动态回答原则
-- 确认模型选择器 DeepSeek 唯一交互
-- 确认项目/账户仅展示
-- 确认 M3/M4 后端能力已完成
-- 不创建 React 项目，不启动前端开发
-- 不修改后端业务代码
+- 已实现 React 前端、动态 terminal-state/report 渲染与现有 Chat/History/Search/Reports 联调
+- 模型选择器保持 DeepSeek 唯一交互；项目/账户仅展示
+- 不修改后端业务事实链、Snapshot/Persistence 或 Report authority
+- 没有结构化 QueryResult/ChartSpec 时不展示表格/图表
 
 ### 后续轮次边界
 
@@ -274,4 +271,4 @@
 
 ---
 
-*最后更新：2026-08-21 | M5.0 前端设计与契约固化*
+*最后更新：2026-08-21 | M5.1 React 前端实现与核心联调*

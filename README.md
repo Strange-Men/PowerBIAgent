@@ -5,13 +5,13 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.0 — 前端设计与契约固化**。M4.4.2 FINAL PASS；M5.0 文档固化已完成；M5 NOT STARTED（React 前端未开始）。
+当前版本：**M5.1 — React 前端实现与核心联调**。M4.4.2 FINAL PASS；M5.1 已完成；M5.2 NOT STARTED。
 
 ## Overview
 
 PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用户。用户用自然语言提出数据问题或报表需求；FastAPI 后端负责语义落地、受限 DAX 构造、Power BI 查询、事实验证、回答与静态 HTML 报表生成。
 
-当前产品形态是 Windows 本地单机 MVP：支持 Mock 离线开发，也支持 DeepSeek + Local MCP + Power BI Desktop 真实链。React 前端在 M5.0 已完成文档契约固化，尚未开始开发。
+当前产品形态是 Windows 本地单机 MVP：支持 Mock 离线开发，也支持 DeepSeek + Local MCP + Power BI Desktop 真实链。M5.1 已提供 React 对话前端，并通过 Vite proxy 接入 FastAPI。
 
 ## Highlights
 
@@ -63,8 +63,9 @@ Canonical authority 来自 runtime schema、Business Semantic Catalog、确定�
 | Persistence & Recovery | SQLite Memory/Snapshot/report metadata；restart replay；incomplete crash witness fail closed；durable delete intent |
 | History / Search | SQLite-only recent、structured history、bounded search、archive、delete；不伪造逐字 transcript |
 | Local Power BI | DeepSeek + readonly Local Modeling MCP + Power BI Desktop；Real DAX/factual LLM authority 为 0 |
+| React Web UI | GPT 式对话页面、可折叠 Sidebar、Composer、DeepSeek 单选、Chat/History/Search/Reports 联调与动态 terminal-state 渲染 |
 
-Remote MCP 继续 Deferred。M5 React + Vite 前端尚未开始。
+Remote MCP 继续 Deferred。M5.2 视觉与交互最终收口尚未开始。
 
 ## Quick Start
 
@@ -72,7 +73,7 @@ Remote MCP 继续 Deferred。M5 React + Vite 前端尚未开始。
 
 - Windows 本地环境。
 - Python 3.11；仓库固定 Conda 环境名为 `PBIAgent`。
-- Mock 模式不需要 API Key、Node.js 或 Power BI Desktop。
+- Mock 后端不需要 API Key 或 Power BI Desktop；运行 React 前端需要 Node.js 20.19+。
 - Real Local MCP 需要 Node.js 20+、npm/npx、Power BI Desktop，以及已打开的测试 PBIX。
 
 ### Install
@@ -91,6 +92,16 @@ conda activate PBIAgent
 ```powershell
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
+
+另开终端启动前端：
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+打开 `http://127.0.0.1:5173`。Vite 开发服务器将 `/api` 与 `/health` 代理到 `127.0.0.1:8000`。SQLite history/search 需要后端设置 `PERSISTENCE_BACKEND=sqlite`；前端 runtime namespace 默认 `real`，Mock 联调时显式设置 `VITE_RUNTIME_MODE=mock`。
 
 ```powershell
 curl.exe http://127.0.0.1:8000/health
@@ -175,7 +186,7 @@ python -m alembic upgrade head
 | M4 | FINAL PASS |
 | M4.4.2 | FINAL PASS — truth / persistence boundary final closure |
 | M5.0 | FINAL PASS — 前端设计与契约固化 |
-| M5.1 | NOT STARTED — React 前端实现与核心联调 |
+| M5.1 | COMPLETE — React 前端实现与核心联调 |
 | M5.2 | NOT STARTED — 视觉与交互收口 |
 
 逐版本变更见 [CHANGELOG](CHANGELOG.md)。
@@ -197,10 +208,10 @@ python -m alembic upgrade head
 - 不支持跨语义模型查询、任意 DAX、任意代码或任意 HTML。
 - 当前报表只有 `sales_report`，内容受 runtime capability 与固定安全设计系统约束。
 - Real Power BI 验收需要 Windows、Node.js 20+、Power BI Desktop 与本地人工 Smoke；CI 不验证 Desktop 在线链。
-- React + Vite UI 属于 M5，当前未开始。
+- Chat/History 当前没有面向前端的 QueryResult rows、metrics 或 ChartSpec；M5.1 只展示真实文字与 ReportArtifact，不从 answer/execution audit 推导表格或图表。
 
 Proprietary software for internal use.
 
 ---
 
-*最后更新：2026-08-21 | M5.0 — 前端设计与契约固化*
+*最后更新：2026-08-21 | M5.1 — React 前端实现与核心联调*

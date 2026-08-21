@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.0 — 前端设计与契约固化（已完成）
+> **状态：** M5.1 — React 前端实现与核心联调（已完成）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -28,7 +28,7 @@
 | **M4.4.1** | **Committed Memory corruption fail-closed + README/document closure** | **✅ FINAL PASS** |
 | **M4.4.2** | **M0–M4 truth / persistence boundary final closure** | **✅ FINAL PASS** |
 | **M5.0** | **前端设计与契约固化（文档校准、页面结构、交互边界、动态回答原则、UI↔后端能力映射）** | **✅ 已完成** |
-| M5.1 | React + Vite 前端实现与核心联调 | ⬜ 待开始 |
+| **M5.1** | **React + Vite 前端实现与核心联调** | **✅ 已完成** |
 | M5.2 | 视觉与交互收口 | ⬜ 待开始 |
 
 ## M3 合并与 CI truth
@@ -55,7 +55,7 @@
 | ReportArtifact | ✅ filesystem HTML authority、required metadata contract、immutable report_id、原子本地保存 |
 | Resource API | ✅ view/download；unknown/path traversal 拒绝 |
 | Idempotency / Memory | ✅ replay 复用 report_id；render/store failure 不成功提交 Memory |
-| Persistent sessions / React | ✅ SQLite session query lifecycle 已完成；React 仍为 M5 |
+| Persistent sessions / React | ✅ SQLite session query lifecycle + React recent/search/history/reports adapters 已完成 |
 | Persistence Architecture (M4.0) | ✅ ADR-012、SQLite/SQLAlchemy Async/Alembic、5 表 schema、migration 基线、Repository ABC |
 | Memory / Snapshot SQLite 实现 (M4.1) | ✅ SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring、DB 级 partial unique index 并发安全、strict concurrent commit tests |
 | SQLite 错误语义硬化 (M4.1.1) | ✅ conversation root `INSERT OR IGNORE` 原子 upsert、`PersistenceRepositoryError`、locked/version_index 分类 helper |
@@ -131,8 +131,9 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 | 事项 | 决策时点 |
 |---|---|
-| M5.1 状态管理与前端消息 Envelope 设计 | M5.1 开始前 |
-| 统一前端 Envelope 是否需要 | M5.1 确定 |
+| M5.1 状态管理 | ✅ React hooks，未引入全局状态框架 |
+| 统一前端 Envelope | ✅ M5.1 不新增；typed adapter 直接消费现有 ChatResponse/History schema |
+| 前端结构化表格/图表数据 | M5.2 前另行决定最小契约；当前 Chat/History 不暴露 QueryResult rows/ChartSpec，M5.1 不伪造 |
 | Remote MCP 管理员与授权条件 | 重新批准 Remote 后 |
 
 ## 当前真实风险
@@ -155,4 +156,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-21 | M5.0 — 前端设计与契约固化*
+*最后更新：2026-08-21 | M5.1 — React 前端实现与核心联调*

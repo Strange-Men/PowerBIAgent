@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.0 — 前端设计与契约固化**。M4.4.2 FINAL PASS；M5.0 文档固化已完成；M5 NOT STARTED（React 前端未开始）。
+当前版本：**M5.1 — React 前端实现与核心联调**。M4.4.2 FINAL PASS；M5.0 文档固化与 M5.1 前端实现已完成；M5.2 NOT STARTED。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -28,6 +28,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M4.4** 已完成真实临时 SQLite + report filesystem 的 dispose/fresh-engine restart/crash acceptance：committed Memory 与 terminal Snapshot 可恢复；Memory 存在但 Snapshot 缺失视为 incomplete crash witness 并 fail closed；持久化 report snapshot 不再保存 HTML，重放必须从 filesystem 加载并校验；conversation delete 使用 durable delete intent 跨 DB commit/HTML cleanup 窗口重试，pending intent 阻止同 namespace 复活。新增 migration `c8d4e6f2a109`。**M4 FINAL PASS；M5 NOT STARTED。**
 - **M4.4.1** 已修复 committed canonical filter 损坏被静默丢弃的 fail-open：domain 反序列化与 StateTransition 均 deterministic fail closed，发生在 LLM/DAX/Power BI/新 Memory commit 之前；合法 legacy dict filter 与 legacy time string contract 保持不变。根 README 已重构为长期 Landing Page，并同步正式状态文档。无 schema change、无 migration。**M4.4.1 FINAL PASS；M5 NOT STARTED。**
 - **M4.4.2** 已完成 M0—M4 truth/persistence boundary 最终代码审计与收口：modern committed WorkMemory 只能从完整 `payload_json` 恢复，NULL/empty/malformed/incomplete/domain-invalid payload 及 row/payload 冲突全部 fail closed，禁止 partial column fallback；conversation-scoped MemoryRepository API 强制显式 runtime namespace，InMemory/SQLite 均严格隔离；terminal Snapshot row/payload integrity 与非 legacy committed time corruption 同样 fail closed。无 schema change、无 migration。**M4.4.2 FINAL PASS；M5 NOT STARTED。**
+- **M5.1** 已创建 React + Vite + TypeScript 前端，实现可折叠 Sidebar、欢迎/对话态、Composer、DeepSeek 单选、集中配置的模型/模板菜单，以及 Chat/Recent/Search/History/Reports 真实 API adapters。项目/账户保持纯展示；不新增 discovery endpoint，不修改 M0—M4 truth/persistence authority。现有 Chat/History 不暴露 QueryResult rows/ChartSpec，前端不从审计或文字伪造表格/图表。**M5.1 COMPLETE；M5.2 NOT STARTED。**
 
 当前真实主链：
 

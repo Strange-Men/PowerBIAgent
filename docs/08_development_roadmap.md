@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.0 — 前端设计与契约固化（已完成）
+> **状态：** M5.1 — React 前端实现与核心联调（已完成）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -28,7 +28,7 @@
 | **M4.4.1** | **Committed Memory corruption fail-closed + README/document closure** | **✅ FINAL PASS** |
 | **M4.4.2** | **M0–M4 truth / persistence boundary final closure** | **✅ FINAL PASS** |
 | **M5.0** | **前端设计与契约固化（文档校准、页面结构、交互边界、动态回答原则、UI↔后端能力映射）** | **✅ 已完成** |
-| M5.1 | React + Vite 前端实现与核心联调 | ⬜ 待开始 |
+| **M5.1** | **React + Vite 前端实现与核心联调** | **✅ 已完成** |
 | M5.2 | 视觉与交互收口 | ⬜ 待开始 |
 
 M0—M2 Final Seal 为 `70748daabfa5d3dd250f17fe22f0c892c7a30b74`。M3.0 commit `e4b5c6c6a759cdf22c74c4d87902482563e27cad`、M3.1 commit `fa4cc0c97a10bcc0867c414dc3fa2d7fa9b35e57` 已纯 fast-forward 合入 main，对应 main CI 均 success。M3.2 / M3.3 / M3.4 直接在 main 完成。M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）。M4.0 已在 main 完成本地持久化架构：SQLite + SQLAlchemy Async + Alembic；MemoryRepository/SnapshotRepository ABC；settings 扩展；26 新增 tests（1503 total）。M4.0 后续 corrective hardening：pytest-asyncio CI 兼容修复、conversation 复合 PK/FK 命名空间隔离、PRAGMA 每连接事件修正；corrective migration `01dc0d90d920`；40 持久化 tests + 全仓 1517 total。
@@ -45,6 +45,16 @@ Canonical QueryPlan
 ```
 
 Real DAX/factual authority 不回到 LLM，Real failure 不回退 Mock。
+
+## M5.1 — React 前端实现与核心联调（已完成）
+
+- 在 `frontend/` 创建 React 19 + Vite 8 + TypeScript 6 工程；使用 React hooks、普通 CSS 与轻量 lucide icons，不引入路由器、重型 Dashboard 框架或全局状态库。
+- 实现 GPT 式 AppShell、可折叠 Sidebar、欢迎/已有对话态、底部 Composer、"+"分组菜单与 DeepSeek-only 单选卡片；项目和账户只展示。
+- typed API client 显式传入 conversation `runtime_mode` 与 report `source_mode`，接入 Chat、recent、search、structured history 与 reports；最近报表由最近会话的严格 report history 组合，不新增后端 sidebar/workspace 字段。
+- Chat adapter 动态处理 answer/clarification/unsupported/error/empty/report；report view/download 只接受与 `report_id` 一致的后端 canonical reference。Trace、DAX、Memory、usage 与 execution audit 不进入 UI。
+- 无 discovery endpoint 时，`semantic_model_key` 与 `sales_report` 在 `src/config.ts` 集中登记并明确为本地配置，不伪装为服务器列表。
+- 已确认最小契约缺口：Chat/History 不暴露 QueryResult `columns/rows`、独立 metrics 或 ChartSpec。M5.1 不反解析 answer/audit、不修改 M4 Snapshot/Persistence、不伪造表格或图表。
+- Fresh acceptance：frontend typecheck/lint/build PASS，Vitest `13 passed`；Chrome 1600×1000 欢迎态实际渲染检查 PASS；backend `1700 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture/Repository Safety/Error Ledger PASS。无 migration。
 
 ## M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure（FINAL PASS）
 
@@ -167,8 +177,8 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
-- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.2 truth/persistence boundary final closure FINAL PASS；M5.0 前端设计与契约固化已完成；禁止 force push。
+- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.2 truth/persistence boundary final closure FINAL PASS；M5.0 文档固化与 M5.1 React 核心实现已完成；M5.2 未开始；禁止 force push。
 
 ---
 
-*最后更新：2026-08-21 | M5.0 — 前端设计与契约固化*
+*最后更新：2026-08-21 | M5.1 — React 前端实现与核心联调*

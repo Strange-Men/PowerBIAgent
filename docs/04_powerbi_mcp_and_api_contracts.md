@@ -15,6 +15,10 @@
 |------|------|------|------|
 | `GET` | `/health` | 当前运行模式配置就绪检查；不调用 LLM、不启动 MCP、不探测 Desktop 在线状态 | ✅ Mock / DeepSeek+Mock / DeepSeek+Local 配置 |
 | `POST` | `/api/v1/chat` | 非流式对话接口；Mock+Mock、DeepSeek+Mock、DeepSeek+Local MCP 共用 TurnPipeline | ✅ Real M2 链已验证 |
+| `GET` | `/api/reports/{report_id}` | 查看 repository-owned static HTML | ✅ M3/M4 |
+| `GET` | `/api/reports/{report_id}/download` | 下载 UTF-8 HTML | ✅ M3/M4 |
+| `GET` | `/api/v1/conversations`、`/search`、`/{id}/history`、`/{id}/reports` | namespace-first recent/search/structured history/report history | ✅ M4.3/M4.4；SQLite-only |
+| `POST/DELETE` | `/api/v1/conversations/{id}/archive`、`/api/v1/conversations/{id}` | 同 namespace 归档/删除 | ✅ M4.3/M4.4 |
 
 ### 计划中的接口（PRD 定义，尚未实现）
 
@@ -22,9 +26,8 @@
 |------|------|------|---------|
 | `GET` | `/api/semantic-models` | 返回可选 Power BI 语义模型列表 | 后续 UI/API 阶段（未批准） |
 | `GET` | `/api/report-templates` | 返回可选固定报表模板列表 | M3+ |
-| `GET` | `/api/reports/{report_id}` | 预览或下载已生成报表 | M3+ |
 
-> **注意：** PRD 中列出的 `/api/semantic-models`、`/api/report-templates`、`/api/reports/{report_id}` 为计划接口，当前未实现。不得在文档中将其描述为已有接口。
+> **注意：** `/api/semantic-models`、`/api/report-templates` 尚未实现。M5.1 使用单一集中前端配置，不伪装为服务器 discovery 数据；报表 resource 与 conversation API 已真实实现。
 
 ---
 
@@ -159,13 +162,13 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 | 能力 | 当前状态 | 目标轮次 |
 |------|---------|---------|
-| 统一前端消息 Envelope | ❌ 不存在 | M5.1 确定 |
+| 统一前端消息 Envelope | ❌ 不存在 | M5.1 决定不新增；typed adapter 消费现有 schema |
 | ChatResponse（answer/report/clarification/unsupported） | ✅ 已实现 | — |
 | verified fact-bounded AnswerSpec | ✅ 已实现 | — |
 | ReportSpec + ReportArtifact + view/download | ✅ M3 已实现 | — |
-| 前端动态渲染 | ❌ 未实现 | M5.1 |
-| 图表前端渲染 | ❌ 未实现 | M5.1 |
-| 表格前端渲染 | ❌ 未实现 | M5.1 |
+| 前端动态渲染 | ✅ answer/clarification/unsupported/error/empty/report | M5.1 |
+| 图表前端渲染 | ⏸ 无 Chat/History ChartSpec，不伪造 | 最小契约缺口 |
+| 表格前端渲染 | ⏸ 无 Chat/History QueryResult rows，不伪造 | 最小契约缺口 |
 | LLM 生成 HTML/JS | ❌ 永久禁止 | — |
 
 ## 六、只读 DAX 安全与执行 authority
@@ -192,4 +195,4 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-*最后更新：2026-08-21 | M5.0 前端组合回答状态同步*
+*最后更新：2026-08-21 | M5.1 React 核心联调与结构化数据缺口同步*

@@ -4,7 +4,7 @@
 > **修订版本：** v1.3
 > **修订日期：** 2026-08-21
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** 同步 M5.0 前端设计与契约固化状态；产品需求与 North Star 不变
+> **本轮修订范围：** 同步 M5.1 React 前端实现与核心联调状态；产品需求与 North Star 不变
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -213,8 +213,8 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 | 接口 | 说明 |
 |------|------|
 | `GET /health` | 检查当前运行模式的配置就绪状态；不把它描述为 Desktop 实时在线探测 |
-| `GET /api/semantic-models` | **未实现** — 计划接口；M5.1 前端联调时需适配 |
-| `GET /api/report-templates` | **未实现** — 计划接口；M5.1 前端联调时需适配 |
+| `GET /api/semantic-models` | **未实现** — M5.1 使用集中本地配置，不伪装服务器 discovery 数据 |
+| `GET /api/report-templates` | **未实现** — M5.1 只集中登记 production `sales_report` |
 | `POST /api/v1/chat` | ✅ 已实现；Mock+Mock、DeepSeek+Mock、DeepSeek+Local MCP 共用正式 TurnPipeline |
 | `GET /api/reports/{report_id}` | ✅ 已实现；查看 repository-owned 静态 HTML |
 | `GET /api/reports/{report_id}/download` | ✅ 已实现；下载 UTF-8 HTML 报表 |
@@ -233,7 +233,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 4. **M3 报表生成闭环** ✅ 已完成并随 M0—M3 正式封板 — `sales_report`、adaptive report planning、固定 HTML、报表资源 ID、查看/下载
 5. **M4 多轮记忆完善** ✅ M4 FINAL PASS；M4.4.2 truth/persistence boundary final closure FINAL PASS — SQLite 会话持久化、恢复、history/search/archive/delete、restart/crash acceptance、完整 committed payload 与 mandatory namespace fail-closed
 6. **M5.0 前端设计与契约固化** ✅ 已完成 — 文档校准、页面结构、交互边界、动态回答原则、UI ↔ 后端能力映射；不创建 React 项目
-7. **M5.1 React 前端实现与核心联调** ⬜ 未开始 — 创建 React + Vite、Sidebar/Welcome/Chat/Composer、Chat/History/Search/Reports 联调、动态渲染
+7. **M5.1 React 前端实现与核心联调** ✅ 已完成 — React + Vite + TypeScript、Sidebar/Welcome/Chat/Composer、Chat/History/Search/Reports 联调、动态 terminal-state/report 渲染
 8. **M5.2 视觉与交互收口** ⬜ 未开始 — 真实多轮对话测试、loading/error/empty/disabled、响应式、accessibility、最终视觉验收
 
 ## 十二、MVP 暂不包含
@@ -269,7 +269,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 ## 十四、验收标准
 
-以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.2 truth/persistence boundary final closure 已完成；M5.0 文档固化已完成，M5.1 React 开发尚未开始。CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
+以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.2 truth/persistence boundary final closure 已完成；M5.0 文档固化与 M5.1 React 核心实现已完成，M5.2 尚未开始。CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
 
 MVP 达到以下条件即可视为成功：
 
@@ -299,4 +299,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-21 | M5.0 前端设计与契约固化同步；产品需求与 North Star 不变*
+*修订日期：2026-08-21 | M5.1 React 前端实现状态同步；产品需求与 North Star 不变*

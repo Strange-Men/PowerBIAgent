@@ -2,13 +2,35 @@
 
 ## 状态
 
-**M5.0 — 前端设计与契约固化（已启动）。M5.0 只修改 Markdown 文档，不创建 React 项目。**
+**M5.1 — React 前端实现与核心联调（已完成）。M5.2 尚未开始。**
 
 ## 技术栈
 
-- React 18+
-- Vite 构建工具
-- 轻量状态管理
+- React 19
+- Vite 8
+- TypeScript 6
+- React hooks 轻量状态管理
+- 普通 CSS + lucide-react
+- Vitest + Testing Library
+
+## 启动与验证
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Vite 默认监听 `http://127.0.0.1:5173`，并将 `/api`、`/health` 代理至 `http://127.0.0.1:8000`。
+
+```powershell
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
+
+内部 runtime namespace 默认 `real`；Mock 后端联调时显式使用 `VITE_RUNTIME_MODE=mock`。可通过 `VITE_SEMANTIC_MODEL_KEY` 与 `VITE_SEMANTIC_MODEL_LABEL` 覆盖集中配置的数据模型，不在前端保存任何 Provider Secret。
 
 ## 页面结构
 
@@ -69,7 +91,7 @@
 1. **数据模型** — 映射为 chat request 的 `semantic_model_key`
 2. **报表模板** — 映射为 chat request 的 `report_template_key`
 
-M5.0 只固化交互结构和数据映射原则。如果当前没有独立 list API（`/api/semantic-models` 和 `/api/report-templates` 当前未实现），不在本轮实现；留到 M5.1 联调时做最小适配判断。
+当前没有独立 list API（`/api/semantic-models` 和 `/api/report-templates` 未实现）。M5.1 未扩大后端，而是在 `src/config.ts` 集中登记实际可用的 model/template key；UI 明确标记为本地配置，不伪装成服务器 discovery 数据。
 
 #### 模型选择器
 
@@ -107,9 +129,9 @@ M5.0 只固化交互结构和数据映射原则。如果当前没有独立 list 
 | `GET /api/v1/conversations/{id}/reports` | ✅ 已实现（必填 source_mode） | 最近报表列表 |
 | `POST /api/v1/conversations/{id}/archive` | ✅ 已实现 | 归档对话 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 | 删除对话 |
-| `GET /api/semantic-models` | ❌ 未实现（需 M5.1 联调适配） | "+"菜单数据模型列表 |
-| `GET /api/report-templates` | ❌ 未实现（需 M5.1 联调适配） | "+"菜单报表模板列表 |
-| 统一 frontend envelope | ❌ 不存在 | M5.1 确定 |
+| `GET /api/semantic-models` | ❌ 未实现 | `src/config.ts` 集中配置，不伪装服务器数据 |
+| `GET /api/report-templates` | ❌ 未实现 | `sales_report` 集中白名单配置 |
+| 统一 frontend envelope | ❌ 不存在 | 不新增；typed adapter 直接消费现有 ChatResponse |
 | Multi-turn Memory 显示 | ✅ 后端已实现 | 前端仅展示当前 turn 的 answer |
 | 报表资源显示 | ✅ 后端已实现 | ChatResponse.report 内的结构化报表字段 |
 
@@ -119,20 +141,24 @@ M5.0 只固化交互结构和数据映射原则。如果当前没有独立 list 
 - `docs/specs/10_frontend_visual_and_interaction_spec.md` — 正式视觉与交互规范
 - `docs/specs/11_structured_answer_contract.md` — 结构化组合回答契约
 
-## 当前目录约束
+## 实现结构
 
-- M5.0 阶段：不创建 `package.json`、`src/`、`node_modules/` 或任何 React 代码
-- 不创建 CSS 或组件文件
-- 完整 React 开发在 M5.1 启动
+- `src/api/`：typed fetch client、namespace query 与 Chat/History → UI adapters
+- `src/components/`：Sidebar、Composer、Conversation、动态 Assistant 与 ReportAttachment
+- `src/hooks/usePowerBIAgent.ts`：当前会话、recent/search/history/reports 与发送状态
+- `src/config.ts`：无 discovery API 时唯一集中 model/template 配置
+- `src/styles.css`：GPT 式桌面优先布局与基础窄屏适配
+
+现有 Chat/History schema 不暴露 QueryResult `columns/rows`、独立 metrics 或 ChartSpec。M5.1 不读取 DAX/Trace/Memory，也不从 `execution_audit` 或 answer 反解析事实；因此当前只动态渲染真实文字 terminal state 和 ReportArtifact。表格/图表保持明确契约缺口，不展示假内容。
 
 ## M5 路线
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
-| M5.0 | 前端设计与契约固化（本文档校准、页面结构、交互边界、动态回答原则、UI↔后端能力映射） | **当前阶段** |
-| M5.1 | React + Vite 实现与核心联调（Sidebar/Welcome/Chat/Composer、菜单交互、Chat/History/Search/Reports 联调、动态渲染） | ⬜ 待开始 |
+| M5.0 | 前端设计与契约固化（本文档校准、页面结构、交互边界、动态回答原则、UI↔后端能力映射） | ✅ 已完成 |
+| M5.1 | React + Vite 实现与核心联调（Sidebar/Welcome/Chat/Composer、菜单交互、Chat/History/Search/Reports 联调、动态渲染） | ✅ 已完成 |
 | M5.2 | 视觉与交互收口（真实多轮测试、loading/error/empty/disabled、响应式、accessibility、最终视觉验收） | ⬜ 待开始 |
 
 ---
 
-*最后更新：2026-08-21 | M5.0 前端设计与契约固化*
+*最后更新：2026-08-21 | M5.1 React 前端实现与核心联调*

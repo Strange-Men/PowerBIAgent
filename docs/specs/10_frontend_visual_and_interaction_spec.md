@@ -1,7 +1,7 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.0 — 前端设计与契约固化（已启动）
-> **目标阶段：** M5.1 React 前端实现时使用；M5.0 只固化规范，不创建 React
+> **状态：** M5.1 — React 前端实现与核心联调（已完成）
+> **目标阶段：** M5.1 已按本规范实现核心页面；M5.2 负责另行批准后的最终视觉收口
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -16,11 +16,7 @@
 
 ## 二、当前阶段与实施边界
 
-**当前阶段：** M5.0 — 只固化设计规范，不开发前端。
-
-- 不创建 React 项目
-- 不创建 package.json、src、node_modules、CSS 或组件
-- 完整 React 开发在 M5.1 启动
+**当前阶段：** M5.1 — React 核心实现已完成。M5.1 保持 M0–M4 authority 不变；缺少 QueryResult rows/ChartSpec 时不伪造前端表格或图表。
 
 ## 三、视觉参考图片
 
@@ -282,7 +278,7 @@
 
 - 映射为 chat request 的 `semantic_model_key`
 - 实际内容来自语义模型列表
-- 当前无独立 `/api/semantic-models` 端点；M5.1 联调时做最小适配
+- 当前无独立 `/api/semantic-models` 端点；M5.1 在 `src/config.ts` 集中配置并明确标记本地来源
 - 当前选中项应有清晰视觉状态
 - 前端不得自行生成不存在的模型
 
@@ -290,7 +286,7 @@
 
 - 映射为 chat request 的 `report_template_key`
 - 实际内容来自已登记模板白名单
-- 当前无独立 `/api/report-templates` 端点；M5.1 联调时做最小适配
+- 当前无独立 `/api/report-templates` 端点；M5.1 只集中登记 `sales_report`
 - 当前选中项应有清晰视觉状态
 - 未实现或不适用于当前模型的模板必须禁用或隐藏
 
@@ -300,7 +296,7 @@
 - 当前选中项应有清晰视觉状态
 - 未实现或无权限选项必须禁用或隐藏
 - 前端不得自行生成不存在的模型和模板
-- M5.0 只固化交互结构和数据映射原则
+- M5.1 已实现交互结构和 request 字段映射
 
 ## 十四、模型选择器
 
@@ -368,19 +364,19 @@
 
 | 能力 | 后端状态 | M5 UI |
 |------|---------|-------|
-| 左侧栏（完整） | — | M5.1 |
-| 新聊天欢迎态 | — | M5.1 |
-| AI 组合回答 | ChatResponse 含 answer/report/clarification/unsupported 字段 | M5.1 动态渲染 |
-| 最近报表列表 | ✅ M3/M4 report history API 已完成 | M5.1 |
-| 最近对话列表 | ✅ M4 conversation history API 已完成 | M5.1 |
-| 搜索聊天 | ✅ M4 search API 已完成 | M5.1 |
-| "查看报表"操作 | ✅ M3 resource API 已完成 | M5.1 |
-| "下载 HTML"操作 | ✅ M3 resource API 已完成 | M5.1 |
-| 多模型切换 | DeepSeek 唯一启用 | M5.1 单选交互 |
+| 左侧栏（完整） | — | ✅ M5.1 |
+| 新聊天欢迎态 | — | ✅ M5.1 |
+| AI 组合回答 | ChatResponse 含 answer/report/clarification/unsupported 字段 | ✅ M5.1 动态渲染 |
+| 最近报表列表 | ✅ M3/M4 report history API 已完成 | ✅ M5.1 |
+| 最近对话列表 | ✅ M4 conversation history API 已完成 | ✅ M5.1 |
+| 搜索聊天 | ✅ M4 search API 已完成 | ✅ M5.1 |
+| "查看报表"操作 | ✅ M3 resource API 已完成 | ✅ M5.1 |
+| "下载 HTML"操作 | ✅ M3 resource API 已完成 | ✅ M5.1 |
+| 多模型切换 | DeepSeek 唯一启用 | ✅ M5.1 单选交互 |
 | 响应式布局 | — | M5.2 |
-| semantic_model_key 列表 | ❌ 无独立 API | +"菜单（M5.1 最小适配）|
-| report_template_key 列表 | ❌ 无独立 API | +"菜单（M5.1 最小适配）|
-| 统一前端 Envelope | ❌ 不存在 | M5.1 确定 |
+| semantic_model_key 列表 | ❌ 无独立 API | +"菜单使用集中本地配置 |
+| report_template_key 列表 | ❌ 无独立 API | +"菜单只登记 `sales_report` |
+| 统一前端 Envelope | ❌ 不存在 | M5.1 决定不新增；typed adapter 直接消费现有 schema |
 
 ## 十八、明确禁止的设计
 
@@ -425,4 +421,4 @@
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-21 | M5.0 动态回答原则、模型选择器交互、后端能力映射校准*
+*最后更新：2026-08-21 | M5.1 React 核心实现状态同步*

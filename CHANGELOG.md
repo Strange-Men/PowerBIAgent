@@ -2,6 +2,21 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.1] — 2026-08-21
+
+### React 前端实现与核心联调
+
+- 在 `frontend/` 正式创建 React 19 + Vite 8 + TypeScript 6 工程，新增 ESLint、Vitest、Testing Library、production build 与 Vite FastAPI proxy；`package-lock.json` 固定依赖，`npm audit` 为 0 vulnerabilities。
+- 实现 GPT 式白色 AppShell、浅灰可折叠 Sidebar、新聊天欢迎态、已有对话滚动区、右侧用户消息、左侧自然 AI 正文、底部稳定 Composer 与基础窄屏适配。
+- Composer 完成 "+"分组卡片与真实映射：数据模型 → `semantic_model_key`、报表模板 → `report_template_key`；无 discovery endpoint 时只使用 `src/config.ts` 集中配置，并在 UI 标记为本地配置。DeepSeek 选择器可展开/关闭、单选默认选中，不展示 Mock/GPT 或其他未接入模型。
+- 新增 typed API client，接入 `POST /api/v1/chat`、recent/search/history/reports；严格携带 conversation `runtime_mode` 与 report `source_mode`。最近报表通过最近会话的 report history 组合；项目和账户不增加后端。
+- Assistant adapter 按 answer/clarification/unsupported/error/empty/report 动态渲染；报表附件只接受与后端 `report_id` 一致的 canonical view/download reference。UI 不展示 Trace、tool sequence、execution audit、Memory、DAX、usage 或内部错误详情。
+- 确认 M5.1 最小契约缺口：Chat/History 不暴露 QueryResult `columns/rows`、独立 metrics 或 ChartSpec。未修改 M0–M4 Snapshot/Persistence/Fact authority；前端不从 answer 或 audit 反解析、推导或伪造表格/图表。
+- Fresh acceptance：frontend typecheck/lint/build PASS；Vitest `13 passed`；Chrome 1600×1000 欢迎态实际渲染检查 PASS；backend `1700 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture Gate `109`、Repository Safety、Error Ledger 与文档治理门通过。
+- M5.1 完成后停止；M5.2 NOT STARTED；不创建 Tag，不修改或合并 `main`。
+
+**Settings.version:** M5.1
+
 ## [M5.0] — 2026-08-21
 
 ### 前端设计与契约固化

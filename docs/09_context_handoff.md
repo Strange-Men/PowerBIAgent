@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.0 — 前端设计与契约固化（已完成）。** M0–M4 后端已全部封板并 FINAL PASS。M5.0 只修改 Markdown 文档，未创建 React/Vite 项目、package.json、src/、CSS、TS/TSX、Python 或 DB 代码。
+**M5.1 — React 前端实现与核心联调（已完成）。** M0–M4 后端保持封板与 FINAL PASS；M5.1 已创建前端并接入现有 Chat/Conversation/Report 契约。M5.2 NOT STARTED。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -15,6 +15,18 @@
 | **M4.4.1** | **Memory corruption fail-closed + README/document closure** | **✅ FINAL PASS** |
 | **M4.4.2** | **M0–M4 truth / persistence boundary final closure** | **✅ FINAL PASS** |
 | **M5.0** | **前端设计与契约固化** | **✅ 已完成** |
+| **M5.1** | **React 前端实现与核心联调** | **✅ 已完成** |
+
+### M5.1 — React 前端实现与核心联调
+
+- `frontend/` 已创建 React 19 + Vite 8 + TypeScript 6 工程，使用 hooks、普通 CSS、lucide-react、Vitest 与 Testing Library；无重型 Dashboard 框架、路由器或全局状态库。
+- 已实现 AppShell、真实折叠 Sidebar、新聊天欢迎态、已有对话态、稳定底部 Composer、"+"数据模型/报表模板菜单与 DeepSeek-only 单选卡片。
+- Chat adapter 发送 `conversation_id` / `request_id` / `semantic_model_key` / `report_template_key`，动态渲染 answer、clarification、unsupported、error、empty 与真实 ReportArtifact；不展示 trace/tool/audit/Memory/DAX/usage。
+- recent/search/history/reports 已接现有 SQLite API。Conversation 请求显式 `runtime_mode`，report 请求显式 `source_mode`；History 只恢复 persisted structured result，并在 UI 明示不是逐字 transcript。
+- 项目卡片与用户账户保持纯展示。没有新增 semantic model/template discovery endpoint；实际 key 只在 `src/config.ts` 集中配置，并在菜单注明本地配置。
+- 报表查看/下载只使用与 `report_id` 严格一致的后端 canonical reference；无 report resource 时不显示附件。
+- 最小契约缺口：Chat/History 不暴露 QueryResult `columns/rows`、独立 metrics 或 ChartSpec，`execution_audit` 也没有可消费 rows。M5.1 不修改 M4 Snapshot/Persistence，不从 answer/audit 推导事实，因此不渲染假表格/图表。
+- Fresh gates：frontend typecheck/lint/build PASS，Vitest `13 passed`；Chrome 1600×1000 实际欢迎态检查 PASS；backend `1700 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture/Repository Safety/Error Ledger PASS。
 
 ### M5.0 — 前端设计与契约固化
 
@@ -100,12 +112,7 @@
 
 后续轮次只有用户另行批准后才可开始：
 
-1. **M5.1**: React + Vite 前端实现与核心联调（Sidebar/Welcome/Chat/Composer、菜单交互、Chat/History/Search/Reports 联调、动态渲染）（NEXT）
-2. **M5.2**: 视觉与交互收口（真实多轮对话测试、loading/error/empty/disabled、响应式、accessibility、最终视觉验收）
-
----
-
-*最后更新：2026-08-21 | M5.0 — 前端设计与契约固化（已完成）*
+1. **M5.2**: 视觉与交互收口（真实 DeepSeek + Local MCP 多轮对话测试、结构化表格/图表契约决策、响应式、accessibility、最终视觉验收）（NEXT；仅用户另行批准后开始）
 
 ## 关键命令
 
@@ -131,4 +138,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\check_documentation_governance.py
 
 ---
 
-*最后更新：2026-08-20 | M4.4.2 — M0–M4 Truth / Persistence Boundary Final Closure*
+*最后更新：2026-08-21 | M5.1 — React 前端实现与核心联调（已完成）*

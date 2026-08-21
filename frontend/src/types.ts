@@ -1,0 +1,119 @@
+export type RuntimeMode = 'mock' | 'real'
+
+export interface ChatRequest {
+  message: string
+  conversation_id?: string
+  request_id: string
+  semantic_model_key: string
+  report_template_key?: string
+}
+
+export interface ReportResource {
+  report_id: string
+  template_key: string
+  contract_version: string
+  view_reference: string
+  download_reference: string
+  content_type: string
+  content_hash: string
+}
+
+export interface ChatResponse {
+  request_id: string
+  conversation_id: string
+  terminal_state: string
+  intent: string
+  response_type: string
+  answer: string | null
+  report: ReportResource | null
+  clarification_question: string | null
+  unsupported_reason: string | null
+  error_type: string | null
+  source_mode: RuntimeMode | ''
+  idempotent_replay: boolean
+}
+
+export interface ConversationSummary {
+  runtime_mode: RuntimeMode
+  conversation_id: string
+  created_at: string
+  updated_at: string
+  archived_at: string | null
+  latest_request_id: string | null
+  latest_terminal_state: string | null
+  latest_response_type: string | null
+  latest_analysis_goal: string | null
+}
+
+export interface ConversationListPage {
+  runtime_mode: RuntimeMode
+  items: ConversationSummary[]
+  next_cursor: string | null
+}
+
+export interface ConversationHistoryItem {
+  request_id: string
+  created_at: string
+  terminal_state: string
+  response_type: string
+  intent: string
+  answer: string | null
+  report: ReportResource | null
+  clarification_question: string | null
+  unsupported_reason: string | null
+  error_type: string | null
+}
+
+export interface ConversationHistoryPage {
+  runtime_mode: RuntimeMode
+  conversation_id: string
+  archived_at: string | null
+  items: ConversationHistoryItem[]
+  next_cursor: string | null
+}
+
+export interface ConversationReportItem extends ReportResource {
+  source_mode: RuntimeMode
+  conversation_id: string
+  request_id: string | null
+  semantic_model_key: string
+  generated_at: string
+  stored_at: string
+}
+
+export interface ConversationReportPage {
+  source_mode: RuntimeMode
+  conversation_id: string
+  items: ConversationReportItem[]
+  next_cursor: string | null
+}
+
+export type AssistantMessageKind =
+  | 'answer'
+  | 'clarification'
+  | 'unsupported'
+  | 'error'
+  | 'empty'
+
+export interface UserMessage {
+  id: string
+  role: 'user'
+  content: string
+}
+
+export interface AssistantMessage {
+  id: string
+  role: 'assistant'
+  kind: AssistantMessageKind
+  content: string
+  report?: ReportResource
+  restored?: boolean
+}
+
+export type ConversationMessage = UserMessage | AssistantMessage
+
+export interface CatalogOption {
+  key: string
+  label: string
+  description: string
+}

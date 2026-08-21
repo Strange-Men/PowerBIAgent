@@ -1,6 +1,6 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M5.0 — 前端设计与契约固化（已启动）。动态回答原则已确认。
+> **状态：** M5.1 — React 前端实现与核心联调（已完成）。动态回答原则已实现。
 > **目标：** 定义前端组合回答的产品目标与数据契约
 > **重要：** 本文档描述前端渲染规则。当前 Real API 以 ChatResponse（含 answer/report/clarification/unsupported 字段 + QueryResult 审计元数据）为数据来源。内容块类型是前端根据后端产物动态渲染的产物类型，不等同于中间数据模型。
 
@@ -39,10 +39,10 @@
 | **M3.1** | deterministic `ReportSpec` → static HTML → `ReportArtifact` / view / download |
 | **M3.2** | CSS bars + responsive/static safety hardened acceptance |
 | **M5.0** | 文档契约固化、动态回答原则确认、UI↔后端能力映射；不写 React |
-| **M5.1** | 前端根据本文档实现动态组合回答渲染，ChatResponse 是主要数据来源 |
+| **M5.1** | ✅ 前端已动态渲染现有 ChatResponse terminal state 与 ReportArtifact；结构化 rows/ChartSpec 缺口保持 fail-closed |
 | **M5.2** | 视觉与交互收口 |
 
-**当前不创建**：统一 `AssistantMessageEnvelope`、消息块列表模型、新 API。统一 frontend envelope 在 M5.1 确定。
+**M5.1 决策：** 不创建新的后端统一 `AssistantMessageEnvelope` 或新 API。前端 typed adapter 直接消费现有 ChatResponse/History schema。
 
 ## 四、text — 文字内容块
 
@@ -93,7 +93,7 @@ ChatResponse 的相关字段：
 
 ### 数据来源
 
-后端 QueryResult / VerifiedFactSet。当前 ChatResponse 不直接暴露独立 metrics 结构；指标信息从 `answer` 文字或 `execution_audit` / `usage` 元数据中提取。M5.1 联调时确定前端如何获取结构化指标。
+后端 QueryResult / VerifiedFactSet。当前 ChatResponse 不直接暴露独立 metrics 结构；`usage` 不是事实数据，`execution_audit` 也不提供可展示指标结构。M5.1 不从 answer/audit 反解析指标，因此只展示 fact-bounded answer 文字。
 
 ### 规则
 
@@ -111,7 +111,7 @@ ChatResponse 的相关字段：
 
 ### 数据来源
 
-后端 QueryResult（通过 ChatResponse 的 `execution_audit` 或结构化元数据间接获取）。M5.1 联调时确定前端如何获取 QueryResult columns/rows。
+后端 QueryResult。当前 ChatResponse 与 History 不暴露 QueryResult columns/rows，现有 `execution_audit` 只有审计元数据。M5.1 将其记录为最小契约缺口，未修改 M4 Snapshot/Persistence，也不生成空表格或假 rows。
 
 ### 前端渲染约束
 
@@ -340,4 +340,4 @@ DeepSeek 提供语言模型能力，不是数据来源。source_mode 不能因�
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-21 | M5.0 动态回答渲染原则、ChatResponse 映射、前端渲染流程、删除固定内容序列*
+*最后更新：2026-08-21 | M5.1 动态回答实现与结构化数据契约缺口确认*
