@@ -65,6 +65,54 @@ def test_grouped_result_produces_table_and_bar_without_copying_rows() -> None:
     assert chart.data_reference == presentation.datasets[0].result_id
 
 
+def test_unverified_query_result_column_is_not_exposed_in_presentation() -> None:
+    plan = _plan(dimensions=["Category"])
+    result = _result(
+        ["Sales[Category]", "[Total Sales]", "Unexpected Secret"],
+        [["A", 10, "hidden-a"], ["B", 20, "hidden-b"]],
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+
+    presentation = StructuredPresentationBuilder.build_answer(
+        plan, result, facts, "按类别对比如下。"
+    )
+
+    dataset = presentation.datasets[0]
+    assert dataset.columns == ["Sales[Category]", "[Total Sales]"]
+    assert dataset.rows == [["A", 10], ["B", 20]]
+    assert "Unexpected Secret" not in presentation.model_dump_json()
+
+
+def test_metric_table_and_chart_references_resolve_to_verified_dataset() -> None:
+    scalar_plan = _plan()
+    scalar_result = _result(["[Total Sales]"], [[123.5]])
+    scalar_facts = VerifiedFactSetBuilder().build(scalar_plan, scalar_result)
+    scalar = StructuredPresentationBuilder.build_answer(
+        scalar_plan, scalar_result, scalar_facts, "总销售额为 123.5。"
+    )
+    metric = next(block for block in scalar.blocks if block.type == "metric")
+    scalar_dataset = scalar.datasets[0]
+    assert metric.data_reference == scalar_dataset.result_id
+    assert metric.value_field in scalar_dataset.columns
+    assert metric.row_index < scalar_dataset.row_count
+
+    grouped_plan = _plan(dimensions=["Category"])
+    grouped_result = _result(
+        ["Sales[Category]", "[Total Sales]"],
+        [["A", 10], ["B", 20]],
+    )
+    grouped_facts = VerifiedFactSetBuilder().build(grouped_plan, grouped_result)
+    grouped = StructuredPresentationBuilder.build_answer(
+        grouped_plan, grouped_result, grouped_facts, "按类别对比如下。"
+    )
+    grouped_dataset = grouped.datasets[0]
+    table = next(block for block in grouped.blocks if block.type == "table")
+    chart = next(block for block in grouped.blocks if block.type == "chart")
+    assert table.data_reference == grouped_dataset.result_id
+    assert chart.data_reference == grouped_dataset.result_id
+    assert {chart.x_field, chart.y_field}.issubset(grouped_dataset.columns)
+
+
 def test_date_dimension_selects_line_chart() -> None:
     plan = _plan(dimensions=["OrderDate"])
     result = _result(
@@ -89,6 +137,30 @@ def test_mismatched_fact_authority_fails_closed() -> None:
     )
     with pytest.raises(ValueError, match="presentation_authority_mismatch"):
         StructuredPresentationBuilder.build_answer(plan, result, facts, "answer")
+
+
+def test_query_result_row_column_shape_mismatch_fails_closed() -> None:
+    plan = _plan(dimensions=["Category"])
+    valid_result = _result(
+        ["Sales[Category]", "[Total Sales]"],
+        [["A", 10]],
+    )
+    facts = VerifiedFactSetBuilder().build(plan, valid_result)
+    malformed_result = QueryResult.model_construct(
+        result_id=valid_result.result_id,
+        semantic_model_key=valid_result.semantic_model_key,
+        columns=list(valid_result.columns),
+        rows=[["A"]],
+        row_count=1,
+        source_mode=valid_result.source_mode,
+        error=None,
+        truncated=False,
+    )
+
+    with pytest.raises(ValueError, match="presentation_authority_mismatch"):
+        StructuredPresentationBuilder.build_answer(
+            plan, malformed_result, facts, "answer"
+        )
 
 
 def test_report_attachment_has_no_factual_dataset() -> None:

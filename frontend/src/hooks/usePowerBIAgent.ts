@@ -32,10 +32,13 @@ function requestId(): string {
   return globalThis.crypto.randomUUID()
 }
 
-function discoveryErrorMessage(errorType: string | null): string | null {
+export function discoveryErrorMessage(errorType: string | null): string | null {
   if (!errorType) return null
   if (errorType === 'powerbi_desktop_not_connected') {
     return 'Power BI Desktop 未连接，请先打开一个 PBIX 文件。'
+  }
+  if (errorType === 'powerbi_multiple_desktop_instances') {
+    return '检测到多个 Power BI Desktop 模型，请只保留一个需要分析的 PBIX 后重试。'
   }
   if (errorType === 'powerbi_desktop_connection_failed') {
     return '已发现 Power BI Desktop，但当前数据模型无法连接。'

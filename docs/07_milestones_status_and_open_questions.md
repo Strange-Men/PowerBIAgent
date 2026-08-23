@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.3 — 结构化结果与前端最终收口已完成；Rich PBIX Real 浏览器验收通过
+> **状态：** M5.3.1 — 多 PBIX 绑定与展示事实边界最终加固已完成
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -32,6 +32,7 @@
 | **M5.2** | **真实业务链路与前端逻辑收口** | **✅ 已完成** |
 | **M5.2.1** | **模型能力边界与真实模式说明收口** | **✅ 已完成** |
 | **M5.3** | **结构化结果、历史/标题/资源管理与视觉交互最终收口** | **✅ 已完成** |
+| **M5.3.1** | **Local Desktop 单实例安全 + presentation verified-field projection** | **✅ 已完成** |
 
 ## M3 合并与 CI truth
 
@@ -59,6 +60,7 @@
 | Idempotency / Memory | ✅ replay 复用 report_id；render/store failure 不成功提交 Memory |
 | Persistent sessions / React | ✅ SQLite session query lifecycle + React recent/search/history/reports adapters 已完成 |
 | M5.3 presentation contract | ✅ QueryResult/VerifiedFactSet 单一 dataset + 动态 text/metric/table/bar/line/report 引用已实现并通过 Rich PBIX Real 验收 |
+| M5.3.1 Desktop/presentation hardening | ✅ 多 Desktop 在 Connect 前 fail closed；额外未验证 QueryResult 字段不进入 presentation |
 | Presentation transcript/title | ✅ Snapshot 保存 UI-only `user_message`/`presentation`；conversation title 自动生成、可重命名；不进入 Memory/factual authority |
 | Conversation/report management | ✅ 重命名、归档与现有 namespace DELETE；报表按所属 conversation 管理并复用 durable delete intent |
 | Persistence Architecture (M4.0) | ✅ ADR-012、SQLite/SQLAlchemy Async/Alembic、5 表 schema、migration 基线、Repository ABC |
@@ -161,4 +163,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-23 | M5.3 COMPLETE — 结构化结果与前端最终收口*
+*最后更新：2026-08-23 | M5.3.1 COMPLETE — 多 PBIX 绑定与展示事实边界最终加固*

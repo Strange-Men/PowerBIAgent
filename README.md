@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.3 — 结构化结果与前端最终收口**。M4.4.2 已最终验收；M5.0/M5.1/M5.2/M5.2.1/M5.3 已完成。
+当前版本：**M5.3.1 — 多 PBIX 绑定与展示事实边界最终加固**。M4.4.2 已最终验收；M5.0/M5.1/M5.2/M5.2.1/M5.3 已完成，M5.3.1 Final Hardening 已收口。
 
 ## 项目概览
 
@@ -23,7 +23,7 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 - 结构化多轮 Memory 只在完整成功后提交；歧义、失败和 clarification 不污染已提交状态。
 - SQLite 提供重启恢复、结构化历史/搜索/归档/删除与崩溃后删除重试。
 - `(runtime_mode, conversation_id)` 和 `(source_mode, conversation_id)` 严格隔离 Mock/Real 状态与报表历史。
-- `presentation` 只读展示契约把已验证的单指标、表格、柱状图/折线图和报表附件安全交给前端；内容块只引用同一份 QueryResult dataset。
+- `presentation` 只读展示契约把已验证的单指标、表格、柱状图/折线图和报表附件安全交给前端；dataset 只投影 VerifiedFactSet 数据事实覆盖字段，内容块只保存引用。
 - 展示型 transcript 与标题支持完整历史恢复、默认标题、重命名、归档和删除，不参与 Memory 或业务事实判断。
 
 ## 工作原理
@@ -64,10 +64,10 @@ LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI
 | 多轮 Memory | 指标、维度、filter、time、sort、TopN 继承；待澄清上下文与已提交 Memory 分离；损坏的 canonical filter 受控失败 |
 | 持久化与恢复 | SQLite Memory/Snapshot/报表 metadata；重启重放；不完整崩溃证据受控失败；持久化删除意图 |
 | 历史与搜索 | 仅 SQLite 支持最近会话、展示型 transcript、自动标题/重命名、有界搜索、归档和删除；旧会话只恢复真实已保存内容 |
-| 本地 Power BI | DeepSeek + 只读 Local Modeling MCP + Power BI Desktop；discovery 后执行当前 glossary/schema 最小兼容性检查；Real DAX/事实的 LLM 权限为 0 |
+| 本地 Power BI | DeepSeek + 只读 Local Modeling MCP + Power BI Desktop；只允许唯一一个打开的 Desktop 模型，多个实例在 Connect 前 fail closed；discovery 后执行当前 glossary/schema 最小兼容性检查；Real DAX/事实的 LLM 权限为 0 |
 | React 网页前端 | 白色主区与浅灰 Sidebar、响应式/键盘交互、动态模型兼容提示、完整历史恢复、会话管理，以及文字/指标/表格/柱状图/折线图/报表附件动态渲染 |
 
-Remote MCP 继续延期。M5.3 不改变 M0–M4 factual authority；Rich PBIX Real 六轮问答、表格、报表与会话恢复验收已通过。
+Remote MCP 继续延期。M5.3.1 不改变 M0–M4 factual authority；Rich PBIX Real 六轮问答、表格、报表与会话恢复验收已通过。
 
 ## 快速开始
 
@@ -101,7 +101,7 @@ DEEPSEEK_API_KEY=<用户自己的 Key>
 
 按以下顺序启动：
 
-1. 在 Power BI Desktop 中打开目标 PBIX。
+1. 在 Power BI Desktop 中只打开一个目标 PBIX；若同时打开多个模型，系统会明确拒绝连接并提示关闭多余 PBIX。
 2. 启动 FastAPI 后端。
 3. 启动 React 前端。
 4. 打开 `http://127.0.0.1:5173`。
@@ -310,6 +310,7 @@ python -m alembic upgrade head
 | M5.2 | 已完成 — 真实业务链路与前端逻辑收口 |
 | M5.2.1 | 已完成 — 模型能力边界与真实模式说明收口 |
 | M5.3 | 已完成 — 结构化结果、历史/标题/管理、响应式与视觉交互已收口；Rich PBIX Real 验收通过 |
+| M5.3.1 | 已完成 — 多 Desktop 实例连接前 fail closed；presentation 仅投影 verified 数据字段 |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -336,4 +337,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-23 | M5.3 COMPLETE — 结构化结果与前端最终收口*
+*最后更新：2026-08-23 | M5.3.1 COMPLETE — 多 PBIX 绑定与展示事实边界最终加固*

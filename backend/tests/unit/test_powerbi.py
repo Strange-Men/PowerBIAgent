@@ -139,8 +139,17 @@ class FlakyLocalDAXNetworkClient:
 class FakeStdioMCPClient:
     """Mimics the official Client surface after stdio protocol negotiation."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        instances: list[dict[str, object]] | None = None,
+    ) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
+        self.instances = instances if instances is not None else [{
+            "parentProcessName": "PBIDesktop",
+            "connectionString": (
+                "Data Source=localhost:54321;Application Name=test"
+            ),
+        }]
 
     async def call_tool(
         self,
@@ -153,10 +162,7 @@ class FakeStdioMCPClient:
         if operation == "ListLocalInstances":
             payload = {
                 "success": True,
-                "data": [{
-                    "parentProcessName": "PBIDesktop",
-                    "connectionString": "Data Source=localhost:54321;Application Name=test",
-                }],
+                "data": self.instances,
             }
         elif operation == "ListConnections":
             payload = {
@@ -739,6 +745,19 @@ class TestLocalMCPPowerBIAdapter:
         assert private_marker not in catalog.model_dump_json()
 
     @pytest.mark.asyncio
+    async def test_discovery_multiple_desktops_is_safe_empty_catalog(self):
+        client = FakeLocalMCPClient(
+            discovery_error=LocalMCPConnectionError(
+                LocalMCPErrorCategory.DESKTOP_CONNECTION,
+                "desktop_multiple_instances",
+            )
+        )
+        catalog = await _local_adapter(client).discover_semantic_models()
+
+        assert catalog.items == []
+        assert catalog.error_type == "powerbi_multiple_desktop_instances"
+
+    @pytest.mark.asyncio
     async def test_process_startup_failure_is_explicit(self):
         client = FakeLocalMCPClient(error=LocalMCPConnectionError(
             LocalMCPErrorCategory.MCP_STARTUP,
@@ -956,6 +975,28 @@ class TestLocalMCPPowerBIAdapter:
         assert result.values == ["A", "B"]
         assert result.truncated is True
         assert result.source_mode == "real"
+        assert client.schema_calls == 1
+        assert client.dax_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_member_lookup_fails_closed_if_dax_session_sees_multiple_desktops(self):
+        client = FakeLocalMCPClient(
+            schema_snapshot=_schema_snapshot(),
+            dax_error=LocalMCPConnectionError(
+                LocalMCPErrorCategory.DESKTOP_CONNECTION,
+                "desktop_multiple_instances",
+            ),
+        )
+
+        with pytest.raises(PowerBIAdapterError) as exc_info:
+            await _local_adapter(client).get_column_members(ColumnMembersRequest(
+                semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+                table_name="Products",
+                field_name="Category",
+                limit=2,
+            ))
+
+        assert exc_info.value.error_type == "connection_error"
         assert client.schema_calls == 1
         assert client.dax_calls == 1
 
@@ -1342,6 +1383,23 @@ class TestLocalMCPPowerBIAdapter:
         assert classified.category == LocalMCPErrorCategory.DAX_ERROR
         assert classified.error_type == "dax_execute_failed"
 
+    def test_exception_group_preserves_multiple_desktop_error(self):
+        classified = PowerBILocalMCPClient._classify_exception(
+            ExceptionGroup(
+                "stdio shutdown",
+                [
+                    LocalMCPConnectionError(
+                        LocalMCPErrorCategory.DESKTOP_CONNECTION,
+                        "desktop_multiple_instances",
+                    ),
+                    RuntimeError("resource cleanup"),
+                ],
+            )
+        )
+
+        assert classified.category == LocalMCPErrorCategory.DESKTOP_CONNECTION
+        assert classified.error_type == "desktop_multiple_instances"
+
     def test_result_payload_prefers_structured_and_supports_inline_text(self):
         structured = SimpleNamespace(
             structured_content={"source": "structured"},
@@ -1380,6 +1438,95 @@ class TestLocalMCPPowerBIAdapter:
             "ListLocalInstances",
             "Connect",
             "ListConnections",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_stdio_client_reports_zero_desktop_instances_without_connecting(self):
+        client = PowerBILocalMCPClient()
+        fake = FakeStdioMCPClient(instances=[])
+
+        diagnostics = await client._discover_and_connect_desktop(
+            fake,  # type: ignore[arg-type]
+            "2025-11-25",
+            _local_tools(),
+        )
+
+        assert diagnostics.error_category == LocalMCPErrorCategory.DESKTOP_NOT_FOUND
+        assert diagnostics.error_type == "desktop_instance_not_found"
+        assert [call[1]["request"]["operation"] for call in fake.calls] == [  # type: ignore[index]
+            "ListLocalInstances",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_stdio_client_fails_closed_for_multiple_desktop_instances(self):
+        client = PowerBILocalMCPClient()
+        fake = FakeStdioMCPClient(instances=[
+            {
+                "parentProcessName": "PBIDesktop",
+                "connectionString": "Data Source=localhost:54321",
+            },
+            {
+                "parentProcessName": "PBIDesktop",
+                "connectionString": "Data Source=localhost:54322",
+            },
+        ])
+
+        diagnostics = await client._discover_and_connect_desktop(
+            fake,  # type: ignore[arg-type]
+            "2025-11-25",
+            _local_tools(),
+        )
+
+        assert diagnostics.error_category == LocalMCPErrorCategory.DESKTOP_CONNECTION
+        assert diagnostics.error_type == "desktop_multiple_instances"
+        assert diagnostics.desktop_detected is True
+        assert [call[1]["request"]["operation"] for call in fake.calls] == [  # type: ignore[index]
+            "ListLocalInstances",
+        ]
+        assert "instances[0]" not in inspect.getsource(PowerBILocalMCPClient)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("path", ["schema", "dax"])
+    async def test_schema_and_dax_sessions_reject_multiple_desktops(self, path: str):
+        client = PowerBILocalMCPClient()
+        instances = [
+            {
+                "parentProcessName": "PBIDesktop",
+                "connectionString": "Data Source=localhost:54321",
+            },
+            {
+                "parentProcessName": "PBIDesktop",
+                "connectionString": "Data Source=localhost:54322",
+            },
+        ]
+        if path == "schema":
+            fake = FakeSchemaStdioMCPClient(_schema_snapshot())
+            fake.instances = instances
+            call = client._read_schema_in_session(
+                fake,  # type: ignore[arg-type]
+                "2025-11-25",
+                _local_tools(),
+            )
+        else:
+            fake = FakeDAXStdioMCPClient(_successful_dax_payload())
+            fake.instances = instances
+            call = client._execute_dax_in_session(
+                fake,  # type: ignore[arg-type]
+                "2025-11-25",
+                _local_tools(),
+                request=DAXRequest(
+                    semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+                    dax='EVALUATE ROW("Value", 1)',
+                ),
+            )
+
+        with pytest.raises(LocalMCPConnectionError) as exc_info:
+            await call
+
+        assert exc_info.value.category == LocalMCPErrorCategory.DESKTOP_CONNECTION
+        assert exc_info.value.error_type == "desktop_multiple_instances"
+        assert [call[1]["request"]["operation"] for call in fake.calls] == [  # type: ignore[index]
+            "ListLocalInstances",
         ]
 
     @pytest.mark.asyncio

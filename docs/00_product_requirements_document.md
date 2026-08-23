@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v1.4
-> **修订日期：** 2026-08-21
+> **修订版本：** v1.5
+> **修订日期：** 2026-08-23
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** 修正 M5.2/M5.3、Desktop 模型 discovery 与 report template override 产品逻辑；North Star 不变
+> **本轮修订范围：** 同步 M5.3/M5.3.1 实现状态、structured presentation 与 Local Desktop 单实例安全边界；North Star 不变
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -23,7 +23,7 @@ Power BI 数据分析 Agent MVP（PowerBIAgent）
 
 完成一套可运行、可验证的 MVP，证明以下链路可行：
 
-当前 M0—M4 已验证的后端主链为：
+当前 M0—M5 已验证的主链为：
 
 ```text
 Natural Language
@@ -53,7 +53,7 @@ MVP 主要供公司内部少量人员使用，暂不处理复杂客户权限和�
 
 ### 5.1 数据问答
 
-用户从后端发现的当前可连接 Power BI Desktop / PBIX 对应语义模型中选择一个模型后，输入自然语言问题。浏览器不直接读取 `.pbix`；Local MCP / PowerBIAdapter 负责发现和连接当前 Desktop 实例，前端只展示后端返回的安全模型目录。以下是长期产品场景示例：
+用户从后端发现的当前可连接 Power BI Desktop / PBIX 对应语义模型中选择一个模型后，输入自然语言问题。浏览器不直接读取 `.pbix`；Local MCP / PowerBIAdapter 负责发现和连接当前 Desktop 实例，前端只展示后端返回的安全模型目录。当前 Local MVP 要求只打开一个待分析 PBIX：0 个实例返回未连接状态，多个实例在连接前 deterministic fail closed，不按顺序或 display name 猜测模型。以下是长期产品场景示例：
 
 - "本月销售额是多少？"
 - "各区域销售额排名如何？"
@@ -98,9 +98,10 @@ React + Vite
 - 项目分区
 - 最近报表（M3 后端报表资源能力，M5 前端界面）
 - 最近对话（M4 后端会话持久化能力，M5 前端界面）
+- 展示型 transcript、自动标题与 namespace-scoped 重命名、归档、删除
 - 用户信息和菜单
 
-> **M3/M4/M5 边界：** M3 准备报表渲染、资源 ID、查看/下载等后端能力；M4 准备会话历史、搜索和持久化等后端能力；左侧栏 React UI 及其所有可见组件（最近报表列表、最近对话列表、搜索界面）统一在 M5 实现。M3 和 M4 不开发 React 左侧栏。
+> **M3/M4/M5 边界：** M3 完成报表渲染、资源 ID、查看/下载等后端能力；M4 完成会话历史、搜索和持久化等后端能力；左侧栏 React UI、最近报表/对话、搜索和会话管理已在 M5 实现。展示型 transcript/title 不进入 Memory 或业务事实链。
 
 ### 输入框组件
 
@@ -111,21 +112,21 @@ React + Vite
 
 ### AI 回答展示形式
 
-AI 回答不是只能返回纯文本。同一条 AI 消息未来可以组合：
+AI 回答不是只能返回纯文本。同一条 AI 消息现在可以按实际后端产物组合：
 
 - 自然语言文字结论
 - 关键指标摘要（metrics）
 - 简单数据表格（table）
-- 基础图表（chart，柱状图/折线图/饼图/散点图）
+- 基础图表（chart，当前只支持柱状图/折线图）
 - 报表附件卡片（report_attachment）
 
 表格直接嵌入 AI 回答，白色背景，浅灰横向分隔线。图表直接嵌入 AI 回答，颜色克制优先单一蓝色，不使用 3D 图表。报表附件以轻量横向卡片展示，包含文件图标、标题、类型、"查看报表"和"下载 HTML"操作。
 
-> **重要：** 组合回答是未来 M5 前端展示目标。当前 API 仍以 AnswerSpec + QueryResult + ReportSpec + RenderedReport 为基础。M1.4 继续复用现有契约。完整组合消息编排在 M5 继续确定。
+> **重要：** M5.3 已实现只读 `PresentationEnvelope`。metric/table/chart block 只引用由 QueryResult 与 VerifiedFactSet 直接投影的一份 dataset；额外的未验证 QueryResult 字段不会进入 presentation。系统不从 answer/audit 反解析数据，也不允许 LLM 或前端造数。饼图、散点图、任意 ChartSpec、前端聚合与通用趋势推断仍未实现。
 
 ### 前端开发策略
 
-**前期只确认页面骨架，不进行完整前端开发。后端链路跑通后再进行正式联调。正式前端开发延后至 M5。**
+前端已在 M5 完成 React 实现、Real 联调、结构化结果、responsive、accessibility 与状态视觉收口；后续不扩展新前端能力，除非另有明确里程碑批准。
 
 ## 七、后端设计
 
@@ -149,6 +150,7 @@ FastAPI
 4. **Power BI MCP Adapter** — 连接 Power BI MCP，获取语义模型结构，执行 DAX 查询，处理异常
 5. **Memory 模块** — 只在 Grounding、DAX、Layer 3、Power BI、FactSet 与 factual output 全链成功后提交当前分析状态；PendingClarificationContext 与 committed Memory 分离
 6. **报表生成模块** — M3 已实现受 VerifiedFactSet / QueryResult 约束的固定模板静态 HTML 渲染与资源契约；M4 persistence 只保存状态/metadata，filesystem 继续拥有 HTML authority
+7. **展示投影模块** — M5.3 已实现 QueryResult/VerifiedFactSet 直接来源的 `presentation` contract，以及 text/metric/table/bar/line/report attachment 动态块；只拥有 UI projection 权限
 
 ### 单 Agent 执行流程
 
@@ -222,6 +224,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 | `GET /api/v1/conversations/search` | ✅ 已实现 |
 | `GET /api/v1/conversations/{id}/history` | ✅ 已实现 |
 | `GET /api/v1/conversations/{id}/reports` | ✅ 已实现（必填 source_mode） |
+| `PATCH /api/v1/conversations/{id}` | ✅ 已实现；仅在 runtime namespace 内修改展示型标题 |
 | `POST /api/v1/conversations/{id}/archive` | ✅ 已实现 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 |
 
@@ -235,7 +238,8 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 6. **M5.0 前端设计与契约固化** ✅ 已完成 — 文档校准、页面结构、交互边界、动态回答原则、UI ↔ 后端能力映射；不创建 React 项目
 7. **M5.1 React 前端实现与核心联调** ✅ 已完成 — React + Vite + TypeScript、Sidebar/Welcome/Chat/Composer、Chat/History/Search/Reports 联调、动态 terminal-state/report 渲染
 8. **M5.2 真实业务链路与前端逻辑收口** ✅ 已完成 — Real 模式、Desktop 模型 discovery、SQLite 会话配置、intent/template/model 逻辑、真实多轮 Chat/report 与最小用户可理解错误态
-9. **M5.3 视觉与交互最终收口** ⬜ 未开始 — ChatGPT 风格尺寸/间距、responsive、accessibility、loading/error/empty polish、表格/图表视觉与最终浏览器验收
+9. **M5.3 结构化结果与前端最终收口** ✅ 已完成 — structured presentation、展示型 transcript/title、重命名/归档/删除、metric/table/bar/line/report attachment、responsive/accessibility/状态视觉与 Rich PBIX Real 浏览器验收
+10. **M5.3.1 Final Hardening** ✅ 已完成 — Local MCP 多 Desktop 在 Connect 前 fail closed，presentation 只投影 VerifiedFactSet 数据事实覆盖字段；无新产品能力或后续里程碑扩展
 
 ## 十二、MVP 暂不包含
 
@@ -270,7 +274,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 ## 十四、验收标准
 
-以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.2 truth/persistence boundary final closure 已完成；M5.0/M5.1/M5.2 已完成，M5.3 尚未开始。CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
+以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.2 truth/persistence boundary final closure 已完成；M5.0/M5.1/M5.2/M5.2.1/M5.3 已完成，M5.3.1 完成最终安全加固。Rich PBIX Real 六轮问答、表格、报表、recent/history/search 与查看/下载已完成验收；CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
 
 MVP 达到以下条件即可视为成功：
 
@@ -300,4 +304,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-21 | M5.2/M5.3 与真实产品逻辑边界修正；North Star 不变*
+*修订日期：2026-08-23 | M5.3/M5.3.1 状态、presentation 与 Desktop 单实例安全边界同步；North Star 不变*

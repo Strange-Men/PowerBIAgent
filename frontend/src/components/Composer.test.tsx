@@ -150,4 +150,28 @@ describe('Composer menus and sending', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText(/connectionstring|stack|mcp_protocol/i)).not.toBeInTheDocument()
   })
+
+  it('shows the multiple Desktop error and keeps sending disabled', () => {
+    const onSend = vi.fn()
+    render(
+      <Composer
+        sending={false}
+        semanticModel={null}
+        semanticModelOptions={[]}
+        loadingSemanticModels={false}
+        semanticModelError="检测到多个 Power BI Desktop 模型，请只保留一个需要分析的 PBIX 后重试。"
+        reportTemplate={null}
+        onSemanticModelChange={vi.fn()}
+        onReportTemplateChange={vi.fn()}
+        onSend={onSend}
+      />,
+    )
+    fireEvent.change(screen.getByLabelText('询问你的 Power BI 数据'), {
+      target: { value: '查询销售额' },
+    })
+
+    expect(screen.getByText(/检测到多个 Power BI Desktop 模型/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
+    expect(onSend).not.toHaveBeenCalled()
+  })
 })

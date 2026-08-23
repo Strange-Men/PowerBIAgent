@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.3 — 结构化结果与前端最终收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0/M5.1/M5.2/M5.2.1/M5.3 已完成。`PowerBIAgent_M3_Rich_Test.pbix` Real 六轮问答、表格、报表、recent/history/search 与查看/下载验收通过。
+**M5.3.1 — 多 PBIX 绑定与展示事实边界最终加固已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0/M5.1/M5.2/M5.2.1/M5.3/M5.3.1 已完成。`PowerBIAgent_M3_Rich_Test.pbix` Real 六轮问答、表格、报表、recent/history/search 与查看/下载验收通过。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -19,6 +19,19 @@
 | **M5.2** | **真实业务链路与前端逻辑收口** | **✅ 已完成** |
 | **M5.2.1** | **模型能力边界与真实模式说明收口** | **✅ 已完成** |
 | **M5.3** | **结构化结果与前端最终收口** | **✅ 已完成** |
+| **M5.3.1** | **多 PBIX 绑定与展示事实边界最终加固** | **✅ 已完成** |
+
+### M5.3.1 — 多 PBIX 绑定与展示事实边界最终加固
+
+- 根因：Local MCP discovery、schema、member lookup 与 DAX 分别建立 stdio session，每次都重新执行 `ListLocalInstances → instances[0] → Connect`。多个 Desktop 同时打开时，不同阶段可能连接不同 PBIX，形成“数据真实但来源模型错误”的 P0 风险。
+- Local MVP 采用最小唯一实例 contract：每个 session 的 `ListLocalInstances` 必须恰好返回一个 Desktop 实例；0 个保持 `powerbi_desktop_not_connected`，多个在 `Connect` 前 fail closed 为 `powerbi_multiple_desktop_instances`。不按顺序或 display name 猜测，不新增 instance registry。
+- discovery/schema/member/DAX 共用同一检查；单实例 Rich 路径不变。前端对多实例显示自然语言提示并禁止发送，不暴露连接 identity 或 MCP raw payload。
+- stdio 关闭可将受控 Desktop 错误与 cleanup 错误组合为 `ExceptionGroup`；分类器现会保留 `DESKTOP_NOT_FOUND` / `DESKTOP_CONNECTION` 中的安全错误码，避免多实例被上层归一为通用 discovery unavailable。
+- `PresentationDataset` 不再复制完整 QueryResult；只按 scalar/grouped/ranking/min/max VerifiedFact `source_fields` 保持 QueryResult 原顺序投影 columns/rows。metric/table/chart 全部引用该 verified dataset，额外列不进入 presentation，row/column shape mismatch 继续 fail closed。
+- 正式 PRD 已同步 M5.3 presentation、transcript/title/rename/delete、metric/table/bar/line/report attachment 与 Rich PBIX acceptance；comparison/YoY/arbitrary trend、Remote MCP、多租户/RLS 等仍 unsupported/deferred。
+- Settings.version 为 M5.3.1；frontend version 为 5.3.1。无 migration，无 M0–M4 authority 变化，无后续里程碑扩展。
+- Fresh 验证：backend focused `98 passed`，backend full `1743 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `34 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `116`、Repository Safety `280`、Error Ledger `25`、Documentation Governance 与 `git diff --check` PASS。
+- Real Smoke：Rich 单实例 discovery 为 compatible/selectable，简单问答、表格、报表均成功；同时打开第二个 PBIX 后明确返回 `powerbi_multiple_desktop_instances`，关闭后 Rich 立即恢复。未修改或保存 PBIX。
 
 ### M5.3 — 结构化结果与前端最终收口
 
@@ -160,7 +173,7 @@
 
 ## 下一步
 
-M5.3 完成后停止，不继续开发后续里程碑。后续工作必须由新的明确用户指令启动。
+M5.3.1 完成后停止，不继续开发后续里程碑。后续工作必须由新的明确用户指令启动。
 
 ## 关键命令
 
@@ -205,4 +218,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-23 | M5.3 COMPLETE — 结构化结果与前端最终收口*
+*最后更新：2026-08-23 | M5.3.1 COMPLETE — 多 PBIX 绑定与展示事实边界最终加固*

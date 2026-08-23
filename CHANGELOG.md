@@ -2,6 +2,20 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.3.1] — 2026-08-23
+
+### 多 PBIX 绑定与展示事实边界最终加固
+
+- 修复 Local MCP discovery/schema/member/DAX 各自新建 stdio session 时静默使用 `instances[0]` 的模型漂移风险。每个 session 现在只接受唯一 Desktop 实例：0 个保持未连接状态，多个实例在 `Connect` 前 deterministic fail closed，并通过 safe catalog 返回 `powerbi_multiple_desktop_instances`。
+- 前端为多实例错误显示“请只保留一个需要分析的 PBIX”并保持不可发送；不暴露端口、进程、连接串或 raw MCP 诊断。
+- `PresentationDataset` 只按 scalar/grouped/ranking/min/max VerifiedFact 的 `source_fields` 投影 QueryResult，额外未验证列及 cell 不再进入前端；metric/table/chart 继续只引用同一 verified dataset，row/column shape mismatch 继续 fail closed。
+- 正式 PRD 同步 M5.3 structured presentation、展示型 transcript/title/rename/delete、metric/table/bar/line/report attachment 与 Rich PBIX Real acceptance 完成状态；comparison/YoY/任意趋势推断、Remote MCP、多租户/RLS 等边界不变。
+- Fresh backend focused regression `98 passed`，backend full regression `1743 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `34 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `116`、Repository Safety `280`、Error Ledger `25`、Documentation Governance 与 `git diff --check` PASS。
+- Real Smoke 在 `PowerBIAgent_M3_Rich_Test.pbix` 单实例下完成 discovery、简单问答、表格与报表；额外打开第二个 PBIX 后 safe catalog 返回 `powerbi_multiple_desktop_instances`，关闭第二个后 Rich 恢复 compatible/selectable。未修改或保存 PBIX。
+- 无 schema change 或 migration；未修改 TurnPipeline、Memory、QueryResult、VerifiedFactSet、Report authority，未进入后续里程碑。
+
+**Settings.version:** M5.3.1
+
 ## [M5.3] — 2026-08-23
 
 ### 结构化结果与前端最终收口

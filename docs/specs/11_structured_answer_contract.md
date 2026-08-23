@@ -1,6 +1,6 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M5.3 presentation contract 已实现并通过 Rich PBIX Real 浏览器验收。
+> **状态：** M5.3 presentation contract 已实现；M5.3.1 已收紧为只投影 VerifiedFactSet 数据事实覆盖字段。
 > **边界：** 本契约只增加安全展示层，不改变 WorkMemory、QueryResult、VerifiedFactSet、ReportSpec 或 ReportArtifact 的事实权威。
 
 ## 一、目标
@@ -21,8 +21,8 @@
 |---|---|
 | 文字回答 | 受事实约束的 terminal answer / clarification / unsupported reason |
 | 指标 | `VerifiedFactSet` 证明且可回指 `QueryResult` 的 scalar fact |
-| 表格 | `QueryResult.columns` 与 `QueryResult.rows` |
-| 柱状图/折线图 | 同一 `QueryResult` dataset 的字段引用 |
+| 表格 | VerifiedFactSet 数据事实 `source_fields` 覆盖的 QueryResult 列与对应 rows 投影 |
+| 柱状图/折线图 | 同一 verified presentation dataset 的字段引用 |
 | 报表附件 | `ReportArtifact` canonical `report_id` 与资源 API |
 
 禁止从 answer 文字反解析数字，禁止从 `execution_audit` 拼 rows，禁止由 LLM 或前端生成第二份 Chart data，禁止为视觉完整度补假数据。
@@ -72,12 +72,12 @@
 | `result_id` | block 的唯一 `data_reference` |
 | `verified_fact_set_id` | 证明 dataset 已经过 VerifiedFactSet 边界 |
 | `semantic_model_key` / `source_mode` | 必须与 QueryResult 和 FactSet 一致 |
-| `columns` | 唯一列名；顺序与 QueryResult 完全一致 |
-| `rows` | 每行长度必须等于 columns 长度 |
+| `columns` | 唯一列名；只包含 scalar/grouped/ranking/min/max 数据事实 `source_fields` 覆盖字段，并保持其在 QueryResult 中的原顺序 |
+| `rows` | 对 QueryResult rows 做相同列投影；每行长度必须等于 columns 长度 |
 | `row_count` | 必须等于 rows 实际数量 |
 | `truncated` | 原样保留 QueryResult 截断状态 |
 
-builder 在 QueryResult error、result/fact ID、model、source、columns、row count 或 truncated 不一致时 fail closed，不返回部分 presentation。
+builder 仍要求 FactSet 的完整 `result_columns` 与 QueryResult 一致，用作 authority coherence witness；presentation dataset 只暴露数据型 VerifiedFact 的 `source_fields`。QueryResult error、result/fact ID、model、source、columns、row shape、row count 或 truncated 不一致时 fail closed，不返回部分 presentation。
 
 ### 3.2 block 引用
 
@@ -97,6 +97,7 @@ builder 在 QueryResult error、result/fact ID、model、source、columns、row 
 4. grouped result 至少两行、Y 字段全部为数值时才产生 chart。
 5. 时间维度或真实日期值产生 `line`；其他 grouped comparison 产生 `bar`。
 6. report 成功时产生 text + `report_attachment`，不把 ReportSpec 数据复制进 chat dataset。
+7. QueryResult 意外增加但未被数据型 VerifiedFact `source_fields` 覆盖的列时，该列及对应 cell 不进入 dataset。
 
 前端不重新判断业务意图，不把普通表格升级成趋势，不修改数据顺序，不计算新指标。
 
@@ -162,6 +163,7 @@ History API 返回保存的 user message、assistant terminal result 和同一 p
 - grouped → table + bar；
 - time series → table + line；
 - QueryResult/FactSet 不一致 fail closed；
+- unexpected QueryResult field 不进入 presentation；
 - dangling dataset/field/row reference fail closed；
 - report attachment 只引用 report_id；
 - History serialization/restart 后 presentation shape 保持一致；
@@ -172,4 +174,4 @@ History API 返回保存的 user message、assistant terminal result 和同一 p
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-23 | M5.3 只读 presentation contract 实现*
+*最后更新：2026-08-23 | M5.3.1 verified-field projection final hardening*

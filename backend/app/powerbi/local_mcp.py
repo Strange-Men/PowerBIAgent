@@ -559,7 +559,19 @@ class PowerBILocalMCPClient:
                 None,
             )
 
-        data_source = self._desktop_data_source(instances[0])
+        if len(instances) != 1:
+            return (
+                LocalMCPDiagnostics.failure(
+                    LocalMCPErrorCategory.DESKTOP_CONNECTION,
+                    "desktop_multiple_instances",
+                    desktop_detected=True,
+                    **state,
+                ),
+                None,
+            )
+
+        instance = next(iter(instances))
+        data_source = self._desktop_data_source(instance)
         if data_source is None:
             return (
                 LocalMCPDiagnostics.failure(
@@ -616,7 +628,7 @@ class PowerBILocalMCPClient:
                 connection=True,
                 **state,
             ),
-            instances[0],
+            instance,
         )
 
     async def _call_schema_tool(
@@ -959,6 +971,8 @@ class PowerBILocalMCPClient:
                 if isinstance(nested, Exception)
             ]
             for category in (
+                LocalMCPErrorCategory.DESKTOP_NOT_FOUND,
+                LocalMCPErrorCategory.DESKTOP_CONNECTION,
                 LocalMCPErrorCategory.NETWORK,
                 LocalMCPErrorCategory.LOCAL_PREREQUISITE,
                 LocalMCPErrorCategory.MCP_PROTOCOL,
@@ -1145,7 +1159,9 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                     await asyncio.sleep(0.25)
                     continue
                 error_type = "semantic_model_discovery_unavailable"
-                if exc.category == LocalMCPErrorCategory.DESKTOP_NOT_FOUND:
+                if exc.error_type == "desktop_multiple_instances":
+                    error_type = "powerbi_multiple_desktop_instances"
+                elif exc.category == LocalMCPErrorCategory.DESKTOP_NOT_FOUND:
                     error_type = "powerbi_desktop_not_connected"
                 elif exc.category == LocalMCPErrorCategory.DESKTOP_CONNECTION:
                     error_type = "powerbi_desktop_connection_failed"
