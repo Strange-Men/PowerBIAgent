@@ -2,7 +2,7 @@
 
 ## 状态
 
-**M5.2.1 — 模型能力边界与真实模式说明收口已完成。M5.3 尚未开始。**
+**M5.3 — 结构化结果与前端最终收口已完成；Rich PBIX Real 浏览器验收通过。**
 
 ## 技术栈
 
@@ -30,7 +30,7 @@ npm test
 npm run build
 ```
 
-前端从后端只读语义模型发现响应取得当前 runtime namespace 和可选模型；浏览器不读取 `.pbix`，也不保存任何连接信息或 Provider Secret。Mock 后端联调时可显式使用 `VITE_RUNTIME_MODE=mock` 作为请求前的保守初值，后端发现结果仍是运行时权威来源。发现到 schema fixture 不等于可进入正式 Chat pipeline；前端只显示后端确认可选择的模型。
+前端从后端只读语义模型发现响应取得当前 runtime namespace、模型与 compatibility 状态；浏览器不读取 `.pbix`，也不保存任何连接信息或 Provider Secret。Mock 后端联调时可显式使用 `VITE_RUNTIME_MODE=mock` 作为请求前的保守初值，后端发现结果仍是运行时权威来源。模型可连接但不符合当前 glossary/schema 时仍会显示名称与明确提示，但发送保持禁用。
 
 连接本地 PBIX 的完整配置和启动顺序见根目录 [README 的“本地 Power BI 真实模式启动”章节](../README.md#本地-power-bi-真实模式启动)。默认配置是 Mock，仅用于开发测试。
 
@@ -49,8 +49,8 @@ npm run build
 |------|---------|---------|
 | 新聊天 | 真实交互 | 无（前端创建新对话） |
 | 搜索聊天 | 真实交互 | M4 会话搜索 API（已完成） |
-| 最近对话 | 真实交互 | M4 会话历史 API（已完成） |
-| 最近报表 | 真实交互 | M3/M4 报表历史 API（已完成） |
+| 最近对话 | 打开、搜索、重命名、归档、删除 | M4 API + M5.3 presentation metadata |
+| 最近报表 | 查看、下载；按所属 conversation 管理 | M3/M4 报表历史与 conversation delete API |
 | 项目 | 仅展示卡片，不新增项目管理后端 | 无 |
 | 用户账户 | 仅展示，不新增用户系统 | 无 |
 
@@ -93,7 +93,7 @@ npm run build
 1. **数据模型** — 映射为 Chat 请求的 `semantic_model_key`
 2. **报表模板** — 仅在用户主动选择具体模板时映射为 Chat 请求的可选 `report_template_key` override
 
-M5.2.1 使用 `GET /api/v1/semantic-models` 读取后端通过 Local MCP / 当前 Power BI Desktop 实例发现、确认可连接且可进入正式 Chat pipeline 的模型。浏览器不能直接读取 `.pbix`；前端只展示后端返回的安全目录，不再内置或伪造“Power BI 销售数据”。Mock discovery 只暴露正式支持的 `mock_sales_model`；`mock_satisfaction_model` 继续保留为测试 fixture，但不会成为正常可选项。当前 Local Adapter 的稳定执行合同一次只连接一个 Desktop 模型，因此 UI 明确显示“当前已连接模型”；M2 封板兼容 key 只留在后端内部，不再是前端产品目录。
+M5.3 使用 `GET /api/v1/semantic-models` 读取后端通过 Local MCP / 当前 Power BI Desktop 实例发现并进行最小 Agent compatibility 检查的模型。浏览器不能直接读取 `.pbix`；前端只展示后端返回的安全目录，不再内置或伪造“Power BI 销售数据”。Mock discovery 只暴露正式支持的 `mock_sales_model`。当前 Local Adapter 的稳定执行合同一次只连接一个 Desktop 模型；若模型可连接但暂不符合当前业务结构，UI 明确提示并禁用发送，不显示内部 schema/hash/DAX。
 
 报表模板暂时没有发现 API，继续由 `src/config.ts` 集中维护 registry-owned 目录。当前只有 `sales_report`，展示名为“销售分析报告”。菜单不提供“不使用模板”：未选择模板只表示本次请求不传 override，普通问答、多轮分析或报表生成仍由后端 intent 自动识别；即使未显式选择，后端也可以按业务规则为报表意图选择默认模板。
 
@@ -131,12 +131,14 @@ M5.2.1 使用 `GET /api/v1/semantic-models` 读取后端通过 Local MCP / 当�
 | `GET /api/v1/conversations/search` | ✅ 已实现 | 搜索聊天 |
 | `GET /api/v1/conversations/{id}/history` | ✅ 已实现 | 恢复对话历史 |
 | `GET /api/v1/conversations/{id}/reports` | ✅ 已实现（必填 source_mode） | 最近报表列表 |
+| `PATCH /api/v1/conversations/{id}` | ✅ M5.3 presentation metadata | 会话重命名 |
 | `POST /api/v1/conversations/{id}/archive` | ✅ 已实现 | 归档对话 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 | 删除对话 |
-| `GET /api/v1/semantic-models` | ✅ M5.2 最小只读端点 | 动态加载当前后端可连接、可选择的 Desktop 模型与 runtime namespace |
+| `GET /api/v1/semantic-models` | ✅ M5.3 最小只读 compatibility | 动态加载 Desktop 模型、runtime namespace 与兼容状态 |
 | `GET /api/report-templates` | ❌ 未实现 | `sales_report` 集中白名单配置 |
-| 统一前端 envelope | ❌ 不存在 | 不新增；typed adapter 直接消费现有 ChatResponse |
-| 多轮 Memory 显示 | ✅ 后端已实现 | 前端仅展示当前轮次的 answer |
+| `ChatResponse.presentation` | ✅ M5.3 只读展示层 | 动态消费 dataset 引用与 text/metric/table/chart/report blocks |
+| 展示型 transcript/title | ✅ M5.3 | 完整恢复新会话消息、自动标题与重命名；不作为 Memory 事实 |
+| 多轮 Memory 显示 | ✅ 后端已实现 | UI 只展示保存的 transcript/result，不读取 Memory |
 | 报表资源显示 | ✅ 后端已实现 | ChatResponse.report 内的结构化报表字段 |
 
 ## 前端规范文档
@@ -148,12 +150,12 @@ M5.2.1 使用 `GET /api/v1/semantic-models` 读取后端通过 Local MCP / 当�
 ## 实现结构
 
 - `src/api/`：typed fetch 客户端、namespace 查询与 Chat/History → UI adapters
-- `src/components/`：Sidebar、Composer、Conversation、动态 Assistant 与 ReportAttachment
+- `src/components/`：Sidebar、Composer、Conversation、动态 Assistant、StructuredBlocks 与 ReportAttachment
 - `src/hooks/usePowerBIAgent.ts`：当前会话、recent/search/history/reports 与发送状态
 - `src/config.ts`：模板目录与发现前的保守 runtime 初值；不再配置真实 Desktop 模型
 - `src/styles.css`：GPT 式桌面优先布局与基础窄屏适配
 
-现有 Chat/History schema 不暴露 QueryResult `columns/rows`、独立 metrics 或 ChartSpec。前端不读取 DAX/Trace/Memory，也不从 `execution_audit` 或 answer 反解析事实；因此当前只动态渲染真实文字终态和 ReportArtifact。表格/图表保持明确契约缺口，不展示假内容。
+`ChatResponse.presentation` 与 History 中保存的同一 envelope 暴露一份 QueryResult dataset；metric/table/chart block 只保存 `data_reference` 与字段引用。前端不读取 DAX/Trace/Memory，也不从 `execution_audit` 或 answer 反解析事实。目前动态支持文字、单值指标、多行表格、简单柱状图/折线图和 ReportArtifact；没有真实 block 时不补假内容。
 
 ## M5 路线
 
@@ -163,8 +165,8 @@ M5.2.1 使用 `GET /api/v1/semantic-models` 读取后端通过 Local MCP / 当�
 | M5.1 | React + Vite 实现与核心联调（Sidebar/Welcome/Chat/Composer、菜单交互、Chat/History/Search/Reports 联调、动态渲染） | ✅ 已完成 |
 | M5.2 | 真实业务链路与前端逻辑收口（Real、Desktop 模型发现、SQLite 会话、intent/template/model、Chat 多轮与报表联调、最小错误态） | ✅ 已完成 |
 | M5.2.1 | 模型能力边界与真实模式说明收口 | ✅ 已完成 |
-| M5.3 | 视觉与交互最终收口（ChatGPT 风格尺寸/间距、responsive、accessibility、loading/error/empty polish、表格/图表视觉与最终浏览器验收） | ⬜ 待开始 |
+| M5.3 | 结构化结果、历史/标题/管理、ChatGPT 风格尺寸/间距、responsive、accessibility、状态与表格/图表视觉 | ✅ 已完成，Rich PBIX Real 验收通过 |
 
 ---
 
-*最后更新：2026-08-23 | M5.2.1 模型能力边界与真实模式说明收口完成*
+*最后更新：2026-08-23 | M5.3 COMPLETE — 结构化结果与前端最终收口*

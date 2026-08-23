@@ -42,6 +42,8 @@ from backend.app.conversation.models import (
     ConversationListPage,
     ConversationNotFoundError,
     ConversationReportPage,
+    ConversationRenameRequest,
+    ConversationRenameResult,
 )
 from backend.app.api.schemas import (
     ChatRequest,
@@ -184,7 +186,7 @@ async def get_conversation_history(
     cursor: str | None = Query(default=None, max_length=2048),
     service: ConversationHistoryService = Depends(get_conversation_history_service),
 ):
-    """Return persisted structured turn history, not a message transcript."""
+    """Return presentation transcript plus persisted structured turn results."""
     try:
         return await service.get_history(
             runtime_mode, conversation_id, limit=limit, cursor=cursor
@@ -225,6 +227,23 @@ async def archive_conversation(
     """Logically archive one namespace without deleting its history/reports."""
     try:
         return await service.archive(runtime_mode, conversation_id)
+    except Exception as exc:
+        _raise_conversation_query_error(exc)
+
+
+@router.patch(
+    "/api/v1/conversations/{conversation_id}",
+    response_model=ConversationRenameResult,
+)
+async def rename_conversation(
+    conversation_id: str,
+    body: ConversationRenameRequest,
+    runtime_mode: RuntimeDataMode,
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+):
+    """Update presentation-only title without changing conversation identity."""
+    try:
+        return await service.rename(runtime_mode, conversation_id, body.title)
     except Exception as exc:
         _raise_conversation_query_error(exc)
 
@@ -294,6 +313,14 @@ async def health(
         version=settings.version,
         llm_mode=settings.llm_mode.value,
         powerbi_mode=settings.powerbi_mode.value,
+        persistence_backend=settings.persistence_backend.value,
+        max_tool_calls=settings.max_tool_calls,
+        local_mcp_readonly=settings.powerbi_local_mcp_readonly,
+        deepseek_configured=settings.is_deepseek_configured,
+        real_mode_configuration_complete=(
+            settings.is_local_real_configuration_complete
+        ),
+        real_mode_reasons=settings.local_real_configuration_reasons,
         harness_mode=settings.harness_mode.value,
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
@@ -556,6 +583,7 @@ async def chat(
         response_type=result.get("response_type", ""),
         answer=result.get("answer"),
         report=report_response,
+        presentation=result.get("presentation"),
         clarification_question=result.get("clarification_question"),
         unsupported_reason=result.get("unsupported_reason"),
         error_type=result.get("error_type"),

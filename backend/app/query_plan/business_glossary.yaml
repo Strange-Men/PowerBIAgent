@@ -39,3 +39,15 @@ fields:
     aliases:
       - 订单日期
       - 销售日期
+  Region:
+    table_name: Sales
+    object_type: field
+    required: false
+    aliases:
+      - 区域
+      - 地区
+    member_aliases:
+      华南: South
+      华东: East
+      华北: North
+      华西: West

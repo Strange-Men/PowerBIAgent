@@ -69,6 +69,7 @@ export function chatResponseToMessage(response: ChatResponse): AssistantMessage 
     role: 'assistant',
     ...content,
     ...(isUsableReport(response.report) ? { report: response.report } : {}),
+    ...(response.presentation ? { presentation: response.presentation } : {}),
   }
 }
 
@@ -81,6 +82,7 @@ export function historyItemToMessage(item: ConversationHistoryItem): AssistantMe
     response_type: item.response_type,
     answer: item.answer,
     report: item.report,
+    presentation: item.presentation,
     clarification_question: item.clarification_question,
     unsupported_reason: item.unsupported_reason,
     error_type: item.error_type,
@@ -88,6 +90,21 @@ export function historyItemToMessage(item: ConversationHistoryItem): AssistantMe
     idempotent_replay: false,
   }
   return { ...chatResponseToMessage(response), restored: true }
+}
+
+export function historyItemToMessages(
+  item: ConversationHistoryItem,
+): import('../types').ConversationMessage[] {
+  const assistant = historyItemToMessage(item)
+  if (!item.user_message?.trim()) return [assistant]
+  return [
+    {
+      id: `user-${item.request_id}`,
+      role: 'user',
+      content: item.user_message.trim(),
+    },
+    assistant,
+  ]
 }
 
 export function isUsableReport(report: ReportResource | null): report is ReportResource {
@@ -100,7 +117,7 @@ export function isUsableReport(report: ReportResource | null): report is ReportR
 }
 
 export function conversationTitle(value: string | null | undefined): string {
-  const normalized = value?.trim()
+  const normalized = value?.replace(/^用户提问:\s*/, '').trim()
   if (!normalized) return '未命名对话'
   return normalized.length > 22 ? `${normalized.slice(0, 22)}…` : normalized
 }

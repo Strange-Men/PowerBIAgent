@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.2.1 — 模型能力边界与真实模式说明收口**。M4.4.2 FINAL PASS；M5.0/M5.1/M5.2/M5.2.1 已完成；M5.3 NOT STARTED。
+当前版本：**M5.3 — 结构化结果与前端最终收口**。M4.4.2 FINAL PASS；M5.0/M5.1/M5.2/M5.2.1/M5.3 已完成。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -29,9 +29,9 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M4.4.1** 已修复 committed canonical filter 损坏被静默丢弃的 fail-open：domain 反序列化与 StateTransition 均 deterministic fail closed，发生在 LLM/DAX/Power BI/新 Memory commit 之前；合法 legacy dict filter 与 legacy time string contract 保持不变。根 README 已重构为长期 Landing Page，并同步正式状态文档。无 schema change、无 migration。**M4.4.1 FINAL PASS；M5 NOT STARTED。**
 - **M4.4.2** 已完成 M0—M4 truth/persistence boundary 最终代码审计与收口：modern committed WorkMemory 只能从完整 `payload_json` 恢复，NULL/empty/malformed/incomplete/domain-invalid payload 及 row/payload 冲突全部 fail closed，禁止 partial column fallback；conversation-scoped MemoryRepository API 强制显式 runtime namespace，InMemory/SQLite 均严格隔离；terminal Snapshot row/payload integrity 与非 legacy committed time corruption 同样 fail closed。无 schema change、无 migration。**M4.4.2 FINAL PASS；M5 NOT STARTED。**
 - **M5.1** 已创建 React + Vite + TypeScript 前端，实现可折叠 Sidebar、欢迎/对话态、Composer、DeepSeek 单选、集中配置菜单，以及 Chat/Recent/Search/History/Reports 真实 API adapters。项目/账户保持纯展示；现有 Chat/History 不暴露 QueryResult rows/ChartSpec，前端不从审计或文字伪造表格/图表。**M5.1 COMPLETE。**
-- **M5.2** 已完成 Real 业务链路与前端逻辑收口：新增只读 `GET /api/v1/semantic-models`，前端动态使用后端 Desktop safe catalog/runtime namespace；SQLite conversation/restart/recent/search/history/report 已真实联调；`report_template_key` 仅为显式可选 override，未传时 report intent 由后端选择 registry-owned 默认 `sales_report`；完成 7-turn Real acceptance、最小错误分类和结构化表格/图表契约审计。**M5.2 COMPLETE；M5.3 NOT STARTED。**
-- **M5.2.1** 已收口 discovery capability truthfulness：Mock discovery 只暴露可进入正式 Chat pipeline 的 `mock_sales_model`，`mock_satisfaction_model` 保留为测试 fixture 但不再作为正常可选项；Real Local MCP discovery 合同不变。根 README 增加醒目的本地 Power BI 真实模式启动说明，并与 `frontend/README.md` 统一中文表达。**M5.2.1 COMPLETE；M5.3 NOT STARTED。**
-- **M5.3** 负责尺寸/间距、responsive、accessibility、loading/error/empty polish、表格/图表视觉与最终浏览器验收；M5.2 不提前进行大规模视觉 polish。
+- **M5.2** 已完成 Real 业务链路与前端逻辑收口：新增只读 `GET /api/v1/semantic-models`，前端动态使用后端 Desktop safe catalog/runtime namespace；SQLite conversation/restart/recent/search/history/report 已真实联调；`report_template_key` 仅为显式可选 override，未传时 report intent 由后端选择 registry-owned 默认 `sales_report`；完成 7-turn Real acceptance、最小错误分类和结构化表格/图表契约审计。**M5.2 COMPLETE。**
+- **M5.2.1** 已收口 discovery capability truthfulness：Mock discovery 只暴露可进入正式 Chat pipeline 的 `mock_sales_model`，`mock_satisfaction_model` 保留为测试 fixture 但不再作为正常可选项；Real Local MCP discovery 合同不变。根 README 增加醒目的本地 Power BI 真实模式启动说明，并与 `frontend/README.md` 统一中文表达。**M5.2.1 COMPLETE。**
+- **M5.3** 已实现安全启动诊断、Desktop 模型最小 compatibility、展示型 transcript/title/rename、conversation 管理、QueryResult/VerifiedFactSet 直接来源的 `presentation` contract、动态指标/表格/柱状图/折线图/报表附件，以及 responsive/accessibility/状态视觉收口。完整 schema fingerprint 仅用于 drift 诊断，不单独阻断模型；Rich PBIX Real 六轮问答、表格、报表、recent/history/search、查看/下载验收通过。M0–M4 factual authority 与 M4 durable delete intent 不变。**M5.3 COMPLETE。**
 
 当前真实主链：
 
@@ -111,4 +111,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-23 | M5.2.1 — 模型能力边界与真实模式说明收口完成*
+*最后更新：2026-08-23 | M5.3 COMPLETE — 结构化结果与前端最终收口*

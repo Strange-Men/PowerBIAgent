@@ -91,6 +91,11 @@ class ConversationModel(Base):
         nullable=True,
         comment="UTC logical archive timestamp; null means visible",
     )
+    title: Mapped[Optional[str]] = mapped_column(
+        String(80),
+        nullable=True,
+        comment="Presentation-only conversation title",
+    )
 
     __table_args__ = (
         Index(

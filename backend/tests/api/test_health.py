@@ -22,7 +22,12 @@ from backend.app.main import create_app
 @pytest_asyncio.fixture
 async def mock_client():
     """Mock 模式客户端 — lifespan_context + ASGITransport"""
-    app = create_app()
+    app = create_app(settings=Settings(
+        llm_mode=LLMMode.MOCK,
+        powerbi_mode=PowerBIMode.MOCK,
+        persistence_backend="memory",
+        deepseek_api_key=None,
+    ))
     transport = ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -72,6 +77,12 @@ class TestHealthMockReady:
         data = response.json()
         assert data["llm_mode"] == "mock"
         assert data["powerbi_mode"] == "mock"
+        assert data["persistence_backend"] == "memory"
+        assert data["max_tool_calls"] == 8
+        assert data["local_mcp_readonly"] is True
+        assert data["deepseek_configured"] is False
+        assert data["real_mode_configuration_complete"] is False
+        assert "llm_mode_requires_deepseek" in data["real_mode_reasons"]
         assert data["harness_mode"] == "strict"
 
     @pytest.mark.asyncio
@@ -181,6 +192,10 @@ class TestHealthNotReady:
                 assert response.json()["ready"] is True
                 assert response.json()["configuration_ready"] is True
                 assert response.json()["powerbi_live_connected"] is False
+                assert response.json()["real_mode_configuration_complete"] is False
+                assert "persistence_backend_requires_sqlite" in (
+                    response.json()["real_mode_reasons"]
+                )
 
     @pytest.mark.asyncio
     async def test_mock_llm_plus_local_reports_explicit_not_ready_reason(self):

@@ -336,6 +336,24 @@ def test_planner_is_repeatable_and_records_provenance():
     assert first.signal.llm_used is False
 
 
+def test_rich_report_is_deterministically_bounded_to_turn_tool_budget():
+    schema = _rich_schema()
+    signal = resolve_report_intent("生成完整销售分析报表")
+
+    plan = ReportPlanner().plan(
+        "sales_report",
+        schema,
+        signal.requested_ids,
+        signal,
+        max_queries=6,
+    )
+
+    assert len(plan.data_plan.queries) <= 6
+    assert len(plan.data_plan.queries) == len(plan.requirement_keys)
+    assert plan.resolved_sections
+    assert plan.unavailable_sections
+
+
 def test_unavailable_sections_are_recorded_not_rendered():
     plan = _plan_for("按区域看销售表现", _rich_without("Region"))
     assert [item.value for item in plan.unavailable_sections] == [

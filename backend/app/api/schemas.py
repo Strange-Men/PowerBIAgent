@@ -20,6 +20,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from backend.app.presentation.models import PresentationEnvelope
+
 
 class ChatRequest(BaseModel):
     """POST /api/v1/chat 请求"""
@@ -82,6 +84,10 @@ class ChatResponse(BaseModel):
     report: Optional[ReportResponse] = Field(
         default=None,
         description="报表场景的结构化报表数据",
+    )
+    presentation: Optional[PresentationEnvelope] = Field(
+        default=None,
+        description="QueryResult/VerifiedFactSet 的只读动态展示合同",
     )
     clarification_question: Optional[str] = Field(
         default=None,
@@ -150,6 +156,12 @@ class HealthResponse(BaseModel):
     version: str
     llm_mode: str
     powerbi_mode: str
+    persistence_backend: str
+    max_tool_calls: int
+    local_mcp_readonly: bool
+    deepseek_configured: bool
+    real_mode_configuration_complete: bool
+    real_mode_reasons: list[str] = Field(default_factory=list)
     harness_mode: str
     timestamp: str
 

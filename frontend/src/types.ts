@@ -18,6 +18,45 @@ export interface ReportResource {
   content_hash: string
 }
 
+export type PresentationCell = string | number | boolean | null
+
+export interface PresentationDataset {
+  result_id: string
+  verified_fact_set_id: string
+  semantic_model_key: string
+  source_mode: RuntimeMode
+  columns: string[]
+  rows: PresentationCell[][]
+  row_count: number
+  truncated: boolean
+}
+
+export type PresentationBlock =
+  | { type: 'text'; content: string }
+  | {
+      type: 'metric'
+      data_reference: string
+      label: string
+      value_field: string
+      row_index: number
+    }
+  | { type: 'table'; data_reference: string; title: string }
+  | {
+      type: 'chart'
+      data_reference: string
+      visual_type: 'bar' | 'line'
+      title: string
+      x_field: string
+      y_field: string
+    }
+  | { type: 'report_attachment'; report_id: string }
+
+export interface PresentationEnvelope {
+  version: 1
+  datasets: PresentationDataset[]
+  blocks: PresentationBlock[]
+}
+
 export interface ChatResponse {
   request_id: string
   conversation_id: string
@@ -26,6 +65,7 @@ export interface ChatResponse {
   response_type: string
   answer: string | null
   report: ReportResource | null
+  presentation?: PresentationEnvelope | null
   clarification_question: string | null
   unsupported_reason: string | null
   error_type: string | null
@@ -43,6 +83,10 @@ export interface SemanticModelOption {
   type: 'semantic_model'
   available: boolean
   connected: boolean
+  agent_compatible?: boolean
+  selectable?: boolean
+  schema_drift?: boolean
+  compatibility_status?: 'compatible' | 'incompatible' | 'unavailable'
 }
 
 export interface SemanticModelCatalog {
@@ -57,6 +101,7 @@ export interface ConversationSummary {
   created_at: string
   updated_at: string
   archived_at: string | null
+  title?: string | null
   latest_request_id: string | null
   latest_terminal_state: string | null
   latest_response_type: string | null
@@ -75,6 +120,8 @@ export interface ConversationHistoryItem {
   terminal_state: string
   response_type: string
   intent: string
+  user_message?: string | null
+  presentation?: PresentationEnvelope | null
   answer: string | null
   report: ReportResource | null
   clarification_question: string | null
@@ -86,6 +133,7 @@ export interface ConversationHistoryPage {
   runtime_mode: RuntimeMode
   conversation_id: string
   archived_at: string | null
+  title?: string | null
   items: ConversationHistoryItem[]
   next_cursor: string | null
 }
@@ -125,6 +173,7 @@ export interface AssistantMessage {
   kind: AssistantMessageKind
   content: string
   report?: ReportResource
+  presentation?: PresentationEnvelope
   restored?: boolean
 }
 
@@ -134,4 +183,8 @@ export interface CatalogOption {
   key: string
   label: string
   description: string
+  compatible: boolean
+  selectable?: boolean
+  schemaDrift?: boolean
+  compatibilityStatus?: 'compatible' | 'incompatible' | 'unavailable'
 }

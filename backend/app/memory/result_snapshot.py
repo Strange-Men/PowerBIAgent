@@ -24,6 +24,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from backend.app.presentation.models import PresentationEnvelope
+
 
 class ReportResultSnapshot(BaseModel):
     """Report 响应快照 — M1.0.1
@@ -61,6 +63,14 @@ class TurnResultSnapshot(BaseModel):
     intent: str = Field(default="", description="意图类型")
     response_type: str = Field(default="", description="answer / report / clarification / unsupported")
     terminal_state: str = Field(min_length=1, description="终端状态")
+    user_message: Optional[str] = Field(
+        default=None,
+        description="仅用于 UI transcript 展示；不属于 Memory 或事实 authority",
+    )
+    presentation: Optional[PresentationEnvelope] = Field(
+        default=None,
+        description="QueryResult/VerifiedFactSet 的只读展示投影",
+    )
 
     # ── Answer 响应 ──
     answer: Optional[str] = Field(default=None, description="数据问答答案文本")

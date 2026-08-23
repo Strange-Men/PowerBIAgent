@@ -111,6 +111,8 @@ from backend.app.report.resources import (
     ReportArtifact,
     ReportRepository,
 )
+from backend.app.presentation.builder import StructuredPresentationBuilder
+from backend.app.presentation.models import PresentationEnvelope
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
     ColumnMembersRequest,
@@ -1133,6 +1135,18 @@ class DeepSeekTurnService:
                     data_summary={"terminal_state": "completed"})
 
         # ── 14. 构建结果（Snapshot 由 TurnPipeline.execute() 统一保存） ──
+        presentation: PresentationEnvelope | None = None
+        if verified_facts is not None and answer_text:
+            presentation = StructuredPresentationBuilder.build_answer(
+                query_plan,
+                query_result,
+                verified_facts,
+                answer_text,
+            )
+        elif report_data is not None:
+            presentation = StructuredPresentationBuilder.build_report(
+                report_data["report_id"]
+            )
         result = self._build_result(
             effective_req_id, effective_conv_id, "completed",
             intent=intent.intent.value, response_type=response_type,
@@ -1140,6 +1154,7 @@ class DeepSeekTurnService:
             source_mode=self._source_mode, collector=collector,
             answer_text=answer_text,
             report_data=report_data,
+            presentation=presentation,
             execution_audit={
                 "canonical_query_plan": query_plan.model_dump(mode="json"),
                 "deterministic_dax": not self.powerbi.is_mock,
@@ -1227,6 +1242,7 @@ class DeepSeekTurnService:
                 schema,
                 signal.requested_ids,
                 signal,
+                max_queries=self.settings.max_tool_calls - 2,
             )
         except ReportPlanError as exc:
             return await self._fail_result(
@@ -1574,6 +1590,9 @@ class DeepSeekTurnService:
             source_mode=self._source_mode,
             collector=collector,
             report_data=report_response,
+            presentation=StructuredPresentationBuilder.build_report(
+                report_response["report_id"]
+            ),
             execution_audit={
                 "canonical_query_plans": {
                     item.requirement_key: item.query_plan.model_dump(mode="json")
@@ -1678,6 +1697,7 @@ class DeepSeekTurnService:
         clarification_question: Optional[str] = None,
         unsupported_reason: Optional[str] = None,
         execution_audit: Optional[dict[str, Any]] = None,
+        presentation: Optional[PresentationEnvelope] = None,
     ) -> dict[str, Any]:
         """构建统一结果字典 — 委托给共享 TurnPipeline"""
         usage: Optional[LLMUsageSummary] = None
@@ -1702,6 +1722,7 @@ class DeepSeekTurnService:
             unsupported_reason=unsupported_reason,
             usage=usage,
             execution_audit=execution_audit,
+            presentation=presentation,
         )
 
     # M1.6.3.2: _build_replay 和 _save_snapshot 已移除 — 统一由 TurnPipeline.execute() 管理

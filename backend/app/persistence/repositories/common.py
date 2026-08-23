@@ -29,6 +29,7 @@ from backend.app.persistence.models import (
     ConversationDeleteIntentModel,
     ConversationModel,
 )
+from backend.app.conversation.title import default_conversation_title
 
 if TYPE_CHECKING:
     from backend.app.memory.models import RuntimeDataMode
@@ -134,6 +135,26 @@ async def touch_conversation(
             )
         )
         .values(updated_at=func.now())
+    )
+
+
+async def set_default_conversation_title(
+    conversation_id: str,
+    runtime_mode_value: str,
+    user_message: str,
+    session: AsyncSession,
+) -> None:
+    """Set the first presentation title without changing conversation identity."""
+    await session.execute(
+        update(ConversationModel)
+        .where(
+            and_(
+                ConversationModel.runtime_mode == runtime_mode_value,
+                ConversationModel.conversation_id == conversation_id,
+                ConversationModel.title.is_(None),
+            )
+        )
+        .values(title=default_conversation_title(user_message))
     )
 
 

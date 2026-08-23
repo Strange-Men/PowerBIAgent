@@ -70,6 +70,7 @@ class StateTransitionService:
     ) -> StateTransitionResult:
         previous_measures = list(committed.measures) if committed else []
         previous_dimensions = list(committed.dimensions) if committed else []
+        previous_dimension_tables = self._previous_dimension_tables(committed)
         previous_filters = self._previous_filters(committed)
         previous_time = self._previous_time(committed)
         previous_sort = committed.sort if committed else None
@@ -87,12 +88,18 @@ class StateTransitionService:
 
         if delta.dimensions is None:
             dimensions = previous_dimensions
+            dimension_tables = {
+                **previous_dimension_tables,
+                **delta.dimension_tables,
+            }
             dimension_transition = SlotTransition.KEEP
         elif not delta.dimensions:
             dimensions = []
+            dimension_tables = dict(delta.dimension_tables)
             dimension_transition = SlotTransition.CLEAR
         else:
             dimensions = delta.dimensions
+            dimension_tables = dict(delta.dimension_tables)
             dimension_transition = (
                 SlotTransition.KEEP
                 if dimensions == previous_dimensions else SlotTransition.REPLACE
@@ -169,6 +176,7 @@ class StateTransitionService:
             semantic_model_key=draft.semantic_model_key,
             measures=measures,
             dimensions=dimensions,
+            dimension_tables=dimension_tables or None,
             filters=filters,
             time_range=time_range,
             sort=sort,
@@ -222,3 +230,24 @@ class StateTransitionService:
             raise CommittedMemoryCorruptionError(
                 "committed_memory_time_range_invalid"
             ) from exc
+
+    @staticmethod
+    def _previous_dimension_tables(
+        committed: StructuredWorkMemory | None,
+    ) -> dict[str, str]:
+        if committed is None or committed.last_query_plan is None:
+            return {}
+        raw = committed.last_query_plan.get("dimension_tables")
+        if raw is None:
+            return {}
+        if not isinstance(raw, dict) or any(
+            not isinstance(field, str)
+            or not field
+            or not isinstance(table, str)
+            or not table
+            for field, table in raw.items()
+        ):
+            raise CommittedMemoryCorruptionError(
+                "committed_memory_dimension_tables_invalid"
+            )
+        return dict(raw)

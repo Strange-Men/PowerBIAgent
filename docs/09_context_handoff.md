@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.2.1 — 模型能力边界与真实模式说明收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0/M5.1/M5.2/M5.2.1 已完成，M5.3 未开始。
+**M5.3 — 结构化结果与前端最终收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0/M5.1/M5.2/M5.2.1/M5.3 已完成。`PowerBIAgent_M3_Rich_Test.pbix` Real 六轮问答、表格、报表、recent/history/search 与查看/下载验收通过。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -18,7 +18,19 @@
 | **M5.1** | **React 前端实现与核心联调** | **✅ 已完成** |
 | **M5.2** | **真实业务链路与前端逻辑收口** | **✅ 已完成** |
 | **M5.2.1** | **模型能力边界与真实模式说明收口** | **✅ 已完成** |
-| **M5.3** | **视觉与交互最终收口** | **⬜ 未开始** |
+| **M5.3** | **结构化结果与前端最终收口** | **✅ 已完成** |
+
+### M5.3 — 结构化结果与前端最终收口
+
+- 新增安全启动诊断：严格 `.env` 行格式只允许 `KEY=value`、注释和空行；CLI 与 `/health` 只输出模式、readonly、工具预算及 DeepSeek“是否配置”，不输出值或 Secret。
+- discovery 在 ToolGateway 只读 schema 路径上执行当前 Semantic Catalog/glossary 最小兼容性构建；完整 fingerprint 仅标记 `schema_drift`，不单独阻断模型。只有缺少必需业务对象或对象类型冲突才返回 `incompatible` 并由 UI 禁用发送，不暴露 schema/hash/DAX。
+- 新增 presentation-only transcript/title：terminal Snapshot 保存本轮 `user_message` 与 `presentation`；conversation 首个有效问题生成默认标题，支持 namespace-scoped PATCH 重命名。两者不进入 WorkMemory、Grounding、QueryPlan 或 VerifiedFactSet。
+- 新增 `PresentationEnvelope`：每个 QueryResult 只保存一份 dataset，包含 verified fact linkage；动态 block 支持 text、metric、table、bar/line chart 与 report attachment，所有数据块只通过 `data_reference` 和字段名引用 dataset。
+- Sidebar 支持搜索、完整历史恢复、重命名、归档、删除；报表按 conversation 管理，DELETE 继续复用 M4 durable delete intent 清理关联 managed HTML，没有独立 report delete API。
+- 前端完成白色主区/浅灰 Sidebar、内容宽度、固定 Composer、折叠、菜单定位、表格横向滚动、图表尺寸、报表附件、hover/focus/loading/disabled/error/empty，以及 desktop/medium/small responsive 和 ESC/focus-visible/aria/keyboard 基础 accessibility。
+- 已在浏览器验证 Rich PBIX Real `local_desktop` discovery；fingerprint drift 下保持 connected/compatible/selectable。六轮问答完成时间与区域筛选继承，真实表格与 HTML 报表生成、查看/下载、recent/history/search 均通过；测试 conversation 与关联 managed HTML 已经正式 DELETE API 精确清理。
+- Alembic head 更新为 `d3b7f9a1c524`，仅增加 nullable conversation `title`；无 M0–M4 factual schema/authority 变化。
+- Fresh affected backend regression：`335 passed`；frontend typecheck/lint/build PASS，Vitest `31 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `116`、Repository Safety `279`、Error Ledger `25`、Documentation Governance 与 `git diff --check` PASS。
 
 ### M5.2.1 — 模型能力边界与真实模式说明收口
 
@@ -148,10 +160,7 @@
 
 ## 下一步
 
-后续轮次只有用户另行批准后才可开始：
-
-1. 在 M5.3 前补充 QueryResult/VerifiedFactSet 直接来源的结构化表格/图表 response contract；若不补充则继续不展示，不得从 answer/audit 反解析。
-2. 进入 **M5.3** 视觉与交互最终收口：尺寸/间距、responsive、accessibility、loading/error/empty polish 与最终浏览器视觉验收。
+M5.3 完成后停止，不继续开发后续里程碑。后续工作必须由新的明确用户指令启动。
 
 ## 关键命令
 
@@ -196,4 +205,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-23 | M5.2.1 — 模型能力边界与真实模式说明收口完成*
+*最后更新：2026-08-23 | M5.3 COMPLETE — 结构化结果与前端最终收口*

@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.2.1 — 模型能力边界与真实模式说明收口**。M4.4.2 已最终验收；M5.0/M5.1/M5.2/M5.2.1 已完成；M5.3 尚未开始。
+当前版本：**M5.3 — 结构化结果与前端最终收口**。M4.4.2 已最终验收；M5.0/M5.1/M5.2/M5.2.1/M5.3 已完成。
 
 ## 项目概览
 
@@ -23,6 +23,8 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 - 结构化多轮 Memory 只在完整成功后提交；歧义、失败和 clarification 不污染已提交状态。
 - SQLite 提供重启恢复、结构化历史/搜索/归档/删除与崩溃后删除重试。
 - `(runtime_mode, conversation_id)` 和 `(source_mode, conversation_id)` 严格隔离 Mock/Real 状态与报表历史。
+- `presentation` 只读展示契约把已验证的单指标、表格、柱状图/折线图和报表附件安全交给前端；内容块只引用同一份 QueryResult dataset。
+- 展示型 transcript 与标题支持完整历史恢复、默认标题、重命名、归档和删除，不参与 Memory 或业务事实判断。
 
 ## 工作原理
 
@@ -61,11 +63,11 @@ LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI
 | 报表 | 唯一正式模板 `sales_report`；schema-aware capability planning；固定安全静态 HTML；查看/下载资源 |
 | 多轮 Memory | 指标、维度、filter、time、sort、TopN 继承；待澄清上下文与已提交 Memory 分离；损坏的 canonical filter 受控失败 |
 | 持久化与恢复 | SQLite Memory/Snapshot/报表 metadata；重启重放；不完整崩溃证据受控失败；持久化删除意图 |
-| 历史与搜索 | 仅 SQLite 支持最近会话、结构化历史、有界搜索、归档和删除；不伪造逐字记录 |
-| 本地 Power BI | DeepSeek + 只读 Local Modeling MCP + Power BI Desktop；Real DAX/事实的 LLM 权限为 0 |
-| React 网页前端 | GPT 式对话页面、可折叠 Sidebar、Desktop 模型动态发现、可选模板 override、Chat/History/Search/Reports 联调与用户可理解的终态渲染 |
+| 历史与搜索 | 仅 SQLite 支持最近会话、展示型 transcript、自动标题/重命名、有界搜索、归档和删除；旧会话只恢复真实已保存内容 |
+| 本地 Power BI | DeepSeek + 只读 Local Modeling MCP + Power BI Desktop；discovery 后执行当前 glossary/schema 最小兼容性检查；Real DAX/事实的 LLM 权限为 0 |
+| React 网页前端 | 白色主区与浅灰 Sidebar、响应式/键盘交互、动态模型兼容提示、完整历史恢复、会话管理，以及文字/指标/表格/柱状图/折线图/报表附件动态渲染 |
 
-Remote MCP 继续延期。M5.2.1 已完成模型能力边界与真实模式说明收口；M5.3 视觉与交互最终收口尚未开始。
+Remote MCP 继续延期。M5.3 不改变 M0–M4 factual authority；Rich PBIX Real 六轮问答、表格、报表与会话恢复验收已通过。
 
 ## 快速开始
 
@@ -112,7 +114,7 @@ curl.exe http://127.0.0.1:8000/health
 curl.exe http://127.0.0.1:8000/api/v1/semantic-models
 ```
 
-正常 Real catalog 的 `runtime_mode` 应为 `real`，模型的 `source` 应为 `local_desktop`，而不是 `mock`。`/health` 只验证当前 runtime 配置是否就绪，不探测 Power BI Desktop 是否在线；实际模型连接状态以 `/api/v1/semantic-models` 为准。
+正常 Real catalog 的 `runtime_mode` 应为 `real`，模型的 `source` 应为 `local_desktop`，而不是 `mock`。`/health` 只验证当前 runtime 配置是否就绪，不探测 Power BI Desktop 是否在线；实际模型连接状态以 `/api/v1/semantic-models` 为准。Desktop 可连接不代表当前 Agent 已支持该业务 schema；若兼容性检查失败，前端会显示“当前模型已连接，但暂不符合 PowerBIAgent 当前支持的数据结构”，并禁止发送，不暴露 schema、hash 或 DAX。
 
 ### Conda 初始化（首次使用）
 
@@ -179,6 +181,16 @@ curl.exe -X POST http://127.0.0.1:8000/api/v1/chat `
 
 ### 常见启动问题
 
+#### `python-dotenv could not parse statement starting at line ...`
+
+`.env` 只能包含 `KEY=value`、以 `#` 开头的注释和空行。不要粘贴 Markdown 代码围栏、PowerShell 命令、项目符号或只有 `KEY` 没有 `=` 的内容；一个配置项只占一行。诊断命令只报告非法行号与安全配置状态，不打印任何配置值或 Key：
+
+```powershell
+python scripts/check_startup_config.py --env-file .env
+```
+
+按报告行号在本地修正后重新运行诊断，再重启后端。不要把 `.env`、诊断时使用的真实 Key 或任何 Secret 提交到 Git。
+
 #### `No module named uvicorn`
 
 使用 `python -m uvicorn ...` 时报错，但 `conda run -n PBIAgent python -m uvicorn ...` 正常。
@@ -237,7 +249,7 @@ python -c "import sys; print(sys.executable)"
 | 方法 | 路径/字段 | 说明 |
 |---|---|---|
 | `GET` | `/health` | 当前 runtime 配置就绪状态 |
-| `GET` | `/api/v1/semantic-models` | 当前后端可连接且可进入正式 Chat pipeline 的安全模型目录与 runtime namespace |
+| `GET` | `/api/v1/semantic-models` | 当前 Desktop 模型的安全目录、runtime namespace 与最小 Agent compatibility 状态 |
 | `POST` | `/api/v1/chat` | 非流式数据问答与报表生成 |
 | 字段 | `semantic_model_key` | 从发现目录选择语义模型 |
 | 字段 | `report_template_key` | 可选的显式模板 override；未传不等于禁用报表 |
@@ -245,8 +257,9 @@ python -c "import sys; print(sys.executable)"
 | `GET` | `/api/reports/{report_id}/download` | 下载 UTF-8 HTML 报表 |
 | `GET` | `/api/v1/conversations` | 按 `runtime_mode` 查询最近会话 |
 | `GET` | `/api/v1/conversations/search` | 按 `runtime_mode` 搜索声明范围内的持久化字段 |
-| `GET` | `/api/v1/conversations/{conversation_id}/history` | 持久化的结构化轮次历史，不是逐字记录 |
+| `GET` | `/api/v1/conversations/{conversation_id}/history` | 持久化的展示型 user/assistant transcript 与结构化轮次结果；不成为事实来源 |
 | `GET` | `/api/v1/conversations/{conversation_id}/reports` | 按 `source_mode` 查询严格报表 metadata |
+| `PATCH` | `/api/v1/conversations/{conversation_id}` | 在 `runtime_mode` namespace 内重命名会话；只修改 presentation metadata |
 | `POST` | `/api/v1/conversations/{conversation_id}/archive` | 幂等归档指定 namespace |
 | `DELETE` | `/api/v1/conversations/{conversation_id}` | 删除指定 namespace 及关联的受管 HTML |
 
@@ -260,8 +273,9 @@ Conversation API 仅在 SQLite 后端可用；namespace 查询参数必填，每
 - 已提交 WorkMemory 只从完整 `payload_json` 恢复；缺失、空、损坏、不完整或与数据库完整性列冲突时受控失败，不使用部分列回退。
 - 只有终态 Snapshot 可以作为请求重放权威；存在 Memory 但缺少 Snapshot 时必须受控失败。
 - Memory conversation API 与 Snapshot/request API 必须显式携带 runtime namespace；Mock/Real 状态严格隔离，历史和搜索不会升级为事实来源。
+- conversation `title`、Snapshot `user_message` 和 `presentation` 只服务 UI 恢复；它们不能输入 Grounding、QueryPlan、Memory 或 VerifiedFactSet。
 
-上述路径均在 Git 之外。当前 schema 由 Alembic 管理；M5.2.1 没有 schema 变更，也没有新增 migration。
+上述路径均在 Git 之外。当前 schema 由 Alembic 管理；M5.3 migration 仅为 `conversations` 增加 nullable `title` presentation metadata，不改变 conversation identity、Memory 或事实链。
 
 ## 开发与验证
 
@@ -295,7 +309,7 @@ python -m alembic upgrade head
 | M5.1 | 已完成 — React 前端实现与核心联调 |
 | M5.2 | 已完成 — 真实业务链路与前端逻辑收口 |
 | M5.2.1 | 已完成 — 模型能力边界与真实模式说明收口 |
-| M5.3 | 尚未开始 — 视觉与交互最终收口 |
+| M5.3 | 已完成 — 结构化结果、历史/标题/管理、响应式与视觉交互已收口；Rich PBIX Real 验收通过 |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -316,10 +330,10 @@ python -m alembic upgrade head
 - 不支持跨语义模型查询、任意 DAX、任意代码或任意 HTML。
 - 当前报表只有 `sales_report`，内容受 runtime capability 与固定安全设计系统约束。
 - Real Power BI 验收需要 Windows、Node.js 20+、Power BI Desktop 与本地人工 Smoke；CI 不验证 Desktop 在线链。
-- Chat/History 当前没有面向前端的 QueryResult rows、metrics 或 ChartSpec；当前只展示真实文字与 ReportArtifact，不从 answer/execution audit 推导表格或图表。结构化表格/图表契约必须在 M5.3 前另行补充。
+- 当前结构化展示支持单值指标、多行表格，以及根据真实 QueryResult 字段引用生成的简单柱状图或折线图；不提供前端排序/筛选工作台、任意 ChartSpec 或前端推断数据。
 
 公司内部专有软件。
 
 ---
 
-*最后更新：2026-08-23 | M5.2.1 — 模型能力边界与真实模式说明收口完成*
+*最后更新：2026-08-23 | M5.3 COMPLETE — 结构化结果与前端最终收口*

@@ -9,6 +9,7 @@ interface ComposerProps {
   semanticModelOptions: CatalogOption[]
   loadingSemanticModels: boolean
   semanticModelError: string | null
+  semanticModelCompatibilityNotice?: string | null
   reportTemplate: CatalogOption | null
   onSemanticModelChange: (option: CatalogOption) => void
   onReportTemplateChange: (option: CatalogOption | null) => void
@@ -21,6 +22,7 @@ export function Composer({
   semanticModelOptions,
   loadingSemanticModels,
   semanticModelError,
+  semanticModelCompatibilityNotice = null,
   reportTemplate,
   onSemanticModelChange,
   onReportTemplateChange,
@@ -30,7 +32,13 @@ export function Composer({
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
-  const canSend = Boolean(value.trim()) && !sending && Boolean(semanticModel)
+  const addButtonRef = useRef<HTMLButtonElement>(null)
+  const modelButtonRef = useRef<HTMLButtonElement>(null)
+  const canSend =
+    Boolean(value.trim()) &&
+    !sending &&
+    semanticModel?.compatible === true &&
+    semanticModel.selectable !== false
 
   useEffect(() => {
     const closeMenus = (event: MouseEvent) => {
@@ -41,8 +49,12 @@ export function Composer({
     }
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        const wasAddOpen = addMenuOpen
+        const wasModelOpen = modelMenuOpen
         setAddMenuOpen(false)
         setModelMenuOpen(false)
+        if (wasAddOpen) addButtonRef.current?.focus()
+        if (wasModelOpen) modelButtonRef.current?.focus()
       }
     }
     document.addEventListener('mousedown', closeMenus)
@@ -51,11 +63,16 @@ export function Composer({
       document.removeEventListener('mousedown', closeMenus)
       document.removeEventListener('keydown', closeOnEscape)
     }
-  }, [])
+  }, [addMenuOpen, modelMenuOpen])
 
   const submit = async () => {
     const content = value.trim()
-    if (!content || sending || !semanticModel) return
+    if (
+      !content ||
+      sending ||
+      !semanticModel?.compatible ||
+      semanticModel.selectable === false
+    ) return
     setValue('')
     setAddMenuOpen(false)
     setModelMenuOpen(false)
@@ -81,6 +98,7 @@ export function Composer({
                 className="menu-option"
                 key={option.key}
                 type="button"
+                aria-describedby={`model-status-${option.key}`}
                 onClick={() => {
                   onSemanticModelChange(option)
                   setAddMenuOpen(false)
@@ -88,7 +106,7 @@ export function Composer({
               >
                 <span>
                   <strong>{option.label}</strong>
-                  <small>{option.description}</small>
+                  <small id={`model-status-${option.key}`}>{option.description}</small>
                 </span>
                 {semanticModel?.key === option.key ? <Check size={16} /> : null}
               </button>
@@ -143,6 +161,7 @@ export function Composer({
 
       <div className="composer">
         <button
+          ref={addButtonRef}
           className={`composer-icon-button ${addMenuOpen ? 'is-active' : ''}`}
           type="button"
           aria-label={addMenuOpen ? '关闭数据与报表选项' : '打开数据与报表选项'}
@@ -169,6 +188,7 @@ export function Composer({
           }}
         />
         <button
+          ref={modelButtonRef}
           className="model-selector"
           type="button"
           aria-expanded={modelMenuOpen}
@@ -190,13 +210,14 @@ export function Composer({
           <Send size={18} />
         </button>
       </div>
-      <div className="composer-selection" aria-live="polite">
+      <div className={`composer-selection ${semanticModelCompatibilityNotice ? 'compatibility-warning' : ''}`} aria-live="polite">
         <span>
           {loadingSemanticModels
             ? '正在连接数据模型'
             : semanticModel?.label || semanticModelError || '当前没有可用数据模型'}
         </span>
         {reportTemplate ? <span>· {reportTemplate.label}</span> : null}
+        {semanticModelCompatibilityNotice ? <span>{semanticModelCompatibilityNotice}</span> : null}
       </div>
     </div>
   )

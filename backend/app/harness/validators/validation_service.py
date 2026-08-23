@@ -276,7 +276,11 @@ class ValidationService:
                 dimension, "dimension", dimension_hints.get(dimension)
             )
         for query_filter in plan.filters:
-            validate_column(query_filter.field, "filter")
+            validate_column(
+                query_filter.field,
+                "filter",
+                dimension_hints.get(query_filter.field),
+            )
 
         # 明显非法的跨表选择：每个维度/筛选表必须能通过 active relationship
         # 到达至少一个 Measure 所在表。只做图可达性，不推断业务方向或基数。

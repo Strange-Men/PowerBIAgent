@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M5.2.1", frozen=True)
+    version: str = Field(default="M5.3", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -172,6 +172,29 @@ class Settings(BaseSettings):
             return False
         return self.powerbi_mode == PowerBIMode.MOCK
 
+    @property
+    def local_real_configuration_reasons(self) -> list[str]:
+        """Return safe, value-free diagnostics for the supported Real stack."""
+        reasons: list[str] = []
+        if self.llm_mode != LLMMode.DEEPSEEK:
+            reasons.append("llm_mode_requires_deepseek")
+        if not self.is_deepseek_configured:
+            reasons.append("deepseek_not_configured")
+        if self.powerbi_mode != PowerBIMode.LOCAL_MCP:
+            reasons.append("powerbi_mode_requires_local_mcp")
+        if not self.is_powerbi_local_mcp_configured:
+            reasons.append("powerbi_local_mcp_configuration_incomplete")
+        if self.persistence_backend != PersistenceBackend.SQLITE:
+            reasons.append("persistence_backend_requires_sqlite")
+        if self.max_tool_calls != 8:
+            reasons.append("max_tool_calls_requires_8")
+        return reasons
+
+    @property
+    def is_local_real_configuration_complete(self) -> bool:
+        """Whether the documented DeepSeek + Local MCP + SQLite stack is complete."""
+        return not self.local_real_configuration_reasons
+
     def safe_repr(self) -> dict:
         """返回不包含 Secret 的易读配置摘要"""
         return {
@@ -191,6 +214,14 @@ class Settings(BaseSettings):
             "deepseek_configured": self.is_deepseek_configured,
             "powerbi_local_mcp_configured": self.is_powerbi_local_mcp_configured,
             "powerbi_local_mcp_readonly": self.powerbi_local_mcp_readonly,
+            "persistence_backend": self.persistence_backend.value,
+            "max_tool_calls": self.max_tool_calls,
+            "local_real_configuration_complete": (
+                self.is_local_real_configuration_complete
+            ),
+            "local_real_configuration_reasons": (
+                self.local_real_configuration_reasons
+            ),
         }
 
 

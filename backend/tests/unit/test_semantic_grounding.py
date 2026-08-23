@@ -169,16 +169,45 @@ class TestSemanticCatalogAndObjectGrounding:
             ))
         assert compute_schema_fingerprint(schema) != compute_schema_fingerprint(changed)
 
-    def test_wrong_schema_fingerprint_fails_closed(self):
+    def test_schema_fingerprint_drift_does_not_block_complete_contract(self):
         glossary = _glossary(schema_fingerprint="0" * 64)
-        with pytest.raises(
-            GlossaryCatalogError, match="glossary_schema_fingerprint_mismatch"
-        ):
-            SemanticCatalogBuilder().build_from_data(_schema(), glossary)
+        catalog = SemanticCatalogBuilder().build_from_data(_schema(), glossary)
+        assert catalog.schema_drift is True
+        assert catalog.schema_fingerprint == compute_schema_fingerprint(_schema())
 
     def test_correct_schema_fingerprint_passes(self):
         catalog = SemanticCatalogBuilder().build_from_data(_schema(), _glossary())
         assert catalog.schema_fingerprint == compute_schema_fingerprint(_schema())
+        assert catalog.schema_drift is False
+
+    def test_missing_required_measure_fails_business_contract(self):
+        schema = _schema()
+        schema.tables[0].measures = [
+            item for item in schema.tables[0].measures if item.name != "Total Sales"
+        ]
+        with pytest.raises(GlossaryCatalogError, match="glossary_unknown_object"):
+            SemanticCatalogBuilder().build_from_data(schema, _glossary())
+
+    def test_missing_required_field_fails_business_contract(self):
+        schema = _schema()
+        schema.tables[0].columns = [
+            item for item in schema.tables[0].columns if item.name != "Category"
+        ]
+        with pytest.raises(GlossaryCatalogError, match="glossary_unknown_object"):
+            SemanticCatalogBuilder().build_from_data(schema, _glossary())
+
+    def test_required_object_type_conflict_fails_business_contract(self):
+        schema = _schema()
+        schema.tables[0].measures = [
+            item for item in schema.tables[0].measures if item.name != "Total Sales"
+        ]
+        schema.tables[0].columns.append(
+            ColumnSchema(name="Total Sales", data_type="Double")
+        )
+        with pytest.raises(
+            GlossaryCatalogError, match="glossary_object_type_mismatch"
+        ):
+            SemanticCatalogBuilder().build_from_data(schema, _glossary())
 
     def test_canonical_exact_and_unique_alias_resolve(self):
         grounder = ObjectGrounder(_catalog())
@@ -413,6 +442,7 @@ class TestMemberAndTimeGrounding:
         grounder = TimeGrounder(lambda: date(2026, 8, 13))
         month = grounder.ground("本月", field)
         year = grounder.ground("今年", field)
+        previous_year = grounder.ground("改成去年", field)
         recent = grounder.ground("最近3个月", field)
         explicit = grounder.ground("2026-01-02 到 2026-02-03", field)
         assert (month.start_date, month.end_date) == (
@@ -421,11 +451,193 @@ class TestMemberAndTimeGrounding:
         assert (year.start_date, year.end_date) == (
             date(2026, 1, 1), date(2026, 12, 31)
         )
+        assert (previous_year.start_date, previous_year.end_date) == (
+            date(2025, 1, 1), date(2025, 12, 31)
+        )
+        assert previous_year.mode == TimeRangeMode.EXPLICIT_RANGE
         assert (recent.start_date, recent.end_date) == (
             date(2026, 6, 1), date(2026, 8, 31)
         )
         assert explicit.mode == TimeRangeMode.EXPLICIT_RANGE
         assert '"date_field":"OrderDate"' in explicit.to_context_text()
+
+    @pytest.mark.asyncio
+    async def test_runtime_only_extra_date_does_not_override_glossary_date(self):
+        schema = _schema(two_dates=True)
+        catalog = SemanticCatalogBuilder().build_from_data(schema, _glossary())
+
+        async def no_lookup(*_):
+            raise AssertionError("member lookup should not run")
+
+        outcome = await SemanticGroundingService(
+            catalog, today=lambda: date(2026, 8, 13)
+        ).ground(
+            "本月销售额是多少？",
+            _intent(detected_measures=["销售额"], detected_time_range="本月"),
+            _draft(measures=["Total Sales"], time_range="本月"),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.time_range is not None
+        assert outcome.delta.time_range.date_field == "OrderDate"
+
+    @pytest.mark.asyncio
+    async def test_glossary_owner_becomes_canonical_dimension_table_hint(self):
+        schema = _schema()
+        schema.tables[0].columns.append(
+            ColumnSchema(name="Region", data_type="String")
+        )
+        schema.tables.append(
+            TableSchema(
+                name="Region",
+                columns=[ColumnSchema(name="Region", data_type="String")],
+            )
+        )
+        glossary = _glossary()
+        glossary["fields"]["Region"] = {
+            "table_name": "Sales",
+            "object_type": "field",
+            "aliases": ["区域"],
+            "member_aliases": {"华南": "South", "华东": "East"},
+        }
+        catalog = SemanticCatalogBuilder().build_from_data(schema, glossary)
+
+        async def no_lookup(*_):
+            raise AssertionError("member lookup should not run")
+
+        outcome = await SemanticGroundingService(catalog).ground(
+            "按区域列出销售额",
+            _intent(detected_measures=["销售额"], detected_dimensions=["区域"]),
+            _draft(measures=["Total Sales"], dimensions=["Region"]),
+            None,
+            no_lookup,
+        )
+        transition = StateTransitionService().merge(
+            _draft(), outcome.delta, None
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.dimension_tables == {"Region": "Sales"}
+        assert transition.query_plan.dimension_tables == {"Region": "Sales"}
+
+    @pytest.mark.asyncio
+    async def test_member_refinement_reuses_committed_glossary_owner_hint(self):
+        schema = _schema()
+        schema.tables[0].columns.append(
+            ColumnSchema(name="Region", data_type="String")
+        )
+        schema.tables.append(
+            TableSchema(
+                name="Region",
+                columns=[ColumnSchema(name="Region", data_type="String")],
+            )
+        )
+        glossary = _glossary()
+        glossary["fields"]["Region"] = {
+            "table_name": "Sales",
+            "object_type": "field",
+            "aliases": ["区域"],
+            "member_aliases": {"华南": "South", "华东": "East"},
+        }
+        catalog = SemanticCatalogBuilder().build_from_data(schema, glossary)
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+            dimensions=["Region"],
+            last_query_plan={"dimension_tables": {"Region": "Sales"}},
+        )
+
+        async def lookup(field, limit):
+            assert field.table_name == "Sales"
+            assert limit == 100
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name="Region",
+                values=["South", "East"],
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(catalog).ground(
+            "只看华南",
+            _intent(),
+            _draft(),
+            committed,
+            lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.filters == [
+            StructuredFilter(field="Region", value="South")
+        ]
+        assert outcome.delta.dimension_tables == {"Region": "Sales"}
+
+    @pytest.mark.asyncio
+    async def test_draft_filter_reuses_committed_glossary_owner_hint(self):
+        schema = _schema()
+        schema.tables[0].columns.append(
+            ColumnSchema(name="Region", data_type="String")
+        )
+        schema.tables.append(
+            TableSchema(
+                name="Region",
+                columns=[ColumnSchema(name="Region", data_type="String")],
+            )
+        )
+        glossary = _glossary()
+        glossary["fields"]["Region"] = {
+            "table_name": "Sales",
+            "object_type": "field",
+            "aliases": ["区域"],
+            "member_aliases": {"华南": "South", "华东": "East"},
+        }
+        catalog = SemanticCatalogBuilder().build_from_data(schema, glossary)
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+            dimensions=["Region"],
+            last_query_plan={"dimension_tables": {"Region": "Sales"}},
+        )
+
+        async def lookup(field, limit):
+            assert field.table_name == "Sales"
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name="Region",
+                values=["South", "East"],
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(catalog).ground(
+            "只看华南",
+            _intent(),
+            _draft(filters=[StructuredFilter(field="Region", value="华南")]),
+            committed,
+            lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.filters == [
+            StructuredFilter(field="Region", value="South")
+        ]
+        assert outcome.delta.dimension_tables == {"Region": "Sales"}
+
+    def test_committed_dimension_table_hint_is_inherited(self):
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+            dimensions=["Region"],
+            last_query_plan={"dimension_tables": {"Region": "Sales"}},
+        )
+
+        transition = StateTransitionService().merge(
+            _draft(), GroundedSemanticDelta(), committed
+        )
+
+        assert transition.query_plan.dimension_tables == {"Region": "Sales"}
 
     @pytest.mark.asyncio
     async def test_ambiguous_date_fields_require_clarification(self):

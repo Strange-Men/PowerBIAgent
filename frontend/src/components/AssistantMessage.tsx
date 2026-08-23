@@ -1,6 +1,7 @@
 import { AlertCircle, CircleHelp, Info } from 'lucide-react'
 import type { AssistantMessage as AssistantMessageModel } from '../types'
 import { ReportAttachment } from './ReportAttachment'
+import { StructuredBlocks } from './StructuredBlocks'
 
 interface AssistantMessageProps {
   message: AssistantMessageModel
@@ -24,8 +25,18 @@ export function AssistantMessage({ message }: AssistantMessageProps) {
         </div>
       ) : null}
       <div className="assistant-content">
-        <p>{message.content}</p>
-        {message.report ? <ReportAttachment report={message.report} /> : null}
+        {message.presentation ? (
+          <StructuredBlocks
+            presentation={message.presentation}
+            fallbackText={message.content}
+            report={message.report}
+          />
+        ) : (
+          <p>{message.content}</p>
+        )}
+        {message.report && !message.presentation ? (
+          <ReportAttachment report={message.report} />
+        ) : null}
       </div>
     </article>
   )

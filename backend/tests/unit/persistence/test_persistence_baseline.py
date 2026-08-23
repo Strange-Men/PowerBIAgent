@@ -211,8 +211,13 @@ datefmt = %H:%M:%S
         conn = sqlite3.connect(tmp_db_path)
         cursor = conn.execute("SELECT version_num FROM alembic_version")
         version = cursor.fetchone()[0]
+        assert version == "d3b7f9a1c524"
+        conversation_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(conversations)").fetchall()
+        }
         conn.close()
-        assert version == "c8d4e6f2a109"
+        assert "title" in conversation_columns
 
 
 # ===========================================================================
@@ -743,7 +748,7 @@ datefmt = %H:%M:%S
                 "SELECT version_num FROM alembic_version"
             ).fetchone()[0]
         assert after == ("conversation_delete_intents",)
-        assert version == "c8d4e6f2a109"
+        assert version == "d3b7f9a1c524"
 
     @staticmethod
     def _run_alembic_upgrade(

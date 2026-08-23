@@ -12,6 +12,7 @@ from backend.app.conversation.models import (
     ConversationHistoryItem,
     ConversationReportItem,
     ConversationSummary,
+    ConversationRenameResult,
 )
 from backend.app.memory.models import RuntimeDataMode
 
@@ -47,6 +48,7 @@ class RepositoryPage(Generic[T, P]):
 @dataclass(frozen=True)
 class HistoryRepositoryPage:
     archived_at: datetime | None
+    title: str | None
     items: list[ConversationHistoryItem]
     next_position: HistoryPosition | None
 
@@ -103,6 +105,11 @@ class ConversationHistoryRepository(ABC):
     async def archive(
         self, runtime_mode: RuntimeDataMode, conversation_id: str
     ) -> ConversationArchiveResult: ...
+
+    @abstractmethod
+    async def rename(
+        self, runtime_mode: RuntimeDataMode, conversation_id: str, title: str
+    ) -> ConversationRenameResult: ...
 
     @abstractmethod
     async def delete(

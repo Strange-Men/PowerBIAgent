@@ -33,6 +33,7 @@ from backend.app.persistence.serialization import domain_to_json, json_to_domain
 from backend.app.persistence.repositories.common import (
     PersistenceRepositoryError,
     ensure_conversation,
+    set_default_conversation_title,
     touch_conversation,
 )
 
@@ -132,6 +133,13 @@ class SQLiteSnapshotRepository(SnapshotRepository):
                     session.add(model)
 
                 await session.flush()
+                if snapshot.user_message:
+                    await set_default_conversation_title(
+                        snapshot.conversation_id,
+                        mode_value,
+                        snapshot.user_message,
+                        session,
+                    )
                 # A completed/terminal snapshot is the durable turn activity
                 # witness used by recent-conversation ordering.
                 await touch_conversation(

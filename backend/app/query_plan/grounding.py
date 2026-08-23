@@ -22,6 +22,7 @@ from backend.app.memory.models import PendingClarificationContext, StructuredWor
 from backend.app.query_plan.semantic_catalog import (
     CatalogObject,
     SemanticCatalog,
+    SemanticObjectSource,
     SemanticObjectType,
     normalize_semantic_text,
 )
@@ -68,6 +69,7 @@ class MemberGroundingResult(BaseModel):
 class GroundedSemanticDelta(BaseModel):
     measures: list[str] | None = None
     dimensions: list[str] | None = None
+    dimension_tables: dict[str, str] = Field(default_factory=dict)
     filters: list[StructuredFilter] | None = None
     remove_filter_fields: list[str] = Field(default_factory=list)
     clear_filters: bool = False
@@ -477,6 +479,30 @@ class MemberGrounder:
                     requested_value=requested_value,
                     method="runtime_normalized_ambiguous",
                 )
+            alias_target = field.member_aliases.get(normalized)
+            if alias_target is not None:
+                alias_matches = [
+                    value
+                    for value in members.values
+                    if isinstance(value, str)
+                    and normalize_semantic_text(value)
+                    == normalize_semantic_text(alias_target)
+                ]
+                if len(alias_matches) == 1:
+                    return MemberGroundingResult(
+                        status=GroundingStatus.RESOLVED,
+                        field=field,
+                        requested_value=requested_value,
+                        canonical_value=alias_matches[0],
+                        method="glossary_alias_runtime_verified",
+                    )
+                if len(alias_matches) > 1:
+                    return MemberGroundingResult(
+                        status=GroundingStatus.AMBIGUOUS,
+                        field=field,
+                        requested_value=requested_value,
+                        method="glossary_alias_runtime_ambiguous",
+                    )
         return MemberGroundingResult(
             status=GroundingStatus.UNRESOLVED,
             field=field,
@@ -516,6 +542,15 @@ class TimeGrounder:
                 mode=TimeRangeMode.CURRENT_YEAR,
                 grain="year",
             )
+        if "去年" in user_input:
+            previous_year = today.year - 1
+            return TimeRangeSpec(
+                date_field=date_field.canonical_name,
+                start_date=date(previous_year, 1, 1),
+                end_date=date(previous_year, 12, 31),
+                mode=TimeRangeMode.EXPLICIT_RANGE,
+                grain="year",
+            )
         recent = self._RECENT_MONTHS.search(user_input)
         if recent:
             count = int(recent.group(1))
@@ -552,6 +587,7 @@ class TimeGrounder:
         return bool(
             "本月" in user_input
             or "今年" in user_input
+            or "去年" in user_input
             or cls._RECENT_MONTHS.search(user_input)
             or len(cls._ISO_DATE.findall(user_input)) == 2
         )
@@ -690,6 +726,9 @@ class SemanticGroundingService:
             for item in discovered_objects:
                 if item.canonical_object is not None:
                     grounded_filter_ids.add(item.canonical_object.object_id)
+                    delta.dimension_tables[
+                        item.canonical_object.canonical_name
+                    ] = item.canonical_object.table_name
         for raw_filter in raw_filters:
             if raw_filter.operator != FilterOperator.EQ:
                 return self._clarification(
@@ -763,6 +802,27 @@ class SemanticGroundingService:
                     role="filter_field",
                     method="filter_field_not_mentioned",
                 )
+            if (
+                field_result.status == GroundingStatus.AMBIGUOUS
+                and committed is not None
+                and committed.last_query_plan is not None
+            ):
+                raw_hints = committed.last_query_plan.get("dimension_tables")
+                if isinstance(raw_hints, dict):
+                    matching = [
+                        candidate
+                        for object_id in field_result.candidate_ids
+                        if (candidate := self.catalog.get(object_id)) is not None
+                        and raw_hints.get(candidate.canonical_name)
+                        == candidate.table_name
+                    ]
+                    if len(matching) == 1:
+                        field_result = ObjectGrounder._resolved(
+                            "filter_field",
+                            user_input,
+                            matching[0],
+                            "committed_canonical_table_owner",
+                        )
             object_results.append(field_result)
             if self._requires_clarification(field_result) or not field_result.canonical_object:
                 return self._clarification(
@@ -771,6 +831,7 @@ class SemanticGroundingService:
                 )
             field = field_result.canonical_object
             grounded_filter_ids.add(field.object_id)
+            delta.dimension_tables[field.canonical_name] = field.table_name
             members = await member_lookup(field, 100)
             member = MemberGrounder.resolve(field, raw_filter.value, members)
             member_results.append(member)
@@ -832,6 +893,9 @@ class SemanticGroundingService:
                     "请明确分析维度。", disagreements,
                 )
             delta.dimensions = [dimension.canonical_object.canonical_name]
+            delta.dimension_tables[
+                dimension.canonical_object.canonical_name
+            ] = dimension.canonical_object.table_name
         else:
             object_results.append(ObjectGroundingResult(
                 status=GroundingStatus.NOT_MENTIONED,
@@ -844,6 +908,13 @@ class SemanticGroundingService:
                 obj for obj in self.catalog.by_type(SemanticObjectType.FIELD)
                 if "date" in obj.data_type.casefold() or "time" in obj.data_type.casefold()
             )
+            glossary_date_fields = tuple(
+                obj
+                for obj in date_fields
+                if obj.source == SemanticObjectSource.RUNTIME_GLOSSARY
+            )
+            if glossary_date_fields:
+                date_fields = glossary_date_fields
             if len(date_fields) != 1:
                 candidates = tuple(item.object_id for item in date_fields)
                 date_result = ObjectGroundingResult(
@@ -873,6 +944,9 @@ class SemanticGroundingService:
                 )
             delta.time_range = time_range
             delta.time_specified = True
+            delta.dimension_tables[
+                date_fields[0].canonical_name
+            ] = date_fields[0].table_name
 
         self._ground_analysis(user_input, draft, delta)
         if delta.clear_time:
@@ -1084,11 +1158,29 @@ class SemanticGroundingService:
             }
             if not committed_fields and len(committed.dimensions) == 1:
                 committed_fields = {committed.dimensions[0]}
+            committed_hints: dict[str, str] = {}
+            if committed.last_query_plan is not None:
+                raw_hints = committed.last_query_plan.get("dimension_tables")
+                if isinstance(raw_hints, dict):
+                    committed_hints = {
+                        field: table
+                        for field, table in raw_hints.items()
+                        if isinstance(field, str) and isinstance(table, str)
+                    }
             for field_name in committed_fields:
                 resolved = self.objects.resolve_phrase(
                     field_name, SemanticObjectType.FIELD, "filter_field"
                 )
-                candidate_ids.extend(resolved.candidate_ids)
+                table_hint = committed_hints.get(field_name)
+                candidate_ids.extend(
+                    object_id
+                    for object_id in resolved.candidate_ids
+                    if table_hint is None
+                    or (
+                        (candidate := self.catalog.get(object_id)) is not None
+                        and candidate.table_name == table_hint
+                    )
+                )
 
         candidates: list[CatalogObject] = []
         seen: set[str] = set()
@@ -1115,6 +1207,16 @@ class SemanticGroundingService:
                 and len(normalize_semantic_text(value)) >= 2
                 and normalize_semantic_text(value) in normalized_input
             ]
+            for alias, target in field.member_aliases.items():
+                if alias not in normalized_input:
+                    continue
+                field_matches.extend(
+                    value
+                    for value in members.values
+                    if isinstance(value, str)
+                    and normalize_semantic_text(value)
+                    == normalize_semantic_text(target)
+                )
             unique_matches: list[Any] = []
             for value in field_matches:
                 if value not in unique_matches:

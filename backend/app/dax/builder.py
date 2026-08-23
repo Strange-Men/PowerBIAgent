@@ -120,7 +120,9 @@ class DeterministicDAXBuilder:
         for item in plan.filters:
             if item.operator != FilterOperator.EQ:
                 raise DAXBuildError("dax_builder_filter_operator_unsupported")
-            table, column = ownership.column(item.field)
+            table, column = ownership.column(
+                item.field, table=dimension_hints.get(item.field)
+            )
             literal = self._literal(item.value, column.data_type)
             arguments.append(
                 f"TREATAS({{{literal}}}, {self._qualified(table, item.field)})"
@@ -128,7 +130,9 @@ class DeterministicDAXBuilder:
 
         if plan.time_range is not None:
             time = plan.time_range
-            table, column = ownership.column(time.date_field)
+            table, column = ownership.column(
+                time.date_field, table=dimension_hints.get(time.date_field)
+            )
             if not self._is_date_type(column.data_type):
                 raise DAXBuildError("dax_builder_time_field_type_invalid")
             arguments.append(

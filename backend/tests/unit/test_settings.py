@@ -16,6 +16,10 @@ from backend.app.config.settings import (
     Settings,
     get_settings,
 )
+from backend.app.config.startup_diagnostics import (
+    inspect_dotenv_format,
+    safe_startup_summary,
+)
 
 
 class TestSettingsDefaults:
@@ -257,6 +261,50 @@ class TestSettingsRealMode:
         assert writable.is_powerbi_local_mcp_configured is False
         assert missing_command.is_powerbi_local_mcp_configured is False
         assert missing_model_key.is_powerbi_local_mcp_configured is False
+
+    def test_local_real_diagnostics_require_sqlite_readonly_and_tool_budget(self):
+        configured = Settings(
+            _env_file=None,
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.LOCAL_MCP,
+            persistence_backend="sqlite",
+            deepseek_api_key=SecretStr("test-key-not-real"),
+            max_tool_calls=8,
+        )
+        assert configured.is_local_real_configuration_complete is True
+        assert configured.local_real_configuration_reasons == []
+
+        incomplete = configured.model_copy(
+            update={"persistence_backend": "memory", "max_tool_calls": 3}
+        )
+        assert incomplete.is_local_real_configuration_complete is False
+        assert "persistence_backend_requires_sqlite" in (
+            incomplete.local_real_configuration_reasons
+        )
+        assert "max_tool_calls_requires_8" in (
+            incomplete.local_real_configuration_reasons
+        )
+
+
+class TestStartupDiagnostics:
+    def test_dotenv_format_reports_only_invalid_line_numbers(self, tmp_path):
+        env_path = tmp_path / ".env"
+        env_path.write_text(
+            "# comment\nLLM_MODE=deepseek\n\nnot-an-assignment\n",
+            encoding="utf-8",
+        )
+        result = inspect_dotenv_format(env_path)
+        assert result.exists is True
+        assert result.valid is False
+        assert result.invalid_line_numbers == (4,)
+        assert "deepseek" not in repr(result)
+
+    def test_safe_summary_never_contains_secret_value(self):
+        secret = "secret-value-must-not-appear"
+        settings = Settings(_env_file=None, deepseek_api_key=SecretStr(secret))
+        summary = safe_startup_summary(settings)
+        assert summary["deepseek_configured"] is True
+        assert secret not in str(summary)
 
 
 class TestSettingsIsolation:

@@ -81,6 +81,8 @@ class ReportPlanner:
         schema: SemanticModelSchema,
         requested_ids: tuple[str, ...],
         signal: ReportIntentSignal,
+        *,
+        max_queries: int | None = None,
     ) -> ReportPlan:
         validation = self._validator.validate(template_key, schema)
         if not validation.available or validation.contract is None:
@@ -98,6 +100,32 @@ class ReportPlanner:
                 "sales_report_no_resolved_sections",
                 tuple(item.value for item in unavailable),
             )
+
+        if max_queries is not None:
+            if max_queries < 1:
+                raise ReportPlanError("report_tool_budget_insufficient")
+            from backend.app.report.capability import SECTION_REQUIREMENTS
+
+            budgeted_sections: list[SectionKey] = []
+            budgeted_requirements: list[str] = []
+            budget_omitted: list[SectionKey] = []
+            for section in (*KPI_SECTION_ORDER, *ANALYSIS_SECTION_ORDER):
+                if section not in resolved:
+                    continue
+                next_requirements = [
+                    key
+                    for key in SECTION_REQUIREMENTS[section]
+                    if key not in budgeted_requirements
+                ]
+                if len(budgeted_requirements) + len(next_requirements) > max_queries:
+                    budget_omitted.append(section)
+                    continue
+                budgeted_sections.append(section)
+                budgeted_requirements.extend(next_requirements)
+            resolved = tuple(budgeted_sections)
+            unavailable = tuple(dict.fromkeys((*unavailable, *budget_omitted)))
+            if not resolved:
+                raise ReportPlanError("report_tool_budget_insufficient")
 
         # Requirement order follows the fixed visual hierarchy: KPI row,
         # analysis sections in layout order.  One requirement runs at most

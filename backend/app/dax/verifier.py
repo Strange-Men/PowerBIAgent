@@ -108,6 +108,9 @@ class RestrictedDAXVerifier:
                 errors.append("dax_filter_operator_not_supported")
                 continue
             owners = column_owners.get(item.field, set())
+            hint = dimension_hints.get(item.field)
+            if hint is not None:
+                owners = {owner for owner in owners if owner == hint}
             if len(owners) != 1 or item.field in measure_owners:
                 errors.append("dax_filter_ownership_not_unique")
                 continue
@@ -131,6 +134,9 @@ class RestrictedDAXVerifier:
                 errors.append("dax_unplanned_time_filter")
         else:
             owners = column_owners.get(plan.time_range.date_field, set())
+            hint = dimension_hints.get(plan.time_range.date_field)
+            if hint is not None:
+                owners = {owner for owner in owners if owner == hint}
             expected_ref = (
                 _Ref(next(iter(owners)), plan.time_range.date_field)
                 if len(owners) == 1 else None

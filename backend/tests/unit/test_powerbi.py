@@ -714,6 +714,10 @@ class TestLocalMCPPowerBIAdapter:
             "type": "semantic_model",
             "available": True,
             "connected": True,
+            "agent_compatible": False,
+            "selectable": False,
+            "schema_drift": False,
+            "compatibility_status": "unavailable",
         }
         assert client.discovery_calls == 1
 

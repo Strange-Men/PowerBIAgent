@@ -3,6 +3,62 @@ import { describe, expect, it } from 'vitest'
 import { AssistantMessage } from './AssistantMessage'
 
 describe('AssistantMessage dynamic rendering', () => {
+  it('renders verified metric, table, and bar blocks from one referenced dataset', () => {
+    render(
+      <AssistantMessage
+        message={{
+          id: 'structured-1',
+          role: 'assistant',
+          kind: 'answer',
+          content: '按区域对比如下。',
+          presentation: {
+            version: 1,
+            datasets: [{
+              result_id: 'result-1',
+              verified_fact_set_id: 'facts-1',
+              semantic_model_key: 'desktop-model',
+              source_mode: 'real',
+              columns: ['区域', '销售额'],
+              rows: [['华东', 120], ['华南', 80]],
+              row_count: 2,
+              truncated: false,
+            }],
+            blocks: [
+              { type: 'text', content: '按区域对比如下。' },
+              { type: 'metric', data_reference: 'result-1', label: '最高示例值', value_field: '销售额', row_index: 0 },
+              { type: 'table', data_reference: 'result-1', title: '区域结果' },
+              { type: 'chart', data_reference: 'result-1', visual_type: 'bar', title: '区域对比', x_field: '区域', y_field: '销售额' },
+            ],
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('最高示例值')).toBeInTheDocument()
+    expect(screen.getByRole('table')).toHaveTextContent('华东')
+    expect(screen.getByLabelText('区域对比柱状图')).toBeInTheDocument()
+  })
+
+  it('renders a line chart for a backend line ChartSpec reference', () => {
+    render(
+      <AssistantMessage
+        message={{
+          id: 'structured-line', role: 'assistant', kind: 'answer', content: '趋势如下。',
+          presentation: {
+            version: 1,
+            datasets: [{
+              result_id: 'trend', verified_fact_set_id: 'facts-trend', semantic_model_key: 'desktop-model', source_mode: 'real',
+              columns: ['月份', '销售额'], rows: [['2026-01', 10], ['2026-02', 20]], row_count: 2, truncated: false,
+            }],
+            blocks: [{ type: 'chart', data_reference: 'trend', visual_type: 'line', title: '销售趋势', x_field: '月份', y_field: '销售额' }],
+          },
+        }}
+      />,
+    )
+    expect(screen.getByLabelText('销售趋势折线图')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '销售额随月份变化' })).toBeInTheDocument()
+  })
+
   it('renders text only when no report artifact exists', () => {
     render(
       <AssistantMessage

@@ -141,9 +141,40 @@ def test_history_api_requires_explicit_namespace_and_never_exposes_payload_or_ht
     assert real.status_code == 200
     assert [item["answer"] for item in mock.json()["items"]] == ["mock API answer"]
     assert [item["answer"] for item in real.json()["items"]] == ["real API answer"]
+    assert [item["user_message"] for item in mock.json()["items"]] == [
+        "mock API question"
+    ]
     serialized = mock.text
     assert "payload_json" not in serialized
     assert "<!DOCTYPE html>" not in serialized
+
+
+def test_title_rename_is_presentation_only_and_searchable(tmp_path: Path) -> None:
+    app = _sqlite_app(tmp_path)
+    with TestClient(app) as client:
+        renamed = client.patch(
+            "/api/v1/conversations/shared-api-conversation",
+            params={"runtime_mode": "real"},
+            json={"title": "  八月销售复盘  "},
+        )
+        recent = client.get(
+            "/api/v1/conversations",
+            params={"runtime_mode": "real", "limit": 20},
+        )
+        history = client.get(
+            "/api/v1/conversations/shared-api-conversation/history",
+            params={"runtime_mode": "real", "limit": 20},
+        )
+        search = client.get(
+            "/api/v1/conversations/search",
+            params={"runtime_mode": "real", "q": "八月销售", "limit": 20},
+        )
+
+    assert renamed.status_code == 200
+    assert renamed.json()["title"] == "八月销售复盘"
+    assert recent.json()["items"][0]["title"] == "八月销售复盘"
+    assert history.json()["title"] == "八月销售复盘"
+    assert search.json()["items"][0]["conversation_id"] == "shared-api-conversation"
 
 
 def test_search_api_namespace_and_declared_content_contract(tmp_path: Path) -> None:

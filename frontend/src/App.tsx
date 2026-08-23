@@ -1,12 +1,24 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Composer } from './components/Composer'
 import { ConversationView } from './components/ConversationView'
 import { Sidebar } from './components/Sidebar'
 import { usePowerBIAgent } from './hooks/usePowerBIAgent'
 
 export function App() {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 760px)').matches
+      : false,
+  )
   const app = usePowerBIAgent()
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia('(max-width: 760px)')
+    const respond = (event: MediaQueryListEvent) => setSidebarCollapsed(event.matches)
+    media.addEventListener('change', respond)
+    return () => media.removeEventListener('change', respond)
+  }, [])
 
   return (
     <div className="app-shell">
@@ -20,6 +32,9 @@ export function App() {
         onNewChat={app.startNewChat}
         onOpenConversation={(conversation) => void app.openConversation(conversation)}
         onSearch={app.search}
+        onRename={app.rename}
+        onArchive={app.archive}
+        onDelete={app.remove}
       />
       <main className="chat-main">
         {app.messages.length > 0 ? (
@@ -39,6 +54,7 @@ export function App() {
           semanticModelOptions={app.semanticModelOptions}
           loadingSemanticModels={app.loadingSemanticModels}
           semanticModelError={app.semanticModelError}
+          semanticModelCompatibilityNotice={app.semanticModelCompatibilityNotice}
           reportTemplate={app.selectedReportTemplate}
           onSemanticModelChange={app.setSelectedSemanticModel}
           onReportTemplateChange={app.setSelectedReportTemplate}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chatResponseToMessage, isUsableReport } from './adapters'
+import { chatResponseToMessage, historyItemToMessages, isUsableReport } from './adapters'
 import type { ChatResponse, ReportResource } from '../types'
 
 function response(overrides: Partial<ChatResponse> = {}): ChatResponse {
@@ -150,5 +150,26 @@ describe('report resource validation', () => {
         response({ report: { ...report, download_reference: 'javascript:alert(1)' } }),
       ).report,
     ).toBeUndefined()
+  })
+})
+
+describe('history transcript projection', () => {
+  it('restores the declared user message before the assistant result', () => {
+    const messages = historyItemToMessages({
+      request_id: 'req-history',
+      created_at: '2026-08-23T10:00:00',
+      terminal_state: 'completed',
+      response_type: 'answer',
+      intent: 'data_question',
+      user_message: '查看华东销售额',
+      answer: '华东销售额为 100。',
+      report: null,
+      clarification_question: null,
+      unsupported_reason: null,
+      error_type: null,
+    })
+    expect(messages).toHaveLength(2)
+    expect(messages[0]).toMatchObject({ role: 'user', content: '查看华东销售额' })
+    expect(messages[1]).toMatchObject({ role: 'assistant', restored: true })
   })
 })

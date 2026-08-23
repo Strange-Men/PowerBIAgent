@@ -1,7 +1,7 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.2 — 真实业务链路与前端逻辑收口已完成；M5.3 未开始
-> **目标阶段：** M5.2 固化真实 runtime/model/template/persistence 逻辑；M5.3 负责最终视觉与交互收口
+> **状态：** M5.3 视觉与交互已完成；Rich PBIX Real 浏览器验收通过
+> **目标阶段：** M5.3 固化结构化结果、历史管理、responsive、accessibility 与最终视觉交互
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -12,11 +12,11 @@
 
 本文件记录 PowerBIAgent 前端的产品视觉方向与交互规范。内容基于两张前端参考图和项目负责人提供的文字化分析。
 
-本文档是 M5.1 React 前端开发的产品方向参考。两张图片是视觉方向参考，不是最终页面定稿，也不是必须逐像素复制的最终稿。总体目标为简洁、清晰、参考 GPT 网页端风格。
+本文档是当前 React 前端的正式视觉与交互基线。两张图片是视觉方向参考，不是官方尺寸来源，也不要求逐像素复制。总体目标为简洁、清晰、参考 GPT 网页端风格。
 
 ## 二、当前阶段与实施边界
 
-**当前阶段：** M5.2 已完成 Real、Desktop discovery、SQLite conversation、intent/template/model 与真实多轮/report 联调。M0–M4 authority 保持不变；缺少 QueryResult rows/ChartSpec 时不伪造前端表格或图表。尺寸/间距、responsive、accessibility 与状态视觉 polish 属于 M5.3。
+**当前阶段：** M5.3 已实现 QueryResult/VerifiedFactSet 直接来源的 presentation contract、展示型 transcript/title、会话管理、尺寸/间距、responsive、accessibility 与状态视觉。M0–M4 authority 保持不变；没有真实 presentation block 时不伪造前端表格或图表。
 
 ## 三、视觉参考图片
 
@@ -136,10 +136,10 @@
 | 内容块 | 出现条件 | 数据来源 |
 |--------|---------|---------|
 | text（文字） | 任何 AI 回答 | ChatResponse.answer / clarification_question / unsupported_reason |
-| metrics（指标摘要） | 仅后端返回指标数据并且有数值结果时 | AnswerSpec / QueryResult |
-| table（表格） | 仅后端 QueryResult 包含数据行时 | QueryResult |
-| chart（图表） | 仅后端提供可视化且是 comparison/trend 场景时 | QueryResult 的 ChartSpec |
-| report_attachment（报表附件） | 仅用户要求生成报表且后端生成 ReportArtifact 时 | ChatResponse.report |
+| metric（指标摘要） | VerifiedFactSet scalar fact 可回指真实 row 时 | `presentation` dataset + field/row reference |
+| table（表格） | grouped fact 且 QueryResult 包含数据行时 | `presentation` 的单一 QueryResult dataset |
+| chart（图表） | grouped result 至少两行且 Y 字段为数值时 | 同一 dataset 的 X/Y field reference |
+| report_attachment（报表附件） | 后端真正生成 ReportArtifact 时 | canonical `report_id` |
 
 典型场景渲染：
 
@@ -158,7 +158,7 @@
 
 **安全约束：**
 - 表格数据必须来自后端 QueryResult
-- 图表数据必须来自后端 QueryResult
+- 图表 block 只能引用同 envelope 的 QueryResult dataset
 - 指标值必须由后端 VerifiedFactSet 证明
 - source_mode 必须与数据层一致
 - 报表引用由后端生成
@@ -203,7 +203,6 @@
 
 - bar（柱状图，含横向/纵向）
 - line（折线图）
-- donut（环形图）
 - 仅在后端返回的可视化数据可用时渲染
 
 ### 10.3 禁止
@@ -216,7 +215,7 @@
 
 ### 10.4 数据约束
 
-- type 必须符合后端允许类型
+- type 当前只允许 `bar` 或 `line`
 - 字段必须存在于后端 QueryResult.columns
 - 数据必须引用后端 QueryResult
 
@@ -280,7 +279,9 @@
 - 实际内容只来自 `GET /api/v1/semantic-models` 返回的 safe catalog
 - 浏览器不读取 `.pbix`；后端通过 Local MCP / Power BI Desktop 实例发现并验证连接
 - catalog 至少包含 backend-owned stable key、display name、source/type、available/connected；不得返回端口、connection string、path 或 MCP raw payload
+- catalog 同时返回最小 `agent_compatible` / `compatibility_status`；不可返回 schema、fingerprint 或 DAX
 - 无模型时显示明确 empty state 并禁用发送，不伪造默认 PBIX
+- Desktop 可连接但 Agent 不兼容时显示“当前模型已连接，但暂不符合 PowerBIAgent 当前支持的数据结构”，并禁用发送
 - 当前只能稳定连接一个 Desktop 模型时显示“当前已连接模型”；不得用静态“Power BI 销售数据”冒充真实模型
 - 当前选中项应有清晰视觉状态
 - 前端不得自行生成不存在的模型
@@ -357,9 +358,9 @@
 
 ## 十六、响应式原则
 
-桌面端优先。窄屏或移动端（M5 实现）：
+桌面端优先。M5.3 已实现以下窄屏行为：
 
-- 左侧栏折叠为抽屉（汉堡菜单触发）
+- 小屏默认折叠 Sidebar，仅保留可访问的展开、新聊天与搜索入口
 - 主对话区占满可用宽度
 - 输入器保持可操作（不溢出）
 - 表格允许横向滚动
@@ -379,10 +380,12 @@
 | "查看报表"操作 | ✅ M3 resource API 已完成 | ✅ M5.1 |
 | "下载 HTML"操作 | ✅ M3 resource API 已完成 | ✅ M5.1 |
 | 多模型切换 | DeepSeek 唯一启用 | ✅ M5.1 单选交互 |
-| 响应式布局 | — | M5.3 |
-| semantic_model_key 列表 | ✅ M5.2 最小只读 API | +"菜单动态展示当前 Desktop model safe catalog |
+| 响应式布局 | — | ✅ M5.3 desktop/medium/small |
+| semantic_model_key 列表 | ✅ M5.3 最小只读 compatibility | +"菜单展示 Desktop model safe catalog 与兼容状态 |
 | report_template_key 列表 | ❌ 无独立 API | +"菜单只登记 `sales_report` |
-| 统一前端 Envelope | ❌ 不存在 | M5.1 决定不新增；typed adapter 直接消费现有 schema |
+| `presentation` 展示层 | ✅ Chat/History typed envelope | M5.3 动态 text/metric/table/bar/line/report |
+| History transcript/title | ✅ presentation metadata | M5.3 完整恢复、默认标题、重命名 |
+| Conversation 管理 | ✅ archive/delete + M5.3 rename | Sidebar 菜单；report 随 conversation 管理 |
 
 ## 十八、明确禁止的设计
 
@@ -427,4 +430,4 @@
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-21 | M5.2 真实业务逻辑收口完成；视觉 polish 顺延 M5.3*
+*最后更新：2026-08-23 | M5.3 视觉与交互最终收口完成*

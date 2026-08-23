@@ -135,9 +135,52 @@ export async function getConversationHistory(
   runtimeMode: RuntimeMode,
   conversationId: string,
 ): Promise<ConversationHistoryPage> {
-  const query = queryString({ runtime_mode: runtimeMode, limit: 50 })
-  return requestJson<ConversationHistoryPage>(
-    `/api/v1/conversations/${encodeURIComponent(conversationId)}/history?${query}`,
+  const items: ConversationHistoryPage['items'] = []
+  let cursor: string | undefined
+  let firstPage: ConversationHistoryPage | undefined
+  do {
+    const query = queryString({ runtime_mode: runtimeMode, limit: 50, cursor })
+    const page = await requestJson<ConversationHistoryPage>(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/history?${query}`,
+    )
+    firstPage ||= page
+    items.push(...page.items)
+    cursor = page.next_cursor || undefined
+  } while (cursor && items.length < 500)
+  return { ...firstPage!, items, next_cursor: cursor || null }
+}
+
+export async function renameConversation(
+  runtimeMode: RuntimeMode,
+  conversationId: string,
+  title: string,
+): Promise<{ title: string }> {
+  const query = queryString({ runtime_mode: runtimeMode })
+  return requestJson<{ title: string }>(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}?${query}`,
+    { method: 'PATCH', body: JSON.stringify({ title }) },
+  )
+}
+
+export async function archiveConversation(
+  runtimeMode: RuntimeMode,
+  conversationId: string,
+): Promise<void> {
+  const query = queryString({ runtime_mode: runtimeMode })
+  await requestJson(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/archive?${query}`,
+    { method: 'POST' },
+  )
+}
+
+export async function deleteConversation(
+  runtimeMode: RuntimeMode,
+  conversationId: string,
+): Promise<void> {
+  const query = queryString({ runtime_mode: runtimeMode })
+  await requestJson(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}?${query}`,
+    { method: 'DELETE' },
   )
 }
 

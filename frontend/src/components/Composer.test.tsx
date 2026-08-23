@@ -8,6 +8,9 @@ const semanticModel: CatalogOption = {
   key: 'local_desktop_model',
   label: '当前销售模型',
   description: '当前已连接的 Power BI Desktop 模型',
+  compatible: true,
+  selectable: true,
+  schemaDrift: false,
 }
 
 function renderComposer(options: CatalogOption[] = [semanticModel]) {
@@ -31,6 +34,38 @@ function renderComposer(options: CatalogOption[] = [semanticModel]) {
 }
 
 describe('Composer menus and sending', () => {
+  it('keeps a truly incompatible model visible and disables sending', () => {
+    render(
+      <Composer
+        sending={false}
+        semanticModel={{ ...semanticModel, compatible: false, selectable: false }}
+        semanticModelOptions={[{ ...semanticModel, compatible: false, selectable: false }]}
+        loadingSemanticModels={false}
+        semanticModelError={null}
+        semanticModelCompatibilityNotice="当前模型已连接，但缺少 PowerBIAgent 当前分析所需的部分业务字段或指标。"
+        reportTemplate={null}
+        onSemanticModelChange={vi.fn()}
+        onReportTemplateChange={vi.fn()}
+        onSend={vi.fn()}
+      />,
+    )
+    fireEvent.change(screen.getByLabelText('询问你的 Power BI 数据'), { target: { value: '查询销售额' } })
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
+    expect(screen.getByText(/当前模型已连接，但缺少/)).toBeInTheDocument()
+  })
+
+  it('allows sending when only the schema fingerprint drifted', () => {
+    const drifted = { ...semanticModel, schemaDrift: true }
+    const { onSend } = renderComposer([drifted])
+    fireEvent.change(screen.getByLabelText('询问你的 Power BI 数据'), {
+      target: { value: '按区域列出销售额' },
+    })
+    const send = screen.getByRole('button', { name: '发送' })
+    expect(send).toBeEnabled()
+    fireEvent.click(send)
+    expect(onSend).toHaveBeenCalledWith('按区域列出销售额')
+  })
+
   it('opens the grouped plus menu and maps the template selection', () => {
     const { onReportTemplateChange } = renderComposer()
     fireEvent.click(screen.getByRole('button', { name: '打开数据与报表选项' }))

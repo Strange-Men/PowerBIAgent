@@ -10,6 +10,8 @@ export const reportTemplateOptions: readonly CatalogOption[] = [
     key: 'sales_report',
     label: '销售分析报告',
     description: '固定安全 HTML 模板',
+    compatible: true,
+    compatibilityStatus: 'compatible',
   },
 ]
 

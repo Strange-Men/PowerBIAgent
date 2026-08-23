@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  archiveConversation,
+  deleteConversation,
   discoverSemanticModels,
+  getConversationHistory,
   listRecentConversations,
   listRecentReports,
+  renameConversation,
   sendChat,
 } from './client'
 
@@ -129,5 +133,36 @@ describe('API namespace and chat mapping', () => {
 
     expect(String(fetchMock.mock.calls[0][0])).toContain('source_mode=real')
     expect(String(fetchMock.mock.calls[0][0])).not.toContain('source_mode=mock')
+  })
+
+  it('loads all bounded history pages for a complete restored conversation', async () => {
+    const pages = [
+      { runtime_mode: 'real', conversation_id: 'conv-1', archived_at: null, title: '完整历史', items: [{ request_id: 'new' }], next_cursor: 'older' },
+      { runtime_mode: 'real', conversation_id: 'conv-1', archived_at: null, title: '完整历史', items: [{ request_id: 'old' }], next_cursor: null },
+    ]
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(pages[0]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(pages[1]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const history = await getConversationHistory('real', 'conv-1')
+
+    expect(history.items.map((item) => item.request_id)).toEqual(['new', 'old'])
+    expect(String(fetchMock.mock.calls[1][0])).toContain('cursor=older')
+  })
+
+  it('uses the existing conversation namespace for rename, archive, and delete', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
+      new Response(JSON.stringify({ title: '新标题' }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await renameConversation('real', 'conv-1', '新标题')
+    await archiveConversation('real', 'conv-1')
+    await deleteConversation('real', 'conv-1')
+
+    expect(fetchMock.mock.calls.map((call) => (call[1] as RequestInit).method)).toEqual(['PATCH', 'POST', 'DELETE'])
+    expect(fetchMock.mock.calls.every((call) => String(call[0]).includes('runtime_mode=real'))).toBe(true)
+    expect(String(fetchMock.mock.calls[2][0])).toContain('/api/v1/conversations/conv-1?')
   })
 })

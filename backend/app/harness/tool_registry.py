@@ -67,23 +67,7 @@ def register_default_tools(
     """
 
     # ── 1. get_semantic_model_schema ──
-    get_schema = powerbi_adapter.get_semantic_model_schema
-
-    async def _get_schema(input_data: SchemaInput) -> SemanticModelSchema:
-        return await get_schema(input_data.semantic_model_key)
-
-    gateway.register(ToolSpec(
-        name=TOOL_NAME_SCHEMA,
-        description="获取 Power BI 语义模型结构",
-        input_model=SchemaInput,
-        output_model=SemanticModelSchema,
-        timeout_seconds=float(config.powerbi_query_timeout_seconds),
-        max_retries=config.max_powerbi_retries,
-        read_only=True,
-        allowed_intents=[IntentType.DATA_QUESTION, IntentType.REPORT_GENERATION],
-        supported_modes=[RuntimeDataMode.MOCK, RuntimeDataMode.REAL],
-        handler=_get_schema,
-    ))
+    register_schema_tool(gateway, powerbi_adapter, config)
 
     # ── 2. get_column_members ──
     get_members = powerbi_adapter.get_column_members
@@ -149,6 +133,31 @@ def register_default_tools(
         allowed_intents=[IntentType.REPORT_GENERATION],
         supported_modes=[RuntimeDataMode.MOCK, RuntimeDataMode.REAL],
         handler=_render_report,
+    ))
+
+
+def register_schema_tool(
+    gateway: ToolGateway,
+    powerbi_adapter: Any,
+    config: HarnessConfig,
+) -> None:
+    """Register the canonical read-only schema boundary for focused callers."""
+    get_schema = powerbi_adapter.get_semantic_model_schema
+
+    async def _get_schema(input_data: SchemaInput) -> SemanticModelSchema:
+        return await get_schema(input_data.semantic_model_key)
+
+    gateway.register(ToolSpec(
+        name=TOOL_NAME_SCHEMA,
+        description="获取 Power BI 语义模型结构",
+        input_model=SchemaInput,
+        output_model=SemanticModelSchema,
+        timeout_seconds=float(config.powerbi_query_timeout_seconds),
+        max_retries=config.max_powerbi_retries,
+        read_only=True,
+        allowed_intents=[IntentType.DATA_QUESTION, IntentType.REPORT_GENERATION],
+        supported_modes=[RuntimeDataMode.MOCK, RuntimeDataMode.REAL],
+        handler=_get_schema,
     ))
 
 

@@ -15,9 +15,11 @@ from backend.app.conversation.models import (
     ConversationHistoryItem,
     ConversationNotFoundError,
     ConversationReportItem,
+    ConversationRenameResult,
     ConversationSummary,
     SnapshotReportSummary,
 )
+from backend.app.conversation.title import normalize_conversation_title
 from backend.app.conversation.repository import (
     ConversationHistoryRepository,
     ConversationPosition,
@@ -126,6 +128,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     created_at=row.created_at,
                     updated_at=row.updated_at,
                     archived_at=row.archived_at,
+                    title=row.title,
                     latest_request_id=(snapshot.request_id if snapshot else None),
                     latest_terminal_state=(
                         snapshot.terminal_state if snapshot else None
@@ -250,6 +253,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             )
         return HistoryRepositoryPage(
             archived_at=conversation.archived_at,
+            title=conversation.title,
             items=items,
             next_position=next_position,
         )
@@ -306,6 +310,13 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             terminal_state=snapshot.terminal_state,
             response_type=snapshot.response_type,
             intent=snapshot.intent,
+            user_message=(
+                snapshot.user_message
+                or SQLiteConversationHistoryRepository._legacy_user_message(
+                    memory
+                )
+            ),
+            presentation=snapshot.presentation,
             answer=snapshot.answer,
             report=report_summary,
             clarification_question=snapshot.clarification_question,
@@ -315,6 +326,17 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             final_memory_version=snapshot.final_memory_version,
             memory=memory_summary,
         )
+
+    @staticmethod
+    def _legacy_user_message(memory: WorkMemoryModel | None) -> str | None:
+        """Recover only the exact legacy display prefix; never infer transcript."""
+        if memory is None or not memory.analysis_goal:
+            return None
+        prefix = "用户提问: "
+        if not memory.analysis_goal.startswith(prefix):
+            return None
+        value = memory.analysis_goal[len(prefix) :].strip()
+        return value or None
 
     @staticmethod
     def _json_text(path: str):
@@ -357,6 +379,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             *[
                 func.instr(func.lower(self._json_text(path)), needle) > 0
                 for path in (
+                    "$.user_message",
                     "$.answer",
                     "$.clarification_question",
                     "$.unsupported_reason",
@@ -376,7 +399,14 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
         conditions = [
             ConversationModel.runtime_mode == runtime_mode.value,
             ConversationModel.archived_at.is_(None),
-            or_(memory_match, snapshot_match),
+            or_(
+                func.instr(
+                    func.lower(func.coalesce(ConversationModel.title, "")), needle
+                )
+                > 0,
+                memory_match,
+                snapshot_match,
+            ),
         ]
         if after is not None:
             conditions.append(self._conversation_cursor_condition(after))
@@ -487,6 +517,29 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             runtime_mode=runtime_mode,
             conversation_id=conversation_id,
             archived_at=archived_at,
+        )
+
+    async def rename(
+        self,
+        runtime_mode: RuntimeDataMode,
+        conversation_id: str,
+        title: str,
+    ) -> ConversationRenameResult:
+        normalized = normalize_conversation_title(title)
+        async with self._session_factory() as session:
+            async with session.begin():
+                row = await self._get_conversation(
+                    session, runtime_mode, conversation_id
+                )
+                row.title = normalized
+                row.updated_at = datetime.utcnow()
+                await session.flush()
+                updated_at = row.updated_at
+        return ConversationRenameResult(
+            runtime_mode=runtime_mode,
+            conversation_id=conversation_id,
+            title=normalized,
+            updated_at=updated_at,
         )
 
     async def delete(

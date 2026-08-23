@@ -251,3 +251,23 @@ def test_dimension_table_hint_on_metric_never_changes_measure_resolution():
     assert request.dax.count("[Total Sales]") == 1  # measure expression
     assert request.dax.count('"Total Sales"') == 1  # name literal
     assert _layer3(request, plan, schema).is_valid
+
+
+def test_dimension_table_hint_also_resolves_same_field_filter_owner():
+    plan = _plan(
+        dimensions=["Category"],
+        filters=[
+            StructuredFilter(
+                field="Category",
+                operator=FilterOperator.EQ,
+                value="Electronics",
+            )
+        ],
+        dimension_tables={"Category": "Sales"},
+    )
+    schema = _schema_dim_duplicate()
+
+    request = _build(plan, schema)
+
+    assert "TREATAS({\"Electronics\"}, 'Sales'[Category])" in request.dax
+    assert _layer3(request, plan, schema).is_valid

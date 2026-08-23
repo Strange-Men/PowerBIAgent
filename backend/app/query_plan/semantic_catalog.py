@@ -47,6 +47,7 @@ class CatalogObject(BaseModel):
     data_type: str
     description: str | None = None
     aliases: tuple[str, ...] = ()
+    member_aliases: dict[str, str] = Field(default_factory=dict)
     source: SemanticObjectSource = SemanticObjectSource.RUNTIME
 
     model_config = ConfigDict(frozen=True)
@@ -55,6 +56,7 @@ class CatalogObject(BaseModel):
 class SemanticCatalog(BaseModel):
     semantic_model_key: str
     schema_fingerprint: str
+    schema_drift: bool = False
     objects: tuple[CatalogObject, ...]
     alias_conflicts: dict[str, tuple[str, ...]] = Field(default_factory=dict)
 
@@ -106,11 +108,16 @@ class SemanticCatalogBuilder:
         if not isinstance(expected_fingerprint, str) or len(expected_fingerprint) != 64:
             raise GlossaryCatalogError("glossary_schema_fingerprint_invalid")
         runtime_fingerprint = compute_schema_fingerprint(schema)
-        if expected_fingerprint != runtime_fingerprint:
-            raise GlossaryCatalogError("glossary_schema_fingerprint_mismatch")
+        schema_drift = expected_fingerprint != runtime_fingerprint
 
         objects: dict[tuple[SemanticObjectType, str, str], CatalogObject] = {}
         hidden: set[tuple[SemanticObjectType, str, str]] = set()
+        all_table_names = {table.name for table in schema.tables}
+        hidden_table_names = {
+            table.name
+            for table in schema.tables
+            if table.is_hidden or table.is_system_managed
+        }
         for table in schema.tables:
             table_hidden = table.is_hidden or table.is_system_managed
             for measure in table.measures:
@@ -151,20 +158,56 @@ class SemanticCatalogBuilder:
             for canonical_ref, metadata in entries.items():
                 if not isinstance(metadata, dict):
                     raise GlossaryCatalogError("glossary_object_invalid")
+                required = metadata.get("required", True)
+                if not isinstance(required, bool):
+                    raise GlossaryCatalogError("glossary_required_flag_invalid")
                 table_name, canonical_name = self._parse_reference(
                     canonical_ref, metadata, object_type
                 )
-                key = (object_type, table_name, canonical_name)
-                if key in hidden:
-                    raise GlossaryCatalogError("glossary_hidden_object")
-                runtime_object = objects.get(key)
-                if runtime_object is None:
-                    raise GlossaryCatalogError("glossary_unknown_object")
                 aliases = metadata.get("aliases", [])
                 if not isinstance(aliases, list) or any(
                     not isinstance(alias, str) or not alias.strip() for alias in aliases
                 ):
                     raise GlossaryCatalogError("glossary_alias_invalid")
+                raw_member_aliases = metadata.get("member_aliases", {})
+                if not isinstance(raw_member_aliases, dict) or any(
+                    not isinstance(alias, str)
+                    or not alias.strip()
+                    or not isinstance(target, str)
+                    or not target.strip()
+                    for alias, target in raw_member_aliases.items()
+                ):
+                    raise GlossaryCatalogError("glossary_member_alias_invalid")
+                member_aliases: dict[str, str] = {}
+                for alias, target in raw_member_aliases.items():
+                    normalized_alias = normalize_semantic_text(alias)
+                    clean_target = unicodedata.normalize("NFKC", target).strip()
+                    previous_target = member_aliases.get(normalized_alias)
+                    if previous_target is not None and previous_target != clean_target:
+                        raise GlossaryCatalogError("glossary_member_alias_conflict")
+                    member_aliases[normalized_alias] = clean_target
+                if table_name not in all_table_names:
+                    if not required:
+                        continue
+                    raise GlossaryCatalogError("glossary_table_missing")
+                key = (object_type, table_name, canonical_name)
+                if table_name in hidden_table_names or key in hidden:
+                    if not required:
+                        continue
+                    raise GlossaryCatalogError("glossary_hidden_object")
+                runtime_object = objects.get(key)
+                if runtime_object is None:
+                    opposite_type = (
+                        SemanticObjectType.FIELD
+                        if object_type == SemanticObjectType.MEASURE
+                        else SemanticObjectType.MEASURE
+                    )
+                    opposite_key = (opposite_type, table_name, canonical_name)
+                    if opposite_key in objects or opposite_key in hidden:
+                        raise GlossaryCatalogError("glossary_object_type_mismatch")
+                    if not required:
+                        continue
+                    raise GlossaryCatalogError("glossary_unknown_object")
                 normalized_seen: set[str] = set()
                 clean_aliases: list[str] = []
                 for alias in aliases:
@@ -179,10 +222,8 @@ class SemanticCatalogBuilder:
                     )
                 objects[key] = runtime_object.model_copy(update={
                     "aliases": tuple(clean_aliases),
-                    "source": (
-                        SemanticObjectSource.RUNTIME_GLOSSARY
-                        if clean_aliases else SemanticObjectSource.RUNTIME
-                    ),
+                    "member_aliases": member_aliases,
+                    "source": SemanticObjectSource.RUNTIME_GLOSSARY,
                 })
 
         conflicts = {
@@ -193,6 +234,7 @@ class SemanticCatalogBuilder:
         return SemanticCatalog(
             semantic_model_key=schema.key,
             schema_fingerprint=runtime_fingerprint,
+            schema_drift=schema_drift,
             objects=tuple(objects.values()),
             alias_conflicts=conflicts,
         )

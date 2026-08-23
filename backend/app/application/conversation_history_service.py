@@ -203,6 +203,7 @@ class ConversationHistoryService:
             runtime_mode=runtime_mode,
             conversation_id=conversation_id,
             archived_at=page.archived_at,
+            title=page.title,
             items=page.items,
             next_cursor=next_cursor,
         )
@@ -301,6 +302,16 @@ class ConversationHistoryService:
 
     async def archive(self, runtime_mode: RuntimeDataMode, conversation_id: str):
         return await self._repository.archive(runtime_mode, conversation_id)
+
+    async def rename(
+        self, runtime_mode: RuntimeDataMode, conversation_id: str, title: str
+    ):
+        normalized = title.strip()
+        if not normalized or len(normalized) > 80:
+            raise InvalidConversationQueryError("invalid_conversation_title")
+        return await self._repository.rename(
+            runtime_mode, conversation_id, normalized
+        )
 
     async def delete(
         self, runtime_mode: RuntimeDataMode, conversation_id: str

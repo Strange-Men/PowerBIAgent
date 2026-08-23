@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  archiveConversation,
+  deleteConversation,
   discoverSemanticModels,
   getConversationHistory,
   listRecentConversations,
   listRecentReports,
+  renameConversation,
   searchConversations,
   sendChat,
 } from '../api/client'
 import {
   chatResponseToMessage,
   conversationTitle,
-  historyItemToMessage,
+  historyItemToMessages,
 } from '../api/adapters'
 import {
   initialRuntimeMode,
@@ -86,14 +89,27 @@ export function usePowerBIAgent() {
             key: item.key,
             label: item.display_name,
             description:
-              item.source === 'local_desktop'
-                ? '当前已连接模型'
-                : '开发测试模型',
+              item.agent_compatible
+                ? item.source === 'local_desktop'
+                  ? item.schema_drift
+                    ? '模型结构有更新，当前分析能力可用'
+                    : '当前已连接且可用于分析'
+                  : '开发测试模型'
+                : item.compatibility_status === 'incompatible'
+                  ? '已连接，但缺少当前分析所需的业务字段或指标'
+                  : '已连接，但兼容性检查暂不可用',
+            compatible: item.agent_compatible === true,
+            selectable: item.selectable === true,
+            schemaDrift: item.schema_drift === true,
+            compatibilityStatus: item.compatibility_status || 'unavailable',
           }))
         setEffectiveRuntimeMode(catalog.runtime_mode)
         setSemanticModelOptions(options)
         setSelectedSemanticModel((current) =>
-          options.find((item) => item.key === current?.key) || options[0] || null,
+          options.find((item) => item.key === current?.key) ||
+          options.find((item) => item.compatible && item.selectable) ||
+          options[0] ||
+          null,
         )
         setSemanticModelError(
           discoveryErrorMessage(catalog.error_type) ||
@@ -125,7 +141,12 @@ export function usePowerBIAgent() {
   const submitMessage = useCallback(
     async (content: string) => {
       const normalized = content.trim()
-      if (!normalized || sending || !selectedSemanticModel) return
+      if (
+        !normalized ||
+        sending ||
+        !selectedSemanticModel?.compatible ||
+        selectedSemanticModel.selectable === false
+      ) return
 
       const id = requestId()
       setMessages((current) => [
@@ -190,10 +211,10 @@ export function usePowerBIAgent() {
       )
       const restoredMessages = [...history.items]
         .sort((left, right) => left.created_at.localeCompare(right.created_at))
-        .map(historyItemToMessage)
+        .flatMap(historyItemToMessages)
       setMessages(restoredMessages)
       setActiveConversationId(conversation.conversation_id)
-      setTitle(conversationTitle(conversation.latest_analysis_goal))
+      setTitle(conversationTitle(history.title || conversation.title || conversation.latest_analysis_goal))
     } catch (error) {
       const content =
         error instanceof Error ? error.message : '无法恢复该对话，请稍后重试。'
@@ -206,7 +227,7 @@ export function usePowerBIAgent() {
         },
       ])
       setActiveConversationId(conversation.conversation_id)
-      setTitle(conversationTitle(conversation.latest_analysis_goal))
+      setTitle(conversationTitle(conversation.title || conversation.latest_analysis_goal))
     } finally {
       setLoadingConversation(false)
     }
@@ -216,6 +237,28 @@ export function usePowerBIAgent() {
     const page = await searchConversations(effectiveRuntimeMode, query)
     return page.items
   }, [effectiveRuntimeMode])
+
+  const rename = useCallback(async (conversation: ConversationSummary, nextTitle: string) => {
+    const result = await renameConversation(
+      effectiveRuntimeMode,
+      conversation.conversation_id,
+      nextTitle,
+    )
+    if (activeConversationId === conversation.conversation_id) setTitle(result.title)
+    await refreshSidebar(effectiveRuntimeMode)
+  }, [activeConversationId, effectiveRuntimeMode, refreshSidebar])
+
+  const archive = useCallback(async (conversation: ConversationSummary) => {
+    await archiveConversation(effectiveRuntimeMode, conversation.conversation_id)
+    if (activeConversationId === conversation.conversation_id) startNewChat()
+    await refreshSidebar(effectiveRuntimeMode)
+  }, [activeConversationId, effectiveRuntimeMode, refreshSidebar, startNewChat])
+
+  const remove = useCallback(async (conversation: ConversationSummary) => {
+    await deleteConversation(effectiveRuntimeMode, conversation.conversation_id)
+    if (activeConversationId === conversation.conversation_id) startNewChat()
+    await refreshSidebar(effectiveRuntimeMode)
+  }, [activeConversationId, effectiveRuntimeMode, refreshSidebar, startNewChat])
 
   const hasRestoredHistory = useMemo(
     () => messages.some((message) => message.role === 'assistant' && message.restored),
@@ -236,6 +279,12 @@ export function usePowerBIAgent() {
     loadingSemanticModels,
     semanticModelError,
     selectedSemanticModel,
+    semanticModelCompatibilityNotice:
+      selectedSemanticModel && !selectedSemanticModel.compatible
+        ? selectedSemanticModel.compatibilityStatus === 'incompatible'
+          ? '当前模型已连接，但缺少 PowerBIAgent 当前分析所需的部分业务字段或指标。'
+          : '当前模型已连接，但暂时无法完成兼容性检查，请稍后重试。'
+        : null,
     selectedReportTemplate,
     reportTemplateOptions,
     hasRestoredHistory,
@@ -243,6 +292,9 @@ export function usePowerBIAgent() {
     submitMessage,
     openConversation,
     search,
+    rename,
+    archive,
+    remove,
     setSelectedSemanticModel,
     setSelectedReportTemplate,
   }

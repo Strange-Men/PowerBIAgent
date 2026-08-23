@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.2.1 — 模型能力边界与真实模式说明收口已完成；M5.3 未开始
+> **状态：** M5.3 — 结构化结果与前端最终收口已完成；Rich PBIX Real 浏览器验收通过
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -31,7 +31,7 @@
 | **M5.1** | **React + Vite 前端实现与核心联调** | **✅ 已完成** |
 | **M5.2** | **真实业务链路与前端逻辑收口** | **✅ 已完成** |
 | **M5.2.1** | **模型能力边界与真实模式说明收口** | **✅ 已完成** |
-| M5.3 | 视觉与交互最终收口 | ⬜ 待开始 |
+| **M5.3** | **结构化结果、历史/标题/资源管理与视觉交互最终收口** | **✅ 已完成** |
 
 ## M3 合并与 CI truth
 
@@ -58,6 +58,9 @@
 | Resource API | ✅ view/download；unknown/path traversal 拒绝 |
 | Idempotency / Memory | ✅ replay 复用 report_id；render/store failure 不成功提交 Memory |
 | Persistent sessions / React | ✅ SQLite session query lifecycle + React recent/search/history/reports adapters 已完成 |
+| M5.3 presentation contract | ✅ QueryResult/VerifiedFactSet 单一 dataset + 动态 text/metric/table/bar/line/report 引用已实现并通过 Rich PBIX Real 验收 |
+| Presentation transcript/title | ✅ Snapshot 保存 UI-only `user_message`/`presentation`；conversation title 自动生成、可重命名；不进入 Memory/factual authority |
+| Conversation/report management | ✅ 重命名、归档与现有 namespace DELETE；报表按所属 conversation 管理并复用 durable delete intent |
 | Persistence Architecture (M4.0) | ✅ ADR-012、SQLite/SQLAlchemy Async/Alembic、5 表 schema、migration 基线、Repository ABC |
 | Memory / Snapshot SQLite 实现 (M4.1) | ✅ SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring、DB 级 partial unique index 并发安全、strict concurrent commit tests |
 | SQLite 错误语义硬化 (M4.1.1) | ✅ conversation root `INSERT OR IGNORE` 原子 upsert、`PersistenceRepositoryError`、locked/version_index 分类 helper |
@@ -134,8 +137,8 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 | 事项 | 决策时点 |
 |---|---|
 | M5.1 状态管理 | ✅ React hooks，未引入全局状态框架 |
-| 统一前端 Envelope | ✅ M5.1 不新增；typed adapter 直接消费现有 ChatResponse/History schema |
-| 前端结构化表格/图表数据 | M5.2 审计确认 Chat/History 不暴露 QueryResult rows/ChartSpec，未新增高风险 adapter、不从 answer/audit 反解析；明确 defer 至 M5.3 前的契约补充 |
+| 统一前端 Envelope | ✅ 不增加跨 authority 的通用事件协议；M5.3 只在 ChatResponse/History 中增加 typed `presentation` 展示层 |
+| 前端结构化表格/图表数据 | ✅ M5.3 从 QueryResult + VerifiedFactSet 确定性投影单一 dataset；blocks 只引用字段和 row，不从 answer/audit 反解析 |
 | Remote MCP 管理员与授权条件 | 重新批准 Remote 后 |
 
 ## 当前真实风险
@@ -158,4 +161,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-23 | M5.2.1 — 模型能力边界与真实模式说明收口完成*
+*最后更新：2026-08-23 | M5.3 COMPLETE — 结构化结果与前端最终收口*

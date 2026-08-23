@@ -54,6 +54,7 @@ from backend.app.memory.result_snapshot import (
     TurnResultSnapshot,
 )
 from backend.app.report.resources import ReportRepository, ReportStorageError
+from backend.app.presentation.models import PresentationEnvelope
 from backend.app.schemas.data_contracts import UserContext
 
 
@@ -243,6 +244,9 @@ class TurnPipeline:
                 pending_clarification=pending_clarification,
                 **execute_kwargs,
             )
+            # Presentation transcript metadata is saved beside the terminal
+            # snapshot but never written into StructuredWorkMemory.
+            result["user_message"] = message
             await self._save_snapshot(result, runtime_mode, fingerprint_hash)
             await self.snapshot_store.complete(effective_req_id, runtime_mode)
             return result
@@ -271,6 +275,7 @@ class TurnPipeline:
         unsupported_reason: Optional[str] = None,
         usage: Optional[Any] = None,
         execution_audit: Optional[dict[str, Any]] = None,
+        presentation: Optional[PresentationEnvelope] = None,
     ) -> dict[str, Any]:
         """构建统一结果字典"""
 
@@ -293,6 +298,7 @@ class TurnPipeline:
             "usage": usage,
             "allowed_tools": allowed_tools or [],
             "execution_audit": execution_audit,
+            "presentation": presentation,
         }
 
         if answer_text is not None:
@@ -368,6 +374,7 @@ class TurnPipeline:
             "source_mode": snapshot.source_mode,
             "usage": None,
             "allowed_tools": snapshot.allowed_tools,
+            "presentation": snapshot.presentation,
             "idempotent_replay": True,
             "replayed_request_id": snapshot.request_id,
         }
@@ -403,6 +410,8 @@ class TurnPipeline:
             intent=result.get("intent", ""),
             response_type=result.get("response_type", ""),
             terminal_state=result.get("terminal_state", ""),
+            user_message=result.get("user_message"),
+            presentation=result.get("presentation"),
             answer=result.get("answer"),
             report=report_snapshot,
             clarification_question=result.get("clarification_question"),

@@ -2,6 +2,20 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.3] — 2026-08-23
+
+### 结构化结果与前端最终收口
+
+- 新增 `.env` 严格行格式诊断与安全 startup summary；Real 配置完整性覆盖 DeepSeek、Local MCP、SQLite、readonly 与 `MAX_TOOL_CALLS=8`，只报告 Key 是否配置，从不输出 Secret。
+- semantic model discovery 经 ToolGateway 只读 schema 路径执行当前 Semantic Catalog/glossary 最小兼容性检查；完整 fingerprint 只标记 `schema_drift`，不单独阻断模型。只有缺少必需业务对象或对象类型冲突才返回安全的 incompatible 状态，前端明确提示并禁用发送，不暴露 schema、fingerprint 或 DAX。
+- 新增只读 `PresentationEnvelope`：QueryResult/VerifiedFactSet 投影为唯一 dataset，动态 blocks 支持 text、metric、table、bar/line chart 与 report attachment；数据块只保存 dataset/field/row 引用，不从 answer/audit 反解析或由 LLM/前端造数。
+- terminal Snapshot 增加 presentation-only `user_message` / `presentation`，conversation 增加 nullable `title`；首个有效问题生成默认标题，PATCH 支持 namespace-scoped 重命名。History 恢复用户与 Assistant 可理解 transcript，但这些字段不进入 Memory 或事实链。Alembic head 为 `d3b7f9a1c524`。
+- Sidebar 增加重命名、归档、删除；报表明确随所属 conversation 管理，DELETE 继续复用 M4 durable delete intent 清理关联 managed HTML，不新增独立 report delete API。
+- 前端完成动态结构化渲染、白色主区/浅灰 Sidebar、内容宽度/消息间距/固定 Composer、表格横向滚动、图表与附件、hover/focus/loading/disabled/error/empty/search，以及 desktop/medium/small responsive、ESC/aria/keyboard/focus-visible 基础 accessibility。
+- 自动化测试使用隔离临时 SQLite/report root 与精确 teardown；不清空用户 `local_state`。Fresh affected backend regression `335 passed`；前端 typecheck/lint/build 与 `31 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture、Repository Safety、Error Ledger、Documentation Governance 与 `git diff --check` PASS。
+- 浏览器使用 `PowerBIAgent_M3_Rich_Test.pbix` 验证 Real `local_desktop` discovery；fingerprint drift 下保持 connected/compatible/selectable。六轮问答、时间/区域筛选继承、真实表格、HTML 报表生成、查看/下载、recent/history/search 均通过；测试 conversation 与关联 managed HTML 已通过正式 DELETE API 精确清理。
+- 未修改 M0–M4 factual authority，未新增分支、merge main、Tag 或 force push。
+
 ## [M5.2.1] — 2026-08-23
 
 ### 模型能力边界与真实模式说明收口

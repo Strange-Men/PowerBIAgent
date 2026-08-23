@@ -264,6 +264,32 @@ async def _conversation_row(
 
 class TestRecentConversations:
     @pytest.mark.asyncio
+    async def test_first_snapshot_message_sets_title_and_restorable_transcript(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        snapshot = _snapshot(
+            mode=RuntimeDataMode.REAL,
+            conversation_id="m53-test-title",
+            request_id="m53-test-title-request",
+            answer="stored answer",
+        ).model_copy(update={"user_message": "  查看八月各区域销售表现  "})
+
+        await history_env.snapshot_repository.save(snapshot, RuntimeDataMode.REAL)
+        recent = await history_env.repository.list_recent(
+            RuntimeDataMode.REAL, limit=20, after=None
+        )
+        history = await history_env.repository.get_history(
+            RuntimeDataMode.REAL,
+            "m53-test-title",
+            limit=20,
+            after=None,
+        )
+
+        assert recent.items[0].title == "查看八月各区域销售表现"
+        assert history.title == "查看八月各区域销售表现"
+        assert history.items[0].user_message == "  查看八月各区域销售表现  "
+
+    @pytest.mark.asyncio
     async def test_recent_order_is_deterministic_with_stable_tie_breaker(
         self, history_env: HistoryEnvironment
     ) -> None:

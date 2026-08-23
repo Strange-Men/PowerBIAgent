@@ -1,8 +1,8 @@
 """DTOs for persisted conversation history and search.
 
 The DTOs intentionally contain no SQLAlchemy rows and no JSON payload blobs.
-They expose only fields that can be reconstructed from persisted repository
-facts.  This is structured history, not a fabricated message transcript.
+They expose terminal results plus explicitly stored presentation transcript
+metadata.  Transcript/title fields never become Memory or factual authority.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.memory.models import RuntimeDataMode
+from backend.app.presentation.models import PresentationEnvelope
 
 
 class ConversationNotFoundError(LookupError):
@@ -28,6 +29,7 @@ class ConversationSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None = None
+    title: str | None = None
     latest_request_id: str | None = None
     latest_terminal_state: str | None = None
     latest_response_type: str | None = None
@@ -66,6 +68,8 @@ class ConversationHistoryItem(BaseModel):
     terminal_state: str
     response_type: str
     intent: str
+    user_message: str | None = None
+    presentation: PresentationEnvelope | None = None
     answer: str | None = None
     report: SnapshotReportSummary | None = None
     clarification_question: str | None = None
@@ -111,6 +115,7 @@ class ConversationHistoryPage(BaseModel):
     runtime_mode: RuntimeDataMode
     conversation_id: str
     archived_at: datetime | None = None
+    title: str | None = None
     items: list[ConversationHistoryItem]
     next_cursor: str | None = None
 
@@ -139,5 +144,20 @@ class ConversationDeleteResult(BaseModel):
     conversation_id: str
     deleted: bool = True
     deleted_counts: dict[str, int]
+
+    model_config = ConfigDict(frozen=True)
+
+
+class ConversationRenameRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ConversationRenameResult(BaseModel):
+    runtime_mode: RuntimeDataMode
+    conversation_id: str
+    title: str
+    updated_at: datetime
 
     model_config = ConfigDict(frozen=True)

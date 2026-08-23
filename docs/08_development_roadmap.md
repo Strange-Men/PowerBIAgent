@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.2.1 — 模型能力边界与真实模式说明收口已完成；M5.3 未开始
+> **状态：** M5.3 — 结构化结果与前端最终收口已完成；Rich PBIX Real 浏览器验收通过
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -31,7 +31,7 @@
 | **M5.1** | **React + Vite 前端实现与核心联调** | **✅ 已完成** |
 | **M5.2** | **真实业务链路与前端逻辑收口** | **✅ 已完成** |
 | **M5.2.1** | **模型能力边界与真实模式说明收口** | **✅ 已完成** |
-| M5.3 | 视觉与交互最终收口 | ⬜ 待开始 |
+| **M5.3** | **结构化结果、历史/标题/资源管理与视觉交互最终收口** | **✅ 已完成** |
 
 ## M5.2 / M5.3 正式边界
 
@@ -46,11 +46,12 @@
 
 ### M5.3 — 视觉与交互最终收口
 
-- ChatGPT 风格尺寸、间距与视觉细节
-- responsive、accessibility 与键盘/焦点细节
-- loading/error/empty 的视觉 polish
-- 表格/图表视觉收口（仅在真实结构化数据契约存在时）
-- 最终浏览器验收
+- QueryResult/VerifiedFactSet 直接来源的只读 `presentation` contract；dataset 是唯一数据副本，metric/table/chart block 只保存引用
+- Snapshot presentation transcript 与 conversation title 只作为 UI metadata；默认标题、重命名、搜索、完整历史恢复不进入 Memory truth
+- 复用现有 archive/delete API 与 M4 durable delete intent；报表按所属 conversation 管理，不新增独立 report delete
+- ChatGPT 风格白色主区/浅灰 Sidebar、尺寸间距、表格横向溢出、柱状图/折线图与报表附件视觉
+- responsive、accessibility、键盘/焦点、loading/error/empty、菜单/搜索/删除交互
+- 自动化门禁与 Desktop Real 浏览器验收；测试资源使用唯一前缀并经正式 delete/teardown 精确清理
 
 M5.2 不提前进行大规模 CSS/响应式/无障碍 polish；M5.3 不反向修改 M5.2 已固化的 runtime、model、intent、template 或 persistence 业务语义。
 
@@ -208,8 +209,8 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
-- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.2 truth/persistence boundary final closure FINAL PASS；M5.0/M5.1/M5.2/M5.2.1 已完成，M5.3 未开始；禁止 force push。
+- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.2 truth/persistence boundary final closure FINAL PASS；M5.0/M5.1/M5.2/M5.2.1/M5.3 已完成；禁止 force push。
 
 ---
 
-*最后更新：2026-08-23 | M5.2.1 完成；M5.3 边界保持未开始*
+*最后更新：2026-08-23 | M5.3 COMPLETE — 结构化结果与前端最终收口*

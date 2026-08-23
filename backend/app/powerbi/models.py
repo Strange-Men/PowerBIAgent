@@ -18,6 +18,12 @@ class SemanticModelOption(BaseModel):
     type: Literal["semantic_model"] = "semantic_model"
     available: bool
     connected: bool
+    agent_compatible: bool = False
+    selectable: bool = False
+    schema_drift: bool = False
+    compatibility_status: Literal[
+        "compatible", "incompatible", "unavailable"
+    ] = "unavailable"
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

@@ -1,4 +1,5 @@
 import { BarChart3 } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import type { ConversationMessage } from '../types'
 import { AssistantMessage } from './AssistantMessage'
 
@@ -15,6 +16,13 @@ export function ConversationView({
   loadingConversation,
   restored,
 }: ConversationViewProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const element = scrollRef.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [messages, sending, loadingConversation])
+
   if (messages.length === 0 && !loadingConversation) {
     return (
       <section className="welcome" aria-labelledby="welcome-title">
@@ -29,11 +37,11 @@ export function ConversationView({
   }
 
   return (
-    <div className="message-scroll" aria-live="polite">
+    <div className="message-scroll" aria-live="polite" ref={scrollRef}>
       <div className="message-list">
         {restored ? (
           <p className="history-note">
-            已恢复后端保存的结构化结果；历史接口不提供逐字用户消息。
+            已恢复保存的历史对话。
           </p>
         ) : null}
         {messages.map((message) =>
@@ -46,7 +54,7 @@ export function ConversationView({
           ),
         )}
         {loadingConversation || sending ? (
-          <div className="assistant-message assistant-loading" aria-label="正在分析">
+          <div className="assistant-message assistant-loading" role="status" aria-label="正在分析">
             <div className="typing-dots" aria-hidden="true">
               <span />
               <span />
