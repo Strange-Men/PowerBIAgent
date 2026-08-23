@@ -2,6 +2,20 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.2.1] — 2026-08-23
+
+### 模型能力边界与真实模式说明收口
+
+- 修正 Mock discovery 将全部 `mock_schema.json` fixture 标记为可用/已连接的问题；现在只返回可进入正式 Chat pipeline 的 `mock_sales_model`。
+- `mock_satisfaction_model` 不再出现在前端正常可选目录，但 fixture 和直接 schema 读取能力保留，不破坏既有聚焦测试。
+- Real Local MCP discovery 代码与响应合同不变；既有单一 Desktop 模型安全发现测试继续通过。未新增 capability 字段，保持 API 与前端类型最小。
+- 根 README 在快速开始顶部新增“本地 Power BI 真实模式启动”，明确默认 Mock 识别、Real `.env` 键、PBIX/后端/前端启动顺序、SQLite 前提与 catalog 检查命令。
+- 根 README 与 `frontend/README.md` 的普通标题和叙述统一为中文，专业名词、代码、API、库名与配置键保留英文。
+- Fresh 验证：discovery 聚焦 `5 passed`；PowerBI/semantic-models/health 受影响回归 `86 passed`；Mock pipeline `41 passed`；前端 Vitest `21 passed`，lint/typecheck/build 全部通过；Architecture Gate `111`、Repository Safety `270`、Error Ledger `25` 与 Documentation Governance 通过。
+- 无 M5.3 视觉调整，无 DB schema/migration，无 M0–M4 核心链修改；不创建 Tag。
+
+**Settings.version:** M5.2.1
+
 ## [M5.2] — 2026-08-21
 
 ### 真实业务链路与前端逻辑收口

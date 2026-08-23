@@ -536,6 +536,22 @@ class TestMockPowerBIAdapter:
         assert await mock_adapter.health_check() is True
 
     @pytest.mark.asyncio
+    async def test_discovery_returns_only_chat_selectable_mock_model(self, mock_adapter):
+        catalog = await mock_adapter.discover_semantic_models()
+
+        assert catalog.runtime_mode == RuntimeDataMode.MOCK
+        assert [item.key for item in catalog.items] == ["mock_sales_model"]
+        assert catalog.items[0].available is True
+        assert catalog.items[0].connected is True
+
+        # The unsupported fixture remains available to focused tests, but discovery
+        # must not promote fixture presence into formal Chat capability.
+        schema = await mock_adapter.get_semantic_model_schema(
+            "mock_satisfaction_model"
+        )
+        assert schema.key == "mock_satisfaction_model"
+
+    @pytest.mark.asyncio
     async def test_get_schema(self, mock_adapter):
         schema = await mock_adapter.get_semantic_model_schema("mock_sales_model")
         assert isinstance(schema, SemanticModelSchema)
@@ -677,7 +693,7 @@ class TestLocalMCPPowerBIAdapter:
         assert client.calls == 1
 
     @pytest.mark.asyncio
-    async def test_discovery_returns_only_safe_current_desktop_model(self):
+    async def test_real_discovery_returns_only_safe_current_desktop_model(self):
         client = FakeLocalMCPClient(
             discovery_snapshot=LocalMCPDiscoverySnapshot(
                 diagnostics=_healthy_local_diagnostics(),

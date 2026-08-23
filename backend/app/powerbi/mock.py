@@ -21,6 +21,9 @@ from backend.app.schemas.data_contracts import (
 )
 
 DEFAULT_FIXTURES_DIR = Path(__file__).resolve().parents[3] / "harness" / "fixtures"
+SELECTABLE_MOCK_SEMANTIC_MODELS = {
+    "mock_sales_model": "Mock 销售模型",
+}
 
 
 class MockPowerBIAdapter(PowerBIAdapter):
@@ -84,18 +87,19 @@ class MockPowerBIAdapter(PowerBIAdapter):
         return True
 
     async def discover_semantic_models(self) -> SemanticModelCatalog:
-        """Return fixture-backed models for explicit Mock development only."""
+        """Return only Mock models supported by the formal Chat pipeline."""
         if self._delay > 0:
             await asyncio.sleep(self._delay)
         items = [
             SemanticModelOption(
                 key=key,
-                display_name="Mock 销售模型" if key == "mock_sales_model" else key,
+                display_name=display_name,
                 source="mock",
                 available=True,
                 connected=True,
             )
-            for key in sorted(self._schemas)
+            for key, display_name in SELECTABLE_MOCK_SEMANTIC_MODELS.items()
+            if key in self._schemas
         ]
         return SemanticModelCatalog(
             runtime_mode="mock",

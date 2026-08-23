@@ -1,11 +1,11 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-08-21
+> **最后更新：** 2026-08-23
 
 ## 当前阶段
 
-**M5.2 — 真实业务链路与前端逻辑收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0/M5.1/M5.2 已完成，M5.3 未开始。
+**M5.2.1 — 模型能力边界与真实模式说明收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0/M5.1/M5.2/M5.2.1 已完成，M5.3 未开始。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -17,7 +17,17 @@
 | **M5.0** | **前端设计与契约固化** | **✅ 已完成** |
 | **M5.1** | **React 前端实现与核心联调** | **✅ 已完成** |
 | **M5.2** | **真实业务链路与前端逻辑收口** | **✅ 已完成** |
+| **M5.2.1** | **模型能力边界与真实模式说明收口** | **✅ 已完成** |
 | **M5.3** | **视觉与交互最终收口** | **⬜ 未开始** |
+
+### M5.2.1 — 模型能力边界与真实模式说明收口
+
+- 根因：Mock discovery 直接遍历 `mock_schema.json` 的全部 fixture，并统一标记 `available=true/connected=true`；`SemanticModelOption` 与前端消费语义实际是可选择模型，因此 `mock_satisfaction_model` 被错误提升为正式业务能力。
+- 修复：`MockPowerBIAdapter` 使用最小显式白名单，只向 discovery 返回 `mock_sales_model`。`mock_satisfaction_model` fixture 与直接 schema 读取能力保留，继续服务聚焦测试，但不进入前端目录。
+- Real Local MCP discovery 未改，仍返回单一 `local_desktop_model` 安全选项；未新增 `selectable/supported` 字段，未扩大 API 或前端类型复杂度。
+- 根 README 在快速开始顶部增加“本地 Power BI 真实模式启动”，明确默认 Mock、Real `.env` 键、启动顺序、SQLite 前提与 `/health`、`/api/v1/semantic-models` 检查；根 README 和 `frontend/README.md` 的普通标题与叙述统一为中文。
+- Fresh 验证：discovery 聚焦 `5 passed`；PowerBI/semantic-models/health 受影响回归 `86 passed`；Mock pipeline `41 passed`；前端 Vitest `21 passed`，lint/typecheck/build 全部通过；Architecture Gate `111`、Repository Safety `270`、Error Ledger `25` 与 Documentation Governance 通过。
+- 无 M5.3 视觉 polish，无 DB schema/migration，无 M0–M4 核心链重构；未创建 Tag。
 
 ### M5.2 — 完成状态与固化边界
 
@@ -186,4 +196,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-21 | M5.2 — 真实业务链路与前端逻辑收口完成*
+*最后更新：2026-08-23 | M5.2.1 — 模型能力边界与真实模式说明收口完成*

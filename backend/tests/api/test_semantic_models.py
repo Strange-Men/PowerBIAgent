@@ -24,8 +24,8 @@ async def test_discovery_endpoint_returns_backend_catalog(client):
     payload = response.json()
     assert payload["runtime_mode"] == "mock"
     assert payload["error_type"] is None
-    assert payload["items"]
-    sales = next(item for item in payload["items"] if item["key"] == "mock_sales_model")
+    assert [item["key"] for item in payload["items"]] == ["mock_sales_model"]
+    sales = payload["items"][0]
     assert sales == {
         "key": "mock_sales_model",
         "display_name": "Mock 销售模型",
