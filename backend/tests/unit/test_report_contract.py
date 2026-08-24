@@ -173,6 +173,32 @@ def test_production_contract_resolves_full_catalog_on_rich_schema():
     }
 
 
+def test_opaque_instance_uses_explicit_registry_binding_scope():
+    opaque_key = f"local_desktop:{'a' * 64}"
+    schema = _rich_schema().model_copy(update={"key": opaque_key})
+
+    default_validation = ReportContractValidator().validate(
+        "sales_report", schema
+    )
+    assert (
+        default_validation.status
+        == ReportAvailabilityStatus.SEMANTIC_MODEL_MISMATCH
+    )
+
+    validator = ReportContractValidator(
+        binding_scope_key="local_desktop_model"
+    )
+    validation = validator.validate("sales_report", schema)
+    assert validation.available is True
+    plan = ReportDataPlanBuilder(validator=validator).build(
+        "sales_report",
+        schema,
+        requirement_keys=("total_sales",),
+    )
+    assert plan.semantic_model_key == opaque_key
+    assert plan.queries[0].query_plan.semantic_model_key == opaque_key
+
+
 @pytest.mark.parametrize(
     ("template_key", "status"),
     [

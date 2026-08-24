@@ -25,7 +25,9 @@ from backend.app.powerbi.local_mcp import (
     DiscoveredLocalTool,
     LocalMCPConnection,
     LocalMCPConnectionError,
+    LocalMCPCompatibilitySnapshot,
     LocalMCPDiagnostics,
+    LocalMCPDiscoveredModel,
     LocalMCPDiscoverySnapshot,
     LocalMCPDAXSnapshot,
     LocalMCPErrorCategory,
@@ -40,6 +42,23 @@ from backend.app.schemas.data_contracts import (
     SemanticModelSchema,
     UserContext,
 )
+
+
+TEST_INSTANCE = {
+    "processId": 1001,
+    "port": 54321,
+    "connectionString": "Data Source=localhost:54321;Application Name=test",
+    "parentProcessName": "PBIDesktop",
+    "parentWindowTitle": "财务销售分析 - Power BI Desktop",
+    "startTime": "2026-08-24T09:00:00+08:00",
+}
+TEST_MODEL_KEY = PowerBILocalMCPClient._desktop_semantic_model_key(
+    process_id=1001,
+    data_source="localhost:54321",
+    start_time="2026-08-24T09:00:00+08:00",
+)
+# Existing focused cases use this historical symbol as their selected key.
+LOCAL_DESKTOP_SEMANTIC_MODEL_KEY = TEST_MODEL_KEY
 
 
 @pytest.fixture
@@ -58,6 +77,8 @@ class FakeLocalMCPClient:
         dax_error: LocalMCPConnectionError | None = None,
         discovery_snapshot: LocalMCPDiscoverySnapshot | None = None,
         discovery_error: LocalMCPConnectionError | None = None,
+        probe_snapshot: LocalMCPCompatibilitySnapshot | None = None,
+        probe_error: LocalMCPConnectionError | None = None,
     ) -> None:
         self.result = result
         self.error = error
@@ -67,10 +88,15 @@ class FakeLocalMCPClient:
         self.dax_error = dax_error
         self.discovery_snapshot = discovery_snapshot
         self.discovery_error = discovery_error
+        self.probe_snapshot = probe_snapshot
+        self.probe_error = probe_error
         self.calls = 0
         self.schema_calls = 0
+        self.schema_keys: list[str] = []
         self.dax_calls = 0
+        self.dax_keys: list[str] = []
         self.discovery_calls = 0
+        self.probe_calls: list[str] = []
 
     async def connect_and_discover(self) -> LocalMCPDiagnostics:
         self.calls += 1
@@ -79,12 +105,23 @@ class FakeLocalMCPClient:
         assert self.result is not None
         return self.result
 
-    async def read_semantic_model_schema(self) -> LocalMCPSchemaSnapshot:
+    async def read_semantic_model_schema(
+        self, semantic_model_key: str
+    ) -> LocalMCPSchemaSnapshot:
         self.schema_calls += 1
+        self.schema_keys.append(semantic_model_key)
         if self.schema_error is not None:
             raise self.schema_error
         assert self.schema_snapshot is not None
-        return self.schema_snapshot
+        return LocalMCPSchemaSnapshot(
+            diagnostics=self.schema_snapshot.diagnostics,
+            semantic_model_key=semantic_model_key,
+            tables=self.schema_snapshot.tables,
+            columns=self.schema_snapshot.columns,
+            measures=self.schema_snapshot.measures,
+            relationships=self.schema_snapshot.relationships,
+            hierarchies=self.schema_snapshot.hierarchies,
+        )
 
     async def discover_semantic_models(self) -> LocalMCPDiscoverySnapshot:
         self.discovery_calls += 1
@@ -93,14 +130,25 @@ class FakeLocalMCPClient:
         assert self.discovery_snapshot is not None
         return self.discovery_snapshot
 
+    async def probe_compatibility(
+        self, semantic_model_key: str
+    ) -> LocalMCPCompatibilitySnapshot:
+        self.probe_calls.append(semantic_model_key)
+        if self.probe_error is not None:
+            raise self.probe_error
+        assert self.probe_snapshot is not None
+        return self.probe_snapshot
+
     async def execute_dax(self, request: DAXRequest) -> LocalMCPDAXSnapshot:
         self.dax_calls += 1
+        self.dax_keys.append(request.semantic_model_key)
         if self.dax_error is not None:
             raise self.dax_error
         assert self.dax_snapshot is not None
         return LocalMCPDAXSnapshot(
             diagnostics=self.dax_snapshot.diagnostics,
             request=request,
+            wire_max_rows=request.max_rows + 1,
             payload=self.dax_snapshot.payload,
         )
 
@@ -109,7 +157,7 @@ class FlakyLocalNetworkClient:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def connect_and_discover(self) -> LocalMCPDiagnostics:
+    async def discover_semantic_models(self) -> LocalMCPDiscoverySnapshot:
         self.calls += 1
         if self.calls == 1:
             raise LocalMCPConnectionError(
@@ -117,7 +165,12 @@ class FlakyLocalNetworkClient:
                 "npm_registry_timeout",
                 retryable=True,
             )
-        return _healthy_local_diagnostics()
+        return _discovery_snapshot()
+
+    async def probe_compatibility(
+        self, semantic_model_key: str
+    ) -> LocalMCPCompatibilitySnapshot:
+        return _compatibility_snapshot(semantic_model_key)
 
 
 class FlakyLocalDAXNetworkClient:
@@ -144,12 +197,7 @@ class FakeStdioMCPClient:
         instances: list[dict[str, object]] | None = None,
     ) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
-        self.instances = instances if instances is not None else [{
-            "parentProcessName": "PBIDesktop",
-            "connectionString": (
-                "Data Source=localhost:54321;Application Name=test"
-            ),
-        }]
+        self.instances = instances if instances is not None else [dict(TEST_INSTANCE)]
 
     async def call_tool(
         self,
@@ -170,7 +218,7 @@ class FakeStdioMCPClient:
                 "data": [{"connectionName": "safe-test-connection"}],
             }
         else:
-            payload = {"connectionName": "safe-test-connection"}
+            payload = {"success": True, "data": "safe-test-connection"}
         return SimpleNamespace(
             is_error=False,
             structured_content=payload,
@@ -187,11 +235,13 @@ class FakeSchemaStdioMCPClient(FakeStdioMCPClient):
         *,
         malformed_tool: str | None = None,
         error_tool: str | None = None,
+        permission_tool: str | None = None,
     ) -> None:
         super().__init__()
         self.snapshot = snapshot
         self.malformed_tool = malformed_tool
         self.error_tool = error_tool
+        self.permission_tool = permission_tool
 
     async def call_tool(
         self,
@@ -211,6 +261,15 @@ class FakeSchemaStdioMCPClient(FakeStdioMCPClient):
             return SimpleNamespace(
                 is_error=True,
                 structured_content={"operation": operation},
+                content=[],
+            )
+        if name == self.permission_tool:
+            return SimpleNamespace(
+                is_error=True,
+                structured_content={
+                    "operation": operation,
+                    "error": "permission denied at private-path",
+                },
                 content=[],
             )
         if name == self.malformed_tool and operation == "List":
@@ -382,10 +441,13 @@ def _healthy_local_diagnostics() -> LocalMCPDiagnostics:
     )
 
 
-def _schema_snapshot() -> LocalMCPSchemaSnapshot:
+def _schema_snapshot(
+    semantic_model_key: str = TEST_MODEL_KEY,
+) -> LocalMCPSchemaSnapshot:
     diagnostics = _healthy_local_diagnostics()
     return LocalMCPSchemaSnapshot(
         diagnostics=diagnostics,
+        semantic_model_key=semantic_model_key,
         tables=(
             {
                 "name": "Sales",
@@ -490,11 +552,54 @@ def _dax_snapshot(
     return LocalMCPDAXSnapshot(
         diagnostics=_healthy_local_diagnostics(),
         request=request or DAXRequest(
-            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            semantic_model_key=TEST_MODEL_KEY,
             dax='EVALUATE ROW("TestValue", 1)',
             request_id="request-123",
         ),
+        wire_max_rows=(request.max_rows if request else 1000) + 1,
         payload=payload,
+    )
+
+
+def _discovery_snapshot(
+    *models: LocalMCPDiscoveredModel,
+) -> LocalMCPDiscoverySnapshot:
+    return LocalMCPDiscoverySnapshot(
+        diagnostics=_healthy_local_diagnostics(),
+        models=models or (
+            LocalMCPDiscoveredModel(
+                semantic_model_key=TEST_MODEL_KEY,
+                display_name="财务销售分析",
+            ),
+        ),
+    )
+
+
+def _compatibility_snapshot(
+    semantic_model_key: str = TEST_MODEL_KEY,
+    *,
+    value: object = 1,
+) -> LocalMCPCompatibilitySnapshot:
+    request = DAXRequest(
+        semantic_model_key=semantic_model_key,
+        dax='EVALUATE ROW("__pbiagent_probe", 1)',
+        max_rows=2,
+    )
+    dax = _dax_snapshot(
+        {
+            "operation": "Execute",
+            "data": {
+                "rowCount": 1,
+                "columns": [{"name": "[__pbiagent_probe]", "ordinal": 0}],
+                "rows": [{"[__pbiagent_probe]": value}],
+            },
+        },
+        request=request,
+    )
+    return LocalMCPCompatibilitySnapshot(
+        diagnostics=_healthy_local_diagnostics(),
+        schema=_schema_snapshot(semantic_model_key),
+        dax=dax,
     )
 
 
@@ -691,20 +796,21 @@ class TestLocalMCPPowerBIAdapter:
 
     @pytest.mark.asyncio
     async def test_health_check_success(self):
-        client = FakeLocalMCPClient(result=_healthy_local_diagnostics())
+        client = FakeLocalMCPClient(
+            discovery_snapshot=_discovery_snapshot(),
+            probe_snapshot=_compatibility_snapshot(),
+        )
         adapter = _local_adapter(client)
 
         assert await adapter.health_check() is True
         assert adapter.last_diagnostics.healthy is True
-        assert client.calls == 1
+        assert client.discovery_calls == 1
+        assert client.probe_calls == [TEST_MODEL_KEY]
 
     @pytest.mark.asyncio
     async def test_real_discovery_returns_only_safe_current_desktop_model(self):
         client = FakeLocalMCPClient(
-            discovery_snapshot=LocalMCPDiscoverySnapshot(
-                diagnostics=_healthy_local_diagnostics(),
-                display_name="财务销售分析",
-            )
+            discovery_snapshot=_discovery_snapshot()
         )
         adapter = _local_adapter(client)
 
@@ -745,11 +851,35 @@ class TestLocalMCPPowerBIAdapter:
         assert private_marker not in catalog.model_dump_json()
 
     @pytest.mark.asyncio
-    async def test_discovery_multiple_desktops_is_safe_empty_catalog(self):
+    async def test_discovery_multiple_desktops_returns_unique_safe_options(self):
+        second_key = PowerBILocalMCPClient._desktop_semantic_model_key(
+            process_id=1002,
+            data_source="localhost:54322",
+            start_time="2026-08-24T09:01:00+08:00",
+        )
+        client = FakeLocalMCPClient(discovery_snapshot=_discovery_snapshot(
+            LocalMCPDiscoveredModel(
+                semantic_model_key=TEST_MODEL_KEY,
+                display_name="同名模型",
+            ),
+            LocalMCPDiscoveredModel(
+                semantic_model_key=second_key,
+                display_name="同名模型",
+            ),
+        ))
+        catalog = await _local_adapter(client).discover_semantic_models()
+
+        assert [item.display_name for item in catalog.items] == ["同名模型", "同名模型"]
+        assert {item.key for item in catalog.items} == {TEST_MODEL_KEY, second_key}
+        assert all(item.key.startswith("local_desktop:") for item in catalog.items)
+        assert catalog.error_type is None
+
+    @pytest.mark.asyncio
+    async def test_discovery_duplicate_instance_identity_fails_closed(self):
         client = FakeLocalMCPClient(
             discovery_error=LocalMCPConnectionError(
-                LocalMCPErrorCategory.DESKTOP_CONNECTION,
-                "desktop_multiple_instances",
+                LocalMCPErrorCategory.DESKTOP_MULTIPLE_INSTANCES,
+                "desktop_instance_identity_not_unique",
             )
         )
         catalog = await _local_adapter(client).discover_semantic_models()
@@ -759,7 +889,7 @@ class TestLocalMCPPowerBIAdapter:
 
     @pytest.mark.asyncio
     async def test_process_startup_failure_is_explicit(self):
-        client = FakeLocalMCPClient(error=LocalMCPConnectionError(
+        client = FakeLocalMCPClient(discovery_error=LocalMCPConnectionError(
             LocalMCPErrorCategory.MCP_STARTUP,
             "local_mcp_server_exited",
         ))
@@ -771,32 +901,25 @@ class TestLocalMCPPowerBIAdapter:
 
     @pytest.mark.asyncio
     async def test_protocol_or_list_tools_failure_is_explicit(self):
-        diagnostics = LocalMCPDiagnostics.failure(
-            LocalMCPErrorCategory.MCP_PROTOCOL,
-            "required_future_capabilities_missing",
-            server_started=True,
-            protocol="2026-07-28",
-            tools=(_tool("connection_operations"),),
-            readonly=True,
-        )
-        adapter = _local_adapter(FakeLocalMCPClient(result=diagnostics))
+        adapter = _local_adapter(FakeLocalMCPClient(
+            discovery_snapshot=_discovery_snapshot(),
+            probe_error=LocalMCPConnectionError(
+                LocalMCPErrorCategory.MCP_PROTOCOL,
+                "required_future_capabilities_missing",
+            ),
+        ))
 
         assert await adapter.health_check() is False
         assert adapter.last_diagnostics.error_category == LocalMCPErrorCategory.MCP_PROTOCOL
 
     @pytest.mark.asyncio
     async def test_desktop_not_found_is_not_ready(self):
-        diagnostics = LocalMCPDiagnostics.failure(
-            LocalMCPErrorCategory.DESKTOP_NOT_FOUND,
-            "desktop_instance_not_found",
-            server_started=True,
-            protocol="2026-07-28",
-            tools=_local_tools(),
-            schema_capability=True,
-            dax_capability=True,
-            readonly=True,
-        )
-        adapter = _local_adapter(FakeLocalMCPClient(result=diagnostics))
+        adapter = _local_adapter(FakeLocalMCPClient(
+            discovery_error=LocalMCPConnectionError(
+                LocalMCPErrorCategory.DESKTOP_NOT_FOUND,
+                "desktop_instance_not_found",
+            )
+        ))
 
         assert await adapter.health_check() is False
         assert adapter.last_diagnostics.desktop_detected is False
@@ -812,7 +935,7 @@ class TestLocalMCPPowerBIAdapter:
 
     @pytest.mark.asyncio
     async def test_failure_never_falls_back_to_mock(self):
-        client = FakeLocalMCPClient(error=LocalMCPConnectionError(
+        client = FakeLocalMCPClient(discovery_error=LocalMCPConnectionError(
             LocalMCPErrorCategory.DESKTOP_CONNECTION,
             "desktop_connection_failed",
         ))
@@ -821,7 +944,7 @@ class TestLocalMCPPowerBIAdapter:
         assert await adapter.health_check() is False
         assert adapter.provider_name == "local_mcp"
         assert adapter.is_mock is False
-        assert client.calls == 1
+        assert client.discovery_calls == 1
 
     @pytest.mark.asyncio
     async def test_readonly_is_mandatory(self):
@@ -977,14 +1100,16 @@ class TestLocalMCPPowerBIAdapter:
         assert result.source_mode == "real"
         assert client.schema_calls == 1
         assert client.dax_calls == 1
+        assert client.schema_keys == [TEST_MODEL_KEY]
+        assert client.dax_keys == [TEST_MODEL_KEY]
 
     @pytest.mark.asyncio
-    async def test_member_lookup_fails_closed_if_dax_session_sees_multiple_desktops(self):
+    async def test_member_lookup_fails_closed_if_selected_instance_disappears(self):
         client = FakeLocalMCPClient(
             schema_snapshot=_schema_snapshot(),
             dax_error=LocalMCPConnectionError(
-                LocalMCPErrorCategory.DESKTOP_CONNECTION,
-                "desktop_multiple_instances",
+                LocalMCPErrorCategory.DESKTOP_STALE_INSTANCE,
+                "desktop_selected_instance_stale",
             ),
         )
 
@@ -996,7 +1121,7 @@ class TestLocalMCPPowerBIAdapter:
                 limit=2,
             ))
 
-        assert exc_info.value.error_type == "connection_error"
+        assert exc_info.value.error_type == "stale_instance"
         assert client.schema_calls == 1
         assert client.dax_calls == 1
 
@@ -1210,6 +1335,7 @@ class TestLocalMCPPowerBIAdapter:
         snapshot = _schema_snapshot()
         malformed = LocalMCPSchemaSnapshot(
             diagnostics=snapshot.diagnostics,
+            semantic_model_key=snapshot.semantic_model_key,
             tables=snapshot.tables,
             columns=snapshot.columns + ({
                 "tableName": "Unknown",
@@ -1389,16 +1515,16 @@ class TestLocalMCPPowerBIAdapter:
                 "stdio shutdown",
                 [
                     LocalMCPConnectionError(
-                        LocalMCPErrorCategory.DESKTOP_CONNECTION,
-                        "desktop_multiple_instances",
+                        LocalMCPErrorCategory.DESKTOP_MULTIPLE_INSTANCES,
+                        "desktop_instance_identity_not_unique",
                     ),
                     RuntimeError("resource cleanup"),
                 ],
             )
         )
 
-        assert classified.category == LocalMCPErrorCategory.DESKTOP_CONNECTION
-        assert classified.error_type == "desktop_multiple_instances"
+        assert classified.category == LocalMCPErrorCategory.DESKTOP_MULTIPLE_INSTANCES
+        assert classified.error_type == "desktop_instance_identity_not_unique"
 
     def test_result_payload_prefers_structured_and_supports_inline_text(self):
         structured = SimpleNamespace(
@@ -1422,13 +1548,15 @@ class TestLocalMCPPowerBIAdapter:
         client = PowerBILocalMCPClient()
         fake = FakeStdioMCPClient()
 
-        diagnostics = await client._discover_and_connect_desktop(
+        diagnostics, connected = await client._connect_selected_desktop(
             fake,  # type: ignore[arg-type]
             "2026-07-28",
             _local_tools(),
+            semantic_model_key=TEST_MODEL_KEY,
         )
 
         assert diagnostics.healthy is True
+        assert connected.instance.semantic_model_key == TEST_MODEL_KEY
         assert [name for name, _ in fake.calls] == [
             "connection_operations",
             "connection_operations",
@@ -1445,41 +1573,40 @@ class TestLocalMCPPowerBIAdapter:
         client = PowerBILocalMCPClient()
         fake = FakeStdioMCPClient(instances=[])
 
-        diagnostics = await client._discover_and_connect_desktop(
-            fake,  # type: ignore[arg-type]
-            "2025-11-25",
-            _local_tools(),
-        )
+        with pytest.raises(LocalMCPConnectionError) as exc_info:
+            await client._enumerate_desktop_instances(
+                fake,  # type: ignore[arg-type]
+                "2025-11-25",
+                _local_tools(),
+            )
 
-        assert diagnostics.error_category == LocalMCPErrorCategory.DESKTOP_NOT_FOUND
-        assert diagnostics.error_type == "desktop_instance_not_found"
+        assert exc_info.value.category == LocalMCPErrorCategory.DESKTOP_NOT_FOUND
+        assert exc_info.value.error_type == "desktop_instance_not_found"
         assert [call[1]["request"]["operation"] for call in fake.calls] == [  # type: ignore[index]
             "ListLocalInstances",
         ]
 
     @pytest.mark.asyncio
-    async def test_stdio_client_fails_closed_for_multiple_desktop_instances(self):
+    async def test_stdio_client_enumerates_multiple_desktop_instances(self):
         client = PowerBILocalMCPClient()
-        fake = FakeStdioMCPClient(instances=[
-            {
-                "parentProcessName": "PBIDesktop",
-                "connectionString": "Data Source=localhost:54321",
-            },
-            {
-                "parentProcessName": "PBIDesktop",
-                "connectionString": "Data Source=localhost:54322",
-            },
-        ])
+        second = {
+            **TEST_INSTANCE,
+            "processId": 1002,
+            "port": 54322,
+            "connectionString": "Data Source=localhost:54322",
+            "startTime": "2026-08-24T09:01:00+08:00",
+        }
+        fake = FakeStdioMCPClient(instances=[dict(TEST_INSTANCE), second])
 
-        diagnostics = await client._discover_and_connect_desktop(
+        diagnostics, instances = await client._enumerate_desktop_instances(
             fake,  # type: ignore[arg-type]
             "2025-11-25",
             _local_tools(),
         )
 
-        assert diagnostics.error_category == LocalMCPErrorCategory.DESKTOP_CONNECTION
-        assert diagnostics.error_type == "desktop_multiple_instances"
         assert diagnostics.desktop_detected is True
+        assert len(instances) == 2
+        assert len({item.semantic_model_key for item in instances}) == 2
         assert [call[1]["request"]["operation"] for call in fake.calls] == [  # type: ignore[index]
             "ListLocalInstances",
         ]
@@ -1487,25 +1614,35 @@ class TestLocalMCPPowerBIAdapter:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", ["schema", "dax"])
-    async def test_schema_and_dax_sessions_reject_multiple_desktops(self, path: str):
+    async def test_schema_and_dax_sessions_connect_exact_selected_desktop(self, path: str):
         client = PowerBILocalMCPClient()
+        second_start = "2026-08-24T09:01:00+08:00"
+        second_key = PowerBILocalMCPClient._desktop_semantic_model_key(
+            process_id=1002,
+            data_source="localhost:54322",
+            start_time=second_start,
+        )
         instances = [
             {
-                "parentProcessName": "PBIDesktop",
-                "connectionString": "Data Source=localhost:54321",
+                **TEST_INSTANCE,
             },
             {
+                **TEST_INSTANCE,
+                "processId": 1002,
+                "port": 54322,
                 "parentProcessName": "PBIDesktop",
                 "connectionString": "Data Source=localhost:54322",
+                "startTime": second_start,
             },
         ]
         if path == "schema":
-            fake = FakeSchemaStdioMCPClient(_schema_snapshot())
+            fake = FakeSchemaStdioMCPClient(_schema_snapshot(second_key))
             fake.instances = instances
             call = client._read_schema_in_session(
                 fake,  # type: ignore[arg-type]
                 "2025-11-25",
                 _local_tools(),
+                semantic_model_key=second_key,
             )
         else:
             fake = FakeDAXStdioMCPClient(_successful_dax_payload())
@@ -1515,16 +1652,40 @@ class TestLocalMCPPowerBIAdapter:
                 "2025-11-25",
                 _local_tools(),
                 request=DAXRequest(
-                    semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+                    semantic_model_key=second_key,
                     dax='EVALUATE ROW("Value", 1)',
                 ),
             )
 
-        with pytest.raises(LocalMCPConnectionError) as exc_info:
-            await call
+        snapshot = await call
 
-        assert exc_info.value.category == LocalMCPErrorCategory.DESKTOP_CONNECTION
-        assert exc_info.value.error_type == "desktop_multiple_instances"
+        assert snapshot.diagnostics.connection is True
+        connect_request = fake.calls[1][1]["request"]
+        assert connect_request["operation"] == "Connect"  # type: ignore[index]
+        assert connect_request["dataSource"] == "localhost:54322"  # type: ignore[index]
+
+    @pytest.mark.asyncio
+    async def test_selected_instance_disappearing_fails_closed(self):
+        client = PowerBILocalMCPClient()
+        fake = FakeDAXStdioMCPClient(_successful_dax_payload())
+        stale_key = PowerBILocalMCPClient._desktop_semantic_model_key(
+            process_id=9999,
+            data_source="localhost:59999",
+            start_time="2026-08-24T08:00:00+08:00",
+        )
+
+        with pytest.raises(LocalMCPConnectionError) as exc_info:
+            await client._execute_dax_in_session(
+                fake,  # type: ignore[arg-type]
+                "2025-11-25",
+                _local_tools(),
+                request=DAXRequest(
+                    semantic_model_key=stale_key,
+                    dax='EVALUATE ROW("Value", 1)',
+                ),
+            )
+
+        assert exc_info.value.category == LocalMCPErrorCategory.DESKTOP_STALE_INSTANCE
         assert [call[1]["request"]["operation"] for call in fake.calls] == [  # type: ignore[index]
             "ListLocalInstances",
         ]
@@ -1538,6 +1699,7 @@ class TestLocalMCPPowerBIAdapter:
             fake,  # type: ignore[arg-type]
             "2025-11-25",
             _local_tools(),
+            semantic_model_key=TEST_MODEL_KEY,
         )
 
         assert len(snapshot.tables) == 2
@@ -1572,6 +1734,7 @@ class TestLocalMCPPowerBIAdapter:
                 fake,  # type: ignore[arg-type]
                 "2025-11-25",
                 tools,
+                semantic_model_key=TEST_MODEL_KEY,
             )
 
         assert exc_info.value.category == LocalMCPErrorCategory.SCHEMA_TOOL_MISSING
@@ -1588,6 +1751,7 @@ class TestLocalMCPPowerBIAdapter:
                 malformed,  # type: ignore[arg-type]
                 "2025-11-25",
                 _local_tools(),
+                semantic_model_key=TEST_MODEL_KEY,
             )
         assert (
             malformed_info.value.category
@@ -1603,8 +1767,26 @@ class TestLocalMCPPowerBIAdapter:
                 failed,  # type: ignore[arg-type]
                 "2025-11-25",
                 _local_tools(),
+                semantic_model_key=TEST_MODEL_KEY,
             )
         assert failed_info.value.category == LocalMCPErrorCategory.SCHEMA_READ_FAILED
+
+        denied = FakeSchemaStdioMCPClient(
+            _schema_snapshot(),
+            permission_tool="measure_operations",
+        )
+        with pytest.raises(LocalMCPConnectionError) as denied_info:
+            await client._read_schema_in_session(
+                denied,  # type: ignore[arg-type]
+                "2025-11-25",
+                _local_tools(),
+                semantic_model_key=TEST_MODEL_KEY,
+            )
+        assert (
+            denied_info.value.category
+            == LocalMCPErrorCategory.MCP_PERMISSION_DENIED
+        )
+        assert "private-path" not in str(denied_info.value)
 
     @pytest.mark.asyncio
     async def test_stdio_dax_execute_uses_inline_readonly_query_contract(self):
@@ -1638,8 +1820,9 @@ class TestLocalMCPPowerBIAdapter:
         assert isinstance(dax_request, dict)
         assert dax_request == {
             "operation": "Execute",
+            "connectionName": "safe-test-connection",
             "query": request.dax,
-            "maxRows": 25,
+            "maxRows": 26,
             "timeoutSeconds": 18,
             "getExecutionMetrics": False,
             "executionMetricsOnly": False,
@@ -1672,6 +1855,216 @@ class TestLocalMCPPowerBIAdapter:
 
         assert exc_info.value.category == LocalMCPErrorCategory.DAX_PERMISSION_DENIED
         assert "private-path" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_compatibility_probe_verifies_schema_and_one_row_value(self):
+        client = FakeLocalMCPClient(
+            probe_snapshot=_compatibility_snapshot(),
+        )
+
+        probe = await _local_adapter(client).probe_compatibility(TEST_MODEL_KEY)
+
+        assert probe.compatible is True
+        assert probe.protocol_negotiated is True
+        assert probe.required_tools_available is True
+        assert probe.schema_read is True
+        assert probe.dax_execute is True
+        assert probe.row_data_verified is True
+        assert client.probe_calls == [TEST_MODEL_KEY]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("error", "safe_type"),
+        [
+            (
+                LocalMCPConnectionError(
+                    LocalMCPErrorCategory.MCP_PROTOCOL,
+                    "required_future_capabilities_missing",
+                ),
+                "powerbi_mcp_protocol_incompatible",
+            ),
+            (
+                LocalMCPConnectionError(
+                    LocalMCPErrorCategory.DAX_TOOL_MISSING,
+                    "dax_execute_tool_missing",
+                ),
+                "powerbi_mcp_tool_missing",
+            ),
+            (
+                LocalMCPConnectionError(
+                    LocalMCPErrorCategory.MCP_TIMEOUT,
+                    "private-timeout-detail",
+                ),
+                "powerbi_mcp_timeout",
+            ),
+            (
+                LocalMCPConnectionError(
+                    LocalMCPErrorCategory.NETWORK,
+                    "private-network-detail",
+                ),
+                "powerbi_mcp_network_error",
+            ),
+            (
+                LocalMCPConnectionError(
+                    LocalMCPErrorCategory.MCP_PERMISSION_DENIED,
+                    "private-permission-detail",
+                ),
+                "powerbi_permission_denied",
+            ),
+        ],
+    )
+    async def test_compatibility_probe_classifies_safe_failures(
+        self,
+        error: LocalMCPConnectionError,
+        safe_type: str,
+    ):
+        probe = await _local_adapter(FakeLocalMCPClient(
+            probe_error=error,
+        )).probe_compatibility(TEST_MODEL_KEY)
+
+        assert probe.compatible is False
+        assert probe.error_type == safe_type
+        assert "private" not in probe.model_dump_json()
+
+    @pytest.mark.asyncio
+    async def test_compatibility_probe_rejects_malformed_schema(self):
+        snapshot = _compatibility_snapshot()
+        malformed_schema = LocalMCPSchemaSnapshot(
+            diagnostics=snapshot.schema.diagnostics,
+            semantic_model_key=TEST_MODEL_KEY,
+            tables=snapshot.schema.tables,
+            columns=snapshot.schema.columns + ({
+                "tableName": "Unknown",
+                "name": "Ghost",
+                "dataType": "String",
+            },),
+            measures=snapshot.schema.measures,
+            relationships=snapshot.schema.relationships,
+            hierarchies=snapshot.schema.hierarchies,
+        )
+        malformed = LocalMCPCompatibilitySnapshot(
+            diagnostics=snapshot.diagnostics,
+            schema=malformed_schema,
+            dax=snapshot.dax,
+        )
+
+        probe = await _local_adapter(FakeLocalMCPClient(
+            probe_snapshot=malformed,
+        )).probe_compatibility(TEST_MODEL_KEY)
+
+        assert probe.compatible is False
+        assert probe.schema_read is False
+        assert probe.error_type == "powerbi_schema_malformed"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("payload", "expected_type"),
+        [
+            (
+                {
+                    "data": {
+                        "rowCount": 1,
+                        "columns": [{"name": "[__pbiagent_probe]"}],
+                    }
+                },
+                "powerbi_dax_probe_row_missing",
+            ),
+            (
+                {
+                    "data": {
+                        "rowCount": 1,
+                        "columns": [{"name": "[__pbiagent_probe]"}],
+                        "rows": [{"[__pbiagent_probe]": 0}],
+                    }
+                },
+                "powerbi_dax_probe_value_invalid",
+            ),
+        ],
+    )
+    async def test_compatibility_probe_rejects_missing_or_wrong_row_data(
+        self,
+        payload: dict[str, object],
+        expected_type: str,
+    ):
+        snapshot = _compatibility_snapshot()
+        malformed = LocalMCPCompatibilitySnapshot(
+            diagnostics=snapshot.diagnostics,
+            schema=snapshot.schema,
+            dax=LocalMCPDAXSnapshot(
+                diagnostics=snapshot.dax.diagnostics,
+                request=snapshot.dax.request,
+                wire_max_rows=snapshot.dax.wire_max_rows,
+                payload=payload,
+            ),
+        )
+
+        probe = await _local_adapter(FakeLocalMCPClient(
+            probe_snapshot=malformed,
+        )).probe_compatibility(TEST_MODEL_KEY)
+
+        assert probe.compatible is False
+        assert probe.error_type == expected_type
+
+    @pytest.mark.asyncio
+    async def test_explicit_truncation_metadata_maps_to_query_result(self):
+        request = DAXRequest(
+            semantic_model_key=TEST_MODEL_KEY,
+            dax='EVALUATE ROW("Value", 1)',
+            max_rows=10,
+        )
+        payload = {
+            "data": {
+                "rowCount": 1,
+                "columns": [{"name": "[Value]"}],
+                "rows": [{"[Value]": 1}],
+                "isTruncated": True,
+            }
+        }
+
+        result = await _local_adapter(FakeLocalMCPClient(
+            dax_snapshot=_dax_snapshot(payload, request=request),
+        )).execute_dax(request)
+
+        assert result.truncated is True
+
+    @pytest.mark.asyncio
+    async def test_explicit_complete_metadata_can_prove_exact_limit_complete(self):
+        request = DAXRequest(
+            semantic_model_key=TEST_MODEL_KEY,
+            dax='EVALUATE ROW("Value", 1)',
+            max_rows=1,
+        )
+        payload = {
+            "data": {
+                "rowCount": 1,
+                "columns": [{"name": "[Value]"}],
+                "rows": [{"[Value]": 1}],
+                "isTruncated": False,
+            }
+        }
+
+        result = await _local_adapter(FakeLocalMCPClient(
+            dax_snapshot=_dax_snapshot(payload, request=request),
+        )).execute_dax(request)
+
+        assert result.truncated is False
+
+    def test_opaque_instance_key_is_deterministic_and_connection_safe(self):
+        repeated = PowerBILocalMCPClient._desktop_semantic_model_key(
+            process_id=1001,
+            data_source="localhost:54321",
+            start_time="2026-08-24T09:00:00+08:00",
+        )
+        changed = PowerBILocalMCPClient._desktop_semantic_model_key(
+            process_id=1001,
+            data_source="localhost:54322",
+            start_time="2026-08-24T09:00:00+08:00",
+        )
+
+        assert repeated == TEST_MODEL_KEY
+        assert changed != TEST_MODEL_KEY
+        assert "54321" not in TEST_MODEL_KEY
+        assert "1001" not in TEST_MODEL_KEY
 
     def test_official_mcp_v2_dependency_is_installed(self):
         assert version("mcp") == "2.0.0"

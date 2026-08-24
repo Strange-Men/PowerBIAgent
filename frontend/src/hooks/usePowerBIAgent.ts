@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   archiveConversation,
   deleteConversation,
@@ -26,6 +26,7 @@ import type {
   ConversationReportItem,
   ConversationSummary,
   RuntimeMode,
+  SemanticModelOption,
 } from '../types'
 
 function requestId(): string {
@@ -38,12 +39,63 @@ export function discoveryErrorMessage(errorType: string | null): string | null {
     return 'Power BI Desktop 未连接，请先打开一个 PBIX 文件。'
   }
   if (errorType === 'powerbi_multiple_desktop_instances') {
-    return '检测到多个 Power BI Desktop 模型，请只保留一个需要分析的 PBIX 后重试。'
+    return '检测到重复的 Desktop 实例身份，已安全停止模型发现。'
   }
   if (errorType === 'powerbi_desktop_connection_failed') {
     return '已发现 Power BI Desktop，但当前数据模型无法连接。'
   }
   return '暂时无法获取可用数据模型。'
+}
+
+export function catalogOptions(items: SemanticModelOption[]): CatalogOption[] {
+  const visible = items.filter((item) => item.available && item.connected)
+  const totals = visible.reduce<Record<string, number>>((counts, item) => {
+    counts[item.display_name] = (counts[item.display_name] || 0) + 1
+    return counts
+  }, {})
+  const seen: Record<string, number> = {}
+  return visible.map((item) => {
+    seen[item.display_name] = (seen[item.display_name] || 0) + 1
+    const label =
+      totals[item.display_name] > 1
+        ? `${item.display_name}（实例 ${seen[item.display_name]}）`
+        : item.display_name
+    return {
+      key: item.key,
+      label,
+      description:
+        item.agent_compatible
+          ? item.source === 'local_desktop'
+            ? item.schema_drift
+              ? '模型结构有更新，当前分析能力可用'
+              : '当前已连接且可用于分析'
+            : '开发测试模型'
+          : item.compatibility_status === 'incompatible'
+            ? '已连接，但缺少当前分析所需的业务字段或指标'
+            : '已连接，但兼容性检查暂不可用',
+      compatible: item.agent_compatible === true,
+      selectable: item.selectable === true,
+      schemaDrift: item.schema_drift === true,
+      compatibilityStatus: item.compatibility_status || 'unavailable',
+    }
+  })
+}
+
+export function reconcileSemanticModelSelection(
+  current: CatalogOption | null,
+  options: CatalogOption[],
+  allowDefault: boolean,
+): { selected: CatalogOption | null; stale: boolean } {
+  if (current) {
+    const matched = options.find((item) => item.key === current.key)
+    return matched ? { selected: matched, stale: false } : { selected: null, stale: true }
+  }
+  return {
+    selected: allowDefault
+      ? options.find((item) => item.compatible && item.selectable) || options[0] || null
+      : null,
+    stale: false,
+  }
 }
 
 export function usePowerBIAgent() {
@@ -62,6 +114,8 @@ export function usePowerBIAgent() {
   const [semanticModelError, setSemanticModelError] = useState<string | null>(null)
   const [selectedSemanticModel, setSelectedSemanticModel] =
     useState<CatalogOption | null>(null)
+  const selectedSemanticModelRef = useRef<CatalogOption | null>(null)
+  const semanticModelsLoadedRef = useRef(false)
   const [selectedReportTemplate, setSelectedReportTemplate] =
     useState<CatalogOption | null>(null)
 
@@ -82,57 +136,51 @@ export function usePowerBIAgent() {
     }
   }, [])
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const catalog = await discoverSemanticModels()
-        const options = catalog.items
-          .filter((item) => item.available && item.connected)
-          .map((item) => ({
-            key: item.key,
-            label: item.display_name,
-            description:
-              item.agent_compatible
-                ? item.source === 'local_desktop'
-                  ? item.schema_drift
-                    ? '模型结构有更新，当前分析能力可用'
-                    : '当前已连接且可用于分析'
-                  : '开发测试模型'
-                : item.compatibility_status === 'incompatible'
-                  ? '已连接，但缺少当前分析所需的业务字段或指标'
-                  : '已连接，但兼容性检查暂不可用',
-            compatible: item.agent_compatible === true,
-            selectable: item.selectable === true,
-            schemaDrift: item.schema_drift === true,
-            compatibilityStatus: item.compatibility_status || 'unavailable',
-          }))
-        setEffectiveRuntimeMode(catalog.runtime_mode)
-        setSemanticModelOptions(options)
-        setSelectedSemanticModel((current) =>
-          options.find((item) => item.key === current?.key) ||
-          options.find((item) => item.compatible && item.selectable) ||
-          options[0] ||
-          null,
-        )
-        setSemanticModelError(
-          discoveryErrorMessage(catalog.error_type) ||
-            (options.length === 0 ? '当前没有可用数据模型。' : null),
-        )
-        await refreshSidebar(catalog.runtime_mode)
-      } catch (error) {
-        setSemanticModelOptions([])
-        setSelectedSemanticModel(null)
-        setSemanticModelError(
-          error instanceof Error ? error.message : '暂时无法获取可用数据模型。',
-        )
-        await refreshSidebar(initialRuntimeMode)
-      } finally {
-        setLoadingSemanticModels(false)
-      }
+  const refreshSemanticModels = useCallback(async () => {
+    setLoadingSemanticModels(true)
+    try {
+      const catalog = await discoverSemanticModels()
+      const options = catalogOptions(catalog.items)
+      const reconciled = reconcileSemanticModelSelection(
+        selectedSemanticModelRef.current,
+        options,
+        !semanticModelsLoadedRef.current,
+      )
+      setEffectiveRuntimeMode(catalog.runtime_mode)
+      setSemanticModelOptions(options)
+      selectedSemanticModelRef.current = reconciled.selected
+      setSelectedSemanticModel(reconciled.selected)
+      setSemanticModelError(
+        (reconciled.stale
+          ? '当前选择的数据模型已关闭或失效，请刷新后重新选择。'
+          : discoveryErrorMessage(catalog.error_type)) ||
+          (options.length === 0 ? '当前没有可用数据模型。' : null),
+      )
+      await refreshSidebar(catalog.runtime_mode)
+    } catch (error) {
+      setSemanticModelOptions([])
+      selectedSemanticModelRef.current = null
+      setSelectedSemanticModel(null)
+      setSemanticModelError(
+        error instanceof Error ? error.message : '暂时无法获取可用数据模型。',
+      )
+      await refreshSidebar(initialRuntimeMode)
+    } finally {
+      semanticModelsLoadedRef.current = true
+      setLoadingSemanticModels(false)
     }
-    const timer = window.setTimeout(() => void load(), 0)
-    return () => window.clearTimeout(timer)
   }, [refreshSidebar])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refreshSemanticModels(), 0)
+    return () => window.clearTimeout(timer)
+  }, [refreshSemanticModels])
+
+  const selectSemanticModel = useCallback((option: CatalogOption) => {
+    selectedSemanticModelRef.current = option
+    setSelectedSemanticModel(option)
+    setSemanticModelError(null)
+  }, [])
 
   const startNewChat = useCallback(() => {
     setMessages([])
@@ -173,6 +221,16 @@ export function usePowerBIAgent() {
         })
         setActiveConversationId(response.conversation_id)
         setMessages((current) => [...current, chatResponseToMessage(response)])
+        if (
+          response.error_type === 'stale_instance' ||
+          response.error_type === 'DESKTOP_STALE_INSTANCE'
+        ) {
+          selectedSemanticModelRef.current = null
+          setSelectedSemanticModel(null)
+          setSemanticModelError(
+            '当前选择的数据模型已关闭或失效，请刷新后重新选择。',
+          )
+        }
         await refreshSidebar(
           response.source_mode === 'mock' || response.source_mode === 'real'
             ? response.source_mode
@@ -279,6 +337,7 @@ export function usePowerBIAgent() {
     sidebarError,
     effectiveRuntimeMode,
     semanticModelOptions,
+    refreshSemanticModels,
     loadingSemanticModels,
     semanticModelError,
     selectedSemanticModel,
@@ -298,7 +357,7 @@ export function usePowerBIAgent() {
     rename,
     archive,
     remove,
-    setSelectedSemanticModel,
+    setSelectedSemanticModel: selectSemanticModel,
     setSelectedReportTemplate,
   }
 }

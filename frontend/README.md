@@ -2,7 +2,7 @@
 
 ## 状态
 
-**M5.3 — 结构化结果与前端最终收口已完成；Rich PBIX Real 浏览器验收通过。**
+**M5.3.2 — Local MCP 多模型选择与协议稳定性加固已完成；双 PBIX 真实目录、单选、问答、表格与报表验收通过。**
 
 ## 技术栈
 
@@ -30,7 +30,7 @@ npm test
 npm run build
 ```
 
-前端从后端只读语义模型发现响应取得当前 runtime namespace、模型与 compatibility 状态；浏览器不读取 `.pbix`，也不保存任何连接信息或 Provider Secret。Mock 后端联调时可显式使用 `VITE_RUNTIME_MODE=mock` 作为请求前的保守初值，后端发现结果仍是运行时权威来源。模型可连接但不符合当前 glossary/schema 时仍会显示名称与明确提示，但发送保持禁用。
+前端从后端只读语义模型发现响应取得当前 runtime namespace、多个 Desktop 模型与逐项 compatibility 状态；浏览器不读取 `.pbix`，也不保存或展示 PID、端口、connection string、opaque identity 细节或 Provider Secret。用户按 display name 单选 PBIX；重名实例仅以“实例 1/2”安全区分。Mock 后端联调时可显式使用 `VITE_RUNTIME_MODE=mock` 作为请求前的保守初值，后端发现结果仍是运行时权威来源。
 
 连接本地 PBIX 的完整配置和启动顺序见根目录 [README 的“本地 Power BI 真实模式启动”章节](../README.md#本地-power-bi-真实模式启动)。默认配置是 Mock，仅用于开发测试。
 
@@ -93,7 +93,7 @@ npm run build
 1. **数据模型** — 映射为 Chat 请求的 `semantic_model_key`
 2. **报表模板** — 仅在用户主动选择具体模板时映射为 Chat 请求的可选 `report_template_key` override
 
-M5.3 使用 `GET /api/v1/semantic-models` 读取后端通过 Local MCP / 当前 Power BI Desktop 实例发现并进行最小 Agent compatibility 检查的模型。浏览器不能直接读取 `.pbix`；前端只展示后端返回的安全目录，不再内置或伪造“Power BI 销售数据”。Mock discovery 只暴露正式支持的 `mock_sales_model`。当前 Local Adapter 的稳定执行合同一次只连接一个 Desktop 模型；若模型可连接但暂不符合当前业务结构，UI 明确提示并禁用发送，不显示内部 schema/hash/DAX。
+M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI Desktop 实例生成的安全目录。每个 option 有独立 opaque `semantic_model_key`，compatibility probe 与 schema 检查都精确绑定该 option。浏览器只显示安全名称；模型菜单提供刷新和单选。当前选择关闭、重启或 identity 变化后，旧选择被清空并提示刷新后重新选择，不会自动切换到仍存活的另一 PBIX。Mock discovery 仍只暴露正式支持的 `mock_sales_model`。
 
 报表模板暂时没有发现 API，继续由 `src/config.ts` 集中维护 registry-owned 目录。当前只有 `sales_report`，展示名为“销售分析报告”。菜单不提供“不使用模板”：未选择模板只表示本次请求不传 override，普通问答、多轮分析或报表生成仍由后端 intent 自动识别；即使未显式选择，后端也可以按业务规则为报表意图选择默认模板。
 
@@ -134,7 +134,7 @@ M5.3 使用 `GET /api/v1/semantic-models` 读取后端通过 Local MCP / 当前 
 | `PATCH /api/v1/conversations/{id}` | ✅ M5.3 presentation metadata | 会话重命名 |
 | `POST /api/v1/conversations/{id}/archive` | ✅ 已实现 | 归档对话 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 | 删除对话 |
-| `GET /api/v1/semantic-models` | ✅ M5.3 最小只读 compatibility | 动态加载 Desktop 模型、runtime namespace 与兼容状态 |
+| `GET /api/v1/semantic-models` | ✅ M5.3.2 多模型逐项 compatibility | 动态加载多个 Desktop 模型、runtime namespace、可选与兼容状态 |
 | `GET /api/report-templates` | ❌ 未实现 | `sales_report` 集中白名单配置 |
 | `ChatResponse.presentation` | ✅ M5.3 只读展示层 | 动态消费 dataset 引用与 text/metric/table/chart/report blocks |
 | 展示型 transcript/title | ✅ M5.3 | 完整恢复新会话消息、自动标题与重命名；不作为 Memory 事实 |
@@ -166,7 +166,9 @@ M5.3 使用 `GET /api/v1/semantic-models` 读取后端通过 Local MCP / 当前 
 | M5.2 | 真实业务链路与前端逻辑收口（Real、Desktop 模型发现、SQLite 会话、intent/template/model、Chat 多轮与报表联调、最小错误态） | ✅ 已完成 |
 | M5.2.1 | 模型能力边界与真实模式说明收口 | ✅ 已完成 |
 | M5.3 | 结构化结果、历史/标题/管理、ChatGPT 风格尺寸/间距、responsive、accessibility、状态与表格/图表视觉 | ✅ 已完成，Rich PBIX Real 验收通过 |
+| M5.3.1 | Local Desktop 单实例 fail-closed 与 presentation verified-field projection | ✅ 已完成 |
+| M5.3.2 | 多 PBIX 安全枚举/单选/刷新、opaque 实例绑定、stale 安全错误与 MCP compatibility | ✅ 已完成 |
 
 ---
 
-*最后更新：2026-08-23 | M5.3 COMPLETE — 结构化结果与前端最终收口*
+*最后更新：2026-08-24 | M5.3.2 COMPLETE — Local MCP 多模型选择与协议稳定性加固*

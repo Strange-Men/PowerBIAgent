@@ -36,3 +36,21 @@ class SemanticModelCatalog(BaseModel):
     error_type: str | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class PowerBICompatibilityProbe(BaseModel):
+    """Provider diagnostic result with no connection or business payload."""
+
+    semantic_model_key: str = Field(min_length=1, max_length=200)
+    server_started: bool = False
+    protocol_negotiated: bool = False
+    required_tools_available: bool = False
+    instance_matched: bool = False
+    connected: bool = False
+    schema_read: bool = False
+    dax_execute: bool = False
+    row_data_verified: bool = False
+    compatible: bool = False
+    error_type: str | None = None
+
+    model_config = ConfigDict(extra="forbid", frozen=True)

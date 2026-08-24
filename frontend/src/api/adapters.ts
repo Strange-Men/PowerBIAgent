@@ -10,6 +10,12 @@ const ERROR_TEXT = '当前请求无法完成，请检查问题或稍后重试。
 
 function friendlyBusinessError(response: ChatResponse): string {
   const errorType = response.error_type || ''
+  if (
+    errorType === 'stale_instance' ||
+    errorType === 'DESKTOP_STALE_INSTANCE'
+  ) {
+    return '当前选择的数据模型已关闭或失效，请刷新模型列表后重新选择。'
+  }
   if (errorType.startsWith('deepseek_') || errorType.startsWith('LLM')) {
     return '语言分析服务暂不可用，请稍后重试。'
   }

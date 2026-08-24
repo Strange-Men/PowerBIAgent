@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Plus, Send, X } from 'lucide-react'
+import { Check, ChevronDown, Plus, RefreshCw, Send, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { reportTemplateOptions } from '../config'
 import type { CatalogOption } from '../types'
@@ -12,6 +12,7 @@ interface ComposerProps {
   semanticModelCompatibilityNotice?: string | null
   reportTemplate: CatalogOption | null
   onSemanticModelChange: (option: CatalogOption) => void
+  onRefreshSemanticModels: () => Promise<void>
   onReportTemplateChange: (option: CatalogOption | null) => void
   onSend: (content: string) => Promise<void>
 }
@@ -25,6 +26,7 @@ export function Composer({
   semanticModelCompatibilityNotice = null,
   reportTemplate,
   onSemanticModelChange,
+  onRefreshSemanticModels,
   onReportTemplateChange,
   onSend,
 }: ComposerProps) {
@@ -84,7 +86,19 @@ export function Composer({
       {addMenuOpen ? (
         <div className="composer-popover add-menu" role="dialog" aria-label="数据与报表选项">
           <div className="menu-group">
-            <span className="menu-label">数据模型</span>
+            <div className="menu-heading">
+              <span className="menu-label">数据模型</span>
+              <button
+                className="catalog-refresh"
+                type="button"
+                disabled={loadingSemanticModels}
+                aria-label="刷新数据模型"
+                onClick={() => void onRefreshSemanticModels()}
+              >
+                <RefreshCw size={14} />
+                刷新
+              </button>
+            </div>
             {loadingSemanticModels ? (
               <p className="menu-empty-state">正在获取当前 Desktop 模型…</p>
             ) : null}
@@ -93,12 +107,12 @@ export function Composer({
                 {semanticModelError || '当前没有可用数据模型。'}
               </p>
             ) : null}
-            {semanticModelOptions.map((option) => (
+            {semanticModelOptions.map((option, index) => (
               <button
                 className="menu-option"
                 key={option.key}
                 type="button"
-                aria-describedby={`model-status-${option.key}`}
+                aria-describedby={`model-status-${index}`}
                 onClick={() => {
                   onSemanticModelChange(option)
                   setAddMenuOpen(false)
@@ -106,7 +120,7 @@ export function Composer({
               >
                 <span>
                   <strong>{option.label}</strong>
-                  <small id={`model-status-${option.key}`}>{option.description}</small>
+                  <small id={`model-status-${index}`}>{option.description}</small>
                 </span>
                 {semanticModel?.key === option.key ? <Check size={16} /> : null}
               </button>

@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v1.5
-> **修订日期：** 2026-08-23
+> **修订版本：** v1.6
+> **修订日期：** 2026-08-24
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** 同步 M5.3/M5.3.1 实现状态、structured presentation 与 Local Desktop 单实例安全边界；North Star 不变
+> **本轮修订范围：** 同步 M5.3.2 多 PBIX opaque instance binding、MCP beta compatibility probe 与 stale/truncation fail-closed；North Star 不变
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -53,7 +53,7 @@ MVP 主要供公司内部少量人员使用，暂不处理复杂客户权限和�
 
 ### 5.1 数据问答
 
-用户从后端发现的当前可连接 Power BI Desktop / PBIX 对应语义模型中选择一个模型后，输入自然语言问题。浏览器不直接读取 `.pbix`；Local MCP / PowerBIAdapter 负责发现和连接当前 Desktop 实例，前端只展示后端返回的安全模型目录。当前 Local MVP 要求只打开一个待分析 PBIX：0 个实例返回未连接状态，多个实例在连接前 deterministic fail closed，不按顺序或 display name 猜测模型。以下是长期产品场景示例：
+用户从后端发现的当前可连接 Power BI Desktop / PBIX 对应语义模型中选择一个模型后，输入自然语言问题。浏览器不直接读取 `.pbix`；Local MCP / PowerBIAdapter 安全枚举所有当前 Desktop 实例，为每个实例生成不泄露连接属性、当前后端进程内确定的 opaque key。schema、member lookup 与 DAX 每次都重新执行 `ListLocalInstances`，只允许该 key 对应的稳定 identity 唯一匹配后 Connect；目标消失、identity 变化、找不到或匹配不唯一均 fail closed，不按顺序或 display name 猜测模型。
 
 - "本月销售额是多少？"
 - "各区域销售额排名如何？"
@@ -196,6 +196,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 - 查询超时时间
 - 最大返回行数
+- 校验 MCP 实际 columns/rows/rowCount shape；显式 limit metadata 映射为 `truncated`，协议无法证明完整时保守标记 truncated，禁止声称全量排名或极值完整性
 - 最大重试次数
 - 禁止危险或无关查询
 - 禁止访问未选择的语义模型
@@ -215,7 +216,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 | 接口 | 说明 |
 |------|------|
 | `GET /health` | 检查当前运行模式的配置就绪状态；不把它描述为 Desktop 实时在线探测 |
-| `GET /api/v1/semantic-models` | ✅ M5.2 最小只读 discovery；通过 Adapter/Local MCP 返回当前可连接 Desktop 模型的 safe catalog，不返回连接 secret/raw payload |
+| `GET /api/v1/semantic-models` | ✅ M5.3.2 多模型只读 discovery；逐实例返回 safe catalog 与 compatibility，不返回 connection string、PID、端口、raw fingerprint 或 MCP payload |
 | `GET /api/report-templates` | **未实现** — M5.1 只集中登记 production `sales_report` |
 | `POST /api/v1/chat` | ✅ 已实现；Mock+Mock、DeepSeek+Mock、DeepSeek+Local MCP 共用正式 TurnPipeline |
 | `GET /api/reports/{report_id}` | ✅ 已实现；查看 repository-owned 静态 HTML |
@@ -240,6 +241,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 8. **M5.2 真实业务链路与前端逻辑收口** ✅ 已完成 — Real 模式、Desktop 模型 discovery、SQLite 会话配置、intent/template/model 逻辑、真实多轮 Chat/report 与最小用户可理解错误态
 9. **M5.3 结构化结果与前端最终收口** ✅ 已完成 — structured presentation、展示型 transcript/title、重命名/归档/删除、metric/table/bar/line/report attachment、responsive/accessibility/状态视觉与 Rich PBIX Real 浏览器验收
 10. **M5.3.1 Final Hardening** ✅ 已完成 — Local MCP 多 Desktop 在 Connect 前 fail closed，presentation 只投影 VerifiedFactSet 数据事实覆盖字段；无新产品能力或后续里程碑扩展
+11. **M5.3.2 Local MCP 多模型选择与协议稳定性加固** ✅ 已完成 — 多 PBIX 安全枚举、前端单选/刷新、opaque 精确实例绑定、只读 capability probe、stale fail-closed 与 row-limit/truncation 防腐；Remote MCP 继续 Deferred
 
 ## 十二、MVP 暂不包含
 
@@ -274,7 +276,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 ## 十四、验收标准
 
-以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.2 truth/persistence boundary final closure 已完成；M5.0/M5.1/M5.2/M5.2.1/M5.3 已完成，M5.3.1 完成最终安全加固。Rich PBIX Real 六轮问答、表格、报表、recent/history/search 与查看/下载已完成验收；CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
+以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.2 truth/persistence boundary final closure 已完成；M5.0—M5.3.2 已完成。M5.3.2 双 PBIX Real 验证覆盖同时 discovery、逐实例 probe/schema/DAX、模型专属查询隔离、前端单选，以及 Rich 问答/表格/报表；CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
 
 MVP 达到以下条件即可视为成功：
 
@@ -304,4 +306,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-23 | M5.3/M5.3.1 状态、presentation 与 Desktop 单实例安全边界同步；North Star 不变*
+*修订日期：2026-08-24 | M5.3.2 多 PBIX 与 MCP beta 稳定性边界同步；North Star 不变*

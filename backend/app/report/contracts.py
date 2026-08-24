@@ -345,8 +345,11 @@ class ReportContractValidator:
     def __init__(
         self,
         contracts: Mapping[str, TemplateContract] = REPORT_TEMPLATE_CONTRACTS,
+        *,
+        binding_scope_key: str | None = None,
     ) -> None:
         self._contracts = MappingProxyType(dict(contracts))
+        self._binding_scope_key = binding_scope_key
 
     def validate(
         self,
@@ -374,7 +377,8 @@ class ReportContractValidator:
                 errors=("report_template_contract_missing",),
             )
         runtime_fingerprint = compute_schema_fingerprint(schema)
-        if schema.key != contract.binding.semantic_model_key:
+        binding_scope_key = self._binding_scope_key or schema.key
+        if binding_scope_key != contract.binding.semantic_model_key:
             return ReportContractValidation(
                 status=ReportAvailabilityStatus.SEMANTIC_MODEL_MISMATCH,
                 template_key=template_key,

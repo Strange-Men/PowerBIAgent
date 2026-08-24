@@ -57,6 +57,7 @@ export function App() {
           semanticModelCompatibilityNotice={app.semanticModelCompatibilityNotice}
           reportTemplate={app.selectedReportTemplate}
           onSemanticModelChange={app.setSelectedSemanticModel}
+          onRefreshSemanticModels={app.refreshSemanticModels}
           onReportTemplateChange={app.setSelectedReportTemplate}
           onSend={app.submitMessage}
         />

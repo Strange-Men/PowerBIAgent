@@ -1259,7 +1259,7 @@ def _patch_fake_runtime_glossary(monkeypatch):
     }
 
     class _TestCatalogBuilder:
-        def build(self, schema):
+        def build(self, schema, *, glossary_scope_key=None):
             glossary = {
                 "version": 1,
                 "semantic_model_key": schema.key,
@@ -1750,6 +1750,7 @@ class TestM24DeepSeekLocalChat:
                         "message": message,
                         "conversation_id": conversation_id,
                         "request_id": f"unsupported-routing-{active}-request",
+                        "semantic_model_key": "local_desktop_model",
                     })
                     body = response.json()
                     assert response.status_code == 200, body
@@ -1809,6 +1810,7 @@ class TestM24DeepSeekLocalChat:
                 response = await client.post("/api/v1/chat", json={
                     "message": "销售额是多少？",
                     "request_id": "intent-grounding-correction",
+                    "semantic_model_key": "local_desktop_model",
                 })
         body = response.json()
         assert body["terminal_state"] == "completed"
@@ -1827,6 +1829,7 @@ class TestM24DeepSeekLocalChat:
             "message": "总销售额是多少？",
             "conversation_id": "conv-m24-local",
             "request_id": "req-m24-local",
+            "semantic_model_key": "local_desktop_model",
         }
         async with app.router.lifespan_context(app):
             service = app.state.turn_service
@@ -1881,6 +1884,7 @@ class TestM24DeepSeekLocalChat:
                 response = await c.post("/api/v1/chat", json={
                     "message": "总销售额是多少？",
                     "request_id": "req-m24-preview-failure",
+                    "semantic_model_key": "local_desktop_model",
                 })
             data = response.json()
             assert response.status_code == 200
@@ -1953,6 +1957,7 @@ class TestM25BusinessGoldenOffline:
                 response = await c.post("/api/v1/chat", json={
                     "message": question,
                     "request_id": request_id,
+                    "semantic_model_key": "local_desktop_model",
                 })
             memory = await service.pipeline.get_memory_by_request_id(
                 request_id, RuntimeDataMode.REAL

@@ -111,6 +111,21 @@ describe('chatResponseToMessage', () => {
     expect(model.content).not.toContain('ToolPolicyDeniedError')
   })
 
+  it('maps a stale Desktop selection to a safe refresh instruction', () => {
+    const message = chatResponseToMessage(
+      response({
+        terminal_state: 'tool_failed',
+        response_type: 'error',
+        answer: null,
+        error_type: 'stale_instance',
+        powerbi_mode: 'local_mcp',
+      }),
+    )
+
+    expect(message.content).toContain('刷新模型列表后重新选择')
+    expect(message.content).not.toContain('stale_instance')
+  })
+
   it('maps provider failures to a safe language-service message', () => {
     const message = chatResponseToMessage(
       response({

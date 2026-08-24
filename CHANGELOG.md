@@ -2,6 +2,22 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.3.2] — 2026-08-24
+
+### Local MCP 多模型选择与协议稳定性加固
+
+- 将 M5.3.1 的“多 Desktop 全部拒绝”升级为安全多 PBIX catalog：beta.12 `ListLocalInstances` raw payload 先严格映射为内部 typed identity，再由 PID、local data source 与 start time 的 canonical identity 经进程内密钥 HMAC-SHA-256 生成 `local_desktop:<opaque-id>`。API/前端不暴露 PID、端口、connection string、raw fingerprint 或 MCP payload；display name 仅展示，重名用“实例 1/2”区分。
+- schema、member lookup 与 DAX 的每个新 stdio session 都重新执行 `ListLocalInstances → opaque key 唯一匹配 → Connect → session connectionName`；目标消失、identity 变化、找不到或匹配不唯一均 fail closed。删除 Real 请求从 `mock_sales_model` 静默替换为固定 local key 的旧 fallback，不按首项或 display name 切换 PBIX。
+- 新增只读 provider compatibility probe，覆盖 server startup、protocol negotiation、required tools、ListLocalInstances、Connect、schema List/Get，以及 `EVALUATE ROW("__pbiagent_probe", 1)` 的 columns/one row/value 校验。probe 结果是 provider diagnostic，不进入 Memory、Snapshot 或业务 Trace；timeout/network/permission/malformed/multi/stale 保留安全分类，ExceptionGroup 保留最具体类别。
+- DAX wire limit 使用 `request.max_rows + 1` sentinel；严格校验实际 columns/rows/rowCount/wire limit。协议显式 truncation/limit metadata 映射到 `QueryResult.truncated`；beta 无完整性证明且结果触及请求上限时保守 truncated，不做任意分页，VerifiedFactSet 既有 truncated 事实语义不变。
+- `GET /api/v1/semantic-models` 对每个精确 option 独立 probe/schema compatibility；前端支持多模型列表、单选、刷新、重复名称安全区分与 stale selection 清空重选，不显示 opaque identity 细节。
+- `sales_report` registry 逻辑 binding 与 opaque instance resource identity 显式分层；TemplateContract、deterministic query catalog、VerifiedFactSet 与 renderer authority 不变。Rich 真实简单问答、表格/柱状图和 HTML 报表继续成功。
+- Fresh backend full regression `1760 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `39 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `116`、Repository Safety `280`、Error Ledger `25` PASS。
+- Real 双 PBIX Smoke 同时发现 `PowerBIAgent_M3_Rich_Test.pbix` / `PowerBIAgent_M3_Test.pbix`，两个 option 均 unique/selectable，逐实例 probe/schema/DAX 与模型专属查询隔离通过，浏览器可分别单选。关闭 Rich 时 Desktop 出现未保存更改确认且检测到用户输入，因此未强制丢弃本地状态；live stale-shaped key 与 disappearance 回归验证下一请求 fail closed。
+- 无 schema change 或 migration；未修改 M0–M4 factual/Memory/Report authority，未扩大 Remote MCP，未进入后续里程碑。
+
+**Settings.version:** M5.3.2
+
 ## [M5.3.1] — 2026-08-23
 
 ### 多 PBIX 绑定与展示事实边界最终加固

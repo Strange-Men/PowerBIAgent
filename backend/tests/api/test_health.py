@@ -69,7 +69,7 @@ class TestHealthMockReady:
         response = await mock_client.get("/health")
         data = response.json()
         from backend.app.config.settings import Settings
-        assert data["version"] == Settings().version
+        assert data["version"] == Settings(_env_file=None).version
 
     @pytest.mark.asyncio
     async def test_health_mode_fields(self, mock_client):
@@ -183,9 +183,7 @@ class TestHealthNotReady:
             assert service is not None
             assert service.powerbi.provider_name == "local_mcp"
             assert service.pipeline is not None
-            assert service._user_context.allowed_semantic_models == [
-                settings.powerbi_local_semantic_model_key
-            ]
+            assert not hasattr(service, "_user_context")
             async with AsyncClient(transport=transport, base_url="http://test") as c:
                 response = await c.get("/health")
                 assert response.status_code == 200
@@ -282,7 +280,7 @@ class TestLifespanIntegration:
     @pytest.mark.asyncio
     async def test_no_lifespan_service_missing(self):
         """未启动 lifespan 时依赖明确失败 — 直接测试依赖函数"""
-        settings = Settings()
+        settings = Settings(_env_file=None)
         app = create_app(settings=settings)
 
         # 模拟未启动 lifespan 的状态：mock_turn_service 为 None
@@ -298,8 +296,8 @@ class TestLifespanIntegration:
     @pytest.mark.asyncio
     async def test_two_apps_different_services(self):
         """两个 app 实例使用不同 Service — 在 lifespan 内验证"""
-        settings1 = Settings()
-        settings2 = Settings()
+        settings1 = Settings(_env_file=None)
+        settings2 = Settings(_env_file=None)
 
         app1 = create_app(settings=settings1)
         app2 = create_app(settings=settings2)
@@ -332,7 +330,7 @@ class TestLifespanIntegration:
     @pytest.mark.asyncio
     async def test_lifespan_shutdown_cleans_state(self):
         """lifespan 退出后 state 被清理"""
-        app = create_app()
+        app = create_app(settings=Settings(_env_file=None))
         transport = ASGITransport(app=app)
 
         async with app.router.lifespan_context(app):
@@ -354,8 +352,8 @@ class TestLifespanIntegration:
     @pytest.mark.asyncio
     async def test_no_global_state_cross_apps(self):
         """两个独立 app 实例互不覆盖 state"""
-        app_a = create_app()
-        app_b = create_app()
+        app_a = create_app(settings=Settings(_env_file=None))
+        app_b = create_app(settings=Settings(_env_file=None))
 
         transport_a = ASGITransport(app=app_a)
         transport_b = ASGITransport(app=app_b)

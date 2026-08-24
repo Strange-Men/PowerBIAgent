@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.3.1 — 多 PBIX 绑定与展示事实边界最终加固**。M4.4.2 FINAL PASS；M5.0/M5.1/M5.2/M5.2.1/M5.3/M5.3.1 已完成。
+当前版本：**M5.3.2 — Local MCP 多模型选择与协议稳定性加固**。M4.4.2 FINAL PASS；M5.0—M5.3.2 已完成。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -33,6 +33,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.2.1** 已收口 discovery capability truthfulness：Mock discovery 只暴露可进入正式 Chat pipeline 的 `mock_sales_model`，`mock_satisfaction_model` 保留为测试 fixture 但不再作为正常可选项；Real Local MCP discovery 合同不变。根 README 增加醒目的本地 Power BI 真实模式启动说明，并与 `frontend/README.md` 统一中文表达。**M5.2.1 COMPLETE。**
 - **M5.3** 已实现安全启动诊断、Desktop 模型最小 compatibility、展示型 transcript/title/rename、conversation 管理、QueryResult/VerifiedFactSet 直接来源的 `presentation` contract、动态指标/表格/柱状图/折线图/报表附件，以及 responsive/accessibility/状态视觉收口。完整 schema fingerprint 仅用于 drift 诊断，不单独阻断模型；Rich PBIX Real 六轮问答、表格、报表、recent/history/search、查看/下载验收通过。M0–M4 factual authority 与 M4 durable delete intent 不变。**M5.3 COMPLETE。**
 - **M5.3.1** 已将 Local MCP Desktop contract 收紧为每个 discovery/schema/member/DAX session 只接受唯一实例，多个实例在 Connect 前 deterministic fail closed；`presentation` dataset 仅投影 VerifiedFactSet 数据事实 `source_fields` 覆盖列。无新 registry、无 M0–M4 authority 变化。**M5.3.1 COMPLETE。**
+- **M5.3.2** 已升级为多 PBIX 安全枚举与选择：后端生成不泄露连接属性的 deterministic opaque key；schema/member/DAX 每个 session 重新枚举并精确匹配唯一实例；逐 option 只读 MCP capability probe、stale fail-closed 与 DAX row shape/truncation 防腐完成。Remote MCP 继续 Deferred；无 migration、无 M0–M4 authority 变化。**M5.3.2 COMPLETE。**
 
 当前真实主链：
 
@@ -112,4 +113,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-23 | M5.3.1 COMPLETE — 多 PBIX 绑定与展示事实边界最终加固*
+*最后更新：2026-08-24 | M5.3.2 COMPLETE — Local MCP 多模型选择与协议稳定性加固*

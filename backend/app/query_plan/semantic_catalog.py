@@ -92,17 +92,31 @@ class SemanticCatalogBuilder:
     def __init__(self, glossary_path: Path = DEFAULT_GLOSSARY_PATH):
         self._glossary_path = Path(glossary_path)
 
-    def build(self, schema: SemanticModelSchema) -> SemanticCatalog:
+    def build(
+        self,
+        schema: SemanticModelSchema,
+        *,
+        glossary_scope_key: str | None = None,
+    ) -> SemanticCatalog:
         glossary = self._load_glossary()
-        return self.build_from_data(schema, glossary)
+        return self.build_from_data(
+            schema,
+            glossary,
+            glossary_scope_key=glossary_scope_key,
+        )
 
     def build_from_data(
-        self, schema: SemanticModelSchema, glossary: dict[str, Any]
+        self,
+        schema: SemanticModelSchema,
+        glossary: dict[str, Any],
+        *,
+        glossary_scope_key: str | None = None,
     ) -> SemanticCatalog:
         """Validate supplied glossary data; used by focused offline tests."""
         if glossary.get("version") != 1:
             raise GlossaryCatalogError("glossary_version_invalid")
-        if glossary.get("semantic_model_key") != schema.key:
+        effective_scope_key = glossary_scope_key or schema.key
+        if glossary.get("semantic_model_key") != effective_scope_key:
             raise GlossaryCatalogError("glossary_semantic_model_key_mismatch")
         expected_fingerprint = glossary.get("schema_fingerprint")
         if not isinstance(expected_fingerprint, str) or len(expected_fingerprint) != 64:

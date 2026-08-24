@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.3.1 — 多 PBIX 绑定与展示事实边界最终加固已完成
+> **状态：** M5.3.2 — Local MCP 多模型选择与协议稳定性加固已完成
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -33,6 +33,7 @@
 | **M5.2.1** | **模型能力边界与真实模式说明收口** | **✅ 已完成** |
 | **M5.3** | **结构化结果、历史/标题/资源管理与视觉交互最终收口** | **✅ 已完成** |
 | **M5.3.1** | **Local Desktop 单实例安全 + presentation verified-field projection** | **✅ 已完成** |
+| **M5.3.2** | **Local MCP 多 PBIX 选择、opaque binding 与 beta 协议稳定性** | **✅ 已完成** |
 
 ## M5.2 / M5.3 正式边界
 
@@ -61,6 +62,15 @@ M5.2 不提前进行大规模 CSS/响应式/无障碍 polish；M5.3 不反向修
 - Local MCP 的 discovery、schema、member lookup 与 DAX 虽使用独立 session，但每个 session 都只允许 `ListLocalInstances` 返回唯一 Desktop 实例；0 个保持未连接，多个在 `Connect` 前返回 `powerbi_multiple_desktop_instances`，禁止顺序选择或名称猜测。
 - `PresentationDataset` 只按 scalar/grouped/ranking/min/max VerifiedFact 的 `source_fields` 投影 QueryResult；额外未验证列不进入前端，metric/table/chart 继续只引用同一 verified dataset。
 - 不新增 instance registry、Remote MCP 或新图表/分析能力；TurnPipeline、Memory、QueryResult、VerifiedFactSet 与 Report authority 不变。
+
+### M5.3.2 — Local MCP 多模型选择与协议稳定性（已完成）
+
+- `ListLocalInstances` 经 beta.12 防腐层映射为内部 typed identity；后端对 PID、local data source 与 start time 的规范化组合使用进程内密钥 HMAC-SHA-256 生成 opaque key。API/前端不暴露 PID、端口、connection string、raw fingerprint 或 MCP payload。
+- discovery 可返回多个安全 option；前端按 display name 单选和刷新，重名只显示“实例 1/2”。schema/member/DAX 的每个新 stdio session 都重新枚举并按 opaque key 精确匹配一个实例，再用本 session 的 `connectionName` 执行；无首项 fallback、名称猜测或跨模型重连。
+- Desktop 关闭/重启、后端进程重启或 identity 改变会使旧 key stale；请求 deterministic fail closed，前端清空选择并要求刷新后重选，不引入持久化 instance registry。
+- 固定 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`；逐 option 只读 probe 验证 server/protocol/required tools/Connect/schema，以及 `EVALUATE ROW("__pbiagent_probe", 1)` 的列、一行和值。
+- DAX 校验实际 columns/rows/rowCount 与 wire limit；显式 limit metadata 映射到 `QueryResult.truncated`，无完整性证明且触及上限时保守 truncated。VerifiedFactSet 现有 truncated 事实语义不变，不做任意 DAX 分页。
+- `sales_report` registry 逻辑 binding 与 opaque resource identity 显式分层；模板 contract/query/layout/fact authority 不变。Remote MCP 继续 Deferred，无 schema/migration、无 M0–M4 authority 变化。
 
 ### M5.2.1 — 模型能力边界与真实模式说明收口（已完成）
 
@@ -216,8 +226,8 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
-- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.2 truth/persistence boundary final closure FINAL PASS；M5.0/M5.1/M5.2/M5.2.1/M5.3/M5.3.1 已完成；禁止 force push。
+- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.2 truth/persistence boundary final closure FINAL PASS；M5.0—M5.3.2 已完成；禁止 force push。
 
 ---
 
-*最后更新：2026-08-23 | M5.3.1 COMPLETE — 多 PBIX 绑定与展示事实边界最终加固*
+*最后更新：2026-08-24 | M5.3.2 COMPLETE — Local MCP 多模型选择与协议稳定性加固*

@@ -1,11 +1,11 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-08-23
+> **最后更新：** 2026-08-24
 
 ## 当前阶段
 
-**M5.3.1 — 多 PBIX 绑定与展示事实边界最终加固已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0/M5.1/M5.2/M5.2.1/M5.3/M5.3.1 已完成。`PowerBIAgent_M3_Rich_Test.pbix` Real 六轮问答、表格、报表、recent/history/search 与查看/下载验收通过。
+**M5.3.2 — Local MCP 多模型选择与协议稳定性加固已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0—M5.3.2 已完成。双 PBIX Real discovery/probe/schema/DAX 与前端单选通过；Rich 简单问答、表格、柱状图和 HTML 报表通过。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -20,6 +20,18 @@
 | **M5.2.1** | **模型能力边界与真实模式说明收口** | **✅ 已完成** |
 | **M5.3** | **结构化结果与前端最终收口** | **✅ 已完成** |
 | **M5.3.1** | **多 PBIX 绑定与展示事实边界最终加固** | **✅ 已完成** |
+| **M5.3.2** | **Local MCP 多模型选择与协议稳定性加固** | **✅ 已完成** |
+
+### M5.3.2 — Local MCP 多模型选择与协议稳定性加固
+
+- `PowerBILocalMCPClient` 将 beta.12 `ListLocalInstances` raw payload 严格转换为内部 typed identity；后端使用 PID、local data source 与 start time 的 canonical identity 经进程内密钥 HMAC-SHA-256 生成 `local_desktop:<opaque-id>`。display name 不参与 identity；API/前端不暴露 PID、端口、connection string、raw fingerprint 或 MCP payload。
+- discovery 返回所有当前 Desktop option。每个 option 的 compatibility 都执行精确绑定 probe；schema/member/DAX 的每个新 stdio session 都重新 `ListLocalInstances → opaque key 唯一匹配 → Connect → session connectionName`，不存在 `instances[0]`、display-name guess 或其他 PBIX fallback。
+- Desktop 重启/关闭、后端进程重启或 identity 变化使旧 key stale；schema/member/DAX deterministic fail closed。前端刷新目录、清空失效选择并要求重选，不持久化 instance registry，不自动切换剩余模型；重复 display name 只显示“实例 1/2”。
+- 固定 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`。只读 capability probe 覆盖 server startup、protocol、required tools、ListLocalInstances、Connect、schema List/Get，以及 `EVALUATE ROW("__pbiagent_probe", 1)` 的列、一行和值；结果不进入 Memory、Snapshot 或业务 Trace。
+- DAX wire 请求使用 `request.max_rows + 1` sentinel，并验证实际 columns/rows/rowCount 与 wire limit。显式 truncation/limit metadata 映射到 `QueryResult.truncated`；无完整性证明且触及上限时保守 truncated，不做任意 DAX 分页，VerifiedFactSet 既有 truncated 语义不变。
+- `sales_report` 的 registry 逻辑 binding 与 opaque instance resource identity 显式分离；TemplateContract、deterministic queries、VerifiedFactSet、renderer 与 M0–M4 factual/Memory/Report authority 未改变。无 migration，Remote MCP 继续 Deferred。
+- Real Smoke：同时打开 `PowerBIAgent_M3_Rich_Test.pbix` 与 `PowerBIAgent_M3_Test.pbix`，safe API 同时返回两个 unique/selectable option；两者 probe/schema/DAX 均成功，模型专属查询证明不串实例；浏览器可分别单选，Rich 问答、表格/柱状图与 HTML 报表成功。关闭 Rich 时 Desktop 显示未保存更改确认且检测到用户输入，因此未强制丢弃本地状态；live stale-shaped key 与 fake disappearance 回归均验证下一请求 fail closed。
+- Fresh 验证：backend full `1760 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `39 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `116`、Repository Safety `280`、Error Ledger `25` PASS。Settings.version 为 M5.3.2；frontend version 为 5.3.2。
 
 ### M5.3.1 — 多 PBIX 绑定与展示事实边界最终加固
 
@@ -173,7 +185,7 @@
 
 ## 下一步
 
-M5.3.1 完成后停止，不继续开发后续里程碑。后续工作必须由新的明确用户指令启动。
+M5.3.2 完成后停止，不继续开发后续里程碑。后续工作必须由新的明确用户指令启动。
 
 ## 关键命令
 
@@ -218,4 +230,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-23 | M5.3.1 COMPLETE — 多 PBIX 绑定与展示事实边界最终加固*
+*最后更新：2026-08-24 | M5.3.2 COMPLETE — Local MCP 多模型选择与协议稳定性加固*

@@ -5,13 +5,13 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.3.1 — 多 PBIX 绑定与展示事实边界最终加固**。M4.4.2 已最终验收；M5.0/M5.1/M5.2/M5.2.1/M5.3 已完成，M5.3.1 Final Hardening 已收口。
+当前版本：**M5.3.2 — Local MCP 多模型选择与协议稳定性加固**。M4.4.2 已最终验收；M5.0—M5.3.2 已完成。
 
 ## 项目概览
 
 PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用户。用户用自然语言提出数据问题或报表需求；FastAPI 后端负责语义落地、受限 DAX 构造、Power BI 查询、事实验证、回答与静态 HTML 报表生成。
 
-当前产品形态是 Windows 本地单机 MVP：支持 Mock 离线开发，也支持 DeepSeek + Local MCP + Power BI Desktop 真实链。React 前端通过 Vite 代理接入 FastAPI，并从后端只读发现接口动态选择当前 Desktop 模型。
+当前产品形态是 Windows 本地单机 MVP：支持 Mock 离线开发，也支持 DeepSeek + Local MCP + Power BI Desktop 真实链。React 前端通过 Vite 代理接入 FastAPI，并从后端只读发现接口动态选择一个当前打开的 Desktop/PBIX 模型。
 
 ## 核心能力
 
@@ -64,10 +64,10 @@ LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI
 | 多轮 Memory | 指标、维度、filter、time、sort、TopN 继承；待澄清上下文与已提交 Memory 分离；损坏的 canonical filter 受控失败 |
 | 持久化与恢复 | SQLite Memory/Snapshot/报表 metadata；重启重放；不完整崩溃证据受控失败；持久化删除意图 |
 | 历史与搜索 | 仅 SQLite 支持最近会话、展示型 transcript、自动标题/重命名、有界搜索、归档和删除；旧会话只恢复真实已保存内容 |
-| 本地 Power BI | DeepSeek + 只读 Local Modeling MCP + Power BI Desktop；只允许唯一一个打开的 Desktop 模型，多个实例在 Connect 前 fail closed；discovery 后执行当前 glossary/schema 最小兼容性检查；Real DAX/事实的 LLM 权限为 0 |
+| 本地 Power BI | DeepSeek + 只读 Local Modeling MCP + Power BI Desktop；可同时安全枚举多个 PBIX，由前端单选后使用 opaque key 精确绑定；每次 schema/member/DAX 都重新枚举并只连接唯一匹配实例，stale/ambiguous identity fail closed；Real DAX/事实的 LLM 权限为 0 |
 | React 网页前端 | 白色主区与浅灰 Sidebar、响应式/键盘交互、动态模型兼容提示、完整历史恢复、会话管理，以及文字/指标/表格/柱状图/折线图/报表附件动态渲染 |
 
-Remote MCP 继续延期。M5.3.1 不改变 M0–M4 factual authority；Rich PBIX Real 六轮问答、表格、报表与会话恢复验收已通过。
+Local MCP 实机基线固定为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，并通过只读 schema + DAX 单行 capability probe 校验协议能力。Remote MCP 继续延期。M5.3.2 不改变 M0–M4 factual authority。
 
 ## 快速开始
 
@@ -101,11 +101,11 @@ DEEPSEEK_API_KEY=<用户自己的 Key>
 
 按以下顺序启动：
 
-1. 在 Power BI Desktop 中只打开一个目标 PBIX；若同时打开多个模型，系统会明确拒绝连接并提示关闭多余 PBIX。
+1. 在 Power BI Desktop 中打开一个或多个目标 PBIX。
 2. 启动 FastAPI 后端。
 3. 启动 React 前端。
 4. 打开 `http://127.0.0.1:5173`。
-5. 在“数据模型”菜单确认显示当前 Desktop 模型，而不是 Mock 模型。
+5. 在“数据模型”菜单确认显示当前 Desktop 模型列表，而不是 Mock 模型；选择本轮要分析的 PBIX。
 
 `PERSISTENCE_BACKEND=sqlite` 是最近会话、搜索、历史和报表历史正常工作的前提。启动后可执行以下只读检查：
 
@@ -114,7 +114,7 @@ curl.exe http://127.0.0.1:8000/health
 curl.exe http://127.0.0.1:8000/api/v1/semantic-models
 ```
 
-正常 Real catalog 的 `runtime_mode` 应为 `real`，模型的 `source` 应为 `local_desktop`，而不是 `mock`。`/health` 只验证当前 runtime 配置是否就绪，不探测 Power BI Desktop 是否在线；实际模型连接状态以 `/api/v1/semantic-models` 为准。Desktop 可连接不代表当前 Agent 已支持该业务 schema；若兼容性检查失败，前端会显示“当前模型已连接，但暂不符合 PowerBIAgent 当前支持的数据结构”，并禁止发送，不暴露 schema、hash 或 DAX。
+正常 Real catalog 的 `runtime_mode` 应为 `real`，每个模型的 `source` 应为 `local_desktop`，而不是 `mock`。后端为每个 Desktop 实例确定性生成当前进程内的 `local_desktop:<opaque-id>`；它不暴露 PID、端口、connection string 或 raw fingerprint，display name 只用于展示。`/health` 只验证当前 runtime 配置是否就绪，不探测 Power BI Desktop 是否在线；实际模型连接状态以 `/api/v1/semantic-models` 为准。compatibility probe 会针对每个精确 option 验证 protocol、required tools、Connect、schema 读取与 `EVALUATE ROW("__pbiagent_probe", 1)` 的一行结果。Desktop 或后端进程重启后旧 key 可失效，前端刷新目录并要求重新选择，不自动切换到其他 PBIX。
 
 ### Conda 初始化（首次使用）
 
@@ -234,6 +234,8 @@ python -c "import sys; print(sys.executable)"
 
 `sales_report` 的 schema、4 次查询和渲染需要 `MAX_TOOL_CALLS=8` 的正式工具预算；更低值会受控失败。仓库固定实机基线为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`；详细前置条件、Smoke 与故障分类见 [Power BI MCP 与 API 契约](docs/04_powerbi_mcp_and_api_contracts.md) 和 [M2 集成计划](docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md)。
 
+Local MCP DAX 执行会验证实际 columns/rows/`rowCount` shape，并使用一行 sentinel 探测上限。协议显式返回的 truncation/limit metadata 会映射到 `QueryResult.truncated`；beta.12 无法证明完整且结果触及请求上限时保守标记 truncated，`VerifiedFactSet` 不会据此宣称全量排名、最大值或最小值完整。
+
 ## 运行模式
 
 | `LLM_MODE` | `POWERBI_MODE` | 用途 |
@@ -251,7 +253,7 @@ python -c "import sys; print(sys.executable)"
 | `GET` | `/health` | 当前 runtime 配置就绪状态 |
 | `GET` | `/api/v1/semantic-models` | 当前 Desktop 模型的安全目录、runtime namespace 与最小 Agent compatibility 状态 |
 | `POST` | `/api/v1/chat` | 非流式数据问答与报表生成 |
-| 字段 | `semantic_model_key` | 从发现目录选择语义模型 |
+| 字段 | `semantic_model_key` | 从发现目录选择 opaque 模型 key；必须精确绑定当前 Desktop 实例 |
 | 字段 | `report_template_key` | 可选的显式模板 override；未传不等于禁用报表 |
 | `GET` | `/api/reports/{report_id}` | 查看 repository-owned HTML 报表 |
 | `GET` | `/api/reports/{report_id}/download` | 下载 UTF-8 HTML 报表 |
@@ -311,6 +313,7 @@ python -m alembic upgrade head
 | M5.2.1 | 已完成 — 模型能力边界与真实模式说明收口 |
 | M5.3 | 已完成 — 结构化结果、历史/标题/管理、响应式与视觉交互已收口；Rich PBIX Real 验收通过 |
 | M5.3.1 | 已完成 — 多 Desktop 实例连接前 fail closed；presentation 仅投影 verified 数据字段 |
+| M5.3.2 | 已完成 — 多 PBIX 安全枚举/单选/opaque 精确绑定、MCP capability probe、stale 与 truncation 防腐 |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -337,4 +340,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-23 | M5.3.1 COMPLETE — 多 PBIX 绑定与展示事实边界最终加固*
+*最后更新：2026-08-24 | M5.3.2 COMPLETE — Local MCP 多模型选择与协议稳定性加固*

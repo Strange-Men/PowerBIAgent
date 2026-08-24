@@ -16,6 +16,7 @@ const semanticModel: CatalogOption = {
 function renderComposer(options: CatalogOption[] = [semanticModel]) {
   const onSend = vi.fn().mockResolvedValue(undefined)
   const onSemanticModelChange = vi.fn()
+  const onRefreshSemanticModels = vi.fn().mockResolvedValue(undefined)
   const onReportTemplateChange = vi.fn()
   render(
     <Composer
@@ -26,11 +27,17 @@ function renderComposer(options: CatalogOption[] = [semanticModel]) {
       semanticModelError={options.length === 0 ? '当前没有可用数据模型。' : null}
       reportTemplate={null}
       onSemanticModelChange={onSemanticModelChange}
+      onRefreshSemanticModels={onRefreshSemanticModels}
       onReportTemplateChange={onReportTemplateChange}
       onSend={onSend}
     />,
   )
-  return { onSend, onSemanticModelChange, onReportTemplateChange }
+  return {
+    onSend,
+    onSemanticModelChange,
+    onRefreshSemanticModels,
+    onReportTemplateChange,
+  }
 }
 
 describe('Composer menus and sending', () => {
@@ -45,6 +52,7 @@ describe('Composer menus and sending', () => {
         semanticModelCompatibilityNotice="当前模型已连接，但缺少 PowerBIAgent 当前分析所需的部分业务字段或指标。"
         reportTemplate={null}
         onSemanticModelChange={vi.fn()}
+        onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
         onReportTemplateChange={vi.fn()}
         onSend={vi.fn()}
       />,
@@ -88,6 +96,7 @@ describe('Composer menus and sending', () => {
         semanticModelError={null}
         reportTemplate={reportTemplateOptions[0]}
         onSemanticModelChange={vi.fn()}
+        onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
         onReportTemplateChange={onReportTemplateChange}
         onSend={vi.fn().mockResolvedValue(undefined)}
       />,
@@ -140,6 +149,7 @@ describe('Composer menus and sending', () => {
         semanticModelError="Power BI Desktop 未连接，请先打开一个 PBIX 文件。"
         reportTemplate={null}
         onSemanticModelChange={vi.fn()}
+        onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
         onReportTemplateChange={vi.fn()}
         onSend={vi.fn().mockResolvedValue(undefined)}
       />,
@@ -151,7 +161,36 @@ describe('Composer menus and sending', () => {
     expect(screen.queryByText(/connectionstring|stack|mcp_protocol/i)).not.toBeInTheDocument()
   })
 
-  it('shows the multiple Desktop error and keeps sending disabled', () => {
+  it('shows multiple Desktop models and allows selecting each PBIX', () => {
+    const second = {
+      ...semanticModel,
+      key: 'local_desktop:bbbb',
+      label: 'PowerBIAgent_M3_Test',
+    }
+    const first = {
+      ...semanticModel,
+      key: 'local_desktop:aaaa',
+      label: 'PowerBIAgent_M3_Rich_Test',
+    }
+    const { onSemanticModelChange } = renderComposer([first, second])
+    fireEvent.click(screen.getByRole('button', { name: '打开数据与报表选项' }))
+
+    expect(screen.getAllByText('PowerBIAgent_M3_Rich_Test')).toHaveLength(2)
+    expect(screen.getByText('PowerBIAgent_M3_Test')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /PowerBIAgent_M3_Test/ }))
+    expect(onSemanticModelChange).toHaveBeenCalledWith(second)
+    expect(screen.queryByText(/local_desktop:/)).not.toBeInTheDocument()
+  })
+
+  it('refreshes the Desktop catalog from the model menu', () => {
+    const { onRefreshSemanticModels } = renderComposer()
+    fireEvent.click(screen.getByRole('button', { name: '打开数据与报表选项' }))
+    fireEvent.click(screen.getByRole('button', { name: '刷新数据模型' }))
+
+    expect(onRefreshSemanticModels).toHaveBeenCalledOnce()
+  })
+
+  it('shows a safe stale-selection error and keeps sending disabled', () => {
     const onSend = vi.fn()
     render(
       <Composer
@@ -159,9 +198,10 @@ describe('Composer menus and sending', () => {
         semanticModel={null}
         semanticModelOptions={[]}
         loadingSemanticModels={false}
-        semanticModelError="检测到多个 Power BI Desktop 模型，请只保留一个需要分析的 PBIX 后重试。"
+        semanticModelError="当前选择的数据模型已关闭或失效，请刷新后重新选择。"
         reportTemplate={null}
         onSemanticModelChange={vi.fn()}
+        onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
         onReportTemplateChange={vi.fn()}
         onSend={onSend}
       />,
@@ -170,7 +210,7 @@ describe('Composer menus and sending', () => {
       target: { value: '查询销售额' },
     })
 
-    expect(screen.getByText(/检测到多个 Power BI Desktop 模型/)).toBeInTheDocument()
+    expect(screen.getByText(/已关闭或失效/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
     expect(onSend).not.toHaveBeenCalled()
   })

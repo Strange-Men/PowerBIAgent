@@ -296,7 +296,10 @@ class ToolGateway:
             except Exception as e:
                 # 仅对可重试的已知错误类型重试
                 last_error = ToolExecutionError(
-                    f"Tool '{tool_name}' execution failed: {e}"
+                    f"Tool '{tool_name}' execution failed: {e}",
+                    error_type=str(
+                        getattr(e, "error_type", type(e).__name__)
+                    ),
                 )
                 if self._is_retryable(e) and attempt < tool.max_retries:
                     await asyncio.sleep(0.5 * (attempt + 1))

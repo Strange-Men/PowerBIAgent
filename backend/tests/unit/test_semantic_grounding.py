@@ -248,6 +248,27 @@ class TestSemanticCatalogAndObjectGrounding:
         with pytest.raises(GlossaryCatalogError, match="glossary_unknown_object"):
             SemanticCatalogBuilder().build_from_data(_schema(), unknown)
 
+    def test_server_owned_instance_key_can_use_explicit_glossary_scope(self):
+        opaque_key = "local_desktop:" + "a" * 64
+        schema = _schema().model_copy(update={
+            "key": opaque_key,
+            "name": opaque_key,
+        })
+        glossary = _glossary(semantic_model_key="local_desktop_model")
+
+        with pytest.raises(
+            GlossaryCatalogError, match="glossary_semantic_model_key_mismatch"
+        ):
+            SemanticCatalogBuilder().build_from_data(schema, glossary)
+
+        catalog = SemanticCatalogBuilder().build_from_data(
+            schema,
+            glossary,
+            glossary_scope_key="local_desktop_model",
+        )
+
+        assert catalog.semantic_model_key == opaque_key
+
     def test_alias_conflict_is_config_conflict(self):
         glossary = _glossary()
         glossary["measures"]["Total Sales"]["aliases"] = ["指标"]

@@ -23,7 +23,10 @@ class ToolTimeoutError(HarnessError):
 
 class ToolExecutionError(HarnessError):
     """工具执行失败"""
-    pass
+
+    def __init__(self, message: str, *, error_type: str = "ToolExecutionError"):
+        super().__init__(message)
+        self.error_type = error_type
 
 
 class ToolOutputValidationError(HarnessError):

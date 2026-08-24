@@ -106,7 +106,11 @@ from backend.app.report.assembly import (
     SalesReportSpecBuilder,
 )
 from backend.app.report.base import ReportRenderer
-from backend.app.report.contracts import ReportContractError, ReportDataPlanBuilder
+from backend.app.report.contracts import (
+    ReportContractError,
+    ReportContractValidator,
+    ReportDataPlanBuilder,
+)
 from backend.app.report.resources import (
     ReportArtifact,
     ReportRepository,
@@ -161,20 +165,7 @@ class DeepSeekTurnService:
         self.settings = settings
         # M1.6.2: 禁止回退 Mock 配置。若未显式传入 config，从自身 settings 构建。
         self.config = config if config is not None else HarnessConfig.from_settings(settings)
-        self._semantic_model_key = (
-            "mock_sales_model"
-            if powerbi_adapter.is_mock
-            else settings.powerbi_local_semantic_model_key
-        )
         self._source_mode = "mock" if powerbi_adapter.is_mock else "real"
-        self._user_context = UserContext(
-            allowed_semantic_models=[self._semantic_model_key],
-            allowed_templates=list(DEFAULT_TEMPLATE_CATALOG.allowed_keys),
-        )
-        self.validator = ValidationService(
-            allowed_semantic_models=[self._semantic_model_key],
-            allowed_templates=DEFAULT_TEMPLATE_CATALOG.allowed_keys,
-        )
         # M1.6.3: ToolGateway 统一进入 DeepSeek 管线
         self.tool_gateway = self._build_tool_gateway()
         # M1.6.3.2: Service 不持有 memory_repo/SnapshotStore —
@@ -211,16 +202,11 @@ class DeepSeekTurnService:
     ) -> dict[str, Any]:
         """执行完整 DeepSeek Turn 流程 — 委托给共享 TurnPipeline 骨架"""
 
-        effective_model_key = semantic_model_key
-        if not self.powerbi.is_mock and semantic_model_key == "mock_sales_model":
-            # API 历史默认值在 Local 组合中由组合根配置替换；真实连接信息不进入请求。
-            effective_model_key = self._semantic_model_key
-
         return await self.pipeline.execute(
             message=message,
             conversation_id=conversation_id,
             request_id=request_id,
-            semantic_model_key=effective_model_key,
+            semantic_model_key=semantic_model_key,
             report_template_key=report_template_key,
             runtime_mode=RuntimeDataMode.REAL,
             is_mock=False,
@@ -272,6 +258,14 @@ class DeepSeekTurnService:
             output_cost_per_million=self.settings.deepseek_output_cost_per_million_tokens,
         )
         observed = ObservedLLMProvider(self.llm_provider, collector)
+        request_user_context = UserContext(
+            allowed_semantic_models=[semantic_model_key],
+            allowed_templates=list(DEFAULT_TEMPLATE_CATALOG.allowed_keys),
+        )
+        request_validator = ValidationService(
+            allowed_semantic_models=[semantic_model_key],
+            allowed_templates=DEFAULT_TEMPLATE_CATALOG.allowed_keys,
+        )
 
         if (
             pending_clarification is not None
@@ -403,7 +397,7 @@ class DeepSeekTurnService:
                 conversation_id=effective_conv_id,
                 runtime_mode=runtime_mode,
                 intent=intent.intent,
-                user=self._user_context,
+                user=request_user_context,
             )
             if schema is None:
                 schema_input = SchemaInput(semantic_model_key=semantic_model_key)
@@ -418,7 +412,8 @@ class DeepSeekTurnService:
                 ToolNotRegisteredError, ToolOutputValidationError) as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
-                terminal_state=TurnState.TOOL_FAILED, error_type=type(e).__name__,
+                terminal_state=TurnState.TOOL_FAILED,
+                error_type=getattr(e, "error_type", type(e).__name__),
                 reason=str(e), stage="schema_fetch", trace_id=trace_id,
                 collector=collector,
             )
@@ -497,7 +492,10 @@ class DeepSeekTurnService:
         # validated catalog + runtime members + deterministic transition 决定。
         if not self.powerbi.is_mock:
             try:
-                catalog = SemanticCatalogBuilder().build(schema)
+                catalog = SemanticCatalogBuilder().build(
+                    schema,
+                    glossary_scope_key=self.settings.powerbi_local_semantic_model_key,
+                )
                 if pending_clarification is not None and (
                     pending_clarification.semantic_model_key != semantic_model_key
                     or pending_clarification.schema_fingerprint
@@ -704,7 +702,7 @@ class DeepSeekTurnService:
                     controller,
                     trace,
                     terminal_state=TurnState.TOOL_FAILED,
-                    error_type=type(e).__name__,
+                    error_type=getattr(e, "error_type", type(e).__name__),
                     reason=str(e),
                     stage="member_grounding",
                     trace_id=trace_id,
@@ -726,7 +724,7 @@ class DeepSeekTurnService:
                 )
 
         # QueryPlan 验证
-        plan_validation = self.validator.validate_query_plan(
+        plan_validation = request_validator.validate_query_plan(
             query_plan,
             schema,
             enforce_semantic_grounding=not self.powerbi.is_mock,
@@ -797,7 +795,7 @@ class DeepSeekTurnService:
             )
 
         if not self.powerbi.is_mock:
-            consistency_result = self.validator.validate_dax_query_plan_consistency(
+            consistency_result = request_validator.validate_dax_query_plan_consistency(
                 dax_request,
                 query_plan,
                 schema,
@@ -840,7 +838,7 @@ class DeepSeekTurnService:
                 conversation_id=effective_conv_id,
                 runtime_mode=runtime_mode,
                 intent=intent.intent,
-                user=self._user_context,
+                user=request_user_context,
             )
             query_result: QueryResult = await self.tool_gateway.execute(
                 TOOL_NAME_DAX,
@@ -883,7 +881,7 @@ class DeepSeekTurnService:
         controller.record_tool_execution_succeeded()
         controller.transition(TurnState.TOOL_EXECUTED)
 
-        result_validation = self.validator.validate_query_result(
+        result_validation = request_validator.validate_query_result(
             query_result,
             expected_source_mode=self._source_mode,
         )
@@ -970,7 +968,7 @@ class DeepSeekTurnService:
                 )
 
             answer_text = response_obj.answer
-            answer_validation = self.validator.validate_answer_strict(response_obj, query_result)
+            answer_validation = request_validator.validate_answer_strict(response_obj, query_result)
             if answer_validation.is_valid and verified_facts is not None:
                 fact_errors = FactOutputValidator().validate_answer(
                     response_obj, verified_facts
@@ -1021,7 +1019,7 @@ class DeepSeekTurnService:
                     collector=collector,
                 )
 
-            report_validation = self.validator.validate_report_strict(
+            report_validation = request_validator.validate_report_strict(
                 report_spec, query_result
             )
             if report_validation.is_valid and verified_facts is not None:
@@ -1057,7 +1055,7 @@ class DeepSeekTurnService:
                     conversation_id=effective_conv_id,
                     runtime_mode=runtime_mode,
                     intent=intent.intent,
-                    user=self._user_context,
+                    user=request_user_context,
                 )
                 report_spec_with_ctx = report_spec.model_copy(update={
                     "conversation_id": effective_conv_id,
@@ -1208,6 +1206,24 @@ class DeepSeekTurnService:
         sealed M2 chain (plan → DAX → Layer 3 → Power BI → facts) →
         adaptive assembly → policy-driven ReportSpec → design-system renderer.
         """
+        request_user_context = UserContext(
+            allowed_semantic_models=[schema.key],
+            allowed_templates=list(DEFAULT_TEMPLATE_CATALOG.allowed_keys),
+        )
+        request_validator = ValidationService(
+            allowed_semantic_models=[schema.key],
+            allowed_templates=DEFAULT_TEMPLATE_CATALOG.allowed_keys,
+        )
+        report_contract_validator = ReportContractValidator(
+            binding_scope_key=self.settings.powerbi_local_semantic_model_key,
+        )
+        report_data_plan_builder = ReportDataPlanBuilder(
+            validator=report_contract_validator,
+        )
+        report_planner = ReportPlanner(
+            validator=report_contract_validator,
+            data_plan_builder=report_data_plan_builder,
+        )
 
         # ── 1. Bounded report-intent weak signal (LLM, registry IDs only) ──
         # Any failure fails closed to an empty draft; the deterministic
@@ -1237,7 +1253,7 @@ class DeepSeekTurnService:
 
         # ── 2. Deterministic ReportPlan (capability resolution) ──
         try:
-            report_plan = ReportPlanner().plan(
+            report_plan = report_planner.plan(
                 template_key,
                 schema,
                 signal.requested_ids,
@@ -1262,7 +1278,7 @@ class DeepSeekTurnService:
         dax_requests: dict[str, DAXRequest] = {}
         try:
             for query in report_plan.data_plan.queries:
-                plan_validation = self.validator.validate_query_plan(
+                plan_validation = request_validator.validate_query_plan(
                     query.query_plan,
                     schema,
                     enforce_semantic_grounding=True,
@@ -1284,7 +1300,7 @@ class DeepSeekTurnService:
                     raise SalesReportAssemblyError(
                         "sales_report_dax_safety_failed"
                     )
-                layer3 = self.validator.validate_dax_query_plan_consistency(
+                layer3 = request_validator.validate_dax_query_plan_consistency(
                     request,
                     query.query_plan,
                     schema,
@@ -1335,7 +1351,7 @@ class DeepSeekTurnService:
             conversation_id=effective_conv_id,
             runtime_mode=runtime_mode,
             intent=intent.intent,
-            user=self._user_context,
+            user=request_user_context,
         )
         query_results: dict[str, QueryResult] = {}
         try:
@@ -1384,7 +1400,7 @@ class DeepSeekTurnService:
         try:
             for query in report_plan.data_plan.queries:
                 result = query_results[query.requirement_key]
-                result_validation = self.validator.validate_query_result(
+                result_validation = request_validator.validate_query_result(
                     result,
                     expected_source_mode=self._source_mode,
                 )
@@ -1402,7 +1418,7 @@ class DeepSeekTurnService:
             fact_row_counts = {
                 key: facts.row_count for key, facts in fact_sets.items()
             }
-            still, dropped = ReportPlanner().apply_fact_evidence(
+            still, dropped = report_planner.apply_fact_evidence(
                 report_plan, schema, fact_row_counts
             )
             if not still:
@@ -1416,7 +1432,7 @@ class DeepSeekTurnService:
                 for key in SECTION_REQUIREMENTS[section]:
                     if key not in remaining_keys:
                         remaining_keys.append(key)
-            execution_plan = ReportDataPlanBuilder().build(
+            execution_plan = report_data_plan_builder.build(
                 template_key,
                 schema,
                 requirement_keys=tuple(remaining_keys),
