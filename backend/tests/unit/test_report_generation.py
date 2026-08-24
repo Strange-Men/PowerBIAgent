@@ -36,11 +36,13 @@ from backend.app.report.intent import ReportIntentDraft
 from backend.app.report.resources import (
     InMemoryReportRepository,
     LocalReportRepository,
+    ReportArchiveResult,
     ReportArtifact,
     ReportDeleteResult,
     ReportNotFoundError,
     ReportRenameResult,
     ReportRepository,
+    ReportRestoreResult,
     ReportStorageError,
 )
 from backend.app.schemas.data_contracts import (
@@ -522,6 +524,16 @@ class _FailingReportRepository(ReportRepository):
         self, report_id: str, display_title: str
     ) -> ReportRenameResult:
         raise ReportStorageError("forced_rename_failure")
+
+    async def archive(
+        self, report_id: str, source_mode: str
+    ) -> ReportArchiveResult:
+        raise ReportStorageError("forced_archive_failure")
+
+    async def restore(
+        self, report_id: str, source_mode: str
+    ) -> ReportRestoreResult:
+        raise ReportStorageError("forced_restore_failure")
 
 
 class _CountingReportRepository(InMemoryReportRepository):

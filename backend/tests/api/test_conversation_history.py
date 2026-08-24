@@ -129,6 +129,12 @@ def test_history_api_requires_explicit_namespace_and_never_exposes_payload_or_ht
     with TestClient(app) as client:
         missing_namespace = client.get("/api/v1/conversations")
         assert missing_namespace.status_code == 422
+        assert client.get("/api/reports").status_code == 422
+
+        report_resources = client.get(
+            "/api/reports",
+            params={"source_mode": "real", "status": "active", "limit": 20},
+        )
 
         mock = client.get(
             "/api/v1/conversations/shared-api-conversation/history",
@@ -141,6 +147,14 @@ def test_history_api_requires_explicit_namespace_and_never_exposes_payload_or_ht
 
     assert mock.status_code == 200
     assert real.status_code == 200
+    assert report_resources.status_code == 200
+    assert report_resources.json() == {
+        "source_mode": "real",
+        "status": "active",
+        "items": [],
+        "next_cursor": None,
+        "total_count": 0,
+    }
     assert [item["answer"] for item in mock.json()["items"]] == ["mock API answer"]
     assert [item["answer"] for item in real.json()["items"]] == ["real API answer"]
     assert [item["user_message"] for item in mock.json()["items"]] == [
@@ -262,14 +276,17 @@ def test_archive_has_a_visible_restore_path_and_keeps_history(tmp_path: Path) ->
 
     assert archived.status_code == 200
     assert recent.json()["items"] == []
+    assert recent.json()["total_count"] == 0
     assert archive_page.json()["items"][0]["conversation_id"] == (
         "shared-api-conversation"
     )
+    assert archive_page.json()["total_count"] == 1
     assert history.json()["items"][0]["answer"] == "real API answer"
     assert restored.status_code == 200 and restored.json()["restored"] is True
     assert recent_after.json()["items"][0]["conversation_id"] == (
         "shared-api-conversation"
     )
+    assert recent_after.json()["total_count"] == 1
 
 
 def test_report_delete_api_is_explicit_and_not_a_toolgateway_capability() -> None:
@@ -285,6 +302,15 @@ def test_report_delete_api_is_explicit_and_not_a_toolgateway_capability() -> Non
     with TestClient(app) as client:
         original = client.get(f"/api/reports/{artifact.report_id}")
         original_etag = original.headers["etag"]
+        archived = client.post(
+            f"/api/reports/{artifact.report_id}/archive",
+            params={"source_mode": "mock"},
+        )
+        still_viewable = client.get(f"/api/reports/{artifact.report_id}")
+        restored = client.post(
+            f"/api/reports/{artifact.report_id}/restore",
+            params={"source_mode": "mock"},
+        )
         renamed = client.patch(
             f"/api/reports/{artifact.report_id}",
             json={"display_title": "区域销售报告"},
@@ -298,6 +324,11 @@ def test_report_delete_api_is_explicit_and_not_a_toolgateway_capability() -> Non
         )
         allowed_tools = app.state.mock_turn_service.tool_gateway.list_tools()
 
+    assert archived.status_code == 200
+    assert archived.json()["archived_at"]
+    assert still_viewable.status_code == 200
+    assert restored.status_code == 200
+    assert restored.json()["restored"] is True
     assert renamed.status_code == 200
     assert renamed.json()["display_title"] == "区域销售报告"
     assert unchanged.headers["etag"] == original_etag
@@ -307,6 +338,6 @@ def test_report_delete_api_is_explicit_and_not_a_toolgateway_capability() -> Non
     assert missing.status_code == 404
     assert rename_missing.status_code == 404
     assert all(
-        "delete" not in name and "rename" not in name
+        "delete" not in name and "rename" not in name and "archive" not in name
         for name in allowed_tools
     )

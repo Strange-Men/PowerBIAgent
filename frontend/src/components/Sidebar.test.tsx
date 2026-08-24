@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationReportItem, ConversationSummary } from '../types'
 import { Sidebar } from './Sidebar'
 
+vi.mock('./ResourceManager', () => ({
+  ResourceManager: () => <div role="dialog" aria-label="设置中心" />,
+}))
+
 const conversation: ConversationSummary = {
   runtime_mode: 'real',
   conversation_id: 'm53-test-conversation',
@@ -30,6 +34,7 @@ const report: ConversationReportItem = {
   semantic_model_key: 'model',
   generated_at: '2026-08-23T10:00:00',
   stored_at: '2026-08-23T10:00:00',
+  archived_at: null,
 }
 
 afterEach(() => vi.unstubAllGlobals())
@@ -40,14 +45,15 @@ function renderSidebar(currentConversation: ConversationSummary = conversation) 
   const onDelete = vi.fn().mockResolvedValue(undefined)
   const onRestore = vi.fn().mockResolvedValue(undefined)
   const onDeleteReport = vi.fn().mockResolvedValue(undefined)
+  const onArchiveReport = vi.fn().mockResolvedValue(undefined)
   const onRenameReport = vi.fn().mockResolvedValue(undefined)
   const batchResult = { succeededIds: [], failed: [] }
   render(
     <Sidebar
       collapsed={false}
       activeConversationId={null}
+      runtimeMode="real"
       conversations={[currentConversation]}
-      archivedConversations={[]}
       reports={[report]}
       error={null}
       onToggle={vi.fn()}
@@ -59,13 +65,24 @@ function renderSidebar(currentConversation: ConversationSummary = conversation) 
       onRestore={onRestore}
       onDelete={onDelete}
       onDeleteReport={onDeleteReport}
+      onArchiveReport={onArchiveReport}
       onRenameReport={onRenameReport}
       onBulkDeleteConversations={vi.fn().mockResolvedValue(batchResult)}
+      onBulkArchiveConversations={vi.fn().mockResolvedValue(batchResult)}
       onBulkRestoreConversations={vi.fn().mockResolvedValue(batchResult)}
       onBulkDeleteReports={vi.fn().mockResolvedValue(batchResult)}
+      onBulkArchiveReports={vi.fn().mockResolvedValue(batchResult)}
+      onBulkRestoreReports={vi.fn().mockResolvedValue(batchResult)}
     />,
   )
-  return { onRename, onArchive, onDelete, onRestore, onDeleteReport }
+  return {
+    onRename,
+    onArchive,
+    onDelete,
+    onRestore,
+    onDeleteReport,
+    onArchiveReport,
+  }
 }
 
 describe('Sidebar conversation management', () => {
@@ -117,36 +134,19 @@ describe('Sidebar conversation management', () => {
     await waitFor(() => expect(onDeleteReport).toHaveBeenCalledWith(report))
   })
 
-  it('shows archived conversations and restores them from their menu', async () => {
-    const onRestore = vi.fn().mockResolvedValue(undefined)
-    render(
-      <Sidebar
-        collapsed={false}
-        activeConversationId={null}
-        conversations={[]}
-        archivedConversations={[{ ...conversation, archived_at: '2026-08-24T10:00:00' }]}
-        reports={[]}
-        error={null}
-        onToggle={vi.fn()}
-        onNewChat={vi.fn()}
-        onOpenConversation={vi.fn()}
-        onSearch={vi.fn().mockResolvedValue([])}
-        onRename={vi.fn().mockResolvedValue(undefined)}
-        onArchive={vi.fn().mockResolvedValue(undefined)}
-        onRestore={onRestore}
-        onDelete={vi.fn().mockResolvedValue(undefined)}
-        onDeleteReport={vi.fn().mockResolvedValue(undefined)}
-        onRenameReport={vi.fn().mockResolvedValue(undefined)}
-        onBulkDeleteConversations={vi.fn().mockResolvedValue({ succeededIds: [], failed: [] })}
-        onBulkRestoreConversations={vi.fn().mockResolvedValue({ succeededIds: [conversation.conversation_id], failed: [] })}
-        onBulkDeleteReports={vi.fn().mockResolvedValue({ succeededIds: [], failed: [] })}
-      />,
-    )
+  it('archives one report from the recent report menu', async () => {
+    const { onArchiveReport } = renderSidebar()
+    fireEvent.click(screen.getByRole('button', { name: '管理报表：销售分析报告' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '归档' }))
+    await waitFor(() => expect(onArchiveReport).toHaveBeenCalledWith(report))
+  })
+
+  it('keeps the user card as the single Settings entry', () => {
+    renderSidebar()
     fireEvent.click(screen.getByRole('button', { name: 'PowerBIAgent 用户' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '已归档' }))
-    expect(screen.getByRole('heading', { name: '已归档' })).toBeInTheDocument()
-    expect(screen.getByText('八月销售复盘')).toBeInTheDocument()
-    expect(onRestore).not.toHaveBeenCalled()
+    expect(screen.getAllByRole('menuitem')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('menuitem', { name: '设置' }))
+    expect(screen.getByRole('dialog', { name: '设置中心' })).toBeInTheDocument()
   })
 
   it('shows pending status immediately and keeps recent/report sections collapsible', () => {

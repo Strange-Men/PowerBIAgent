@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  archiveReport,
   archiveConversation,
   deleteConversation,
   deleteReport,
@@ -10,6 +11,7 @@ import {
   listRecentReports,
   renameConversation,
   renameReport,
+  restoreReport,
   restoreConversation,
   searchConversations,
   sendChat,
@@ -170,12 +172,22 @@ function failureReason(error: unknown): string {
   return error instanceof Error ? error.message : '操作未完成，请稍后重试。'
 }
 
-function assertBatchLimit(ids: string[]): string[] {
+export async function runBoundedBatch(
+  ids: string[],
+  operation: (id: string) => Promise<unknown>,
+): Promise<BatchOperationResult> {
   const unique = [...new Set(ids)]
-  if (unique.length > MAX_BATCH_ITEMS) {
-    throw new Error(`单次最多管理 ${MAX_BATCH_ITEMS} 项资源。`)
+  const outcome: BatchOperationResult = { succeededIds: [], failed: [] }
+  for (let offset = 0; offset < unique.length; offset += MAX_BATCH_ITEMS) {
+    const batch = unique.slice(offset, offset + MAX_BATCH_ITEMS)
+    const results = await Promise.allSettled(batch.map((id) => operation(id)))
+    results.forEach((result, index) => {
+      const id = batch[index]
+      if (result.status === 'fulfilled') outcome.succeededIds.push(id)
+      else outcome.failed.push({ id, reason: failureReason(result.reason) })
+    })
   }
-  return unique
+  return outcome
 }
 
 export function usePowerBIAgent() {
@@ -732,6 +744,16 @@ export function usePowerBIAgent() {
     [replaceSessions],
   )
 
+  const archiveReportResource = useCallback(
+    async (report: ConversationReportItem) => {
+      await archiveReport(effectiveRuntimeMode, report.report_id)
+      setRecentReports((current) =>
+        current.filter((item) => item.report_id !== report.report_id),
+      )
+    },
+    [effectiveRuntimeMode],
+  )
+
   const renameReportResource = useCallback(
     async (report: ConversationReportItem, displayTitle: string) => {
       const renamed = await renameReport(report.report_id, displayTitle)
@@ -763,54 +785,46 @@ export function usePowerBIAgent() {
 
   const bulkRemoveConversations = useCallback(
     async (items: ConversationSummary[]): Promise<BatchOperationResult> => {
-      const ids = assertBatchLimit(items.map((item) => item.conversation_id))
-      const persistedIds = new Set([
-        ...persistedRecent.map((item) => item.conversation_id),
-        ...archivedConversations.map((item) => item.conversation_id),
-      ])
-      const results = await Promise.allSettled(
-        ids.map((id) =>
+      const outcome = await runBoundedBatch(
+        items.map((item) => item.conversation_id),
+        (id) =>
           runningConversationIdsRef.current.has(id)
             ? Promise.reject(new Error('对话仍在分析，完成后再删除。'))
-            : persistedIds.has(id)
-            ? deleteConversation(effectiveRuntimeMode, id)
-            : Promise.resolve(),
-        ),
+            : deleteConversation(effectiveRuntimeMode, id),
       )
-      const outcome: BatchOperationResult = { succeededIds: [], failed: [] }
-      results.forEach((result, index) => {
-        const id = ids[index]
-        if (result.status === 'fulfilled') {
-          outcome.succeededIds.push(id)
-          clearConversationLocally(id)
-        } else {
-          outcome.failed.push({ id, reason: failureReason(result.reason) })
-        }
-      })
+      outcome.succeededIds.forEach(clearConversationLocally)
       await refreshSidebar(effectiveRuntimeMode)
       return outcome
     },
     [
-      archivedConversations,
       clearConversationLocally,
       effectiveRuntimeMode,
-      persistedRecent,
       refreshSidebar,
     ],
   )
 
+  const bulkArchiveConversations = useCallback(
+    async (items: ConversationSummary[]): Promise<BatchOperationResult> => {
+      const outcome = await runBoundedBatch(
+        items.map((item) => item.conversation_id),
+        (id) =>
+          runningConversationIdsRef.current.has(id)
+            ? Promise.reject(new Error('对话仍在分析，完成后再归档。'))
+            : archiveConversation(effectiveRuntimeMode, id),
+      )
+      outcome.succeededIds.forEach(clearConversationLocally)
+      await refreshSidebar(effectiveRuntimeMode)
+      return outcome
+    },
+    [clearConversationLocally, effectiveRuntimeMode, refreshSidebar],
+  )
+
   const bulkRestoreConversations = useCallback(
     async (items: ConversationSummary[]): Promise<BatchOperationResult> => {
-      const ids = assertBatchLimit(items.map((item) => item.conversation_id))
-      const results = await Promise.allSettled(
-        ids.map((id) => restoreConversation(effectiveRuntimeMode, id)),
+      const outcome = await runBoundedBatch(
+        items.map((item) => item.conversation_id),
+        (id) => restoreConversation(effectiveRuntimeMode, id),
       )
-      const outcome: BatchOperationResult = { succeededIds: [], failed: [] }
-      results.forEach((result, index) => {
-        const id = ids[index]
-        if (result.status === 'fulfilled') outcome.succeededIds.push(id)
-        else outcome.failed.push({ id, reason: failureReason(result.reason) })
-      })
       await refreshSidebar(effectiveRuntimeMode)
       return outcome
     },
@@ -820,19 +834,11 @@ export function usePowerBIAgent() {
   const bulkRemoveReports = useCallback(
     async (items: ConversationReportItem[]): Promise<BatchOperationResult> => {
       const byId = new Map(items.map((item) => [item.report_id, item]))
-      const ids = assertBatchLimit([...byId.keys()])
-      const results = await Promise.allSettled(ids.map((id) => deleteReport(id)))
-      const outcome: BatchOperationResult = { succeededIds: [], failed: [] }
+      const outcome = await runBoundedBatch([...byId.keys()], deleteReport)
       const successfulReports = new Map<string, ConversationReportItem>()
-      results.forEach((result, index) => {
-        const id = ids[index]
-        if (result.status === 'fulfilled') {
-          outcome.succeededIds.push(id)
-          const report = byId.get(id)
-          if (report) successfulReports.set(id, report)
-        } else {
-          outcome.failed.push({ id, reason: failureReason(result.reason) })
-        }
+      outcome.succeededIds.forEach((id) => {
+        const report = byId.get(id)
+        if (report) successfulReports.set(id, report)
       })
       if (successfulReports.size > 0) {
         setRecentReports((current) =>
@@ -861,6 +867,32 @@ export function usePowerBIAgent() {
       return outcome
     },
     [replaceSessions],
+  )
+
+  const bulkArchiveReports = useCallback(
+    async (items: ConversationReportItem[]): Promise<BatchOperationResult> => {
+      const outcome = await runBoundedBatch(
+        items.map((item) => item.report_id),
+        (id) => archiveReport(effectiveRuntimeMode, id),
+      )
+      setRecentReports((current) =>
+        current.filter((item) => !outcome.succeededIds.includes(item.report_id)),
+      )
+      return outcome
+    },
+    [effectiveRuntimeMode],
+  )
+
+  const bulkRestoreReports = useCallback(
+    async (items: ConversationReportItem[]): Promise<BatchOperationResult> => {
+      const outcome = await runBoundedBatch(
+        items.map((item) => item.report_id),
+        (id) => restoreReport(effectiveRuntimeMode, id),
+      )
+      await refreshSidebar(effectiveRuntimeMode)
+      return outcome
+    },
+    [effectiveRuntimeMode, refreshSidebar],
   )
 
   const recentConversations = useMemo(() => {
@@ -949,10 +981,14 @@ export function usePowerBIAgent() {
     restore,
     remove,
     removeReport,
+    archiveReport: archiveReportResource,
     renameReport: renameReportResource,
     bulkRemoveConversations,
+    bulkArchiveConversations,
     bulkRestoreConversations,
     bulkRemoveReports,
+    bulkArchiveReports,
+    bulkRestoreReports,
     setSelectedSemanticModel: selectSemanticModel,
     setSelectedReportTemplate,
   }

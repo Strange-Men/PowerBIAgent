@@ -2,7 +2,7 @@
 
 ## 状态
 
-**M5.4 — 多会话并发、用户设置与资源管理最终收口已完成。M5.5 语义/中文字段/视觉/性能继续 Deferred。**
+**M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成。M5.5 语义/中文字段/视觉/性能继续 Deferred。**
 
 ## 技术栈
 
@@ -52,18 +52,21 @@ npm run build
 | 最近对话 | 打开、搜索、重命名、归档、删除 | M4 API + M5.3 presentation metadata |
 | 最近报表 | 查看、下载；按所属 conversation 管理 | M3/M4 报表历史与 conversation delete API |
 | 项目 | 仅展示卡片，不新增项目管理后端 | 无 |
-| 用户卡片 | 打开设置、已归档、资源管理；不新增用户系统 | 复用已有 conversation/report API |
+| 用户卡片 | 只打开统一 Settings Hub；不新增用户系统 | 复用并补齐正式 conversation/report pagination API |
 
 **原则：** 已有完善后端能力的功能提供真实交互；没有后端能力的功能只做展示，不为了 UI 扩大 M0–M4 后端范围。
 
-### M5.4 会话与资源管理合同
+### M5.4.1 会话与完整资源管理合同
 
 - hook 不再以全局 messages/sending/loading/error 表示所有会话，而是维护 `conversation_id → ConversationSession`；active ID 只选择当前可见 session。
 - 新 conversation 首次发送前生成 UUID，同一 ID 直接发送到 Chat API；Sidebar 立即显示“正在分析”。
 - 不同 conversation 可并发，同 conversation 串行。history/navigation 可 Abort，business chat 切窗不取消、完成不跳窗。
-- Sidebar 的最近对话/报表可折叠并独立滚动；批量 checkbox 只在用户卡片打开的资源面板。
-- 资源面板一次最多处理 20 项，逐项协调现有单资源 API，部分失败保留原因。
+- Sidebar 的最近对话/报表可折叠并独立滚动，继续只承载 bounded Recent subset；批量 checkbox 只在 Settings。
+- 用户卡片只进入 Settings；左导航为常规、对话管理、报表管理、已归档、数据模型、关于。
+- Settings 不复用 `recentConversations`，而是分别分页访问全部 active/archived conversation 与 report，显示 total/loaded/selected/has-more 并按需加载，避免一次渲染无限 DOM。
+- “全选当前已加载”只选择已加载资源；选择数量可超过 20。一次用户确认的大批量操作在前端按最多 20 项一组逐项协调正式单资源 API，部分失败精确保留原因。
 - report 删除保留 history tombstone；report rename 只修改 `display_title`，不改 report_id/HTML/content_hash/ReportSpec/VerifiedFactSet。LLM 无资源变更权限。
+- automation-owned browser/Real/API tests 必须登记 `test_run_id`，在 `finally` 中通过正式 API cleanup 并验证 conversation/report/HTML/SQLite/delete-intent residual=0；未知 ownership 的用户资源不得自动删除。
 
 ### AI 回答 — 动态渲染原则
 
@@ -183,8 +186,9 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | M5.3.2 | 多 PBIX 安全枚举/单选/刷新、opaque 实例绑定、stale 安全错误与 MCP compatibility | ✅ 已完成 |
 | M5.3.3 | fresh/follow-up/replace、archive/restore、独立 report delete、history race 与 Artifact Governance | ✅ 已完成 |
 | M5.4 | conversation-scoped state、client UUID pending、异会话并发、用户卡片/资源面板、report tombstone/rename | ✅ 已完成 |
+| M5.4.1 | Settings Hub、完整 conversation/report pagination、selection/batch 修复与 test-owned cleanup | ✅ 已完成 |
 | M5.5 | 语义、中文字段、报表视觉、性能 | ⏸ Deferred / NOT STARTED |
 
 ---
 
-*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与用户资源管理最终收口*
+*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源与 automation cleanup；M5.5 Deferred*

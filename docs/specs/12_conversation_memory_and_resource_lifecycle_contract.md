@@ -1,6 +1,6 @@
 # 12 — 多轮语义、会话与资源生命周期契约
 
-> **状态：** M5.3.3 正式契约；实现与 fresh 验收进行中
+> **状态：** M5.3.3 正式契约；M5.4.1 补充全量资源查询与 automation ownership cleanup
 > **边界：** 本契约只收口多轮省略项继承、只读 unsupported、会话 UI 异步一致性、归档/恢复/删除与本地 artifact 生命周期；不改变 M0–M5 Canonical QueryPlan、Deterministic DAX、VerifiedFactSet、Report factual authority。
 
 ## 一、语言理解与 canonical authority
@@ -161,6 +161,16 @@ local_state/archive/
 Create → register ownership → use → teardown → verify cleanup
 ```
 
+M5.4.1 起，`register ownership` 不得只登记临时文件路径。任何会写入正式 SQLite/report filesystem 的 Codex acceptance、pytest integration、browser、Real Smoke、MCP 或 report test，必须至少记录：
+
+- 唯一 `test_run_id`；
+- `test_owner=automation`（或等价受控枚举）；
+- exact runtime/source namespace；
+- conversation ID、report ID、managed HTML linkage 与创建时间；
+- cleanup 状态与失败原因。
+
+teardown 必须位于 `finally`，优先调用正式 conversation/report API；直接运行 repository integration 时只能调用同一 production repository lifecycle，不得执行无 namespace SQL 或按标题猜测删除。cleanup 完成后必须重新查询并证明 test-owned conversation/report metadata/HTML/SQLite namespace/delete intent/orphan residual 全部为 0。
+
 Artifact Governance Gate 必须只读检查并在以下情况失败：
 
 - active ownership registry 中的 test conversation/report/file 残留；
@@ -168,9 +178,11 @@ Artifact Governance Gate 必须只读检查并在以下情况失败：
 - unauthorized local_state root entry；
 - runtime artifact 写进 source tree；
 - cleanup failure/pending cleanup 未解决。
+- 本轮 test-owned conversation、report metadata、managed HTML、SQLite namespace 或 pending delete intent 残留；
+- ownership registry 声称已清理但正式 repository/filesystem 仍存在 exact linked resource。
 
-Gate 不自动删除、移动或修复用户数据。无法证明为 test-owned 的既有状态一律按用户数据处理；清理或归档需要显式、可审计的 ownership 与安全操作。
+Gate 不自动删除、移动或修复用户数据。无法证明为 test-owned 的既有状态一律按用户数据处理；标题、问题文本或“看起来像测试”不构成 ownership。历史清理或归档必须有 metadata、known test namespace/ID、fixture 或 report linkage 的显式证据，并通过正式资源生命周期操作。
 
 ---
 
-*创建日期：2026-08-24 | M5.3.3 多轮语义、会话与资源生命周期正式契约*
+*创建日期：2026-08-24 | 最后更新：M5.4.1 automation ownership 与零残留 Gate 合同*

@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.4 — 多会话并发、用户设置与资源管理最终收口已完成
+> **状态：** M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -36,7 +36,20 @@
 | **M5.3.2** | **Local MCP 多 PBIX 选择、opaque binding 与 beta 协议稳定性** | **✅ 已完成** |
 | **M5.3.3** | **多轮语义、conversation/report 生命周期与 Artifact Governance 最终收口** | **✅ 已完成** |
 | **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
+| **M5.4.1** | **Settings 全量资源分页、选择/批量语义与 automation ownership cleanup** | **✅ 已完成** |
 | **M5.5** | **语言理解/中文字段/单指标/报表视觉/性能** | **⏸ Deferred / NOT STARTED** |
+
+### M5.4.1 — 全量资源生命周期与测试产物治理（已完成）
+
+- 根因验证必须覆盖 recent/archived conversation API、conversation-scoped report history、Settings ResourceManager 与 Sidebar refresh；禁止只放大默认 12/20/50 的 page size 掩盖第一页耦合。
+- Settings 建立独立 resource-query state，按 runtime/source namespace 分页访问全部 active/archived conversation 与 report；Sidebar 继续只显示 Recent subset。
+- 正式列表合同返回 deterministic ordered page、opaque cursor、`total_count` 与 `has_more`。首屏一页、按需继续加载，滚动容器避免一次渲染无限 DOM。
+- selection 明确区分“全选当前已加载”与“选择全部匹配项”；最低交付为全部历史可浏览、多选任意项、selected/loaded/total 可见。
+- 浏览/选择数量与 destructive execution wave 分离：一次确认可超过 20 项，前端内部按最多 20 项一组协调正式单资源 API，逐项汇总 partial failure，不新增 bulk delete shortcut。
+- Codex acceptance、pytest integration、browser、Real Smoke、MCP 与 report tests 使用 explicit automation ownership；`finally` cleanup 必须经正式 API/repository，随后验证 conversation/report/HTML/SQLite namespace/pending intent/orphan residual 为 0。
+- Artifact Governance 只读 fail closed；仅清理可证明 test-owned 的 exact IDs/namespaces。无法确认 ownership 的历史资源视为用户数据并保留。
+- report rename 仍只改 `display_title`；archive 隐藏 recent 并可 restore；delete 清理 managed HTML/factual metadata，history 保留最后 title 的 tombstone。M0–M5 authority 不变；M5.5 Deferred。
+- Fresh evidence：Real Browser 25 conversations/10 reports 完整分页、20+5 bounded archive/restore、report rename/archive/restore/delete/tombstone/restart 全部通过，automation teardown exact residual=0；backend `1797 passed, 1 skipped`，Vitest `69 passed`，Golden `11 passed, 1 manual-real skipped`；全部治理 Gate 与 `git diff --check` PASS。
 
 ### M5.4 — 最终收口（已完成）
 
@@ -257,4 +270,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 ---
 
-*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与用户资源管理最终收口，M5.5 Deferred*
+*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源与 artifact governance；M5.5 Deferred*

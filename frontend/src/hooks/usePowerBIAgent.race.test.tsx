@@ -124,10 +124,10 @@ beforeEach(() => {
     error_type: null,
   })
   api.listRecentConversations.mockResolvedValue({
-    runtime_mode: 'real', items: [], next_cursor: null,
+    runtime_mode: 'real', items: [], next_cursor: null, total_count: 0,
   })
   api.listArchivedConversations.mockResolvedValue({
-    runtime_mode: 'real', items: [], next_cursor: null,
+    runtime_mode: 'real', items: [], next_cursor: null, total_count: 0,
   })
   api.listRecentReports.mockResolvedValue([])
   api.archiveConversation.mockResolvedValue(undefined)
@@ -379,6 +379,7 @@ describe('report presentation synchronization', () => {
       semantic_model_key: 'model',
       generated_at: '2026-08-24T10:00:00',
       stored_at: '2026-08-24T10:00:00',
+      archived_at: null,
     }
     await act(async () => {
       await result.current.renameReport(report, '区域销售报告')

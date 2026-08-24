@@ -18,6 +18,7 @@ from backend.app.conversation.models import (
     ConversationRenameResult,
     ConversationRestoreResult,
     ConversationSummary,
+    ReportResourceStatus,
     SnapshotReportSummary,
 )
 from backend.app.conversation.title import normalize_conversation_title
@@ -146,10 +147,12 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
 
     @staticmethod
     def _conversation_cursor_condition(after: ConversationPosition):
+        stored_time = func.julianday(ConversationModel.updated_at)
+        cursor_time = func.julianday(after.updated_at)
         return or_(
-            ConversationModel.updated_at < after.updated_at,
+            stored_time < cursor_time,
             and_(
-                ConversationModel.updated_at == after.updated_at,
+                stored_time == cursor_time,
                 ConversationModel.conversation_id > after.conversation_id,
             ),
         )
@@ -161,18 +164,28 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
         limit: int,
         after: ConversationPosition | None,
     ) -> RepositoryPage[ConversationSummary, ConversationPosition]:
-        conditions = [
+        base_conditions = [
             ConversationModel.runtime_mode == runtime_mode.value,
             ConversationModel.archived_at.is_(None),
         ]
+        conditions = [*base_conditions]
         if after is not None:
             conditions.append(self._conversation_cursor_condition(after))
         async with self._session_factory() as session:
+            total_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(ConversationModel)
+                        .where(and_(*base_conditions))
+                    )
+                ).scalar_one()
+            )
             result = await session.execute(
                 select(ConversationModel)
                 .where(and_(*conditions))
                 .order_by(
-                    ConversationModel.updated_at.desc(),
+                    func.julianday(ConversationModel.updated_at).desc(),
                     ConversationModel.conversation_id.asc(),
                 )
                 .limit(limit + 1)
@@ -187,7 +200,11 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 updated_at=last.updated_at,
                 conversation_id=last.conversation_id,
             )
-        return RepositoryPage(items=summaries, next_position=next_position)
+        return RepositoryPage(
+            items=summaries,
+            next_position=next_position,
+            total_count=total_count,
+        )
 
     async def list_archived(
         self,
@@ -196,18 +213,28 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
         limit: int,
         after: ConversationPosition | None,
     ) -> RepositoryPage[ConversationSummary, ConversationPosition]:
-        conditions = [
+        base_conditions = [
             ConversationModel.runtime_mode == runtime_mode.value,
             ConversationModel.archived_at.is_not(None),
         ]
+        conditions = [*base_conditions]
         if after is not None:
             conditions.append(self._conversation_cursor_condition(after))
         async with self._session_factory() as session:
+            total_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(ConversationModel)
+                        .where(and_(*base_conditions))
+                    )
+                ).scalar_one()
+            )
             result = await session.execute(
                 select(ConversationModel)
                 .where(and_(*conditions))
                 .order_by(
-                    ConversationModel.updated_at.desc(),
+                    func.julianday(ConversationModel.updated_at).desc(),
                     ConversationModel.conversation_id.asc(),
                 )
                 .limit(limit + 1)
@@ -222,7 +249,11 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 updated_at=last.updated_at,
                 conversation_id=last.conversation_id,
             )
-        return RepositoryPage(items=summaries, next_position=next_position)
+        return RepositoryPage(
+            items=summaries,
+            next_position=next_position,
+            total_count=total_count,
+        )
 
     async def get_history(
         self,
@@ -241,11 +272,13 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 ResultSnapshotModel.conversation_id == conversation_id,
             ]
             if after is not None:
+                stored_time = func.julianday(ResultSnapshotModel.created_at)
+                cursor_time = func.julianday(after.created_at)
                 conditions.append(
                     or_(
-                        ResultSnapshotModel.created_at < after.created_at,
+                        stored_time < cursor_time,
                         and_(
-                            ResultSnapshotModel.created_at == after.created_at,
+                            stored_time == cursor_time,
                             ResultSnapshotModel.id < after.row_id,
                         ),
                     )
@@ -254,7 +287,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 select(ResultSnapshotModel)
                 .where(and_(*conditions))
                 .order_by(
-                    ResultSnapshotModel.created_at.desc(),
+                    func.julianday(ResultSnapshotModel.created_at).desc(),
                     ResultSnapshotModel.id.desc(),
                 )
                 .limit(limit + 1)
@@ -530,7 +563,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 )
             )
         ).correlate(ConversationModel)
-        conditions = [
+        base_conditions = [
             ConversationModel.runtime_mode == runtime_mode.value,
             ConversationModel.archived_at.is_(None),
             or_(
@@ -542,14 +575,24 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 snapshot_match,
             ),
         ]
+        conditions = [*base_conditions]
         if after is not None:
             conditions.append(self._conversation_cursor_condition(after))
         async with self._session_factory() as session:
+            total_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(ConversationModel)
+                        .where(and_(*base_conditions))
+                    )
+                ).scalar_one()
+            )
             result = await session.execute(
                 select(ConversationModel)
                 .where(and_(*conditions))
                 .order_by(
-                    ConversationModel.updated_at.desc(),
+                    func.julianday(ConversationModel.updated_at).desc(),
                     ConversationModel.conversation_id.asc(),
                 )
                 .limit(limit + 1)
@@ -564,7 +607,11 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 updated_at=last.updated_at,
                 conversation_id=last.conversation_id,
             )
-        return RepositoryPage(items=summaries, next_position=next_position)
+        return RepositoryPage(
+            items=summaries,
+            next_position=next_position,
+            total_count=total_count,
+        )
 
     async def list_reports(
         self,
@@ -574,27 +621,39 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
         limit: int,
         after: ReportPosition | None,
     ) -> RepositoryPage[ConversationReportItem, ReportPosition]:
-        conditions = [
+        base_conditions = [
             ReportArtifactModel.source_mode == source_mode.value,
             ReportArtifactModel.conversation_id == conversation_id,
         ]
+        conditions = [*base_conditions]
         if after is not None:
+            stored_time = func.julianday(ReportArtifactModel.created_at)
+            cursor_time = func.julianday(after.created_at)
             conditions.append(
                 or_(
-                    ReportArtifactModel.created_at < after.created_at,
+                    stored_time < cursor_time,
                     and_(
-                        ReportArtifactModel.created_at == after.created_at,
+                        stored_time == cursor_time,
                         ReportArtifactModel.report_id < after.report_id,
                     ),
                 )
             )
         async with self._session_factory() as session:
             await self._get_conversation(session, source_mode, conversation_id)
+            total_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(ReportArtifactModel)
+                        .where(and_(*base_conditions))
+                    )
+                ).scalar_one()
+            )
             result = await session.execute(
                 select(ReportArtifactModel)
                 .where(and_(*conditions))
                 .order_by(
-                    ReportArtifactModel.created_at.desc(),
+                    func.julianday(ReportArtifactModel.created_at).desc(),
                     ReportArtifactModel.report_id.desc(),
                 )
                 .limit(limit + 1)
@@ -650,6 +709,11 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                         verified_fact_set_ids=artifact.verified_fact_set_ids,
                         query_result_ids=artifact.query_result_ids,
                         display_title=display_title,
+                        archived_at=(
+                            presentation.archived_at
+                            if presentation is not None
+                            else None
+                        ),
                     )
                 )
         next_position = None
@@ -658,7 +722,167 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             next_position = ReportPosition(
                 created_at=last.created_at, report_id=last.report_id
             )
-        return RepositoryPage(items=items, next_position=next_position)
+        return RepositoryPage(
+            items=items,
+            next_position=next_position,
+            total_count=total_count,
+        )
+
+    async def list_managed_reports(
+        self,
+        source_mode: RuntimeDataMode,
+        status: ReportResourceStatus,
+        *,
+        limit: int,
+        after: ReportPosition | None,
+    ) -> RepositoryPage[ConversationReportItem, ReportPosition]:
+        archive_condition = (
+            ReportPresentationModel.archived_at.is_(None)
+            if status == "active"
+            else ReportPresentationModel.archived_at.is_not(None)
+        )
+        base_conditions = [
+            ReportArtifactModel.source_mode == source_mode.value,
+            ReportPresentationModel.availability_status == "available",
+            archive_condition,
+        ]
+        page_conditions = [*base_conditions]
+        if after is not None:
+            stored_time = func.julianday(ReportArtifactModel.created_at)
+            cursor_time = func.julianday(after.created_at)
+            page_conditions.append(
+                or_(
+                    stored_time < cursor_time,
+                    and_(
+                        stored_time == cursor_time,
+                        ReportArtifactModel.report_id < after.report_id,
+                    ),
+                )
+            )
+
+        join_condition = (
+            ReportPresentationModel.report_id == ReportArtifactModel.report_id
+        )
+        conversation_join_condition = and_(
+            ConversationModel.runtime_mode == ReportArtifactModel.source_mode,
+            ConversationModel.conversation_id == ReportArtifactModel.conversation_id,
+        )
+        async with self._session_factory() as session:
+            missing_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(ReportArtifactModel)
+                        .outerjoin(ReportPresentationModel, join_condition)
+                        .where(
+                            and_(
+                                ReportArtifactModel.source_mode
+                                == source_mode.value,
+                                ReportPresentationModel.report_id.is_(None),
+                            )
+                        )
+                    )
+                ).scalar_one()
+            )
+            if missing_count:
+                raise ConversationHistoryCorruptionError(
+                    "report_presentation_missing"
+                )
+            missing_conversation_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(ReportArtifactModel)
+                        .outerjoin(
+                            ConversationModel,
+                            conversation_join_condition,
+                        )
+                        .where(
+                            and_(
+                                ReportArtifactModel.source_mode
+                                == source_mode.value,
+                                or_(
+                                    ReportArtifactModel.conversation_id.is_(None),
+                                    ConversationModel.conversation_id.is_(None),
+                                ),
+                            )
+                        )
+                    )
+                ).scalar_one()
+            )
+            if missing_conversation_count:
+                raise ConversationHistoryCorruptionError(
+                    "report_conversation_linkage_missing"
+                )
+            total_count = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(ReportArtifactModel)
+                        .join(ReportPresentationModel, join_condition)
+                        .where(and_(*base_conditions))
+                    )
+                ).scalar_one()
+            )
+            result = await session.execute(
+                select(ReportArtifactModel, ReportPresentationModel)
+                .join(ReportPresentationModel, join_condition)
+                .where(and_(*page_conditions))
+                .order_by(
+                    func.julianday(ReportArtifactModel.created_at).desc(),
+                    ReportArtifactModel.report_id.desc(),
+                )
+                .limit(limit + 1)
+            )
+            fetched = list(result.all())
+            page_rows = fetched[:limit]
+            items: list[ConversationReportItem] = []
+            for row, presentation in page_rows:
+                artifact = _model_to_artifact(row)
+                if (
+                    artifact.conversation_id is None
+                    or presentation.source_mode != artifact.source_mode
+                    or presentation.conversation_id != artifact.conversation_id
+                    or presentation.request_id != artifact.request_id
+                    or presentation.availability_status != "available"
+                ):
+                    raise ConversationHistoryCorruptionError(
+                        "report_presentation_row_mismatch"
+                    )
+                items.append(
+                    ConversationReportItem(
+                        report_id=artifact.report_id,
+                        source_mode=artifact.source_mode,
+                        conversation_id=artifact.conversation_id,
+                        request_id=artifact.request_id,
+                        template_key=artifact.template_key,
+                        semantic_model_key=artifact.semantic_model_key,
+                        schema_fingerprint=artifact.schema_fingerprint,
+                        contract_version=artifact.contract_version,
+                        generated_at=artifact.generated_at,
+                        stored_at=row.created_at,
+                        content_type=artifact.content_type,
+                        content_hash=artifact.content_hash,
+                        view_reference=artifact.view_reference,
+                        download_reference=artifact.download_reference,
+                        verified_fact_set_ids=artifact.verified_fact_set_ids,
+                        query_result_ids=artifact.query_result_ids,
+                        display_title=presentation.display_title,
+                        archived_at=presentation.archived_at,
+                    )
+                )
+        next_position = None
+        if len(fetched) > limit and page_rows:
+            last = page_rows[-1][0]
+            next_position = ReportPosition(
+                created_at=last.created_at,
+                report_id=last.report_id,
+            )
+        return RepositoryPage(
+            items=items,
+            next_position=next_position,
+            total_count=total_count,
+        )
 
     async def archive(
         self, runtime_mode: RuntimeDataMode, conversation_id: str

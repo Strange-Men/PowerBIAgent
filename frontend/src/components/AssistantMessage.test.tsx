@@ -132,6 +132,7 @@ describe('AssistantMessage dynamic rendering', () => {
     )
 
     expect(screen.getByLabelText('已删除报表')).toHaveTextContent('区域销售报告')
+    expect(screen.getByText('此报表已删除')).toBeInTheDocument()
     expect(screen.getByText('此文件已不可查看或下载')).toBeInTheDocument()
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })

@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v1.8
+> **修订版本：** v1.9
 > **修订日期：** 2026-08-24
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** 固化 M5.4 conversation-scoped UI/runtime state、client UUID provisional identity、异会话并发/同会话串行、pending Sidebar、用户卡片与 bounded 资源管理、report tombstone 与 presentation-only rename；North Star 与 factual authority 不变
+> **本轮修订范围：** 固化 M5.4.1 Settings Hub、全量 conversation/report 分页、准确选择语义、bounded destructive waves 与 automation-owned artifact teardown；North Star 与 factual authority 不变
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -117,12 +117,22 @@ React + Vite
 - history/navigation 请求可取消 stale response；正在执行的 business chat 归属 conversation，切窗不取消、完成不自动跳回。
 - Sidebar 合并 persisted summary 与 local pending session；失败 session 保留以便重试或人工删除。
 
-### 设置与资源管理（M5.4）
+### 设置中心与完整资源管理（M5.4.1）
 
-- 设置中提供最近对话、已归档和最近报表三个区域，支持 checkbox、全选当前加载范围和最多 20 项的 bounded 批量操作。
-- 批量删除/恢复由前端协调正式单资源 API；不新增 `DELETE ALL`，不绕过 durable delete，部分失败必须保留并逐项显示原因。
+- 用户卡片只保留“设置”入口；Settings 左导航固定为常规、对话管理、报表管理、已归档、数据模型、关于，不恢复多个重复一级入口。
+- Sidebar 继续显示 bounded Recent subset。Settings 不得复用 Sidebar 的 `recentConversations`/recent reports；它必须通过独立 namespace-scoped cursor pagination 浏览全部 active conversations、archived conversations、active reports 与 archived reports。
+- 对话/报表列表首屏只加载一页，支持“加载更多”或等价分页、scroll container、loading/empty state、`total_count`、loaded/selected count；不得一次把无限历史全部塞进 DOM，也不得把 recent page 冒充全部历史。
+- “全选当前已加载”只选当前已加载资源；只有按后端查询条件取得完整匹配 ID 时才提供“选择全部匹配项”，并明确显示例如“已选择全部 143 个对话”。本轮最低要求是全部历史可浏览、可多选任意项。
+- 浏览数量与可选择数量不受 20 项限制。一次用户确认可以包含更大集合；前端内部按最多 20 项一组 bounded execution，继续逐项协调正式单资源 API并精确汇总 partial failure。
+- 不新增 `DELETE ALL`，不绕过 conversation/report durable delete intent；archive/restore/delete/rename 继续保持现有 namespace、ownership 与 presentation/factual 边界。
 - report 独立删除后历史消息保留 `deleted` tombstone，不重建 ReportArtifact；view/download 不再可用。
 - report rename 只修改 `display_title`；`report_id`、HTML、`content_hash`、ReportSpec 与 VerifiedFactSet 不变。rename/delete 不进 ToolGateway，LLM 和自然语言无资源变更权。
+
+### 自动化测试资源治理（M5.4.1）
+
+- Codex acceptance、pytest integration、browser test、Real Smoke、MCP test 与 report generation test 创建的资源必须在创建时登记 explicit automation ownership，至少包含稳定 `test_run_id` 与 test owner/namespace。
+- 测试生命周期固定为 `create → register ownership → use → finally cleanup through formal API/repository → verify residual=0`。cleanup failure、pending delete intent、test-owned conversation/report metadata/HTML/SQLite namespace 或 orphan 任一残留都必须使测试/Gate FAIL。
+- cleanup 只能作用于已证明 test-owned 的 exact namespace/resource ID；用户真实资源、缺少 ownership 证据的历史资源或仅凭标题看似测试的资源不得自动删除。
 
 ### 输入框组件
 
@@ -147,7 +157,7 @@ AI 回答不是只能返回纯文本。同一条 AI 消息现在可以按实际�
 
 ### 前端开发策略
 
-M5.4 只收口多会话状态、用户卡片与资源管理。语言理解/近义词、中文字段 Localization Registry、单指标展示策略、report HTML 视觉重构与性能 profiling/cache 全部 Deferred 至 M5.5，本轮不提前开发。
+M5.4.1 只修复 Settings 全量资源生命周期与 automation artifact governance。语言理解/近义词、中文字段 Localization Registry、单指标展示策略、report HTML 视觉重构与性能 profiling/cache 全部 Deferred 至 M5.5，本轮不提前开发。
 
 ## 七、后端设计
 
@@ -335,4 +345,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-24 | M5.4 COMPLETE；M5.5 Deferred；North Star 与 factual authority 不变*
+*修订日期：2026-08-24 | M5.4.1 COMPLETE；M5.5 Deferred；North Star 与 factual authority 不变*

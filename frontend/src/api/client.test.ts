@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   archiveConversation,
+  archiveReport,
   deleteConversation,
   deleteReport,
   discoverSemanticModels,
   getConversationHistory,
   listArchivedConversations,
+  listManagedReports,
   listRecentConversations,
   listRecentReports,
   renameConversation,
   renameReport,
   restoreConversation,
+  restoreReport,
   sendChat,
 } from './client'
 
@@ -22,7 +25,7 @@ describe('API namespace and chat mapping', () => {
   it('sends the explicit runtime namespace for recent conversations', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ runtime_mode: 'real', items: [], next_cursor: null }),
+        JSON.stringify({ runtime_mode: 'real', items: [], next_cursor: null, total_count: 0 }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     )
@@ -78,7 +81,7 @@ describe('API namespace and chat mapping', () => {
   it('lists archived conversations through their recoverable namespace entry', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ runtime_mode: 'real', items: [], next_cursor: null }),
+        JSON.stringify({ runtime_mode: 'real', items: [], next_cursor: null, total_count: 0 }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     )
@@ -86,6 +89,60 @@ describe('API namespace and chat mapping', () => {
     await listArchivedConversations('real')
     expect(String(fetchMock.mock.calls[0][0])).toContain(
       '/api/v1/conversations/archived?runtime_mode=real',
+    )
+  })
+
+  it('passes opaque cursors to independent Settings history queries', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          runtime_mode: 'real',
+          items: [],
+          next_cursor: null,
+          total_count: 35,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await listRecentConversations('real', 20, 'opaque-next-page')
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('limit=20')
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      'cursor=opaque-next-page',
+    )
+  })
+
+  it('uses the global source-scoped report lifecycle and pagination APIs', async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            source_mode: 'real',
+            status: 'archived',
+            items: [],
+            next_cursor: null,
+            total_count: 30,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await listManagedReports('real', 'archived', 20, 'report-cursor')
+    await archiveReport('real', 'rpt_' + 'a'.repeat(32))
+    await restoreReport('real', 'rpt_' + 'a'.repeat(32))
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      '/api/reports?source_mode=real&status=archived&limit=20&cursor=report-cursor',
+    )
+    expect(String(fetchMock.mock.calls[1][0])).toContain(
+      '/archive?source_mode=real',
+    )
+    expect(String(fetchMock.mock.calls[2][0])).toContain(
+      '/restore?source_mode=real',
     )
   })
 
@@ -141,7 +198,7 @@ describe('API namespace and chat mapping', () => {
   it('keeps report history inside the selected source namespace', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ source_mode: 'real', conversation_id: 'conv-1', items: [], next_cursor: null }),
+        JSON.stringify({ source_mode: 'real', conversation_id: 'conv-1', items: [], next_cursor: null, total_count: 0 }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     )

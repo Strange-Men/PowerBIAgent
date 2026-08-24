@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.4 — 多会话并发、用户设置与资源管理最终收口已完成
+> **状态：** M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -36,6 +36,7 @@
 | **M5.3.2** | **多 PBIX 选择、opaque instance binding 与 MCP beta 稳定性** | **✅ 已完成** |
 | **M5.3.3** | **多轮继承语义、conversation/report 生命周期与 Artifact Governance** | **✅ 已完成** |
 | **M5.4** | **conversation-scoped state、异会话并发、用户卡片/资源管理、report tombstone/rename** | **✅ 已完成** |
+| **M5.4.1** | **Settings Hub、全量 conversation/report 分页、准确全选语义与 automation artifact cleanup** | **✅ 已完成** |
 | **M5.5** | **语言理解、字段中文化、视觉与性能优化** | **⏸ Deferred / NOT STARTED** |
 
 ## M3 合并与 CI truth
@@ -72,6 +73,8 @@
 | M5.4 concurrent sessions | ✅ `conversation_id → session`、client UUID pending row、异 conversation 并发/同 conversation 串行 |
 | M5.4 resource manager | ✅ 用户卡片、最多 20 项 bounded bulk orchestration、partial failure UI |
 | M5.4 report presentation lifecycle | ✅ deleted tombstone 与不改 hash/HTML/ReportSpec 的 `display_title` |
+| M5.4.1 full resource management contract | ✅ Settings 独立分页全部 active/archived conversation/report；Recent 不再作为完整历史数据源 |
+| M5.4.1 artifact ownership contract | ✅ automation-owned 资源显式登记、finally cleanup、零残留 Gate；未知 ownership 用户资源保留 |
 | Persistence Architecture (M4.0) | ✅ ADR-012、SQLite/SQLAlchemy Async/Alembic、5 表 schema、migration 基线、Repository ABC |
 | Memory / Snapshot SQLite 实现 (M4.1) | ✅ SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring、DB 级 partial unique index 并发安全、strict concurrent commit tests |
 | SQLite 错误语义硬化 (M4.1.1) | ✅ conversation root `INSERT OR IGNORE` 原子 upsert、`PersistenceRepositoryError`、locked/version_index 分类 helper |
@@ -161,6 +164,15 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - report delete 保留 transcript tombstone；rename 只修改 presentation `display_title`。LLM 无 rename/delete 权限。
 - M5.5 语言、中文字段、单指标展示、HTML 视觉和性能不在本轮开发。
 
+## M5.4.1 不可退化契约
+
+- 用户卡片只进入统一 Settings Hub；左导航为常规、对话管理、报表管理、已归档、数据模型、关于。
+- Sidebar Recent 保持 bounded/轻量；Settings 对话与报表管理必须独立 cursor pagination，并显示 total/loaded/selected/has-more。active 与 archived 都必须可访问完整历史。
+- “全选当前已加载”只选已加载项；不得把第一页、当前 DOM 或 recent subset 表述为全部匹配资源。完整历史至少必须可持续加载并多选任意项。
+- 浏览与选择不受 20 项限制；一次确认的大集合由前端按最多 20 项一组调用正式单资源 API，partial failure 精确归属资源，不新增 `DELETE ALL`。
+- 所有 Codex/pytest/browser/Real/MCP/report 自动化资源必须具有 explicit test ownership；`finally` cleanup 后验证 conversation/report metadata/HTML/SQLite namespace/delete intent residual=0，否则 Gate FAIL。
+- 历史清理只处理有 ownership/known namespace/fixture/linkage 证据的 automation-owned 资源；无法确认的资源保留。M5.5 继续 Deferred。
+
 ## 当前真实风险
 
 - Simple M3 PBIX runtime `OrderDate` 为 `Int64`；Simple 模型无时间趋势能力（TIME_TREND UNAVAILABLE），不得伪装为 DateTime。Rich PBIX `OrderDate` 为 `DateTime` 且含 Date 表，趋势能力真实解析。
@@ -188,4 +200,11 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - Backend full `1790 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `61 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `117`、Repository Safety `290`、Error Ledger `25`、Documentation Governance、Artifact Governance 与 `git diff --check` PASS。
 - 新增 Alembic revision `a4f6b8c2d190`。LLM 无 conversation/report rename/delete tool；M0–M5 factual authority 不变；M5.5 未开始。
 
-*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与用户资源管理最终收口*
+### M5.4.1 fresh evidence
+
+- Real Browser：25 个 owned conversations 首屏 20/25、加载到 25/25；Sidebar 保持 12；25 项单次确认按 20+5 bounded waves 完成 archive/restore。
+- 10 个 owned reports 独立分页可见，rename/archive/restore/delete 与最后标题 tombstone 通过；restart 后状态正确。
+- teardown 后 conversation/report/HTML/SQLite/delete-intent exact residual=0；无法确认 ownership 的资源未删除。
+- Backend `1797 passed, 1 skipped`；Vitest `69 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `295`、Error Ledger `27`、Documentation/Artifact Governance 与 `git diff --check` PASS。
+
+*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源生命周期与 test-owned cleanup*

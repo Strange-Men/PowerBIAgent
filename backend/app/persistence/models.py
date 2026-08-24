@@ -424,6 +424,12 @@ class ReportArtifactModel(Base):
             "created_at",
             "report_id",
         ),
+        Index(
+            "ix_report_artifacts_source_history",
+            "source_mode",
+            "created_at",
+            "report_id",
+        ),
         {"sqlite_autoincrement": False},
     )
 
@@ -444,6 +450,9 @@ class ReportPresentationModel(Base):
     deleted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=False), nullable=True
     )
+    archived_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), nullable=False, server_default=func.now()
     )
@@ -460,6 +469,13 @@ class ReportPresentationModel(Base):
             "source_mode",
             "conversation_id",
             "request_id",
+            "report_id",
+        ),
+        Index(
+            "ix_report_presentations_resource_status",
+            "source_mode",
+            "archived_at",
+            "updated_at",
             "report_id",
         ),
     )

@@ -63,7 +63,7 @@ def _audit_registry(path: Path, violations: list[str]) -> None:
     except (OSError, UnicodeError, json.JSONDecodeError):
         violations.append("artifact_ownership_registry_invalid")
         return
-    if not isinstance(payload, dict) or payload.get("version") != 1:
+    if not isinstance(payload, dict) or payload.get("version") not in {1, 2}:
         violations.append("artifact_ownership_registry_invalid")
         return
     active = payload.get("active", [])
@@ -76,9 +76,39 @@ def _audit_registry(path: Path, violations: list[str]) -> None:
             violations.append("artifact_ownership_registry_invalid")
             continue
         violations.append(f"test_artifact_residual:{item['owner_id']}")
+        if payload.get("version") == 2:
+            _audit_owned_run(item, violations)
     for item in failures:
         owner_id = item.get("owner_id") if isinstance(item, dict) else None
         violations.append(f"artifact_cleanup_failure:{owner_id or 'unknown'}")
+
+
+def _audit_owned_run(item: dict[str, object], violations: list[str]) -> None:
+    owner_id = str(item["owner_id"])
+    required = (
+        "test_run_id",
+        "test_owner",
+        "test_namespace",
+        "runtime_mode",
+        "source_mode",
+    )
+    if not all(isinstance(item.get(field), str) and item[field] for field in required):
+        violations.append("artifact_ownership_registry_invalid")
+        return
+    for field, prefix in (
+        ("conversation_ids", "test_conversation_residual"),
+        ("report_ids", "test_report_metadata_residual"),
+        ("html_paths", "test_report_html_residual"),
+        ("sqlite_paths", "test_sqlite_namespace_residual"),
+    ):
+        values = item.get(field)
+        if not isinstance(values, list) or not all(
+            isinstance(value, str) and value for value in values
+        ):
+            violations.append("artifact_ownership_registry_invalid")
+            continue
+        for value in values:
+            violations.append(f"{prefix}:{owner_id}:{value}")
 
 
 def _audit_database_and_reports(state_root: Path, violations: list[str]) -> None:

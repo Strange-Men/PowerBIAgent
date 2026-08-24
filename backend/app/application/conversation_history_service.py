@@ -16,6 +16,8 @@ from backend.app.conversation.models import (
     ConversationHistoryPage,
     ConversationListPage,
     ConversationReportPage,
+    ReportResourcePage,
+    ReportResourceStatus,
 )
 from backend.app.conversation.repository import (
     ConversationHistoryRepository,
@@ -41,7 +43,9 @@ class InvalidConversationQueryError(ValueError):
 
 class _CursorPayload(BaseModel):
     v: Literal[1]
-    kind: Literal["recent", "archived", "search", "history", "reports"]
+    kind: Literal[
+        "recent", "archived", "search", "history", "reports", "report_resources"
+    ]
     mode: RuntimeDataMode
     timestamp: datetime
     tie: str
@@ -69,7 +73,9 @@ def _encode_cursor(payload: _CursorPayload) -> str:
 def _decode_cursor(
     cursor: str,
     *,
-    kind: Literal["recent", "archived", "search", "history", "reports"],
+    kind: Literal[
+        "recent", "archived", "search", "history", "reports", "report_resources"
+    ],
     mode: RuntimeDataMode,
     scope: str,
 ) -> _CursorPayload:
@@ -153,6 +159,7 @@ class ConversationHistoryService:
             runtime_mode=runtime_mode,
             items=page.items,
             next_cursor=next_cursor,
+            total_count=page.total_count,
         )
 
     async def get_history(
@@ -244,6 +251,7 @@ class ConversationHistoryService:
             runtime_mode=runtime_mode,
             items=page.items,
             next_cursor=next_cursor,
+            total_count=page.total_count,
         )
 
     async def search(
@@ -290,6 +298,7 @@ class ConversationHistoryService:
             runtime_mode=runtime_mode,
             items=page.items,
             next_cursor=next_cursor,
+            total_count=page.total_count,
         )
 
     async def list_reports(
@@ -336,6 +345,54 @@ class ConversationHistoryService:
             conversation_id=conversation_id,
             items=page.items,
             next_cursor=next_cursor,
+            total_count=page.total_count,
+        )
+
+    async def list_managed_reports(
+        self,
+        source_mode: RuntimeDataMode,
+        *,
+        status: ReportResourceStatus,
+        limit: int,
+        cursor: str | None = None,
+    ) -> ReportResourcePage:
+        _validate_limit(limit)
+        after = None
+        if cursor is not None:
+            payload = _decode_cursor(
+                cursor,
+                kind="report_resources",
+                mode=source_mode,
+                scope=status,
+            )
+            after = ReportPosition(
+                created_at=_normalize_cursor_time(payload.timestamp),
+                report_id=payload.tie,
+            )
+        page = await self._repository.list_managed_reports(
+            source_mode,
+            status,
+            limit=limit,
+            after=after,
+        )
+        next_cursor = None
+        if page.next_position is not None:
+            next_cursor = _encode_cursor(
+                _CursorPayload(
+                    v=1,
+                    kind="report_resources",
+                    mode=source_mode,
+                    timestamp=page.next_position.created_at,
+                    tie=page.next_position.report_id,
+                    scope=status,
+                )
+            )
+        return ReportResourcePage(
+            source_mode=source_mode,
+            status=status,
+            items=page.items,
+            next_cursor=next_cursor,
+            total_count=page.total_count,
         )
 
     async def archive(self, runtime_mode: RuntimeDataMode, conversation_id: str):

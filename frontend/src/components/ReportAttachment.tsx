@@ -18,7 +18,7 @@ export function ReportAttachment({ report }: ReportAttachmentProps) {
       </div>
       <div className="report-file-copy">
         <strong>{title}</strong>
-        <span>{deleted ? '报表已删除' : 'HTML 报表'}</span>
+        <span>{deleted ? '此报表已删除' : 'HTML 报表'}</span>
       </div>
       {deleted ? (
         <p className="report-tombstone-copy">此文件已不可查看或下载</p>

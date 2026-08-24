@@ -2,6 +2,27 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.4.1] — 2026-08-24
+
+### 用户设置中心、全量历史资源管理与测试产物治理修复
+
+- 开发前固化 Settings Hub 合同：用户卡片只进入设置；左导航为常规、对话管理、报表管理、已归档、数据模型、关于。
+- Sidebar Recent 保持轻量；Settings 必须独立分页访问全部 active/archived conversation 与 report，显示 total/loaded/selected/has-more，不把 recent 第一页冒充完整历史。
+- “全选当前已加载”只选择已加载项；浏览与选择数量不再受 20 限制。一次用户确认可覆盖更大集合，前端内部按最多 20 项一组继续调用正式单资源 API并逐项汇总 partial failure。
+- Codex/pytest/browser/Real/MCP/report tests 必须登记 explicit automation ownership，在 `finally` 中执行正式 cleanup 并验证 conversation/report metadata/HTML/SQLite namespace/delete intent/orphan residual=0；任一残留 Gate FAIL。
+- 历史清理只处理可证明 automation-owned 的 exact resource；无法确认 ownership 的用户数据保留。
+- report rename/archive/restore/delete/tombstone 继续遵守现有 presentation、filesystem、factual metadata 与 durable intent 边界；不修改 TurnPipeline、DAX、Memory、VerifiedFactSet 或 ReportSpec authority。
+- M5.5 语言理解、中文字段、单指标、HTML 视觉与性能继续 Deferred。
+- 根因已确认：Settings 直接复用 Sidebar 首个 `limit=12` recent page；report 再对该子集聚合并截断到 8；旧“全选”又截断到 20。SQLite server-default 秒级时间与带微秒 cursor 的文本比较还会在同秒数据上重复返回第一页。
+- Settings 改为独立的 active/archived conversation/report cursor query，返回 `total_count`，首屏 20 项并按需加载；SQLite keyset 统一使用 `julianday(timestamp) + stable ID`。Sidebar 仍保持 Recent subset。
+- 全选文案固定为“全选当前已加载”；加载更多后可继续选择。一次确认可选择任意数量，执行器按最多 20 项一组调用正式单资源 API并精确报告 partial failure。
+- report presentation 新增 archive/restore 状态与全局分页 API；rename 只改 `display_title`，delete 清理 managed HTML/factual metadata，history 保留最后标题与“此报表已删除” tombstone。新增 migration `b7c9d2e4f610`。
+- automation ownership registry、`managed_test_run` finally cleanup、正式 API cleanup CLI 与精确 SQLite residual probe 已完成；Artifact Governance 对 conversation/report/HTML/SQLite/delete-intent/orphan residual fail closed。无法证明 ownership 的既有资源未删除。
+- Real Browser Acceptance 使用正式 SQLite/repository 创建 25 个 owned conversations 与 10 个 owned reports：Sidebar 仅 12 项，Settings 首屏 20/25 并可加载到 25/25；25 项一次确认按 20+5 archive/restore；10 个 report 的 rename/archive/restore/delete/tombstone 通过；restart 后状态正确；teardown 后 exact residual=0。
+- Fresh backend full `1797 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `69 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `295`、Error Ledger `27`、Documentation/Artifact Governance 与 `git diff --check` PASS。M0–M5 factual authority 不变，未进入 M5.5。
+
+**Settings.version:** M5.4.1
+
 ## [M5.4] — 2026-08-24
 
 ### 多会话并发、用户设置与资源管理最终收口

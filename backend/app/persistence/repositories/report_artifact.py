@@ -34,10 +34,12 @@ from backend.app.persistence.models import (
     ReportPresentationModel,
 )
 from backend.app.report.resources import (
+    ReportArchiveResult,
     ReportArtifact,
     ReportArtifactMetadata,
     ReportNotFoundError,
     ReportRenameResult,
+    ReportRestoreResult,
     ReportStorageError,
     _build_metadata_json,
     _normalize_display_title,
@@ -116,6 +118,18 @@ class ReportArtifactRepository:
 
     async def rename(self, report_id: str, display_title: str) -> ReportRenameResult:
         """Update mutable presentation title without touching factual metadata."""
+        raise NotImplementedError
+
+    async def archive(
+        self, report_id: str, source_mode: str
+    ) -> ReportArchiveResult:
+        """Archive presentation metadata without touching factual metadata/HTML."""
+        raise NotImplementedError
+
+    async def restore(
+        self, report_id: str, source_mode: str
+    ) -> ReportRestoreResult:
+        """Restore archived presentation metadata without rebuilding the report."""
         raise NotImplementedError
 
     async def complete_delete(self, report_id: str) -> None:
@@ -586,6 +600,67 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
                     display_title=normalized_title,
                 )
 
+    async def archive(
+        self, report_id: str, source_mode: str
+    ) -> ReportArchiveResult:
+        async with self._session_factory() as session:
+            async with session.begin():
+                result = await session.execute(
+                    select(ReportArtifactModel).where(
+                        and_(
+                            ReportArtifactModel.report_id == report_id,
+                            ReportArtifactModel.source_mode == source_mode,
+                        )
+                    )
+                )
+                row = result.scalar_one_or_none()
+                if row is None:
+                    raise ReportNotFoundError("report_not_found")
+                artifact = _model_to_artifact(row)
+                presentation = await _ensure_presentation(session, artifact)
+                if presentation.availability_status != _AVAILABLE:
+                    raise ReportNotFoundError("report_not_found")
+                if presentation.archived_at is None:
+                    presentation.archived_at = _utc_now_naive()
+                    presentation.updated_at = presentation.archived_at
+                await session.flush()
+                archived_at = presentation.archived_at
+        return ReportArchiveResult(
+            report_id=report_id,
+            source_mode=source_mode,
+            archived_at=archived_at,
+        )
+
+    async def restore(
+        self, report_id: str, source_mode: str
+    ) -> ReportRestoreResult:
+        async with self._session_factory() as session:
+            async with session.begin():
+                result = await session.execute(
+                    select(ReportArtifactModel).where(
+                        and_(
+                            ReportArtifactModel.report_id == report_id,
+                            ReportArtifactModel.source_mode == source_mode,
+                        )
+                    )
+                )
+                row = result.scalar_one_or_none()
+                if row is None:
+                    raise ReportNotFoundError("report_not_found")
+                artifact = _model_to_artifact(row)
+                presentation = await _ensure_presentation(session, artifact)
+                if presentation.availability_status != _AVAILABLE:
+                    raise ReportNotFoundError("report_not_found")
+                updated_at = _utc_now_naive()
+                presentation.archived_at = None
+                presentation.updated_at = updated_at
+                await session.flush()
+        return ReportRestoreResult(
+            report_id=report_id,
+            source_mode=source_mode,
+            updated_at=updated_at,
+        )
+
     async def complete_delete(self, report_id: str) -> None:
         async with self._session_factory() as session:
             async with session.begin():
@@ -626,6 +701,7 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
         self._delete_intents: dict[str, ReportArtifact] = {}
         self._display_titles: dict[str, str] = {}
         self._deleted_presentations: set[str] = set()
+        self._archived_at: dict[str, datetime] = {}
         self._lock = asyncio.Lock()
 
     async def save(
@@ -694,6 +770,7 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
                 raise ReportNotFoundError("report_not_found")
             self._delete_intents[report_id] = artifact
             self._deleted_presentations.add(report_id)
+            self._archived_at.pop(report_id, None)
             return artifact
 
     async def rename(self, report_id: str, display_title: str) -> ReportRenameResult:
@@ -705,6 +782,44 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
             return ReportRenameResult(
                 report_id=report_id,
                 display_title=normalized_title,
+            )
+
+    async def archive(
+        self, report_id: str, source_mode: str
+    ) -> ReportArchiveResult:
+        async with self._lock:
+            artifact = self._items.get(report_id)
+            if (
+                artifact is None
+                or artifact.source_mode != source_mode
+                or report_id in self._deleted_presentations
+            ):
+                raise ReportNotFoundError("report_not_found")
+            archived_at = self._archived_at.setdefault(
+                report_id, _utc_now_naive()
+            )
+            return ReportArchiveResult(
+                report_id=report_id,
+                source_mode=source_mode,
+                archived_at=archived_at,
+            )
+
+    async def restore(
+        self, report_id: str, source_mode: str
+    ) -> ReportRestoreResult:
+        async with self._lock:
+            artifact = self._items.get(report_id)
+            if (
+                artifact is None
+                or artifact.source_mode != source_mode
+                or report_id in self._deleted_presentations
+            ):
+                raise ReportNotFoundError("report_not_found")
+            self._archived_at.pop(report_id, None)
+            return ReportRestoreResult(
+                report_id=report_id,
+                source_mode=source_mode,
+                updated_at=_utc_now_naive(),
             )
 
     async def complete_delete(self, report_id: str) -> None:

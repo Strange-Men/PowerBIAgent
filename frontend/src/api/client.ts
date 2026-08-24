@@ -6,8 +6,12 @@ import type {
   ConversationListPage,
   ConversationReportItem,
   ConversationReportPage,
+  ReportArchiveResult,
   ReportDeleteResult,
   ReportRenameResult,
+  ReportResourcePage,
+  ReportResourceStatus,
+  ReportRestoreResult,
   RuntimeMode,
   SemanticModelCatalog,
 } from '../types'
@@ -120,16 +124,18 @@ export async function sendChat(body: ChatRequest): Promise<ChatResponse> {
 export async function listRecentConversations(
   runtimeMode: RuntimeMode,
   limit = 12,
+  cursor?: string,
 ): Promise<ConversationListPage> {
-  const query = queryString({ runtime_mode: runtimeMode, limit })
+  const query = queryString({ runtime_mode: runtimeMode, limit, cursor })
   return requestJson<ConversationListPage>(`/api/v1/conversations?${query}`)
 }
 
 export async function listArchivedConversations(
   runtimeMode: RuntimeMode,
   limit = 12,
+  cursor?: string,
 ): Promise<ConversationListPage> {
-  const query = queryString({ runtime_mode: runtimeMode, limit })
+  const query = queryString({ runtime_mode: runtimeMode, limit, cursor })
   return requestJson<ConversationListPage>(
     `/api/v1/conversations/archived?${query}`,
   )
@@ -227,6 +233,38 @@ export async function renameReport(
   )
 }
 
+export async function archiveReport(
+  sourceMode: RuntimeMode,
+  reportId: string,
+): Promise<ReportArchiveResult> {
+  const query = queryString({ source_mode: sourceMode })
+  return requestJson<ReportArchiveResult>(
+    `/api/reports/${encodeURIComponent(reportId)}/archive?${query}`,
+    { method: 'POST' },
+  )
+}
+
+export async function restoreReport(
+  sourceMode: RuntimeMode,
+  reportId: string,
+): Promise<ReportRestoreResult> {
+  const query = queryString({ source_mode: sourceMode })
+  return requestJson<ReportRestoreResult>(
+    `/api/reports/${encodeURIComponent(reportId)}/restore?${query}`,
+    { method: 'POST' },
+  )
+}
+
+export async function listManagedReports(
+  sourceMode: RuntimeMode,
+  status: ReportResourceStatus,
+  limit = 20,
+  cursor?: string,
+): Promise<ReportResourcePage> {
+  const query = queryString({ source_mode: sourceMode, status, limit, cursor })
+  return requestJson<ReportResourcePage>(`/api/reports?${query}`)
+}
+
 export async function listConversationReports(
   sourceMode: RuntimeMode,
   conversationId: string,
@@ -250,6 +288,7 @@ export async function listRecentReports(
     result.status === 'fulfilled' ? result.value.items : [],
   )
   return reports
+    .filter((report) => !report.archived_at)
     .filter(
       (report, index, all) =>
         all.findIndex((candidate) => candidate.report_id === report.report_id) === index,

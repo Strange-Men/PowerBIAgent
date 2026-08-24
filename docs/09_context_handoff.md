@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.4 — 多会话并发、用户设置与资源管理最终收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0—M5.4 已完成；M5.5 继续 Deferred。
+**M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0—M5.4.1 已完成；M5.5 继续 Deferred。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -23,7 +23,23 @@
 | **M5.3.2** | **Local MCP 多模型选择与协议稳定性加固** | **✅ 已完成** |
 | **M5.3.3** | **多轮语义、会话资源生命周期与 Artifact Governance** | **✅ 已完成** |
 | **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
+| **M5.4.1** | **Settings Hub、全量历史资源分页与 test-owned cleanup** | **✅ 已完成** |
 | **M5.5** | **语义/中文字段/视觉/性能** | **⏸ Deferred / NOT STARTED** |
+
+### M5.4.1 final implementation and evidence
+
+- 根因：Settings 复用 Sidebar `limit=12` 的 recent 第一页；report 再对该 conversation 子集聚合并截断到 8；旧选择逻辑截断到 20。SQLite server-default 秒级时间与带微秒 cursor 的文本比较还会让同秒资源重复第一页。
+- Sidebar Recent 继续 bounded/轻量。Settings 使用独立 query state 与 namespace-scoped cursor pagination，完整覆盖 active/archived conversation 及 active/archived report，并显示 total/loaded/selected/has-more。
+- “全选当前已加载”只选择当前已加载行；不得让用户误以为第一页等于全部。全部历史至少可持续加载并任意多选。
+- 选择与执行解耦：一次确认可超过 20 项，前端按最多 20 项一组调用正式单资源 API，逐项精确汇总 partial failure；不新增 `DELETE ALL`。
+- report rename/archive/restore/delete 继续遵守 presentation title、filesystem HTML、factual metadata、namespace 与 tombstone authority。
+- Codex/pytest/browser/Real/MCP/report 自动化资源必须显式登记 test ownership，在 `finally` 中通过正式 API/repository cleanup 并验证 conversation/report/HTML/SQLite namespace/delete intent/orphan residual=0；任一残留 Gate FAIL。
+- 历史清理只处理有 ownership metadata、known test namespace/ID、fixture 或 report linkage 证据的资源；无法确认 ownership 的现有资源保留。
+- 本轮不修改 TurnPipeline factual semantics、DAX、Memory、VerifiedFactSet 或 ReportSpec authority；M5.5 Deferred。
+- 正式实现：独立 conversation/report active/archived cursor API、`total_count`、SQLite `julianday + stable ID` keyset、20 项按需加载、任意多选和最多 20 项执行 wave；migration `b7c9d2e4f610`。
+- Real Browser：25 conversations 从 20/25 加载到 25/25，Sidebar 仍为 12；25 项一次确认以 20+5 archive/restore。10 reports 的 rename/archive/restore/delete/tombstone/restart 通过。
+- automation ownership registry、finally cleanup CLI 与 Artifact Governance exact SQLite probe 已启用；本轮 teardown 后 conversation/report/HTML/SQLite/delete-intent residual=0，未知 ownership 数据未删除。
+- Fresh gates：backend `1797 passed, 1 skipped`；Vitest `69 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `295`、Error Ledger `27`、Documentation/Artifact Governance 与 `git diff --check` PASS。
 
 ### M5.4 root-cause baseline（代码修改前）
 
@@ -285,4 +301,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与用户资源管理最终收口*
+*最后更新：2026-08-24 | M5.4.1 COMPLETE — Settings 全量资源与 automation 零残留治理；M5.5 Deferred*

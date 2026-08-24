@@ -25,8 +25,8 @@ export function App() {
       <Sidebar
         collapsed={sidebarCollapsed}
         activeConversationId={app.activeConversationId}
+        runtimeMode={app.effectiveRuntimeMode}
         conversations={app.recentConversations}
-        archivedConversations={app.archivedConversations}
         reports={app.recentReports}
         error={app.sidebarError}
         onToggle={() => setSidebarCollapsed((collapsed) => !collapsed)}
@@ -38,10 +38,14 @@ export function App() {
         onRestore={app.restore}
         onDelete={app.remove}
         onDeleteReport={app.removeReport}
+        onArchiveReport={app.archiveReport}
         onRenameReport={app.renameReport}
         onBulkDeleteConversations={app.bulkRemoveConversations}
+        onBulkArchiveConversations={app.bulkArchiveConversations}
         onBulkRestoreConversations={app.bulkRestoreConversations}
         onBulkDeleteReports={app.bulkRemoveReports}
+        onBulkArchiveReports={app.bulkArchiveReports}
+        onBulkRestoreReports={app.bulkRestoreReports}
       />
       <main className="chat-main">
         {app.messages.length > 0 ? (

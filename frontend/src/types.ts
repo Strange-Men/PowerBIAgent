@@ -116,6 +116,7 @@ export interface ConversationListPage {
   runtime_mode: RuntimeMode
   items: ConversationSummary[]
   next_cursor: string | null
+  total_count: number
 }
 
 export interface ReportDeleteResult {
@@ -130,6 +131,19 @@ export interface ReportRenameResult {
   report_id: string
   display_title: string
   availability_status: 'available'
+}
+
+export interface ReportArchiveResult {
+  report_id: string
+  source_mode: RuntimeMode
+  archived_at: string
+}
+
+export interface ReportRestoreResult {
+  report_id: string
+  source_mode: RuntimeMode
+  restored: boolean
+  updated_at: string
 }
 
 export interface ConversationHistoryItem {
@@ -163,6 +177,7 @@ export interface ConversationReportItem extends ReportResource {
   semantic_model_key: string
   generated_at: string
   stored_at: string
+  archived_at: string | null
 }
 
 export interface ConversationReportPage {
@@ -170,6 +185,17 @@ export interface ConversationReportPage {
   conversation_id: string
   items: ConversationReportItem[]
   next_cursor: string | null
+  total_count: number
+}
+
+export type ReportResourceStatus = 'active' | 'archived'
+
+export interface ReportResourcePage {
+  source_mode: RuntimeMode
+  status: ReportResourceStatus
+  items: ConversationReportItem[]
+  next_cursor: string | null
+  total_count: number
 }
 
 export type AssistantMessageKind =

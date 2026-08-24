@@ -1,7 +1,7 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.4 多会话并发、用户设置与资源管理已完成
-> **目标阶段：** M5.4 固化 conversation-scoped state、pending navigation、用户卡片/资源面板、report tombstone/rename；M5.5 Deferred
+> **状态：** M5.4.1 Settings Hub、全量资源分页与测试产物治理修复已完成
+> **目标阶段：** M5.4.1 固化完整 history resource query、准确 selection/batch 语义、report archive 与 automation cleanup；M5.5 Deferred
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -16,7 +16,7 @@
 
 ## 二、当前阶段与实施边界
 
-**当前阶段：** M5.4 已将请求与 UI 状态收口到 conversation scope，并完成轻量用户资源面板、report tombstone/rename。M0–M5 factual authority 保持不变；没有真实 presentation block 时不伪造前端表格或图表。
+**当前阶段：** M5.4 已将请求与 UI 状态收口到 conversation scope；M5.4.1 已把依赖 Recent 第一页的轻量资源面板修复为独立分页的 Settings Hub。M0–M5 factual authority 保持不变；没有真实 presentation block 时不伪造前端表格或图表。
 
 ## 三、视觉参考图片
 
@@ -82,7 +82,7 @@
 | 8 | 最近生成的报表列表 | 可折叠、独立滚动；不放批量 checkbox | 真实交互 |
 | 9 | "最近"分区标题 | 对话分区标签 | — |
 | 10 | 最近对话 | persisted + local pending；可折叠、独立滚动 | 真实交互 |
-| 11 | 用户卡片 | 底部固定，展示用户名/内部用户；打开设置、已归档、资源管理 | 真实交互，不新增账户后端 |
+| 11 | 用户卡片 | 底部固定，展示用户名/内部用户；只打开统一“设置” | 真实交互，不新增账户后端 |
 
 ## 七、新聊天欢迎态
 
@@ -393,12 +393,15 @@
 
 Sidebar 在桌面端固定可用高度；“最近对话”与“最近报表”各自 `overflow-y:auto` 并可折叠。已归档默认不常驻 Sidebar，通过用户卡片进入资源面板。
 
-## 十六 A、用户卡片与资源面板（M5.4）
+## 十六 A、用户卡片与 Settings Hub（M5.4.1）
 
-- 菜单只提供“设置”“已归档”“资源管理”；不提供套餐、支付、账户安全等无后端能力。
-- 资源面板含最近对话、已归档、最近报表三区，checkbox 和“全选当前加载范围”只出现于此。
-- 批量操作最多 20 项，调用单资源 API 并展示逐项结果。成功项从 UI 移除，失败项保留并显示可理解原因，不自动重试未知失败。
-- 删除操作必须确认；archive 恢复不等于重建，conversation/report delete 不得绕过 durable delete intent。
+- 用户卡片只提供“设置”入口；Settings 左导航固定为“常规 / 对话管理 / 报表管理 / 已归档 / 数据模型 / 关于”，不恢复三个重复一级入口，也不增加套餐、支付、账户安全等无后端能力。
+- “对话管理”独立分页查询全部 active conversations；“报表管理”独立分页查询全部 active reports；“已归档”分为已归档对话与已归档报表。Settings 不读取 Sidebar `recentConversations` 作为数据源。
+- 每个列表使用固定高度 scroll container，首屏只渲染一页；提供 loading more、empty state、`共 N 项`、`已加载 N 项`、`已选择 N / 共 N 项` 和明确的 has-more/load-more control。
+- checkbox 与批量操作只在 Settings。按钮文案固定为“全选当前已加载”；只有完整后端查询条件与全部匹配 ID 均已取得时才允许“选择全部匹配项”，并显示完整数量。
+- 用户可持续分页后多选任意历史项，选择数量不受 20 限制。一次确认的大批量操作由前端按最多 20 项一组执行，每组继续调用正式单资源 API；成功项移除，失败项保留并逐项显示原因。
+- conversation 支持 rename/archive/delete；report 支持 rename/archive/delete；归档页支持 restore/delete。删除必须确认，archive/restore 不重建事实资源，delete 不得绕过 durable delete intent。
+- report 行与 Sidebar Recent Reports 的 `…` 菜单统一提供“重命名 / 归档 / 删除”。rename 只改 `display_title`；archive 隐藏 recent、保留 HTML/metadata/conversation；delete 清理 managed HTML/factual metadata 并保留最后 title 的 history tombstone。
 
 ## 十七、当前 MVP 后端能力到 UI 映射
 
@@ -421,7 +424,7 @@ Sidebar 在桌面端固定可用高度；“最近对话”与“最近报表”
 | Conversation 管理 | ✅ archive/delete + M5.3 rename；M5.3.3 restore | Sidebar 区分最近/已归档；archive 可恢复，delete 永久清理 |
 | 独立 report delete | M5.3.3 显式资源 API | 最近报表 `…` 菜单 + 确认；conversation 保留，LLM 无权限 |
 | 多 conversation state | M5.4 前端合同 | local UUID pending、异会话并发、同会话串行、loading/error/result 隔离 |
-| 用户资源管理 | M5.4 前端协调单资源 API | 设置 modal、最多 20 项 bounded bulk、partial failure |
+| 用户资源管理 | M5.4.1 独立分页 + 前端协调单资源 API | Settings Hub、完整 active/archived conversation/report、selection 不限、最多 20 项/执行组、partial failure |
 | report rename/tombstone | M5.4 presentation metadata | `display_title` 同步；deleted 历史卡保留且无 view/download |
 
 ## 十八、明确禁止的设计
@@ -467,4 +470,4 @@ Sidebar 在桌面端固定可用高度；“最近对话”与“最近报表”
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话状态、用户资源面板与 report presentation lifecycle*
+*最后更新：2026-08-24 | M5.4.1 COMPLETE — Settings 全量分页、准确选择语义与 report lifecycle*

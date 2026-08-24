@@ -45,6 +45,8 @@ from backend.app.conversation.models import (
     ConversationRenameRequest,
     ConversationRenameResult,
     ConversationRestoreResult,
+    ReportResourcePage,
+    ReportResourceStatus,
 )
 from backend.app.api.schemas import (
     ChatRequest,
@@ -73,11 +75,13 @@ from backend.app.memory.request_fingerprint import (
 from backend.app.memory.models import RuntimeDataMode
 from backend.app.powerbi.models import SemanticModelCatalog
 from backend.app.report.resources import (
+    ReportArchiveResult,
     ReportDeleteResult,
     ReportNotFoundError,
     ReportRenameRequest,
     ReportRenameResult,
     ReportRepository,
+    ReportRestoreResult,
     ReportStorageError,
 )
 
@@ -103,6 +107,26 @@ async def discover_semantic_models(
 ):
     """Return safe models currently selectable by the frontend."""
     return await service.discover()
+
+
+@router.get("/api/reports", response_model=ReportResourcePage)
+async def list_managed_reports(
+    source_mode: RuntimeDataMode,
+    status: ReportResourceStatus = Query(default="active"),
+    limit: int = Query(default=20, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = Query(default=None, max_length=2048),
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+):
+    """List all manageable reports in one explicit source namespace."""
+    try:
+        return await service.list_managed_reports(
+            source_mode,
+            status=status,
+            limit=limit,
+            cursor=cursor,
+        )
+    except Exception as exc:
+        _raise_conversation_query_error(exc)
 
 
 @router.get("/api/reports/{report_id}", response_class=HTMLResponse)
@@ -301,6 +325,46 @@ async def rename_report(
     """Rename presentation metadata only; never exposed through ToolGateway."""
     try:
         return await repository.rename(report_id, body.display_title)
+    except ReportNotFoundError:
+        raise HTTPException(status_code=404, detail="report_not_found") from None
+    except ReportStorageError:
+        raise HTTPException(
+            status_code=500, detail="report_presentation_update_failed"
+        ) from None
+
+
+@router.post(
+    "/api/reports/{report_id}/archive",
+    response_model=ReportArchiveResult,
+)
+async def archive_report(
+    report_id: str,
+    source_mode: RuntimeDataMode,
+    repository: ReportRepository = Depends(get_report_repository),
+):
+    """Archive one report presentation; HTML and factual metadata remain."""
+    try:
+        return await repository.archive(report_id, source_mode.value)
+    except ReportNotFoundError:
+        raise HTTPException(status_code=404, detail="report_not_found") from None
+    except ReportStorageError:
+        raise HTTPException(
+            status_code=500, detail="report_presentation_update_failed"
+        ) from None
+
+
+@router.post(
+    "/api/reports/{report_id}/restore",
+    response_model=ReportRestoreResult,
+)
+async def restore_report(
+    report_id: str,
+    source_mode: RuntimeDataMode,
+    repository: ReportRepository = Depends(get_report_repository),
+):
+    """Restore one archived report without rewriting identity or HTML."""
+    try:
+        return await repository.restore(report_id, source_mode.value)
     except ReportNotFoundError:
         raise HTTPException(status_code=404, detail="report_not_found") from None
     except ReportStorageError:

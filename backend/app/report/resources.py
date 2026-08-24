@@ -71,6 +71,23 @@ class ReportRenameResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+class ReportArchiveResult(BaseModel):
+    report_id: str
+    source_mode: Literal["mock", "real"]
+    archived_at: datetime
+
+    model_config = ConfigDict(frozen=True)
+
+
+class ReportRestoreResult(BaseModel):
+    report_id: str
+    source_mode: Literal["mock", "real"]
+    restored: bool = True
+    updated_at: datetime
+
+    model_config = ConfigDict(frozen=True)
+
+
 class ReportArtifact(RenderedReport):
     """Metadata and exact compatibility copy for one managed HTML artifact."""
 
@@ -220,6 +237,20 @@ class ReportRepository(ABC):
         """Rename presentation metadata only; factual artifact bytes stay immutable."""
         ...
 
+    @abstractmethod
+    async def archive(
+        self, report_id: str, source_mode: Literal["mock", "real"]
+    ) -> ReportArchiveResult:
+        """Hide one report from active/recent lists without deleting bytes."""
+        ...
+
+    @abstractmethod
+    async def restore(
+        self, report_id: str, source_mode: Literal["mock", "real"]
+    ) -> ReportRestoreResult:
+        """Restore one archived report without recreating factual metadata."""
+        ...
+
     async def delete_html_files(self, report_ids: list[str]) -> None:
         """Delete repository-owned HTML bytes after metadata cascade.
 
@@ -323,6 +354,7 @@ class InMemoryReportRepository(ReportRepository):
     def __init__(self) -> None:
         self._items: dict[str, tuple[ReportArtifact, bytes]] = {}
         self._display_titles: dict[str, str] = {}
+        self._archived_at: dict[str, datetime] = {}
         self._lock = asyncio.Lock()
 
     async def store(
@@ -369,6 +401,8 @@ class InMemoryReportRepository(ReportRepository):
             for report_id in report_ids:
                 _validate_report_id(report_id)
                 self._items.pop(report_id, None)
+                self._display_titles.pop(report_id, None)
+                self._archived_at.pop(report_id, None)
 
     async def delete(self, report_id: str) -> ReportDeleteResult:
         _validate_report_id(report_id)
@@ -377,6 +411,8 @@ class InMemoryReportRepository(ReportRepository):
             if item is None:
                 raise ReportNotFoundError("report_not_found")
             artifact = item[0]
+            self._display_titles.pop(report_id, None)
+            self._archived_at.pop(report_id, None)
             return ReportDeleteResult(
                 report_id=artifact.report_id,
                 source_mode=artifact.source_mode,
@@ -392,6 +428,38 @@ class InMemoryReportRepository(ReportRepository):
                 raise ReportNotFoundError("report_not_found")
             self._display_titles[report_id] = normalized
             return ReportRenameResult(report_id=report_id, display_title=normalized)
+
+    async def archive(
+        self, report_id: str, source_mode: Literal["mock", "real"]
+    ) -> ReportArchiveResult:
+        _validate_report_id(report_id)
+        async with self._lock:
+            item = self._items.get(report_id)
+            if item is None or item[0].source_mode != source_mode:
+                raise ReportNotFoundError("report_not_found")
+            archived_at = self._archived_at.setdefault(
+                report_id, datetime.now(timezone.utc)
+            )
+            return ReportArchiveResult(
+                report_id=report_id,
+                source_mode=source_mode,
+                archived_at=archived_at,
+            )
+
+    async def restore(
+        self, report_id: str, source_mode: Literal["mock", "real"]
+    ) -> ReportRestoreResult:
+        _validate_report_id(report_id)
+        async with self._lock:
+            item = self._items.get(report_id)
+            if item is None or item[0].source_mode != source_mode:
+                raise ReportNotFoundError("report_not_found")
+            self._archived_at.pop(report_id, None)
+            return ReportRestoreResult(
+                report_id=report_id,
+                source_mode=source_mode,
+                updated_at=datetime.now(timezone.utc),
+            )
 
     def _new_id(self) -> str:
         while True:
@@ -417,6 +485,7 @@ class LocalReportRepository(ReportRepository):
         self._root.mkdir(parents=True, exist_ok=True)
         self._metadata_repo = metadata_repo
         self._items: dict[str, ReportArtifact] = {}
+        self._archived_at: dict[str, datetime] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -515,6 +584,7 @@ class LocalReportRepository(ReportRepository):
                 for report_id, target in targets:
                     target.unlink(missing_ok=True)
                     self._items.pop(report_id, None)
+                    self._archived_at.pop(report_id, None)
             except OSError as exc:
                 raise ReportStorageError("report_artifact_delete_failed") from exc
 
@@ -533,6 +603,7 @@ class LocalReportRepository(ReportRepository):
             except OSError as exc:
                 raise ReportStorageError("report_artifact_delete_failed") from exc
             self._items.pop(report_id, None)
+            self._archived_at.pop(report_id, None)
             if self._metadata_repo is not None:
                 await self._metadata_repo.complete_delete(report_id)
             return ReportDeleteResult(
@@ -554,6 +625,46 @@ class LocalReportRepository(ReportRepository):
                     report_id=report_id, display_title=normalized
                 )
             return await self._metadata_repo.rename(report_id, normalized)
+
+    async def archive(
+        self, report_id: str, source_mode: Literal["mock", "real"]
+    ) -> ReportArchiveResult:
+        """Hide one report from active lists while retaining managed HTML."""
+
+        _validate_report_id(report_id)
+        async with self._lock:
+            if self._metadata_repo is not None:
+                return await self._metadata_repo.archive(report_id, source_mode)
+            artifact = await self._resolve_artifact(report_id)
+            if artifact.source_mode != source_mode:
+                raise ReportNotFoundError("report_not_found")
+            archived_at = self._archived_at.setdefault(
+                report_id, datetime.now(timezone.utc)
+            )
+            return ReportArchiveResult(
+                report_id=report_id,
+                source_mode=source_mode,
+                archived_at=archived_at,
+            )
+
+    async def restore(
+        self, report_id: str, source_mode: Literal["mock", "real"]
+    ) -> ReportRestoreResult:
+        """Restore presentation visibility without changing report identity."""
+
+        _validate_report_id(report_id)
+        async with self._lock:
+            if self._metadata_repo is not None:
+                return await self._metadata_repo.restore(report_id, source_mode)
+            artifact = await self._resolve_artifact(report_id)
+            if artifact.source_mode != source_mode:
+                raise ReportNotFoundError("report_not_found")
+            self._archived_at.pop(report_id, None)
+            return ReportRestoreResult(
+                report_id=report_id,
+                source_mode=source_mode,
+                updated_at=datetime.now(timezone.utc),
+            )
 
     def _validate_path(self, artifact: ReportArtifact) -> Path:
         """Validate and resolve the relative_path as the recovery authority.

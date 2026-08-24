@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.4 — 多会话并发、用户设置与资源管理最终收口**。M4.4.2 FINAL PASS；M5.0—M5.4 已完成。
+当前版本：**M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复**。M4.4.2 FINAL PASS；M5.0—M5.4.1 已完成；M5.5 Deferred。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -36,6 +36,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.3.2** 已升级为多 PBIX 安全枚举与选择：后端生成不泄露连接属性的 deterministic opaque key；schema/member/DAX 每个 session 重新枚举并精确匹配唯一实例；逐 option 只读 MCP capability probe、stale fail-closed 与 DAX row shape/truncation 防腐完成。Remote MCP 继续 Deferred；无 migration、无 M0–M4 authority 变化。**M5.3.2 COMPLETE。**
 - **M5.3.3** 已完成多轮与资源生命周期最终收口：当前明确表达 > bounded LLM semantic draft > committed Memory；fresh/follow-up/replace 分离，unsupported 在 Memory/Grounding/DAX 前 fail closed；archive 可恢复且不等于 delete；report 只可由用户显式资源 API 独立删除；前端 history 使用 abort/generation/active identity 防串窗；local_state 与测试 artifact 由长期 ownership/cleanup gate 治理。新增 migration `e7a9c2d4f631`；Rich PBIX 八轮 Real 浏览器与资源生命周期验收通过。M0–M5 factual authority 不变。**M5.3.3 COMPLETE。**
 - **M5.4** 已完成 conversation-scoped UI/runtime state、client UUID provisional conversation、异 conversation 并发/同 conversation 串行、Sidebar pending row、用户卡片资源管理、最多 20 项 bounded bulk orchestration、report tombstone 与 presentation-only `display_title`。新增 migration `a4f6b8c2d190`；Rich PBIX A/B/C 并发、归档恢复、rename/delete/history tombstone 与资源清理 Real Browser Acceptance 通过。M5.5 语言理解、中文字段、性能、HTML 视觉继续 Deferred。**M5.4 COMPLETE。**
+- **M5.4.1** 已完成 Settings 独立全量 cursor pagination、active/archived conversation/report 管理、准确 total/loaded/selected 语义与最多 20 项一组的 bounded execution；同秒 SQLite cursor 使用 `julianday + stable ID` 防止重复页。automation-owned 资源显式登记 ownership，`finally` teardown 后验证 conversation/report/HTML/SQLite/delete-intent residual 为 0；无法证明 ownership 的现有资源一律保留。新增 migration `b7c9d2e4f610`。**M5.4.1 COMPLETE；M5.5 Deferred。**
 
 当前真实主链：
 
@@ -90,6 +91,11 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 20. M5.4：首次发送前端生成符合现有合同的 UUID 并直接作为 Chat `conversation_id`；发送后立即显示 local pending row。不同 conversation 可并发，同一 conversation 仍必须串行；navigation/history 可取消，business chat 不得因切窗取消。
 21. M5.4：用户卡片是设置/已归档/资源管理入口；Sidebar 不堆叠批量 checkbox。批量管理只能 bounded 协调现有正式单资源 API，部分失败必须逐项呈现，禁止 `DELETE ALL` 或绕过 durable delete。
 22. M5.4：report delete 保留 presentation tombstone；report `display_title` 只是可变展示 metadata，不得修改 `report_id` / HTML / `content_hash` / ReportSpec / VerifiedFactSet。rename/delete 仅由明确 UI 用户操作触发，不注册 ToolGateway，LLM 无权。
+23. M5.4.1：Sidebar Recent 只服务轻量导航；Settings 是完整资源管理入口，必须使用独立、namespace-scoped、可持续分页的 conversation/report 查询，不得复用 `recentConversations` 或把第一页冒充全部历史。
+24. M5.4.1：“全选当前已加载”只选择已加载行；只有基于明确后端查询条件与完整 ID 集合时才可称“选择全部匹配项”。UI 必须显示 total、loaded 与 selected 数量，全部历史可分页浏览且不得一次渲染无限 DOM。
+25. M5.4.1：浏览与选择数量不限于 20；单次 destructive execution wave 最多 20 项，前端可把一次用户确认的大批量操作自动分组，继续逐项调用正式单资源 API并精确汇总 partial failure。禁止 `DELETE ALL`。
+26. M5.4.1：Codex acceptance、pytest integration、browser/Real Smoke/MCP/report tests 创建的 conversation/report/file 必须携带可审计 test ownership（至少 test run identity 与 automation owner），在 `finally` 中通过正式 API/repository cleanup 并验证零残留。cleanup failure、pending intent、orphan 或本轮 test SQLite namespace residual 必须使 Gate FAIL。
+27. M5.4.1：test cleanup 只能处理已证明 automation-owned 的资源；标题、问题文本或“看起来像测试”不是 ownership 证据。不得删除无法确认 ownership 的用户资源；M5.5 继续 Deferred。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前开发 M5、开发 Remote MCP；未经用户明确批准不得创建 Tag。
 
@@ -123,4 +129,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与用户资源管理最终收口*
+*最后更新：2026-08-24 | M5.4.1 COMPLETE — Settings 全量资源生命周期与 automation 零残留治理；M5.5 Deferred*

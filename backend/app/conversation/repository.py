@@ -14,6 +14,7 @@ from backend.app.conversation.models import (
     ConversationSummary,
     ConversationRenameResult,
     ConversationRestoreResult,
+    ReportResourceStatus,
 )
 from backend.app.memory.models import RuntimeDataMode
 
@@ -44,6 +45,7 @@ class ReportPosition:
 class RepositoryPage(Generic[T, P]):
     items: list[T]
     next_position: P | None
+    total_count: int
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,16 @@ class ConversationHistoryRepository(ABC):
         self,
         source_mode: RuntimeDataMode,
         conversation_id: str,
+        *,
+        limit: int,
+        after: ReportPosition | None,
+    ) -> RepositoryPage[ConversationReportItem, ReportPosition]: ...
+
+    @abstractmethod
+    async def list_managed_reports(
+        self,
+        source_mode: RuntimeDataMode,
+        status: ReportResourceStatus,
         *,
         limit: int,
         after: ReportPosition | None,

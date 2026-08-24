@@ -38,6 +38,7 @@ from backend.app.persistence.models import (
     PendingClarificationModel,
     ReportArtifactModel,
     ReportDeleteIntentModel,
+    ReportPresentationModel,
     ResultSnapshotModel,
     WorkMemoryModel,
 )
@@ -51,6 +52,8 @@ from backend.app.persistence.repositories.snapshot import SQLiteSnapshotReposito
 from backend.app.persistence.serialization import domain_to_json
 from backend.app.report.resources import (
     LocalReportRepository,
+    ReportArtifact,
+    ReportArtifactMetadata,
     ReportNotFoundError,
     ReportSpec,
     ReportStorageError,
@@ -324,6 +327,42 @@ class TestRecentConversations:
         assert second.next_cursor is None
 
     @pytest.mark.asyncio
+    async def test_all_35_conversations_are_pageable_with_stable_total_count(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        async with history_env.session_factory() as session:
+            async with session.begin():
+                session.add_all(
+                    [
+                        ConversationModel(
+                            conversation_id=f"full-history-{index:02d}",
+                            runtime_mode=RuntimeDataMode.REAL.value,
+                        )
+                        for index in range(35)
+                    ]
+                )
+
+        service = ConversationHistoryService(history_env.repository)
+        seen: list[str] = []
+        cursor: str | None = None
+        page_sizes: list[int] = []
+        while True:
+            page = await service.list_recent(
+                RuntimeDataMode.REAL,
+                limit=12,
+                cursor=cursor,
+            )
+            assert page.total_count == 35
+            page_sizes.append(len(page.items))
+            seen.extend(item.conversation_id for item in page.items)
+            cursor = page.next_cursor
+            if cursor is None:
+                break
+
+        assert page_sizes == [12, 12, 11]
+        assert len(seen) == len(set(seen)) == 35
+
+    @pytest.mark.asyncio
     async def test_completed_snapshot_touches_conversation_activity_time(
         self, history_env: HistoryEnvironment
     ) -> None:
@@ -525,6 +564,143 @@ class TestReportHistory:
         assert real_reports.items[0].semantic_model_key == "real_model"
 
     @pytest.mark.asyncio
+    async def test_all_30_reports_are_pageable_and_archive_is_recoverable(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        conversation_id = "full-report-history"
+        await _insert_conversation(
+            history_env.session_factory,
+            mode=RuntimeDataMode.REAL,
+            conversation_id=conversation_id,
+            created_at=UTC_BASE,
+            updated_at=UTC_BASE,
+        )
+        metadata_repo = SQLiteReportArtifactRepository(history_env.session_factory)
+        report_repo = LocalReportRepository(
+            history_env.db_path.parent / "full-report-history",
+            metadata_repo,
+        )
+        reports_root = history_env.db_path.parent / "full-report-history"
+        reports_root.mkdir(parents=True, exist_ok=True)
+        report_ids: list[str] = []
+        async with history_env.session_factory() as session:
+            async with session.begin():
+                for index in range(30):
+                    report_id = f"rpt_{index:032x}"
+                    request_id = f"report-request-{index}"
+                    html = f"<!DOCTYPE html><html><body>{index}</body></html>"
+                    artifact = ReportArtifact(
+                        report_id=report_id,
+                        template_key="sales_report",
+                        html="",
+                        source_mode="real",
+                        generated_at=UTC_BASE,
+                        contract_version="1.0",
+                        semantic_model_key="model",
+                        schema_fingerprint=f"{index:064x}",
+                        verified_fact_set_ids=[f"fact-{index}"],
+                        query_result_ids=[f"query-{index}"],
+                        content_hash=hashlib.sha256(html.encode()).hexdigest(),
+                        created_at=UTC_BASE + timedelta(seconds=index),
+                        view_reference=f"/api/reports/{report_id}",
+                        download_reference=f"/api/reports/{report_id}/download",
+                        relative_path=f"{report_id}.html",
+                        conversation_id=conversation_id,
+                        request_id=request_id,
+                    )
+                    metadata = ReportArtifactMetadata.from_domain(
+                        artifact,
+                        f"{report_id}.html",
+                        conversation_id=conversation_id,
+                        request_id=request_id,
+                    )
+                    session.add(
+                        ReportArtifactModel(
+                            report_id=report_id,
+                            conversation_id=conversation_id,
+                            request_id=request_id,
+                            template_key="sales_report",
+                            semantic_model_key="model",
+                            schema_fingerprint=f"{index:064x}",
+                            source_mode="real",
+                            content_hash=artifact.content_hash,
+                            relative_path=f"{report_id}.html",
+                            payload_json=domain_to_json(metadata),
+                        )
+                    )
+                    session.add(
+                        ReportPresentationModel(
+                            report_id=report_id,
+                            source_mode="real",
+                            conversation_id=conversation_id,
+                            request_id=request_id,
+                            display_title=f"report {index}",
+                            availability_status="available",
+                            created_at=artifact.created_at,
+                            updated_at=artifact.created_at,
+                        )
+                    )
+                    (reports_root / f"{report_id}.html").write_text(
+                        html, encoding="utf-8"
+                    )
+                    report_ids.append(report_id)
+
+        service = ConversationHistoryService(history_env.repository)
+        seen: list[str] = []
+        cursor: str | None = None
+        while True:
+            page = await service.list_managed_reports(
+                RuntimeDataMode.REAL,
+                status="active",
+                limit=13,
+                cursor=cursor,
+            )
+            assert page.total_count == 30
+            assert page.status == "active"
+            seen.extend(item.report_id for item in page.items)
+            cursor = page.next_cursor
+            if cursor is None:
+                break
+        assert len(seen) == len(set(seen)) == 30
+
+        active_cursor = (
+            await service.list_managed_reports(
+                RuntimeDataMode.REAL, status="active", limit=1
+            )
+        ).next_cursor
+        assert active_cursor is not None
+        with pytest.raises(InvalidConversationCursorError):
+            await service.list_managed_reports(
+                RuntimeDataMode.REAL,
+                status="archived",
+                limit=1,
+                cursor=active_cursor,
+            )
+
+        original, original_html = await report_repo.read_html(report_ids[0])
+        archived = await report_repo.archive(report_ids[0], "real")
+        assert archived.archived_at is not None
+        active_page = await service.list_managed_reports(
+            RuntimeDataMode.REAL, status="active", limit=30
+        )
+        archived_page = await service.list_managed_reports(
+            RuntimeDataMode.REAL, status="archived", limit=30
+        )
+        assert active_page.total_count == 29
+        assert [item.report_id for item in archived_page.items] == [report_ids[0]]
+        unchanged, unchanged_html = await report_repo.read_html(report_ids[0])
+        assert unchanged.content_hash == original.content_hash
+        assert unchanged_html == original_html
+
+        restored = await report_repo.restore(report_ids[0], "real")
+        assert restored.restored is True
+        assert (
+            await service.list_managed_reports(
+                RuntimeDataMode.REAL, status="archived", limit=30
+            )
+        ).total_count == 0
+
+    @pytest.mark.asyncio
     async def test_report_rename_and_delete_preserve_presentation_tombstone(
         self, history_env: HistoryEnvironment
     ) -> None:
@@ -603,6 +779,12 @@ class TestReportHistory:
             RuntimeDataMode.REAL, conversation_id, limit=20
         )
         assert listed.items[0].display_title == "区域销售报告"
+
+        await report_repo.archive(artifact.report_id, "real")
+        archived_reports = await service.list_managed_reports(
+            RuntimeDataMode.REAL, status="archived", limit=20
+        )
+        assert archived_reports.items[0].display_title == "区域销售报告"
 
         deleted = await report_repo.delete(artifact.report_id)
         assert deleted.conversation_id == conversation_id

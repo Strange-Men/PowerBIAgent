@@ -104,6 +104,7 @@ class ConversationReportItem(BaseModel):
     query_result_ids: list[str]
     display_title: str = "销售分析报告"
     availability_status: Literal["available"] = "available"
+    archived_at: datetime | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -112,6 +113,7 @@ class ConversationListPage(BaseModel):
     runtime_mode: RuntimeDataMode
     items: list[ConversationSummary]
     next_cursor: str | None = None
+    total_count: int = Field(ge=0)
 
     model_config = ConfigDict(frozen=True)
 
@@ -132,6 +134,20 @@ class ConversationReportPage(BaseModel):
     conversation_id: str
     items: list[ConversationReportItem]
     next_cursor: str | None = None
+    total_count: int = Field(ge=0)
+
+    model_config = ConfigDict(frozen=True)
+
+
+ReportResourceStatus = Literal["active", "archived"]
+
+
+class ReportResourcePage(BaseModel):
+    source_mode: RuntimeDataMode
+    status: ReportResourceStatus
+    items: list[ConversationReportItem]
+    next_cursor: str | None = None
+    total_count: int = Field(ge=0)
 
     model_config = ConfigDict(frozen=True)
 

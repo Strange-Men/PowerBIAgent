@@ -24,14 +24,15 @@ import type {
   BatchOperationResult,
   ConversationReportItem,
   ConversationSummary,
+  RuntimeMode,
 } from '../types'
 import { ResourceManager } from './ResourceManager'
 
 interface SidebarProps {
   collapsed: boolean
   activeConversationId: string | null
+  runtimeMode: RuntimeMode
   conversations: ConversationSummary[]
-  archivedConversations: ConversationSummary[]
   reports: ConversationReportItem[]
   error: string | null
   onToggle: () => void
@@ -43,14 +44,24 @@ interface SidebarProps {
   onRestore: (conversation: ConversationSummary) => Promise<void>
   onDelete: (conversation: ConversationSummary) => Promise<void>
   onDeleteReport: (report: ConversationReportItem) => Promise<void>
+  onArchiveReport: (report: ConversationReportItem) => Promise<void>
   onRenameReport: (report: ConversationReportItem, title: string) => Promise<void>
   onBulkDeleteConversations: (
+    items: ConversationSummary[],
+  ) => Promise<BatchOperationResult>
+  onBulkArchiveConversations: (
     items: ConversationSummary[],
   ) => Promise<BatchOperationResult>
   onBulkRestoreConversations: (
     items: ConversationSummary[],
   ) => Promise<BatchOperationResult>
   onBulkDeleteReports: (
+    items: ConversationReportItem[],
+  ) => Promise<BatchOperationResult>
+  onBulkArchiveReports: (
+    items: ConversationReportItem[],
+  ) => Promise<BatchOperationResult>
+  onBulkRestoreReports: (
     items: ConversationReportItem[],
   ) => Promise<BatchOperationResult>
 }
@@ -62,8 +73,8 @@ function displayTitle(conversation: ConversationSummary): string {
 export function Sidebar({
   collapsed,
   activeConversationId,
+  runtimeMode,
   conversations,
-  archivedConversations,
   reports,
   error,
   onToggle,
@@ -75,10 +86,14 @@ export function Sidebar({
   onRestore,
   onDelete,
   onDeleteReport,
+  onArchiveReport,
   onRenameReport,
   onBulkDeleteConversations,
+  onBulkArchiveConversations,
   onBulkRestoreConversations,
   onBulkDeleteReports,
+  onBulkArchiveReports,
+  onBulkRestoreReports,
 }: SidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -160,15 +175,18 @@ export function Sidebar({
     }
   }
 
-  const manageReport = async (report: ConversationReportItem) => {
+  const manageReport = async (
+    report: ConversationReportItem,
+    action: () => Promise<void>,
+  ) => {
     setManagingReportId(report.report_id)
     setActionError(null)
     try {
-      await onDeleteReport(report)
+      await action()
       setActionReportId(null)
     } catch (failure) {
       setActionError(
-        failure instanceof Error ? failure.message : '报表删除未完成，请稍后重试。',
+        failure instanceof Error ? failure.message : '报表操作未完成，请稍后重试。',
       )
     } finally {
       setManagingReportId(null)
@@ -284,8 +302,15 @@ export function Sidebar({
               <button className="conversation-actions-trigger" type="button" aria-label={`管理报表：${report.display_title || '销售分析报告'}`} aria-haspopup="menu" aria-expanded={actionReportId === report.report_id} onClick={() => setActionReportId((current) => current === report.report_id ? null : report.report_id)}><MoreHorizontal size={17} /></button>
               {actionReportId === report.report_id ? (
                 <div className="conversation-actions-menu" role="menu" aria-label={`报表操作：${report.display_title || '销售分析报告'}`}>
+                  <button type="button" role="menuitem" disabled={managingReportId === report.report_id} onClick={() => {
+                    const title = window.prompt('输入新的报表标题', report.display_title || '销售分析报告')?.trim()
+                    if (title) void manageReport(report, () => onRenameReport(report, title))
+                  }}><Pencil size={15} />重命名</button>
+                  <button type="button" role="menuitem" disabled={managingReportId === report.report_id} onClick={() => {
+                    void manageReport(report, () => onArchiveReport(report))
+                  }}><Archive size={15} />归档</button>
                   <button className="danger-action" type="button" role="menuitem" disabled={managingReportId === report.report_id} onClick={() => {
-                    if (window.confirm(`删除“${report.display_title || '销售分析报告'}”？此操作不可撤销，但不会删除所属对话。`)) void manageReport(report)
+                    if (window.confirm(`删除“${report.display_title || '销售分析报告'}”？此操作不可撤销，但不会删除所属对话。`)) void manageReport(report, () => onDeleteReport(report))
                   }}><Trash2 size={15} />删除报表</button>
                 </div>
               ) : null}
@@ -303,13 +328,11 @@ export function Sidebar({
       <div className="account-actions" data-account-actions>
         {userMenuOpen && !collapsed ? <div className="account-menu" role="menu" aria-label="用户菜单">
           <button type="button" role="menuitem" onClick={() => { setResourceManagerOpen(true); setUserMenuOpen(false) }}><Settings size={16} />设置</button>
-          <button type="button" role="menuitem" onClick={() => { setResourceManagerOpen(true); setUserMenuOpen(false) }}><Archive size={16} />已归档</button>
-          <button type="button" role="menuitem" onClick={() => { setResourceManagerOpen(true); setUserMenuOpen(false) }}><Folder size={16} />资源管理</button>
         </div> : null}
         <button className="account-card" type="button" title="PowerBIAgent 用户" aria-label="PowerBIAgent 用户" aria-haspopup="menu" aria-expanded={userMenuOpen} onClick={() => { if (collapsed) onToggle(); setUserMenuOpen((open) => !open) }}><span className="account-avatar"><UserRound size={16} /></span><span className="account-copy"><strong>PowerBIAgent</strong><small>内部用户</small></span></button>
       </div>
     </aside>
-    {resourceManagerOpen ? <ResourceManager conversations={conversations} archivedConversations={archivedConversations} reports={reports} onClose={() => setResourceManagerOpen(false)} onBulkDeleteConversations={onBulkDeleteConversations} onBulkRestoreConversations={onBulkRestoreConversations} onBulkDeleteReports={onBulkDeleteReports} onRenameReport={onRenameReport} /> : null}
+    {resourceManagerOpen ? <ResourceManager runtimeMode={runtimeMode} onClose={() => setResourceManagerOpen(false)} onRenameConversation={onRename} onBulkDeleteConversations={onBulkDeleteConversations} onBulkArchiveConversations={onBulkArchiveConversations} onBulkRestoreConversations={onBulkRestoreConversations} onBulkDeleteReports={onBulkDeleteReports} onBulkArchiveReports={onBulkArchiveReports} onBulkRestoreReports={onBulkRestoreReports} onRenameReport={onRenameReport} /> : null}
     </>
   )
 }

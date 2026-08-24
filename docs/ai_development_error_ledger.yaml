@@ -8,6 +8,84 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-541-001
+  title: Settings 将 Recent 第一页误作全部历史资源
+  category: ERR
+  first_detected_version: M5.4.1
+  symptom: Settings 只显示约 12 个 conversation，删除后原第二页资源补入第一页，用户看到后续历史不断重新出现；report 与全选范围同样被截断
+  local_evidence: frontend/src/api/client.ts 默认 recent/archived limit=12 且 listRecentReports 只遍历当前 recent conversation 后 slice(0,8)；usePowerBIAgent.refreshSidebar 只保存第一页；ResourceManager 直接消费 Sidebar props 并 ids.slice(0,20)
+  authoritative_sources:
+  - title: FastAPI Query Parameters
+    url: https://fastapi.tiangolo.com/tutorial/query-params/
+    reason: limit/cursor 必须作为显式、受验证的 query contract；默认 limit 只定义一页，不能代表全部匹配结果
+  - title: SQLAlchemy 2.0 Using SELECT Statements
+    url: https://docs.sqlalchemy.org/en/20/tutorial/data_select.html
+    reason: 分页查询必须使用确定性 ORDER BY，并通过受限 SELECT/limit 与稳定 tie-breaker 取得后续页
+  - title: React Updating Arrays in State
+    url: https://react.dev/learn/updating-arrays-in-state
+    reason: load-more、selection 与 partial failure 应以不可变 state 合并/过滤，避免分页状态与 Sidebar state 相互覆盖
+  root_cause: Settings 与 Sidebar 共享 bounded recent state；客户端既不保留 cursor/total，也没有全局 report collection query；selection 与 destructive wave 上限又被同一个 20 常量错误耦合。Real Browser 进一步证明 SQLite CURRENT_TIMESTAMP 无小数文本与 Python .000000 cursor 直接比较会令同秒 keyset 原地循环
+  failed_attempts:
+  - 第一版沿用 DateTime column 与 Python datetime 直接比较，unit fixture 使用显式 Python timestamp 未暴露 SQLite server-default 文本精度差异；Real Browser load-more 返回同一页
+  repair_attempt_count: 2
+  final_fix: Settings 独立 cursor/total pagination 与全局 namespace-scoped report collection；全选只指当前已加载；任意 selection 由最多 20 项 execution wave 协调正式单资源 API；SQLite keyset 的 ORDER BY 与 cursor predicate 统一使用 julianday 时间归一并以资源 ID tie-break
+  regression_tests:
+  - backend/tests/api/test_conversation_history.py
+  - backend/tests/unit/persistence/test_conversation_history.py
+  - frontend/src/components/ResourceManager.test.tsx
+  - frontend/src/hooks/usePowerBIAgent.batch.test.ts
+  prohibited_patterns:
+  - 把 recent page size 从 12 改成更大常量冒充全量历史
+  - Settings 直接复用 recentConversations 或 recentReports
+  - 用 selection 上限替代 destructive execution wave 上限
+  prevention_rules:
+  - 完整资源管理必须有独立 cursor、total_count、loaded/selected/has_more 状态
+  - Sidebar Recent 与 Settings 全量资源查询分别测试
+  - report collection 必须显式 source_mode/status namespace
+  related_adr: ADR-012
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-24'
+    action: discovered
+    version: M5.4.1
+  - date: '2026-08-24'
+    action: mitigation
+    version: M5.4.1
+- id: ERR-541-002
+  title: Test-owned cleanup 验残使用超出 API 合同的 page limit
+  category: ERR
+  first_detected_version: M5.4.1
+  symptom: 首次 Real Browser teardown 已完成正式 DELETE，但 residual probe 用 limit=100 请求最大 50 的列表 API，收到 422 并按 fail-closed 规则令 Artifact Governance 失败
+  local_evidence: scripts/owned_resource_cleanup.py 首次 Real Browser cleanup traceback；ownership registry 保留 active/failure，修复后第二次 cleanup 清空 registry 与全部 test-owned rows/HTML/intents
+  authoritative_sources:
+  - title: FastAPI Query Parameters
+    url: https://fastapi.tiangolo.com/tutorial/query-params/
+    reason: Cleanup probe 同样必须遵守正式 endpoint 的受验证 limit contract，不能绕过 MAX_PAGE_SIZE
+  root_cause: Cleanup probe 将内部期望的较大扫描页写死为 100，未复用正式 API 的 MAX_PAGE_SIZE=50 合同
+  failed_attempts:
+  - 首次 teardown 的删除阶段完成，但 100-item residual page 被 API 拒绝，Gate 正确保持 FAIL
+  repair_attempt_count: 1
+  final_fix: Residual probe 使用正式上限 50 持续 cursor 扫描，并增加 exact registered IDs 的 read-only SQLite namespace/report presentation/delete-intent probe；第二次 cleanup 后 registry active/failure、conversation/report/snapshot/HTML/delete intent 均为 0
+  regression_tests:
+  - backend/tests/unit/persistence/test_artifact_governance.py
+  - scripts/owned_resource_cleanup.py
+  prohibited_patterns:
+  - cleanup 或 governance probe 使用超出正式 API 合同的 limit
+  - 只检查 available report 而遗漏 deleted presentation metadata
+  prevention_rules:
+  - teardown probe 必须同时检查正式分页 API、exact SQLite namespace、registered HTML 与 pending intent
+  - cleanup failure 必须保留 ownership witness，修复并再次验证后才能 PASS
+  related_adr: ADR-012
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-24'
+    action: discovered
+    version: M5.4.1
+  - date: '2026-08-24'
+    action: mitigation
+    version: M5.4.1
 - id: ERR-264-001
   title: TopN QueryResult 行位置被写成严格业务名次
   category: ERR
