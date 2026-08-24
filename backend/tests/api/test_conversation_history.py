@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from backend.app.api.dependencies import get_report_repository
 from backend.app.config.settings import PersistenceBackend, Settings
 from backend.app.main import create_app
 from backend.app.memory.models import MemoryStatus, RuntimeDataMode, StructuredWorkMemory
@@ -26,6 +27,7 @@ from backend.app.persistence.models import (
     WorkMemoryModel,
 )
 from backend.app.persistence.serialization import domain_to_json
+from backend.app.report.resources import InMemoryReportRepository, ReportSpec
 
 
 async def _prepare_database(db_path: Path) -> None:
@@ -230,3 +232,63 @@ def test_invalid_limits_cursors_and_unknown_conversations_fail_explicitly(
             )
             assert response.status_code == 404
             assert response.json()["detail"] == "conversation_not_found"
+
+
+def test_archive_has_a_visible_restore_path_and_keeps_history(tmp_path: Path) -> None:
+    app = _sqlite_app(tmp_path)
+    with TestClient(app) as client:
+        archived = client.post(
+            "/api/v1/conversations/shared-api-conversation/archive",
+            params={"runtime_mode": "real"},
+        )
+        recent = client.get(
+            "/api/v1/conversations", params={"runtime_mode": "real"}
+        )
+        archive_page = client.get(
+            "/api/v1/conversations/archived",
+            params={"runtime_mode": "real"},
+        )
+        history = client.get(
+            "/api/v1/conversations/shared-api-conversation/history",
+            params={"runtime_mode": "real"},
+        )
+        restored = client.post(
+            "/api/v1/conversations/shared-api-conversation/restore",
+            params={"runtime_mode": "real"},
+        )
+        recent_after = client.get(
+            "/api/v1/conversations", params={"runtime_mode": "real"}
+        )
+
+    assert archived.status_code == 200
+    assert recent.json()["items"] == []
+    assert archive_page.json()["items"][0]["conversation_id"] == (
+        "shared-api-conversation"
+    )
+    assert history.json()["items"][0]["answer"] == "real API answer"
+    assert restored.status_code == 200 and restored.json()["restored"] is True
+    assert recent_after.json()["items"][0]["conversation_id"] == (
+        "shared-api-conversation"
+    )
+
+
+def test_report_delete_api_is_explicit_and_not_a_toolgateway_capability() -> None:
+    repository = InMemoryReportRepository()
+    artifact = asyncio.run(repository.store(
+        ReportSpec(title="resource", template_key="test_report", source_mode="mock"),
+        "<!DOCTYPE html><html><body>resource</body></html>",
+        conversation_id="conversation-kept",
+        request_id="request-report",
+    ))
+    app = create_app(settings=Settings(_env_file=None))
+    app.dependency_overrides[get_report_repository] = lambda: repository
+    with TestClient(app) as client:
+        deleted = client.delete(f"/api/reports/{artifact.report_id}")
+        missing = client.get(f"/api/reports/{artifact.report_id}")
+        allowed_tools = app.state.mock_turn_service.tool_gateway.list_tools()
+
+    assert deleted.status_code == 200
+    assert deleted.json()["conversation_id"] == "conversation-kept"
+    assert deleted.json()["deleted"] is True
+    assert missing.status_code == 404
+    assert all("delete" not in name for name in allowed_tools)

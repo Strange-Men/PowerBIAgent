@@ -26,6 +26,7 @@ export function App() {
         collapsed={sidebarCollapsed}
         activeConversationId={app.activeConversationId}
         conversations={app.recentConversations}
+        archivedConversations={app.archivedConversations}
         reports={app.recentReports}
         error={app.sidebarError}
         onToggle={() => setSidebarCollapsed((collapsed) => !collapsed)}
@@ -34,7 +35,9 @@ export function App() {
         onSearch={app.search}
         onRename={app.rename}
         onArchive={app.archive}
+        onRestore={app.restore}
         onDelete={app.remove}
+        onDeleteReport={app.removeReport}
       />
       <main className="chat-main">
         {app.messages.length > 0 ? (

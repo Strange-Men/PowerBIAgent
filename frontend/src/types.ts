@@ -114,6 +114,14 @@ export interface ConversationListPage {
   next_cursor: string | null
 }
 
+export interface ReportDeleteResult {
+  report_id: string
+  source_mode: RuntimeMode
+  conversation_id: string | null
+  request_id: string | null
+  deleted: boolean
+}
+
 export interface ConversationHistoryItem {
   request_id: string
   created_at: string

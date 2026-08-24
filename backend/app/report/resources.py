@@ -39,6 +39,16 @@ class ReportStorageError(ReportResourceError):
     pass
 
 
+class ReportDeleteResult(BaseModel):
+    report_id: str
+    source_mode: Literal["mock", "real"]
+    conversation_id: str | None = None
+    request_id: str | None = None
+    deleted: bool = True
+
+    model_config = ConfigDict(frozen=True)
+
+
 class ReportArtifact(RenderedReport):
     """Metadata and exact compatibility copy for one managed HTML artifact."""
 
@@ -176,6 +186,11 @@ class ReportRepository(ABC):
 
     @abstractmethod
     async def read_html(self, report_id: str) -> tuple[ReportArtifact, str]:
+        ...
+
+    @abstractmethod
+    async def delete(self, report_id: str) -> ReportDeleteResult:
+        """Delete one report resource; this is never an Agent tool."""
         ...
 
     async def delete_html_files(self, report_ids: list[str]) -> None:
@@ -317,6 +332,20 @@ class InMemoryReportRepository(ReportRepository):
                 _validate_report_id(report_id)
                 self._items.pop(report_id, None)
 
+    async def delete(self, report_id: str) -> ReportDeleteResult:
+        _validate_report_id(report_id)
+        async with self._lock:
+            item = self._items.pop(report_id, None)
+            if item is None:
+                raise ReportNotFoundError("report_not_found")
+            artifact = item[0]
+            return ReportDeleteResult(
+                report_id=artifact.report_id,
+                source_mode=artifact.source_mode,
+                conversation_id=artifact.conversation_id,
+                request_id=artifact.request_id,
+            )
+
     def _new_id(self) -> str:
         while True:
             report_id = f"rpt_{uuid.uuid4().hex}"
@@ -440,6 +469,30 @@ class LocalReportRepository(ReportRepository):
                     self._items.pop(report_id, None)
             except OSError as exc:
                 raise ReportStorageError("report_artifact_delete_failed") from exc
+
+    async def delete(self, report_id: str) -> ReportDeleteResult:
+        """Durably unlink one exact managed report without deleting its conversation."""
+
+        _validate_report_id(report_id)
+        async with self._lock:
+            if self._metadata_repo is not None:
+                artifact = await self._metadata_repo.begin_delete(report_id)
+            else:
+                artifact = await self._resolve_artifact(report_id)
+            target = self._target(report_id)
+            try:
+                target.unlink(missing_ok=True)
+            except OSError as exc:
+                raise ReportStorageError("report_artifact_delete_failed") from exc
+            self._items.pop(report_id, None)
+            if self._metadata_repo is not None:
+                await self._metadata_repo.complete_delete(report_id)
+            return ReportDeleteResult(
+                report_id=artifact.report_id,
+                source_mode=artifact.source_mode,
+                conversation_id=artifact.conversation_id,
+                request_id=artifact.request_id,
+            )
 
     def _validate_path(self, artifact: ReportArtifact) -> Path:
         """Validate and resolve the relative_path as the recovery authority.

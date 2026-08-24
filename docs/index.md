@@ -41,6 +41,7 @@
 |---|---|---|
 | `docs/specs/10_frontend_visual_and_interaction_spec.md` | 前端视觉与交互专项规范 | M5 或相关契约任务 |
 | `docs/specs/11_structured_answer_contract.md` | Answer/Report 组合输出专项契约 | 输出契约、M3/M5 任务 |
+| `docs/specs/12_conversation_memory_and_resource_lifecycle_contract.md` | 多轮继承、archive/restore/delete、report ownership 与 artifact lifecycle | M5.3.3 多轮、会话或资源生命周期任务 |
 | `docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md` | M2 Local Demo / Remote Production 专项计划 | M2 Provider、Smoke、Remote 证据任务 |
 | `docs/adr/ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md` | TurnPipeline / ToolGateway 总体决策 | 控制面与工具边界 |
 | `docs/adr/ADR-006_remote_powerbi_mcp_production_integration.md` | Remote MCP 生产化决策 | 仅重新获批 Remote 时 |
@@ -75,7 +76,7 @@
 | Local MCP / Adapter / Smoke | 04/05 + M2 plan + ADR-006/007 |
 | 安全、Git、CI、治理脚本 | 06 + CLAUDE + 相关 gate/test |
 | M3 报表 | specs/11 + ADR-010 + M3 milestone 文档（如后续需要） |
-| M5 前端 | 01 + specs/10/11（获批后） |
+| M5 前端 | 01 + specs/10/11/12（获批后） |
 
 ## 新增文档规则
 

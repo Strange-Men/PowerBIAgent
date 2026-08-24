@@ -19,8 +19,10 @@ from backend.app.intent.models import (
 )
 from backend.app.intent.prompt import SYSTEM_PROMPT as INTENT_SYSTEM_PROMPT
 from backend.app.intent.unsupported_policy import (
+    deterministic_unsupported_reason,
     should_defer_unsupported_to_grounding,
 )
+from backend.app.memory.models import MemoryStatus, StructuredWorkMemory
 
 
 class TestIntentType:
@@ -342,4 +344,29 @@ class TestUnsupportedRoutingPolicy:
     def test_clear_out_of_scope_request_keeps_early_stop(self, message):
         assert should_defer_unsupported_to_grounding(
             message, self._intent()
+        ) is False
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "预测下个月销售额",
+            "帮我修改这个 PBIX 里的度量值",
+            "删除所有数据",
+            "写入 Power BI 模型",
+            "运行一段 Python 代码",
+            "任意代码执行",
+        ],
+    )
+    def test_deterministic_preflight_rejects_readonly_violations(self, message):
+        assert deterministic_unsupported_reason(message) is not None
+
+    def test_committed_memory_never_overrides_current_unsupported_request(self):
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+        )
+        assert should_defer_unsupported_to_grounding(
+            "帮我修改这个 PBIX 里的度量值",
+            self._intent(),
+            committed=committed,
         ) is False

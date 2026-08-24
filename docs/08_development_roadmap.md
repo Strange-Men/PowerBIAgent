@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.3.2 — Local MCP 多模型选择与协议稳定性加固已完成
+> **状态：** M5.3.3 — 多轮语义、会话资源生命周期与仓库治理最终收口已完成
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -34,6 +34,18 @@
 | **M5.3** | **结构化结果、历史/标题/资源管理与视觉交互最终收口** | **✅ 已完成** |
 | **M5.3.1** | **Local Desktop 单实例安全 + presentation verified-field projection** | **✅ 已完成** |
 | **M5.3.2** | **Local MCP 多 PBIX 选择、opaque binding 与 beta 协议稳定性** | **✅ 已完成** |
+| **M5.3.3** | **多轮语义、conversation/report 生命周期与 Artifact Governance 最终收口** | **✅ 已完成** |
+
+### M5.3.3 — 最终收口边界（已完成）
+
+- LLM 负责 flexible、typed、bounded semantic draft；runtime schema/glossary/members、固定 clock 与 deterministic validators 继续拥有 canonical identity/time authority。
+- 当前明确表达 > 当前 bounded draft > committed Memory；区分 fresh question、follow-up、replace，Memory 只继承真正省略的兼容槽。
+- 预测、写入、PBIX/Measure 修改、删除数据、任意代码与自然语言 report delete 在 Memory/Grounding/DAX 前 readonly fail closed。
+- archive 保留并可恢复；conversation delete 永久清理 exact namespace；独立 report delete 只由用户显式资源管理 UI/API 触发，LLM/ToolGateway 无权限。
+- history response 使用 abort/generation + active conversation identity，禁止 A 响应覆盖 B。
+- local_state 固定 persistence/reports/runtime/archive；测试 artifact 必须 register ownership、teardown 并验证，Artifact Governance Gate 只读 fail closed，不自动删除用户数据。
+- 新增 `e7a9c2d4f631` report delete intent migration；Rich PBIX 八轮真实浏览器、archive/restore、独立 report delete、conversation cascade delete 与 A/B 快速切换已通过。
+- 不修改 M0–M5 factual authority，不开发 Remote MCP 或后续里程碑。
 
 ## M5.2 / M5.3 正式边界
 
@@ -226,8 +238,8 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
-- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.2 truth/persistence boundary final closure FINAL PASS；M5.0—M5.3.2 已完成；禁止 force push。
+- M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.2 truth/persistence boundary final closure FINAL PASS；M5.0—M5.3.3 已完成；禁止 force push。
 
 ---
 
-*最后更新：2026-08-24 | M5.3.2 COMPLETE — Local MCP 多模型选择与协议稳定性加固*
+*最后更新：2026-08-24 | M5.3.3 COMPLETE — 完成后停止，不进入后续里程碑*

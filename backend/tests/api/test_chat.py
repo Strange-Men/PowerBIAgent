@@ -17,7 +17,13 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel
 
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
-from backend.app.intent.models import IntentSpec, IntentType
+from backend.app.intent.models import (
+    IntentSpec,
+    IntentType,
+    TimeIntentDraft,
+    TimeIntentKind,
+    TurnRelation,
+)
 from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
 from backend.app.llm.registry import LLMProviderRegistry
 from backend.app.main import create_app
@@ -1083,6 +1089,170 @@ class _M24FakeLocalPowerBIAdapter(PowerBIAdapter):
         return PowerBIError(type="unknown", message="normalized")
 
 
+class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.active = "current"
+        self.model_key = "local_desktop_model"
+
+    async def generate(self, request, output_type):
+        self.calls.append(request)
+        messages = {
+            "current": "本月销售额是多少？",
+            "absolute": "2025年5月销售额多少？",
+            "last_may": "去年五月",
+            "previous_month": "上个月",
+            "recent_half": "最近半年",
+            "top_region": "销售额最高的前3个区域是什么？",
+            "south": "那只看华南呢？",
+            "last_year": "改成去年。",
+            "fresh_quantity": "总销量是多少？",
+            "failed": "总销售额是多少？",
+            "model_switch": "总销售额是多少？",
+        }
+        if request.task == LLMTask.INTENT_RECOGNITION:
+            values = {
+                "intent": IntentType.DATA_QUESTION,
+                "confidence": 0.99,
+                "normalized_question": messages[self.active],
+            }
+            if self.active in {
+                "current", "absolute", "top_region", "failed", "model_switch"
+            }:
+                values["detected_measures"] = ["销售额"]
+                values["turn_relation"] = TurnRelation.FRESH_QUESTION
+            elif self.active == "fresh_quantity":
+                values["detected_measures"] = ["销量"]
+                values["turn_relation"] = TurnRelation.FRESH_QUESTION
+            else:
+                values["turn_relation"] = (
+                    TurnRelation.FOLLOW_UP
+                    if self.active == "south" else TurnRelation.REPLACE
+                )
+            if self.active == "absolute":
+                values["detected_time_range"] = "2025年5月"
+                values["time_intent"] = TimeIntentDraft(
+                    kind=TimeIntentKind.ABSOLUTE_MONTH,
+                    expression="2025年5月",
+                    year=2025,
+                    month=5,
+                )
+            elif self.active in {
+                "current", "last_may", "previous_month", "recent_half", "last_year"
+            }:
+                values["detected_time_range"] = messages[self.active]
+            if self.active == "top_region":
+                values["detected_dimensions"] = ["区域"]
+            if self.active == "south":
+                values["detected_filters"] = [
+                    {"field": "区域", "operator": "eq", "value": "华南"}
+                ]
+            structured = IntentSpec(**values)
+        elif request.task == LLMTask.QUERY_PLAN:
+            values = {
+                "normalized_question": messages[self.active],
+                "semantic_model_key": self.model_key,
+            }
+            if self.active in {
+                "current", "absolute", "last_may", "previous_month",
+                "recent_half", "top_region", "south", "last_year", "failed",
+                "model_switch",
+            }:
+                values["measures"] = ["Total Sales"]
+            else:
+                values["measures"] = ["Total Quantity"]
+            if self.active in {"top_region", "south", "last_year"}:
+                values["dimensions"] = ["Region"]
+                values["sort"] = "desc"
+                values["top_n"] = 3
+            if self.active == "south":
+                values["filters"] = [
+                    StructuredFilter(field="Region", value="华南")
+                ]
+            if self.active in {
+                "current", "absolute", "last_may", "previous_month", "recent_half", "last_year"
+            }:
+                values["time_range"] = messages[self.active]
+            structured = QueryPlan(**values)
+        else:
+            raise AssertionError(f"unexpected LLM task: {request.task}")
+        return LLMResponse(
+            content="{}",
+            structured=structured,
+            model="fake-deepseek",
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        )
+
+
+class _M533MultiTurnAdapter(_M24FakeLocalPowerBIAdapter):
+    fail_next = False
+
+    async def get_semantic_model_schema(self, semantic_model_key: str):
+        self.schema_calls += 1
+        assert semantic_model_key in {
+            "local_desktop_model", "local_desktop_model_alt"
+        }
+        return SemanticModelSchema(
+            name="Local Desktop Model",
+            key=semantic_model_key,
+            tables=[TableSchema(
+                name="Sales",
+                columns=[
+                    ColumnSchema(name="Category", data_type="string"),
+                    ColumnSchema(name="Product", data_type="string"),
+                    ColumnSchema(name="OrderDate", data_type="datetime"),
+                    ColumnSchema(name="Region", data_type="string"),
+                ],
+                measures=[
+                    MeasureSchema(name="Total Sales", data_type="decimal"),
+                    MeasureSchema(name="Total Quantity", data_type="int64"),
+                ],
+            )],
+        )
+
+    async def get_column_members(self, request: ColumnMembersRequest):
+        return ColumnMembersResult(
+            semantic_model_key=request.semantic_model_key,
+            table_name=request.table_name,
+            field_name=request.field_name,
+            values=["华南", "华东", "华北"],
+            source_mode="real",
+        )
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.dax_calls += 1
+        if self.fail_next:
+            self.fail_next = False
+            return QueryResult(
+                semantic_model_key=request.semantic_model_key,
+                source_mode="real",
+                request_id=request.request_id,
+                error=PowerBIError(type="injected_failure", message="controlled"),
+            )
+        measure = (
+            "Total Quantity" if "[Total Quantity]" in request.dax else "Total Sales"
+        )
+        if "'Sales'[Region]" in request.dax:
+            return QueryResult(
+                result_id=f"qr-{request.request_id}",
+                semantic_model_key=request.semantic_model_key,
+                columns=["Sales[Region]", f"[{measure}]"],
+                rows=[["华南", 100], ["华东", 80], ["华北", 60]],
+                row_count=3,
+                source_mode="real",
+                request_id=request.request_id,
+            )
+        return QueryResult(
+            result_id=f"qr-{request.request_id}",
+            semantic_model_key=request.semantic_model_key,
+            columns=[f"[{measure}]"],
+            rows=[[100]],
+            row_count=1,
+            source_mode="real",
+            request_id=request.request_id,
+        )
+
+
 class _M24PreviewMissingRowsAdapter(_M24FakeLocalPowerBIAdapter):
     async def execute_dax(self, request: DAXRequest) -> QueryResult:
         self.dax_calls += 1
@@ -1255,6 +1425,7 @@ def _patch_fake_runtime_glossary(monkeypatch):
         "Total Quantity": ["销量", "总数量", "销售数量", "件数", "多少件"],
         "Category": ["类别", "品类"],
         "Product": ["产品", "商品"],
+        "Region": ["区域", "地区"],
         "OrderDate": ["订单日期", "销售日期"],
     }
 
@@ -1341,6 +1512,27 @@ def _patch_unsupported_routing_composition(monkeypatch):
     _patch_fake_runtime_glossary(monkeypatch)
     monkeypatch.setattr(
         main_module, "LocalMCPPowerBIAdapter", _M24FakeLocalPowerBIAdapter
+    )
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        deepseek_api_key="test-key-not-real",
+    )
+    return main_module.create_app(settings=settings), provider
+
+
+def _patch_m533_multi_turn_composition(monkeypatch):
+    import backend.app.llm.factory as llm_factory
+    import backend.app.main as main_module
+
+    provider = _M533MultiTurnProvider()
+    registry = LLMProviderRegistry()
+    registry.register("deepseek", provider, set_default=True)
+    monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+    _patch_fake_runtime_glossary(monkeypatch)
+    monkeypatch.setattr(
+        main_module, "LocalMCPPowerBIAdapter", _M533MultiTurnAdapter
     )
     settings = Settings(
         _env_file=None,
@@ -1621,6 +1813,116 @@ class TestPendingClarificationProductionPath:
                 assert committed.request_id == "pending-e3"
                 assert committed.memory_version == 1
 
+
+    @pytest.mark.asyncio
+    async def test_time_replace_fresh_follow_up_and_failed_turn_boundaries(
+        self, monkeypatch
+    ):
+        app, provider = _patch_m533_multi_turn_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        conversation_id = "m533-multi-turn"
+
+        async def post(
+            client,
+            active,
+            message,
+            semantic_model_key="local_desktop_model",
+        ):
+            provider.active = active
+            provider.model_key = semantic_model_key
+            response = await client.post("/api/v1/chat", json={
+                "message": message,
+                "conversation_id": conversation_id,
+                "request_id": f"m533-{active}",
+                "semantic_model_key": semantic_model_key,
+            })
+            assert response.status_code == 200, response.text
+            return response.json()
+
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                for active, message, start, end in (
+                    ("current", "本月销售额是多少？", "2026-08-01", "2026-08-31"),
+                    ("absolute", "2025年5月销售额多少？", "2025-05-01", "2025-05-31"),
+                    ("last_may", "去年五月", "2025-05-01", "2025-05-31"),
+                    ("previous_month", "上个月", "2026-07-01", "2026-07-31"),
+                    ("recent_half", "最近半年", "2026-03-01", "2026-08-31"),
+                ):
+                    body = await post(client, active, message)
+                    assert body["terminal_state"] == "completed", body
+                    committed = await service.pipeline.get_latest_committed_memory(
+                        conversation_id, RuntimeDataMode.REAL
+                    )
+                    assert committed is not None and committed.time_range is not None
+                    assert committed.time_range.start_date.isoformat() == start
+                    assert committed.time_range.end_date.isoformat() == end
+
+                top = await post(
+                    client,
+                    "top_region",
+                    "销售额最高的前3个区域是什么？",
+                )
+                assert top["terminal_state"] == "completed", top
+                plan = top["execution_audit"]["canonical_query_plan"]
+                assert plan["dimensions"] == ["Region"]
+                assert plan["top_n"] == 3 and plan["sort"] == "desc"
+                assert plan["time_range"] is None
+                assert plan["filters"] == []
+
+                follow = await post(client, "south", "那只看华南呢？")
+                follow_plan = follow["execution_audit"]["canonical_query_plan"]
+                assert follow_plan["dimensions"] == ["Region"]
+                assert follow_plan["top_n"] == 3
+                assert follow_plan["filters"][0]["value"] == "华南"
+
+                replaced = await post(client, "last_year", "改成去年。")
+                replace_plan = replaced["execution_audit"]["canonical_query_plan"]
+                assert replace_plan["time_range"]["start_date"] == "2025-01-01"
+                assert replace_plan["filters"][0]["value"] == "华南"
+
+                fresh = await post(client, "fresh_quantity", "总销量是多少？")
+                fresh_plan = fresh["execution_audit"]["canonical_query_plan"]
+                assert fresh_plan["measures"] == ["Total Quantity"]
+                assert fresh_plan["dimensions"] == []
+                assert fresh_plan["filters"] == []
+                assert fresh_plan["time_range"] is None
+                assert fresh_plan["sort"] is None and fresh_plan["top_n"] is None
+                committed_before_failure = await service.pipeline.get_latest_committed_memory(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+
+                service.powerbi.fail_next = True
+                failed = await post(client, "failed", "总销售额是多少？")
+                assert failed["terminal_state"] == "tool_failed"
+                committed_after_failure = await service.pipeline.get_latest_committed_memory(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+                assert committed_before_failure is not None
+                assert committed_after_failure is not None
+                assert committed_after_failure.request_id == committed_before_failure.request_id
+                assert (
+                    committed_after_failure.memory_version
+                    == committed_before_failure.memory_version
+                )
+
+                switched = await post(
+                    client,
+                    "model_switch",
+                    "总销售额是多少？",
+                    "local_desktop_model_alt",
+                )
+                switched_plan = switched["execution_audit"]["canonical_query_plan"]
+                assert switched["terminal_state"] == "completed"
+                assert switched_plan["semantic_model_key"] == "local_desktop_model_alt"
+                assert switched_plan["dimensions"] == []
+                assert switched_plan["filters"] == []
+                assert switched_plan["time_range"] is None
+                switched_memory = await service.pipeline.get_latest_committed_memory(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+                assert switched_memory is not None
+                assert switched_memory.semantic_model_key == "local_desktop_model_alt"
     @pytest.mark.asyncio
     async def test_current_explicit_slot_overrides_pending(self, monkeypatch):
         app, provider = _patch_pending_clarification_composition(monkeypatch)
@@ -1767,6 +2069,40 @@ class TestM24DeepSeekLocalChat:
                         assert await service.pipeline.get_pending_clarification(
                             conversation_id, RuntimeDataMode.REAL
                         ) is None
+
+    @pytest.mark.asyncio
+    async def test_readonly_unsupported_preflight_never_uses_llm_dax_or_memory(
+        self, monkeypatch
+    ):
+        app, provider = _patch_unsupported_routing_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        messages = (
+            "预测下个月销售额",
+            "帮我修改这个 PBIX 里的度量值",
+            "删除所有数据",
+        )
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                for index, message in enumerate(messages):
+                    conversation_id = f"m533-unsupported-{index}"
+                    llm_calls = len(provider.calls)
+                    dax_calls = service.powerbi.dax_calls
+                    response = await client.post("/api/v1/chat", json={
+                        "message": message,
+                        "conversation_id": conversation_id,
+                        "request_id": f"m533-unsupported-request-{index}",
+                        "semantic_model_key": "local_desktop_model",
+                    })
+                    body = response.json()
+                    assert response.status_code == 200
+                    assert body["terminal_state"] == "unsupported"
+                    assert body["memory_commit"] is False
+                    assert len(provider.calls) == llm_calls
+                    assert service.powerbi.dax_calls == dax_calls
+                    assert await service.pipeline.get_latest_committed_memory(
+                        conversation_id, RuntimeDataMode.REAL
+                    ) is None
 
     @pytest.mark.asyncio
     async def test_catalog_alias_can_correct_intent_clarification(self, monkeypatch):

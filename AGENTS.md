@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.3.2 — Local MCP 多模型选择与协议稳定性加固**。M4.4.2 FINAL PASS；M5.0—M5.3.2 已完成。
+当前版本：**M5.3.3 — 多轮语义、会话资源生命周期与仓库治理最终收口**。M4.4.2 FINAL PASS；M5.0—M5.3.3 已完成。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -34,6 +34,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.3** 已实现安全启动诊断、Desktop 模型最小 compatibility、展示型 transcript/title/rename、conversation 管理、QueryResult/VerifiedFactSet 直接来源的 `presentation` contract、动态指标/表格/柱状图/折线图/报表附件，以及 responsive/accessibility/状态视觉收口。完整 schema fingerprint 仅用于 drift 诊断，不单独阻断模型；Rich PBIX Real 六轮问答、表格、报表、recent/history/search、查看/下载验收通过。M0–M4 factual authority 与 M4 durable delete intent 不变。**M5.3 COMPLETE。**
 - **M5.3.1** 已将 Local MCP Desktop contract 收紧为每个 discovery/schema/member/DAX session 只接受唯一实例，多个实例在 Connect 前 deterministic fail closed；`presentation` dataset 仅投影 VerifiedFactSet 数据事实 `source_fields` 覆盖列。无新 registry、无 M0–M4 authority 变化。**M5.3.1 COMPLETE。**
 - **M5.3.2** 已升级为多 PBIX 安全枚举与选择：后端生成不泄露连接属性的 deterministic opaque key；schema/member/DAX 每个 session 重新枚举并精确匹配唯一实例；逐 option 只读 MCP capability probe、stale fail-closed 与 DAX row shape/truncation 防腐完成。Remote MCP 继续 Deferred；无 migration、无 M0–M4 authority 变化。**M5.3.2 COMPLETE。**
+- **M5.3.3** 已完成多轮与资源生命周期最终收口：当前明确表达 > bounded LLM semantic draft > committed Memory；fresh/follow-up/replace 分离，unsupported 在 Memory/Grounding/DAX 前 fail closed；archive 可恢复且不等于 delete；report 只可由用户显式资源 API 独立删除；前端 history 使用 abort/generation/active identity 防串窗；local_state 与测试 artifact 由长期 ownership/cleanup gate 治理。新增 migration `e7a9c2d4f631`；Rich PBIX 八轮 Real 浏览器与资源生命周期验收通过。M0–M5 factual authority 不变。**M5.3.3 COMPLETE。**
 
 当前真实主链：
 
@@ -80,6 +81,10 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 12. ADR-011：固定模板 = 固定设计规则 + 允许能力目录，不是固定输出内容；报表 section 由用户需求 ∩ runtime schema 能力 ∩ catalog 决定；capability.py 是 schema-aware capability engine；Report Intent weak signal 只输出 registry-owned ID 并单独计数；Visualization/Layout/Theme Policy 由普通代码决定，LLM 无图表选择 authority。
 13. M4.3：Repository query/mutation 必须把 namespace 作为必填参数；不得只按 `conversation_id` 查询、归档或删除；SQLite history/search 不是 business/result/report factual authority，也不得从现有 schema 伪造 transcript。
 14. M4.4：只有 terminal Snapshot 可作为 request replay authority；Memory-without-Snapshot 必须 fail closed。Report HTML 只能从 filesystem 恢复。跨 DB/filesystem delete 必须保留 durable cleanup intent，cleanup 成功后才能清除 intent。
+15. M5.3.3：同 conversation 不等于自动 follow-up；Memory 只继承当前轮真正省略的兼容槽。fresh question 清除无关旧槽，replace 只替换明确槽，证据不足 clarification。semantic model 切换不得继承旧模型业务上下文。
+16. M5.3.3：预测、写入、PBIX/Measure 修改、删除数据、任意代码与自然语言 report delete 必须在 committed Memory/Grounding/DAX 前 readonly fail closed；存在 Memory 不是放行理由。
+17. M5.3.3：archive 保留 conversation/history/report/HTML 并可 restore；独立 report delete 只能由用户显式 UI/API 触发，不注册 ToolGateway，LLM 无权限。
+18. M5.3.3：异步 history 响应必须复核 active conversation 与 request generation；local_state 只允许 persistence/reports/runtime/archive，测试 artifact 必须登记 ownership、teardown 并验证 cleanup，Gate 不自动删除用户数据。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前开发 M5、开发 Remote MCP；未经用户明确批准不得创建 Tag。
 
@@ -113,4 +118,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-24 | M5.3.2 COMPLETE — Local MCP 多模型选择与协议稳定性加固*
+*最后更新：2026-08-24 | M5.3.3 COMPLETE — 多轮语义、会话资源生命周期与仓库治理最终收口*

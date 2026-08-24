@@ -81,7 +81,7 @@
 | 7 | "最近报表"分区标题 | 分区标签 | — |
 | 8 | 最近生成的报表列表 | 接 M3/M4 后端 report history API | 真实交互 |
 | 9 | "最近"分区标题 | 对话分区标签 | — |
-| 10 | 最近对话列表 | 当前选中使用浅灰背景 | 真实交互，接 M4 后端 |
+| 10 | 最近对话 / 已归档入口 | 当前选中使用浅灰背景；归档可恢复 | 真实交互，接 M4/M5.3.3 后端 |
 | 11 | 用户信息 + 更多菜单 | 底部固定，不新增用户系统 | 仅展示 |
 
 ## 七、新聊天欢迎态
@@ -245,6 +245,15 @@
 - report_id 来自后端
 - view_reference 和 download_reference 由后端生成
 - LLM 不得生成任意外部 URL
+- 最近报表提供 `… → 删除报表`，必须经用户确认；只调用显式资源管理 API，不删除所属 conversation
+- 独立删除后该 report 不再从 Recent/History attachment 恢复；LLM 与自然语言 Chat 无删除路径
+
+### 11.5 异步 conversation 隔离
+
+- 打开 conversation 时立即记录目标 ID，并为 history 请求分配 generation/AbortController
+- response 返回后再次核对 response conversation ID、当前 active ID 与 generation；任一不一致即丢弃
+- open/new/delete/archive/restore/model switch 必须使旧 history 请求失效
+- A conversation 的慢响应、错误或 report attachment 不得覆盖已经打开的 B conversation
 
 ## 十二、底部输入器（Composer）
 
@@ -385,7 +394,8 @@
 | report_template_key 列表 | ❌ 无独立 API | +"菜单只登记 `sales_report` |
 | `presentation` 展示层 | ✅ Chat/History typed envelope | M5.3 动态 text/metric/table/bar/line/report |
 | History transcript/title | ✅ presentation metadata | M5.3 完整恢复、默认标题、重命名 |
-| Conversation 管理 | ✅ archive/delete + M5.3 rename | Sidebar 菜单；report 随 conversation 管理 |
+| Conversation 管理 | ✅ archive/delete + M5.3 rename；M5.3.3 restore | Sidebar 区分最近/已归档；archive 可恢复，delete 永久清理 |
+| 独立 report delete | M5.3.3 显式资源 API | 最近报表 `…` 菜单 + 确认；conversation 保留，LLM 无权限 |
 
 ## 十八、明确禁止的设计
 
@@ -430,4 +440,4 @@
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-23 | M5.3 视觉与交互最终收口完成*
+*最后更新：2026-08-24 | M5.3.3 archive/restore/report delete 与异步隔离契约*

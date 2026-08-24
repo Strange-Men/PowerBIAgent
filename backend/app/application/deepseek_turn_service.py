@@ -48,6 +48,7 @@ from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.deepseek_service import DeepSeekIntentService
 from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.intent.unsupported_policy import (
+    deterministic_unsupported_reason,
     should_defer_unsupported_to_grounding,
 )
 from backend.app.llm.base import LLMProvider, LLMTask
@@ -82,7 +83,10 @@ from backend.app.query_plan.semantic_catalog import (
     GlossaryCatalogError,
     SemanticCatalogBuilder,
 )
-from backend.app.query_plan.state_transition import StateTransitionService
+from backend.app.query_plan.state_transition import (
+    StateTransitionService,
+    TurnInheritancePolicy,
+)
 from backend.app.query_plan.template_catalog import (
     DEFAULT_TEMPLATE_CATALOG,
     TemplateGroundingStatus,
@@ -258,6 +262,57 @@ class DeepSeekTurnService:
             output_cost_per_million=self.settings.deepseek_output_cost_per_million_tokens,
         )
         observed = ObservedLLMProvider(self.llm_provider, collector)
+
+        unsupported_reason = deterministic_unsupported_reason(message)
+        if unsupported_reason is not None:
+            await self.pipeline.clear_pending_clarification(
+                effective_conv_id, runtime_mode
+            )
+            trace.record(
+                "request_completed",
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                data_summary={
+                    "terminal_state": "unsupported",
+                    "policy": "deterministic_preflight",
+                },
+            )
+            return self._build_result(
+                effective_req_id,
+                effective_conv_id,
+                "unsupported",
+                intent=IntentType.UNSUPPORTED.value,
+                response_type="unsupported",
+                unsupported_reason=unsupported_reason,
+                trace=trace,
+                trace_id=trace_id,
+                is_mock=False,
+                source_mode=self._source_mode,
+                collector=collector,
+                execution_audit={
+                    "unsupported_preflight": True,
+                    "committed_memory_mutated": False,
+                    "dax_executed": False,
+                },
+            )
+
+        commit_base = committed
+        semantic_committed = committed
+        if (
+            committed is not None
+            and committed.semantic_model_key != semantic_model_key
+        ):
+            semantic_committed = None
+            await self.pipeline.clear_pending_clarification(
+                effective_conv_id, runtime_mode
+            )
+            pending_clarification = None
+            trace.record(
+                "semantic_model_context_reset",
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                data_summary={"reason": "semantic_model_key_changed"},
+            )
         request_user_context = UserContext(
             allowed_semantic_models=[semantic_model_key],
             allowed_templates=list(DEFAULT_TEMPLATE_CATALOG.allowed_keys),
@@ -280,7 +335,9 @@ class DeepSeekTurnService:
         intent_service = DeepSeekIntentService(provider=observed, max_format_repairs=1)
         intent = await intent_service.recognize(
             user_input=message,
-            committed_memory=committed.model_dump() if committed else None,
+            committed_memory=(
+                semantic_committed.model_dump() if semantic_committed else None
+            ),
             semantic_model_key=semantic_model_key,
             report_template_key=report_template_key,
         )
@@ -294,7 +351,7 @@ class DeepSeekTurnService:
             if should_defer_unsupported_to_grounding(
                 message,
                 intent,
-                committed=committed,
+                committed=semantic_committed,
                 pending=pending_clarification,
                 report_template_key=report_template_key,
             ):
@@ -367,7 +424,7 @@ class DeepSeekTurnService:
             )
 
         # ── 5. 创建 pending memory — M1.6.3.1: 委托给 TurnPipeline ──
-        base_version = committed.memory_version if committed is not None else 0
+        base_version = commit_base.memory_version if commit_base is not None else 0
         memory = await self.pipeline.create_pending_memory(
             conversation_id=effective_conv_id,
             request_id=effective_req_id,
@@ -425,7 +482,9 @@ class DeepSeekTurnService:
             qp_service = DeepSeekQueryPlanService(provider=observed, max_format_repairs=1)
             query_plan = await qp_service.generate(
                 user_input=message, intent=intent, schema=schema,
-                committed_memory=committed.model_dump() if committed else None,
+                committed_memory=(
+                    semantic_committed.model_dump() if semantic_committed else None
+                ),
                 semantic_model_key=semantic_model_key,
                 report_template_key=report_template_key,
                 enforce_semantic_grounding=not self.powerbi.is_mock,
@@ -532,7 +591,7 @@ class DeepSeekTurnService:
                     message,
                     intent,
                     query_plan,
-                    committed,
+                    semantic_committed,
                     _member_lookup,
                     pending=pending_clarification,
                 )
@@ -588,7 +647,7 @@ class DeepSeekTurnService:
                         schema_fingerprint=catalog.schema_fingerprint,
                         runtime_mode=runtime_mode,
                         intent=intent.intent.value,
-                        committed=committed,
+                        committed=semantic_committed,
                     )
                 if clarification_merge is not None and not clarification_merge.complete:
                     await self.pipeline.save_pending_clarification(
@@ -640,7 +699,7 @@ class DeepSeekTurnService:
                         },
                     )
                 transition_delta = grounding.delta
-                transition_base = committed
+                transition_base = semantic_committed
                 if clarification_merge is not None:
                     if clarification_merge.executable_delta is None:
                         raise ValueError("clarification_complete_without_delta")
@@ -653,11 +712,46 @@ class DeepSeekTurnService:
                     )
                 if transition_delta is None:
                     raise ValueError("semantic_grounding_delta_missing")
+                inheritance = TurnInheritancePolicy.decide(
+                    message,
+                    intent,
+                    transition_delta,
+                    transition_base,
+                )
+                if inheritance.requires_clarification or inheritance.mode is None:
+                    await self.pipeline.mark_memory_failed(
+                        effective_req_id,
+                        runtime_mode,
+                        reason=inheritance.reason,
+                        stage="inheritance_policy",
+                    )
+                    controller.set_failure_reason(inheritance.reason)
+                    controller.transition(TurnState.CLARIFICATION_REQUIRED)
+                    return self._build_result(
+                        effective_req_id,
+                        effective_conv_id,
+                        "clarification_required",
+                        intent=intent.intent.value,
+                        response_type="clarification",
+                        clarification_question=(
+                            "请说明这是一个独立问题，还是要修改上一轮条件。"
+                        ),
+                        trace=trace,
+                        trace_id=trace_id,
+                        is_mock=False,
+                        source_mode=self._source_mode,
+                        collector=collector,
+                        execution_audit={
+                            "inheritance_policy": inheritance.reason,
+                            "committed_memory_mutated": False,
+                        },
+                    )
                 transition = StateTransitionService().merge(
                     query_plan,
                     transition_delta,
                     transition_base,
                     canonical_template_key=template_grounding.canonical_key,
+                    inheritance_mode=inheritance.mode,
                 )
                 query_plan = transition.query_plan
                 trace.record(
@@ -666,6 +760,8 @@ class DeepSeekTurnService:
                     request_id=effective_req_id,
                     data_summary={
                         "authority": "semantic_catalog",
+                        "inheritance_mode": inheritance.mode.value,
+                        "inheritance_reason": inheritance.reason,
                         "intent_disagreement_count": len(
                             grounding.intent_disagreements
                         ),

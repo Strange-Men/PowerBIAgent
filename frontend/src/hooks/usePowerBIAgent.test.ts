@@ -5,6 +5,7 @@ import {
   catalogOptions,
   discoveryErrorMessage,
   reconcileSemanticModelSelection,
+  withoutDeletedReport,
 } from './usePowerBIAgent'
 
 describe('semantic-model discovery errors', () => {
@@ -85,5 +86,40 @@ describe('semantic-model catalog selection', () => {
       selected: null,
       stale: false,
     })
+  })
+})
+
+describe('independent report removal projection', () => {
+  it('removes only the deleted attachment and leaves the conversation text', () => {
+    const messages = withoutDeletedReport([
+      { id: 'user-1', role: 'user', content: '生成报告' },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        kind: 'answer',
+        content: '报告已生成',
+        report: {
+          report_id: 'rpt-1',
+          template_key: 'sales_report',
+          contract_version: '1.0',
+          view_reference: '/api/reports/rpt-1',
+          download_reference: '/api/reports/rpt-1/download',
+          content_type: 'text/html; charset=utf-8',
+          content_hash: 'a'.repeat(64),
+        },
+        presentation: {
+          version: 1,
+          datasets: [],
+          blocks: [
+            { type: 'text', content: '报告已生成' },
+            { type: 'report_attachment', report_id: 'rpt-1' },
+          ],
+        },
+      },
+    ], 'rpt-1')
+
+    expect(messages).toHaveLength(2)
+    expect(messages[1]).not.toHaveProperty('report')
+    expect(messages[1]).toMatchObject({ content: '报告已生成' })
   })
 })

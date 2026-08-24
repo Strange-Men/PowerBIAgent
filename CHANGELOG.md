@@ -2,6 +2,23 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.3.3] — 2026-08-24
+
+### 多轮语义、会话资源生命周期与仓库治理最终收口
+
+- 完成真实错误链审计：未识别时间被标为 NOT_MENTIONED、StateTransition 对同 conversation 全量 KEEP、LLM draft 注入旧 Memory、unsupported 因存在 committed/pending 被放行，以及前端 history response 无 active identity/generation 校验，共同导致后续问题错误继承“本月”和 A/B report 串窗。
+- Intent 增加 bounded `turn_relation` / `TimeIntentDraft`；deterministic Time resolver 支持绝对月、去年五月、上个月、季度、最近月份/半年和受限范围。LLM 只解释语言，runtime schema/glossary/members 与 validators 继续决定 canonical identity 和 `TimeRangeSpec`。
+- 新增 deterministic `TurnInheritancePolicy`：自包含 fresh question 清除旧 time/filter/dimension/sort/top_n；明确 follow-up/replace 只继承当前省略的兼容槽；证据不足 clarification；semantic model 变化清空旧模型语义上下文。
+- 新增 readonly unsupported preflight，在 LLM/Memory/Grounding/DAX 前拒绝预测、PBIX/Measure 写入、数据删除与任意代码。存在 committed Memory 不再放行，unsupported 不执行 DAX、不提交 Memory。
+- 新增 archived list/restore API；archive 保留 conversation/history/report/HTML 并从 recent 隐藏，delete 继续永久清理 exact runtime namespace。
+- 新增显式人工 `DELETE /api/reports/{report_id}`、durable `report_delete_intents` 与 Alembic revision `e7a9c2d4f631`；精确同步删除 metadata/cache/managed HTML，conversation 保留。接口未注册 ToolGateway，LLM/自然语言无删除权限；cleanup 失败返回错误并保留 durable retry witness。
+- History 只投影 exact `(source_mode, conversation_id, request_id, report_id)` report ownership；前端 history 使用 AbortController、generation、active conversation ID 与 response conversation ID 校验，open/new/delete/archive/model switch 取消旧请求。Sidebar 增加“已归档”/恢复及 recent report 人工删除确认。
+- local_state 固定 `persistence/reports/runtime/archive`；新增只读 Artifact Governance Gate。全仓 pytest report artifact 使用 per-test 临时 ownership，teardown 后验证清理；既有明确 test orphan 移入可恢复 archive，用户真实数据不自动删除。
+- Rich PBIX Real 八轮、archive/restore、独立 report delete、conversation cascade delete 与 A/B 快速切换全部通过。Fresh backend full `1789 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `49 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `117`、Repository Safety `287`、Error Ledger `25`、Documentation/Artifact Governance 与 `git diff --check` PASS。
+- 未修改 M0–M5 factual authority，未开发 Remote MCP 或后续里程碑；未合并 main，未创建 Tag。
+
+**Settings.version:** M5.3.3
+
 ## [M5.3.2] — 2026-08-24
 
 ### Local MCP 多模型选择与协议稳定性加固

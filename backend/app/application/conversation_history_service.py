@@ -41,7 +41,7 @@ class InvalidConversationQueryError(ValueError):
 
 class _CursorPayload(BaseModel):
     v: Literal[1]
-    kind: Literal["recent", "search", "history", "reports"]
+    kind: Literal["recent", "archived", "search", "history", "reports"]
     mode: RuntimeDataMode
     timestamp: datetime
     tie: str
@@ -69,7 +69,7 @@ def _encode_cursor(payload: _CursorPayload) -> str:
 def _decode_cursor(
     cursor: str,
     *,
-    kind: Literal["recent", "search", "history", "reports"],
+    kind: Literal["recent", "archived", "search", "history", "reports"],
     mode: RuntimeDataMode,
     scope: str,
 ) -> _CursorPayload:
@@ -208,6 +208,44 @@ class ConversationHistoryService:
             next_cursor=next_cursor,
         )
 
+    async def list_archived(
+        self,
+        runtime_mode: RuntimeDataMode,
+        *,
+        limit: int,
+        cursor: str | None = None,
+    ) -> ConversationListPage:
+        _validate_limit(limit)
+        after = None
+        if cursor is not None:
+            payload = _decode_cursor(
+                cursor, kind="archived", mode=runtime_mode, scope=""
+            )
+            after = ConversationPosition(
+                updated_at=_normalize_cursor_time(payload.timestamp),
+                conversation_id=payload.tie,
+            )
+        page = await self._repository.list_archived(
+            runtime_mode, limit=limit, after=after
+        )
+        next_cursor = None
+        if page.next_position is not None:
+            next_cursor = _encode_cursor(
+                _CursorPayload(
+                    v=1,
+                    kind="archived",
+                    mode=runtime_mode,
+                    timestamp=page.next_position.updated_at,
+                    tie=page.next_position.conversation_id,
+                    scope="",
+                )
+            )
+        return ConversationListPage(
+            runtime_mode=runtime_mode,
+            items=page.items,
+            next_cursor=next_cursor,
+        )
+
     async def search(
         self,
         runtime_mode: RuntimeDataMode,
@@ -302,6 +340,9 @@ class ConversationHistoryService:
 
     async def archive(self, runtime_mode: RuntimeDataMode, conversation_id: str):
         return await self._repository.archive(runtime_mode, conversation_id)
+
+    async def restore(self, runtime_mode: RuntimeDataMode, conversation_id: str):
+        return await self._repository.restore(runtime_mode, conversation_id)
 
     async def rename(
         self, runtime_mode: RuntimeDataMode, conversation_id: str, title: str

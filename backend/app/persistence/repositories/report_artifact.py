@@ -23,12 +23,13 @@ import asyncio
 import json
 from typing import Optional
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.persistence.models import (
     ConversationDeleteIntentModel,
     ReportArtifactModel,
+    ReportDeleteIntentModel,
 )
 from backend.app.report.resources import (
     ReportArtifact,
@@ -99,6 +100,14 @@ class ReportArtifactRepository:
 
     async def exists(self, report_id: str) -> bool:
         """Check whether metadata exists for this report_id."""
+        raise NotImplementedError
+
+    async def begin_delete(self, report_id: str) -> ReportArtifact:
+        """Persist delete intent and hide metadata in one transaction."""
+        raise NotImplementedError
+
+    async def complete_delete(self, report_id: str) -> None:
+        """Clear intent only after exact managed HTML cleanup succeeds."""
         raise NotImplementedError
 
 
@@ -268,6 +277,10 @@ def _model_to_artifact(row: ReportArtifactModel) -> ReportArtifact:
             f"Report metadata persistence contract invalid for {row.report_id}: {exc}"
         ) from exc
 
+    return _metadata_to_artifact(metadata)
+
+
+def _metadata_to_artifact(metadata: ReportArtifactMetadata) -> ReportArtifact:
     try:
         return ReportArtifact(
             report_id=metadata.report_id,
@@ -291,8 +304,19 @@ def _model_to_artifact(row: ReportArtifactModel) -> ReportArtifact:
         )
     except Exception as exc:
         raise ReportStorageError(
-            f"Report metadata reconstruction failed for {row.report_id}: {exc}"
+            f"Report metadata reconstruction failed for {metadata.report_id}: {exc}"
         ) from exc
+
+
+def _delete_payload_to_artifact(payload_json: str) -> ReportArtifact:
+    try:
+        raw = json.loads(payload_json)
+        if not isinstance(raw, dict) or raw.get("html"):
+            raise ValueError("delete payload must be metadata-only")
+        metadata = ReportArtifactMetadata.model_validate(raw)
+    except Exception as exc:
+        raise ReportStorageError("report_delete_intent_invalid") from exc
+    return _metadata_to_artifact(metadata)
 
 
 class SQLiteReportArtifactRepository(ReportArtifactRepository):
@@ -330,6 +354,13 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
         )
         async with self._session_factory() as session:
             async with session.begin():
+                pending_delete = await session.execute(
+                    select(ReportDeleteIntentModel.report_id).where(
+                        ReportDeleteIntentModel.report_id == artifact.report_id
+                    )
+                )
+                if pending_delete.scalar_one_or_none() is not None:
+                    raise ReportStorageError("report_delete_pending")
                 stmt = select(ReportArtifactModel).where(
                     ReportArtifactModel.report_id == artifact.report_id
                 )
@@ -383,6 +414,49 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
             result = await session.execute(stmt)
             return result.scalar_one_or_none() is not None
 
+    async def begin_delete(self, report_id: str) -> ReportArtifact:
+        async with self._session_factory() as session:
+            async with session.begin():
+                intent_result = await session.execute(
+                    select(ReportDeleteIntentModel).where(
+                        ReportDeleteIntentModel.report_id == report_id
+                    )
+                )
+                intent = intent_result.scalar_one_or_none()
+                if intent is not None:
+                    return _delete_payload_to_artifact(intent.payload_json)
+
+                row_result = await session.execute(
+                    select(ReportArtifactModel).where(
+                        ReportArtifactModel.report_id == report_id
+                    )
+                )
+                row = row_result.scalar_one_or_none()
+                if row is None:
+                    raise ReportNotFoundError("report_not_found")
+                artifact = _model_to_artifact(row)
+                session.add(
+                    ReportDeleteIntentModel(
+                        report_id=artifact.report_id,
+                        source_mode=artifact.source_mode,
+                        conversation_id=artifact.conversation_id,
+                        request_id=artifact.request_id,
+                        payload_json=row.payload_json,
+                    )
+                )
+                await session.delete(row)
+                await session.flush()
+                return artifact
+
+    async def complete_delete(self, report_id: str) -> None:
+        async with self._session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    delete(ReportDeleteIntentModel).where(
+                        ReportDeleteIntentModel.report_id == report_id
+                    )
+                )
+
     # ------------------------------------------------------------------
     # Test introspection
     # ------------------------------------------------------------------
@@ -411,6 +485,7 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
 
     def __init__(self) -> None:
         self._items: dict[str, ReportArtifact] = {}
+        self._delete_intents: dict[str, ReportArtifact] = {}
         self._lock = asyncio.Lock()
 
     async def save(
@@ -458,6 +533,21 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
     async def exists(self, report_id: str) -> bool:
         async with self._lock:
             return report_id in self._items
+
+    async def begin_delete(self, report_id: str) -> ReportArtifact:
+        async with self._lock:
+            pending = self._delete_intents.get(report_id)
+            if pending is not None:
+                return pending
+            artifact = self._items.pop(report_id, None)
+            if artifact is None:
+                raise ReportNotFoundError("report_not_found")
+            self._delete_intents[report_id] = artifact
+            return artifact
+
+    async def complete_delete(self, report_id: str) -> None:
+        async with self._lock:
+            self._delete_intents.pop(report_id, None)
 
     async def _count(self) -> int:
         async with self._lock:

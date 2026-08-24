@@ -44,6 +44,7 @@ from backend.app.conversation.models import (
     ConversationReportPage,
     ConversationRenameRequest,
     ConversationRenameResult,
+    ConversationRestoreResult,
 )
 from backend.app.api.schemas import (
     ChatRequest,
@@ -72,6 +73,7 @@ from backend.app.memory.request_fingerprint import (
 from backend.app.memory.models import RuntimeDataMode
 from backend.app.powerbi.models import SemanticModelCatalog
 from backend.app.report.resources import (
+    ReportDeleteResult,
     ReportNotFoundError,
     ReportRepository,
     ReportStorageError,
@@ -158,6 +160,25 @@ async def list_recent_conversations(
         _raise_conversation_query_error(exc)
 
 
+@router.get(
+    "/api/v1/conversations/archived",
+    response_model=ConversationListPage,
+)
+async def list_archived_conversations(
+    runtime_mode: RuntimeDataMode,
+    limit: int = Query(default=20, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = Query(default=None, max_length=2048),
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+):
+    """List recoverable archived conversations in one explicit namespace."""
+    try:
+        return await service.list_archived(
+            runtime_mode, limit=limit, cursor=cursor
+        )
+    except Exception as exc:
+        _raise_conversation_query_error(exc)
+
+
 @router.get("/api/v1/conversations/search", response_model=ConversationListPage)
 async def search_conversations(
     runtime_mode: RuntimeDataMode,
@@ -229,6 +250,41 @@ async def archive_conversation(
         return await service.archive(runtime_mode, conversation_id)
     except Exception as exc:
         _raise_conversation_query_error(exc)
+
+
+@router.post(
+    "/api/v1/conversations/{conversation_id}/restore",
+    response_model=ConversationRestoreResult,
+)
+async def restore_conversation(
+    conversation_id: str,
+    runtime_mode: RuntimeDataMode,
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+):
+    """Restore one archived namespace without changing its history/reports."""
+    try:
+        return await service.restore(runtime_mode, conversation_id)
+    except Exception as exc:
+        _raise_conversation_query_error(exc)
+
+
+@router.delete(
+    "/api/reports/{report_id}",
+    response_model=ReportDeleteResult,
+)
+async def delete_report(
+    report_id: str,
+    repository: ReportRepository = Depends(get_report_repository),
+):
+    """Delete one managed report resource; never exposed through ToolGateway."""
+    try:
+        return await repository.delete(report_id)
+    except ReportNotFoundError:
+        raise HTTPException(status_code=404, detail="report_not_found") from None
+    except ReportStorageError:
+        raise HTTPException(
+            status_code=500, detail="report_artifact_delete_failed"
+        ) from None
 
 
 @router.patch(

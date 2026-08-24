@@ -11,14 +11,33 @@ from backend.app.memory.models import PendingClarificationContext, StructuredWor
 _DETERMINISTICALLY_OUT_OF_SCOPE = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
-        r"(?:删除|清空|销毁|写入|修改|更新).*(?:数据|模型|表|字段|Power\s*BI)",
+        r"(?:删除|清空|销毁|写入|修改|更新|新增).*(?:数据|模型|表|字段|度量值|Measure|PBIX|Power\s*BI)",
+        r"(?:预测|预估|外推|forecast).*(?:销售|销量|订单|利润|收入|成本|金额|数据|指标)",
         r"(?:执行|运行|编写).*(?:SQL|Shell|PowerShell|Python|JavaScript|代码)",
+        r"(?:SQL|Shell|PowerShell|Python|JavaScript|任意代码|代码).*(?:执行|运行)",
         r"(?:密钥|API\s*Key|Token|密码|Client\s*Secret)",
         r"(?:绕过|规避).*(?:权限|白名单|安全|验证)",
         r"(?:修改|泄露|显示).*(?:系统\s*Prompt|系统提示词)",
         r"(?:写诗|写一首诗|讲笑话|翻译|天气|新闻|订餐|发邮件)",
     )
 )
+
+
+def deterministic_unsupported_reason(user_input: str) -> str | None:
+    """Fail closed before Memory inheritance, Grounding, tools, or DAX."""
+
+    normalized = user_input.strip()
+    if not normalized:
+        return None
+    if re.search(
+        r"(?:预测|预估|外推|forecast).*(?:销售|销量|订单|利润|收入|成本|金额|数据|指标)",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return "当前只支持基于已存在数据的只读分析，不支持预测或未来外推。"
+    if any(pattern.search(normalized) for pattern in _DETERMINISTICALLY_OUT_OF_SCOPE):
+        return "当前为只读分析模式，不支持修改、删除、写入模型或执行任意代码。"
+    return None
 
 _DATA_SHAPED = re.compile(
     r"(?:"
@@ -52,7 +71,9 @@ def should_defer_unsupported_to_grounding(
     normalized = user_input.strip()
     if any(pattern.search(normalized) for pattern in _DETERMINISTICALLY_OUT_OF_SCOPE):
         return False
-    if report_template_key is not None or committed is not None or pending is not None:
+    # Existing Memory/Pending state is deliberately irrelevant: it can never
+    # turn the current unsupported request into a data query.
+    if report_template_key is not None:
         return True
     if (
         intent.detected_measures

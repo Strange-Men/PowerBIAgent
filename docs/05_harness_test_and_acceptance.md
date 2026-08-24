@@ -2,7 +2,7 @@
 
 > **状态：** M2.6.4 — M0—M2 ready for final seal；契约为 8 Case / 2 holdout / 6 Conversation / 16 Turn
 > **关联 ADR：** ADR-004
-> **本轮 fresh 离线基线：** backend pytest 1397 passed；Golden 11/11 runnable passed + 1 Real-only skip；Architecture 85、Repository Safety 189、Error Ledger 25/0、Documentation Governance PASS
+> **本轮 fresh 离线基线：** backend pytest 1789 passed + 1 Real-only skip；Golden 11/11 runnable passed + 1 Real-only skip；frontend Vitest 49 passed；Architecture 117、Repository Safety 287、Error Ledger 25/0、Documentation Governance 与 Artifact Governance PASS
 > **M2.6.4 Real hardened evidence：** Known-answer 8/8、Holdout 2/2、6 Conversation / 16 Turn、51 个成功 Real 查询、TopN 3/3、fallback/pollution/DAX LLM/Answer LLM 均为 0
 > **Token 统计：** call_count/repair_count 按 task 独立统计，LLMValidationError 携带 usage
 > **模式切换：** Mock+Mock 200 / DeepSeek+Mock 200 / DeepSeek+Local MCP 200 / Remote MCP 503
@@ -159,7 +159,7 @@ TopN selection 与 presentation ordering 是两个契约：TOPN 必须匹配 Que
 - grouped：按明确业务 Key canonicalize 后比较，不依赖 raw row 顺序；
 - ordered/TopN：比较成员和值并独立验证排序方向；同一指标值的 ties 可交换顺序，第 N 名并列可使行数超过 N。
 
-数值默认 `abs_tolerance=1e-9`、`rel_tolerance=1e-9`；绝对/相对容差配置上限分别为 `0.01` 与 `1e-6`。分类维度 exact match，`None` 显式比较。committed `harness/baselines/example_known_answers.yaml` 仅含虚构测试值；真实 baseline 固定为 Git 忽略的 `local_state/m2_known_answers.yaml`，缺失时返回 `real_baseline_not_configured`，覆盖不完整时返回 `real_baseline_incomplete`，均禁止回退 example baseline。
+数值默认 `abs_tolerance=1e-9`、`rel_tolerance=1e-9`；绝对/相对容差配置上限分别为 `0.01` 与 `1e-6`。分类维度 exact match，`None` 显式比较。committed `harness/baselines/example_known_answers.yaml` 仅含虚构测试值；真实 baseline 固定为 Git 忽略的 `local_state/runtime/m2_known_answers.yaml`，缺失时返回 `real_baseline_not_configured`，覆盖不完整时返回 `real_baseline_incomplete`，均禁止回退 example baseline。
 
 `harness/cases/known_answer_cases.yaml` 固化 8 个语义 Case，其中 2 个 holdout 不进入 QueryPlan Prompt 示例，也未引入业务词典或 Prompt 特化。
 

@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M5.3.2", frozen=True)
+    version: str = Field(default="M5.3.3", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -116,6 +116,10 @@ class Settings(BaseSettings):
     persistence_database_path: str = Field(
         default="local_state/persistence/powerbiagent.db",
         description="SQLite 数据库相对路径（persistence_backend=sqlite 时使用）",
+    )
+    report_artifacts_path: str = Field(
+        default="local_state/reports",
+        description="受管 HTML report 根目录；测试必须覆盖到临时目录",
     )
 
     @property

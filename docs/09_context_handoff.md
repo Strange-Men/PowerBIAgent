@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.3.2 — Local MCP 多模型选择与协议稳定性加固已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0—M5.3.2 已完成。双 PBIX Real discovery/probe/schema/DAX 与前端单选通过；Rich 简单问答、表格、柱状图和 HTML 报表通过。
+**M5.3.3 — 多轮语义、会话资源生命周期与仓库治理最终收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0—M5.3.3 已完成；按批准边界停止，不进入后续里程碑。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -21,6 +21,30 @@
 | **M5.3** | **结构化结果与前端最终收口** | **✅ 已完成** |
 | **M5.3.1** | **多 PBIX 绑定与展示事实边界最终加固** | **✅ 已完成** |
 | **M5.3.2** | **Local MCP 多模型选择与协议稳定性加固** | **✅ 已完成** |
+| **M5.3.3** | **多轮语义、会话资源生命周期与 Artifact Governance** | **✅ 已完成** |
+
+### M5.3.3 root-cause baseline（代码修改前）
+
+- 真实浏览器 conversation `2704941c-…` 的五轮证据显示：前五轮全部 `completed` 且 `memory_commit=true`。第 2 轮 `2025年5月销售额多少` 的 committed `time_range` 仍为 2026-08 current_month；第 3 轮虽正确解析 Region/Top3/desc，仍 KEEP 该时间；预测与 PBIX Measure 修改又分别把同一旧 plan 提交为 Memory v4/v5。
+- `TimeGrounder` 仅识别本月/今年/去年/最近数字月/两个 ISO date，无法消费 LLM 的结构化当前时间语义；未识别的当前表达被当成 NOT_MENTIONED。
+- `StateTransitionService` 对同 conversation 的所有未指定 slot 默认 KEEP，没有 fresh/follow-up/replace 决策，因此自包含新问题机械继承旧 time/filter/dimension/sort/top_n。
+- Intent 与 QueryPlan Prompt 都注入全部 committed slot，LLM 可能重复旧槽；Grounding 已有部分 current-literal 防腐，但无法纠正“当前时间未识别 + 默认全量继承”的组合。
+- `should_defer_unsupported_to_grounding()` 明确以 `committed is not None` / pending 为放行条件，导致 LLM 已识别 unsupported 的预测/写请求仍进入 data pipeline。
+- 前端 `openConversation()` 在 history 完成后才设置 active ID，且无 AbortController/generation/identity re-check；慢 A response 可在用户已切 B/new/archive/delete 后覆盖 messages/title/report attachment。
+- 后端 report history 已按 `(source_mode, conversation_id)` 查询，未发现跨 namespace predicate；A/B 串窗当前证据指向前端 stale response/state lifecycle。
+
+正式实现契约见 `docs/specs/12_conversation_memory_and_resource_lifecycle_contract.md`。
+
+### M5.3.3 — 最终实现与验收
+
+- Intent 新增 bounded `turn_relation` 与 `TimeIntentDraft`；deterministic resolver 处理绝对月、去年五月、上个月、季度、最近月/半年与受限范围。runtime schema/glossary/members 和 validators 继续拥有 canonical authority。
+- `TurnInheritancePolicy` 将 fresh/follow-up/replace 分离：自包含新问题清除旧 time/filter/dimension/sort/top_n；明确追问或替换只继承兼容省略项；证据不足 clarification；semantic model 切换清空旧模型语义上下文。
+- readonly unsupported preflight 在 LLM/Memory/Grounding/DAX 前拒绝预测、PBIX/Measure 写操作、删除数据和任意代码；terminal Snapshot 保留审计，Memory 不提交。
+- archive 从 recent 隐藏但保留 conversation/history/report/HTML，并通过 archived/restore API 恢复；独立 `DELETE /api/reports/{report_id}` 使用 durable report delete intent 精确清理 metadata/cache/HTML，conversation 保留，且不注册 ToolGateway。
+- history 只恢复 exact `(source_mode, conversation_id, request_id, report_id)` ownership；前端使用 AbortController + generation + active ID + response ID 四重检查，open/new/delete/archive/model switch 使旧 history 失效。
+- local_state 固定四目录；Artifact Governance 检查 ownership residual、cleanup failure/pending、orphan/mismatch、unauthorized entry 与 source-tree runtime artifact。pytest 默认 report root 改为 per-test 临时 ownership，teardown 后验证清理。
+- Rich PBIX Real 八轮：本月、2025-05、Top3 Region、华南 follow-up、去年 replace、预测 unsupported、PBIX 修改 unsupported、report generation 全部符合契约；archive/restore、独立 report delete（对话保留）、再生成后 conversation cascade delete、A/B 快速切换均通过。
+- Fresh 验证：backend full `1789 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `49 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `117`、Repository Safety `287`、Error Ledger `25`、Documentation Governance、Artifact Governance 与 `git diff --check` PASS。
 
 ### M5.3.2 — Local MCP 多模型选择与协议稳定性加固
 
@@ -185,7 +209,7 @@
 
 ## 下一步
 
-M5.3.2 完成后停止，不继续开发后续里程碑。后续工作必须由新的明确用户指令启动。
+M5.3.3 已完成并停止；等待用户后续明确任务，不进入后续里程碑。
 
 ## 关键命令
 
@@ -207,6 +231,7 @@ D:\Conda\envs\PBIAgent\python.exe scripts\check_architecture_gate.py
 D:\Conda\envs\PBIAgent\python.exe scripts\check_repository_safety.py
 D:\Conda\envs\PBIAgent\python.exe scripts\check_ai_error_ledger.py
 D:\Conda\envs\PBIAgent\python.exe scripts\check_documentation_governance.py
+D:\Conda\envs\PBIAgent\python.exe scripts\check_artifact_governance.py
 ```
 
 ## 本地启动（PowerShell 标准流程）
@@ -230,4 +255,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-24 | M5.3.2 COMPLETE — Local MCP 多模型选择与协议稳定性加固*
+*最后更新：2026-08-24 | M5.3.3 COMPLETE — 多轮语义、会话资源生命周期与仓库治理最终收口*

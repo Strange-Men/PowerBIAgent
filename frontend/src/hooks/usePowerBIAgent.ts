@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   archiveConversation,
   deleteConversation,
+  deleteReport,
   discoverSemanticModels,
   getConversationHistory,
+  listArchivedConversations,
   listRecentConversations,
   listRecentReports,
   renameConversation,
+  restoreConversation,
   searchConversations,
   sendChat,
 } from '../api/client'
@@ -98,11 +101,36 @@ export function reconcileSemanticModelSelection(
   }
 }
 
+export function withoutDeletedReport(
+  messages: ConversationMessage[],
+  reportId: string,
+): ConversationMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'assistant') return message
+    const next: AssistantMessage = { ...message }
+    if (next.report?.report_id === reportId) delete next.report
+    if (next.presentation) {
+      next.presentation = {
+        ...next.presentation,
+        blocks: next.presentation.blocks.filter(
+          (block) => block.type !== 'report_attachment' || block.report_id !== reportId,
+        ),
+      }
+    }
+    return next
+  })
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
 export function usePowerBIAgent() {
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const [title, setTitle] = useState('新聊天')
   const [recentConversations, setRecentConversations] = useState<ConversationSummary[]>([])
+  const [archivedConversations, setArchivedConversations] = useState<ConversationSummary[]>([])
   const [recentReports, setRecentReports] = useState<ConversationReportItem[]>([])
   const [sending, setSending] = useState(false)
   const [loadingConversation, setLoadingConversation] = useState(false)
@@ -116,13 +144,27 @@ export function usePowerBIAgent() {
     useState<CatalogOption | null>(null)
   const selectedSemanticModelRef = useRef<CatalogOption | null>(null)
   const semanticModelsLoadedRef = useRef(false)
+  const activeConversationIdRef = useRef<string | null>(null)
+  const historyGenerationRef = useRef(0)
+  const historyAbortRef = useRef<AbortController | null>(null)
   const [selectedReportTemplate, setSelectedReportTemplate] =
     useState<CatalogOption | null>(null)
 
+  const cancelHistoryRequest = useCallback(() => {
+    historyGenerationRef.current += 1
+    historyAbortRef.current?.abort()
+    historyAbortRef.current = null
+    setLoadingConversation(false)
+  }, [])
+
   const refreshSidebar = useCallback(async (mode: RuntimeMode) => {
     try {
-      const page = await listRecentConversations(mode)
+      const [page, archivedPage] = await Promise.all([
+        listRecentConversations(mode),
+        listArchivedConversations(mode),
+      ])
       setRecentConversations(page.items)
+      setArchivedConversations(archivedPage.items)
       const reports = await listRecentReports(
         mode,
         page.items.map((item) => item.conversation_id),
@@ -132,6 +174,7 @@ export function usePowerBIAgent() {
     } catch {
       setSidebarError('会话记录暂不可用')
       setRecentConversations([])
+      setArchivedConversations([])
       setRecentReports([])
     }
   }, [])
@@ -173,21 +216,36 @@ export function usePowerBIAgent() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refreshSemanticModels(), 0)
-    return () => window.clearTimeout(timer)
-  }, [refreshSemanticModels])
+    return () => {
+      window.clearTimeout(timer)
+      cancelHistoryRequest()
+    }
+  }, [cancelHistoryRequest, refreshSemanticModels])
 
   const selectSemanticModel = useCallback((option: CatalogOption) => {
+    const changed = selectedSemanticModelRef.current?.key !== option.key
     selectedSemanticModelRef.current = option
     setSelectedSemanticModel(option)
     setSemanticModelError(null)
-  }, [])
+    if (changed) {
+      cancelHistoryRequest()
+      activeConversationIdRef.current = null
+      setActiveConversationId(null)
+      setMessages([])
+      setTitle('新聊天')
+      setSelectedReportTemplate(null)
+    }
+  }, [cancelHistoryRequest])
 
   const startNewChat = useCallback(() => {
+    cancelHistoryRequest()
     setMessages([])
+    activeConversationIdRef.current = null
     setActiveConversationId(null)
     setTitle('新聊天')
     setSelectedReportTemplate(null)
-  }, [])
+    setLoadingConversation(false)
+  }, [cancelHistoryRequest])
 
   const submitMessage = useCallback(
     async (content: string) => {
@@ -219,6 +277,7 @@ export function usePowerBIAgent() {
             ? { report_template_key: selectedReportTemplate.key }
             : {}),
         })
+        activeConversationIdRef.current = response.conversation_id
         setActiveConversationId(response.conversation_id)
         setMessages((current) => [...current, chatResponseToMessage(response)])
         if (
@@ -264,35 +323,57 @@ export function usePowerBIAgent() {
   )
 
   const openConversation = useCallback(async (conversation: ConversationSummary) => {
+    cancelHistoryRequest()
+    const generation = historyGenerationRef.current
+    const controller = new AbortController()
+    historyAbortRef.current = controller
+    const conversationId = conversation.conversation_id
+    activeConversationIdRef.current = conversationId
+    setActiveConversationId(conversationId)
+    setMessages([])
+    setTitle(conversationTitle(conversation.title || conversation.latest_analysis_goal))
     setLoadingConversation(true)
     try {
       const history = await getConversationHistory(
         effectiveRuntimeMode,
-        conversation.conversation_id,
+        conversationId,
+        controller.signal,
       )
+      if (
+        controller.signal.aborted ||
+        generation !== historyGenerationRef.current ||
+        activeConversationIdRef.current !== conversationId ||
+        history.conversation_id !== conversationId
+      ) return
       const restoredMessages = [...history.items]
         .sort((left, right) => left.created_at.localeCompare(right.created_at))
         .flatMap(historyItemToMessages)
       setMessages(restoredMessages)
-      setActiveConversationId(conversation.conversation_id)
       setTitle(conversationTitle(history.title || conversation.title || conversation.latest_analysis_goal))
     } catch (error) {
+      if (
+        isAbortError(error) ||
+        generation !== historyGenerationRef.current ||
+        activeConversationIdRef.current !== conversationId
+      ) return
       const content =
         error instanceof Error ? error.message : '无法恢复该对话，请稍后重试。'
       setMessages([
         {
-          id: `history-error-${conversation.conversation_id}`,
+          id: `history-error-${conversationId}`,
           role: 'assistant',
           kind: 'error',
           content,
         },
       ])
-      setActiveConversationId(conversation.conversation_id)
       setTitle(conversationTitle(conversation.title || conversation.latest_analysis_goal))
     } finally {
-      setLoadingConversation(false)
+      if (generation === historyGenerationRef.current) {
+        historyAbortRef.current = null
+        setLoadingConversation(false)
+      }
     }
-  }, [effectiveRuntimeMode])
+  }, [cancelHistoryRequest, effectiveRuntimeMode])
 
   const search = useCallback(async (query: string) => {
     const page = await searchConversations(effectiveRuntimeMode, query)
@@ -310,16 +391,32 @@ export function usePowerBIAgent() {
   }, [activeConversationId, effectiveRuntimeMode, refreshSidebar])
 
   const archive = useCallback(async (conversation: ConversationSummary) => {
+    cancelHistoryRequest()
     await archiveConversation(effectiveRuntimeMode, conversation.conversation_id)
     if (activeConversationId === conversation.conversation_id) startNewChat()
     await refreshSidebar(effectiveRuntimeMode)
-  }, [activeConversationId, effectiveRuntimeMode, refreshSidebar, startNewChat])
+  }, [activeConversationId, cancelHistoryRequest, effectiveRuntimeMode, refreshSidebar, startNewChat])
 
   const remove = useCallback(async (conversation: ConversationSummary) => {
+    cancelHistoryRequest()
     await deleteConversation(effectiveRuntimeMode, conversation.conversation_id)
     if (activeConversationId === conversation.conversation_id) startNewChat()
     await refreshSidebar(effectiveRuntimeMode)
-  }, [activeConversationId, effectiveRuntimeMode, refreshSidebar, startNewChat])
+  }, [activeConversationId, cancelHistoryRequest, effectiveRuntimeMode, refreshSidebar, startNewChat])
+
+  const restore = useCallback(async (conversation: ConversationSummary) => {
+    cancelHistoryRequest()
+    await restoreConversation(effectiveRuntimeMode, conversation.conversation_id)
+    await refreshSidebar(effectiveRuntimeMode)
+  }, [cancelHistoryRequest, effectiveRuntimeMode, refreshSidebar])
+
+  const removeReport = useCallback(async (report: ConversationReportItem) => {
+    await deleteReport(report.report_id)
+    setRecentReports((current) =>
+      current.filter((item) => item.report_id !== report.report_id),
+    )
+    setMessages((current) => withoutDeletedReport(current, report.report_id))
+  }, [])
 
   const hasRestoredHistory = useMemo(
     () => messages.some((message) => message.role === 'assistant' && message.restored),
@@ -331,6 +428,7 @@ export function usePowerBIAgent() {
     activeConversationId,
     title,
     recentConversations,
+    archivedConversations,
     recentReports,
     sending,
     loadingConversation,
@@ -356,7 +454,9 @@ export function usePowerBIAgent() {
     search,
     rename,
     archive,
+    restore,
     remove,
+    removeReport,
     setSelectedSemanticModel: selectSemanticModel,
     setSelectedReportTemplate,
   }

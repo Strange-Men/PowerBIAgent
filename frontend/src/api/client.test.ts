@@ -2,11 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   archiveConversation,
   deleteConversation,
+  deleteReport,
   discoverSemanticModels,
   getConversationHistory,
+  listArchivedConversations,
   listRecentConversations,
   listRecentReports,
   renameConversation,
+  restoreConversation,
   sendChat,
 } from './client'
 
@@ -69,6 +72,20 @@ describe('API namespace and chat mapping', () => {
       semantic_model_key: 'local_desktop_model',
       report_template_key: 'sales_report',
     })
+  })
+
+  it('lists archived conversations through their recoverable namespace entry', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ runtime_mode: 'real', items: [], next_cursor: null }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await listArchivedConversations('real')
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      '/api/v1/conversations/archived?runtime_mode=real',
+    )
   })
 
   it('omits the report template when the user did not choose an override', async () => {
@@ -151,6 +168,19 @@ describe('API namespace and chat mapping', () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain('cursor=older')
   })
 
+  it('passes an AbortSignal through every history page request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ runtime_mode: 'real', conversation_id: 'conv-1', archived_at: null, items: [], next_cursor: null }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+    await getConversationHistory('real', 'conv-1', controller.signal)
+    expect((fetchMock.mock.calls[0][1] as RequestInit).signal).toBe(controller.signal)
+  })
+
   it('uses the existing conversation namespace for rename, archive, and delete', async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
       new Response(JSON.stringify({ title: '新标题' }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
@@ -159,10 +189,25 @@ describe('API namespace and chat mapping', () => {
 
     await renameConversation('real', 'conv-1', '新标题')
     await archiveConversation('real', 'conv-1')
+    await restoreConversation('real', 'conv-1')
     await deleteConversation('real', 'conv-1')
 
-    expect(fetchMock.mock.calls.map((call) => (call[1] as RequestInit).method)).toEqual(['PATCH', 'POST', 'DELETE'])
+    expect(fetchMock.mock.calls.map((call) => (call[1] as RequestInit).method)).toEqual(['PATCH', 'POST', 'POST', 'DELETE'])
     expect(fetchMock.mock.calls.every((call) => String(call[0]).includes('runtime_mode=real'))).toBe(true)
-    expect(String(fetchMock.mock.calls[2][0])).toContain('/api/v1/conversations/conv-1?')
+    expect(String(fetchMock.mock.calls[3][0])).toContain('/api/v1/conversations/conv-1?')
+  })
+
+  it('deletes one report through the resource API without a conversation mutation', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ report_id: 'rpt-1', source_mode: 'real', conversation_id: 'conv-1', request_id: 'req-1', deleted: true }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await deleteReport('rpt-1')
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/reports/rpt-1')
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('DELETE')
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain('/conversations/')
   })
 })

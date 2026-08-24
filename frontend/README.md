@@ -2,7 +2,7 @@
 
 ## 状态
 
-**M5.3.2 — Local MCP 多模型选择与协议稳定性加固已完成；双 PBIX 真实目录、单选、问答、表格与报表验收通过。**
+**M5.3.3 — 多轮语义、会话资源生命周期与仓库治理最终收口已完成；Rich PBIX 八轮语义、archive/restore、report delete 与 A/B 防串窗验收通过。**
 
 ## 技术栈
 
@@ -133,7 +133,10 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | `GET /api/v1/conversations/{id}/reports` | ✅ 已实现（必填 source_mode） | 最近报表列表 |
 | `PATCH /api/v1/conversations/{id}` | ✅ M5.3 presentation metadata | 会话重命名 |
 | `POST /api/v1/conversations/{id}/archive` | ✅ 已实现 | 归档对话 |
+| `GET /api/v1/conversations/archived` | ✅ M5.3.3 | 已归档入口 |
+| `POST /api/v1/conversations/{id}/restore` | ✅ M5.3.3 | 恢复归档对话 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 | 删除对话 |
+| `DELETE /api/reports/{report_id}` | ✅ M5.3.3 显式资源 API | 独立删除 managed report；不删除对话、不属于 Agent tool |
 | `GET /api/v1/semantic-models` | ✅ M5.3.2 多模型逐项 compatibility | 动态加载多个 Desktop 模型、runtime namespace、可选与兼容状态 |
 | `GET /api/report-templates` | ❌ 未实现 | `sales_report` 集中白名单配置 |
 | `ChatResponse.presentation` | ✅ M5.3 只读展示层 | 动态消费 dataset 引用与 text/metric/table/chart/report blocks |
@@ -168,7 +171,8 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | M5.3 | 结构化结果、历史/标题/管理、ChatGPT 风格尺寸/间距、responsive、accessibility、状态与表格/图表视觉 | ✅ 已完成，Rich PBIX Real 验收通过 |
 | M5.3.1 | Local Desktop 单实例 fail-closed 与 presentation verified-field projection | ✅ 已完成 |
 | M5.3.2 | 多 PBIX 安全枚举/单选/刷新、opaque 实例绑定、stale 安全错误与 MCP compatibility | ✅ 已完成 |
+| M5.3.3 | fresh/follow-up/replace、archive/restore、独立 report delete、history race 与 Artifact Governance | ✅ 已完成 |
 
 ---
 
-*最后更新：2026-08-24 | M5.3.2 COMPLETE — Local MCP 多模型选择与协议稳定性加固*
+*最后更新：2026-08-24 | M5.3.3 COMPLETE — 多轮语义、会话资源生命周期与仓库治理最终收口*

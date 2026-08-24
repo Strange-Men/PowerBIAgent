@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from backend.app.intent.models import IntentSpec
+from backend.app.intent.models import IntentSpec, TimeIntentDraft, TimeIntentKind
 from backend.app.llm.base import LLMProvider, LLMRequest, LLMTask
 from backend.app.memory.models import PendingClarificationContext, StructuredWorkMemory
 from backend.app.query_plan.semantic_catalog import (
@@ -513,26 +513,59 @@ class MemberGrounder:
 
 class TimeGrounder:
     _RECENT_MONTHS = re.compile(r"最近\s*(\d+)\s*个?月")
+    _ABSOLUTE_MONTH = re.compile(r"(?<!\d)(\d{4})\s*年\s*(\d{1,2})\s*月")
+    _RELATIVE_NAMED_MONTH = re.compile(
+        r"去年\s*(十[一二]|十二|十|[一二三四五六七八九]|\d{1,2})\s*月"
+    )
+    _QUARTER = re.compile(
+        r"(?:(?P<year>\d{4})\s*年|(?P<relative>今年|去年))?\s*"
+        r"第?\s*(?P<quarter>[一二三四1-4])\s*季度"
+    )
     _ISO_DATE = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2})(?!\d)")
+    _CHINESE_NUMBER = {
+        "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6,
+        "七": 7, "八": 8, "九": 9, "十": 10, "十一": 11, "十二": 12,
+    }
 
     def __init__(self, today: Callable[[], date] = date.today):
         self._today = today
 
     def ground(
-        self, user_input: str, date_field: CatalogObject | None
+        self,
+        user_input: str,
+        date_field: CatalogObject | None,
+        time_intent: TimeIntentDraft | None = None,
     ) -> TimeRangeSpec | None:
         if date_field is None:
             return None
         today = self._today()
+        absolute_month = self._ABSOLUTE_MONTH.search(user_input)
+        if absolute_month:
+            return self._month_range(
+                date_field, int(absolute_month.group(1)), int(absolute_month.group(2))
+            )
+        relative_named_month = self._RELATIVE_NAMED_MONTH.search(user_input)
+        if relative_named_month:
+            month = self._parse_number(relative_named_month.group(1))
+            if month is not None:
+                return self._month_range(date_field, today.year - 1, month)
+        quarter_match = self._QUARTER.search(user_input)
+        if quarter_match:
+            quarter = self._parse_number(quarter_match.group("quarter"))
+            raw_year = quarter_match.group("year")
+            relative = quarter_match.group("relative")
+            year = (
+                int(raw_year) if raw_year else today.year - 1
+                if relative == "去年" else today.year
+            )
+            if quarter is not None:
+                return self._quarter_range(date_field, year, quarter)
+        if "上个月" in user_input:
+            year, month = self._shift_month(today.year, today.month, -1)
+            return self._month_range(date_field, year, month)
         if "本月" in user_input:
-            return TimeRangeSpec(
-                date_field=date_field.canonical_name,
-                start_date=today.replace(day=1),
-                end_date=today.replace(
-                    day=calendar.monthrange(today.year, today.month)[1]
-                ),
-                mode=TimeRangeMode.CURRENT_MONTH,
-                grain="month",
+            return self._month_range(
+                date_field, today.year, today.month, mode=TimeRangeMode.CURRENT_MONTH
             )
         if "今年" in user_input:
             return TimeRangeSpec(
@@ -552,13 +585,16 @@ class TimeGrounder:
                 grain="year",
             )
         recent = self._RECENT_MONTHS.search(user_input)
+        recent_count = 6 if "最近半年" in user_input else None
         if recent:
-            count = int(recent.group(1))
+            recent_count = int(recent.group(1))
+        if recent_count is not None:
+            count = recent_count
             if count < 1:
                 return None
-            month_index = today.year * 12 + today.month - count
-            start_year, zero_month = divmod(month_index, 12)
-            start_month = zero_month + 1
+            start_year, start_month = self._shift_month(
+                today.year, today.month, -(count - 1)
+            )
             return TimeRangeSpec(
                 date_field=date_field.canonical_name,
                 start_date=date(start_year, start_month, 1),
@@ -580,17 +616,148 @@ class TimeGrounder:
                 )
             except ValueError:
                 return None
+        if self._draft_has_current_evidence(user_input, time_intent):
+            return self._resolve_draft(time_intent, date_field, today)
         return None
 
     @classmethod
-    def is_explicit(cls, user_input: str) -> bool:
+    def is_explicit(
+        cls, user_input: str, time_intent: TimeIntentDraft | None = None
+    ) -> bool:
         return bool(
             "本月" in user_input
+            or "上个月" in user_input
             or "今年" in user_input
             or "去年" in user_input
+            or "最近半年" in user_input
+            or cls._ABSOLUTE_MONTH.search(user_input)
+            or cls._RELATIVE_NAMED_MONTH.search(user_input)
+            or cls._QUARTER.search(user_input)
             or cls._RECENT_MONTHS.search(user_input)
             or len(cls._ISO_DATE.findall(user_input)) == 2
+            or cls._draft_has_current_evidence(user_input, time_intent)
         )
+
+    @staticmethod
+    def _draft_has_current_evidence(
+        user_input: str, time_intent: TimeIntentDraft | None
+    ) -> bool:
+        if time_intent is None:
+            return False
+        expression = normalize_semantic_text(time_intent.expression)
+        return bool(expression and expression in normalize_semantic_text(user_input))
+
+    def _resolve_draft(
+        self,
+        draft: TimeIntentDraft | None,
+        date_field: CatalogObject,
+        today: date,
+    ) -> TimeRangeSpec | None:
+        if draft is None:
+            return None
+        if draft.kind == TimeIntentKind.ABSOLUTE_MONTH:
+            return self._month_range(date_field, draft.year or 0, draft.month or 0)
+        if draft.kind == TimeIntentKind.ABSOLUTE_YEAR:
+            year = draft.year or 0
+            return self._year_range(date_field, year)
+        if draft.kind == TimeIntentKind.RELATIVE_MONTH:
+            year, month = self._shift_month(
+                today.year, today.month, draft.relative_offset or 0
+            )
+            return self._month_range(date_field, year, month)
+        if draft.kind == TimeIntentKind.RELATIVE_YEAR:
+            return self._year_range(
+                date_field, today.year + (draft.relative_offset or 0)
+            )
+        if draft.kind == TimeIntentKind.QUARTER:
+            year = draft.year
+            if year is None:
+                year = today.year + (draft.relative_offset or 0)
+            return self._quarter_range(date_field, year, draft.quarter or 0)
+        if draft.kind == TimeIntentKind.RECENT_MONTHS:
+            count = draft.months or 0
+            if count < 1:
+                return None
+            start_year, start_month = self._shift_month(
+                today.year, today.month, -(count - 1)
+            )
+            return TimeRangeSpec(
+                date_field=date_field.canonical_name,
+                start_date=date(start_year, start_month, 1),
+                end_date=date(
+                    today.year,
+                    today.month,
+                    calendar.monthrange(today.year, today.month)[1],
+                ),
+                mode=TimeRangeMode.RECENT_MONTHS,
+                grain="month",
+            )
+        if draft.kind == TimeIntentKind.BOUNDED_RANGE:
+            return TimeRangeSpec(
+                date_field=date_field.canonical_name,
+                start_date=draft.start_date,
+                end_date=draft.end_date,
+                mode=TimeRangeMode.EXPLICIT_RANGE,
+            )
+        return None
+
+    @staticmethod
+    def _shift_month(year: int, month: int, offset: int) -> tuple[int, int]:
+        zero_based = year * 12 + (month - 1) + offset
+        shifted_year, shifted_month = divmod(zero_based, 12)
+        return shifted_year, shifted_month + 1
+
+    @staticmethod
+    def _month_range(
+        date_field: CatalogObject,
+        year: int,
+        month: int,
+        *,
+        mode: TimeRangeMode = TimeRangeMode.EXPLICIT_RANGE,
+    ) -> TimeRangeSpec | None:
+        if year < 1 or not 1 <= month <= 12:
+            return None
+        return TimeRangeSpec(
+            date_field=date_field.canonical_name,
+            start_date=date(year, month, 1),
+            end_date=date(year, month, calendar.monthrange(year, month)[1]),
+            mode=mode,
+            grain="month",
+        )
+
+    @staticmethod
+    def _year_range(date_field: CatalogObject, year: int) -> TimeRangeSpec | None:
+        if year < 1:
+            return None
+        return TimeRangeSpec(
+            date_field=date_field.canonical_name,
+            start_date=date(year, 1, 1),
+            end_date=date(year, 12, 31),
+            mode=TimeRangeMode.EXPLICIT_RANGE,
+            grain="year",
+        )
+
+    @staticmethod
+    def _quarter_range(
+        date_field: CatalogObject, year: int, quarter: int
+    ) -> TimeRangeSpec | None:
+        if year < 1 or not 1 <= quarter <= 4:
+            return None
+        start_month = (quarter - 1) * 3 + 1
+        end_month = start_month + 2
+        return TimeRangeSpec(
+            date_field=date_field.canonical_name,
+            start_date=date(year, start_month, 1),
+            end_date=date(year, end_month, calendar.monthrange(year, end_month)[1]),
+            mode=TimeRangeMode.EXPLICIT_RANGE,
+            grain="month",
+        )
+
+    @classmethod
+    def _parse_number(cls, value: str) -> int | None:
+        if value.isdigit():
+            return int(value)
+        return cls._CHINESE_NUMBER.get(value)
 
 
 MemberLookup = Callable[[CatalogObject, int], Awaitable[ColumnMembersResult]]
@@ -903,7 +1070,7 @@ class SemanticGroundingService:
                 method="no_dimension_requirement",
             ))
 
-        if self.time.is_explicit(user_input):
+        if self.time.is_explicit(user_input, intent.time_intent):
             date_fields = tuple(
                 obj for obj in self.catalog.by_type(SemanticObjectType.FIELD)
                 if "date" in obj.data_type.casefold() or "time" in obj.data_type.casefold()
@@ -936,7 +1103,9 @@ class SemanticGroundingService:
                 "date_field", user_input, date_fields[0], "unique_runtime_date_field"
             )
             object_results.append(date_result)
-            time_range = self.time.ground(user_input, date_fields[0])
+            time_range = self.time.ground(
+                user_input, date_fields[0], intent.time_intent
+            )
             if time_range is None:
                 return self._clarification(
                     GroundingStatus.UNRESOLVED, object_results, member_results,
@@ -1042,7 +1211,7 @@ class SemanticGroundingService:
         return bool(
             current_filters
             or dimension_requested
-            or self.time.is_explicit(user_input)
+            or self.time.is_explicit(user_input, intent.time_intent)
             or self._TOP_N.search(user_input)
             or explicit_clear
         )

@@ -16,6 +16,76 @@ class IntentType(str, Enum):
     UNSUPPORTED = "unsupported"
 
 
+class TurnRelation(str, Enum):
+    """Bounded linguistic signal; never a canonical semantic authority."""
+
+    FRESH_QUESTION = "fresh_question"
+    FOLLOW_UP = "follow_up"
+    REPLACE = "replace"
+    UNCLEAR = "unclear"
+
+
+class TimeIntentKind(str, Enum):
+    """Allowed shapes for an LLM-owned time-language draft."""
+
+    ABSOLUTE_MONTH = "absolute_month"
+    ABSOLUTE_YEAR = "absolute_year"
+    RELATIVE_MONTH = "relative_month"
+    RELATIVE_YEAR = "relative_year"
+    QUARTER = "quarter"
+    RECENT_MONTHS = "recent_months"
+    BOUNDED_RANGE = "bounded_range"
+
+
+class TimeIntentDraft(BaseModel):
+    """Typed weak signal resolved to ``TimeRangeSpec`` by ordinary code.
+
+    ``expression`` must be evidence from the current user input.  Numeric fields
+    describe only the linguistic meaning; they are not a date-field identity and
+    cannot cross the canonical grounding boundary on their own.
+    """
+
+    kind: TimeIntentKind
+    expression: str = Field(..., min_length=1)
+    year: int | None = Field(default=None, ge=1900, le=2200)
+    month: int | None = Field(default=None, ge=1, le=12)
+    relative_offset: int | None = Field(default=None, ge=-120, le=120)
+    quarter: int | None = Field(default=None, ge=1, le=4)
+    months: int | None = Field(default=None, ge=1, le=120)
+    start_date: date | None = None
+    end_date: date | None = None
+
+    model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> "TimeIntentDraft":
+        object.__setattr__(self, "expression", self.expression.strip())
+        if not self.expression:
+            raise ValueError("time intent expression must not be blank")
+        required: dict[TimeIntentKind, tuple[str, ...]] = {
+            TimeIntentKind.ABSOLUTE_MONTH: ("year", "month"),
+            TimeIntentKind.ABSOLUTE_YEAR: ("year",),
+            TimeIntentKind.RELATIVE_MONTH: ("relative_offset",),
+            TimeIntentKind.RELATIVE_YEAR: ("relative_offset",),
+            TimeIntentKind.QUARTER: ("quarter",),
+            TimeIntentKind.RECENT_MONTHS: ("months",),
+            TimeIntentKind.BOUNDED_RANGE: ("start_date", "end_date"),
+        }
+        missing = [name for name in required[self.kind] if getattr(self, name) is None]
+        if missing:
+            raise ValueError(
+                f"time intent {self.kind.value} missing: {', '.join(missing)}"
+            )
+        if (
+            self.kind == TimeIntentKind.BOUNDED_RANGE
+            and self.start_date is not None
+            and self.end_date is not None
+            and self.start_date > self.end_date
+        ):
+            raise ValueError("time intent bounded range start must not exceed end")
+        return self
+
+
 class FilterOperator(str, Enum):
     """筛选操作符"""
     EQ = "eq"
@@ -82,12 +152,20 @@ class IntentSpec(BaseModel):
 
     # 上下文继承
     inherited_context: Optional[str] = Field(default=None, description="从 committed memory 继承的上下文摘要")
+    turn_relation: TurnRelation = Field(
+        default=TurnRelation.UNCLEAR,
+        description="当前语言是独立问题、追问、替换还是证据不足",
+    )
 
     # 检测到的分析要素
     detected_measures: list[str] = Field(default_factory=list, description="检测到的指标")
     detected_dimensions: list[str] = Field(default_factory=list, description="检测到的维度")
     detected_filters: list[FilterSpec] = Field(default_factory=list, description="检测到的筛选条件")
     detected_time_range: Optional[str] = Field(default=None, description="检测到的时间范围")
+    time_intent: TimeIntentDraft | None = Field(
+        default=None,
+        description="受限时间语言草稿；最终时间由 deterministic resolver 决定",
+    )
 
     # 报表相关
     requested_template: Optional[str] = Field(default=None, description="请求的报表模板名称")

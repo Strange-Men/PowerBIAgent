@@ -154,6 +154,8 @@ History API 返回保存的 user message、assistant terminal result 和同一 p
 
 - 只有 canonical `report_id` 存在时展示。
 - 查看和下载继续调用同一 report resource；不把 HTML 放入 Snapshot 或 presentation。
+- History 恢复 attachment 前必须验证同 `(source_mode, conversation_id, request_id, report_id)` metadata 仍存在；独立删除后的旧 Snapshot block 不再投影到 UI。
+- 独立 report delete 不改写 QueryResult/VerifiedFactSet 或伪造新业务 Snapshot，只使已删除 resource reference 在 presentation projection 中不可用。
 
 ## 八、安全与测试要求
 
@@ -174,4 +176,4 @@ History API 返回保存的 user message、assistant terminal result 和同一 p
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-23 | M5.3.1 verified-field projection final hardening*
+*最后更新：2026-08-24 | M5.3.3 deleted report attachment projection boundary*

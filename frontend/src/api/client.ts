@@ -6,6 +6,7 @@ import type {
   ConversationListPage,
   ConversationReportItem,
   ConversationReportPage,
+  ReportDeleteResult,
   RuntimeMode,
   SemanticModelCatalog,
 } from '../types'
@@ -50,7 +51,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
         ...init?.headers,
       },
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
     throw new ApiError('无法连接到 PowerBIAgent 服务，请检查网络后重试。', 0)
   }
 
@@ -122,6 +124,16 @@ export async function listRecentConversations(
   return requestJson<ConversationListPage>(`/api/v1/conversations?${query}`)
 }
 
+export async function listArchivedConversations(
+  runtimeMode: RuntimeMode,
+  limit = 12,
+): Promise<ConversationListPage> {
+  const query = queryString({ runtime_mode: runtimeMode, limit })
+  return requestJson<ConversationListPage>(
+    `/api/v1/conversations/archived?${query}`,
+  )
+}
+
 export async function searchConversations(
   runtimeMode: RuntimeMode,
   search: string,
@@ -134,6 +146,7 @@ export async function searchConversations(
 export async function getConversationHistory(
   runtimeMode: RuntimeMode,
   conversationId: string,
+  signal?: AbortSignal,
 ): Promise<ConversationHistoryPage> {
   const items: ConversationHistoryPage['items'] = []
   let cursor: string | undefined
@@ -142,6 +155,7 @@ export async function getConversationHistory(
     const query = queryString({ runtime_mode: runtimeMode, limit: 50, cursor })
     const page = await requestJson<ConversationHistoryPage>(
       `/api/v1/conversations/${encodeURIComponent(conversationId)}/history?${query}`,
+      { signal },
     )
     firstPage ||= page
     items.push(...page.items)
@@ -173,6 +187,17 @@ export async function archiveConversation(
   )
 }
 
+export async function restoreConversation(
+  runtimeMode: RuntimeMode,
+  conversationId: string,
+): Promise<void> {
+  const query = queryString({ runtime_mode: runtimeMode })
+  await requestJson(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/restore?${query}`,
+    { method: 'POST' },
+  )
+}
+
 export async function deleteConversation(
   runtimeMode: RuntimeMode,
   conversationId: string,
@@ -180,6 +205,13 @@ export async function deleteConversation(
   const query = queryString({ runtime_mode: runtimeMode })
   await requestJson(
     `/api/v1/conversations/${encodeURIComponent(conversationId)}?${query}`,
+    { method: 'DELETE' },
+  )
+}
+
+export async function deleteReport(reportId: string): Promise<ReportDeleteResult> {
+  return requestJson<ReportDeleteResult>(
+    `/api/reports/${encodeURIComponent(reportId)}`,
     { method: 'DELETE' },
   )
 }

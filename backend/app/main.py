@@ -149,6 +149,7 @@ async def lifespan(app: FastAPI):
         await configure_engine(_engine)
 
     report_repository = LocalReportRepository(
+        root=settings.report_artifacts_path,
         metadata_repo=report_artifact_repo,
     )
     app.state.report_repository = report_repository

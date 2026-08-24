@@ -37,6 +37,7 @@ from backend.app.persistence.models import (
     ConversationModel,
     PendingClarificationModel,
     ReportArtifactModel,
+    ReportDeleteIntentModel,
     ResultSnapshotModel,
     WorkMemoryModel,
 )
@@ -48,7 +49,12 @@ from backend.app.persistence.repositories.report_artifact import (
 )
 from backend.app.persistence.repositories.snapshot import SQLiteSnapshotRepository
 from backend.app.persistence.serialization import domain_to_json
-from backend.app.report.resources import LocalReportRepository, ReportSpec
+from backend.app.report.resources import (
+    LocalReportRepository,
+    ReportNotFoundError,
+    ReportSpec,
+    ReportStorageError,
+)
 
 
 UTC_BASE = datetime(2026, 8, 20, 10, 0, 0)
@@ -518,6 +524,190 @@ class TestReportHistory:
         assert mock_reports.items[0].semantic_model_key == "mock_model"
         assert real_reports.items[0].semantic_model_key == "real_model"
 
+    @pytest.mark.asyncio
+    async def test_independent_report_delete_preserves_conversation_and_hides_attachment(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        conversation_id = "conv-report-delete"
+        request_id = "req-report-delete"
+        await _insert_conversation(
+            history_env.session_factory,
+            mode=RuntimeDataMode.REAL,
+            conversation_id=conversation_id,
+            created_at=UTC_BASE,
+            updated_at=UTC_BASE,
+        )
+        metadata_repo = SQLiteReportArtifactRepository(history_env.session_factory)
+        reports_root = history_env.db_path.parent / "reports-delete"
+        report_repo = LocalReportRepository(
+            root=reports_root, metadata_repo=metadata_repo
+        )
+        artifact = await report_repo.store(
+            ReportSpec(
+                title="sales report",
+                template_key="sales_report",
+                summary="stored",
+                source_mode="real",
+                contract_version="1.0",
+                semantic_model_key="model",
+                schema_fingerprint="f" * 64,
+                verified_fact_set_ids=["fact"],
+                query_result_ids=["query"],
+            ),
+            "<!DOCTYPE html><html><body>delete report</body></html>",
+            conversation_id=conversation_id,
+            request_id=request_id,
+        )
+        snapshot = _snapshot(
+            mode=RuntimeDataMode.REAL,
+            conversation_id=conversation_id,
+            request_id=request_id,
+            report_html="<!DOCTYPE html><html><body>legacy ignored</body></html>",
+        ).model_copy(
+            update={
+                "report": ReportResultSnapshot(
+                    report_id=artifact.report_id,
+                    template_key=artifact.template_key,
+                    contract_version=artifact.contract_version,
+                    view_reference=artifact.view_reference,
+                    download_reference=artifact.download_reference,
+                    content_type=artifact.content_type,
+                    content_hash=artifact.content_hash,
+                )
+            }
+        )
+        await _insert_snapshot(
+            history_env.session_factory,
+            snapshot,
+            mode=RuntimeDataMode.REAL,
+            created_at=UTC_BASE,
+        )
+        service = ConversationHistoryService(history_env.repository)
+        assert (
+            await service.get_history(
+                RuntimeDataMode.REAL, conversation_id, limit=20
+            )
+        ).items[0].report is not None
+
+        deleted = await report_repo.delete(artifact.report_id)
+        assert deleted.conversation_id == conversation_id
+        assert not (reports_root / f"{artifact.report_id}.html").exists()
+        with pytest.raises(ReportNotFoundError):
+            await metadata_repo.get(artifact.report_id)
+        history = await service.get_history(
+            RuntimeDataMode.REAL, conversation_id, limit=20
+        )
+        assert history.items[0].report is None
+        assert history.conversation_id == conversation_id
+
+    @pytest.mark.asyncio
+    async def test_report_delete_failure_is_durable_and_retryable(
+        self, history_env: HistoryEnvironment, monkeypatch
+    ) -> None:
+        await _insert_conversation(
+            history_env.session_factory,
+            mode=RuntimeDataMode.MOCK,
+            conversation_id="conv-report-delete-failure",
+            created_at=UTC_BASE,
+            updated_at=UTC_BASE,
+        )
+        metadata_repo = SQLiteReportArtifactRepository(history_env.session_factory)
+        reports_root = history_env.db_path.parent / "reports-delete-failure"
+        report_repo = LocalReportRepository(reports_root, metadata_repo)
+        artifact = await report_repo.store(
+            ReportSpec(
+                title="report", template_key="test_report", source_mode="mock"
+            ),
+            "<!DOCTYPE html><html><body>retry</body></html>",
+            conversation_id="conv-report-delete-failure",
+            request_id="req-report-delete-failure",
+        )
+        target = reports_root / f"{artifact.report_id}.html"
+        original_unlink = Path.unlink
+
+        def fail_unlink(self, *args, **kwargs):
+            if self == target:
+                raise OSError("injected unlink failure")
+            return original_unlink(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", fail_unlink)
+        with pytest.raises(ReportStorageError, match="report_artifact_delete_failed"):
+            await report_repo.delete(artifact.report_id)
+        assert target.exists()
+        async with history_env.session_factory() as session:
+            pending = await session.scalar(
+                select(ReportDeleteIntentModel).where(
+                    ReportDeleteIntentModel.report_id == artifact.report_id
+                )
+            )
+            assert pending is not None
+
+        monkeypatch.setattr(Path, "unlink", original_unlink)
+        await report_repo.delete(artifact.report_id)
+        assert not target.exists()
+        async with history_env.session_factory() as session:
+            pending = await session.scalar(
+                select(ReportDeleteIntentModel).where(
+                    ReportDeleteIntentModel.report_id == artifact.report_id
+                )
+            )
+            assert pending is None
+
+    @pytest.mark.asyncio
+    async def test_history_never_projects_another_conversation_report(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        for conversation_id in ("conv-owner-a", "conv-owner-b"):
+            await _insert_conversation(
+                history_env.session_factory,
+                mode=RuntimeDataMode.REAL,
+                conversation_id=conversation_id,
+                created_at=UTC_BASE,
+                updated_at=UTC_BASE,
+            )
+        metadata_repo = SQLiteReportArtifactRepository(history_env.session_factory)
+        report_repo = LocalReportRepository(
+            history_env.db_path.parent / "reports-owner", metadata_repo
+        )
+        artifact = await report_repo.store(
+            ReportSpec(
+                title="A report",
+                template_key="sales_report",
+                source_mode="real",
+                contract_version="1.0",
+                semantic_model_key="model",
+                schema_fingerprint="a" * 64,
+                verified_fact_set_ids=["fact"],
+                query_result_ids=["query"],
+            ),
+            "<!DOCTYPE html><html><body>A</body></html>",
+            conversation_id="conv-owner-a",
+            request_id="req-owner-a",
+        )
+        forged_b_snapshot = _snapshot(
+            mode=RuntimeDataMode.REAL,
+            conversation_id="conv-owner-b",
+            request_id="req-owner-b",
+            report_html="<!DOCTYPE html><html><body>B</body></html>",
+        ).model_copy(
+            update={
+                "report": ReportResultSnapshot(
+                    report_id=artifact.report_id,
+                    template_key=artifact.template_key,
+                )
+            }
+        )
+        await _insert_snapshot(
+            history_env.session_factory,
+            forged_b_snapshot,
+            mode=RuntimeDataMode.REAL,
+            created_at=UTC_BASE,
+        )
+        history = await ConversationHistoryService(
+            history_env.repository
+        ).get_history(RuntimeDataMode.REAL, "conv-owner-b", limit=20)
+        assert history.items[0].report is None
+
 
 class TestSearch:
     @pytest.mark.asyncio
@@ -663,6 +853,40 @@ class TestArchiveDeleteAndErrors:
             RuntimeDataMode.REAL, "shared-delete", limit=20
         )
         assert [x.answer for x in real_history.items] == ["delete real"]
+
+    @pytest.mark.asyncio
+    async def test_archive_list_and_restore_preserve_history(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        await _insert_conversation(
+            history_env.session_factory,
+            mode=RuntimeDataMode.MOCK,
+            conversation_id="conv-restore",
+            created_at=UTC_BASE,
+            updated_at=UTC_BASE,
+        )
+        await _seed_turn(
+            history_env,
+            mode=RuntimeDataMode.MOCK,
+            conversation_id="conv-restore",
+            request_id="req-restore",
+            when=UTC_BASE,
+            answer="preserved",
+            analysis_goal="用户提问: preserve",
+        )
+        service = ConversationHistoryService(history_env.repository)
+        await service.archive(RuntimeDataMode.MOCK, "conv-restore")
+        assert (await service.list_recent(RuntimeDataMode.MOCK, limit=20)).items == []
+        archived = await service.list_archived(RuntimeDataMode.MOCK, limit=20)
+        assert [item.conversation_id for item in archived.items] == ["conv-restore"]
+        restored = await service.restore(RuntimeDataMode.MOCK, "conv-restore")
+        assert restored.restored is True
+        recent = await service.list_recent(RuntimeDataMode.MOCK, limit=20)
+        assert [item.conversation_id for item in recent.items] == ["conv-restore"]
+        history = await service.get_history(
+            RuntimeDataMode.MOCK, "conv-restore", limit=20
+        )
+        assert history.items[0].answer == "preserved"
 
     @pytest.mark.asyncio
     async def test_delete_removes_only_linked_namespace_report_html(

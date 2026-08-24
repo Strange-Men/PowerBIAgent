@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.3.2 — Local MCP 多模型选择与协议稳定性加固**。M4.4.2 已最终验收；M5.0—M5.3.2 已完成。
+当前版本：**M5.3.3 — 多轮语义、会话资源生命周期与仓库治理最终收口**。M4.4.2 已最终验收；M5.0—M5.3.3 已完成。
 
 ## 项目概览
 
@@ -20,8 +20,8 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 - Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界。
 - `sales_report` 根据用户需求与 runtime capability 生成 KPI、趋势、贡献、对比和排行等固定设计报表。
-- 结构化多轮 Memory 只在完整成功后提交；歧义、失败和 clarification 不污染已提交状态。
-- SQLite 提供重启恢复、结构化历史/搜索/归档/删除与崩溃后删除重试。
+- 结构化多轮 Memory 只补当前轮真正省略的兼容槽；fresh/follow-up/replace 分离，当前明确表达始终优先；歧义、失败、unsupported 和 clarification 不污染已提交状态。
+- SQLite 提供重启恢复、结构化历史/搜索、可恢复归档、永久删除、独立 report 删除与崩溃后删除重试。
 - `(runtime_mode, conversation_id)` 和 `(source_mode, conversation_id)` 严格隔离 Mock/Real 状态与报表历史。
 - `presentation` 只读展示契约把已验证的单指标、表格、柱状图/折线图和报表附件安全交给前端；dataset 只投影 VerifiedFactSet 数据事实覆盖字段，内容块只保存引用。
 - 展示型 transcript 与标题支持完整历史恢复、默认标题、重命名、归档和删除，不参与 Memory 或业务事实判断。
@@ -48,7 +48,7 @@ LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI
 
 | LLM 可以 | LLM 不可以 |
 |---|---|
-| Intent 与受约束语言理解 | 发明业务语义或 runtime 对象 |
+| Intent、turn relation 与受限 `TimeIntentDraft` 语言理解 | 发明业务语义、runtime 对象或 canonical 时间范围 |
 | 在 Catalog-owned candidate ID 中进行有界选择 | 生成具有权威性的 Real DAX |
 | 生成受事实约束的语言草稿 | 发明 QueryResult、数字、排名、趋势或因果 |
 | 输出 registry-owned 报表意图弱信号 | 生成任意 HTML、JavaScript 或报表事实 |
@@ -61,13 +61,13 @@ LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI
 |---|---|
 | 数据问答 | Measure、Dimension、`EQ` filter、确定性时间范围、单 Measure Sort/TopN 的受限自然语言查询 |
 | 报表 | 唯一正式模板 `sales_report`；schema-aware capability planning；固定安全静态 HTML；查看/下载资源 |
-| 多轮 Memory | 指标、维度、filter、time、sort、TopN 继承；待澄清上下文与已提交 Memory 分离；损坏的 canonical filter 受控失败 |
+| 多轮 Memory | 当前明确表达 > bounded semantic draft > committed Memory；fresh 清除无关旧槽，follow-up/replace 只继承兼容省略项；模型切换清空旧语义上下文 |
 | 持久化与恢复 | SQLite Memory/Snapshot/报表 metadata；重启重放；不完整崩溃证据受控失败；持久化删除意图 |
-| 历史与搜索 | 仅 SQLite 支持最近会话、展示型 transcript、自动标题/重命名、有界搜索、归档和删除；旧会话只恢复真实已保存内容 |
+| 历史与搜索 | 仅 SQLite 支持最近会话、展示型 transcript、自动标题/重命名、有界搜索、archive/restore 与永久删除；旧会话只恢复真实已保存内容 |
 | 本地 Power BI | DeepSeek + 只读 Local Modeling MCP + Power BI Desktop；可同时安全枚举多个 PBIX，由前端单选后使用 opaque key 精确绑定；每次 schema/member/DAX 都重新枚举并只连接唯一匹配实例，stale/ambiguous identity fail closed；Real DAX/事实的 LLM 权限为 0 |
-| React 网页前端 | 白色主区与浅灰 Sidebar、响应式/键盘交互、动态模型兼容提示、完整历史恢复、会话管理，以及文字/指标/表格/柱状图/折线图/报表附件动态渲染 |
+| React 网页前端 | 完整历史恢复、已归档入口/恢复、独立 report 删除、A/B history stale-response 防护，以及文字/指标/表格/柱状图/折线图/报表附件动态渲染 |
 
-Local MCP 实机基线固定为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，并通过只读 schema + DAX 单行 capability probe 校验协议能力。Remote MCP 继续延期。M5.3.2 不改变 M0–M4 factual authority。
+Local MCP 实机基线固定为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，并通过只读 schema + DAX 单行 capability probe 校验协议能力。Remote MCP 继续延期。M5.3.3 不改变 M0–M5 factual authority。
 
 ## 快速开始
 
@@ -293,6 +293,7 @@ python scripts/check_architecture_gate.py
 python scripts/check_repository_safety.py
 python scripts/check_ai_error_ledger.py
 python scripts/check_documentation_governance.py
+python scripts/check_artifact_governance.py
 
 # 全新 SQLite schema Smoke
 python -m alembic upgrade head
@@ -314,6 +315,7 @@ python -m alembic upgrade head
 | M5.3 | 已完成 — 结构化结果、历史/标题/管理、响应式与视觉交互已收口；Rich PBIX Real 验收通过 |
 | M5.3.1 | 已完成 — 多 Desktop 实例连接前 fail closed；presentation 仅投影 verified 数据字段 |
 | M5.3.2 | 已完成 — 多 PBIX 安全枚举/单选/opaque 精确绑定、MCP capability probe、stale 与 truncation 防腐 |
+| M5.3.3 | 已完成 — 多轮继承语义、unsupported preflight、archive/restore、独立 report delete、A/B 防串窗与 Artifact Governance |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -340,4 +342,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-24 | M5.3.2 COMPLETE — Local MCP 多模型选择与协议稳定性加固*
+*最后更新：2026-08-24 | M5.3.3 COMPLETE — 多轮语义、会话资源生命周期与仓库治理最终收口*

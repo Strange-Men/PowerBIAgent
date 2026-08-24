@@ -51,7 +51,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_CONVERSATIONS_PATH = PROJECT_ROOT / "harness" / "cases" / "multi_turn_conversations.yaml"
 DEFAULT_KNOWN_ANSWER_CASES_PATH = PROJECT_ROOT / "harness" / "cases" / "known_answer_cases.yaml"
 DEFAULT_EXAMPLE_BASELINE_PATH = PROJECT_ROOT / "harness" / "baselines" / "example_known_answers.yaml"
-DEFAULT_REAL_BASELINE_PATH = PROJECT_ROOT / "local_state" / "m2_known_answers.yaml"
+DEFAULT_REAL_BASELINE_PATH = (
+    PROJECT_ROOT / "local_state" / "runtime" / "m2_known_answers.yaml"
+)
 
 
 class TurnEvaluation(BaseModel):

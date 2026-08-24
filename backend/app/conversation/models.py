@@ -139,6 +139,15 @@ class ConversationArchiveResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+class ConversationRestoreResult(BaseModel):
+    runtime_mode: RuntimeDataMode
+    conversation_id: str
+    restored: bool = True
+    updated_at: datetime
+
+    model_config = ConfigDict(frozen=True)
+
+
 class ConversationDeleteResult(BaseModel):
     runtime_mode: RuntimeDataMode
     conversation_id: str

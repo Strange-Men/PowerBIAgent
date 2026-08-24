@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v1.6
+> **修订版本：** v1.7
 > **修订日期：** 2026-08-24
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** 同步 M5.3.2 多 PBIX opaque instance binding、MCP beta compatibility probe 与 stale/truncation fail-closed；North Star 不变
+> **本轮修订范围：** 固化 M5.3.3 多轮省略项继承、readonly unsupported、archive/restore/delete、独立 report delete、异步 conversation 隔离与 artifact lifecycle；North Star 与 factual authority 不变
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -71,7 +71,9 @@ Agent 查询真实数据，返回文字结论和数据表格。
 - "改成今年的数据。"
 - "哪个区域下降最多？"（未来 comparison/trend 能力，M2 不宣称支持）
 
-系统继承当前会话中的语义模型、指标、时间范围和筛选条件。
+系统只对真正省略的兼容槽继承 last successful committed state。同一 conversation 不等于自动 follow-up；必须区分 fresh question、follow-up 与 replace。当前用户明确表达优先于 bounded LLM semantic draft，二者均优先于 Memory。fresh question 清除未在当前轮表达的旧 time/filter/dimension/sort/top_n；证据不足时 clarification，禁止为方便执行而机械继承。
+
+自然时间理解允许 LLM 输出受限 `TimeIntentDraft`（absolute month/year、relative month/year、quarter、recent months、bounded range），但最终 Date field 和 `TimeRangeSpec` 仍由 runtime schema、固定 clock/calendar 与 deterministic resolver 决定。LLM 不拥有 canonical 时间或对象 identity。
 
 ### 5.3 报表生成
 
@@ -99,6 +101,8 @@ React + Vite
 - 最近报表（M3 后端报表资源能力，M5 前端界面）
 - 最近对话（M4 后端会话持久化能力，M5 前端界面）
 - 展示型 transcript、自动标题与 namespace-scoped 重命名、归档、删除
+- “已归档”入口与恢复；归档保留 History/Memory/report/HTML，删除才永久清理
+- 最近报表的显式人工删除；只删除 report，不删除所属 conversation
 - 用户信息和菜单
 
 > **M3/M4/M5 边界：** M3 完成报表渲染、资源 ID、查看/下载等后端能力；M4 完成会话历史、搜索和持久化等后端能力；左侧栏 React UI、最近报表/对话、搜索和会话管理已在 M5 实现。展示型 transcript/title 不进入 Memory 或业务事实链。
@@ -151,6 +155,7 @@ FastAPI
 5. **Memory 模块** — 只在 Grounding、DAX、Layer 3、Power BI、FactSet 与 factual output 全链成功后提交当前分析状态；PendingClarificationContext 与 committed Memory 分离
 6. **报表生成模块** — M3 已实现受 VerifiedFactSet / QueryResult 约束的固定模板静态 HTML 渲染与资源契约；M4 persistence 只保存状态/metadata，filesystem 继续拥有 HTML authority
 7. **展示投影模块** — M5.3 已实现 QueryResult/VerifiedFactSet 直接来源的 `presentation` contract，以及 text/metric/table/bar/line/report attachment 动态块；只拥有 UI projection 权限
+8. **资源生命周期模块** — M5.3.3 将 archive/restore/conversation delete 与独立 report delete 分离；report delete 是用户显式资源 API，不是 Agent tool，LLM 无调用权限
 
 ### 单 Agent 执行流程
 
@@ -221,12 +226,15 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 | `POST /api/v1/chat` | ✅ 已实现；Mock+Mock、DeepSeek+Mock、DeepSeek+Local MCP 共用正式 TurnPipeline |
 | `GET /api/reports/{report_id}` | ✅ 已实现；查看 repository-owned 静态 HTML |
 | `GET /api/reports/{report_id}/download` | ✅ 已实现；下载 UTF-8 HTML 报表 |
+| `DELETE /api/reports/{report_id}` | ✅ M5.3.3；显式人工删除 report metadata + managed HTML，conversation 保留；不属于 ToolGateway，LLM 无权限 |
 | `GET /api/v1/conversations` | ✅ 已实现（SQLite 必填 runtime_mode） |
 | `GET /api/v1/conversations/search` | ✅ 已实现 |
 | `GET /api/v1/conversations/{id}/history` | ✅ 已实现 |
 | `GET /api/v1/conversations/{id}/reports` | ✅ 已实现（必填 source_mode） |
 | `PATCH /api/v1/conversations/{id}` | ✅ 已实现；仅在 runtime namespace 内修改展示型标题 |
 | `POST /api/v1/conversations/{id}/archive` | ✅ 已实现 |
+| `GET /api/v1/conversations/archived` | ✅ M5.3.3；列出 exact runtime namespace 的 archived conversations |
+| `POST /api/v1/conversations/{id}/restore` | ✅ M5.3.3；恢复逻辑归档，不重建业务状态 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 |
 
 ## 十一、MVP 开发阶段
@@ -242,6 +250,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 9. **M5.3 结构化结果与前端最终收口** ✅ 已完成 — structured presentation、展示型 transcript/title、重命名/归档/删除、metric/table/bar/line/report attachment、responsive/accessibility/状态视觉与 Rich PBIX Real 浏览器验收
 10. **M5.3.1 Final Hardening** ✅ 已完成 — Local MCP 多 Desktop 在 Connect 前 fail closed，presentation 只投影 VerifiedFactSet 数据事实覆盖字段；无新产品能力或后续里程碑扩展
 11. **M5.3.2 Local MCP 多模型选择与协议稳定性加固** ✅ 已完成 — 多 PBIX 安全枚举、前端单选/刷新、opaque 精确实例绑定、只读 capability probe、stale fail-closed 与 row-limit/truncation 防腐；Remote MCP 继续 Deferred
+12. **M5.3.3 多轮语义、会话资源生命周期与仓库治理最终收口** ✅ 已完成 — LLM flexible draft + deterministic canonical resolution、fresh/follow-up/replace inheritance、unsupported preflight、archive/restore/report delete、conversation stale-response protection 与 Artifact Governance
 
 ## 十二、MVP 暂不包含
 
@@ -276,7 +285,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 ## 十四、验收标准
 
-以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.2 truth/persistence boundary final closure 已完成；M5.0—M5.3.2 已完成。M5.3.2 双 PBIX Real 验证覆盖同时 discovery、逐实例 probe/schema/DAX、模型专属查询隔离、前端单选，以及 Rich 问答/表格/报表；CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
+以下是完整 MVP 的跨阶段成功标准。M0—M3 已封板，M4 backend 已 FINAL PASS，M4.4.2 truth/persistence boundary final closure 已完成；M5.0—M5.3.3 已完成。M5.3.3 Rich PBIX Real 浏览器验证覆盖八轮语义、unsupported、报表 ownership、archive/restore、独立 report delete、conversation delete 与 A/B 快速切换；CI 只验证 Mock/Fake 边界，真实 Power BI Desktop 继续由本地人工 Smoke 验证。
 
 MVP 达到以下条件即可视为成功：
 
@@ -306,4 +315,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-24 | M5.3.2 多 PBIX 与 MCP beta 稳定性边界同步；North Star 不变*
+*修订日期：2026-08-24 | M5.3.3 COMPLETE；North Star 与 factual authority 不变*

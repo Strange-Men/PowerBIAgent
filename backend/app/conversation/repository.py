@@ -13,6 +13,7 @@ from backend.app.conversation.models import (
     ConversationReportItem,
     ConversationSummary,
     ConversationRenameResult,
+    ConversationRestoreResult,
 )
 from backend.app.memory.models import RuntimeDataMode
 
@@ -72,6 +73,15 @@ class ConversationHistoryRepository(ABC):
     ) -> RepositoryPage[ConversationSummary, ConversationPosition]: ...
 
     @abstractmethod
+    async def list_archived(
+        self,
+        runtime_mode: RuntimeDataMode,
+        *,
+        limit: int,
+        after: ConversationPosition | None,
+    ) -> RepositoryPage[ConversationSummary, ConversationPosition]: ...
+
+    @abstractmethod
     async def get_history(
         self,
         runtime_mode: RuntimeDataMode,
@@ -105,6 +115,11 @@ class ConversationHistoryRepository(ABC):
     async def archive(
         self, runtime_mode: RuntimeDataMode, conversation_id: str
     ) -> ConversationArchiveResult: ...
+
+    @abstractmethod
+    async def restore(
+        self, runtime_mode: RuntimeDataMode, conversation_id: str
+    ) -> ConversationRestoreResult: ...
 
     @abstractmethod
     async def rename(

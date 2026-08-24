@@ -310,6 +310,15 @@ PowerBIAgent/
 - 未经用户明确批准，不得创建 Tag 或 Release。
 - 任何阶段均禁止 force push。
 
+### M5.3.3 多轮与资源生命周期硬规则
+
+- 当前输入明确表达 > 当前 bounded LLM semantic draft > committed Memory；Memory 仅补省略项，不得覆盖当前 turn。
+- 同 conversation 必须区分 fresh question、follow-up、replace；证据不足 clarification。不得默认继承全部旧 slot。
+- 预测、写入、PBIX/Measure 修改、删除数据、任意代码与自然语言 report delete 在 Memory/Grounding/DAX 前 fail closed；committed/pending 不得改变该结论。
+- archive 是可恢复的逻辑隐藏；delete 是永久清理；独立 report delete 只属于显式人工资源 API，不进入 ToolGateway，LLM 无权限。
+- 前端 history response 必须验证 active conversation 与 generation；open/new/delete/archive/restore/model switch 必须使旧请求失效。
+- local_state 只允许 persistence/reports/runtime/archive。测试 artifact 必须 Create → register ownership → use → teardown → verify cleanup；Artifact Gate 只读检测，不自动删除用户数据。
+
 ---
 
-*最后更新：2026-08-14 | M2.6.4 文档治理与阶段边界同步*
+*最后更新：2026-08-24 | M5.3.3 COMPLETE — 多轮语义与资源生命周期硬规则已实施*

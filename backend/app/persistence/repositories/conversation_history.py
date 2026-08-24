@@ -16,6 +16,7 @@ from backend.app.conversation.models import (
     ConversationNotFoundError,
     ConversationReportItem,
     ConversationRenameResult,
+    ConversationRestoreResult,
     ConversationSummary,
     SnapshotReportSummary,
 )
@@ -36,6 +37,7 @@ from backend.app.persistence.models import (
     ConversationDeleteIntentModel,
     PendingClarificationModel,
     ReportArtifactModel,
+    ReportDeleteIntentModel,
     ResultSnapshotModel,
     WorkMemoryModel,
 )
@@ -186,6 +188,41 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             )
         return RepositoryPage(items=summaries, next_position=next_position)
 
+    async def list_archived(
+        self,
+        runtime_mode: RuntimeDataMode,
+        *,
+        limit: int,
+        after: ConversationPosition | None,
+    ) -> RepositoryPage[ConversationSummary, ConversationPosition]:
+        conditions = [
+            ConversationModel.runtime_mode == runtime_mode.value,
+            ConversationModel.archived_at.is_not(None),
+        ]
+        if after is not None:
+            conditions.append(self._conversation_cursor_condition(after))
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(ConversationModel)
+                .where(and_(*conditions))
+                .order_by(
+                    ConversationModel.updated_at.desc(),
+                    ConversationModel.conversation_id.asc(),
+                )
+                .limit(limit + 1)
+            )
+            fetched = list(result.scalars().all())
+            page_rows = fetched[:limit]
+            summaries = await self._summaries(session, runtime_mode, page_rows)
+        next_position = None
+        if len(fetched) > limit and page_rows:
+            last = page_rows[-1]
+            next_position = ConversationPosition(
+                updated_at=last.updated_at,
+                conversation_id=last.conversation_id,
+            )
+        return RepositoryPage(items=summaries, next_position=next_position)
+
     async def get_history(
         self,
         runtime_mode: RuntimeDataMode,
@@ -225,6 +262,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             page_rows = fetched[:limit]
             request_ids = [row.request_id for row in page_rows]
             memories: dict[str, WorkMemoryModel] = {}
+            owned_reports: set[tuple[str, str]] = set()
             if request_ids:
                 memory_result = await session.execute(
                     select(WorkMemoryModel).where(
@@ -240,9 +278,31 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 memories = {
                     row.request_id: row for row in memory_result.scalars().all()
                 }
+                report_result = await session.execute(
+                    select(
+                        ReportArtifactModel.report_id,
+                        ReportArtifactModel.request_id,
+                    ).where(
+                        and_(
+                            ReportArtifactModel.source_mode == runtime_mode.value,
+                            ReportArtifactModel.conversation_id == conversation_id,
+                            ReportArtifactModel.request_id.in_(request_ids),
+                        )
+                    )
+                )
+                owned_reports = {
+                    (report_id, request_id)
+                    for report_id, request_id in report_result.all()
+                    if request_id is not None
+                }
 
             items = [
-                self._history_item(row, runtime_mode, memories.get(row.request_id))
+                self._history_item(
+                    row,
+                    runtime_mode,
+                    memories.get(row.request_id),
+                    owned_reports,
+                )
                 for row in page_rows
             ]
         next_position = None
@@ -263,6 +323,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
         row: ResultSnapshotModel,
         runtime_mode: RuntimeDataMode,
         memory: WorkMemoryModel | None,
+        owned_reports: set[tuple[str, str]],
     ) -> ConversationHistoryItem:
         try:
             snapshot = json_to_domain(TurnResultSnapshot, row.payload_json)
@@ -294,7 +355,11 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 updated_at=memory.updated_at,
             )
         report_summary = None
-        if snapshot.report is not None:
+        report_is_owned = bool(
+            snapshot.report is not None
+            and (snapshot.report.report_id, snapshot.request_id) in owned_reports
+        )
+        if snapshot.report is not None and report_is_owned:
             report_summary = SnapshotReportSummary(
                 report_id=snapshot.report.report_id,
                 template_key=snapshot.report.template_key,
@@ -303,6 +368,17 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 download_reference=snapshot.report.download_reference,
                 content_type=snapshot.report.content_type,
                 content_hash=snapshot.report.content_hash,
+            )
+        presentation = snapshot.presentation
+        if presentation is not None and not report_is_owned:
+            presentation = presentation.model_copy(
+                update={
+                    "blocks": [
+                        block
+                        for block in presentation.blocks
+                        if block.type != "report_attachment"
+                    ]
+                }
             )
         return ConversationHistoryItem(
             request_id=snapshot.request_id,
@@ -316,7 +392,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     memory
                 )
             ),
-            presentation=snapshot.presentation,
+            presentation=presentation,
             answer=snapshot.answer,
             report=report_summary,
             clarification_question=snapshot.clarification_question,
@@ -519,6 +595,24 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             archived_at=archived_at,
         )
 
+    async def restore(
+        self, runtime_mode: RuntimeDataMode, conversation_id: str
+    ) -> ConversationRestoreResult:
+        async with self._session_factory() as session:
+            async with session.begin():
+                row = await self._get_conversation(
+                    session, runtime_mode, conversation_id
+                )
+                updated_at = datetime.utcnow()
+                row.archived_at = None
+                row.updated_at = updated_at
+                await session.flush()
+        return ConversationRestoreResult(
+            runtime_mode=runtime_mode,
+            conversation_id=conversation_id,
+            updated_at=updated_at,
+        )
+
     async def rename(
         self,
         runtime_mode: RuntimeDataMode,
@@ -571,6 +665,19 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     )
                 )
                 report_ids = list(report_result.scalars().all())
+                pending_report_result = await session.execute(
+                    select(ReportDeleteIntentModel.report_id).where(
+                        and_(
+                            ReportDeleteIntentModel.source_mode == runtime_mode.value,
+                            ReportDeleteIntentModel.conversation_id == conversation_id,
+                        )
+                    )
+                )
+                report_ids.extend(
+                    report_id
+                    for report_id in pending_report_result.scalars().all()
+                    if report_id not in report_ids
+                )
                 deleted_counts: dict[str, int] = {}
                 for name, model, mode_column in (
                     (
@@ -600,6 +707,14 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 )
                 deleted_counts["report_artifacts"] = max(
                     report_delete.rowcount or 0, 0
+                )
+                await session.execute(
+                    delete(ReportDeleteIntentModel).where(
+                        and_(
+                            ReportDeleteIntentModel.source_mode == runtime_mode.value,
+                            ReportDeleteIntentModel.conversation_id == conversation_id,
+                        )
+                    )
                 )
                 await session.execute(
                     delete(ConversationModel).where(

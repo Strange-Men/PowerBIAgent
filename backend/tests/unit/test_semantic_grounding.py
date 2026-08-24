@@ -6,7 +6,13 @@ from datetime import date
 
 import pytest
 
-from backend.app.intent.models import IntentSpec, IntentType
+from backend.app.intent.models import (
+    IntentSpec,
+    IntentType,
+    TimeIntentDraft,
+    TimeIntentKind,
+    TurnRelation,
+)
 from backend.app.memory.models import (
     MemoryStatus,
     PendingClarificationContext,
@@ -36,8 +42,10 @@ from backend.app.query_plan.semantic_catalog import (
 from backend.app.query_plan.state_transition import (
     CommittedMemoryCorruptionError,
     FilterTransition,
+    InheritanceMode,
     SlotTransition,
     StateTransitionService,
+    TurnInheritancePolicy,
 )
 from backend.app.schemas.data_contracts import (
     ColumnMembersResult,
@@ -482,6 +490,39 @@ class TestMemberAndTimeGrounding:
         assert explicit.mode == TimeRangeMode.EXPLICIT_RANGE
         assert '"date_field":"OrderDate"' in explicit.to_context_text()
 
+    @pytest.mark.parametrize(
+        ("phrase", "expected_start", "expected_end"),
+        [
+            ("2025年5月销售额", date(2025, 5, 1), date(2025, 5, 31)),
+            ("去年五月", date(2025, 5, 1), date(2025, 5, 31)),
+            ("上个月", date(2026, 7, 1), date(2026, 7, 31)),
+            ("最近半年", date(2026, 3, 1), date(2026, 8, 31)),
+            ("今年第一季度", date(2026, 1, 1), date(2026, 3, 31)),
+        ],
+    )
+    def test_time_fast_path_covers_stable_structures(
+        self, phrase, expected_start, expected_end
+    ):
+        field = next(
+            item for item in _catalog().objects if item.canonical_name == "OrderDate"
+        )
+        result = TimeGrounder(lambda: date(2026, 8, 13)).ground(phrase, field)
+        assert result is not None
+        assert (result.start_date, result.end_date) == (expected_start, expected_end)
+
+    def test_bounded_time_draft_requires_current_input_evidence(self):
+        field = next(
+            item for item in _catalog().objects if item.canonical_name == "OrderDate"
+        )
+        grounder = TimeGrounder(lambda: date(2026, 8, 13))
+        draft = TimeIntentDraft(
+            kind=TimeIntentKind.RECENT_MONTHS,
+            expression="过去六个月",
+            months=6,
+        )
+        assert grounder.ground("过去六个月销售额", field, draft) is not None
+        assert grounder.ground("销售额", field, draft) is None
+
     @pytest.mark.asyncio
     async def test_runtime_only_extra_date_does_not_override_glossary_date(self):
         schema = _schema(two_dates=True)
@@ -689,6 +730,77 @@ class TestMemberAndTimeGrounding:
 
 
 class TestGroundingAuthorityAndStateTransition:
+    def test_fresh_question_clears_unmentioned_committed_slots(self):
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+            dimensions=["Product"],
+            filters=[{"field": "Category", "operator": "eq", "value": "North"}],
+            time_range={
+                "date_field": "OrderDate",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31",
+                "mode": "current_month",
+                "grain": "month",
+            },
+            sort="desc",
+            top_n=5,
+        )
+        delta = GroundedSemanticDelta(
+            measures=["Total Sales"],
+            dimensions=["Category"],
+            sort="desc",
+            sort_specified=True,
+            top_n=3,
+            top_n_specified=True,
+        )
+        intent = _intent(turn_relation=TurnRelation.UNCLEAR)
+        decision = TurnInheritancePolicy.decide(
+            "销售额最高的前3个区域是什么？", intent, delta, committed
+        )
+        assert decision.mode == InheritanceMode.FRESH_QUESTION
+
+        result = StateTransitionService().merge(
+            _draft(),
+            delta,
+            committed,
+            inheritance_mode=decision.mode,
+        )
+        assert result.query_plan.time_range is None
+        assert result.query_plan.filters == []
+        assert result.query_plan.top_n == 3
+        assert result.transitions.time == SlotTransition.CLEAR
+
+    def test_follow_up_and_time_replace_inherit_only_when_explicit(self):
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+            dimensions=["Category"],
+        )
+        follow_delta = GroundedSemanticDelta(
+            filters=[StructuredFilter(field="Category", value="South")]
+        )
+        follow = TurnInheritancePolicy.decide(
+            "那华东呢？", _intent(), follow_delta, committed
+        )
+        replace = TurnInheritancePolicy.decide(
+            "改成去年", _intent(),
+            GroundedSemanticDelta(time_specified=True), committed,
+        )
+        assert follow.mode == InheritanceMode.FOLLOW_UP
+        assert replace.mode == InheritanceMode.REPLACE
+
+    def test_ambiguous_omission_requires_clarification(self):
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+        )
+        decision = TurnInheritancePolicy.decide(
+            "华东", _intent(), GroundedSemanticDelta(), committed
+        )
+        assert decision.requires_clarification is True
+        assert decision.mode is None
+
     @pytest.mark.asyncio
     async def test_explicit_grouping_cue_discards_hallucinated_draft_filter(self):
         async def no_lookup(*_):

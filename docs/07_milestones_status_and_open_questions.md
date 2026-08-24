@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.3.2 — Local MCP 多模型选择与协议稳定性加固已完成
+> **状态：** M5.3.3 — 多轮语义、会话资源生命周期与仓库治理最终收口已完成
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -34,6 +34,7 @@
 | **M5.3** | **结构化结果、历史/标题/资源管理与视觉交互最终收口** | **✅ 已完成** |
 | **M5.3.1** | **Local Desktop 单实例安全 + presentation verified-field projection** | **✅ 已完成** |
 | **M5.3.2** | **多 PBIX 选择、opaque instance binding 与 MCP beta 稳定性** | **✅ 已完成** |
+| **M5.3.3** | **多轮继承语义、conversation/report 生命周期与 Artifact Governance** | **✅ 已完成** |
 
 ## M3 合并与 CI truth
 
@@ -58,6 +59,7 @@
 | SalesReportRenderer (design system) | ✅ 固定 UTF-8 static HTML；inline SVG line/donut、CSS column/hbar；无同源表格重复；无 JS/CDN/外部资源/自由 HTML |
 | ReportArtifact | ✅ filesystem HTML authority、required metadata contract、immutable report_id、原子本地保存 |
 | Resource API | ✅ view/download；unknown/path traversal 拒绝 |
+| M5.3.3 lifecycle | ✅ fresh/follow-up/replace、unsupported preflight、archive/restore、独立 report delete、A/B stale-response 防护与 Artifact Governance |
 | Idempotency / Memory | ✅ replay 复用 report_id；render/store failure 不成功提交 Memory |
 | Persistent sessions / React | ✅ SQLite session query lifecycle + React recent/search/history/reports adapters 已完成 |
 | M5.3 presentation contract | ✅ QueryResult/VerifiedFactSet 单一 dataset + 动态 text/metric/table/bar/line/report 引用已实现并通过 Rich PBIX Real 验收 |
@@ -165,4 +167,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-24 | M5.3.2 COMPLETE — Local MCP 多模型选择与协议稳定性加固*
+*最后更新：2026-08-24 | M5.3.3 COMPLETE — 多轮语义、会话资源生命周期与仓库治理最终收口*

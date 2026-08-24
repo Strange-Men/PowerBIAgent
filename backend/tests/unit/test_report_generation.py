@@ -37,6 +37,7 @@ from backend.app.report.resources import (
     InMemoryReportRepository,
     LocalReportRepository,
     ReportArtifact,
+    ReportDeleteResult,
     ReportNotFoundError,
     ReportRepository,
     ReportStorageError,
@@ -512,6 +513,9 @@ class _FailingReportRepository(ReportRepository):
 
     async def read_html(self, report_id: str) -> tuple[ReportArtifact, str]:
         raise ReportNotFoundError("report_not_found")
+
+    async def delete(self, report_id: str) -> ReportDeleteResult:
+        raise ReportStorageError("forced_delete_failure")
 
 
 class _CountingReportRepository(InMemoryReportRepository):

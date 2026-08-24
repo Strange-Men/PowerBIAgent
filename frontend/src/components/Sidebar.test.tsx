@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ConversationSummary } from '../types'
+import type { ConversationReportItem, ConversationSummary } from '../types'
 import { Sidebar } from './Sidebar'
 
 const conversation: ConversationSummary = {
@@ -16,18 +16,37 @@ const conversation: ConversationSummary = {
   latest_analysis_goal: '用户提问: 查看八月销售',
 }
 
+const report: ConversationReportItem = {
+  report_id: 'report-1',
+  template_key: 'sales_report',
+  contract_version: '1.0',
+  view_reference: '/api/reports/report-1',
+  download_reference: '/api/reports/report-1/download',
+  content_type: 'text/html; charset=utf-8',
+  content_hash: 'a'.repeat(64),
+  source_mode: 'real',
+  conversation_id: conversation.conversation_id,
+  request_id: 'request-1',
+  semantic_model_key: 'model',
+  generated_at: '2026-08-23T10:00:00',
+  stored_at: '2026-08-23T10:00:00',
+}
+
 afterEach(() => vi.unstubAllGlobals())
 
 function renderSidebar() {
   const onRename = vi.fn().mockResolvedValue(undefined)
   const onArchive = vi.fn().mockResolvedValue(undefined)
   const onDelete = vi.fn().mockResolvedValue(undefined)
+  const onRestore = vi.fn().mockResolvedValue(undefined)
+  const onDeleteReport = vi.fn().mockResolvedValue(undefined)
   render(
     <Sidebar
       collapsed={false}
       activeConversationId={null}
       conversations={[conversation]}
-      reports={[]}
+      archivedConversations={[]}
+      reports={[report]}
       error={null}
       onToggle={vi.fn()}
       onNewChat={vi.fn()}
@@ -35,10 +54,12 @@ function renderSidebar() {
       onSearch={vi.fn().mockResolvedValue([])}
       onRename={onRename}
       onArchive={onArchive}
+      onRestore={onRestore}
       onDelete={onDelete}
+      onDeleteReport={onDeleteReport}
     />,
   )
-  return { onRename, onArchive, onDelete }
+  return { onRename, onArchive, onDelete, onRestore, onDeleteReport }
 }
 
 describe('Sidebar conversation management', () => {
@@ -69,5 +90,44 @@ describe('Sidebar conversation management', () => {
     fireEvent.click(screen.getByRole('button', { name: /管理对话/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: /删除/ }))
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith(conversation))
+  })
+
+  it('requires the explicit irreversible confirmation before deleting only a report', async () => {
+    const confirm = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('confirm', confirm)
+    const { onDeleteReport } = renderSidebar()
+    fireEvent.click(screen.getByRole('button', { name: '管理报表：销售分析报告' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /删除报表/ }))
+    expect(confirm).toHaveBeenCalledWith(
+      '删除“销售分析报告”？此操作不可撤销，但不会删除所属对话。',
+    )
+    await waitFor(() => expect(onDeleteReport).toHaveBeenCalledWith(report))
+  })
+
+  it('shows archived conversations and restores them from their menu', async () => {
+    const onRestore = vi.fn().mockResolvedValue(undefined)
+    render(
+      <Sidebar
+        collapsed={false}
+        activeConversationId={null}
+        conversations={[]}
+        archivedConversations={[{ ...conversation, archived_at: '2026-08-24T10:00:00' }]}
+        reports={[]}
+        error={null}
+        onToggle={vi.fn()}
+        onNewChat={vi.fn()}
+        onOpenConversation={vi.fn()}
+        onSearch={vi.fn().mockResolvedValue([])}
+        onRename={vi.fn().mockResolvedValue(undefined)}
+        onArchive={vi.fn().mockResolvedValue(undefined)}
+        onRestore={onRestore}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+        onDeleteReport={vi.fn().mockResolvedValue(undefined)}
+      />,
+    )
+    expect(screen.getByText('已归档')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /管理对话：八月销售复盘/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /恢复/ }))
+    await waitFor(() => expect(onRestore).toHaveBeenCalled())
   })
 })

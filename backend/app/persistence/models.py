@@ -428,6 +428,23 @@ class ReportArtifactModel(Base):
     )
 
 
+class ReportDeleteIntentModel(Base):
+    """Durable witness while one report crosses DB/filesystem deletion."""
+
+    __tablename__ = "report_delete_intents"
+
+    report_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    conversation_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    request_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[str] = mapped_column(
+        Text, nullable=False, comment="metadata-only report delete recovery payload"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False, server_default=func.now()
+    )
+
+
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
