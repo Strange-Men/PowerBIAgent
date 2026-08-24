@@ -2,6 +2,24 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.4] — 2026-08-24
+
+### 多会话并发、用户设置与资源管理最终收口
+
+- 开发前先固化正式合同：前端状态由单一全局 messages/sending/loading/error 收口为 `conversation_id → ConversationSession`，`activeConversationId` 只决定当前可见会话。
+- 新会话首次发送使用前端 UUID 直接作为现有 Chat `conversation_id`，发送后立即显示 Sidebar pending row；不新增 provisional backend entity。
+- 不同 conversation 允许并发，同 conversation 保持串行。history/navigation 可取消 stale fetch，business chat 不因切窗取消，完成不自动跳窗。
+- 用户卡片作为设置/已归档/资源管理入口；Sidebar 最近会话/报表独立滚动并可折叠，批量 checkbox 不进 Sidebar。
+- 批量操作一次最多 20 项，只协调正式单资源 API；不新增 `DELETE ALL`，部分失败保留并显示原因，archive ≠ delete。
+- report delete 将保留 presentation tombstone；report rename 只修改 `display_title`，不改 report_id、HTML、content_hash、ReportSpec 或 VerifiedFactSet。rename/delete 不进 ToolGateway，LLM 无权限。
+- M5.5 的语义增强、中文字段、单指标展示、report HTML 视觉与性能 profiling/cache 继续 Deferred。
+- 新增 `report_presentations` migration `a4f6b8c2d190`；rename/delete/history 共享最后 display title 与 `available | deleted` 状态，conversation delete 清理同 namespace presentation metadata。
+- Rich PBIX Real A/B/C 并发结果分别回到所属 conversation，pending/loading 独立且不自动跳窗；用户卡片、归档恢复、两次 report generation、report rename、delete 后 reload/history tombstone 均通过。本轮 9 个 Real 测试 conversation 与关联 report 已经正式 API 精确清理。
+- Fresh backend full `1790 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `61 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `117`、Repository Safety `290`、Error Ledger `25`、Documentation/Artifact Governance 与 `git diff --check` PASS。
+- 未修改 M0–M5 factual/Memory/VerifiedFactSet/Report authority，未进入 M5.5，未合并 main，未创建 Tag。
+
+**Settings.version:** M5.4
+
 ## [M5.3.3] — 2026-08-24
 
 ### 多轮语义、会话资源生命周期与仓库治理最终收口

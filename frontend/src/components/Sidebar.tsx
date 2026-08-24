@@ -1,8 +1,10 @@
 import {
   Archive,
   BarChart3,
+  ChevronDown,
   FileText,
   Folder,
+  LoaderCircle,
   MessageSquare,
   MoreHorizontal,
   PanelLeftClose,
@@ -11,13 +13,19 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Settings,
   Trash2,
   UserRound,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { isUsableReport } from '../api/adapters'
-import type { ConversationReportItem, ConversationSummary } from '../types'
+import type {
+  BatchOperationResult,
+  ConversationReportItem,
+  ConversationSummary,
+} from '../types'
+import { ResourceManager } from './ResourceManager'
 
 interface SidebarProps {
   collapsed: boolean
@@ -35,6 +43,16 @@ interface SidebarProps {
   onRestore: (conversation: ConversationSummary) => Promise<void>
   onDelete: (conversation: ConversationSummary) => Promise<void>
   onDeleteReport: (report: ConversationReportItem) => Promise<void>
+  onRenameReport: (report: ConversationReportItem, title: string) => Promise<void>
+  onBulkDeleteConversations: (
+    items: ConversationSummary[],
+  ) => Promise<BatchOperationResult>
+  onBulkRestoreConversations: (
+    items: ConversationSummary[],
+  ) => Promise<BatchOperationResult>
+  onBulkDeleteReports: (
+    items: ConversationReportItem[],
+  ) => Promise<BatchOperationResult>
 }
 
 function displayTitle(conversation: ConversationSummary): string {
@@ -57,6 +75,10 @@ export function Sidebar({
   onRestore,
   onDelete,
   onDeleteReport,
+  onRenameReport,
+  onBulkDeleteConversations,
+  onBulkRestoreConversations,
+  onBulkDeleteReports,
 }: SidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -70,6 +92,10 @@ export function Sidebar({
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionReportId, setActionReportId] = useState<string | null>(null)
   const [managingReportId, setManagingReportId] = useState<string | null>(null)
+  const [recentOpen, setRecentOpen] = useState(true)
+  const [reportsOpen, setReportsOpen] = useState(true)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [resourceManagerOpen, setResourceManagerOpen] = useState(false)
 
   useEffect(() => {
     const closeMenus = (event: KeyboardEvent) => {
@@ -78,16 +104,20 @@ export function Sidebar({
       setActionReportId(null)
       setEditingConversationId(null)
       setSearchOpen(false)
+      setUserMenuOpen(false)
+      setResourceManagerOpen(false)
     }
     const closeActionMenu = (event: MouseEvent) => {
       const target = event.target
       if (
         target instanceof Element &&
         !target.closest('[data-conversation-actions]') &&
-        !target.closest('[data-report-actions]')
+        !target.closest('[data-report-actions]') &&
+        !target.closest('[data-account-actions]')
       ) {
         setActionConversationId(null)
         setActionReportId(null)
+        setUserMenuOpen(false)
       }
     }
     document.addEventListener('keydown', closeMenus)
@@ -173,7 +203,18 @@ export function Sidebar({
               title={title}
               onClick={() => onOpenConversation(conversation)}
             >
-              <MessageSquare size={16} /><span>{title}</span>
+              {conversation.local_status === 'processing' ? (
+                <LoaderCircle className="pending-spinner" size={16} aria-hidden="true" />
+              ) : (
+                <MessageSquare size={16} />
+              )}
+              <span>{title}</span>
+              {conversation.local_status === 'processing' ? (
+                <small className="pending-label">正在分析</small>
+              ) : null}
+              {conversation.local_status === 'failed' ? (
+                <small className="failed-label">失败</small>
+              ) : null}
             </button>
             <button
               className="conversation-actions-trigger"
@@ -189,13 +230,13 @@ export function Sidebar({
         )}
         {actionConversationId === conversation.conversation_id && !isEditing ? (
           <div className="conversation-actions-menu" role="menu" aria-label={`对话操作：${title}`}>
-            <button type="button" role="menuitem" onClick={() => { setDraftTitle(title); setEditingConversationId(conversation.conversation_id); setActionConversationId(null) }}><Pencil size={15} />重命名</button>
+            {conversation.local_status !== 'processing' && conversation.local_status !== 'failed' ? <button type="button" role="menuitem" onClick={() => { setDraftTitle(title); setEditingConversationId(conversation.conversation_id); setActionConversationId(null) }}><Pencil size={15} />重命名</button> : null}
             {archived ? (
               <button type="button" role="menuitem" disabled={busy} onClick={() => void manage(conversation, () => onRestore(conversation))}><RotateCcw size={15} />恢复</button>
-            ) : (
+            ) : conversation.local_status !== 'processing' && conversation.local_status !== 'failed' ? (
               <button type="button" role="menuitem" disabled={busy} onClick={() => void manage(conversation, () => onArchive(conversation))}><Archive size={15} />归档</button>
-            )}
-            <button className="danger-action" type="button" role="menuitem" disabled={busy} onClick={() => {
+            ) : null}
+            <button className="danger-action" type="button" role="menuitem" disabled={busy || conversation.local_status === 'processing'} onClick={() => {
               if (window.confirm(`删除“${title}”及其关联报表？此操作不可撤销。`)) void manage(conversation, () => onDelete(conversation))
             }}><Trash2 size={15} />删除</button>
           </div>
@@ -205,6 +246,7 @@ export function Sidebar({
   })
 
   return (
+    <>
     <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`}>
       <div className="sidebar-brand-row">
         <div className="brand-mark" title="PowerBIAgent"><BarChart3 size={20} strokeWidth={1.8} /><strong>PowerBIAgent</strong></div>
@@ -234,37 +276,40 @@ export function Sidebar({
 
       <div className="sidebar-scroll">
         <section className="sidebar-section project-section"><span className="sidebar-label">项目</span><div className="project-card" title="Power BI 销售分析"><Folder size={18} /><span>Power BI 销售分析</span></div></section>
-        <section className="sidebar-section">
-          <span className="sidebar-label">最近报表</span>
-          {reports.length === 0 ? <p className="sidebar-state">暂无最近报表</p> : reports.map((report) => isUsableReport(report) ? (
+        <section className="sidebar-section collapsible-section">
+          <button className="sidebar-section-toggle" type="button" aria-expanded={reportsOpen} onClick={() => setReportsOpen((open) => !open)}><span>最近报表</span><ChevronDown className={reportsOpen ? 'is-open' : ''} size={15} /></button>
+          {reportsOpen && reports.length === 0 ? <p className="sidebar-state">暂无最近报表</p> : reportsOpen ? reports.map((report) => isUsableReport(report) ? (
             <div className="sidebar-item-row" data-report-actions key={report.report_id}>
-              <a className="sidebar-item" href={report.view_reference} target="_blank" rel="noreferrer" title="查看销售分析报告"><FileText size={17} /><span>销售分析报告</span></a>
-              <button className="conversation-actions-trigger" type="button" aria-label="管理报表：销售分析报告" aria-haspopup="menu" aria-expanded={actionReportId === report.report_id} onClick={() => setActionReportId((current) => current === report.report_id ? null : report.report_id)}><MoreHorizontal size={17} /></button>
+              <a className="sidebar-item" href={report.view_reference} target="_blank" rel="noreferrer" title={`查看${report.display_title || '销售分析报告'}`}><FileText size={17} /><span>{report.display_title || '销售分析报告'}</span></a>
+              <button className="conversation-actions-trigger" type="button" aria-label={`管理报表：${report.display_title || '销售分析报告'}`} aria-haspopup="menu" aria-expanded={actionReportId === report.report_id} onClick={() => setActionReportId((current) => current === report.report_id ? null : report.report_id)}><MoreHorizontal size={17} /></button>
               {actionReportId === report.report_id ? (
-                <div className="conversation-actions-menu" role="menu" aria-label="报表操作：销售分析报告">
+                <div className="conversation-actions-menu" role="menu" aria-label={`报表操作：${report.display_title || '销售分析报告'}`}>
                   <button className="danger-action" type="button" role="menuitem" disabled={managingReportId === report.report_id} onClick={() => {
-                    if (window.confirm('删除“销售分析报告”？此操作不可撤销，但不会删除所属对话。')) void manageReport(report)
+                    if (window.confirm(`删除“${report.display_title || '销售分析报告'}”？此操作不可撤销，但不会删除所属对话。`)) void manageReport(report)
                   }}><Trash2 size={15} />删除报表</button>
                 </div>
               ) : null}
             </div>
-          ) : null)}
-          {reports.length > 0 ? <p className="sidebar-state">报表可独立删除；归档不会删除报表。</p> : null}
+          ) : null) : null}
         </section>
-        <section className="sidebar-section">
-          <span className="sidebar-label">最近</span>
-          {error ? <p className="sidebar-state">{error}</p> : null}
-          {!error && conversations.length === 0 ? <p className="sidebar-state">暂无最近对话</p> : null}
-          {conversationRows(conversations)}
+        <section className="sidebar-section collapsible-section recent-section">
+          <button className="sidebar-section-toggle" type="button" aria-expanded={recentOpen} onClick={() => setRecentOpen((open) => !open)}><span>最近对话</span><ChevronDown className={recentOpen ? 'is-open' : ''} size={15} /></button>
+          {recentOpen && error ? <p className="sidebar-state">{error}</p> : null}
+          {recentOpen && !error && conversations.length === 0 ? <p className="sidebar-state">暂无最近对话</p> : null}
+          {recentOpen ? <div className="recent-conversation-list">{conversationRows(conversations)}</div> : null}
           {actionError ? <p className="sidebar-state sidebar-state-error" role="alert">{actionError}</p> : null}
         </section>
-        <section className="sidebar-section">
-          <span className="sidebar-label">已归档</span>
-          {archivedConversations.length === 0 ? <p className="sidebar-state">暂无已归档对话</p> : null}
-          {conversationRows(archivedConversations, true)}
-        </section>
       </div>
-      <div className="account-card" title="PowerBIAgent 用户"><span className="account-avatar"><UserRound size={16} /></span><span className="account-copy"><strong>PowerBIAgent</strong><small>内部用户</small></span></div>
+      <div className="account-actions" data-account-actions>
+        {userMenuOpen && !collapsed ? <div className="account-menu" role="menu" aria-label="用户菜单">
+          <button type="button" role="menuitem" onClick={() => { setResourceManagerOpen(true); setUserMenuOpen(false) }}><Settings size={16} />设置</button>
+          <button type="button" role="menuitem" onClick={() => { setResourceManagerOpen(true); setUserMenuOpen(false) }}><Archive size={16} />已归档</button>
+          <button type="button" role="menuitem" onClick={() => { setResourceManagerOpen(true); setUserMenuOpen(false) }}><Folder size={16} />资源管理</button>
+        </div> : null}
+        <button className="account-card" type="button" title="PowerBIAgent 用户" aria-label="PowerBIAgent 用户" aria-haspopup="menu" aria-expanded={userMenuOpen} onClick={() => { if (collapsed) onToggle(); setUserMenuOpen((open) => !open) }}><span className="account-avatar"><UserRound size={16} /></span><span className="account-copy"><strong>PowerBIAgent</strong><small>内部用户</small></span></button>
+      </div>
     </aside>
+    {resourceManagerOpen ? <ResourceManager conversations={conversations} archivedConversations={archivedConversations} reports={reports} onClose={() => setResourceManagerOpen(false)} onBulkDeleteConversations={onBulkDeleteConversations} onBulkRestoreConversations={onBulkRestoreConversations} onBulkDeleteReports={onBulkDeleteReports} onRenameReport={onRenameReport} /> : null}
+    </>
   )
 }

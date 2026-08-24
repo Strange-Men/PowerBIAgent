@@ -1,7 +1,7 @@
 # 01 — 产品范围与前端骨架
 
-> **状态：** M5.2 — 真实业务链路与前端逻辑收口已完成；M5.3 未开始。
-> **下一轮细化：** M5.3 视觉与交互最终收口（仅 M5.2 完成后开始）
+> **状态：** M5.4 — 多会话并发、用户设置与资源管理最终收口已完成。
+> **当前边界：** 只收口 conversation-scoped state、provisional UUID、异会话并发、用户卡片/资源管理、report tombstone/rename；M5.5 全部 Deferred。
 > **视觉参考：** `docs/assets/frontend/整体01.png`（已有对话与组合回答态）、`docs/assets/frontend/整体02.png`（新聊天欢迎态与菜单展开态）
 
 ---
@@ -87,11 +87,11 @@
 | 新聊天 | 新对话入口 | 真实交互 | — |
 | 搜索聊天 | 搜索历史对话 | 真实交互 | M4 conversation search 已完成 |
 | 项目 | 当前 Power BI 分析项目入口 | 仅展示卡片，不新增后端 | — |
-| 最近报表 | 最近生成的报表列表 | 真实交互 | M3/M4 report history 已完成 |
-| 最近对话 | 最近对话列表，当前选中浅灰背景 | 真实交互 | M4 conversation recent/history 已完成 |
-| 用户信息 | 底部用户信息和更多菜单 | 仅展示，不新增用户系统 | — |
+| 最近报表 | 最近生成的报表列表；可折叠/独立滚动 | 查看、下载、导航 | M3/M4 report history 已完成 |
+| 最近对话 | persisted summary + local pending session；可折叠/独立滚动 | 导航、单项操作 | M4 conversation recent/history 已完成 |
+| 用户卡片 | 底部用户名 + “内部用户” | 打开设置/已归档/资源管理；不新增用户系统 | — |
 
-> **左侧栏定位：** 新聊天和对话导航，展示项目入口、最近报表和最近会话。不展示 Trace、日志、Memory 内部状态、系统健康状态或开发调试面板。
+> **左侧栏定位：** 新聊天和轻量导航。批量 checkbox、已归档长列表与资源管理必须放入用户卡片打开的面板，不得堆在 Sidebar。不展示 Trace、日志、Memory 内部状态、系统健康状态或开发调试面板。
 
 ### 2.4 新聊天欢迎态
 
@@ -153,7 +153,7 @@
 - 最右黑色圆形发送按钮
 - 开始对话后固定或稳定停留在页面底部
 - 支持 Enter 发送，Shift+Enter 换行
-- 发送期间输入框禁用
+- 只在当前 conversation 有 sending request 时禁用其输入框；其他 conversation 可正常发送
 
 ### 2.7 "+"菜单
 
@@ -204,6 +204,34 @@
 | 禁用 | 未接入模型、未配置数据模型、未登记模板、未实现功能必须明确禁用，不得制造可点击但无效果的按钮 |
 | 网络断开 | 显示连接断开提示 |
 
+### 2.10A 多会话状态与并发（M5.4）
+
+```text
+ConversationSession {
+  clientConversationId
+  serverConversationId?
+  title
+  messages
+  pendingRequests
+  sending
+  loadingHistory
+  error
+  status
+}
+```
+
+- 使用 `conversation_id → ConversationSession` 保存多会话状态；页面只使用 `activeConversationId` 选择当前可见 session。
+- 新聊天首次发送前产生 UUID，立即将消息/session/pending row 写入本地状态，同一 ID 直接传给 Chat API。
+- A/B/C 可同时处理，各自完成只更新自己；active=B 时不显示 A loading/error，A 完成不切回 A。
+- 同一 conversation 有 pending request 时禁止第二次发送。切换/新建只可取消 history/navigation fetch，不取消已执行 chat。
+
+### 2.10B 设置与资源管理（M5.4）
+
+- 用户卡片菜单只包含“设置”“已归档”“资源管理”，不添加套餐、支付、账户安全等假能力。
+- 资源面板分最近对话、已归档、最近报表三区；支持多选与全选当前加载范围。
+- 批量操作最多 20 项，逐个协调正式单资源 API。部分失败不得声称全部成功；成功项移除，失败项保留原因。
+- report 删除后展示 tombstone；rename 只修改 `display_title`，与 Sidebar/report card 同步。两者均只能由显式 UI 操作调用。
+
 ### 2.10 响应式原则（M5 实现）
 
 - 桌面端优先
@@ -237,10 +265,11 @@
 1. **M0.1—M4：** 仅确认骨架和视觉规范，不创建 React 项目
 2. **M5.0：** ✅ 文档校准、页面结构、交互边界、动态回答原则、UI ↔ 后端能力映射
 3. **M5.1：** ✅ 已创建 React + Vite + TypeScript 项目并实现核心对话页面与 API adapters
-4. **M5.2：** 真实业务链路与前端逻辑收口（Real、Desktop discovery、SQLite、intent/template/model、多轮与 report）
-5. **M5.3：** 视觉与交互最终收口（尺寸/间距、responsive、accessibility、状态 polish、最终浏览器验收）
-6. **开发阶段：** 使用 Vite dev server，代理到 FastAPI 后端
-7. **契约结论：** 不新增统一 envelope；Chat/History 无 QueryResult rows/ChartSpec 时不伪造表格/图表
+4. **M5.2—M5.3.3：** ✅ Real 业务逻辑、presentation、多 PBIX、多轮与资源生命周期已完成
+5. **M5.4：** ✅ conversation-scoped state、异会话并发、pending Sidebar、用户卡片/设置、bounded bulk 管理、report tombstone/rename
+6. **M5.5：** Deferred，不在本轮处理语义、中文字段、单指标策略、HTML 视觉或性能
+7. **开发阶段：** 使用 Vite dev server，代理到 FastAPI 后端
+8. **契约结论：** 不新增跨 authority 统一 envelope；presentation metadata 不成为 factual authority
 
 ---
 
@@ -251,6 +280,8 @@
 | `POST /api/v1/chat` | ✅ 已实现 | 对话主交互 |
 | `GET /api/reports/{report_id}` | ✅ 已实现 | 查看报表 |
 | `GET /api/reports/{report_id}/download` | ✅ 已实现 | 下载 HTML |
+| `DELETE /api/reports/{report_id}` | ✅ M5.3.3 | 独立删除并保留历史 tombstone |
+| `PATCH /api/reports/{report_id}` | ✅ M5.4 已实现 | 只修改 presentation `display_title` |
 | `GET /api/v1/conversations` | ✅ 已实现（SQLite 必填 runtime_mode） | 最近对话列表 |
 | `GET /api/v1/conversations/search` | ✅ 已实现 | 搜索聊天 |
 | `GET /api/v1/conversations/{id}/history` | ✅ 已实现 | 恢复对话历史 |
@@ -264,13 +295,12 @@
 
 ## 四、产品边界
 
-### M5.2 实现边界
+### M5.4 实现边界
 
-- Real 模式真实链路、Desktop/PBIX 模型 discovery、SQLite conversation 配置与联调
-- intent/template/model 产品逻辑修正，Chat 多轮与 report 真实验收，最小用户可理解错误分类
-- 模型选择器保持 DeepSeek 唯一交互；项目/账户继续仅展示
-- 不修改后端业务事实链、Snapshot/Persistence 或 Report authority
-- 没有结构化 QueryResult/ChartSpec 时不展示表格/图表
+- 只重构前端会话状态与用户资源管理入口，以及支撑 presentation-only report title/tombstone 的最小持久化/API。
+- 不改 TurnPipeline conversation consistency；同 conversation 仍串行，不同 conversation 使用现有 namespace/idempotency/request_id 并发。
+- 不修改 factual Memory、VerifiedFactSet、ReportSpec/HTML/content hash authority，不注册资源管理 ToolGateway。
+- M5.5 所有能力不开始。
 
 ### 后续轮次边界
 
@@ -278,4 +308,4 @@
 
 ---
 
-*最后更新：2026-08-21 | M5.2 真实业务链路与前端逻辑边界修正*
+*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与用户资源管理最终收口*

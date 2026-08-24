@@ -7,6 +7,7 @@ import type {
   ConversationReportItem,
   ConversationReportPage,
   ReportDeleteResult,
+  ReportRenameResult,
   RuntimeMode,
   SemanticModelCatalog,
 } from '../types'
@@ -213,6 +214,16 @@ export async function deleteReport(reportId: string): Promise<ReportDeleteResult
   return requestJson<ReportDeleteResult>(
     `/api/reports/${encodeURIComponent(reportId)}`,
     { method: 'DELETE' },
+  )
+}
+
+export async function renameReport(
+  reportId: string,
+  displayTitle: string,
+): Promise<ReportRenameResult> {
+  return requestJson<ReportRenameResult>(
+    `/api/reports/${encodeURIComponent(reportId)}`,
+    { method: 'PATCH', body: JSON.stringify({ display_title: displayTitle }) },
   )
 }
 

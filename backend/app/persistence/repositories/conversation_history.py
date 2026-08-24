@@ -38,6 +38,7 @@ from backend.app.persistence.models import (
     PendingClarificationModel,
     ReportArtifactModel,
     ReportDeleteIntentModel,
+    ReportPresentationModel,
     ResultSnapshotModel,
     WorkMemoryModel,
 )
@@ -263,6 +264,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             request_ids = [row.request_id for row in page_rows]
             memories: dict[str, WorkMemoryModel] = {}
             owned_reports: set[tuple[str, str]] = set()
+            report_presentations: dict[str, ReportPresentationModel] = {}
             if request_ids:
                 memory_result = await session.execute(
                     select(WorkMemoryModel).where(
@@ -295,6 +297,21 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     for report_id, request_id in report_result.all()
                     if request_id is not None
                 }
+                presentation_result = await session.execute(
+                    select(ReportPresentationModel).where(
+                        and_(
+                            ReportPresentationModel.source_mode
+                            == runtime_mode.value,
+                            ReportPresentationModel.conversation_id
+                            == conversation_id,
+                            ReportPresentationModel.request_id.in_(request_ids),
+                        )
+                    )
+                )
+                report_presentations = {
+                    presentation.report_id: presentation
+                    for presentation in presentation_result.scalars().all()
+                }
 
             items = [
                 self._history_item(
@@ -302,6 +319,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     runtime_mode,
                     memories.get(row.request_id),
                     owned_reports,
+                    report_presentations,
                 )
                 for row in page_rows
             ]
@@ -324,6 +342,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
         runtime_mode: RuntimeDataMode,
         memory: WorkMemoryModel | None,
         owned_reports: set[tuple[str, str]],
+        report_presentations: dict[str, ReportPresentationModel],
     ) -> ConversationHistoryItem:
         try:
             snapshot = json_to_domain(TurnResultSnapshot, row.payload_json)
@@ -359,18 +378,57 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             snapshot.report is not None
             and (snapshot.report.report_id, snapshot.request_id) in owned_reports
         )
-        if snapshot.report is not None and report_is_owned:
+        report_presentation = (
+            report_presentations.get(snapshot.report.report_id)
+            if snapshot.report is not None
+            else None
+        )
+        report_is_deleted = False
+        display_title = "销售分析报告"
+        if report_presentation is not None:
+            coherent_presentation = (
+                report_presentation.source_mode == runtime_mode.value
+                and report_presentation.conversation_id == snapshot.conversation_id
+                and report_presentation.request_id == snapshot.request_id
+                and report_presentation.availability_status
+                in {"available", "deleted"}
+            )
+            if not coherent_presentation:
+                raise ConversationHistoryCorruptionError(
+                    "report_presentation_row_mismatch"
+                )
+            display_title = report_presentation.display_title
+            report_is_deleted = (
+                report_presentation.availability_status == "deleted"
+            )
+            if report_is_owned == report_is_deleted:
+                raise ConversationHistoryCorruptionError(
+                    "report_presentation_availability_mismatch"
+                )
+        if snapshot.report is not None and (report_is_owned or report_is_deleted):
             report_summary = SnapshotReportSummary(
                 report_id=snapshot.report.report_id,
                 template_key=snapshot.report.template_key,
                 contract_version=snapshot.report.contract_version,
-                view_reference=snapshot.report.view_reference,
-                download_reference=snapshot.report.download_reference,
+                view_reference=(
+                    "" if report_is_deleted else snapshot.report.view_reference
+                ),
+                download_reference=(
+                    "" if report_is_deleted else snapshot.report.download_reference
+                ),
                 content_type=snapshot.report.content_type,
-                content_hash=snapshot.report.content_hash,
+                content_hash="" if report_is_deleted else snapshot.report.content_hash,
+                display_title=display_title,
+                availability_status=(
+                    "deleted" if report_is_deleted else "available"
+                ),
             )
         presentation = snapshot.presentation
-        if presentation is not None and not report_is_owned:
+        if (
+            presentation is not None
+            and not report_is_owned
+            and not report_is_deleted
+        ):
             presentation = presentation.model_copy(
                 update={
                     "blocks": [
@@ -543,9 +601,36 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             )
             fetched = list(result.scalars().all())
             page_rows = fetched[:limit]
+            presentation_rows: dict[str, ReportPresentationModel] = {}
+            if page_rows:
+                presentation_result = await session.execute(
+                    select(ReportPresentationModel).where(
+                        ReportPresentationModel.report_id.in_(
+                            [row.report_id for row in page_rows]
+                        )
+                    )
+                )
+                presentation_rows = {
+                    row.report_id: row
+                    for row in presentation_result.scalars().all()
+                }
             items: list[ConversationReportItem] = []
             for row in page_rows:
                 artifact = _model_to_artifact(row)
+                presentation = presentation_rows.get(artifact.report_id)
+                display_title = "销售分析报告"
+                if presentation is not None:
+                    coherent_presentation = (
+                        presentation.source_mode == source_mode.value
+                        and presentation.conversation_id == conversation_id
+                        and presentation.request_id == artifact.request_id
+                        and presentation.availability_status == "available"
+                    )
+                    if not coherent_presentation:
+                        raise ConversationHistoryCorruptionError(
+                            "report_presentation_row_mismatch"
+                        )
+                    display_title = presentation.display_title
                 items.append(
                     ConversationReportItem(
                         report_id=artifact.report_id,
@@ -564,6 +649,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                         download_reference=artifact.download_reference,
                         verified_fact_set_ids=artifact.verified_fact_set_ids,
                         query_result_ids=artifact.query_result_ids,
+                        display_title=display_title,
                     )
                 )
         next_position = None
@@ -678,6 +764,21 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     for report_id in pending_report_result.scalars().all()
                     if report_id not in report_ids
                 )
+                presentation_result = await session.execute(
+                    select(ReportPresentationModel.report_id).where(
+                        and_(
+                            ReportPresentationModel.source_mode
+                            == runtime_mode.value,
+                            ReportPresentationModel.conversation_id
+                            == conversation_id,
+                        )
+                    )
+                )
+                report_ids.extend(
+                    report_id
+                    for report_id in presentation_result.scalars().all()
+                    if report_id not in report_ids
+                )
                 deleted_counts: dict[str, int] = {}
                 for name, model, mode_column in (
                     (
@@ -713,6 +814,16 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                         and_(
                             ReportDeleteIntentModel.source_mode == runtime_mode.value,
                             ReportDeleteIntentModel.conversation_id == conversation_id,
+                        )
+                    )
+                )
+                await session.execute(
+                    delete(ReportPresentationModel).where(
+                        and_(
+                            ReportPresentationModel.source_mode
+                            == runtime_mode.value,
+                            ReportPresentationModel.conversation_id
+                            == conversation_id,
                         )
                     )
                 )

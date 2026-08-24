@@ -2,6 +2,8 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type {
+  ChatRequest,
+  ChatResponse,
   ConversationHistoryPage,
   ConversationSummary,
   RuntimeMode,
@@ -18,6 +20,7 @@ const api = vi.hoisted(() => ({
   listRecentConversations: vi.fn(),
   listRecentReports: vi.fn(),
   renameConversation: vi.fn(),
+  renameReport: vi.fn(),
   restoreConversation: vi.fn(),
   searchConversations: vi.fn(),
   sendChat: vi.fn(),
@@ -86,6 +89,23 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+function response(body: ChatRequest, answer: string): ChatResponse {
+  return {
+    request_id: body.request_id,
+    conversation_id: body.conversation_id!,
+    terminal_state: 'completed',
+    intent: 'data_question',
+    response_type: 'answer',
+    answer,
+    report: null,
+    clarification_question: null,
+    unsupported_reason: null,
+    error_type: null,
+    source_mode: 'real',
+    idempotent_replay: false,
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   api.discoverSemanticModels.mockResolvedValue({
@@ -112,6 +132,14 @@ beforeEach(() => {
   api.listRecentReports.mockResolvedValue([])
   api.archiveConversation.mockResolvedValue(undefined)
   api.deleteConversation.mockResolvedValue(undefined)
+  api.deleteReport.mockResolvedValue({ deleted: true })
+  api.renameReport.mockImplementation(
+    async (_reportId: string, displayTitle: string) => ({
+      report_id: 'rpt-a',
+      display_title: displayTitle,
+      availability_status: 'available',
+    }),
+  )
 })
 
 describe('conversation history stale-response protection', () => {
@@ -162,7 +190,10 @@ describe('conversation history stale-response protection', () => {
       a.resolve(history('A', 'A answer', true))
       await opening
     })
-    expect(result.current.activeConversationId).toBeNull()
+    expect(result.current.activeConversationId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
+    expect(result.current.activeSession?.status).toBe('draft')
     expect(result.current.messages).toEqual([])
   })
 
@@ -190,4 +221,181 @@ describe('conversation history stale-response protection', () => {
       expect(result.current.messages.some((item) => item.role === 'assistant' && item.report)).toBe(false)
     },
   )
+})
+
+describe('conversation-owned chat concurrency', () => {
+  it('does not project A loading into a newly opened idle B', async () => {
+    const pending = deferred<ChatResponse>()
+    api.sendChat.mockImplementation(() => pending.promise)
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(result.current.loadingSemanticModels).toBe(false))
+    let aId = ''
+    let aRequest!: Promise<void>
+    let bId = ''
+    act(() => {
+      aId = result.current.startNewChat()
+      aRequest = result.current.submitMessage('A pending')
+      bId = result.current.startNewChat()
+    })
+    expect(result.current.sessions[aId].sending).toBe(true)
+    expect(result.current.activeConversationId).toBe(bId)
+    expect(result.current.sending).toBe(false)
+    expect(result.current.loadingConversation).toBe(false)
+    expect(result.current.messages).toEqual([])
+
+    const body = api.sendChat.mock.calls[0][0] as ChatRequest
+    await act(async () => {
+      pending.resolve(response(body, 'A complete'))
+      await aRequest
+    })
+    expect(result.current.activeConversationId).toBe(bId)
+    expect(result.current.messages).toEqual([])
+  })
+
+  it('runs A/B/C concurrently and updates only the owning session', async () => {
+    const pending = new Map<string, ReturnType<typeof deferred<ChatResponse>>>()
+    api.sendChat.mockImplementation((body: ChatRequest) => {
+      const task = deferred<ChatResponse>()
+      pending.set(body.message, task)
+      return task.promise
+    })
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(result.current.loadingSemanticModels).toBe(false))
+
+    let aId = ''
+    let bId = ''
+    let cId = ''
+    let aRequest!: Promise<void>
+    let bRequest!: Promise<void>
+    let cRequest!: Promise<void>
+    act(() => {
+      aId = result.current.startNewChat()
+      aRequest = result.current.submitMessage('A question')
+    })
+    await waitFor(() => expect(result.current.sessions[aId]?.sending).toBe(true))
+    expect(result.current.recentConversations[0]).toMatchObject({
+      conversation_id: aId,
+      local_status: 'processing',
+    })
+
+    act(() => {
+      bId = result.current.startNewChat()
+      bRequest = result.current.submitMessage('B question')
+      cId = result.current.startNewChat()
+      cRequest = result.current.submitMessage('C question')
+    })
+    await waitFor(() => expect(api.sendChat).toHaveBeenCalledTimes(3))
+    expect(result.current.sessions[aId].sending).toBe(true)
+    expect(result.current.sessions[bId].sending).toBe(true)
+    expect(result.current.sessions[cId].sending).toBe(true)
+
+    await act(async () => {
+      await result.current.openConversation(
+        result.current.recentConversations.find(
+          (item) => item.conversation_id === bId,
+        )!,
+      )
+    })
+    expect(result.current.activeConversationId).toBe(bId)
+    expect(result.current.sending).toBe(true)
+    expect(result.current.messages.some((item) => item.role === 'user' && item.content === 'A question')).toBe(false)
+
+    const aBody = api.sendChat.mock.calls.find(
+      (call) => (call[0] as ChatRequest).message === 'A question',
+    )![0] as ChatRequest
+    await act(async () => {
+      pending.get('A question')!.resolve(response(aBody, 'A answer'))
+      await aRequest
+    })
+    expect(result.current.activeConversationId).toBe(bId)
+    expect(result.current.sessions[aId].messages.some((item) => item.role === 'assistant' && item.content === 'A answer')).toBe(true)
+    expect(result.current.sessions[bId].messages.some((item) => item.role === 'assistant' && item.content === 'A answer')).toBe(false)
+
+    const bBody = api.sendChat.mock.calls.find(
+      (call) => (call[0] as ChatRequest).message === 'B question',
+    )![0] as ChatRequest
+    const cBody = api.sendChat.mock.calls.find(
+      (call) => (call[0] as ChatRequest).message === 'C question',
+    )![0] as ChatRequest
+    await act(async () => {
+      pending.get('B question')!.resolve(response(bBody, 'B answer'))
+      pending.get('C question')!.resolve(response(cBody, 'C answer'))
+      await Promise.all([bRequest, cRequest])
+    })
+    expect(result.current.sessions[bId].messages.some((item) => item.role === 'assistant' && item.content === 'B answer')).toBe(true)
+    expect(result.current.sessions[cId].messages.some((item) => item.role === 'assistant' && item.content === 'C answer')).toBe(true)
+  })
+
+  it('serializes a single conversation while another conversation can send', async () => {
+    const pending = deferred<ChatResponse>()
+    api.sendChat.mockImplementation((body: ChatRequest) =>
+      body.message === 'first'
+        ? pending.promise
+        : Promise.resolve(response(body, 'other answer')),
+    )
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(result.current.loadingSemanticModels).toBe(false))
+
+    let first!: Promise<void>
+    let other!: Promise<void>
+    act(() => {
+      result.current.startNewChat()
+      first = result.current.submitMessage('first')
+      void result.current.submitMessage('blocked second')
+      result.current.startNewChat()
+      other = result.current.submitMessage('other')
+    })
+    await waitFor(() => expect(api.sendChat).toHaveBeenCalledTimes(2))
+    await act(async () => { await other })
+    const firstBody = api.sendChat.mock.calls[0][0] as ChatRequest
+    await act(async () => {
+      pending.resolve(response(firstBody, 'first answer'))
+      await first
+    })
+  })
+})
+
+describe('report presentation synchronization', () => {
+  it('keeps rename and delete tombstone synchronized with the active report card', async () => {
+    api.getConversationHistory.mockResolvedValue(history('A', '', true))
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(result.current.loadingSemanticModels).toBe(false))
+    await act(async () => {
+      await result.current.openConversation(summary('A'))
+    })
+    const report = {
+      report_id: 'rpt-a',
+      template_key: 'sales_report',
+      contract_version: '1.0',
+      view_reference: '/api/reports/rpt-a',
+      download_reference: '/api/reports/rpt-a/download',
+      content_type: 'text/html; charset=utf-8',
+      content_hash: 'a'.repeat(64),
+      display_title: '销售分析报告',
+      availability_status: 'available' as const,
+      source_mode: 'real' as const,
+      conversation_id: 'A',
+      request_id: 'req-A',
+      semantic_model_key: 'model',
+      generated_at: '2026-08-24T10:00:00',
+      stored_at: '2026-08-24T10:00:00',
+    }
+    await act(async () => {
+      await result.current.renameReport(report, '区域销售报告')
+    })
+    expect(result.current.messages.find((item) => item.role === 'assistant')?.report?.display_title).toBe('区域销售报告')
+
+    await act(async () => {
+      await result.current.removeReport({
+        ...report,
+        display_title: '区域销售报告',
+      })
+    })
+    expect(result.current.messages.find((item) => item.role === 'assistant')?.report).toMatchObject({
+      display_title: '区域销售报告',
+      availability_status: 'deleted',
+      view_reference: '',
+      download_reference: '',
+    })
+  })
 })

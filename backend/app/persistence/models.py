@@ -428,6 +428,43 @@ class ReportArtifactModel(Base):
     )
 
 
+class ReportPresentationModel(Base):
+    """Mutable presentation metadata kept outside factual report metadata."""
+
+    __tablename__ = "report_presentations"
+
+    report_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    conversation_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    request_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    display_title: Mapped[str] = mapped_column(String(120), nullable=False)
+    availability_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="available"
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_report_presentations_namespace_history",
+            "source_mode",
+            "conversation_id",
+            "request_id",
+            "report_id",
+        ),
+    )
+
+
 class ReportDeleteIntentModel(Base):
     """Durable witness while one report crosses DB/filesystem deletion."""
 

@@ -2,7 +2,7 @@
 
 ## 状态
 
-**M5.3.3 — 多轮语义、会话资源生命周期与仓库治理最终收口已完成；Rich PBIX 八轮语义、archive/restore、report delete 与 A/B 防串窗验收通过。**
+**M5.4 — 多会话并发、用户设置与资源管理最终收口已完成。M5.5 语义/中文字段/视觉/性能继续 Deferred。**
 
 ## 技术栈
 
@@ -52,9 +52,18 @@ npm run build
 | 最近对话 | 打开、搜索、重命名、归档、删除 | M4 API + M5.3 presentation metadata |
 | 最近报表 | 查看、下载；按所属 conversation 管理 | M3/M4 报表历史与 conversation delete API |
 | 项目 | 仅展示卡片，不新增项目管理后端 | 无 |
-| 用户账户 | 仅展示，不新增用户系统 | 无 |
+| 用户卡片 | 打开设置、已归档、资源管理；不新增用户系统 | 复用已有 conversation/report API |
 
 **原则：** 已有完善后端能力的功能提供真实交互；没有后端能力的功能只做展示，不为了 UI 扩大 M0–M4 后端范围。
+
+### M5.4 会话与资源管理合同
+
+- hook 不再以全局 messages/sending/loading/error 表示所有会话，而是维护 `conversation_id → ConversationSession`；active ID 只选择当前可见 session。
+- 新 conversation 首次发送前生成 UUID，同一 ID 直接发送到 Chat API；Sidebar 立即显示“正在分析”。
+- 不同 conversation 可并发，同 conversation 串行。history/navigation 可 Abort，business chat 切窗不取消、完成不跳窗。
+- Sidebar 的最近对话/报表可折叠并独立滚动；批量 checkbox 只在用户卡片打开的资源面板。
+- 资源面板一次最多处理 20 项，逐项协调现有单资源 API，部分失败保留原因。
+- report 删除保留 history tombstone；report rename 只修改 `display_title`，不改 report_id/HTML/content_hash/ReportSpec/VerifiedFactSet。LLM 无资源变更权限。
 
 ### AI 回答 — 动态渲染原则
 
@@ -137,6 +146,7 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | `POST /api/v1/conversations/{id}/restore` | ✅ M5.3.3 | 恢复归档对话 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 | 删除对话 |
 | `DELETE /api/reports/{report_id}` | ✅ M5.3.3 显式资源 API | 独立删除 managed report；不删除对话、不属于 Agent tool |
+| `PATCH /api/reports/{report_id}` | ✅ M5.4 已实现 | 只修改 presentation-only `display_title` |
 | `GET /api/v1/semantic-models` | ✅ M5.3.2 多模型逐项 compatibility | 动态加载多个 Desktop 模型、runtime namespace、可选与兼容状态 |
 | `GET /api/report-templates` | ❌ 未实现 | `sales_report` 集中白名单配置 |
 | `ChatResponse.presentation` | ✅ M5.3 只读展示层 | 动态消费 dataset 引用与 text/metric/table/chart/report blocks |
@@ -154,7 +164,7 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 
 - `src/api/`：typed fetch 客户端、namespace 查询与 Chat/History → UI adapters
 - `src/components/`：Sidebar、Composer、Conversation、动态 Assistant、StructuredBlocks 与 ReportAttachment
-- `src/hooks/usePowerBIAgent.ts`：当前会话、recent/search/history/reports 与发送状态
+- `src/hooks/usePowerBIAgent.ts`：conversation-scoped sessions、active identity、recent/search/history/reports 与资源协调
 - `src/config.ts`：模板目录与发现前的保守 runtime 初值；不再配置真实 Desktop 模型
 - `src/styles.css`：GPT 式桌面优先布局与基础窄屏适配
 
@@ -172,7 +182,9 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | M5.3.1 | Local Desktop 单实例 fail-closed 与 presentation verified-field projection | ✅ 已完成 |
 | M5.3.2 | 多 PBIX 安全枚举/单选/刷新、opaque 实例绑定、stale 安全错误与 MCP compatibility | ✅ 已完成 |
 | M5.3.3 | fresh/follow-up/replace、archive/restore、独立 report delete、history race 与 Artifact Governance | ✅ 已完成 |
+| M5.4 | conversation-scoped state、client UUID pending、异会话并发、用户卡片/资源面板、report tombstone/rename | ✅ 已完成 |
+| M5.5 | 语义、中文字段、报表视觉、性能 | ⏸ Deferred / NOT STARTED |
 
 ---
 
-*最后更新：2026-08-24 | M5.3.3 COMPLETE — 多轮语义、会话资源生命周期与仓库治理最终收口*
+*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与用户资源管理最终收口*

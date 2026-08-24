@@ -8,6 +8,7 @@ metadata.  Transcript/title fields never become Memory or factual authority.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -58,6 +59,8 @@ class SnapshotReportSummary(BaseModel):
     download_reference: str = ""
     content_type: str
     content_hash: str = ""
+    display_title: str = "销售分析报告"
+    availability_status: Literal["available", "deleted"] = "available"
 
     model_config = ConfigDict(frozen=True)
 
@@ -99,6 +102,8 @@ class ConversationReportItem(BaseModel):
     download_reference: str
     verified_fact_set_ids: list[str]
     query_result_ids: list[str]
+    display_title: str = "销售分析报告"
+    availability_status: Literal["available"] = "available"
 
     model_config = ConfigDict(frozen=True)
 

@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.3.3 — 多轮语义、会话资源生命周期与仓库治理最终收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0—M5.3.3 已完成；按批准边界停止，不进入后续里程碑。
+**M5.4 — 多会话并发、用户设置与资源管理最终收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0—M5.4 已完成；M5.5 继续 Deferred。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -22,6 +22,36 @@
 | **M5.3.1** | **多 PBIX 绑定与展示事实边界最终加固** | **✅ 已完成** |
 | **M5.3.2** | **Local MCP 多模型选择与协议稳定性加固** | **✅ 已完成** |
 | **M5.3.3** | **多轮语义、会话资源生命周期与 Artifact Governance** | **✅ 已完成** |
+| **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
+| **M5.5** | **语义/中文字段/视觉/性能** | **⏸ Deferred / NOT STARTED** |
+
+### M5.4 root-cause baseline（代码修改前）
+
+- `usePowerBIAgent()` 仅维护一组全局 `messages / activeConversationId / sending / loadingConversation / error`，把“当前展示哪个会话”与“哪个会话正在执行”错误合并。
+- 新聊天在后端返回 conversation ID 前没有稳定 local identity，因此无法立即出现于 Sidebar，也无法让 A pending 时 B/C 独立发送。
+- M5.3.3 已为 history navigation 建立 abort/generation/active identity 保护，但 business chat 仍绑全局 sending/messages，不能表达不同 conversation 同时 pending。
+- 当前 Sidebar 使用长 recent list，用户卡片纯展示；批量 conversation/archive/report 管理、report rename 和 deleted tombstone 尚未实现。
+
+### M5.4 approved implementation contract
+
+- 使用 `conversation_id → ConversationSession` 隔离 messages/pending/sending/history/error/status；active ID 只决定当前可见 session。
+- 新会话首次发送由前端生成合法 UUID，同一 ID 直接传给 Chat API；Sidebar 立即合并 local pending row。
+- 不同 conversation 允许并发，同 conversation 保持串行。history fetch 可取消，business chat 归属 conversation，切窗不取消也不自动回跳。
+- 用户卡片打开设置/已归档/资源管理；Sidebar recent/report 独立滚动与折叠，批量 checkbox 只在资源面板。
+- 批量操作最多 20 项，协调正式单资源 API 并呈现 partial failure；不增 `DELETE ALL`，不绕过 durable delete，archive ≠ delete。
+- report delete 保留 presentation tombstone；report `display_title` 只是 presentation metadata，report_id/HTML/content_hash/ReportSpec/VerifiedFactSet 不变。LLM/ToolGateway 无 rename/delete 权限。
+- M5.5 语言理解、Localization Registry、单指标展示、HTML 视觉与性能继续 Deferred。
+
+### M5.4 — 最终实现与验收
+
+- `usePowerBIAgent()` 以 `conversation_id → ConversationSession` 保存 messages、pending request、sending、history、error 和 status；active ID 仅选择可见会话。首次发送使用前端 UUID 作为正式 Chat identity，pending row 无需等待后端。
+- business chat 不携带 navigation Abort signal，按 owning conversation 回写；不同 conversation 可同时运行，同 conversation 由 running guard 串行。history 继续使用 AbortController/generation/active identity，后台完成不切换当前窗口。
+- 用户卡片提供设置/已归档/资源管理入口；最近对话与报表可折叠，recent 独立滚动。资源面板最多选择 20 项，通过单资源 API 协调批量删除/恢复，并逐项保留 partial failure。
+- `report_presentations` 与 migration `a4f6b8c2d190` 保存 `display_title`/availability。PATCH 只改 presentation title；delete 仍清理 HTML/factual metadata 并保留 transcript tombstone。conversation delete 会清理同 namespace presentation row；接口不注册 ToolGateway。
+- Rich PBIX Real A/B/C 并发结果分别为总销售额 `6,943,997.51`、四区域销售表、总销量 `3,065`；pending/loading/result 均隔离且无自动跳窗。归档恢复、report rename、delete 后 reload/history tombstone 无 view/download 均通过。
+- 本轮 9 个 Real acceptance conversation 与关联 report 通过正式单资源 API 精确清理。一个此前无 DB ownership 的 `test01.html` 未删除，已可恢复归档到 `local_state/archive/m54_preexisting_orphan_20260824/`，Artifact Governance PASS。
+- Fresh evidence：backend `1790 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `61 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `117`、Repository Safety `290`、Error Ledger `25`、Documentation Governance、Artifact Governance、`git diff --check` PASS。
+- M0–M5 factual/Memory/VerifiedFactSet/Report authority 未改变；M5.5 未开始；不合并 main，不创建 Tag。
 
 ### M5.3.3 root-cause baseline（代码修改前）
 
@@ -209,7 +239,7 @@
 
 ## 下一步
 
-M5.3.3 已完成并停止；等待用户后续明确任务，不进入后续里程碑。
+M5.4 已完成。下一步必须等待用户明确批准 M5.5；不得自行进入语言理解、中文字段、单指标、HTML 视觉或性能范围。
 
 ## 关键命令
 
@@ -255,4 +285,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-24 | M5.3.3 COMPLETE — 多轮语义、会话资源生命周期与仓库治理最终收口*
+*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与用户资源管理最终收口*

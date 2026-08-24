@@ -525,7 +525,7 @@ class TestReportHistory:
         assert real_reports.items[0].semantic_model_key == "real_model"
 
     @pytest.mark.asyncio
-    async def test_independent_report_delete_preserves_conversation_and_hides_attachment(
+    async def test_report_rename_and_delete_preserve_presentation_tombstone(
         self, history_env: HistoryEnvironment
     ) -> None:
         conversation_id = "conv-report-delete"
@@ -583,11 +583,26 @@ class TestReportHistory:
             created_at=UTC_BASE,
         )
         service = ConversationHistoryService(history_env.repository)
-        assert (
-            await service.get_history(
-                RuntimeDataMode.REAL, conversation_id, limit=20
-            )
-        ).items[0].report is not None
+        before = await service.get_history(
+            RuntimeDataMode.REAL, conversation_id, limit=20
+        )
+        assert before.items[0].report is not None
+        original_hash = artifact.content_hash
+        _, original_html = await report_repo.read_html(artifact.report_id)
+
+        renamed = await report_repo.rename(artifact.report_id, "区域销售报告")
+        assert renamed.display_title == "区域销售报告"
+        unchanged, unchanged_html = await report_repo.read_html(artifact.report_id)
+        assert unchanged.content_hash == original_hash
+        assert unchanged_html == original_html
+        renamed_history = await service.get_history(
+            RuntimeDataMode.REAL, conversation_id, limit=20
+        )
+        assert renamed_history.items[0].report.display_title == "区域销售报告"
+        listed = await service.list_reports(
+            RuntimeDataMode.REAL, conversation_id, limit=20
+        )
+        assert listed.items[0].display_title == "区域销售报告"
 
         deleted = await report_repo.delete(artifact.report_id)
         assert deleted.conversation_id == conversation_id
@@ -597,7 +612,13 @@ class TestReportHistory:
         history = await service.get_history(
             RuntimeDataMode.REAL, conversation_id, limit=20
         )
-        assert history.items[0].report is None
+        tombstone = history.items[0].report
+        assert tombstone is not None
+        assert tombstone.display_title == "区域销售报告"
+        assert tombstone.availability_status == "deleted"
+        assert tombstone.view_reference == ""
+        assert tombstone.download_reference == ""
+        assert tombstone.content_hash == ""
         assert history.conversation_id == conversation_id
 
     @pytest.mark.asyncio

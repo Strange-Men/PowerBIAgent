@@ -74,7 +74,7 @@ export function chatResponseToMessage(response: ChatResponse): AssistantMessage 
     id: response.request_id,
     role: 'assistant',
     ...content,
-    ...(isUsableReport(response.report) ? { report: response.report } : {}),
+    ...(isPresentableReport(response.report) ? { report: response.report } : {}),
     ...(response.presentation ? { presentation: response.presentation } : {}),
   }
 }
@@ -116,10 +116,19 @@ export function historyItemToMessages(
 export function isUsableReport(report: ReportResource | null): report is ReportResource {
   return Boolean(
     report?.report_id &&
+      report.availability_status !== 'deleted' &&
       report.view_reference === `/api/reports/${encodeURIComponent(report.report_id)}` &&
       report.download_reference ===
         `/api/reports/${encodeURIComponent(report.report_id)}/download`,
   )
+}
+
+export function isPresentableReport(
+  report: ReportResource | null,
+): report is ReportResource {
+  if (!report) return false
+  if (report.availability_status === 'deleted') return Boolean(report.report_id)
+  return isUsableReport(report)
 }
 
 export function conversationTitle(value: string | null | undefined): string {

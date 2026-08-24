@@ -75,6 +75,8 @@ from backend.app.powerbi.models import SemanticModelCatalog
 from backend.app.report.resources import (
     ReportDeleteResult,
     ReportNotFoundError,
+    ReportRenameRequest,
+    ReportRenameResult,
     ReportRepository,
     ReportStorageError,
 )
@@ -284,6 +286,26 @@ async def delete_report(
     except ReportStorageError:
         raise HTTPException(
             status_code=500, detail="report_artifact_delete_failed"
+        ) from None
+
+
+@router.patch(
+    "/api/reports/{report_id}",
+    response_model=ReportRenameResult,
+)
+async def rename_report(
+    report_id: str,
+    body: ReportRenameRequest,
+    repository: ReportRepository = Depends(get_report_repository),
+):
+    """Rename presentation metadata only; never exposed through ToolGateway."""
+    try:
+        return await repository.rename(report_id, body.display_title)
+    except ReportNotFoundError:
+        raise HTTPException(status_code=404, detail="report_not_found") from None
+    except ReportStorageError:
+        raise HTTPException(
+            status_code=500, detail="report_presentation_update_failed"
         ) from None
 
 
@@ -619,6 +641,9 @@ async def chat(
                 "content_type", "text/html; charset=utf-8"
             ),
             content_hash=report_data.get("content_hash", ""),
+            display_title=report_data.get(
+                "display_title", report_data.get("title", "销售分析报告")
+            ),
             html=report_data.get("html", ""),
         )
 

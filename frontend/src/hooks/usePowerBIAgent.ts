@@ -9,6 +9,7 @@ import {
   listRecentConversations,
   listRecentReports,
   renameConversation,
+  renameReport,
   restoreConversation,
   searchConversations,
   sendChat,
@@ -18,22 +19,40 @@ import {
   conversationTitle,
   historyItemToMessages,
 } from '../api/adapters'
-import {
-  initialRuntimeMode,
-  reportTemplateOptions,
-} from '../config'
+import { initialRuntimeMode, reportTemplateOptions } from '../config'
 import type {
   AssistantMessage,
+  BatchOperationResult,
   CatalogOption,
   ConversationMessage,
   ConversationReportItem,
+  ConversationSession,
   ConversationSummary,
   RuntimeMode,
   SemanticModelOption,
 } from '../types'
 
-function requestId(): string {
+const MAX_BATCH_ITEMS = 20
+
+function newId(): string {
   return globalThis.crypto.randomUUID()
+}
+
+function createSession(
+  conversationId: string,
+  title = '新聊天',
+): ConversationSession {
+  return {
+    clientConversationId: conversationId,
+    title,
+    messages: [],
+    pendingRequests: [],
+    sending: false,
+    loadingHistory: false,
+    error: null,
+    status: 'draft',
+    restored: false,
+  }
 }
 
 export function discoveryErrorMessage(errorType: string | null): string | null {
@@ -66,16 +85,15 @@ export function catalogOptions(items: SemanticModelOption[]): CatalogOption[] {
     return {
       key: item.key,
       label,
-      description:
-        item.agent_compatible
-          ? item.source === 'local_desktop'
-            ? item.schema_drift
-              ? '模型结构有更新，当前分析能力可用'
-              : '当前已连接且可用于分析'
-            : '开发测试模型'
-          : item.compatibility_status === 'incompatible'
-            ? '已连接，但缺少当前分析所需的业务字段或指标'
-            : '已连接，但兼容性检查暂不可用',
+      description: item.agent_compatible
+        ? item.source === 'local_desktop'
+          ? item.schema_drift
+            ? '模型结构有更新，当前分析能力可用'
+            : '当前已连接且可用于分析'
+          : '开发测试模型'
+        : item.compatibility_status === 'incompatible'
+          ? '已连接，但缺少当前分析所需的业务字段或指标'
+          : '已连接，但兼容性检查暂不可用',
       compatible: item.agent_compatible === true,
       selectable: item.selectable === true,
       schemaDrift: item.schema_drift === true,
@@ -91,11 +109,15 @@ export function reconcileSemanticModelSelection(
 ): { selected: CatalogOption | null; stale: boolean } {
   if (current) {
     const matched = options.find((item) => item.key === current.key)
-    return matched ? { selected: matched, stale: false } : { selected: null, stale: true }
+    return matched
+      ? { selected: matched, stale: false }
+      : { selected: null, stale: true }
   }
   return {
     selected: allowDefault
-      ? options.find((item) => item.compatible && item.selectable) || options[0] || null
+      ? options.find((item) => item.compatible && item.selectable) ||
+        options[0] ||
+        null
       : null,
     stale: false,
   }
@@ -104,78 +126,177 @@ export function reconcileSemanticModelSelection(
 export function withoutDeletedReport(
   messages: ConversationMessage[],
   reportId: string,
+  displayTitle?: string,
 ): ConversationMessage[] {
   return messages.map((message) => {
-    if (message.role !== 'assistant') return message
-    const next: AssistantMessage = { ...message }
-    if (next.report?.report_id === reportId) delete next.report
-    if (next.presentation) {
-      next.presentation = {
-        ...next.presentation,
-        blocks: next.presentation.blocks.filter(
-          (block) => block.type !== 'report_attachment' || block.report_id !== reportId,
-        ),
-      }
+    if (message.role !== 'assistant' || message.report?.report_id !== reportId) {
+      return message
     }
-    return next
+    return {
+      ...message,
+      report: {
+        ...message.report,
+        display_title:
+          displayTitle || message.report.display_title || '销售分析报告',
+        availability_status: 'deleted',
+        view_reference: '',
+        download_reference: '',
+        content_hash: '',
+      },
+    }
   })
+}
+
+function withRenamedReport(
+  messages: ConversationMessage[],
+  reportId: string,
+  displayTitle: string,
+): ConversationMessage[] {
+  return messages.map((message) =>
+    message.role === 'assistant' && message.report?.report_id === reportId
+      ? {
+          ...message,
+          report: { ...message.report, display_title: displayTitle },
+        }
+      : message,
+  )
 }
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
 }
 
+function failureReason(error: unknown): string {
+  return error instanceof Error ? error.message : '操作未完成，请稍后重试。'
+}
+
+function assertBatchLimit(ids: string[]): string[] {
+  const unique = [...new Set(ids)]
+  if (unique.length > MAX_BATCH_ITEMS) {
+    throw new Error(`单次最多管理 ${MAX_BATCH_ITEMS} 项资源。`)
+  }
+  return unique
+}
+
 export function usePowerBIAgent() {
-  const [messages, setMessages] = useState<ConversationMessage[]>([])
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
-  const [title, setTitle] = useState('新聊天')
-  const [recentConversations, setRecentConversations] = useState<ConversationSummary[]>([])
-  const [archivedConversations, setArchivedConversations] = useState<ConversationSummary[]>([])
+  const [sessions, setSessions] = useState<Record<string, ConversationSession>>(
+    {},
+  )
+  const sessionsRef = useRef<Record<string, ConversationSession>>({})
+  const runningConversationIdsRef = useRef(new Set<string>())
+  const removedConversationIdsRef = useRef(new Set<string>())
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(
+    null,
+  )
+  const activeConversationIdRef = useRef<string | null>(null)
+  const [persistedRecent, setPersistedRecent] = useState<ConversationSummary[]>([])
+  const [archivedConversations, setArchivedConversations] = useState<
+    ConversationSummary[]
+  >([])
   const [recentReports, setRecentReports] = useState<ConversationReportItem[]>([])
-  const [sending, setSending] = useState(false)
-  const [loadingConversation, setLoadingConversation] = useState(false)
   const [sidebarError, setSidebarError] = useState<string | null>(null)
   const [effectiveRuntimeMode, setEffectiveRuntimeMode] =
     useState<RuntimeMode>(initialRuntimeMode)
-  const [semanticModelOptions, setSemanticModelOptions] = useState<CatalogOption[]>([])
+  const [semanticModelOptions, setSemanticModelOptions] = useState<CatalogOption[]>(
+    [],
+  )
   const [loadingSemanticModels, setLoadingSemanticModels] = useState(true)
   const [semanticModelError, setSemanticModelError] = useState<string | null>(null)
   const [selectedSemanticModel, setSelectedSemanticModel] =
     useState<CatalogOption | null>(null)
   const selectedSemanticModelRef = useRef<CatalogOption | null>(null)
   const semanticModelsLoadedRef = useRef(false)
-  const activeConversationIdRef = useRef<string | null>(null)
+  const sidebarRefreshGenerationRef = useRef(0)
   const historyGenerationRef = useRef(0)
   const historyAbortRef = useRef<AbortController | null>(null)
-  const [selectedReportTemplate, setSelectedReportTemplate] =
+  const historyConversationRef = useRef<string | null>(null)
+  const [selectedReportTemplate, setSelectedReportTemplateState] =
     useState<CatalogOption | null>(null)
+  const selectedReportTemplateRef = useRef<CatalogOption | null>(null)
 
-  const cancelHistoryRequest = useCallback(() => {
-    historyGenerationRef.current += 1
-    historyAbortRef.current?.abort()
-    historyAbortRef.current = null
-    setLoadingConversation(false)
+  const replaceSessions = useCallback(
+    (
+      updater: (
+        current: Record<string, ConversationSession>,
+      ) => Record<string, ConversationSession>,
+    ) => {
+      const next = updater(sessionsRef.current)
+      sessionsRef.current = next
+      setSessions(next)
+    },
+    [],
+  )
+
+  const updateSession = useCallback(
+    (
+      conversationId: string,
+      updater: (session: ConversationSession) => ConversationSession,
+    ) => {
+      replaceSessions((current) => {
+        if (removedConversationIdsRef.current.has(conversationId)) return current
+        const existing = current[conversationId] || createSession(conversationId)
+        return { ...current, [conversationId]: updater(existing) }
+      })
+    },
+    [replaceSessions],
+  )
+
+  const activate = useCallback((conversationId: string | null) => {
+    activeConversationIdRef.current = conversationId
+    setActiveConversationId(conversationId)
   }, [])
 
+  const setSelectedReportTemplate = useCallback(
+    (option: CatalogOption | null) => {
+      selectedReportTemplateRef.current = option
+      setSelectedReportTemplateState(option)
+    },
+    [],
+  )
+
+  const cancelHistoryRequest = useCallback(
+    (conversationId?: string) => {
+      if (
+        conversationId &&
+        historyConversationRef.current !== conversationId
+      ) {
+        return
+      }
+      const owner = historyConversationRef.current
+      historyGenerationRef.current += 1
+      historyAbortRef.current?.abort()
+      historyAbortRef.current = null
+      historyConversationRef.current = null
+      if (owner) {
+        updateSession(owner, (session) => ({
+          ...session,
+          loadingHistory: false,
+        }))
+      }
+    },
+    [updateSession],
+  )
+
   const refreshSidebar = useCallback(async (mode: RuntimeMode) => {
+    const generation = ++sidebarRefreshGenerationRef.current
     try {
       const [page, archivedPage] = await Promise.all([
         listRecentConversations(mode),
         listArchivedConversations(mode),
       ])
-      setRecentConversations(page.items)
-      setArchivedConversations(archivedPage.items)
       const reports = await listRecentReports(
         mode,
         page.items.map((item) => item.conversation_id),
       )
+      if (generation !== sidebarRefreshGenerationRef.current) return
+      setPersistedRecent(page.items)
+      setArchivedConversations(archivedPage.items)
       setRecentReports(reports)
       setSidebarError(null)
     } catch {
-      setSidebarError('会话记录暂不可用')
-      setRecentConversations([])
-      setArchivedConversations([])
-      setRecentReports([])
+      if (generation === sidebarRefreshGenerationRef.current) {
+        setSidebarError('会话记录暂不可用')
+      }
     }
   }, [])
 
@@ -218,68 +339,101 @@ export function usePowerBIAgent() {
     const timer = window.setTimeout(() => void refreshSemanticModels(), 0)
     return () => {
       window.clearTimeout(timer)
-      cancelHistoryRequest()
+      historyGenerationRef.current += 1
+      historyAbortRef.current?.abort()
     }
-  }, [cancelHistoryRequest, refreshSemanticModels])
+  }, [refreshSemanticModels])
 
-  const selectSemanticModel = useCallback((option: CatalogOption) => {
-    const changed = selectedSemanticModelRef.current?.key !== option.key
-    selectedSemanticModelRef.current = option
-    setSelectedSemanticModel(option)
-    setSemanticModelError(null)
-    if (changed) {
-      cancelHistoryRequest()
-      activeConversationIdRef.current = null
-      setActiveConversationId(null)
-      setMessages([])
-      setTitle('新聊天')
-      setSelectedReportTemplate(null)
-    }
-  }, [cancelHistoryRequest])
+  const selectSemanticModel = useCallback(
+    (option: CatalogOption) => {
+      const changed = selectedSemanticModelRef.current?.key !== option.key
+      selectedSemanticModelRef.current = option
+      setSelectedSemanticModel(option)
+      setSemanticModelError(null)
+      if (changed) {
+        cancelHistoryRequest()
+        activate(null)
+        setSelectedReportTemplate(null)
+      }
+    },
+    [activate, cancelHistoryRequest, setSelectedReportTemplate],
+  )
 
   const startNewChat = useCallback(() => {
     cancelHistoryRequest()
-    setMessages([])
-    activeConversationIdRef.current = null
-    setActiveConversationId(null)
-    setTitle('新聊天')
+    const conversationId = newId()
+    replaceSessions((current) => ({
+      ...current,
+      [conversationId]: createSession(conversationId),
+    }))
+    removedConversationIdsRef.current.delete(conversationId)
+    activate(conversationId)
     setSelectedReportTemplate(null)
-    setLoadingConversation(false)
-  }, [cancelHistoryRequest])
+    return conversationId
+  }, [activate, cancelHistoryRequest, replaceSessions, setSelectedReportTemplate])
 
   const submitMessage = useCallback(
     async (content: string) => {
       const normalized = content.trim()
-      if (
-        !normalized ||
-        sending ||
-        !selectedSemanticModel?.compatible ||
-        selectedSemanticModel.selectable === false
-      ) return
+      const model = selectedSemanticModelRef.current
+      if (!normalized || !model?.compatible || model.selectable === false) return
 
-      const id = requestId()
-      setMessages((current) => [
-        ...current,
-        { id: `user-${id}`, role: 'user', content: normalized },
-      ])
-      if (!activeConversationId) setTitle(conversationTitle(normalized))
-      setSending(true)
+      let conversationId = activeConversationIdRef.current
+      if (!conversationId) {
+        conversationId = newId()
+        const generatedId = conversationId
+        replaceSessions((current) => ({
+          ...current,
+          [generatedId]: createSession(generatedId),
+        }))
+        removedConversationIdsRef.current.delete(generatedId)
+        activate(conversationId)
+      }
+      if (runningConversationIdsRef.current.has(conversationId)) return
+
+      const id = newId()
+      const template = selectedReportTemplateRef.current
+      runningConversationIdsRef.current.add(conversationId)
+      updateSession(conversationId, (session) => ({
+        ...session,
+        title:
+          session.status === 'draft'
+            ? conversationTitle(normalized)
+            : session.title,
+        messages: [
+          ...session.messages,
+          { id: `user-${id}`, role: 'user', content: normalized },
+        ],
+        pendingRequests: [...session.pendingRequests, id],
+        sending: true,
+        loadingHistory: false,
+        error: null,
+        status: 'processing',
+        restored: false,
+      }))
 
       try {
         const response = await sendChat({
           message: normalized,
+          conversation_id: conversationId,
           request_id: id,
-          semantic_model_key: selectedSemanticModel.key,
-          ...(activeConversationId
-            ? { conversation_id: activeConversationId }
-            : {}),
-          ...(selectedReportTemplate
-            ? { report_template_key: selectedReportTemplate.key }
-            : {}),
+          semantic_model_key: model.key,
+          ...(template ? { report_template_key: template.key } : {}),
         })
-        activeConversationIdRef.current = response.conversation_id
-        setActiveConversationId(response.conversation_id)
-        setMessages((current) => [...current, chatResponseToMessage(response)])
+        if (response.conversation_id !== conversationId) {
+          throw new Error('服务返回了不匹配的对话身份，已停止写入。')
+        }
+        updateSession(conversationId, (session) => ({
+          ...session,
+          serverConversationId: response.conversation_id,
+          messages: [...session.messages, chatResponseToMessage(response)],
+          pendingRequests: session.pendingRequests.filter(
+            (request) => request !== id,
+          ),
+          sending: false,
+          error: response.error_type ? '当前请求未完成。' : null,
+          status: response.error_type ? 'failed' : 'ready',
+        }))
         if (
           response.error_type === 'stale_instance' ||
           response.error_type === 'DESKTOP_STALE_INSTANCE'
@@ -296,7 +450,7 @@ export function usePowerBIAgent() {
             : effectiveRuntimeMode,
         )
       } catch (error) {
-        const content =
+        const errorText =
           error instanceof Error
             ? error.message
             : '当前请求无法完成，请稍后重试。'
@@ -304,129 +458,467 @@ export function usePowerBIAgent() {
           id: `error-${id}`,
           role: 'assistant',
           kind: 'error',
-          content,
+          content: errorText,
         }
-        setMessages((current) => [...current, message])
+        updateSession(conversationId, (session) => ({
+          ...session,
+          messages: [...session.messages, message],
+          pendingRequests: session.pendingRequests.filter(
+            (request) => request !== id,
+          ),
+          sending: false,
+          error: errorText,
+          status: 'failed',
+        }))
       } finally {
-        setSelectedReportTemplate(null)
-        setSending(false)
+        runningConversationIdsRef.current.delete(conversationId)
+        if (
+          activeConversationIdRef.current === conversationId &&
+          selectedReportTemplateRef.current?.key === template?.key
+        ) {
+          setSelectedReportTemplate(null)
+        }
       }
     },
     [
-      activeConversationId,
-      refreshSidebar,
-      selectedReportTemplate,
-      selectedSemanticModel,
-      sending,
+      activate,
       effectiveRuntimeMode,
+      refreshSidebar,
+      replaceSessions,
+      setSelectedReportTemplate,
+      updateSession,
     ],
   )
 
-  const openConversation = useCallback(async (conversation: ConversationSummary) => {
-    cancelHistoryRequest()
-    const generation = historyGenerationRef.current
-    const controller = new AbortController()
-    historyAbortRef.current = controller
-    const conversationId = conversation.conversation_id
-    activeConversationIdRef.current = conversationId
-    setActiveConversationId(conversationId)
-    setMessages([])
-    setTitle(conversationTitle(conversation.title || conversation.latest_analysis_goal))
-    setLoadingConversation(true)
-    try {
-      const history = await getConversationHistory(
-        effectiveRuntimeMode,
-        conversationId,
-        controller.signal,
-      )
+  const openConversation = useCallback(
+    async (conversation: ConversationSummary) => {
+      cancelHistoryRequest()
+      const conversationId = conversation.conversation_id
+      activate(conversationId)
+      const local = sessionsRef.current[conversationId]
       if (
-        controller.signal.aborted ||
-        generation !== historyGenerationRef.current ||
-        activeConversationIdRef.current !== conversationId ||
-        history.conversation_id !== conversationId
-      ) return
-      const restoredMessages = [...history.items]
-        .sort((left, right) => left.created_at.localeCompare(right.created_at))
-        .flatMap(historyItemToMessages)
-      setMessages(restoredMessages)
-      setTitle(conversationTitle(history.title || conversation.title || conversation.latest_analysis_goal))
-    } catch (error) {
-      if (
-        isAbortError(error) ||
-        generation !== historyGenerationRef.current ||
-        activeConversationIdRef.current !== conversationId
-      ) return
-      const content =
-        error instanceof Error ? error.message : '无法恢复该对话，请稍后重试。'
-      setMessages([
-        {
-          id: `history-error-${conversationId}`,
-          role: 'assistant',
-          kind: 'error',
-          content,
-        },
-      ])
-      setTitle(conversationTitle(conversation.title || conversation.latest_analysis_goal))
-    } finally {
-      if (generation === historyGenerationRef.current) {
-        historyAbortRef.current = null
-        setLoadingConversation(false)
+        local &&
+        (local.messages.length > 0 ||
+          local.sending ||
+          conversation.local_status === 'processing' ||
+          conversation.local_status === 'failed')
+      ) {
+        return
       }
-    }
-  }, [cancelHistoryRequest, effectiveRuntimeMode])
 
-  const search = useCallback(async (query: string) => {
-    const page = await searchConversations(effectiveRuntimeMode, query)
-    return page.items
-  }, [effectiveRuntimeMode])
-
-  const rename = useCallback(async (conversation: ConversationSummary, nextTitle: string) => {
-    const result = await renameConversation(
-      effectiveRuntimeMode,
-      conversation.conversation_id,
-      nextTitle,
-    )
-    if (activeConversationId === conversation.conversation_id) setTitle(result.title)
-    await refreshSidebar(effectiveRuntimeMode)
-  }, [activeConversationId, effectiveRuntimeMode, refreshSidebar])
-
-  const archive = useCallback(async (conversation: ConversationSummary) => {
-    cancelHistoryRequest()
-    await archiveConversation(effectiveRuntimeMode, conversation.conversation_id)
-    if (activeConversationId === conversation.conversation_id) startNewChat()
-    await refreshSidebar(effectiveRuntimeMode)
-  }, [activeConversationId, cancelHistoryRequest, effectiveRuntimeMode, refreshSidebar, startNewChat])
-
-  const remove = useCallback(async (conversation: ConversationSummary) => {
-    cancelHistoryRequest()
-    await deleteConversation(effectiveRuntimeMode, conversation.conversation_id)
-    if (activeConversationId === conversation.conversation_id) startNewChat()
-    await refreshSidebar(effectiveRuntimeMode)
-  }, [activeConversationId, cancelHistoryRequest, effectiveRuntimeMode, refreshSidebar, startNewChat])
-
-  const restore = useCallback(async (conversation: ConversationSummary) => {
-    cancelHistoryRequest()
-    await restoreConversation(effectiveRuntimeMode, conversation.conversation_id)
-    await refreshSidebar(effectiveRuntimeMode)
-  }, [cancelHistoryRequest, effectiveRuntimeMode, refreshSidebar])
-
-  const removeReport = useCallback(async (report: ConversationReportItem) => {
-    await deleteReport(report.report_id)
-    setRecentReports((current) =>
-      current.filter((item) => item.report_id !== report.report_id),
-    )
-    setMessages((current) => withoutDeletedReport(current, report.report_id))
-  }, [])
-
-  const hasRestoredHistory = useMemo(
-    () => messages.some((message) => message.role === 'assistant' && message.restored),
-    [messages],
+      const generation = historyGenerationRef.current
+      const controller = new AbortController()
+      historyAbortRef.current = controller
+      historyConversationRef.current = conversationId
+      updateSession(conversationId, (session) => ({
+        ...session,
+        title: conversationTitle(
+          conversation.title || conversation.latest_analysis_goal,
+        ),
+        messages: [],
+        loadingHistory: true,
+        error: null,
+        status: 'ready',
+      }))
+      try {
+        const history = await getConversationHistory(
+          effectiveRuntimeMode,
+          conversationId,
+          controller.signal,
+        )
+        if (
+          controller.signal.aborted ||
+          generation !== historyGenerationRef.current ||
+          activeConversationIdRef.current !== conversationId ||
+          history.conversation_id !== conversationId
+        ) {
+          return
+        }
+        const restoredMessages = [...history.items]
+          .sort((left, right) => left.created_at.localeCompare(right.created_at))
+          .flatMap(historyItemToMessages)
+        updateSession(conversationId, (session) => ({
+          ...session,
+          serverConversationId: conversationId,
+          title: conversationTitle(
+            history.title ||
+              conversation.title ||
+              conversation.latest_analysis_goal,
+          ),
+          messages: restoredMessages,
+          loadingHistory: false,
+          error: null,
+          status: 'ready',
+          restored: true,
+        }))
+      } catch (error) {
+        if (
+          isAbortError(error) ||
+          generation !== historyGenerationRef.current ||
+          activeConversationIdRef.current !== conversationId
+        ) {
+          return
+        }
+        const errorText =
+          error instanceof Error
+            ? error.message
+            : '无法恢复该对话，请稍后重试。'
+        updateSession(conversationId, (session) => ({
+          ...session,
+          messages: [
+            {
+              id: `history-error-${conversationId}`,
+              role: 'assistant',
+              kind: 'error',
+              content: errorText,
+            },
+          ],
+          loadingHistory: false,
+          error: errorText,
+          status: 'failed',
+        }))
+      } finally {
+        if (generation === historyGenerationRef.current) {
+          historyAbortRef.current = null
+          historyConversationRef.current = null
+          updateSession(conversationId, (session) => ({
+            ...session,
+            loadingHistory: false,
+          }))
+        }
+      }
+    },
+    [activate, cancelHistoryRequest, effectiveRuntimeMode, updateSession],
   )
 
+  const search = useCallback(
+    async (query: string) =>
+      (await searchConversations(effectiveRuntimeMode, query)).items,
+    [effectiveRuntimeMode],
+  )
+
+  const rename = useCallback(
+    async (conversation: ConversationSummary, nextTitle: string) => {
+      const result = await renameConversation(
+        effectiveRuntimeMode,
+        conversation.conversation_id,
+        nextTitle,
+      )
+      updateSession(conversation.conversation_id, (session) => ({
+        ...session,
+        title: result.title,
+      }))
+      await refreshSidebar(effectiveRuntimeMode)
+    },
+    [effectiveRuntimeMode, refreshSidebar, updateSession],
+  )
+
+  const clearConversationLocally = useCallback(
+    (conversationId: string) => {
+      removedConversationIdsRef.current.add(conversationId)
+      runningConversationIdsRef.current.delete(conversationId)
+      replaceSessions((current) => {
+        const next = { ...current }
+        delete next[conversationId]
+        return next
+      })
+      if (activeConversationIdRef.current === conversationId) activate(null)
+      setPersistedRecent((current) =>
+        current.filter((item) => item.conversation_id !== conversationId),
+      )
+      setArchivedConversations((current) =>
+        current.filter((item) => item.conversation_id !== conversationId),
+      )
+      setRecentReports((current) =>
+        current.filter((item) => item.conversation_id !== conversationId),
+      )
+    },
+    [activate, replaceSessions],
+  )
+
+  const archive = useCallback(
+    async (conversation: ConversationSummary) => {
+      if (runningConversationIdsRef.current.has(conversation.conversation_id)) {
+        throw new Error('对话仍在分析，完成后再归档。')
+      }
+      cancelHistoryRequest(conversation.conversation_id)
+      await archiveConversation(effectiveRuntimeMode, conversation.conversation_id)
+      if (activeConversationIdRef.current === conversation.conversation_id) {
+        activate(null)
+      }
+      replaceSessions((current) => {
+        const next = { ...current }
+        delete next[conversation.conversation_id]
+        return next
+      })
+      setPersistedRecent((current) =>
+        current.filter(
+          (item) => item.conversation_id !== conversation.conversation_id,
+        ),
+      )
+      await refreshSidebar(effectiveRuntimeMode)
+    },
+    [
+      activate,
+      cancelHistoryRequest,
+      effectiveRuntimeMode,
+      refreshSidebar,
+      replaceSessions,
+    ],
+  )
+
+  const remove = useCallback(
+    async (conversation: ConversationSummary) => {
+      if (runningConversationIdsRef.current.has(conversation.conversation_id)) {
+        throw new Error('对话仍在分析，完成后再删除。')
+      }
+      cancelHistoryRequest(conversation.conversation_id)
+      const persisted =
+        persistedRecent.some(
+          (item) => item.conversation_id === conversation.conversation_id,
+        ) ||
+        archivedConversations.some(
+          (item) => item.conversation_id === conversation.conversation_id,
+        )
+      if (persisted) {
+        await deleteConversation(
+          effectiveRuntimeMode,
+          conversation.conversation_id,
+        )
+      }
+      clearConversationLocally(conversation.conversation_id)
+      if (persisted) await refreshSidebar(effectiveRuntimeMode)
+    },
+    [
+      archivedConversations,
+      cancelHistoryRequest,
+      clearConversationLocally,
+      effectiveRuntimeMode,
+      persistedRecent,
+      refreshSidebar,
+    ],
+  )
+
+  const restore = useCallback(
+    async (conversation: ConversationSummary) => {
+      await restoreConversation(effectiveRuntimeMode, conversation.conversation_id)
+      await refreshSidebar(effectiveRuntimeMode)
+    },
+    [effectiveRuntimeMode, refreshSidebar],
+  )
+
+  const removeReport = useCallback(
+    async (report: ConversationReportItem) => {
+      await deleteReport(report.report_id)
+      setRecentReports((current) =>
+        current.filter((item) => item.report_id !== report.report_id),
+      )
+      replaceSessions((current) =>
+        Object.fromEntries(
+          Object.entries(current).map(([id, session]) => [
+            id,
+            {
+              ...session,
+              messages: withoutDeletedReport(
+                session.messages,
+                report.report_id,
+                report.display_title,
+              ),
+            },
+          ]),
+        ),
+      )
+    },
+    [replaceSessions],
+  )
+
+  const renameReportResource = useCallback(
+    async (report: ConversationReportItem, displayTitle: string) => {
+      const renamed = await renameReport(report.report_id, displayTitle)
+      setRecentReports((current) =>
+        current.map((item) =>
+          item.report_id === report.report_id
+            ? { ...item, display_title: renamed.display_title }
+            : item,
+        ),
+      )
+      replaceSessions((current) =>
+        Object.fromEntries(
+          Object.entries(current).map(([id, session]) => [
+            id,
+            {
+              ...session,
+              messages: withRenamedReport(
+                session.messages,
+                report.report_id,
+                renamed.display_title,
+              ),
+            },
+          ]),
+        ),
+      )
+    },
+    [replaceSessions],
+  )
+
+  const bulkRemoveConversations = useCallback(
+    async (items: ConversationSummary[]): Promise<BatchOperationResult> => {
+      const ids = assertBatchLimit(items.map((item) => item.conversation_id))
+      const persistedIds = new Set([
+        ...persistedRecent.map((item) => item.conversation_id),
+        ...archivedConversations.map((item) => item.conversation_id),
+      ])
+      const results = await Promise.allSettled(
+        ids.map((id) =>
+          runningConversationIdsRef.current.has(id)
+            ? Promise.reject(new Error('对话仍在分析，完成后再删除。'))
+            : persistedIds.has(id)
+            ? deleteConversation(effectiveRuntimeMode, id)
+            : Promise.resolve(),
+        ),
+      )
+      const outcome: BatchOperationResult = { succeededIds: [], failed: [] }
+      results.forEach((result, index) => {
+        const id = ids[index]
+        if (result.status === 'fulfilled') {
+          outcome.succeededIds.push(id)
+          clearConversationLocally(id)
+        } else {
+          outcome.failed.push({ id, reason: failureReason(result.reason) })
+        }
+      })
+      await refreshSidebar(effectiveRuntimeMode)
+      return outcome
+    },
+    [
+      archivedConversations,
+      clearConversationLocally,
+      effectiveRuntimeMode,
+      persistedRecent,
+      refreshSidebar,
+    ],
+  )
+
+  const bulkRestoreConversations = useCallback(
+    async (items: ConversationSummary[]): Promise<BatchOperationResult> => {
+      const ids = assertBatchLimit(items.map((item) => item.conversation_id))
+      const results = await Promise.allSettled(
+        ids.map((id) => restoreConversation(effectiveRuntimeMode, id)),
+      )
+      const outcome: BatchOperationResult = { succeededIds: [], failed: [] }
+      results.forEach((result, index) => {
+        const id = ids[index]
+        if (result.status === 'fulfilled') outcome.succeededIds.push(id)
+        else outcome.failed.push({ id, reason: failureReason(result.reason) })
+      })
+      await refreshSidebar(effectiveRuntimeMode)
+      return outcome
+    },
+    [effectiveRuntimeMode, refreshSidebar],
+  )
+
+  const bulkRemoveReports = useCallback(
+    async (items: ConversationReportItem[]): Promise<BatchOperationResult> => {
+      const byId = new Map(items.map((item) => [item.report_id, item]))
+      const ids = assertBatchLimit([...byId.keys()])
+      const results = await Promise.allSettled(ids.map((id) => deleteReport(id)))
+      const outcome: BatchOperationResult = { succeededIds: [], failed: [] }
+      const successfulReports = new Map<string, ConversationReportItem>()
+      results.forEach((result, index) => {
+        const id = ids[index]
+        if (result.status === 'fulfilled') {
+          outcome.succeededIds.push(id)
+          const report = byId.get(id)
+          if (report) successfulReports.set(id, report)
+        } else {
+          outcome.failed.push({ id, reason: failureReason(result.reason) })
+        }
+      })
+      if (successfulReports.size > 0) {
+        setRecentReports((current) =>
+          current.filter((item) => !successfulReports.has(item.report_id)),
+        )
+        replaceSessions((current) =>
+          Object.fromEntries(
+            Object.entries(current).map(([sessionId, session]) => [
+              sessionId,
+              {
+                ...session,
+                messages: [...successfulReports.values()].reduce(
+                  (messages, report) =>
+                    withoutDeletedReport(
+                      messages,
+                      report.report_id,
+                      report.display_title,
+                    ),
+                  session.messages,
+                ),
+              },
+            ]),
+          ),
+        )
+      }
+      return outcome
+    },
+    [replaceSessions],
+  )
+
+  const recentConversations = useMemo(() => {
+    const persisted = new Map(
+      persistedRecent.map((conversation) => [
+        conversation.conversation_id,
+        conversation,
+      ]),
+    )
+    const localRows = Object.values(sessions)
+      .filter((session) => session.status !== 'draft')
+      .map<ConversationSummary>((session) => {
+        const stored = persisted.get(session.clientConversationId)
+        persisted.delete(session.clientConversationId)
+        const timestamp = new Date().toISOString()
+        return {
+          runtime_mode: effectiveRuntimeMode,
+          conversation_id: session.clientConversationId,
+          created_at: stored?.created_at || timestamp,
+          updated_at: stored?.updated_at || timestamp,
+          archived_at: null,
+          title: session.title,
+          latest_request_id:
+            session.pendingRequests.at(-1) || stored?.latest_request_id || null,
+          latest_terminal_state:
+            session.status === 'processing'
+              ? 'processing'
+              : stored?.latest_terminal_state || null,
+          latest_response_type: stored?.latest_response_type || null,
+          latest_analysis_goal: stored?.latest_analysis_goal || session.title,
+          local_status:
+            session.status === 'processing'
+              ? 'processing'
+              : session.status === 'failed'
+                ? 'failed'
+                : 'ready',
+          local_error: session.error,
+        }
+      })
+    return [...localRows, ...persisted.values()]
+  }, [effectiveRuntimeMode, persistedRecent, sessions])
+
+  const activeSession = activeConversationId
+    ? sessions[activeConversationId] || null
+    : null
+  const messages = activeSession?.messages || []
+  const sending = activeSession?.sending || false
+  const loadingConversation = activeSession?.loadingHistory || false
+  const title = activeSession?.title || '新聊天'
+  const hasRestoredHistory = Boolean(activeSession?.restored)
+
   return {
+    sessions,
+    activeSession,
     messages,
     activeConversationId,
     title,
+    error: activeSession?.error || null,
     recentConversations,
     archivedConversations,
     recentReports,
@@ -457,6 +949,10 @@ export function usePowerBIAgent() {
     restore,
     remove,
     removeReport,
+    renameReport: renameReportResource,
+    bulkRemoveConversations,
+    bulkRestoreConversations,
+    bulkRemoveReports,
     setSelectedSemanticModel: selectSemanticModel,
     setSelectedReportTemplate,
   }

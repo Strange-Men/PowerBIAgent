@@ -1,7 +1,7 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.3 视觉与交互已完成；Rich PBIX Real 浏览器验收通过
-> **目标阶段：** M5.3 固化结构化结果、历史管理、responsive、accessibility 与最终视觉交互
+> **状态：** M5.4 多会话并发、用户设置与资源管理已完成
+> **目标阶段：** M5.4 固化 conversation-scoped state、pending navigation、用户卡片/资源面板、report tombstone/rename；M5.5 Deferred
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -16,7 +16,7 @@
 
 ## 二、当前阶段与实施边界
 
-**当前阶段：** M5.3 已实现 QueryResult/VerifiedFactSet 直接来源的 presentation contract、展示型 transcript/title、会话管理、尺寸/间距、responsive、accessibility 与状态视觉。M0–M4 authority 保持不变；没有真实 presentation block 时不伪造前端表格或图表。
+**当前阶段：** M5.4 已将请求与 UI 状态收口到 conversation scope，并完成轻量用户资源面板、report tombstone/rename。M0–M5 factual authority 保持不变；没有真实 presentation block 时不伪造前端表格或图表。
 
 ## 三、视觉参考图片
 
@@ -79,10 +79,10 @@
 | 5 | "项目"分区标题 | 分区标签 | — |
 | 6 | 当前 Power BI 分析项目 | 仅展示卡片，不新增后端 | 仅展示 |
 | 7 | "最近报表"分区标题 | 分区标签 | — |
-| 8 | 最近生成的报表列表 | 接 M3/M4 后端 report history API | 真实交互 |
+| 8 | 最近生成的报表列表 | 可折叠、独立滚动；不放批量 checkbox | 真实交互 |
 | 9 | "最近"分区标题 | 对话分区标签 | — |
-| 10 | 最近对话 / 已归档入口 | 当前选中使用浅灰背景；归档可恢复 | 真实交互，接 M4/M5.3.3 后端 |
-| 11 | 用户信息 + 更多菜单 | 底部固定，不新增用户系统 | 仅展示 |
+| 10 | 最近对话 | persisted + local pending；可折叠、独立滚动 | 真实交互 |
+| 11 | 用户卡片 | 底部固定，展示用户名/内部用户；打开设置、已归档、资源管理 | 真实交互，不新增账户后端 |
 
 ## 七、新聊天欢迎态
 
@@ -255,6 +255,14 @@
 - open/new/delete/archive/restore/model switch 必须使旧 history 请求失效
 - A conversation 的慢响应、错误或 report attachment 不得覆盖已经打开的 B conversation
 
+### 11.6 report tombstone 与重命名（M5.4）
+
+- report 独立删除后，所属 assistant message 保留“曾生成过报表”的 presentation tombstone；标题使用删除前最后一个 `display_title`。
+- tombstone 显示“报表已删除 / 此文件已不可查看或下载”，隐藏 view/download，不重建 ReportArtifact。
+- history restore 必须复原 tombstone，不得将整个 attachment block 静默丢弃。
+- rename 只更新 presentation-only `display_title`，Sidebar 与 report card 共用该标题；`report_id`/HTML/`content_hash`/ReportSpec/VerifiedFactSet 不变。
+- rename/delete 只能由明确 UI 用户操作触发，不进 ToolGateway 或 LLM allowed tools。
+
 ## 十二、底部输入器（Composer）
 
 ### 12.1 样式
@@ -276,7 +284,14 @@
 
 - 开始对话后输入器固定或稳定停留在页面底部
 - 支持 Enter 发送，Shift+Enter 换行
-- 发送期间输入框禁用
+- 只在 active conversation 自己 sending 时禁用其输入框；其他 idle conversation 仍可发送
+
+### 12.4 conversation-scoped 请求状态（M5.4）
+
+- 状态容器固定为 `conversation_id → ConversationSession`，每个 session 独立保存 messages/pendingRequests/sending/loadingHistory/error/status。
+- 新会话首次发送前生成 UUID，立即写入本地 session/Sidebar，同一 ID 传给 Chat API。
+- 不同 session 的 chat promise 独立运行；任一完成只更新它的 session，不读写 active session 的 messages/error，不改 active ID。
+- 同一 session `sending=true` 时禁止第二次发送。切窗只能 Abort history/navigation，不 Abort business chat。
 
 ## 十三、"+"菜单
 
@@ -376,6 +391,15 @@
 - 图表适配容器宽度
 - 报表卡片操作不溢出
 
+Sidebar 在桌面端固定可用高度；“最近对话”与“最近报表”各自 `overflow-y:auto` 并可折叠。已归档默认不常驻 Sidebar，通过用户卡片进入资源面板。
+
+## 十六 A、用户卡片与资源面板（M5.4）
+
+- 菜单只提供“设置”“已归档”“资源管理”；不提供套餐、支付、账户安全等无后端能力。
+- 资源面板含最近对话、已归档、最近报表三区，checkbox 和“全选当前加载范围”只出现于此。
+- 批量操作最多 20 项，调用单资源 API 并展示逐项结果。成功项从 UI 移除，失败项保留并显示可理解原因，不自动重试未知失败。
+- 删除操作必须确认；archive 恢复不等于重建，conversation/report delete 不得绕过 durable delete intent。
+
 ## 十七、当前 MVP 后端能力到 UI 映射
 
 | 能力 | 后端状态 | M5 UI |
@@ -396,6 +420,9 @@
 | History transcript/title | ✅ presentation metadata | M5.3 完整恢复、默认标题、重命名 |
 | Conversation 管理 | ✅ archive/delete + M5.3 rename；M5.3.3 restore | Sidebar 区分最近/已归档；archive 可恢复，delete 永久清理 |
 | 独立 report delete | M5.3.3 显式资源 API | 最近报表 `…` 菜单 + 确认；conversation 保留，LLM 无权限 |
+| 多 conversation state | M5.4 前端合同 | local UUID pending、异会话并发、同会话串行、loading/error/result 隔离 |
+| 用户资源管理 | M5.4 前端协调单资源 API | 设置 modal、最多 20 项 bounded bulk、partial failure |
+| report rename/tombstone | M5.4 presentation metadata | `display_title` 同步；deleted 历史卡保留且无 view/download |
 
 ## 十八、明确禁止的设计
 
@@ -440,4 +467,4 @@
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-24 | M5.3.3 archive/restore/report delete 与异步隔离契约*
+*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话状态、用户资源面板与 report presentation lifecycle*

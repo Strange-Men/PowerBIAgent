@@ -63,6 +63,8 @@ class ReportResponse(BaseModel):
     download_reference: str = Field(default="", description="后端生成的下载引用")
     content_type: str = Field(default="text/html; charset=utf-8")
     content_hash: str = Field(default="", description="保存内容的 SHA-256")
+    display_title: str = Field(default="销售分析报告", max_length=120)
+    availability_status: str = Field(default="available", pattern="^available$")
     html: str = Field(
         default="",
         description="兼容字段；与 repository 保存的同一 Renderer 输出完全一致",

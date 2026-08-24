@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.3.3 — 多轮语义、会话资源生命周期与仓库治理最终收口已完成
+> **状态：** M5.4 — 多会话并发、用户设置与资源管理最终收口已完成
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -35,6 +35,21 @@
 | **M5.3.1** | **Local Desktop 单实例安全 + presentation verified-field projection** | **✅ 已完成** |
 | **M5.3.2** | **Local MCP 多 PBIX 选择、opaque binding 与 beta 协议稳定性** | **✅ 已完成** |
 | **M5.3.3** | **多轮语义、conversation/report 生命周期与 Artifact Governance 最终收口** | **✅ 已完成** |
+| **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
+| **M5.5** | **语言理解/中文字段/单指标/报表视觉/性能** | **⏸ Deferred / NOT STARTED** |
+
+### M5.4 — 最终收口（已完成）
+
+- 前端从单一全局 `messages/sending/loading/error` 重构为 `conversation_id → ConversationSession`；`activeConversationId` 只选择可见 session。
+- 新会话首次发送由前端生成 UUID 并直接传给现有 Chat API；发送后立即合并到 Sidebar local pending list。
+- A/B/C 可同时执行；同 conversation 保持串行。history/navigation 可 Abort，business chat 切窗不取消，完成不自动跳窗。
+- 用户卡片作为设置/已归档/资源管理入口；Sidebar 最近会话/报表独立滚动并可折叠。
+- 资源面板支持最近对话批量删除、已归档批量恢复/删除、最近报表批量删除/单项重命名；一次最多 20 项，只协调正式单资源 API。
+- report delete 删除 HTML/metadata 但保留 presentation tombstone；report `display_title` 仅是可变 UI metadata，不改 report_id/HTML/content_hash/ReportSpec/VerifiedFactSet。
+- rename/delete 不进 ToolGateway/LLM tools；archive 不等于 delete；M0–M5 factual authority 不变。
+- M5.5 的语义增强、Localization Registry、单指标策略、HTML 视觉重构、profiling/cache 继续 Deferred。
+- Alembic revision `a4f6b8c2d190` 新增 report presentation metadata/tombstone；Rich PBIX A/B/C 并发、归档恢复、rename/delete/history tombstone 与测试资源精确清理通过。
+- Fresh evidence：backend `1790 passed, 1 skipped`；frontend Vitest `61 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；全部治理门禁与 `git diff --check` PASS。
 
 ### M5.3.3 — 最终收口边界（已完成）
 
@@ -242,4 +257,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 ---
 
-*最后更新：2026-08-24 | M5.3.3 COMPLETE — 完成后停止，不进入后续里程碑*
+*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与用户资源管理最终收口，M5.5 Deferred*

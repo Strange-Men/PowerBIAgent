@@ -34,17 +34,19 @@ const report: ConversationReportItem = {
 
 afterEach(() => vi.unstubAllGlobals())
 
-function renderSidebar() {
+function renderSidebar(currentConversation: ConversationSummary = conversation) {
   const onRename = vi.fn().mockResolvedValue(undefined)
   const onArchive = vi.fn().mockResolvedValue(undefined)
   const onDelete = vi.fn().mockResolvedValue(undefined)
   const onRestore = vi.fn().mockResolvedValue(undefined)
   const onDeleteReport = vi.fn().mockResolvedValue(undefined)
+  const onRenameReport = vi.fn().mockResolvedValue(undefined)
+  const batchResult = { succeededIds: [], failed: [] }
   render(
     <Sidebar
       collapsed={false}
       activeConversationId={null}
-      conversations={[conversation]}
+      conversations={[currentConversation]}
       archivedConversations={[]}
       reports={[report]}
       error={null}
@@ -57,12 +59,23 @@ function renderSidebar() {
       onRestore={onRestore}
       onDelete={onDelete}
       onDeleteReport={onDeleteReport}
+      onRenameReport={onRenameReport}
+      onBulkDeleteConversations={vi.fn().mockResolvedValue(batchResult)}
+      onBulkRestoreConversations={vi.fn().mockResolvedValue(batchResult)}
+      onBulkDeleteReports={vi.fn().mockResolvedValue(batchResult)}
     />,
   )
   return { onRename, onArchive, onDelete, onRestore, onDeleteReport }
 }
 
 describe('Sidebar conversation management', () => {
+  it('keeps presentation actions available after a provisional conversation becomes ready', () => {
+    renderSidebar({ ...conversation, local_status: 'ready' })
+    fireEvent.click(screen.getByRole('button', { name: /管理对话：八月销售复盘/ }))
+    expect(screen.getByRole('menuitem', { name: /重命名/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /归档/ })).toBeInTheDocument()
+  })
+
   it('renames a conversation through the inline presentation title editor', async () => {
     const { onRename } = renderSidebar()
     fireEvent.click(screen.getByRole('button', { name: /管理对话：八月销售复盘/ }))
@@ -123,11 +136,28 @@ describe('Sidebar conversation management', () => {
         onRestore={onRestore}
         onDelete={vi.fn().mockResolvedValue(undefined)}
         onDeleteReport={vi.fn().mockResolvedValue(undefined)}
+        onRenameReport={vi.fn().mockResolvedValue(undefined)}
+        onBulkDeleteConversations={vi.fn().mockResolvedValue({ succeededIds: [], failed: [] })}
+        onBulkRestoreConversations={vi.fn().mockResolvedValue({ succeededIds: [conversation.conversation_id], failed: [] })}
+        onBulkDeleteReports={vi.fn().mockResolvedValue({ succeededIds: [], failed: [] })}
       />,
     )
-    expect(screen.getByText('已归档')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /管理对话：八月销售复盘/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /恢复/ }))
-    await waitFor(() => expect(onRestore).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'PowerBIAgent 用户' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '已归档' }))
+    expect(screen.getByRole('heading', { name: '已归档' })).toBeInTheDocument()
+    expect(screen.getByText('八月销售复盘')).toBeInTheDocument()
+    expect(onRestore).not.toHaveBeenCalled()
+  })
+
+  it('shows pending status immediately and keeps recent/report sections collapsible', () => {
+    renderSidebar()
+    expect(screen.getByRole('button', { name: '最近对话' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    fireEvent.click(screen.getByRole('button', { name: '最近对话' }))
+    expect(screen.queryByText('八月销售复盘')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '最近报表' }))
+    expect(screen.queryByText('销售分析报告')).not.toBeInTheDocument()
   })
 })

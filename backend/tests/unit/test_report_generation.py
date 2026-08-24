@@ -39,6 +39,7 @@ from backend.app.report.resources import (
     ReportArtifact,
     ReportDeleteResult,
     ReportNotFoundError,
+    ReportRenameResult,
     ReportRepository,
     ReportStorageError,
 )
@@ -516,6 +517,11 @@ class _FailingReportRepository(ReportRepository):
 
     async def delete(self, report_id: str) -> ReportDeleteResult:
         raise ReportStorageError("forced_delete_failure")
+
+    async def rename(
+        self, report_id: str, display_title: str
+    ) -> ReportRenameResult:
+        raise ReportStorageError("forced_rename_failure")
 
 
 class _CountingReportRepository(InMemoryReportRepository):

@@ -283,12 +283,30 @@ def test_report_delete_api_is_explicit_and_not_a_toolgateway_capability() -> Non
     app = create_app(settings=Settings(_env_file=None))
     app.dependency_overrides[get_report_repository] = lambda: repository
     with TestClient(app) as client:
+        original = client.get(f"/api/reports/{artifact.report_id}")
+        original_etag = original.headers["etag"]
+        renamed = client.patch(
+            f"/api/reports/{artifact.report_id}",
+            json={"display_title": "区域销售报告"},
+        )
+        unchanged = client.get(f"/api/reports/{artifact.report_id}")
         deleted = client.delete(f"/api/reports/{artifact.report_id}")
         missing = client.get(f"/api/reports/{artifact.report_id}")
+        rename_missing = client.patch(
+            f"/api/reports/{artifact.report_id}",
+            json={"display_title": "不可复活"},
+        )
         allowed_tools = app.state.mock_turn_service.tool_gateway.list_tools()
 
+    assert renamed.status_code == 200
+    assert renamed.json()["display_title"] == "区域销售报告"
+    assert unchanged.headers["etag"] == original_etag
     assert deleted.status_code == 200
     assert deleted.json()["conversation_id"] == "conversation-kept"
     assert deleted.json()["deleted"] is True
     assert missing.status_code == 404
-    assert all("delete" not in name for name in allowed_tools)
+    assert rename_missing.status_code == 404
+    assert all(
+        "delete" not in name and "rename" not in name
+        for name in allowed_tools
+    )

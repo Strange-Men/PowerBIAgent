@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v1.7
+> **修订版本：** v1.8
 > **修订日期：** 2026-08-24
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** 固化 M5.3.3 多轮省略项继承、readonly unsupported、archive/restore/delete、独立 report delete、异步 conversation 隔离与 artifact lifecycle；North Star 与 factual authority 不变
+> **本轮修订范围：** 固化 M5.4 conversation-scoped UI/runtime state、client UUID provisional identity、异会话并发/同会话串行、pending Sidebar、用户卡片与 bounded 资源管理、report tombstone 与 presentation-only rename；North Star 与 factual authority 不变
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -103,9 +103,26 @@ React + Vite
 - 展示型 transcript、自动标题与 namespace-scoped 重命名、归档、删除
 - “已归档”入口与恢复；归档保留 History/Memory/report/HTML，删除才永久清理
 - 最近报表的显式人工删除；只删除 report，不删除所属 conversation
-- 用户信息和菜单
+- 发送首条消息后立即显示的 local pending conversation，不等待后端完成
+- 最近会话和最近报表独立滚动/折叠，不无限加载或撑高 Sidebar
+- 可点击用户卡片，保留用户名和“内部用户”标识，作为设置、已归档和资源管理入口
 
-> **M3/M4/M5 边界：** M3 完成报表渲染、资源 ID、查看/下载等后端能力；M4 完成会话历史、搜索和持久化等后端能力；左侧栏 React UI、最近报表/对话、搜索和会话管理已在 M5 实现。展示型 transcript/title 不进入 Memory 或业务事实链。
+> **M3/M4/M5 边界：** M3 完成报表渲染、资源 ID、查看/下载；M4 完成会话持久化/history/search/archive/delete；M5.4 只完善多会话 UI 状态与人工资源管理。展示型 transcript/title/report `display_title`/tombstone 不进入 Memory、ReportSpec 或业务事实链。
+
+### 多会话运行规则（M5.4）
+
+- 每个 conversation 拥有独立 messages、pending requests、sending、history loading、error 和 status；当前页面只额外维护 `activeConversationId`。
+- 点击新聊天只创建本地 session；首次发送时生成 UUID，直接作为现有 Chat API `conversation_id`，不新增 backend provisional entity。
+- 不同 conversation 可同时执行；同一 conversation 请求仍串行，只禁用自己的 Composer。
+- history/navigation 请求可取消 stale response；正在执行的 business chat 归属 conversation，切窗不取消、完成不自动跳回。
+- Sidebar 合并 persisted summary 与 local pending session；失败 session 保留以便重试或人工删除。
+
+### 设置与资源管理（M5.4）
+
+- 设置中提供最近对话、已归档和最近报表三个区域，支持 checkbox、全选当前加载范围和最多 20 项的 bounded 批量操作。
+- 批量删除/恢复由前端协调正式单资源 API；不新增 `DELETE ALL`，不绕过 durable delete，部分失败必须保留并逐项显示原因。
+- report 独立删除后历史消息保留 `deleted` tombstone，不重建 ReportArtifact；view/download 不再可用。
+- report rename 只修改 `display_title`；`report_id`、HTML、`content_hash`、ReportSpec 与 VerifiedFactSet 不变。rename/delete 不进 ToolGateway，LLM 和自然语言无资源变更权。
 
 ### 输入框组件
 
@@ -130,7 +147,7 @@ AI 回答不是只能返回纯文本。同一条 AI 消息现在可以按实际�
 
 ### 前端开发策略
 
-前端已在 M5 完成 React 实现、Real 联调、结构化结果、responsive、accessibility 与状态视觉收口；后续不扩展新前端能力，除非另有明确里程碑批准。
+M5.4 只收口多会话状态、用户卡片与资源管理。语言理解/近义词、中文字段 Localization Registry、单指标展示策略、report HTML 视觉重构与性能 profiling/cache 全部 Deferred 至 M5.5，本轮不提前开发。
 
 ## 七、后端设计
 
@@ -227,6 +244,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 | `GET /api/reports/{report_id}` | ✅ 已实现；查看 repository-owned 静态 HTML |
 | `GET /api/reports/{report_id}/download` | ✅ 已实现；下载 UTF-8 HTML 报表 |
 | `DELETE /api/reports/{report_id}` | ✅ M5.3.3；显式人工删除 report metadata + managed HTML，conversation 保留；不属于 ToolGateway，LLM 无权限 |
+| `PATCH /api/reports/{report_id}` | 已实现；只允许修改 presentation-only `display_title` |
 | `GET /api/v1/conversations` | ✅ 已实现（SQLite 必填 runtime_mode） |
 | `GET /api/v1/conversations/search` | ✅ 已实现 |
 | `GET /api/v1/conversations/{id}/history` | ✅ 已实现 |
@@ -251,6 +269,8 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 10. **M5.3.1 Final Hardening** ✅ 已完成 — Local MCP 多 Desktop 在 Connect 前 fail closed，presentation 只投影 VerifiedFactSet 数据事实覆盖字段；无新产品能力或后续里程碑扩展
 11. **M5.3.2 Local MCP 多模型选择与协议稳定性加固** ✅ 已完成 — 多 PBIX 安全枚举、前端单选/刷新、opaque 精确实例绑定、只读 capability probe、stale fail-closed 与 row-limit/truncation 防腐；Remote MCP 继续 Deferred
 12. **M5.3.3 多轮语义、会话资源生命周期与仓库治理最终收口** ✅ 已完成 — LLM flexible draft + deterministic canonical resolution、fresh/follow-up/replace inheritance、unsupported preflight、archive/restore/report delete、conversation stale-response protection 与 Artifact Governance
+13. **M5.4 多会话并发、用户设置与资源管理最终收口** ✅ 已完成 — conversation-scoped state、client UUID pending session、异会话并发、用户卡片/设置、bounded bulk management、report tombstone/rename
+14. **M5.5** Deferred — 语言理解、字段中文化、报表视觉与性能优化未开始
 
 ## 十二、MVP 暂不包含
 
@@ -315,4 +335,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-24 | M5.3.3 COMPLETE；North Star 与 factual authority 不变*
+*修订日期：2026-08-24 | M5.4 COMPLETE；M5.5 Deferred；North Star 与 factual authority 不变*

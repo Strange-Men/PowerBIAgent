@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.3.3 — 多轮语义、会话资源生命周期与仓库治理最终收口已完成
+> **状态：** M5.4 — 多会话并发、用户设置与资源管理最终收口已完成
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -35,6 +35,8 @@
 | **M5.3.1** | **Local Desktop 单实例安全 + presentation verified-field projection** | **✅ 已完成** |
 | **M5.3.2** | **多 PBIX 选择、opaque instance binding 与 MCP beta 稳定性** | **✅ 已完成** |
 | **M5.3.3** | **多轮继承语义、conversation/report 生命周期与 Artifact Governance** | **✅ 已完成** |
+| **M5.4** | **conversation-scoped state、异会话并发、用户卡片/资源管理、report tombstone/rename** | **✅ 已完成** |
+| **M5.5** | **语言理解、字段中文化、视觉与性能优化** | **⏸ Deferred / NOT STARTED** |
 
 ## M3 合并与 CI truth
 
@@ -67,6 +69,9 @@
 | M5.3.2 Local MCP multi-model hardening | ✅ 多 PBIX safe catalog、逐 session opaque 精确绑定、只读 capability probe、stale/truncation fail closed |
 | Presentation transcript/title | ✅ Snapshot 保存 UI-only `user_message`/`presentation`；conversation title 自动生成、可重命名；不进入 Memory/factual authority |
 | Conversation/report management | ✅ 重命名、归档与现有 namespace DELETE；报表按所属 conversation 管理并复用 durable delete intent |
+| M5.4 concurrent sessions | ✅ `conversation_id → session`、client UUID pending row、异 conversation 并发/同 conversation 串行 |
+| M5.4 resource manager | ✅ 用户卡片、最多 20 项 bounded bulk orchestration、partial failure UI |
+| M5.4 report presentation lifecycle | ✅ deleted tombstone 与不改 hash/HTML/ReportSpec 的 `display_title` |
 | Persistence Architecture (M4.0) | ✅ ADR-012、SQLite/SQLAlchemy Async/Alembic、5 表 schema、migration 基线、Repository ABC |
 | Memory / Snapshot SQLite 实现 (M4.1) | ✅ SQLiteMemoryRepository + SQLiteSnapshotRepository production wiring、DB 级 partial unique index 并发安全、strict concurrent commit tests |
 | SQLite 错误语义硬化 (M4.1.1) | ✅ conversation root `INSERT OR IGNORE` 原子 upsert、`PersistenceRepositoryError`、locked/version_index 分类 helper |
@@ -147,6 +152,15 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 | 前端结构化表格/图表数据 | ✅ M5.3 从 QueryResult + VerifiedFactSet 确定性投影单一 dataset；blocks 只引用字段和 row，不从 answer/audit 反解析 |
 | Remote MCP 管理员与授权条件 | 重新批准 Remote 后 |
 
+## M5.4 不可退化契约
+
+- 新 conversation 首条消息发送后必须立即出现于 Sidebar；前端 UUID 直接作为现有 Chat `conversation_id`。
+- 不同 conversation 可并发；同 conversation 串行。loading/error/result 不跨 conversation，后台 chat 不因导航取消。
+- 用户卡片承载设置/已归档/资源管理；Sidebar 最近区可折叠、独立滚动、不无限加载。
+- archive ≠ delete；批量操作只协调单资源 API、最多 20 项，部分失败保留。
+- report delete 保留 transcript tombstone；rename 只修改 presentation `display_title`。LLM 无 rename/delete 权限。
+- M5.5 语言、中文字段、单指标展示、HTML 视觉和性能不在本轮开发。
+
 ## 当前真实风险
 
 - Simple M3 PBIX runtime `OrderDate` 为 `Int64`；Simple 模型无时间趋势能力（TIME_TREND UNAVAILABLE），不得伪装为 DateTime。Rich PBIX `OrderDate` 为 `DateTime` 且含 Date 表，趋势能力真实解析。
@@ -167,4 +181,11 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ---
 
-*最后更新：2026-08-24 | M5.3.3 COMPLETE — 多轮语义、会话资源生命周期与仓库治理最终收口*
+### M5.4 fresh evidence
+
+- Rich PBIX A/B/C 在同一浏览器中并发执行，Sidebar provisional row 立即可见；active C/B 不显示其他会话 loading，三个结果只写回所属 session，完成后不自动跳窗。
+- 用户卡片设置面板、归档/恢复、两次 report generation、rename、delete 后 history tombstone 已通过 Real Browser Acceptance；本轮 9 个测试 conversation 与关联 report 已经正式 API 精确清理。
+- Backend full `1790 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `61 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `117`、Repository Safety `290`、Error Ledger `25`、Documentation Governance、Artifact Governance 与 `git diff --check` PASS。
+- 新增 Alembic revision `a4f6b8c2d190`。LLM 无 conversation/report rename/delete tool；M0–M5 factual authority 不变；M5.5 未开始。
+
+*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与用户资源管理最终收口*

@@ -204,6 +204,7 @@ datefmt = %H:%M:%S
             "alembic_version", "conversations", "work_memories",
             "pending_clarifications", "result_snapshots", "report_artifacts",
             "conversation_delete_intents", "report_delete_intents",
+            "report_presentations",
         }
         missing = expected - tables
         assert not missing, f"Tables missing after migration: {missing}"
@@ -211,13 +212,69 @@ datefmt = %H:%M:%S
         conn = sqlite3.connect(tmp_db_path)
         cursor = conn.execute("SELECT version_num FROM alembic_version")
         version = cursor.fetchone()[0]
-        assert version == "e7a9c2d4f631"
+        assert version == "a4f6b8c2d190"
         conversation_columns = {
             row[1]
             for row in conn.execute("PRAGMA table_info(conversations)").fetchall()
         }
         conn.close()
         assert "title" in conversation_columns
+
+    def test_report_presentation_migration_backfills_existing_artifacts(self):
+        tmp_db_path = _tmp_db_path()
+        posix_path = Path(tmp_db_path).resolve().as_posix()
+        project_root = Path.cwd().resolve()
+        TestMigrationConstraints._run_alembic_upgrade(
+            tmp_db_path,
+            posix_path,
+            project_root,
+            target="e7a9c2d4f631",
+        )
+        report_id = "rpt_" + "a" * 32
+        with sqlite3.connect(tmp_db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO report_artifacts (
+                    report_id, conversation_id, request_id, template_key,
+                    semantic_model_key, schema_fingerprint, source_mode,
+                    content_hash, relative_path, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    report_id,
+                    "conv-existing",
+                    "req-existing",
+                    "sales_report",
+                    "model",
+                    "f" * 64,
+                    "real",
+                    "c" * 64,
+                    f"{report_id}.html",
+                    None,
+                ),
+            )
+        TestMigrationConstraints._run_alembic_upgrade(
+            tmp_db_path,
+            posix_path,
+            project_root,
+            target="head",
+        )
+        with sqlite3.connect(tmp_db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT source_mode, conversation_id, request_id,
+                       display_title, availability_status
+                FROM report_presentations WHERE report_id = ?
+                """,
+                (report_id,),
+            ).fetchone()
+        assert row == (
+            "real",
+            "conv-existing",
+            "req-existing",
+            "销售分析报告",
+            "available",
+        )
 
 
 # ===========================================================================
@@ -748,7 +805,7 @@ datefmt = %H:%M:%S
                 "SELECT version_num FROM alembic_version"
             ).fetchone()[0]
         assert after == ("conversation_delete_intents",)
-        assert version == "e7a9c2d4f631"
+        assert version == "a4f6b8c2d190"
 
     @staticmethod
     def _run_alembic_upgrade(

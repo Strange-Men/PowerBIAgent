@@ -319,6 +319,17 @@ PowerBIAgent/
 - 前端 history response 必须验证 active conversation 与 generation；open/new/delete/archive/restore/model switch 必须使旧请求失效。
 - local_state 只允许 persistence/reports/runtime/archive。测试 artifact 必须 Create → register ownership → use → teardown → verify cleanup；Artifact Gate 只读检测，不自动删除用户数据。
 
+### M5.4 多会话并发与资源管理硬规则
+
+- 会话 UI/runtime state 必须按 conversation 隔离；不同 conversation 可并发，同一 conversation 串行。`activeConversationId` 不得兼任全局请求状态。
+- 首次发送使用前端 UUID 作为正式 Chat `conversation_id`，Sidebar 立即显示 pending session，不新增 provisional backend entity。
+- history/navigation 可 Abort 并校验 generation/active identity；business chat 归属 conversation，切换窗口不取消、不自动跳转。
+- 用户卡片承载设置、已归档和资源管理入口；Sidebar 仅导航，最近会话/报表独立滚动或折叠。
+- 批量操作一次最多 20 项，只协调现有单资源 API；成功项移除、失败项保留并显示原因，不绕过 durable delete，archive 不等于 delete。
+- report tombstone 只是历史展示，不重建 ReportArtifact。`display_title` 只是 presentation metadata；report_id/HTML/content_hash/ReportSpec/VerifiedFactSet 不变。
+- report/conversation rename/delete/restore 只能由明确 UI 用户操作发起，不进 ToolGateway/LLM allowed tools；自然语言不得执行资源变更。
+- M5.5 的语言理解、中文字段、性能/cache、单指标策略与 report HTML 视觉继续 Deferred。
+
 ---
 
-*最后更新：2026-08-24 | M5.3.3 COMPLETE — 多轮语义与资源生命周期硬规则已实施*
+*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与资源管理硬规则已固化并通过 fresh evidence*

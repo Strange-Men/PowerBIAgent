@@ -9,6 +9,7 @@ import {
   listRecentConversations,
   listRecentReports,
   renameConversation,
+  renameReport,
   restoreConversation,
   sendChat,
 } from './client'
@@ -209,5 +210,25 @@ describe('API namespace and chat mapping', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain('/api/reports/rpt-1')
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('DELETE')
     expect(String(fetchMock.mock.calls[0][0])).not.toContain('/conversations/')
+  })
+
+  it('renames one report through presentation-only resource metadata', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          report_id: 'rpt-1',
+          display_title: '区域销售报告',
+          availability_status: 'available',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await renameReport('rpt-1', '区域销售报告')
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/reports/rpt-1')
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('PATCH')
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      display_title: '区域销售报告',
+    })
   })
 })

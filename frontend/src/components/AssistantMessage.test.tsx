@@ -107,4 +107,32 @@ describe('AssistantMessage dynamic rendering', () => {
       '/api/reports/report-1/download',
     )
   })
+
+  it('renders a deleted report tombstone without view or download actions', () => {
+    render(
+      <AssistantMessage
+        message={{
+          id: 'deleted-report',
+          role: 'assistant',
+          kind: 'answer',
+          content: '曾生成报表。',
+          report: {
+            report_id: 'report-deleted',
+            template_key: 'sales_report',
+            contract_version: '2.0',
+            view_reference: '',
+            download_reference: '',
+            content_type: 'text/html; charset=utf-8',
+            content_hash: '',
+            display_title: '区域销售报告',
+            availability_status: 'deleted',
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByLabelText('已删除报表')).toHaveTextContent('区域销售报告')
+    expect(screen.getByText('此文件已不可查看或下载')).toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
 })

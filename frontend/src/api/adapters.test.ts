@@ -187,4 +187,22 @@ describe('history transcript projection', () => {
     expect(messages[0]).toMatchObject({ role: 'user', content: '查看华东销售额' })
     expect(messages[1]).toMatchObject({ role: 'assistant', restored: true })
   })
+
+  it('restores a deleted report as a tombstone even without artifact links', () => {
+    const deleted: ReportResource = {
+      report_id: 'report-deleted',
+      template_key: 'sales_report',
+      contract_version: '2.0',
+      display_title: '删除前标题',
+      availability_status: 'deleted',
+      view_reference: '',
+      download_reference: '',
+      content_type: 'text/html; charset=utf-8',
+      content_hash: '',
+    }
+    expect(chatResponseToMessage(response({ report: deleted })).report).toEqual(
+      deleted,
+    )
+    expect(isUsableReport(deleted)).toBe(false)
+  })
 })

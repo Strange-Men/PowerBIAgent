@@ -16,6 +16,8 @@ export interface ReportResource {
   download_reference: string
   content_type: string
   content_hash: string
+  display_title?: string
+  availability_status?: 'available' | 'deleted'
 }
 
 export type PresentationCell = string | number | boolean | null
@@ -106,6 +108,8 @@ export interface ConversationSummary {
   latest_terminal_state: string | null
   latest_response_type: string | null
   latest_analysis_goal: string | null
+  local_status?: 'processing' | 'failed' | 'ready'
+  local_error?: string | null
 }
 
 export interface ConversationListPage {
@@ -120,6 +124,12 @@ export interface ReportDeleteResult {
   conversation_id: string | null
   request_id: string | null
   deleted: boolean
+}
+
+export interface ReportRenameResult {
+  report_id: string
+  display_title: string
+  availability_status: 'available'
 }
 
 export interface ConversationHistoryItem {
@@ -186,6 +196,30 @@ export interface AssistantMessage {
 }
 
 export type ConversationMessage = UserMessage | AssistantMessage
+
+export type ConversationSessionStatus =
+  | 'draft'
+  | 'processing'
+  | 'ready'
+  | 'failed'
+
+export interface ConversationSession {
+  clientConversationId: string
+  serverConversationId?: string
+  title: string
+  messages: ConversationMessage[]
+  pendingRequests: string[]
+  sending: boolean
+  loadingHistory: boolean
+  error: string | null
+  status: ConversationSessionStatus
+  restored: boolean
+}
+
+export interface BatchOperationResult {
+  succeededIds: string[]
+  failed: Array<{ id: string; reason: string }>
+}
 
 export interface CatalogOption {
   key: string

@@ -38,6 +38,10 @@ export function App() {
         onRestore={app.restore}
         onDelete={app.remove}
         onDeleteReport={app.removeReport}
+        onRenameReport={app.renameReport}
+        onBulkDeleteConversations={app.bulkRemoveConversations}
+        onBulkRestoreConversations={app.bulkRestoreConversations}
+        onBulkDeleteReports={app.bulkRemoveReports}
       />
       <main className="chat-main">
         {app.messages.length > 0 ? (

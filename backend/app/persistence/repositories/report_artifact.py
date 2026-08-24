@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import and_, delete, select
@@ -30,13 +31,16 @@ from backend.app.persistence.models import (
     ConversationDeleteIntentModel,
     ReportArtifactModel,
     ReportDeleteIntentModel,
+    ReportPresentationModel,
 )
 from backend.app.report.resources import (
     ReportArtifact,
     ReportArtifactMetadata,
     ReportNotFoundError,
+    ReportRenameResult,
     ReportStorageError,
     _build_metadata_json,
+    _normalize_display_title,
 )
 
 
@@ -63,6 +67,9 @@ _AUTHORITY_COLUMNS = (
     "content_hash",
     "relative_path",
 )
+_DEFAULT_DISPLAY_TITLE = "销售分析报告"
+_AVAILABLE = "available"
+_DELETED = "deleted"
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +92,7 @@ class ReportArtifactRepository:
         conversation_id: str | None = None,
         request_id: str | None = None,
         relative_path: str | None = None,
+        display_title: str | None = None,
     ) -> None:
         """Persist report metadata."""
         raise NotImplementedError
@@ -104,6 +112,10 @@ class ReportArtifactRepository:
 
     async def begin_delete(self, report_id: str) -> ReportArtifact:
         """Persist delete intent and hide metadata in one transaction."""
+        raise NotImplementedError
+
+    async def rename(self, report_id: str, display_title: str) -> ReportRenameResult:
+        """Update mutable presentation title without touching factual metadata."""
         raise NotImplementedError
 
     async def complete_delete(self, report_id: str) -> None:
@@ -319,6 +331,60 @@ def _delete_payload_to_artifact(payload_json: str) -> ReportArtifact:
     return _metadata_to_artifact(metadata)
 
 
+def _utc_now_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _validate_presentation_linkage(
+    row: ReportPresentationModel,
+    artifact: ReportArtifact,
+) -> None:
+    expected = (
+        artifact.source_mode,
+        _normalize_nullable_string(artifact.conversation_id),
+        _normalize_nullable_string(artifact.request_id),
+    )
+    actual = (
+        row.source_mode,
+        _normalize_nullable_string(row.conversation_id),
+        _normalize_nullable_string(row.request_id),
+    )
+    if actual != expected or row.availability_status not in {_AVAILABLE, _DELETED}:
+        raise ReportStorageError("report_presentation_coherence_violation")
+
+
+async def _ensure_presentation(
+    session: AsyncSession,
+    artifact: ReportArtifact,
+    *,
+    display_title: str | None = None,
+    availability_status: str = _AVAILABLE,
+) -> ReportPresentationModel:
+    result = await session.execute(
+        select(ReportPresentationModel).where(
+            ReportPresentationModel.report_id == artifact.report_id
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is not None:
+        _validate_presentation_linkage(row, artifact)
+        return row
+    normalized_title = _normalize_display_title(
+        display_title or _DEFAULT_DISPLAY_TITLE
+    )
+    row = ReportPresentationModel(
+        report_id=artifact.report_id,
+        source_mode=artifact.source_mode,
+        conversation_id=artifact.conversation_id,
+        request_id=artifact.request_id,
+        display_title=normalized_title,
+        availability_status=availability_status,
+        deleted_at=_utc_now_naive() if availability_status == _DELETED else None,
+    )
+    session.add(row)
+    return row
+
+
 class SQLiteReportArtifactRepository(ReportArtifactRepository):
     """Report metadata repository backed by SQLite.
 
@@ -339,6 +405,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
         conversation_id: str | None = None,
         request_id: str | None = None,
         relative_path: str | None = None,
+        display_title: str | None = None,
     ) -> None:
         """Insert immutable metadata or accept an identical idempotent save."""
         # M4.2.1: fall back to artifact fields if kwargs not provided
@@ -351,6 +418,9 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
             conversation_id=conversation_id,
             request_id=request_id,
             relative_path=relative_path,
+        )
+        normalized_title = _normalize_display_title(
+            display_title or _DEFAULT_DISPLAY_TITLE
         )
         async with self._session_factory() as session:
             async with session.begin():
@@ -381,11 +451,40 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
                 existing = result.scalar_one_or_none()
                 if existing:
                     if _row_matches_values(existing, values):
+                        presentation = await _ensure_presentation(
+                            session,
+                            artifact.model_copy(
+                                update={
+                                    "conversation_id": values["conversation_id"],
+                                    "request_id": values["request_id"],
+                                }
+                            ),
+                            display_title=normalized_title,
+                        )
+                        if presentation.availability_status != _AVAILABLE:
+                            raise ReportStorageError("report_deleted")
                         return
                     raise ReportStorageError("report_artifact_identity_collision")
                 else:
+                    presentation_result = await session.execute(
+                        select(ReportPresentationModel.report_id).where(
+                            ReportPresentationModel.report_id == artifact.report_id
+                        )
+                    )
+                    if presentation_result.scalar_one_or_none() is not None:
+                        raise ReportStorageError("report_artifact_identity_collision")
                     model = ReportArtifactModel(**values)
                     session.add(model)
+                    await _ensure_presentation(
+                        session,
+                        artifact.model_copy(
+                            update={
+                                "conversation_id": values["conversation_id"],
+                                "request_id": values["request_id"],
+                            }
+                        ),
+                        display_title=normalized_title,
+                    )
                 await session.flush()
 
     async def get(self, report_id: str) -> ReportArtifact:
@@ -424,7 +523,16 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
                 )
                 intent = intent_result.scalar_one_or_none()
                 if intent is not None:
-                    return _delete_payload_to_artifact(intent.payload_json)
+                    artifact = _delete_payload_to_artifact(intent.payload_json)
+                    presentation = await _ensure_presentation(
+                        session,
+                        artifact,
+                        availability_status=_DELETED,
+                    )
+                    presentation.availability_status = _DELETED
+                    presentation.deleted_at = presentation.deleted_at or _utc_now_naive()
+                    presentation.updated_at = _utc_now_naive()
+                    return artifact
 
                 row_result = await session.execute(
                     select(ReportArtifactModel).where(
@@ -435,6 +543,12 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
                 if row is None:
                     raise ReportNotFoundError("report_not_found")
                 artifact = _model_to_artifact(row)
+                presentation = await _ensure_presentation(session, artifact)
+                if presentation.availability_status != _AVAILABLE:
+                    raise ReportStorageError("report_presentation_coherence_violation")
+                presentation.availability_status = _DELETED
+                presentation.deleted_at = _utc_now_naive()
+                presentation.updated_at = _utc_now_naive()
                 session.add(
                     ReportDeleteIntentModel(
                         report_id=artifact.report_id,
@@ -447,6 +561,30 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
                 await session.delete(row)
                 await session.flush()
                 return artifact
+
+    async def rename(self, report_id: str, display_title: str) -> ReportRenameResult:
+        normalized_title = _normalize_display_title(display_title)
+        async with self._session_factory() as session:
+            async with session.begin():
+                result = await session.execute(
+                    select(ReportArtifactModel).where(
+                        ReportArtifactModel.report_id == report_id
+                    )
+                )
+                row = result.scalar_one_or_none()
+                if row is None:
+                    raise ReportNotFoundError("report_not_found")
+                artifact = _model_to_artifact(row)
+                presentation = await _ensure_presentation(session, artifact)
+                if presentation.availability_status != _AVAILABLE:
+                    raise ReportNotFoundError("report_not_found")
+                presentation.display_title = normalized_title
+                presentation.updated_at = _utc_now_naive()
+                await session.flush()
+                return ReportRenameResult(
+                    report_id=report_id,
+                    display_title=normalized_title,
+                )
 
     async def complete_delete(self, report_id: str) -> None:
         async with self._session_factory() as session:
@@ -486,6 +624,8 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
     def __init__(self) -> None:
         self._items: dict[str, ReportArtifact] = {}
         self._delete_intents: dict[str, ReportArtifact] = {}
+        self._display_titles: dict[str, str] = {}
+        self._deleted_presentations: set[str] = set()
         self._lock = asyncio.Lock()
 
     async def save(
@@ -495,6 +635,7 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
         conversation_id: str | None = None,
         request_id: str | None = None,
         relative_path: str | None = None,
+        display_title: str | None = None,
     ) -> None:
         values = _artifact_to_model_values(
             artifact,
@@ -509,6 +650,9 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
                 "relative_path": values["relative_path"],
             }
         )
+        normalized_title = _normalize_display_title(
+            display_title or _DEFAULT_DISPLAY_TITLE
+        )
         async with self._lock:
             existing = self._items.get(artifact.report_id)
             if existing is not None:
@@ -519,9 +663,15 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
                     relative_path=existing.relative_path,
                 )
                 if _metadata_values_match(existing_values, values):
+                    if artifact.report_id in self._deleted_presentations:
+                        raise ReportStorageError("report_deleted")
+                    self._display_titles.setdefault(artifact.report_id, normalized_title)
                     return
                 raise ReportStorageError("report_artifact_identity_collision")
+            if artifact.report_id in self._display_titles:
+                raise ReportStorageError("report_artifact_identity_collision")
             self._items[artifact.report_id] = canonical
+            self._display_titles[artifact.report_id] = normalized_title
 
     async def get(self, report_id: str) -> ReportArtifact:
         async with self._lock:
@@ -543,7 +693,19 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
             if artifact is None:
                 raise ReportNotFoundError("report_not_found")
             self._delete_intents[report_id] = artifact
+            self._deleted_presentations.add(report_id)
             return artifact
+
+    async def rename(self, report_id: str, display_title: str) -> ReportRenameResult:
+        normalized_title = _normalize_display_title(display_title)
+        async with self._lock:
+            if report_id not in self._items or report_id in self._deleted_presentations:
+                raise ReportNotFoundError("report_not_found")
+            self._display_titles[report_id] = normalized_title
+            return ReportRenameResult(
+                report_id=report_id,
+                display_title=normalized_title,
+            )
 
     async def complete_delete(self, report_id: str) -> None:
         async with self._lock:

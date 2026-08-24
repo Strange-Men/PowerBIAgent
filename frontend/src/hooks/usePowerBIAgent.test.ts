@@ -90,7 +90,7 @@ describe('semantic-model catalog selection', () => {
 })
 
 describe('independent report removal projection', () => {
-  it('removes only the deleted attachment and leaves the conversation text', () => {
+  it('keeps a presentation tombstone and leaves the conversation text', () => {
     const messages = withoutDeletedReport([
       { id: 'user-1', role: 'user', content: '生成报告' },
       {
@@ -119,7 +119,16 @@ describe('independent report removal projection', () => {
     ], 'rpt-1')
 
     expect(messages).toHaveLength(2)
-    expect(messages[1]).not.toHaveProperty('report')
+    expect(messages[1]).toMatchObject({
+      report: {
+        report_id: 'rpt-1',
+        display_title: '销售分析报告',
+        availability_status: 'deleted',
+        view_reference: '',
+        download_reference: '',
+        content_hash: '',
+      },
+    })
     expect(messages[1]).toMatchObject({ content: '报告已生成' })
   })
 })

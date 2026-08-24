@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.app.persistence.serialization import domain_to_json
 from backend.app.schemas.data_contracts import RenderedReport, ReportSpec
@@ -45,6 +45,28 @@ class ReportDeleteResult(BaseModel):
     conversation_id: str | None = None
     request_id: str | None = None
     deleted: bool = True
+
+    model_config = ConfigDict(frozen=True)
+
+
+class ReportRenameRequest(BaseModel):
+    display_title: str = Field(min_length=1, max_length=120)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("display_title")
+    @classmethod
+    def validate_display_title(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("invalid_report_display_title")
+        return normalized
+
+
+class ReportRenameResult(BaseModel):
+    report_id: str
+    display_title: str
+    availability_status: Literal["available"] = "available"
 
     model_config = ConfigDict(frozen=True)
 
@@ -193,6 +215,11 @@ class ReportRepository(ABC):
         """Delete one report resource; this is never an Agent tool."""
         ...
 
+    @abstractmethod
+    async def rename(self, report_id: str, display_title: str) -> ReportRenameResult:
+        """Rename presentation metadata only; factual artifact bytes stay immutable."""
+        ...
+
     async def delete_html_files(self, report_ids: list[str]) -> None:
         """Delete repository-owned HTML bytes after metadata cascade.
 
@@ -206,6 +233,15 @@ class ReportRepository(ABC):
 def _validate_report_id(report_id: str) -> None:
     if not _REPORT_ID_PATTERN.fullmatch(report_id):
         raise ReportNotFoundError("report_not_found")
+
+
+def _normalize_display_title(display_title: str) -> str:
+    if not isinstance(display_title, str):
+        raise ReportStorageError("invalid_report_display_title")
+    normalized = display_title.strip()
+    if not normalized or len(normalized) > 120:
+        raise ReportStorageError("invalid_report_display_title")
+    return normalized
 
 
 def _validated_html_bytes(html: str) -> bytes:
@@ -286,6 +322,7 @@ class InMemoryReportRepository(ReportRepository):
 
     def __init__(self) -> None:
         self._items: dict[str, tuple[ReportArtifact, bytes]] = {}
+        self._display_titles: dict[str, str] = {}
         self._lock = asyncio.Lock()
 
     async def store(
@@ -305,6 +342,7 @@ class InMemoryReportRepository(ReportRepository):
                 request_id=request_id,
             )
             self._items[report_id] = (artifact, content)
+            self._display_titles[report_id] = _normalize_display_title(report.title)
             return artifact
 
     async def get(self, report_id: str) -> ReportArtifact:
@@ -345,6 +383,15 @@ class InMemoryReportRepository(ReportRepository):
                 conversation_id=artifact.conversation_id,
                 request_id=artifact.request_id,
             )
+
+    async def rename(self, report_id: str, display_title: str) -> ReportRenameResult:
+        _validate_report_id(report_id)
+        normalized = _normalize_display_title(display_title)
+        async with self._lock:
+            if report_id not in self._items:
+                raise ReportNotFoundError("report_not_found")
+            self._display_titles[report_id] = normalized
+            return ReportRenameResult(report_id=report_id, display_title=normalized)
 
     def _new_id(self) -> str:
         while True:
@@ -424,6 +471,7 @@ class LocalReportRepository(ReportRepository):
                         conversation_id=conversation_id,
                         request_id=request_id,
                         relative_path=relative_path,
+                        display_title=report.title,
                     )
                 except Exception:
                     # Metadata persistence failed — clean up the temp HTML
@@ -493,6 +541,19 @@ class LocalReportRepository(ReportRepository):
                 conversation_id=artifact.conversation_id,
                 request_id=artifact.request_id,
             )
+
+    async def rename(self, report_id: str, display_title: str) -> ReportRenameResult:
+        """Update only the presentation title for one available report."""
+
+        _validate_report_id(report_id)
+        normalized = _normalize_display_title(display_title)
+        async with self._lock:
+            if self._metadata_repo is None:
+                await self._resolve_artifact(report_id)
+                return ReportRenameResult(
+                    report_id=report_id, display_title=normalized
+                )
+            return await self._metadata_repo.rename(report_id, normalized)
 
     def _validate_path(self, artifact: ReportArtifact) -> Path:
         """Validate and resolve the relative_path as the recovery authority.
