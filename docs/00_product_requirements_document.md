@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v1.9
-> **修订日期：** 2026-08-24
+> **修订版本：** v2.0
+> **修订日期：** 2026-08-25
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** 固化 M5.4.1 Settings Hub、全量 conversation/report 分页、准确选择语义、bounded destructive waves 与 automation-owned artifact teardown；North Star 与 factual authority 不变
+> **本轮修订范围：** 固化 M5.5 三层 capability、Localization Registry、Presentation 中文化/格式化、报表 safe geometry/responsive 与 phase timing；North Star 与 factual authority 不变
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -155,9 +155,14 @@ AI 回答不是只能返回纯文本。同一条 AI 消息现在可以按实际�
 
 > **重要：** M5.3 已实现只读 `PresentationEnvelope`。metric/table/chart block 只引用由 QueryResult 与 VerifiedFactSet 直接投影的一份 dataset；额外的未验证 QueryResult 字段不会进入 presentation。系统不从 answer/audit 反解析数据，也不允许 LLM 或前端造数。饼图、散点图、任意 ChartSpec、前端聚合与通用趋势推断仍未实现。
 
-### 前端开发策略
+### M5.5 最终展示与性能合同
 
-M5.4.1 只修复 Settings 全量资源生命周期与 automation artifact governance。语言理解/近义词、中文字段 Localization Registry、单指标展示策略、report HTML 视觉重构与性能 profiling/cache 全部 Deferred 至 M5.5，本轮不提前开发。
+- 高置信危险表达先由 deterministic fast-path 拒绝；其余语言由 bounded capability enum 提供弱信号，普通代码最终决定 supported / clarification / unsupported。
+- display localization 的优先级为 model metadata → model-scoped glossary → persisted registry → bounded LLM translation。每条记录绑定 model/object/type/canonical/locale/source/schema identity；LLM 只能翻译已存在对象的 display name。
+- Presentation 同时保留 canonical identity 与 display metadata。单 scalar 只显示自然中文文本；多 KPI 才显示 cards；grouped 为 text + table，适合比较时加 bar；trend 为 text + table + line。
+- integer/decimal/percentage/date/month/null 由确定性 formatter 展示，底层事实值保持不变。
+- `sales_report` 使用 safe plot geometry 与 fluid layout；无空 section/placeholder，单 section 铺开、pair 才双列、小屏单列。
+- 先记录 intent/capability/schema/member/grounding/MCP/DAX/fact/answer/report/persistence/total timing，再只优化经 profiling 证明的瓶颈。cache 必须 model/instance/schema scoped 并可失效。
 
 ## 七、后端设计
 
@@ -280,7 +285,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 11. **M5.3.2 Local MCP 多模型选择与协议稳定性加固** ✅ 已完成 — 多 PBIX 安全枚举、前端单选/刷新、opaque 精确实例绑定、只读 capability probe、stale fail-closed 与 row-limit/truncation 防腐；Remote MCP 继续 Deferred
 12. **M5.3.3 多轮语义、会话资源生命周期与仓库治理最终收口** ✅ 已完成 — LLM flexible draft + deterministic canonical resolution、fresh/follow-up/replace inheritance、unsupported preflight、archive/restore/report delete、conversation stale-response protection 与 Artifact Governance
 13. **M5.4 多会话并发、用户设置与资源管理最终收口** ✅ 已完成 — conversation-scoped state、client UUID pending session、异会话并发、用户卡片/设置、bounded bulk management、report tombstone/rename
-14. **M5.5** Deferred — 语言理解、字段中文化、报表视觉与性能优化未开始
+14. **M5.5** ✅ 已完成 — 三层 capability、通用 Localization Registry、中文 display metadata、确定性格式化、单 scalar 去冗余、报表 safe geometry/responsive 与安全 profiling；M5 正式结束
 
 ## 十二、MVP 暂不包含
 
@@ -345,4 +350,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-24 | M5.4.1 COMPLETE；M5.5 Deferred；North Star 与 factual authority 不变*
+*修订日期：2026-08-25 | M5.5 COMPLETE；M5 正式结束，North Star 与 factual authority 不变*

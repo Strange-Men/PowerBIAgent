@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from backend.app.facts.verified import FactType, VerifiedFactSet
+from backend.app.localization.models import ResolvedLocalization
+from backend.app.presentation.formatter import PresentationValueFormatter
 from backend.app.presentation.models import (
     ChartPresentationBlock,
     MetricPresentationBlock,
     PresentationDataset,
     PresentationEnvelope,
+    PresentationFieldMetadata,
     ReportPresentationBlock,
     TablePresentationBlock,
     TextPresentationBlock,
@@ -35,27 +38,41 @@ class StructuredPresentationBuilder:
         result: QueryResult,
         facts: VerifiedFactSet,
         answer_text: str,
+        localizations: dict[str, ResolvedLocalization] | None = None,
+        formatter: PresentationValueFormatter | None = None,
     ) -> PresentationEnvelope:
         cls._validate_authority(result, facts)
-        dataset = cls._project_verified_dataset(result, facts)
+        labels = localizations or {}
+        value_formatter = formatter or PresentationValueFormatter()
+        dataset = cls._project_verified_dataset(
+            result, facts, labels, value_formatter
+        )
         blocks: list[object] = [TextPresentationBlock(content=answer_text)]
 
-        for fact in facts.by_type(FactType.SCALAR_METRIC):
-            if not fact.source_fields or not fact.source_rows:
-                continue
-            blocks.append(
-                MetricPresentationBlock(
-                    data_reference=result.result_id,
-                    label=fact.measure or fact.source_fields[-1],
-                    value_field=fact.source_fields[-1],
-                    row_index=fact.source_rows[0],
+        scalar = facts.by_type(FactType.SCALAR_METRIC)
+        if len(scalar) > 1:
+            for fact in scalar:
+                if not fact.source_fields or not fact.source_rows:
+                    continue
+                value_field = fact.source_fields[-1]
+                localized = cls._localization(labels, value_field, fact.measure)
+                blocks.append(
+                    MetricPresentationBlock(
+                        data_reference=result.result_id,
+                        label=(
+                            localized.display_name
+                            if localized is not None
+                            else fact.measure or value_field
+                        ),
+                        value_field=value_field,
+                        row_index=fact.source_rows[0],
+                    )
                 )
-            )
 
         grouped = facts.by_type(FactType.GROUPED_METRIC)
         if grouped and dataset.rows:
             blocks.append(
-                TablePresentationBlock(data_reference=result.result_id)
+                TablePresentationBlock(data_reference=result.result_id, title="查询结果")
             )
             first = grouped[0]
             if len(first.source_fields) >= 2:
@@ -74,9 +91,12 @@ class StructuredPresentationBuilder:
                                 else "bar"
                             ),
                             title=(
-                                "趋势"
+                                f"{cls._display(labels, y_field)}趋势"
                                 if cls._is_time_series(plan, dataset, x_field)
-                                else "对比"
+                                else (
+                                    f"{cls._display(labels, y_field)}按"
+                                    f"{cls._display(labels, x_field)}对比"
+                                )
                             ),
                             x_field=x_field,
                             y_field=y_field,
@@ -125,6 +145,8 @@ class StructuredPresentationBuilder:
         cls,
         result: QueryResult,
         facts: VerifiedFactSet,
+        localizations: dict[str, ResolvedLocalization],
+        formatter: PresentationValueFormatter,
     ) -> PresentationDataset:
         verified_fields = {
             field
@@ -136,6 +158,18 @@ class StructuredPresentationBuilder:
             column for column in result.columns if column in verified_fields
         ]
         indexes = [result.columns.index(column) for column in columns]
+        display_metadata: dict[str, PresentationFieldMetadata] = {}
+        for column in columns:
+            localized = cls._localization(localizations, column)
+            if localized is not None:
+                display_metadata[column] = PresentationFieldMetadata(
+                    canonical_name=column,
+                    display_name=localized.display_name,
+                    object_identity=localized.object_identity,
+                    object_type=localized.object_type,
+                    localization_source=localized.source.value,
+                    schema_identity=localized.schema_identity,
+                )
         return PresentationDataset(
             result_id=result.result_id,
             verified_fact_set_id=facts.fact_set_id,
@@ -146,9 +180,43 @@ class StructuredPresentationBuilder:
                 [row[index] for index in indexes]
                 for row in result.rows
             ],
+            formatted_rows=[
+                [
+                    formatter.format(
+                        row[index],
+                        cls._localization(localizations, result.columns[index]),
+                    )
+                    for index in indexes
+                ]
+                for row in result.rows
+            ],
+            display_metadata=display_metadata,
             row_count=result.row_count,
             truncated=result.truncated,
         )
+
+    @staticmethod
+    def _localization(
+        localizations: dict[str, ResolvedLocalization],
+        *names: str | None,
+    ) -> ResolvedLocalization | None:
+        return next(
+            (
+                localizations[name]
+                for name in names
+                if name is not None and name in localizations
+            ),
+            None,
+        )
+
+    @classmethod
+    def _display(
+        cls,
+        localizations: dict[str, ResolvedLocalization],
+        name: str,
+    ) -> str:
+        localized = cls._localization(localizations, name)
+        return localized.display_name if localized is not None else name
 
     @staticmethod
     def _is_time_series(

@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复**。M4.4.2 FINAL PASS；M5.0—M5.4.1 已完成；M5.5 Deferred。
+当前版本：**M5.5 — 语义理解、中文展示、性能与报表视觉最终收口（COMPLETE）**。M4.4.2 FINAL PASS；M5.0—M5.5 已完成，M5 正式结束。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -25,9 +25,9 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M4.2** 已实现会话/报表恢复；M4.2.1 将 HTML authority 固定为 filesystem 并持久化 conversation/request linkage；M4.2.2 完成严格路径 containment 与 row/payload coherence。
 - **M4.2.3** 已完成持久化 invariant 最终收口：modern report payload 的 7 个 authority 字段缺失或与 DB row 冲突均 fail closed；`report_id` 为 immutable resource identity，仅完整 metadata 相同可幂等 no-op；conversation report history 固定以 `(source_mode, conversation_id)` 隔离 Mock/Real。M4.2 series FINAL PASS。
 - **M4.3** 已实现 SQLite recent/history/search/archive/delete API：所有 conversation 查询/变更必须显式 `(runtime_mode, conversation_id)` namespace，report history 必须显式 `(source_mode, conversation_id)`；history 只组合 persisted result snapshot、同 request committed memory 与严格 report metadata，不声称 message transcript；search 仅覆盖 committed `analysis_goal` 与 snapshot 的 answer/clarification/unsupported 文本；archive 逻辑隐藏，delete 物理清理同 namespace DB rows 与关联 HTML。新增 migration `f4c3a2b1907d`。
-- **M4.4** 已完成真实临时 SQLite + report filesystem 的 dispose/fresh-engine restart/crash acceptance：committed Memory 与 terminal Snapshot 可恢复；Memory 存在但 Snapshot 缺失视为 incomplete crash witness 并 fail closed；持久化 report snapshot 不再保存 HTML，重放必须从 filesystem 加载并校验；conversation delete 使用 durable delete intent 跨 DB commit/HTML cleanup 窗口重试，pending intent 阻止同 namespace 复活。新增 migration `c8d4e6f2a109`。**M4 FINAL PASS；M5 NOT STARTED。**
-- **M4.4.1** 已修复 committed canonical filter 损坏被静默丢弃的 fail-open：domain 反序列化与 StateTransition 均 deterministic fail closed，发生在 LLM/DAX/Power BI/新 Memory commit 之前；合法 legacy dict filter 与 legacy time string contract 保持不变。根 README 已重构为长期 Landing Page，并同步正式状态文档。无 schema change、无 migration。**M4.4.1 FINAL PASS；M5 NOT STARTED。**
-- **M4.4.2** 已完成 M0—M4 truth/persistence boundary 最终代码审计与收口：modern committed WorkMemory 只能从完整 `payload_json` 恢复，NULL/empty/malformed/incomplete/domain-invalid payload 及 row/payload 冲突全部 fail closed，禁止 partial column fallback；conversation-scoped MemoryRepository API 强制显式 runtime namespace，InMemory/SQLite 均严格隔离；terminal Snapshot row/payload integrity 与非 legacy committed time corruption 同样 fail closed。无 schema change、无 migration。**M4.4.2 FINAL PASS；M5 NOT STARTED。**
+- **M4.4** 已完成真实临时 SQLite + report filesystem 的 dispose/fresh-engine restart/crash acceptance：committed Memory 与 terminal Snapshot 可恢复；Memory 存在但 Snapshot 缺失视为 incomplete crash witness 并 fail closed；持久化 report snapshot 不再保存 HTML，重放必须从 filesystem 加载并校验；conversation delete 使用 durable delete intent 跨 DB commit/HTML cleanup 窗口重试，pending intent 阻止同 namespace 复活。新增 migration `c8d4e6f2a109`。**M4 FINAL PASS；M5 NOT STARTED（当时状态）。**
+- **M4.4.1** 已修复 committed canonical filter 损坏被静默丢弃的 fail-open：domain 反序列化与 StateTransition 均 deterministic fail closed，发生在 LLM/DAX/Power BI/新 Memory commit 之前；合法 legacy dict filter 与 legacy time string contract 保持不变。根 README 已重构为长期 Landing Page，并同步正式状态文档。无 schema change、无 migration。**M4.4.1 FINAL PASS；M5 NOT STARTED（当时状态）。**
+- **M4.4.2** 已完成 M0—M4 truth/persistence boundary 最终代码审计与收口：modern committed WorkMemory 只能从完整 `payload_json` 恢复，NULL/empty/malformed/incomplete/domain-invalid payload 及 row/payload 冲突全部 fail closed，禁止 partial column fallback；conversation-scoped MemoryRepository API 强制显式 runtime namespace，InMemory/SQLite 均严格隔离；terminal Snapshot row/payload integrity 与非 legacy committed time corruption 同样 fail closed。无 schema change、无 migration。**M4.4.2 FINAL PASS；M5 NOT STARTED（当时状态）。**
 - **M5.1** 已创建 React + Vite + TypeScript 前端，实现可折叠 Sidebar、欢迎/对话态、Composer、DeepSeek 单选、集中配置菜单，以及 Chat/Recent/Search/History/Reports 真实 API adapters。项目/账户保持纯展示；现有 Chat/History 不暴露 QueryResult rows/ChartSpec，前端不从审计或文字伪造表格/图表。**M5.1 COMPLETE。**
 - **M5.2** 已完成 Real 业务链路与前端逻辑收口：新增只读 `GET /api/v1/semantic-models`，前端动态使用后端 Desktop safe catalog/runtime namespace；SQLite conversation/restart/recent/search/history/report 已真实联调；`report_template_key` 仅为显式可选 override，未传时 report intent 由后端选择 registry-owned 默认 `sales_report`；完成 7-turn Real acceptance、最小错误分类和结构化表格/图表契约审计。**M5.2 COMPLETE。**
 - **M5.2.1** 已收口 discovery capability truthfulness：Mock discovery 只暴露可进入正式 Chat pipeline 的 `mock_sales_model`，`mock_satisfaction_model` 保留为测试 fixture 但不再作为正常可选项；Real Local MCP discovery 合同不变。根 README 增加醒目的本地 Power BI 真实模式启动说明，并与 `frontend/README.md` 统一中文表达。**M5.2.1 COMPLETE。**
@@ -35,8 +35,9 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.3.1** 已将 Local MCP Desktop contract 收紧为每个 discovery/schema/member/DAX session 只接受唯一实例，多个实例在 Connect 前 deterministic fail closed；`presentation` dataset 仅投影 VerifiedFactSet 数据事实 `source_fields` 覆盖列。无新 registry、无 M0–M4 authority 变化。**M5.3.1 COMPLETE。**
 - **M5.3.2** 已升级为多 PBIX 安全枚举与选择：后端生成不泄露连接属性的 deterministic opaque key；schema/member/DAX 每个 session 重新枚举并精确匹配唯一实例；逐 option 只读 MCP capability probe、stale fail-closed 与 DAX row shape/truncation 防腐完成。Remote MCP 继续 Deferred；无 migration、无 M0–M4 authority 变化。**M5.3.2 COMPLETE。**
 - **M5.3.3** 已完成多轮与资源生命周期最终收口：当前明确表达 > bounded LLM semantic draft > committed Memory；fresh/follow-up/replace 分离，unsupported 在 Memory/Grounding/DAX 前 fail closed；archive 可恢复且不等于 delete；report 只可由用户显式资源 API 独立删除；前端 history 使用 abort/generation/active identity 防串窗；local_state 与测试 artifact 由长期 ownership/cleanup gate 治理。新增 migration `e7a9c2d4f631`；Rich PBIX 八轮 Real 浏览器与资源生命周期验收通过。M0–M5 factual authority 不变。**M5.3.3 COMPLETE。**
-- **M5.4** 已完成 conversation-scoped UI/runtime state、client UUID provisional conversation、异 conversation 并发/同 conversation 串行、Sidebar pending row、用户卡片资源管理、最多 20 项 bounded bulk orchestration、report tombstone 与 presentation-only `display_title`。新增 migration `a4f6b8c2d190`；Rich PBIX A/B/C 并发、归档恢复、rename/delete/history tombstone 与资源清理 Real Browser Acceptance 通过。M5.5 语言理解、中文字段、性能、HTML 视觉继续 Deferred。**M5.4 COMPLETE。**
-- **M5.4.1** 已完成 Settings 独立全量 cursor pagination、active/archived conversation/report 管理、准确 total/loaded/selected 语义与最多 20 项一组的 bounded execution；同秒 SQLite cursor 使用 `julianday + stable ID` 防止重复页。automation-owned 资源显式登记 ownership，`finally` teardown 后验证 conversation/report/HTML/SQLite/delete-intent residual 为 0；无法证明 ownership 的现有资源一律保留。新增 migration `b7c9d2e4f610`。**M5.4.1 COMPLETE；M5.5 Deferred。**
+- **M5.4** 已完成 conversation-scoped UI/runtime state、client UUID provisional conversation、异 conversation 并发/同 conversation 串行、Sidebar pending row、用户卡片资源管理、最多 20 项 bounded bulk orchestration、report tombstone 与 presentation-only `display_title`。新增 migration `a4f6b8c2d190`；Rich PBIX A/B/C 并发、归档恢复、rename/delete/history tombstone 与资源清理 Real Browser Acceptance 通过。M5.5 语言理解、中文字段、性能、HTML 视觉继续 Deferred（当时状态）。**M5.4 COMPLETE。**
+- **M5.4.1** 已完成 Settings 独立全量 cursor pagination、active/archived conversation/report 管理、准确 total/loaded/selected 语义与最多 20 项一组的 bounded execution；同秒 SQLite cursor 使用 `julianday + stable ID` 防止重复页。automation-owned 资源显式登记 ownership，`finally` teardown 后验证 conversation/report/HTML/SQLite/delete-intent residual 为 0；无法证明 ownership 的现有资源一律保留。新增 migration `b7c9d2e4f610`。**M5.4.1 COMPLETE；M5.5 Deferred（当时状态）。**
+- **M5.5** 已完成 deterministic safety fast-path → bounded LLM capability enum → deterministic capability policy；增加 model/object/schema-scoped Localization Registry 与未知字段安全翻译；Presentation 保留 canonical identity 并使用中文 display metadata、确定性数值格式和单 scalar 纯文本策略；修复 `sales_report` SVG safe geometry 与 fluid responsive layout；全阶段 timing 与 Fake/Real profiling 证明外部 LLM/MCP/report query 为主要长尾，未加入无证据 cache。Rich PBIX readonly Browser Acceptance、四宽度 report geometry/visual、全量 tests/gates 与 automation residual=0 通过。Prediction/write-back/Remote MCP/新模板未实现。**M5.5 COMPLETE；M5 正式结束。**
 
 当前真实主链：
 
@@ -95,7 +96,12 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 24. M5.4.1：“全选当前已加载”只选择已加载行；只有基于明确后端查询条件与完整 ID 集合时才可称“选择全部匹配项”。UI 必须显示 total、loaded 与 selected 数量，全部历史可分页浏览且不得一次渲染无限 DOM。
 25. M5.4.1：浏览与选择数量不限于 20；单次 destructive execution wave 最多 20 项，前端可把一次用户确认的大批量操作自动分组，继续逐项调用正式单资源 API并精确汇总 partial failure。禁止 `DELETE ALL`。
 26. M5.4.1：Codex acceptance、pytest integration、browser/Real Smoke/MCP/report tests 创建的 conversation/report/file 必须携带可审计 test ownership（至少 test run identity 与 automation owner），在 `finally` 中通过正式 API/repository cleanup 并验证零残留。cleanup failure、pending intent、orphan 或本轮 test SQLite namespace residual 必须使 Gate FAIL。
-27. M5.4.1：test cleanup 只能处理已证明 automation-owned 的资源；标题、问题文本或“看起来像测试”不是 ownership 证据。不得删除无法确认 ownership 的用户资源；M5.5 继续 Deferred。
+27. M5.4.1：test cleanup 只能处理已证明 automation-owned 的资源；标题、问题文本或“看起来像测试”不是 ownership 证据。不得删除无法确认 ownership 的用户资源；M5.5 Deferred（当时状态）。
+28. M5.5：capability LLM 只输出 registry-owned enum、confidence 与当前输入 evidence span；最终 supported/clarification/unsupported 由普通代码决定，且 unsupported 必须在 Memory/Grounding/DAX/Power BI 前终止。
+29. M5.5：Localization 只处理 runtime schema 已存在且 exact identity 已确定的展示名；canonical QueryPlan/DAX/QueryResult/VerifiedFactSet/ReportSpec identity 不变。translation 绑定 semantic model、object 与 schema identity，schema 变化即失效，低置信度使用 humanized/canonical fallback。
+30. M5.5：Presentation 单 scalar 只显示本地化自然语言，不额外生成 KPI card；grouped 为 text + table，适合比较时加 bar；trend 为 text + table + line。格式化只改变展示，不改变底层事实值。
+31. M5.5：report line chart 的点、轴标签与 direct label 必须位于 safe plot；首/末锚点向内。布局必须 fluid，单 section 铺开、pair 才双列、小屏单列、无 section 无 placeholder。
+32. M5.5：phase timing 仅记录耗时与安全 diagnostic metadata，不记录 Secret、完整 prompt 或 raw response。cache 必须 model scoped，绑定 instance/schema identity 并可失效；不得绕过 Grounding、Layer 3、VerifiedFactSet 或实例复核。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前开发 M5、开发 Remote MCP；未经用户明确批准不得创建 Tag。
 
@@ -129,4 +135,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — Settings 全量资源生命周期与 automation 零残留治理；M5.5 Deferred*
+*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*

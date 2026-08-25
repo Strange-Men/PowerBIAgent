@@ -40,9 +40,9 @@
     line-height: 1.5;
   }
   .report {
-    max-width: 1024px;
+    width: min(100%, 1280px);
     margin: 0 auto;
-    padding: 24px 20px 40px;
+    padding: clamp(18px, 2.2vw, 32px) clamp(14px, 2.5vw, 32px) 40px;
   }
   .report-header { margin-bottom: 20px; }
   .report-header h1 {
@@ -97,11 +97,13 @@
   }
   .pair {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--gap);
     margin-bottom: var(--gap);
   }
-  .chart svg { display: block; width: 100%; height: auto; }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .chart-line { width: 100%; overflow: hidden; }
+  .chart-line svg { height: clamp(190px, 20vw, 250px); }
   .chart-axis-label {
     font-family: var(--font);
     font-size: 11px;
@@ -205,11 +207,14 @@
   /* donut */
   .chart-donut {
     display: grid;
-    grid-template-columns: 200px 1fr;
+    grid-template-columns: minmax(160px, 220px) minmax(220px, 1fr);
     align-items: center;
-    gap: 14px;
+    gap: clamp(14px, 2vw, 28px);
+    max-width: 760px;
+    margin: 0 auto;
   }
-  .donut-svg svg { max-width: 200px; }
+  .donut-svg { display: grid; place-items: center; }
+  .donut-svg svg { width: min(100%, 210px); }
   .donut-legend {
     list-style: none;
     margin: 0;
@@ -242,11 +247,22 @@
     color: var(--ink-muted);
     font-size: 11px;
     line-height: 1.7;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 14px;
+    overflow-wrap: anywhere;
+  }
+  .report-footer span:not(:last-child)::after { content: " ·"; }
+  @media (min-width: 1440px) {
+    .section-card { padding: 20px 24px; }
+    .pair { gap: 20px; }
   }
   @media (max-width: 760px) {
     .pair { grid-template-columns: 1fr; }
     .section-card.half { margin-bottom: var(--gap); }
     .chart-donut { grid-template-columns: 1fr; }
+    .donut-legend { width: min(100%, 520px); margin: 0 auto; }
+    .chart-line svg { height: 210px; }
   }
   @media (max-width: 430px) {
     .report { padding: 16px 12px 28px; }

@@ -29,6 +29,7 @@ from backend.app.harness.runtime.tool_gateway import (
 )
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
 from backend.app.harness.observability.trace_recorder import TraceRecorder
+from backend.app.harness.observability.phase_timing import PhaseTimingCollector
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.llm.base import LLMRequest, LLMTask
@@ -248,6 +249,7 @@ class MockTurnService:
         context: Optional[dict[str, Any]] = None,
         committed: Optional[StructuredWorkMemory] = None,
         pending_clarification: Optional[PendingClarificationContext] = None,
+        phase_timings: PhaseTimingCollector | None = None,
     ) -> dict[str, Any]:
         """Owner 执行 Mock LLM 管线（控制面由共享 TurnPipeline 骨架提供）"""
         # 确保 resolved_scenario 有效

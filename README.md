@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复**。M4.4.2 已最终验收；M5.0—M5.4.1 已完成；M5.5 Deferred。
+当前版本：**M5.5 — 语义理解、中文展示、性能与报表视觉最终收口（COMPLETE）**。M4.4.2 已最终验收；M5.0—M5.5 已完成，M5 正式结束。
 
 ## 项目概览
 
@@ -24,6 +24,7 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 - SQLite 提供重启恢复、结构化历史/搜索、可恢复归档、永久删除、独立 report 删除与崩溃后删除重试。
 - `(runtime_mode, conversation_id)` 和 `(source_mode, conversation_id)` 严格隔离 Mock/Real 状态与报表历史。
 - `presentation` 只读展示契约把已验证的单指标、表格、柱状图/折线图和报表附件安全交给前端；dataset 只投影 VerifiedFactSet 数据事实覆盖字段，内容块只保存引用。
+- M5.5 在不改变 canonical identity 与事实值的前提下增加 model-scoped 中文 display metadata、确定性数值格式和单 scalar 纯文本展示，并以三层 capability policy 拒绝预测、写入、删除与任意代码请求。
 - 展示型 transcript 与标题支持完整历史恢复、默认标题、重命名、归档和删除，不参与 Memory 或业务事实判断。
 
 ## 工作原理
@@ -66,6 +67,7 @@ LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI
 | 历史与搜索 | 仅 SQLite 支持最近会话、展示型 transcript、自动标题/重命名、有界搜索、archive/restore 与永久删除；旧会话只恢复真实已保存内容 |
 | 本地 Power BI | DeepSeek + 只读 Local Modeling MCP + Power BI Desktop；可同时安全枚举多个 PBIX，由前端单选后使用 opaque key 精确绑定；每次 schema/member/DAX 都重新枚举并只连接唯一匹配实例，stale/ambiguous identity fail closed；Real DAX/事实的 LLM 权限为 0 |
 | React 网页前端 | 完整历史恢复、已归档入口/恢复、独立 report 删除、A/B history stale-response 防护，以及文字/指标/表格/柱状图/折线图/报表附件动态渲染 |
+| M5.5 收口 | 三层 capability classification/policy、通用 Localization Registry、中文与数值展示、单 scalar 去冗余、现有 `sales_report` safe geometry/responsive、全阶段 timing |
 
 Local MCP 实机基线固定为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，并通过只读 schema + DAX 单行 capability probe 校验协议能力。Remote MCP 继续延期。M5.3.3 不改变 M0–M5 factual authority。
 
@@ -318,7 +320,7 @@ python -m alembic upgrade head
 | M5.3.3 | 已完成 — 多轮继承语义、unsupported preflight、archive/restore、独立 report delete、A/B 防串窗与 Artifact Governance |
 | M5.4 | 已完成 — conversation-scoped state、client UUID pending session、异会话并发、用户卡片/资源管理、report tombstone/rename |
 | M5.4.1 | 已完成 — Settings 独立全量分页、准确 selection/batch 语义与 automation-owned resource cleanup |
-| M5.5 | Deferred / NOT STARTED — 语义、中文字段、报表视觉与性能优化不在本轮 |
+| M5.5 | 已完成 — 三层 capability、本地化展示、确定性格式化、报表视觉与安全 profiling 最终收口 |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -345,4 +347,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源与 test-owned cleanup；M5.5 Deferred*
+*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*

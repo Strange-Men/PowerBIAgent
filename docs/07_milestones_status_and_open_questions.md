@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成
+> **状态：** M5.5 — 语义理解、中文展示、性能与报表视觉最终收口（COMPLETE）；M5 正式结束
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -37,7 +37,7 @@
 | **M5.3.3** | **多轮继承语义、conversation/report 生命周期与 Artifact Governance** | **✅ 已完成** |
 | **M5.4** | **conversation-scoped state、异会话并发、用户卡片/资源管理、report tombstone/rename** | **✅ 已完成** |
 | **M5.4.1** | **Settings Hub、全量 conversation/report 分页、准确全选语义与 automation artifact cleanup** | **✅ 已完成** |
-| **M5.5** | **语言理解、字段中文化、视觉与性能优化** | **⏸ Deferred / NOT STARTED** |
+| **M5.5** | **语言理解、字段中文化、视觉与性能优化** | **✅ 已完成** |
 
 ## M3 合并与 CI truth
 
@@ -133,9 +133,9 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - **M4.1.3**：locked failure 必须在原 transaction 退出（rollback）后再 fresh-session resolution；`commit()` 中捕获 locked 后只保存 context → `session.begin()` exit 后调用 resolver；`create_engine` 新增 `busy_timeout` 参数（测试 100ms，production 5000ms）；真实 2-engine SQLite lock integration test（Writer A hold lock → B commit hit lock → tx exit → fresh reread）、instrumented session-exit 顺序证明（`write_tx_enter → locked → write_tx_exit → fresh_session`）。M4.1 series final hardening。
 - **M4.2.3**：modern ReportArtifact payload 的 7 个 authority 字段 required；linkage nullable 但 DB 有值时 payload 不得缺失；row/payload 缺失或冲突统一 fail closed。`report_id` immutable，SQLite/InMemory 仅允许完整 metadata 相同的幂等 no-op；report history namespace 固定为 `(source_mode, conversation_id)`。M4.2 series FINAL PASS。
 - **M4.3**：新增 SQLite `ConversationHistoryRepository` + application query service + FastAPI endpoints。Conversation 方法强制 `runtime_mode`，report history 强制 `source_mode`；recent=`updated_at DESC, conversation_id ASC`，terminal snapshot transaction touch root；history authority=result snapshot + optional committed memory + strict report metadata，不提供 transcript；search 仅查 committed `analysis_goal` 与 snapshot answer/clarification/unsupported，不引入 FTS5；archive 逻辑隐藏，delete 物理级联同 namespace DB rows/HTML。Migration `f4c3a2b1907d` 增加 `archived_at` 与复合查询索引。
-- **M4.4**：使用临时真实 SQLite/report filesystem 与 dispose → fresh engine/session/repository/service 验证 restart。terminal Snapshot 是唯一 request replay authority；Memory-without-Snapshot 是 incomplete crash witness 并 fail closed。持久化 report snapshot 不保存 HTML，重放必须从 filesystem 加载并验证 metadata/hash/linkage/namespace。delete transaction 新增 durable intent，保存精确 report IDs/counts；HTML cleanup 成功后 finalize，失败或 crash 可由新实例重试，intent 期间拒绝同 namespace 复活。Migration `c8d4e6f2a109`；fresh 与 M4.3 → head PASS；backend `1681 passed, 1 skipped`。M4 FINAL PASS，M5 NOT STARTED。
-- **M4.4.1**：committed canonical filter 在 domain deserialize 时逐项验证；StateTransition 遇到 malformed filter 抛出稳定 corruption error，不再 `continue`。真实临时 SQLite restart regression 参数化覆盖 Mock/Real，同 namespace 不生成 LLM/DAX/Power BI 调用或新 memory version，另一 namespace 合法数据继续恢复。README 重构为长期 Landing Page，状态文档同步；无 migration。M4.4.1 FINAL PASS，M5 NOT STARTED。
-- **M4.4.2**：移除 committed WorkMemory payload 缺失时的 partial column fallback；modern payload 必须完整且通过 domain validation，并与 row integrity fields 一致。Memory conversation methods 的 runtime namespace 在 ABC/InMemory/SQLite 与 production callers 中 mandatory；修复 InMemory exact-ID cross-mode overwrite。terminal Snapshot row/payload 冲突与非 legacy committed time corruption 同样 fail closed。Targeted/adjacent `607 passed`；backend `1700 passed, 1 skipped`；Golden/gates/fresh Alembic PASS；无 migration。M4.4.2 FINAL PASS，M5 NOT STARTED。
+- **M4.4**：使用临时真实 SQLite/report filesystem 与 dispose → fresh engine/session/repository/service 验证 restart。terminal Snapshot 是唯一 request replay authority；Memory-without-Snapshot 是 incomplete crash witness 并 fail closed。持久化 report snapshot 不保存 HTML，重放必须从 filesystem 加载并验证 metadata/hash/linkage/namespace。delete transaction 新增 durable intent，保存精确 report IDs/counts；HTML cleanup 成功后 finalize，失败或 crash 可由新实例重试，intent 期间拒绝同 namespace 复活。Migration `c8d4e6f2a109`；fresh 与 M4.3 → head PASS；backend `1681 passed, 1 skipped`。M4 FINAL PASS，M5 NOT STARTED（当时状态）。
+- **M4.4.1**：committed canonical filter 在 domain deserialize 时逐项验证；StateTransition 遇到 malformed filter 抛出稳定 corruption error，不再 `continue`。真实临时 SQLite restart regression 参数化覆盖 Mock/Real，同 namespace 不生成 LLM/DAX/Power BI 调用或新 memory version，另一 namespace 合法数据继续恢复。README 重构为长期 Landing Page，状态文档同步；无 migration。M4.4.1 FINAL PASS，M5 NOT STARTED（当时状态）。
+- **M4.4.2**：移除 committed WorkMemory payload 缺失时的 partial column fallback；modern payload 必须完整且通过 domain validation，并与 row integrity fields 一致。Memory conversation methods 的 runtime namespace 在 ABC/InMemory/SQLite 与 production callers 中 mandatory；修复 InMemory exact-ID cross-mode overwrite。terminal Snapshot row/payload 冲突与非 legacy committed time corruption 同样 fail closed。Targeted/adjacent `607 passed`；backend `1700 passed, 1 skipped`；Golden/gates/fresh Alembic PASS；无 migration。M4.4.2 FINAL PASS，M5 NOT STARTED（当时状态）。
 
 ## M3.3 Report Template V2 changes
 
@@ -162,7 +162,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - 用户卡片承载设置/已归档/资源管理；Sidebar 最近区可折叠、独立滚动、不无限加载。
 - archive ≠ delete；批量操作只协调单资源 API、最多 20 项，部分失败保留。
 - report delete 保留 transcript tombstone；rename 只修改 presentation `display_title`。LLM 无 rename/delete 权限。
-- M5.5 语言、中文字段、单指标展示、HTML 视觉和性能不在本轮开发。
+- M5.5 语言、中文字段、单指标展示、HTML 视觉和性能不在 M5.4.1 开发（当时状态）。
 
 ## M5.4.1 不可退化契约
 
@@ -171,7 +171,19 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - “全选当前已加载”只选已加载项；不得把第一页、当前 DOM 或 recent subset 表述为全部匹配资源。完整历史至少必须可持续加载并多选任意项。
 - 浏览与选择不受 20 项限制；一次确认的大集合由前端按最多 20 项一组调用正式单资源 API，partial failure 精确归属资源，不新增 `DELETE ALL`。
 - 所有 Codex/pytest/browser/Real/MCP/report 自动化资源必须具有 explicit test ownership；`finally` cleanup 后验证 conversation/report metadata/HTML/SQLite namespace/delete intent residual=0，否则 Gate FAIL。
-- 历史清理只处理有 ownership/known namespace/fixture/linkage 证据的 automation-owned 资源；无法确认的资源保留。M5.5 继续 Deferred。
+- 历史清理只处理有 ownership/known namespace/fixture/linkage 证据的 automation-owned 资源；无法确认的资源保留。M5.5 Deferred（当时状态）。
+
+## M5.5 验收合同与结果（COMPLETE）
+
+- capability 判定固定为 safety fast-path、bounded LLM enum、deterministic policy 三层；危险请求 zero DAX / zero Power BI / zero Memory commit，普通读取不得因“大概”等词误杀。
+- Localization Registry 通用于任意 runtime schema；展示名绑定 exact object identity、model 与 schema identity，canonical identity 不变，schema drift 使持久化翻译失效。
+- Presentation 单 scalar 仅中文自然文本；grouped/trend 继续按事实形状动态生成 table/bar/line；数值格式化不改原值。
+- Renderer 修复 line safe geometry、首尾锚点与 responsive layout；只修改现有 `sales_report`。
+- phase timing 覆盖指定阶段且不记录敏感内容；性能优化只能基于 before/after，cache 不跨 PBIX 且不绕过安全检查。
+- 自动化与 Real acceptance 继续执行 test ownership finally cleanup 和 residual=0；M5.5 完成后结束 M5。
+- Fresh evidence：focused backend `394 passed`；backend full `1834 passed, 1 skipped`；frontend typecheck/lint/build PASS、Vitest `70 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `124`、Repository Safety `304`、Error Ledger `29`、Documentation/Artifact Governance 与 `git diff --check` PASS。
+- Rich PBIX readonly Browser Acceptance：scalar `6,943,997.51`、quantity `3,065` 均无 KPI card；grouped 中文表头 + table/bar；2025-05 正确；prediction/delete/write zero DAX/Memory；report 1920/2560/1280/390 与 SVG bounds PASS；automation residual=0。
+- M5.0—M5.5 已完成，M5 正式结束。Prediction、write-back、Remote MCP 与新模板未实现；事实与资源 authority 不变。
 
 ## 当前真实风险
 
@@ -198,7 +210,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - Rich PBIX A/B/C 在同一浏览器中并发执行，Sidebar provisional row 立即可见；active C/B 不显示其他会话 loading，三个结果只写回所属 session，完成后不自动跳窗。
 - 用户卡片设置面板、归档/恢复、两次 report generation、rename、delete 后 history tombstone 已通过 Real Browser Acceptance；本轮 9 个测试 conversation 与关联 report 已经正式 API 精确清理。
 - Backend full `1790 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `61 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `117`、Repository Safety `290`、Error Ledger `25`、Documentation Governance、Artifact Governance 与 `git diff --check` PASS。
-- 新增 Alembic revision `a4f6b8c2d190`。LLM 无 conversation/report rename/delete tool；M0–M5 factual authority 不变；M5.5 未开始。
+- 新增 Alembic revision `a4f6b8c2d190`。LLM 无 conversation/report rename/delete tool；M0–M5 factual authority 不变；M5.5 未开始（当时状态）。
 
 ### M5.4.1 fresh evidence
 
@@ -207,4 +219,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - teardown 后 conversation/report/HTML/SQLite/delete-intent exact residual=0；无法确认 ownership 的资源未删除。
 - Backend `1797 passed, 1 skipped`；Vitest `69 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `295`、Error Ledger `27`、Documentation/Artifact Governance 与 `git diff --check` PASS。
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源生命周期与 test-owned cleanup*
+*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*

@@ -27,6 +27,11 @@ from typing import Any, Callable, Optional
 
 from backend.app.harness.models import HarnessConfig
 from backend.app.harness.observability.trace_recorder import TraceRecorder
+from backend.app.harness.observability.phase_timing import (
+    PhaseTimingCollector,
+    bind_phase_timings,
+    reset_phase_timings,
+)
 from backend.app.harness.runtime.context_builder import ContextBuilder
 from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
@@ -109,6 +114,8 @@ class TurnPipeline:
         5. 委托 do_execute 回调执行 LLM 管线
         6. Snapshot 完成/异常中止
         """
+
+        phase_timings = PhaseTimingCollector()
 
         # ── 统一 ID 生成 ──
         effective_conv_id = conversation_id or str(uuid.uuid4())
@@ -225,30 +232,41 @@ class TurnPipeline:
 
         # ── OWNER: 执行 LLM 管线 ──
         try:
-            result = await do_execute(
-                message=message,
-                effective_conv_id=effective_conv_id,
-                effective_req_id=effective_req_id,
-                semantic_model_key=semantic_model_key,
-                report_template_key=report_template_key,
-                runtime_mode=runtime_mode,
-                is_mock=is_mock,
-                llm_provider_name=llm_provider_name,
-                powerbi_provider_name=powerbi_provider_name,
-                trace=trace,
-                trace_id=trace_id,
-                fingerprint_hash=fingerprint_hash,
-                controller=controller,
-                context=context,
-                committed=committed,
-                pending_clarification=pending_clarification,
-                **execute_kwargs,
-            )
+            timing_token = bind_phase_timings(phase_timings)
+            try:
+                result = await do_execute(
+                    message=message,
+                    effective_conv_id=effective_conv_id,
+                    effective_req_id=effective_req_id,
+                    semantic_model_key=semantic_model_key,
+                    report_template_key=report_template_key,
+                    runtime_mode=runtime_mode,
+                    is_mock=is_mock,
+                    llm_provider_name=llm_provider_name,
+                    powerbi_provider_name=powerbi_provider_name,
+                    trace=trace,
+                    trace_id=trace_id,
+                    fingerprint_hash=fingerprint_hash,
+                    controller=controller,
+                    context=context,
+                    committed=committed,
+                    pending_clarification=pending_clarification,
+                    phase_timings=phase_timings,
+                    **execute_kwargs,
+                )
+            finally:
+                reset_phase_timings(timing_token)
             # Presentation transcript metadata is saved beside the terminal
             # snapshot but never written into StructuredWorkMemory.
             result["user_message"] = message
-            await self._save_snapshot(result, runtime_mode, fingerprint_hash)
-            await self.snapshot_store.complete(effective_req_id, runtime_mode)
+            with phase_timings.measure("persistence"):
+                await self._save_snapshot(result, runtime_mode, fingerprint_hash)
+                await self.snapshot_store.complete(effective_req_id, runtime_mode)
+            execution_audit = result.get("execution_audit")
+            if not isinstance(execution_audit, dict):
+                execution_audit = {}
+                result["execution_audit"] = execution_audit
+            execution_audit["phase_timings_ms"] = phase_timings.finish()
             return result
         except Exception:
             await self.snapshot_store.abort(effective_req_id, runtime_mode)

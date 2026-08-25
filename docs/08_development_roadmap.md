@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成
+> **状态：** M5.5 — 语义理解、中文展示、性能与报表视觉最终收口（COMPLETE）；M5 正式结束
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -37,7 +37,18 @@
 | **M5.3.3** | **多轮语义、conversation/report 生命周期与 Artifact Governance 最终收口** | **✅ 已完成** |
 | **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
 | **M5.4.1** | **Settings 全量资源分页、选择/批量语义与 automation ownership cleanup** | **✅ 已完成** |
-| **M5.5** | **语言理解/中文字段/单指标/报表视觉/性能** | **⏸ Deferred / NOT STARTED** |
+| **M5.5** | **语言理解/中文字段/单指标/报表视觉/性能** | **✅ 已完成** |
+
+### M5.5 — M5 最终收口（已完成）
+
+- 三层 capability 判定：deterministic safety fast-path、bounded LLM enum weak signal、deterministic policy；unsupported 在 Memory/Grounding/DAX/Power BI 前 fail closed。
+- 通用 model-scoped Localization Registry：metadata → glossary → persisted registry → bounded LLM display translation；exact runtime identity 与 schema identity 是硬前置。
+- Presentation 保留 canonical identity 和 display metadata；单 scalar 只显示格式化中文文本，多 KPI/grouped/trend 按真实 shape 动态渲染。
+- `sales_report` 仅修复 safe SVG geometry、fluid responsive layout 与 friendly model footer，不新增模板或事实能力。
+- 记录完整 phase timing，完成 scalar/grouped/report before/after；只对真实瓶颈做 model/instance/schema-scoped 优化。
+- 全量 Gate、readonly Rich PBIX Real Browser 与 automation residual=0 后才可标 COMPLETE；完成后停止，不进入后续里程碑。
+- Fresh evidence：Rich PBIX readonly scalar/grouped/month/unsupported/report 与 1920/2560/1280/390 report visual PASS；backend `1834 passed, 1 skipped`，frontend Vitest `70 passed` 且 typecheck/lint/build PASS，Golden `11 passed, 1 manual-real skipped`，全部 governance PASS，automation residual=0。
+- M5.0—M5.5 已完成，M5 正式结束；prediction、write-back、Remote MCP 与新 report template 继续不实现。
 
 ### M5.4.1 — 全量资源生命周期与测试产物治理（已完成）
 
@@ -48,7 +59,7 @@
 - 浏览/选择数量与 destructive execution wave 分离：一次确认可超过 20 项，前端内部按最多 20 项一组协调正式单资源 API，逐项汇总 partial failure，不新增 bulk delete shortcut。
 - Codex acceptance、pytest integration、browser、Real Smoke、MCP 与 report tests 使用 explicit automation ownership；`finally` cleanup 必须经正式 API/repository，随后验证 conversation/report/HTML/SQLite namespace/pending intent/orphan residual 为 0。
 - Artifact Governance 只读 fail closed；仅清理可证明 test-owned 的 exact IDs/namespaces。无法确认 ownership 的历史资源视为用户数据并保留。
-- report rename 仍只改 `display_title`；archive 隐藏 recent 并可 restore；delete 清理 managed HTML/factual metadata，history 保留最后 title 的 tombstone。M0–M5 authority 不变；M5.5 Deferred。
+- report rename 仍只改 `display_title`；archive 隐藏 recent 并可 restore；delete 清理 managed HTML/factual metadata，history 保留最后 title 的 tombstone。M0–M5 authority 不变；M5.5 Deferred（当时状态）。
 - Fresh evidence：Real Browser 25 conversations/10 reports 完整分页、20+5 bounded archive/restore、report rename/archive/restore/delete/tombstone/restart 全部通过，automation teardown exact residual=0；backend `1797 passed, 1 skipped`，Vitest `69 passed`，Golden `11 passed, 1 manual-real skipped`；全部治理 Gate 与 `git diff --check` PASS。
 
 ### M5.4 — 最终收口（已完成）
@@ -60,7 +71,7 @@
 - 资源面板支持最近对话批量删除、已归档批量恢复/删除、最近报表批量删除/单项重命名；一次最多 20 项，只协调正式单资源 API。
 - report delete 删除 HTML/metadata 但保留 presentation tombstone；report `display_title` 仅是可变 UI metadata，不改 report_id/HTML/content_hash/ReportSpec/VerifiedFactSet。
 - rename/delete 不进 ToolGateway/LLM tools；archive 不等于 delete；M0–M5 factual authority 不变。
-- M5.5 的语义增强、Localization Registry、单指标策略、HTML 视觉重构、profiling/cache 继续 Deferred。
+- M5.5 的语义增强、Localization Registry、单指标策略、HTML 视觉重构、profiling/cache 继续 Deferred（当时状态）。
 - Alembic revision `a4f6b8c2d190` 新增 report presentation metadata/tombstone；Rich PBIX A/B/C 并发、归档恢复、rename/delete/history tombstone 与测试资源精确清理通过。
 - Fresh evidence：backend `1790 passed, 1 skipped`；frontend Vitest `61 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；全部治理门禁与 `git diff --check` PASS。
 
@@ -150,7 +161,7 @@ Real DAX/factual authority 不回到 LLM，Real failure 不回退 Mock。
 - SQLite committed WorkMemory 不再从 dedicated columns 做 partial reconstruction。Modern `payload_json` 必须完整覆盖 domain contract；NULL/empty/malformed/incomplete/domain-invalid 及 row/payload integrity mismatch 均在 Intent、DAX、Power BI、新 Memory commit 与 fake terminal Snapshot 前 fail closed。
 - `MemoryRepository.get_latest_committed()` / `list_by_conversation()` 的 runtime namespace 在 ABC、InMemory 与 SQLite 中 mandatory；production callers 全部显式传入，跨 Mock/Real aggregate 默认行为删除。InMemory conversation store 使用 `(runtime_mode, request_id)`，同 conversation/request ID 可在两种模式完全隔离共存。
 - Audit corrective closure：非 legacy committed time corruption 不再被 StateTransition 静默解释为空；terminal Snapshot row/payload request/conversation/fingerprint/terminal integrity mismatch 不得重放。legacy time string contract 保持不变。
-- Semantic Grounding、Deterministic DAX + Layer 3、VerifiedFactSet、deterministic Report、terminal Snapshot replay、filesystem HTML 与 durable delete intent 的既有 authority 不变。无产品功能、schema 或 migration；M5 NOT STARTED。
+- Semantic Grounding、Deterministic DAX + Layer 3、VerifiedFactSet、deterministic Report、terminal Snapshot replay、filesystem HTML 与 durable delete intent 的既有 authority 不变。无产品功能、schema 或 migration；M5 NOT STARTED（当时状态）。
 - Fresh acceptance：targeted/adjacent `607 passed`；backend `1700 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；四个治理门 PASS；Alembic head 保持 `c8d4e6f2a109`，fresh DB → head 与幂等 head → head PASS。
 
 ## M4.4.1 — Memory Corruption Fail-Closed、README 重构与文档状态同步（FINAL PASS）
@@ -158,7 +169,7 @@ Real DAX/factual authority 不回到 LLM，Real failure 不回退 Mock。
 - `StructuredWorkMemory.filters` 仍保持既有 `list[dict]` storage/legacy contract，但 domain validation 会逐项按 canonical `StructuredFilter` 校验；SQLite payload 的 malformed filter 在 fresh repository load 时 deterministic fail closed。
 - StateTransition 不再捕获 malformed committed filter 后 `continue`；进程内出现绕过初始 validation 的损坏状态时抛出稳定 `committed_memory_filter_invalid:<index>`，不得降级为空 filter 或扩大查询范围。
 - 真实临时 SQLite restart regression 同时覆盖 Mock/Real namespace：损坏 namespace 在 LLM、schema、DAX、Power BI 与新 Memory commit 前失败；合法 sibling namespace 正常恢复。legacy time string contract 保持不变。
-- 根 README 已重构为稳定 Landing Page，并在 `AGENTS.md` 固化 maintenance contract；正式 PRD、07/08/09 与 CHANGELOG 状态同步。无 schema change、无 migration；M5 NOT STARTED。
+- 根 README 已重构为稳定 Landing Page，并在 `AGENTS.md` 固化 maintenance contract；正式 PRD、07/08/09 与 CHANGELOG 状态同步。无 schema change、无 migration；M5 NOT STARTED（当时状态）。
 
 ## M4.4 — Restart / Crash Acceptance & M4 Final Closure（FINAL PASS）
 
@@ -168,7 +179,7 @@ Real DAX/factual authority 不回到 LLM，Real failure 不回退 Mock。
 - Report recovery boundary：新 persistent report Snapshot 只存 ID/reference/hash metadata，不存 HTML；replay 必须经 ReportRepository 从 filesystem 读取，并验证 metadata、linkage、namespace 与 content hash。验收修复了 adaptive Real report 错传未带 conversation/request context 的原 `ReportSpec`；missing/tampered HTML、corrupt metadata 或 linkage mismatch fail closed。
 - Delete recovery boundary：migration `c8d4e6f2a109` 新增 `conversation_delete_intents`。DB 删除 transaction 同时保存 exact namespace 的 report IDs/counts；HTML cleanup 成功后才 finalize。unlink/finalize failure 或中间 crash 后，全新实例可按同 namespace 重试；pending intent 阻止 namespace 复活。SQLite transaction 不被描述为可原子覆盖 filesystem。
 - Bounded guarantee：report create 的常规 metadata-save failure 会 best-effort unlink 已写 HTML；本轮未增加 durable create journal，因此不保证进程恰在 HTML rename 后、metadata commit 前退出时自动回收无引用文件。该窗口没有 metadata/Snapshot 成功态，读取仍 fail closed。
-- Fresh DB → head、M4.3 `f4c3a2b1907d` → head、backend `1681 passed, 1 skipped` 均通过。M4 FINAL PASS；M5 NOT STARTED；不创建 Tag。
+- Fresh DB → head、M4.3 `f4c3a2b1907d` → head、backend `1681 passed, 1 skipped` 均通过。M4 FINAL PASS；M5 NOT STARTED（当时状态）；不创建 Tag。
 
 ## M4.3 — Conversation History / Search API（已完成）
 
@@ -270,4 +281,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源与 artifact governance；M5.5 Deferred*
+*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*

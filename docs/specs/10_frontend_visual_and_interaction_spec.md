@@ -1,7 +1,7 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.4.1 Settings Hub、全量资源分页与测试产物治理修复已完成
-> **目标阶段：** M5.4.1 固化完整 history resource query、准确 selection/batch 语义、report archive 与 automation cleanup；M5.5 Deferred
+> **状态：** M5.5 语义理解、中文展示、性能与报表视觉最终收口（COMPLETE）
+> **目标阶段：** M5.5 固化本地化 presentation、单指标去冗余、确定性 formatter 与既有 `sales_report` 响应式视觉；M5.4.1 已完成
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -16,7 +16,7 @@
 
 ## 二、当前阶段与实施边界
 
-**当前阶段：** M5.4 已将请求与 UI 状态收口到 conversation scope；M5.4.1 已把依赖 Recent 第一页的轻量资源面板修复为独立分页的 Settings Hub。M0–M5 factual authority 保持不变；没有真实 presentation block 时不伪造前端表格或图表。
+**当前阶段：** M5.4 已将请求与 UI 状态收口到 conversation scope；M5.4.1 已把依赖 Recent 第一页的轻量资源面板修复为独立分页的 Settings Hub；M5.5 已把后端提供的 display metadata 与确定性格式化值安全投影到现有动态 UI，并完成 `sales_report` safe geometry/responsive 验收。M0–M5 factual authority 保持不变；没有真实 presentation block 时不伪造前端表格或图表。
 
 ## 三、视觉参考图片
 
@@ -136,7 +136,7 @@
 | 内容块 | 出现条件 | 数据来源 |
 |--------|---------|---------|
 | text（文字） | 任何 AI 回答 | ChatResponse.answer / clarification_question / unsupported_reason |
-| metric（指标摘要） | VerifiedFactSet scalar fact 可回指真实 row 时 | `presentation` dataset + field/row reference |
+| metric（指标摘要） | 同一结果存在多个 scalar KPI 且可回指真实 row 时 | `presentation` dataset + field/row reference |
 | table（表格） | grouped fact 且 QueryResult 包含数据行时 | `presentation` 的单一 QueryResult dataset |
 | chart（图表） | grouped result 至少两行且 Y 字段为数值时 | 同一 dataset 的 X/Y field reference |
 | report_attachment（报表附件） | 后端真正生成 ReportArtifact 时 | canonical `report_id` |
@@ -147,7 +147,8 @@
 |------|---------|
 | 普通问答 | 仅有文字 |
 | 数据查询 | 文字 + 表格 |
-| 简单数字追问 | 仅有文字或指标 |
+| 单 scalar | 仅有确定性格式化的中文文字，不生成冗余 KPI card |
+| 多 KPI | 文字 + 必要的指标卡 |
 | 多轮追问 | 仅更新文字/表格 |
 | comparison/trend 且后端提供可视化 | 才显示图表 |
 | 用户要求生成报表且后端生成 ReportArtifact | 才显示报表附件卡片 |
@@ -163,6 +164,8 @@
 - source_mode 必须与数据层一致
 - 报表引用由后端生成
 - **禁止**前端为了页面完整度创造 KPI、表格数据、图表数据、趋势、排名、HTML 报表、事实结论
+- 列、指标与图表标题优先使用后端随 canonical identity 返回的 `display_name`；前端不得维护 Sales 专用硬编码翻译字典
+- 展示格式优先使用后端 deterministic formatter 结果；原始值仍保留在 dataset 中，不参与前端重新计算
 
 ## 九、表格
 
@@ -393,6 +396,8 @@
 
 Sidebar 在桌面端固定可用高度；“最近对话”与“最近报表”各自 `overflow-y:auto` 并可折叠。已归档默认不常驻 Sidebar，通过用户卡片进入资源面板。
 
+M5.5 对 repository-owned HTML 报表补充以下约束：容器使用合理 `max-width` 和 fluid padding；只有成对 section 才使用双列，单 section 必须合理铺开；趋势图高度不得随宽屏异常增长；donut、legend 与 value 使用响应式 grid/flex；中宽与移动端自动单列。SVG 数据点、轴标签和 direct label 必须由 Renderer 的 safe geometry 保证不越界，不能只靠 CSS 裁切掩盖。
+
 ## 十六 A、用户卡片与 Settings Hub（M5.4.1）
 
 - 用户卡片只提供“设置”入口；Settings 左导航固定为“常规 / 对话管理 / 报表管理 / 已归档 / 数据模型 / 关于”，不恢复三个重复一级入口，也不增加套餐、支付、账户安全等无后端能力。
@@ -426,6 +431,8 @@ Sidebar 在桌面端固定可用高度；“最近对话”与“最近报表”
 | 多 conversation state | M5.4 前端合同 | local UUID pending、异会话并发、同会话串行、loading/error/result 隔离 |
 | 用户资源管理 | M5.4.1 独立分页 + 前端协调单资源 API | Settings Hub、完整 active/archived conversation/report、selection 不限、最多 20 项/执行组、partial failure |
 | report rename/tombstone | M5.4 presentation metadata | `display_title` 同步；deleted 历史卡保留且无 view/download |
+| display localization / formatter | M5.5 后端 canonical + display metadata | 表头、metric、chart、answer 使用后端中文展示名与格式化值；前端不翻译 canonical 对象 |
+| 单 scalar | M5.5 deterministic presentation policy | 只显示自然中文文本，不生成冗余 metric card |
 
 ## 十八、明确禁止的设计
 
@@ -470,4 +477,4 @@ Sidebar 在桌面端固定可用高度；“最近对话”与“最近报表”
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — Settings 全量分页、准确选择语义与 report lifecycle*
+*最后更新：2026-08-25 | M5.5 COMPLETE — localization presentation 与 report responsive contract*

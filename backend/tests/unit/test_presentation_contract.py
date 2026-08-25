@@ -2,7 +2,11 @@
 
 import pytest
 
-from backend.app.facts import VerifiedFactSetBuilder
+from backend.app.facts import FactBoundedAnswerBuilder, FactOutputValidator, VerifiedFactSetBuilder
+from backend.app.localization.models import (
+    LocalizationSource,
+    ResolvedLocalization,
+)
 from backend.app.presentation.builder import StructuredPresentationBuilder
 from backend.app.presentation.models import PresentationEnvelope
 from backend.app.schemas.data_contracts import CanonicalQueryPlan, QueryResult
@@ -28,7 +32,28 @@ def _result(columns: list[str], rows: list[list[object]]) -> QueryResult:
     )
 
 
-def test_scalar_metric_references_the_single_verified_dataset() -> None:
+def _localized(
+    *,
+    canonical_name: str,
+    display_name: str,
+    object_type: str = "measure",
+    table_name: str = "Sales",
+    data_type: str = "decimal",
+) -> ResolvedLocalization:
+    return ResolvedLocalization(
+        semantic_model_key="model",
+        object_identity=f"{object_type}:{table_name}:{canonical_name}",
+        object_type=object_type,
+        canonical_name=canonical_name,
+        display_name=display_name,
+        source=LocalizationSource.GLOSSARY,
+        schema_identity="a" * 64,
+        table_name=table_name,
+        data_type=data_type,
+    )
+
+
+def test_single_scalar_is_text_only_and_keeps_verified_dataset() -> None:
     plan = _plan()
     result = _result(["[Total Sales]"], [[123.5]])
     facts = VerifiedFactSetBuilder().build(plan, result)
@@ -39,10 +64,33 @@ def test_scalar_metric_references_the_single_verified_dataset() -> None:
 
     assert presentation.datasets[0].rows == [[123.5]]
     assert presentation.datasets[0].verified_fact_set_id == facts.fact_set_id
-    metric = next(block for block in presentation.blocks if block.type == "metric")
-    assert metric.data_reference == result.result_id
-    assert metric.value_field == "[Total Sales]"
-    assert not any(block.type in {"table", "chart"} for block in presentation.blocks)
+    assert [block.type for block in presentation.blocks] == ["text"]
+
+
+def test_single_scalar_localized_answer_formats_float_without_metric_card() -> None:
+    plan = _plan()
+    result = _result(["[Total Sales]"], [[6943997.509999986]])
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    localized = _localized(
+        canonical_name="Total Sales", display_name="总销售额"
+    )
+    localizations = {
+        "Total Sales": localized,
+        "[Total Sales]": localized,
+    }
+    answer = FactBoundedAnswerBuilder(localizations=localizations).build(
+        plan, result, facts
+    )
+    presentation = StructuredPresentationBuilder.build_answer(
+        plan, result, facts, answer.answer, localizations=localizations
+    )
+
+    assert answer.answer == "总销售额为 6,943,997.51。"
+    assert FactOutputValidator().validate_answer(answer, facts) == []
+    assert presentation.datasets[0].rows == [[6943997.509999986]]
+    assert presentation.datasets[0].formatted_rows == [["6,943,997.51"]]
+    assert presentation.datasets[0].display_metadata["[Total Sales]"].display_name == "总销售额"
+    assert [block.type for block in presentation.blocks] == ["text"]
 
 
 def test_grouped_result_produces_table_and_bar_without_copying_rows() -> None:
@@ -84,17 +132,22 @@ def test_unverified_query_result_column_is_not_exposed_in_presentation() -> None
 
 
 def test_metric_table_and_chart_references_resolve_to_verified_dataset() -> None:
-    scalar_plan = _plan()
-    scalar_result = _result(["[Total Sales]"], [[123.5]])
+    scalar_plan = CanonicalQueryPlan(
+        normalized_question="query",
+        semantic_model_key="model",
+        measures=["Total Sales", "Total Quantity"],
+    )
+    scalar_result = _result(["[Total Sales]", "[Total Quantity]"], [[123.5, 10]])
     scalar_facts = VerifiedFactSetBuilder().build(scalar_plan, scalar_result)
     scalar = StructuredPresentationBuilder.build_answer(
         scalar_plan, scalar_result, scalar_facts, "总销售额为 123.5。"
     )
-    metric = next(block for block in scalar.blocks if block.type == "metric")
+    metrics = [block for block in scalar.blocks if block.type == "metric"]
     scalar_dataset = scalar.datasets[0]
-    assert metric.data_reference == scalar_dataset.result_id
-    assert metric.value_field in scalar_dataset.columns
-    assert metric.row_index < scalar_dataset.row_count
+    assert len(metrics) == 2
+    assert all(metric.data_reference == scalar_dataset.result_id for metric in metrics)
+    assert all(metric.value_field in scalar_dataset.columns for metric in metrics)
+    assert all(metric.row_index < scalar_dataset.row_count for metric in metrics)
 
     grouped_plan = _plan(dimensions=["Category"])
     grouped_result = _result(

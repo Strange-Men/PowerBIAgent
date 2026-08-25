@@ -6,6 +6,7 @@ measures:
   Total Sales:
     table_name: Sales
     object_type: measure
+    display_name: 总销售额
     aliases:
       - 销售额
       - 总销售额
@@ -13,6 +14,7 @@ measures:
   Total Quantity:
     table_name: Sales
     object_type: measure
+    display_name: 总销量
     aliases:
       - 销量
       - 总数量
@@ -24,18 +26,21 @@ fields:
   Category:
     table_name: Sales
     object_type: field
+    display_name: 产品类别
     aliases:
       - 类别
       - 品类
   Product:
     table_name: Sales
     object_type: field
+    display_name: 产品
     aliases:
       - 产品
       - 商品
   OrderDate:
     table_name: Sales
     object_type: field
+    display_name: 订单日期
     aliases:
       - 订单日期
       - 销售日期
@@ -43,6 +48,7 @@ fields:
     table_name: Sales
     object_type: field
     required: false
+    display_name: 区域
     aliases:
       - 区域
       - 地区

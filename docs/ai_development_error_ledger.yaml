@@ -3,11 +3,84 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-14 | M2.6.4
+# 最后更新：2026-08-25 | M5.5
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-550-001
+  title: Future prediction 近义表达绕过 readonly preflight
+  category: ERR
+  first_detected_version: M5.5
+  symptom: “估算明年销售额”“估计下季度销量”“推测明年收入”“假设明年增长10%”和“forecast next year”未命中旧 regex，可能进入历史 Sales 查询；“总销售额大概是多少”又必须保持正常只读查询
+  local_evidence: backend/app/intent/unsupported_policy.py 旧规则只覆盖预测/预估/外推；修复前最小复现中上述 6 类表达返回 None，而正常只读表达同样返回 None
+  authoritative_sources:
+  - title: DeepSeek JSON Output
+    url: https://api-docs.deepseek.com/guides/json_mode
+    reason: bounded capability classification 使用结构化 JSON 输出，但其结果仍只是语言弱信号
+  - title: Pydantic Models
+    url: https://docs.pydantic.dev/latest/concepts/models/
+    reason: registry-owned enum、confidence 与 evidence span 由 typed model 严格验证
+  root_cause: readonly policy 只维护单层关键词 regex，预测同义词与未来时态/目标对象未组合判断；LLM Intent 的 unsupported 又可能被 data-shaped defer 重新送入 Grounding
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 建立 deterministic safety fast-path、同一 Intent LLM round-trip 的 bounded capability enum、deterministic final policy 三层机制；未来证据与业务目标联合判断，危险/歧义分别 unsupported/clarification，均发生在 pending Memory、Grounding、DAX 与 Power BI 前
+  regression_tests:
+  - backend/tests/unit/test_intent.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 用单个“估算”或“大概”关键词决定 prediction
+  - 让 LLM capability enum 直接成为执行 authority
+  - 用 committed Memory 放行当前轮 readonly 越界
+  prevention_rules:
+  - fast-path 只覆盖具有 future/target 证据的高置信危险表达
+  - LLM evidence span 必须来自当前输入，低置信或无当前证据只能 clarification
+  - unsupported 必须证明 zero DAX、zero Power BI、zero Memory commit
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-25'
+    action: discovered
+    version: M5.5
+  - date: '2026-08-25'
+    action: mitigation
+    version: M5.5
+- id: ERR-550-002
+  title: Line chart 首尾轴标签与 direct value label 使用向外锚点
+  category: ERR
+  first_detected_version: M5.5
+  symptom: 真实报表中末尾“2026-03”显示为“2026-0”，首尾 direct value label 在端点或极值时被 SVG viewport 裁切
+  local_evidence: backend/app/report/fixed.py 旧 geometry 将最后点放在 x=584/600 且 axis anchor=middle；direct label 又把首点设为 end、末点设为 start，文字向 viewport 外延伸
+  authoritative_sources:
+  - title: SVG text-anchor
+    url: https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/text-anchor
+    reason: start/end/middle 决定文字相对当前点的延伸方向，端点必须向 safe plot 内侧锚定
+  - title: CSS Grid Layout
+    url: https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout
+    reason: pair、donut/legend 与窄屏布局使用显式 responsive grid contract
+  root_cause: 数据点只按普通 plot padding 放置，未把 axis/direct label 的文字边界纳入 safe geometry；首尾 direct anchor 方向写反
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 建立 safePlotLeft/Right/Top/Bottom；首轴标签 start、末轴标签 end、中间 middle；首 direct label start 加内移、末 direct label end 加内移；同时收紧 trend 高度并将单 section、pair、donut/legend、footer 改为 fluid responsive layout
+  regression_tests:
+  - backend/tests/unit/test_report_generation.py
+  prohibited_patterns:
+  - 只用 overflow hidden 或 CSS 掩盖 SVG 坐标越界
+  - 首点 end anchor 或末点 start anchor
+  prevention_rules:
+  - 1/2/15 点以及首尾极值均验证 point 在 safe plot 内
+  - 长年月标签必须保留完整文本并使用端点向内锚点
+  related_adr: ADR-011
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-25'
+    action: discovered
+    version: M5.5
+  - date: '2026-08-25'
+    action: mitigation
+    version: M5.5
 - id: ERR-541-001
   title: Settings 将 Recent 第一页误作全部历史资源
   category: ERR

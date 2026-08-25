@@ -3,6 +3,42 @@ import { describe, expect, it } from 'vitest'
 import { AssistantMessage } from './AssistantMessage'
 
 describe('AssistantMessage dynamic rendering', () => {
+  it('uses backend display metadata and formatted rows without changing canonical fields', () => {
+    render(
+      <AssistantMessage
+        message={{
+          id: 'localized', role: 'assistant', kind: 'answer', content: '按区域列出销售额。',
+          presentation: {
+            version: 1,
+            datasets: [{
+              result_id: 'localized-result', verified_fact_set_id: 'localized-facts', semantic_model_key: 'desktop-model', source_mode: 'real',
+              columns: ['Sales[Region]', '[Total Sales]'],
+              rows: [['East', 6943997.509999986]],
+              formatted_rows: [['East', '6,943,997.51']],
+              display_metadata: {
+                'Sales[Region]': {
+                  canonical_name: 'Sales[Region]', display_name: '区域', object_identity: 'field:Sales:Region', object_type: 'field', localization_source: 'glossary', schema_identity: 'a'.repeat(64),
+                },
+                '[Total Sales]': {
+                  canonical_name: '[Total Sales]', display_name: '总销售额', object_identity: 'measure:Sales:Total Sales', object_type: 'measure', localization_source: 'glossary', schema_identity: 'a'.repeat(64),
+                },
+              },
+              row_count: 1,
+              truncated: false,
+            }],
+            blocks: [{ type: 'table', data_reference: 'localized-result', title: '查询结果' }],
+          },
+        }}
+      />,
+    )
+
+    const table = screen.getByRole('table')
+    expect(table).toHaveTextContent('区域')
+    expect(table).toHaveTextContent('总销售额')
+    expect(table).toHaveTextContent('6,943,997.51')
+    expect(table).not.toHaveTextContent('[Total Sales]')
+  })
+
   it('renders verified metric, table, and bar blocks from one referenced dataset', () => {
     render(
       <AssistantMessage

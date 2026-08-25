@@ -25,6 +25,36 @@ class TurnRelation(str, Enum):
     UNCLEAR = "unclear"
 
 
+class CapabilityClass(str, Enum):
+    """Bounded language classification; ordinary code owns the policy."""
+
+    READ_ANALYSIS = "READ_ANALYSIS"
+    FUTURE_PREDICTION = "FUTURE_PREDICTION"
+    MODEL_WRITE = "MODEL_WRITE"
+    DATA_DELETE = "DATA_DELETE"
+    ARBITRARY_CODE = "ARBITRARY_CODE"
+    RESOURCE_MANAGEMENT_REQUEST = "RESOURCE_MANAGEMENT_REQUEST"
+    UNKNOWN = "UNKNOWN"
+
+
+class CapabilityClassification(BaseModel):
+    """LLM weak signal with evidence copied from the current user input."""
+
+    capability: CapabilityClass
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    evidence_span: str | None = None
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("evidence_span")
+    @classmethod
+    def clean_evidence_span(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+
 class TimeIntentKind(str, Enum):
     """Allowed shapes for an LLM-owned time-language draft."""
 
@@ -155,6 +185,13 @@ class IntentSpec(BaseModel):
     turn_relation: TurnRelation = Field(
         default=TurnRelation.UNCLEAR,
         description="当前语言是独立问题、追问、替换还是证据不足",
+    )
+    capability_classification: CapabilityClassification | None = Field(
+        default=None,
+        description=(
+            "受限 capability 语言弱信号；supported/clarification/unsupported "
+            "最终由 deterministic policy 决定"
+        ),
     )
 
     # 检测到的分析要素

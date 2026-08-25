@@ -46,6 +46,7 @@ class CatalogObject(BaseModel):
     table_name: str
     data_type: str
     description: str | None = None
+    display_name: str | None = None
     aliases: tuple[str, ...] = ()
     member_aliases: dict[str, str] = Field(default_factory=dict)
     source: SemanticObjectSource = SemanticObjectSource.RUNTIME
@@ -184,6 +185,11 @@ class SemanticCatalogBuilder:
                 ):
                     raise GlossaryCatalogError("glossary_alias_invalid")
                 raw_member_aliases = metadata.get("member_aliases", {})
+                display_name = metadata.get("display_name")
+                if display_name is not None and (
+                    not isinstance(display_name, str) or not display_name.strip()
+                ):
+                    raise GlossaryCatalogError("glossary_display_name_invalid")
                 if not isinstance(raw_member_aliases, dict) or any(
                     not isinstance(alias, str)
                     or not alias.strip()
@@ -237,6 +243,11 @@ class SemanticCatalogBuilder:
                 objects[key] = runtime_object.model_copy(update={
                     "aliases": tuple(clean_aliases),
                     "member_aliases": member_aliases,
+                    "display_name": (
+                        unicodedata.normalize("NFKC", display_name).strip()
+                        if isinstance(display_name, str)
+                        else None
+                    ),
                     "source": SemanticObjectSource.RUNTIME_GLOSSARY,
                 })
 

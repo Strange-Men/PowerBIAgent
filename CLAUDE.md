@@ -328,7 +328,7 @@ PowerBIAgent/
 - 批量操作每个 destructive execution wave 最多 20 项，只协调现有单资源 API；成功项移除、失败项保留并显示原因，不绕过 durable delete，archive 不等于 delete。该上限不得限制历史浏览或用户一次确认的选择总量。
 - report tombstone 只是历史展示，不重建 ReportArtifact。`display_title` 只是 presentation metadata；report_id/HTML/content_hash/ReportSpec/VerifiedFactSet 不变。
 - report/conversation rename/delete/restore 只能由明确 UI 用户操作发起，不进 ToolGateway/LLM allowed tools；自然语言不得执行资源变更。
-- M5.5 的语言理解、中文字段、性能/cache、单指标策略与 report HTML 视觉继续 Deferred。
+- M5.5 已完成并正式结束 M5；三层 capability policy、Localization 展示层、Presentation 格式化/去冗余、`sales_report` 视觉与安全 profiling 已收口，不进入后续里程碑。
 
 ### M5.4.1 全量资源与测试 ownership 硬规则
 
@@ -337,8 +337,16 @@ PowerBIAgent/
 - 一次确认可包含超过 20 项；前端内部按最多 20 项一组、bounded concurrency 调用正式单资源 mutation API，并逐项汇总成功/失败。禁止新增 bulk delete backend shortcut 或绕过 durable intent。
 - 自动化创建的 conversation/report/HTML/SQLite namespace 必须在创建时记录 `test_run_id` 与 automation ownership；teardown 必须位于 `finally`，通过正式 API/repository cleanup 后验证 residual=0。
 - Artifact Governance 对 test-owned conversation、report metadata、HTML、SQLite namespace、pending delete intent、orphan 和 cleanup failure 任一残留 fail closed；Gate 只读，不自动清理用户数据。
-- 历史资源清理必须有 ownership metadata、已知 test namespace/ID、fixture 或 report linkage 证据。仅凭标题或内容猜测为测试资源时必须保留。M5.5 继续 Deferred。
+- 历史资源清理必须有 ownership metadata、已知 test namespace/ID、fixture 或 report linkage 证据。仅凭标题或内容猜测为测试资源时必须保留。
+
+### M5.5 语义、Localization、展示与性能硬规则
+
+- deterministic safety fast-path 只处理高置信 readonly 越界；bounded LLM capability classification 只输出 registry enum/confidence/evidence，最终 policy 由普通代码决定。
+- Localization 只改 display metadata；exact runtime object identity、schema identity 与 model scope 是前置条件。LLM 不得创造字段或改写 canonical name，低置信度回退 humanized/canonical。
+- 单 scalar 只输出确定性格式化的中文文本；多 KPI 才使用 cards。底层 QueryResult/VerifiedFactSet 值不得因展示格式化而变化。
+- report safe geometry 与响应式布局由 Renderer/Policy 决定；不新增模板，不把 CSS 当作 SVG 越界的唯一修复。
+- timing 仅为诊断 metadata。任何 cache 必须 model/instance/schema scoped 并支持 stale invalidation，且不得绕过事实链或实例复核。
 
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源分页、bounded execution 与 test-owned cleanup*
+*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束，不进入后续里程碑*

@@ -9,6 +9,17 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class PresentationFieldMetadata(BaseModel):
+    canonical_name: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    object_identity: str = Field(min_length=1)
+    object_type: str = Field(min_length=1)
+    localization_source: str = Field(min_length=1)
+    schema_identity: str = Field(min_length=64, max_length=64)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class PresentationDataset(BaseModel):
     """The single fact data copy exposed to the frontend for one QueryResult."""
 
@@ -18,6 +29,8 @@ class PresentationDataset(BaseModel):
     source_mode: Literal["mock", "real"]
     columns: list[str]
     rows: list[list[Any]]
+    formatted_rows: list[list[str]] = Field(default_factory=list)
+    display_metadata: dict[str, PresentationFieldMetadata] = Field(default_factory=dict)
     row_count: int = Field(ge=0)
     truncated: bool = False
 
@@ -31,6 +44,18 @@ class PresentationDataset(BaseModel):
             raise ValueError("presentation_dataset_columns_not_unique")
         if any(len(row) != len(self.columns) for row in self.rows):
             raise ValueError("presentation_dataset_row_shape_mismatch")
+        if self.formatted_rows and (
+            len(self.formatted_rows) != len(self.rows)
+            or any(len(row) != len(self.columns) for row in self.formatted_rows)
+        ):
+            raise ValueError("presentation_dataset_formatted_row_shape_mismatch")
+        if not set(self.display_metadata).issubset(self.columns):
+            raise ValueError("presentation_dataset_display_field_missing")
+        if any(
+            key != metadata.canonical_name
+            for key, metadata in self.display_metadata.items()
+        ):
+            raise ValueError("presentation_dataset_display_identity_mismatch")
         return self
 
 

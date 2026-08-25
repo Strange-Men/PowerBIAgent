@@ -89,6 +89,8 @@ class ColumnSchema(BaseModel):
     data_type: str
     is_hidden: bool = False
     description: Optional[str] = None
+    display_name: Optional[str] = None
+    format_string: Optional[str] = None
 
 
 class MeasureSchema(BaseModel):
@@ -97,6 +99,8 @@ class MeasureSchema(BaseModel):
     data_type: str = "decimal"
     is_hidden: bool = False
     description: Optional[str] = None
+    display_name: Optional[str] = None
+    format_string: Optional[str] = None
 
 
 class HierarchySchema(BaseModel):
@@ -345,6 +349,7 @@ class ReportSpec(BaseModel):
     tables: list[TableSpec] = Field(default_factory=list)
     insights: list[str] = Field(default_factory=list)
     data_source: str = ""
+    data_source_display_name: Optional[str] = None
     filters: list[StructuredFilter] = Field(default_factory=list)
     generated_at: Optional[datetime] = None
     source_mode: str = "mock"

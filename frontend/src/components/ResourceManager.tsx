@@ -571,7 +571,7 @@ export function ResourceManager({
               <SettingsIntro title="数据模型" text={`当前资源 namespace：${runtimeMode}。数据模型仍由后端安全发现接口管理。`} />
             ) : null}
             {section === 'about' ? (
-              <SettingsIntro title="关于" text="PowerBIAgent M5.4.1 — 本地 Power BI 数据分析 Agent。" />
+              <SettingsIntro title="关于" text="PowerBIAgent M5.5 — 本地 Power BI 数据分析 Agent。" />
             ) : null}
           </div>
         </div>

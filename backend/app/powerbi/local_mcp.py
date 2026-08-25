@@ -44,6 +44,7 @@ from backend.app.schemas.data_contracts import (
     SemanticModelSchema,
     TableSchema,
 )
+from backend.app.harness.observability.phase_timing import timed_phase
 
 
 LOCAL_MCP_PACKAGE = "@microsoft/powerbi-modeling-mcp@0.5.0-beta.12"
@@ -679,6 +680,7 @@ class PowerBILocalMCPClient:
             ordered,
         )
 
+    @timed_phase("mcp_enumerate/connect")
     async def _connect_selected_desktop(
         self,
         client: Client,
@@ -1728,6 +1730,14 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 data_type=cls._required_schema_text(raw_column, "dataType"),
                 is_hidden=cls._optional_bool(raw_column, "isHidden"),
                 description=cls._optional_text(raw_column, "description"),
+                display_name=(
+                    cls._optional_text(raw_column, "displayName")
+                    or cls._optional_text(raw_column, "display_name")
+                ),
+                format_string=(
+                    cls._optional_text(raw_column, "formatString")
+                    or cls._optional_text(raw_column, "format_string")
+                ),
             ))
 
         seen_measures: set[tuple[str, str]] = set()
@@ -1747,6 +1757,14 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 data_type=cls._required_schema_text(raw_measure, "dataType"),
                 is_hidden=cls._optional_bool(raw_measure, "isHidden"),
                 description=cls._optional_text(raw_measure, "description"),
+                display_name=(
+                    cls._optional_text(raw_measure, "displayName")
+                    or cls._optional_text(raw_measure, "display_name")
+                ),
+                format_string=(
+                    cls._optional_text(raw_measure, "formatString")
+                    or cls._optional_text(raw_measure, "format_string")
+                ),
             ))
 
         seen_hierarchies: set[tuple[str, str]] = set()

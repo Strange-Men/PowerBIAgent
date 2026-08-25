@@ -1428,6 +1428,14 @@ def _patch_fake_runtime_glossary(monkeypatch):
         "Region": ["区域", "地区"],
         "OrderDate": ["订单日期", "销售日期"],
     }
+    display_names = {
+        "Total Sales": "总销售额",
+        "Total Quantity": "总销量",
+        "Category": "产品类别",
+        "Product": "产品",
+        "Region": "区域",
+        "OrderDate": "订单日期",
+    }
 
     class _TestCatalogBuilder:
         def build(self, schema, *, glossary_scope_key=None):
@@ -1443,12 +1451,14 @@ def _patch_fake_runtime_glossary(monkeypatch):
                     glossary["measures"][measure.name] = {
                         "table_name": table.name,
                         "object_type": "measure",
+                        "display_name": display_names.get(measure.name),
                         "aliases": aliases.get(measure.name, []),
                     }
                 for column in table.columns:
                     glossary["fields"][column.name] = {
                         "table_name": table.name,
                         "object_type": "field",
+                        "display_name": display_names.get(column.name),
                         "aliases": aliases.get(column.name, []),
                     }
             return SemanticCatalogBuilder().build_from_data(schema, glossary)
@@ -2078,8 +2088,18 @@ class TestM24DeepSeekLocalChat:
         transport = ASGITransport(app=app)
         messages = (
             "预测下个月销售额",
+            "预估明年销售额",
+            "估算明年销售额",
+            "估计下季度销量",
+            "推测明年收入",
+            "假设明年增长10%，销售额是多少？",
+            "明年大概能卖多少",
+            "forecast next year",
             "帮我修改这个 PBIX 里的度量值",
-            "删除所有数据",
+            "更新 Measure",
+            "删除这些销售数据",
+            "删掉订单数据",
+            "清空销售数据",
         )
         async with app.router.lifespan_context(app):
             service = app.state.turn_service
@@ -2198,8 +2218,35 @@ class TestM24DeepSeekLocalChat:
             )
             assert "Total Sales" in str(query_plan_prompt.messages)
             assert "local_desktop_model" in str(query_plan_prompt.messages)
-            assert first_data["answer"] == "Total Sales为100。"
+            assert first_data["answer"] == "总销售额为 100。"
+            assert [
+                block["type"] for block in first_data["presentation"]["blocks"]
+            ] == ["text"]
             audit = first_data["execution_audit"]
+            assert set(audit["phase_timings_ms"]) == {
+                "intent_llm",
+                "capability_classification",
+                "schema",
+                "member_lookup",
+                "grounding",
+                "mcp_enumerate/connect",
+                "dax",
+                "verified_fact",
+                "answer_llm",
+                "report_plan",
+                "report_query",
+                "report_render",
+                "persistence",
+                "total",
+            }
+            assert audit["phase_timings_ms"]["total"] > 0
+            assert audit["phase_timings_ms"]["intent_llm"] > 0
+            assert audit["phase_timings_ms"]["schema"] > 0
+            assert audit["phase_timings_ms"]["dax"] > 0
+            assert all(
+                isinstance(value, float) and value >= 0
+                for value in audit["phase_timings_ms"].values()
+            )
             assert audit["deterministic_dax"] is True
             assert audit["layer3_pass"] is True
             assert audit["query_result_success"] is True

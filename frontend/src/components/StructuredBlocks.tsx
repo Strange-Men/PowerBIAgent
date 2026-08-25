@@ -22,6 +22,19 @@ function displayValue(value: PresentationCell): string {
   return value
 }
 
+function displayField(dataset: PresentationDataset, field: string): string {
+  return dataset.display_metadata?.[field]?.display_name ?? field
+}
+
+function displayCell(
+  dataset: PresentationDataset,
+  rowIndex: number,
+  columnIndex: number,
+): string {
+  return dataset.formatted_rows?.[rowIndex]?.[columnIndex]
+    ?? displayValue(dataset.rows[rowIndex]?.[columnIndex] ?? null)
+}
+
 function datasetFor(
   datasets: PresentationDataset[],
   block: Exclude<PresentationBlock, { type: 'text' } | { type: 'report_attachment' }>,
@@ -37,9 +50,13 @@ function numericSeries(
   const xIndex = dataset.columns.indexOf(xField)
   const yIndex = dataset.columns.indexOf(yField)
   if (xIndex < 0 || yIndex < 0) return []
-  return dataset.rows.flatMap((row) =>
+  return dataset.rows.flatMap((row, rowIndex) =>
     typeof row[yIndex] === 'number'
-      ? [{ label: displayValue(row[xIndex]), value: row[yIndex] as number }]
+      ? [{
+          label: displayCell(dataset, rowIndex, xIndex),
+          value: row[yIndex] as number,
+          formattedValue: displayCell(dataset, rowIndex, yIndex),
+        }]
       : [],
   )
 }
@@ -60,7 +77,7 @@ function BarChart({ dataset, block }: {
             <div className="bar-track">
               <i style={{ width: `${Math.max(2, Math.abs(item.value) / max * 100)}%` }} />
             </div>
-            <strong>{displayValue(item.value)}</strong>
+            <strong>{item.formattedValue}</strong>
           </div>
         ))}
       </div>
@@ -87,7 +104,7 @@ function LineChart({ dataset, block }: {
   return (
     <figure className="result-chart" aria-label={`${block.title}折线图`}>
       <figcaption>{block.title}</figcaption>
-      <svg viewBox="0 0 100 100" role="img" aria-label={`${block.y_field}随${block.x_field}变化`} preserveAspectRatio="none">
+      <svg viewBox="0 0 100 100" role="img" aria-label={`${displayField(dataset, block.y_field)}随${displayField(dataset, block.x_field)}变化`} preserveAspectRatio="none">
         <line x1="0" y1="92" x2="100" y2="92" />
         <polyline points={points} />
       </svg>
@@ -123,7 +140,7 @@ export function StructuredBlocks({
           const value = dataset.rows[block.row_index]?.[column]
           return (
             <section className="result-metric" key={`metric-${blockIndex}`} aria-label={block.label}>
-              <span>{block.label}</span><strong>{displayValue(value ?? null)}</strong>
+              <span>{block.label}</span><strong>{dataset.formatted_rows?.[block.row_index]?.[column] ?? displayValue(value ?? null)}</strong>
             </section>
           )
         }
@@ -133,9 +150,9 @@ export function StructuredBlocks({
               <h2>{block.title}</h2>
               <div className="result-table-scroll" tabIndex={0} aria-label={`${block.title}，可横向滚动`}>
                 <table>
-                  <thead><tr>{dataset.columns.map((column) => <th scope="col" key={column}>{column}</th>)}</tr></thead>
+                  <thead><tr>{dataset.columns.map((column) => <th scope="col" key={column}>{displayField(dataset, column)}</th>)}</tr></thead>
                   <tbody>{dataset.rows.map((row, rowIndex) => (
-                    <tr key={rowIndex}>{row.map((value, columnIndex) => <td key={`${rowIndex}-${dataset.columns[columnIndex]}`}>{displayValue(value)}</td>)}</tr>
+                    <tr key={rowIndex}>{row.map((_value, columnIndex) => <td key={`${rowIndex}-${dataset.columns[columnIndex]}`}>{displayCell(dataset, rowIndex, columnIndex)}</td>)}</tr>
                   ))}</tbody>
                 </table>
               </div>

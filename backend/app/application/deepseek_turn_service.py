@@ -48,10 +48,15 @@ from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.deepseek_service import DeepSeekIntentService
 from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.intent.unsupported_policy import (
+    CapabilityPolicyStatus,
     deterministic_unsupported_reason,
+    resolve_capability_policy,
     should_defer_unsupported_to_grounding,
 )
+from backend.app.harness.observability.phase_timing import PhaseTimingCollector
 from backend.app.llm.base import LLMProvider, LLMTask
+from backend.app.localization.registry import LocalizationRegistry
+from backend.app.localization.service import LocalizationService
 from backend.app.memory.models import (
     PendingClarificationContext,
     RuntimeDataMode,
@@ -167,6 +172,9 @@ class DeepSeekTurnService:
         self.report_renderer = report_renderer
         self._report_repository = report_repository
         self.settings = settings
+        self._localization_service = LocalizationService(
+            LocalizationRegistry(settings.localization_registry_path)
+        )
         # M1.6.2: 禁止回退 Mock 配置。若未显式传入 config，从自身 settings 构建。
         self.config = config if config is not None else HarnessConfig.from_settings(settings)
         self._source_mode = "mock" if powerbi_adapter.is_mock else "real"
@@ -244,6 +252,7 @@ class DeepSeekTurnService:
         context: Optional[dict[str, Any]] = None,
         committed: Optional[StructuredWorkMemory] = None,
         pending_clarification: Optional[PendingClarificationContext] = None,
+        phase_timings: PhaseTimingCollector | None = None,
     ) -> dict[str, Any]:
         """Owner 执行 DeepSeek LLM 管线（控制面由共享 TurnPipeline 骨架提供）"""
 
@@ -255,6 +264,8 @@ class DeepSeekTurnService:
             context = {}
         if controller is None:
             controller = TurnController(self.config, request_id=effective_req_id)
+        if phase_timings is None:
+            phase_timings = PhaseTimingCollector()
 
         # ── 1. 每请求独立的 Collector + ObservedProvider ──
         collector = LLMCallCollector(
@@ -263,7 +274,8 @@ class DeepSeekTurnService:
         )
         observed = ObservedLLMProvider(self.llm_provider, collector)
 
-        unsupported_reason = deterministic_unsupported_reason(message)
+        with phase_timings.measure("capability_classification"):
+            unsupported_reason = deterministic_unsupported_reason(message)
         if unsupported_reason is not None:
             await self.pipeline.clear_pending_clarification(
                 effective_conv_id, runtime_mode
@@ -333,16 +345,75 @@ class DeepSeekTurnService:
 
         # ── 3. 意图识别 ──
         intent_service = DeepSeekIntentService(provider=observed, max_format_repairs=1)
-        intent = await intent_service.recognize(
-            user_input=message,
-            committed_memory=(
-                semantic_committed.model_dump() if semantic_committed else None
-            ),
-            semantic_model_key=semantic_model_key,
-            report_template_key=report_template_key,
-        )
+        with phase_timings.measure("intent_llm"):
+            intent = await intent_service.recognize(
+                user_input=message,
+                committed_memory=(
+                    semantic_committed.model_dump() if semantic_committed else None
+                ),
+                semantic_model_key=semantic_model_key,
+                report_template_key=report_template_key,
+            )
         trace.record("intent_classified", trace_id=trace_id, request_id=effective_req_id,
                      data_summary={"intent": intent.intent.value})
+
+        with phase_timings.measure("capability_classification"):
+            capability_decision = resolve_capability_policy(message, intent)
+        capability_signal = intent.capability_classification
+        trace.record(
+            "capability_classified",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={
+                "classification": (
+                    capability_signal.capability.value
+                    if capability_signal is not None
+                    else "not_provided"
+                ),
+                "decision": capability_decision.status.value,
+            },
+        )
+        if capability_decision.status == CapabilityPolicyStatus.UNSUPPORTED:
+            await self.pipeline.clear_pending_clarification(
+                effective_conv_id, runtime_mode
+            )
+            return self._build_result(
+                effective_req_id,
+                effective_conv_id,
+                "unsupported",
+                intent=IntentType.UNSUPPORTED.value,
+                response_type="unsupported",
+                unsupported_reason=capability_decision.reason,
+                trace=trace,
+                trace_id=trace_id,
+                is_mock=False,
+                source_mode=self._source_mode,
+                collector=collector,
+                execution_audit={
+                    "capability_policy": capability_decision.status.value,
+                    "committed_memory_mutated": False,
+                    "dax_executed": False,
+                },
+            )
+        if capability_decision.status == CapabilityPolicyStatus.CLARIFICATION:
+            return self._build_result(
+                effective_req_id,
+                effective_conv_id,
+                "clarification_required",
+                intent=IntentType.CLARIFICATION.value,
+                response_type="clarification",
+                clarification_question=capability_decision.reason,
+                trace=trace,
+                trace_id=trace_id,
+                is_mock=False,
+                source_mode=self._source_mode,
+                collector=collector,
+                execution_audit={
+                    "capability_policy": capability_decision.status.value,
+                    "committed_memory_mutated": False,
+                    "dax_executed": False,
+                },
+            )
 
         # ── 4. unsupported 可按产品契约早停；Real clarification 只作为
         # linguistic diagnostic。数据/报表范围内的 canonical semantic
@@ -406,6 +477,7 @@ class DeepSeekTurnService:
             )
 
         schema: SemanticModelSchema | None = None
+        catalog = None
         exec_ctx: Any = None
         controller_prepared = False
 
@@ -458,13 +530,14 @@ class DeepSeekTurnService:
             )
             if schema is None:
                 schema_input = SchemaInput(semantic_model_key=semantic_model_key)
-                schema = await self.tool_gateway.execute(
-                    TOOL_NAME_SCHEMA,
-                    exec_ctx,
-                    schema_input,
-                    trace=trace,
-                    controller=controller,
-                )
+                with phase_timings.measure("schema"):
+                    schema = await self.tool_gateway.execute(
+                        TOOL_NAME_SCHEMA,
+                        exec_ctx,
+                        schema_input,
+                        trace=trace,
+                        controller=controller,
+                    )
         except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
                 ToolNotRegisteredError, ToolOutputValidationError) as e:
             return await self._fail_result(
@@ -544,6 +617,7 @@ class DeepSeekTurnService:
                 trace=trace,
                 trace_id=trace_id,
                 collector=collector,
+                phase_timings=phase_timings,
             )
 
         # ── 8.1 Business Semantic Grounding ──
@@ -574,27 +648,29 @@ class DeepSeekTurnService:
                 async def _member_lookup(
                     field: Any, limit: int
                 ) -> ColumnMembersResult:
-                    return await self.tool_gateway.execute(
-                        TOOL_NAME_MEMBERS,
-                        exec_ctx,
-                        ColumnMembersRequest(
-                            semantic_model_key=semantic_model_key,
-                            table_name=field.table_name,
-                            field_name=field.canonical_name,
-                            limit=limit,
-                        ),
-                        trace=trace,
-                        controller=controller,
-                    )
+                    with phase_timings.measure("member_lookup"):
+                        return await self.tool_gateway.execute(
+                            TOOL_NAME_MEMBERS,
+                            exec_ctx,
+                            ColumnMembersRequest(
+                                semantic_model_key=semantic_model_key,
+                                table_name=field.table_name,
+                                field_name=field.canonical_name,
+                                limit=limit,
+                            ),
+                            trace=trace,
+                            controller=controller,
+                        )
 
-                grounding = await grounding_service.ground(
-                    message,
-                    intent,
-                    query_plan,
-                    semantic_committed,
-                    _member_lookup,
-                    pending=pending_clarification,
-                )
+                with phase_timings.measure("grounding"):
+                    grounding = await grounding_service.ground(
+                        message,
+                        intent,
+                        query_plan,
+                        semantic_committed,
+                        _member_lookup,
+                        pending=pending_clarification,
+                    )
                 if not grounding.pending_eligible:
                     await self.pipeline.clear_pending_clarification(
                         effective_conv_id, runtime_mode
@@ -858,12 +934,13 @@ class DeepSeekTurnService:
                     request_id=effective_req_id,
                 )
             else:
-                dax_request = DeterministicDAXBuilder().build(
-                    query_plan,
-                    schema,
-                    request_id=effective_req_id,
-                    timeout_seconds=self.settings.powerbi_query_timeout_seconds,
-                )
+                with phase_timings.measure("dax"):
+                    dax_request = DeterministicDAXBuilder().build(
+                        query_plan,
+                        schema,
+                        request_id=effective_req_id,
+                        timeout_seconds=self.settings.powerbi_query_timeout_seconds,
+                    )
         except Exception as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
@@ -936,13 +1013,14 @@ class DeepSeekTurnService:
                 intent=intent.intent,
                 user=request_user_context,
             )
-            query_result: QueryResult = await self.tool_gateway.execute(
-                TOOL_NAME_DAX,
-                exec_ctx,
-                dax_request,
-                trace=trace,
-                controller=controller,
-            )
+            with phase_timings.measure("dax"):
+                query_result: QueryResult = await self.tool_gateway.execute(
+                    TOOL_NAME_DAX,
+                    exec_ctx,
+                    dax_request,
+                    trace=trace,
+                    controller=controller,
+                )
         except ToolTimeoutError as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
@@ -1003,11 +1081,13 @@ class DeepSeekTurnService:
         )
 
         verified_facts: VerifiedFactSet | None = None
+        localizations = {}
         if not self.powerbi.is_mock:
             try:
-                verified_facts = VerifiedFactSetBuilder().build(
-                    query_plan, query_result
-                )
+                with phase_timings.measure("verified_fact"):
+                    verified_facts = VerifiedFactSetBuilder().build(
+                        query_plan, query_result
+                    )
             except FactVerificationError as e:
                 return await self._fail_result(
                     memory,
@@ -1033,6 +1113,27 @@ class DeepSeekTurnService:
                     "truncated": verified_facts.truncated,
                 },
             )
+            if catalog is not None:
+                localizations = await self._localization_service.resolve_for_plan(
+                    schema=schema,
+                    catalog=catalog,
+                    plan=query_plan,
+                    translator=observed,
+                )
+                unique_localizations = {
+                    item.object_identity: item for item in localizations.values()
+                }
+                trace.record(
+                    "display_localization_resolved",
+                    trace_id=trace_id,
+                    request_id=effective_req_id,
+                    data_summary={
+                        "object_count": len(unique_localizations),
+                        "sources": sorted({
+                            item.source.value for item in unique_localizations.values()
+                        }),
+                    },
+                )
 
         # ── 11. 生成 Answer 或 ReportSpec ──
         answer_text: Optional[str] = None
@@ -1043,18 +1144,21 @@ class DeepSeekTurnService:
             response_type = "answer"
             try:
                 if verified_facts is not None:
-                    response_obj = FactBoundedAnswerBuilder().build(
+                    response_obj = FactBoundedAnswerBuilder(
+                        localizations=localizations
+                    ).build(
                         query_plan, query_result, verified_facts
                     )
                 else:
                     answer_service = DeepSeekAnswerService(
                         provider=observed, max_repairs=1
                     )
-                    response_obj = await answer_service.generate(
-                        user_input=message, intent=intent, query_plan=query_plan,
-                        query_result=query_result, schema=schema,
-                        request_id=effective_req_id,
-                    )
+                    with phase_timings.measure("answer_llm"):
+                        response_obj = await answer_service.generate(
+                            user_input=message, intent=intent, query_plan=query_plan,
+                            query_result=query_result, schema=schema,
+                            request_id=effective_req_id,
+                        )
             except Exception as e:
                 return await self._fail_result(
                     memory, effective_req_id, effective_conv_id, controller, trace,
@@ -1236,6 +1340,7 @@ class DeepSeekTurnService:
                 query_result,
                 verified_facts,
                 answer_text,
+                localizations=localizations,
             )
         elif report_data is not None:
             presentation = StructuredPresentationBuilder.build_report(
@@ -1294,6 +1399,7 @@ class DeepSeekTurnService:
         trace: TraceRecorder,
         trace_id: str,
         collector: LLMCallCollector,
+        phase_timings: PhaseTimingCollector,
     ) -> dict[str, Any]:
         """Execute the adaptive M3.4 sales report inside the active TurnPipeline.
 
@@ -1330,10 +1436,11 @@ class DeepSeekTurnService:
             observed_report_intent = ObservedLLMProvider(
                 self.llm_provider, collector
             )
-            llm_report_intent_ids = await DeepSeekReportIntentService(
-                observed_report_intent,
-                max_format_repairs=0,
-            ).draft(message)
+            with phase_timings.measure("report_plan"):
+                llm_report_intent_ids = await DeepSeekReportIntentService(
+                    observed_report_intent,
+                    max_format_repairs=0,
+                ).draft(message)
         signal = resolve_report_intent(message, llm_draft=llm_report_intent_ids)
         trace.record(
             "report_intent_resolved",
@@ -1349,13 +1456,14 @@ class DeepSeekTurnService:
 
         # ── 2. Deterministic ReportPlan (capability resolution) ──
         try:
-            report_plan = report_planner.plan(
-                template_key,
-                schema,
-                signal.requested_ids,
-                signal,
-                max_queries=self.settings.max_tool_calls - 2,
-            )
+            with phase_timings.measure("report_plan"):
+                report_plan = report_planner.plan(
+                    template_key,
+                    schema,
+                    signal.requested_ids,
+                    signal,
+                    max_queries=self.settings.max_tool_calls - 2,
+                )
         except ReportPlanError as exc:
             return await self._fail_result(
                 memory,
@@ -1372,6 +1480,7 @@ class DeepSeekTurnService:
             )
 
         dax_requests: dict[str, DAXRequest] = {}
+        report_query_started = phase_timings.begin()
         try:
             for query in report_plan.data_plan.queries:
                 plan_validation = request_validator.validate_query_plan(
@@ -1489,6 +1598,7 @@ class DeepSeekTurnService:
                 trace_id=trace_id,
                 collector=collector,
             )
+        phase_timings.end("report_query", report_query_started)
 
         controller.record_tool_execution_succeeded()
         controller.transition(TurnState.TOOL_EXECUTED)
@@ -1504,10 +1614,11 @@ class DeepSeekTurnService:
                     raise SalesReportAssemblyError(
                         "sales_report_query_result_validation_failed"
                     )
-                fact_sets[query.requirement_key] = VerifiedFactSetBuilder().build(
-                    query.query_plan,
-                    result,
-                )
+                with phase_timings.measure("verified_fact"):
+                    fact_sets[query.requirement_key] = VerifiedFactSetBuilder().build(
+                        query.query_plan,
+                        result,
+                    )
 
             # ── 3. Fact-level re-gate: sections whose requirements returned
             # no verified rows are dropped (never rendered empty). ──
@@ -1541,11 +1652,12 @@ class DeepSeekTurnService:
                 requirement_key: fact_sets[requirement_key]
                 for requirement_key in filtered_results
             }
-            report_data_contract = SalesReportDataAssembler().build(
-                execution_plan,
-                filtered_results,
-                filtered_facts,
-            )
+            with phase_timings.measure("report_plan"):
+                report_data_contract = SalesReportDataAssembler().build(
+                    execution_plan,
+                    filtered_results,
+                    filtered_facts,
+                )
         except (FactVerificationError, SalesReportAssemblyError, ReportContractError) as exc:
             return await self._fail_result(
                 memory,
@@ -1582,14 +1694,16 @@ class DeepSeekTurnService:
             report_spec_with_ctx = report_spec.model_copy(update={
                 "conversation_id": effective_conv_id,
                 "request_id": effective_req_id,
+                "data_source_display_name": schema.name,
             })
-            rendered: ReportArtifact = await self.tool_gateway.execute(
-                TOOL_NAME_RENDER,
-                exec_ctx,
-                report_spec_with_ctx,
-                trace=trace,
-                controller=controller,
-            )
+            with phase_timings.measure("report_render"):
+                rendered: ReportArtifact = await self.tool_gateway.execute(
+                    TOOL_NAME_RENDER,
+                    exec_ctx,
+                    report_spec_with_ctx,
+                    trace=trace,
+                    controller=controller,
+                )
         except SalesReportAssemblyError as exc:
             return await self._fail_result(
                 memory,

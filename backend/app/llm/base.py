@@ -24,6 +24,9 @@ class LLMTask(str, Enum):
     # section ID；与 factual authority（DAX/ReportData/Report factual）
     # 分开计数，绝不计入事实类 LLM 调用。
     REPORT_INTENT = "report_intent"
+    # Display-only translation of already verified runtime object identities.
+    # This task never returns QueryPlan, DAX, values, or resource actions.
+    DISPLAY_TRANSLATION = "display_translation"
 
 
 @dataclass

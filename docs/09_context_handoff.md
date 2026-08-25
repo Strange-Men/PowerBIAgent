@@ -1,11 +1,11 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-08-24
+> **最后更新：** 2026-08-25
 
 ## 当前阶段
 
-**M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0—M5.4.1 已完成；M5.5 继续 Deferred。
+**M5.5 — 语义理解、中文展示、性能与报表视觉最终收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0—M5.5 已完成，M5 正式结束；不进入后续里程碑。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -24,7 +24,24 @@
 | **M5.3.3** | **多轮语义、会话资源生命周期与 Artifact Governance** | **✅ 已完成** |
 | **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
 | **M5.4.1** | **Settings Hub、全量历史资源分页与 test-owned cleanup** | **✅ 已完成** |
-| **M5.5** | **语义/中文字段/视觉/性能** | **⏸ Deferred / NOT STARTED** |
+| **M5.5** | **语义/中文字段/视觉/性能** | **✅ 已完成** |
+
+### M5.5 final implementation and evidence（COMPLETE）
+
+- semantic：高置信危险表达 fast-path；bounded LLM 只给 registry-owned capability/confidence/evidence；deterministic policy 最终裁决。预测/写入/删除/任意代码 zero DAX、zero Power BI、zero Memory commit。
+- localization：通用 model/object/schema-scoped registry；metadata、glossary、persisted registry、bounded translation 四级优先；只改 display name，不改 canonical identity。
+- presentation：确定性中文 answer 与 formatter；单 scalar 无 KPI card，grouped 为 text+table，比较可加 bar，trend 为 text+table+line。
+- report：现有 `sales_report` 使用 safe plot 与首尾向内锚点，fluid max-width、单 section 铺开、pair 双列、小屏单列、donut/legend 紧凑。
+- performance：记录 14 个指定 phase timing（含 total），不采集 Secret/prompt/raw response；profiling 后只做 model/instance/schema-scoped 安全优化。
+- acceptance：focused/full/frontend/governance/Golden/readonly Rich PBIX；所有 automation-owned artifact finally cleanup 并证明 residual=0。
+
+- C1—C6 实现完成；C7 focused backend `394 passed`，frontend typecheck/lint/build PASS、Vitest `70 passed`。
+- C8 backend full `1834 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture `124`、Repository Safety `304`、Error Ledger `29`、Documentation/Artifact Governance 与 `git diff --check` PASS。
+- 同机 Fake 边界 12 次取中位数，M5.4.1 baseline → M5.5：scalar `2.436 → 3.006 ms`、grouped `2.485 → 3.513 ms`、report `4.709 → 4.401 ms`。Real scalar/grouped/report total 分别约 `44.65s / 104.46s / 190.98s`；外部 LLM、MCP/schema 与 report query 是主要长尾，没有证据支持加入 cache，故未做投机性缓存。
+- C9 readonly Rich PBIX discovery/probe 与 Browser Acceptance PASS：scalar `6,943,997.51`、quantity `3,065` 仅 text；grouped 使用中文 display metadata + table/bar；2025-05 为 `536,974.85`；两类 prediction、delete、PBIX/Measure write 全部 unsupported、zero DAX、zero Memory commit。
+- `sales_report` Real HTML 在 1920/2560/1280/390 均无横向溢出；`2026-03`、首尾 direct label 与 endpoint extrema 完整，所有 line SVG text bbox 位于 viewBox 内；donut/legend、footer wrapping 与移动端单列视觉 PASS。
+- 所有 browser/minimal Real attempts 均使用 explicit automation ownership 并在 `finally` 经正式 cleanup；本轮 test conversation/report/HTML/SQLite namespace/pending delete intent residual 为 0，未知 ownership 用户资源未删除。
+- Prediction engine、write-back、Remote MCP 与新 report template 未实现；TurnPipeline、Deterministic DAX、QueryResult、VerifiedFactSet、Memory、ReportSpec、ToolGateway → PowerBIAdapter 与 resource authority 不变。M5.0—M5.5 已完成，M5 正式结束。
 
 ### M5.4.1 final implementation and evidence
 
@@ -35,7 +52,7 @@
 - report rename/archive/restore/delete 继续遵守 presentation title、filesystem HTML、factual metadata、namespace 与 tombstone authority。
 - Codex/pytest/browser/Real/MCP/report 自动化资源必须显式登记 test ownership，在 `finally` 中通过正式 API/repository cleanup 并验证 conversation/report/HTML/SQLite namespace/delete intent/orphan residual=0；任一残留 Gate FAIL。
 - 历史清理只处理有 ownership metadata、known test namespace/ID、fixture 或 report linkage 证据的资源；无法确认 ownership 的现有资源保留。
-- 本轮不修改 TurnPipeline factual semantics、DAX、Memory、VerifiedFactSet 或 ReportSpec authority；M5.5 Deferred。
+- 本轮不修改 TurnPipeline factual semantics、DAX、Memory、VerifiedFactSet 或 ReportSpec authority；M5.5 Deferred（当时状态）。
 - 正式实现：独立 conversation/report active/archived cursor API、`total_count`、SQLite `julianday + stable ID` keyset、20 项按需加载、任意多选和最多 20 项执行 wave；migration `b7c9d2e4f610`。
 - Real Browser：25 conversations 从 20/25 加载到 25/25，Sidebar 仍为 12；25 项一次确认以 20+5 archive/restore。10 reports 的 rename/archive/restore/delete/tombstone/restart 通过。
 - automation ownership registry、finally cleanup CLI 与 Artifact Governance exact SQLite probe 已启用；本轮 teardown 后 conversation/report/HTML/SQLite/delete-intent residual=0，未知 ownership 数据未删除。
@@ -56,7 +73,7 @@
 - 用户卡片打开设置/已归档/资源管理；Sidebar recent/report 独立滚动与折叠，批量 checkbox 只在资源面板。
 - 批量操作最多 20 项，协调正式单资源 API 并呈现 partial failure；不增 `DELETE ALL`，不绕过 durable delete，archive ≠ delete。
 - report delete 保留 presentation tombstone；report `display_title` 只是 presentation metadata，report_id/HTML/content_hash/ReportSpec/VerifiedFactSet 不变。LLM/ToolGateway 无 rename/delete 权限。
-- M5.5 语言理解、Localization Registry、单指标展示、HTML 视觉与性能继续 Deferred。
+- M5.5 语言理解、Localization Registry、单指标展示、HTML 视觉与性能继续 Deferred（当时状态）。
 
 ### M5.4 — 最终实现与验收
 
@@ -67,7 +84,7 @@
 - Rich PBIX Real A/B/C 并发结果分别为总销售额 `6,943,997.51`、四区域销售表、总销量 `3,065`；pending/loading/result 均隔离且无自动跳窗。归档恢复、report rename、delete 后 reload/history tombstone 无 view/download 均通过。
 - 本轮 9 个 Real acceptance conversation 与关联 report 通过正式单资源 API 精确清理。一个此前无 DB ownership 的 `test01.html` 未删除，已可恢复归档到 `local_state/archive/m54_preexisting_orphan_20260824/`，Artifact Governance PASS。
 - Fresh evidence：backend `1790 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `61 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `117`、Repository Safety `290`、Error Ledger `25`、Documentation Governance、Artifact Governance、`git diff --check` PASS。
-- M0–M5 factual/Memory/VerifiedFactSet/Report authority 未改变；M5.5 未开始；不合并 main，不创建 Tag。
+- M0–M5 factual/Memory/VerifiedFactSet/Report authority 未改变；M5.5 未开始（当时状态）；不合并 main，不创建 Tag。
 
 ### M5.3.3 root-cause baseline（代码修改前）
 
@@ -242,7 +259,7 @@
 - Golden：11 passed、1 manual-real skipped；Architecture `109`、Repository Safety `239`、Error Ledger `25`、Documentation Governance PASS。
 - Alembic head 保持 `c8d4e6f2a109`；fresh DB → head 与 head → head 幂等 upgrade PASS，确认无新增 migration。
 - `backend/app/config/settings.py`：version → M4.4.1。
-- M4.4.1 无 migration；M5 NOT STARTED；不新增 Tag。
+- M4.4.1 无 migration；M5 NOT STARTED（当时状态）；不新增 Tag。
 
 ### M4.4.2 fresh acceptance
 
@@ -251,11 +268,11 @@
 - Golden：`11 passed, 1 manual-real skipped`；Architecture `109`、Repository Safety `239`、Error Ledger `25`、Documentation Governance PASS。
 - Alembic head 保持 `c8d4e6f2a109`；fresh DB → head 与 head → head 幂等 upgrade PASS，确认无新增 migration。
 - `backend/app/config/settings.py`：version → M4.4.2。
-- M4.4.2 FINAL PASS；M5 NOT STARTED；不新增 Tag。
+- M4.4.2 FINAL PASS；M5 NOT STARTED（当时状态）；不新增 Tag。
 
-## 下一步
+## 当前收口
 
-M5.4 已完成。下一步必须等待用户明确批准 M5.5；不得自行进入语言理解、中文字段、单指标、HTML 视觉或性能范围。
+M5.5 已完成全部 Gate、readonly Real Browser Acceptance 与 automation residual=0；M5 正式结束，停止在本里程碑，不进入后续里程碑。
 
 ## 关键命令
 
@@ -301,4 +318,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — Settings 全量资源与 automation 零残留治理；M5.5 Deferred*
+*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*

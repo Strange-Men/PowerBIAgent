@@ -55,7 +55,7 @@ class SalesReportRenderer(ReportRenderer):
     _ALLOWED_LAYOUT_HINTS = frozenset({"full", "half"})
     _MAX_SERIES = 200
     _LINE_WIDTH = 600
-    _LINE_HEIGHT = 220
+    _LINE_HEIGHT = 210
 
     @property
     def supported_templates(self) -> list[str]:
@@ -97,19 +97,26 @@ class SalesReportRenderer(ReportRenderer):
         generated_at = report.generated_at
         if generated_at is None:
             raise ValueError("sales_report_generated_at_required")
+        friendly_model_name = (
+            report.data_source_display_name.strip()
+            if report.data_source_display_name
+            else report.data_source
+        )
         footer_items = [
-            f"数据来源：{self._text(report.data_source)}",
+            f"数据来源：{self._text(friendly_model_name)}",
             f"执行模式：{self._text(report.source_mode)}",
             f"合同版本：{self._text(report.contract_version)}",
             f"生成时间：{self._text(generated_at.isoformat())}",
         ]
+        if friendly_model_name != report.data_source:
+            footer_items.insert(1, f"模型标识：{self._text(report.data_source)}")
         html = template.substitute(
             title=self._text(report.title),
             kpi_block=kpi_block,
             trend_block=trend_block,
             pair_one_block=pair_one_block,
             pair_two_block=pair_two_block,
-            footer=" · ".join(footer_items),
+            footer="".join(f"<span>{item}</span>" for item in footer_items),
         )
         self._validate_rendered_html(html)
         return html
@@ -190,10 +197,12 @@ class SalesReportRenderer(ReportRenderer):
         points = cls._series(chart)
         width = cls._LINE_WIDTH
         height = cls._LINE_HEIGHT
-        pad_left, pad_right = 46, 16
-        pad_top, pad_bottom = 14, 34
-        plot_w = width - pad_left - pad_right
-        plot_h = height - pad_top - pad_bottom
+        safe_plot_left = 72
+        safe_plot_right = width - 72
+        safe_plot_top = 28
+        safe_plot_bottom = height - 44
+        plot_w = safe_plot_right - safe_plot_left
+        plot_h = safe_plot_bottom - safe_plot_top
 
         values = [Decimal(str(item["value"])) for item in points]
         minimum = min(values)
@@ -201,21 +210,21 @@ class SalesReportRenderer(ReportRenderer):
         span = maximum - minimum
         if span == 0:
             span = Decimal("1")
-        # 8% headroom so the top label never clips
-        upper = maximum + span * Decimal("0.08")
-        lower = minimum - span * Decimal("0.08")
+        # Headroom protects direct labels even when an endpoint is the extrema.
+        upper = maximum + span * Decimal("0.12")
+        lower = minimum - span * Decimal("0.12")
 
         def scale_x(index: int) -> str:
             x = (
-                pad_left
+                safe_plot_left
                 if len(points) == 1
-                else pad_left + index * plot_w / (len(points) - 1)
+                else safe_plot_left + index * plot_w / (len(points) - 1)
             )
             return f"{x:.2f}"
 
         def scale_y(value: Decimal) -> str:
             ratio = (value - lower) / (upper - lower)
-            y = pad_top + plot_h - ratio * plot_h
+            y = safe_plot_top + plot_h - ratio * plot_h
             return f"{y:.2f}"
 
         coords = [
@@ -225,9 +234,9 @@ class SalesReportRenderer(ReportRenderer):
         line_points = " ".join(f"{x},{y}" for x, y in coords)
         if len(coords) >= 2:
             area_points = (
-                f"{pad_left},{pad_top + plot_h} "
+                f"{safe_plot_left},{safe_plot_bottom} "
                 + line_points
-                + f" {scale_x(len(points) - 1)},{pad_top + plot_h}"
+                + f" {scale_x(len(points) - 1)},{safe_plot_bottom}"
             )
             area = (
                 f'<polygon points="{area_points}" fill="{ThemePolicy.SEQUENTIAL_100}" '
@@ -255,11 +264,13 @@ class SalesReportRenderer(ReportRenderer):
                 labels.append(cls._axis_period_label(
                     points[index]["label"],
                     scale_x(index),
+                    index,
+                    len(points),
                 ))
         middle = len(points) // 2
         if len(points) > 2 and middle not in labeled_indexes:
             labels.append(cls._axis_period_label(
-                points[middle]["label"], scale_x(middle)
+                points[middle]["label"], scale_x(middle), middle, len(points)
             ))
 
         direct_labels = ""
@@ -271,12 +282,21 @@ class SalesReportRenderer(ReportRenderer):
                 direct.append((index, values[index]))
             for index, value in direct:
                 x, y = coords[index]
-                anchor = (
-                    "end" if index == 0 else "start" if index == len(points) - 1 else "middle"
-                )
+                numeric_x = float(x)
+                if len(points) == 1:
+                    anchor = "middle"
+                elif index == 0:
+                    anchor = "start"
+                    numeric_x += 8
+                elif index == len(points) - 1:
+                    anchor = "end"
+                    numeric_x -= 8
+                else:
+                    anchor = "middle"
                 dy = "-6" if index == max_index else "14"
                 direct_labels += (
-                    f'<text x="{x}" y="{y}" dy="{dy}" text-anchor="{anchor}" '
+                    f'<text x="{numeric_x:.2f}" y="{y}" dy="{dy}" '
+                    f'text-anchor="{anchor}" data-direct-index="{index}" '
                     f'class="chart-direct-label">'
                     f"{cls._number(value, decimals=2)}</text>"
                 )
@@ -284,6 +304,10 @@ class SalesReportRenderer(ReportRenderer):
         return (
             f'<div class="chart chart-line" data-chart="time_trend">'
             f'<svg viewBox="0 0 {width} {height}" role="img" '
+            f'data-safe-plot-left="{safe_plot_left}" '
+            f'data-safe-plot-right="{safe_plot_right}" '
+            f'data-safe-plot-top="{safe_plot_top}" '
+            f'data-safe-plot-bottom="{safe_plot_bottom}" '
             f'aria-label="{cls._text(chart.title)}">'
             f'{area}{"".join(circles)}'
             f'<polyline points="{line_points}" fill="none" '
@@ -295,11 +319,26 @@ class SalesReportRenderer(ReportRenderer):
         )
 
     @classmethod
-    def _axis_period_label(cls, period: str, x: str) -> str:
-        anchor = "start" if float(x) < 60 else "middle"
+    def _axis_period_label(
+        cls,
+        period: str,
+        x: str,
+        index: int,
+        point_count: int,
+    ) -> str:
+        anchor = (
+            "middle"
+            if point_count == 1
+            else "start"
+            if index == 0
+            else "end"
+            if index == point_count - 1
+            else "middle"
+        )
         return (
             f'<text x="{x}" y="{cls._LINE_HEIGHT - 8}" text-anchor="{anchor}" '
-            f'class="chart-axis-label">{cls._text(period)}</text>'
+            f'data-axis-index="{index}" class="chart-axis-label">'
+            f'{cls._text(period)}</text>'
         )
 
     # ── Donut chart (category composition) ──

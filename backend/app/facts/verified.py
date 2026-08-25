@@ -342,6 +342,19 @@ class VerifiedFactSetBuilder:
 
 
 class FactBoundedAnswerBuilder:
+    def __init__(
+        self,
+        *,
+        localizations: dict[str, Any] | None = None,
+        formatter: Any | None = None,
+    ) -> None:
+        # Imports remain local to keep the factual model independent from the
+        # optional display layer.
+        from backend.app.presentation.formatter import PresentationValueFormatter
+
+        self._localizations = localizations or {}
+        self._formatter = formatter or PresentationValueFormatter()
+
     def build(
         self,
         plan: CanonicalQueryPlan,
@@ -360,12 +373,13 @@ class FactBoundedAnswerBuilder:
             rows = []
             for item in ranking.values:
                 dimension_text = "，".join(
-                    f"{key}={self._format(value)}"
+                    f"{self._label(key)}={self._format(value, key)}"
                     for key, value in item["dimensions"].items()
                 )
                 rows.append(
                     f"结果第{item['result_position']}项 {dimension_text}："
-                    f"{item['measure']}={self._format(item['value'])}"
+                    f"{self._label(item['measure'])}="
+                    f"{self._format(item['value'], item['measure'])}"
                 )
             parts.append("TopN结果顺序：" + "；".join(rows) + "。")
         elif plan.dimensions:
@@ -374,18 +388,22 @@ class FactBoundedAnswerBuilder:
             rows = []
             for item in grouped[:20]:
                 dimension_text = "，".join(
-                    f"{key}={self._format(value)}"
+                    f"{self._label(key)}={self._format(value, key)}"
                     for key, value in item.dimensions.items()
                 )
                 rows.append(
-                    f"{dimension_text}：{item.measure}={self._format(item.value)}"
+                    f"{dimension_text}：{self._label(item.measure)}="
+                    f"{self._format(item.value, item.measure)}"
                 )
             parts.append("；".join(rows) + "。")
         else:
             scalar = facts.by_type(FactType.SCALAR_METRIC)
             used.extend(scalar)
             for item in scalar:
-                parts.append(f"{item.measure}为{self._format(item.value)}。")
+                parts.append(
+                    f"{self._label(item.measure)}为 "
+                    f"{self._format(item.value, item.measure)}。"
+                )
                 if self._is_number(item.value):
                     metrics[item.measure or "metric"] = item.value
                     metric_provenance[item.measure or "metric"] = {
@@ -397,7 +415,8 @@ class FactBoundedAnswerBuilder:
             used.append(item)
             value = item.value
             parts.append(
-                f"筛选条件：{value['field']}={self._format(value['value'])}。"
+                f"筛选条件：{self._label(value['field'])}="
+                f"{self._format(value['value'], value['field'])}。"
             )
         for item in facts.by_type(FactType.APPLIED_TIME_RANGE):
             used.append(item)
@@ -430,11 +449,17 @@ class FactBoundedAnswerBuilder:
             fact_ids=[item.fact_id for item in used],
         )
 
-    @staticmethod
-    def _format(value: Any) -> str:
-        if isinstance(value, (date, datetime)):
-            return value.isoformat()
-        return str(value)
+    def _format(self, value: Any, field_name: str | None = None) -> str:
+        return self._formatter.format(
+            value,
+            self._localizations.get(field_name) if field_name else None,
+        )
+
+    def _label(self, field_name: str | None) -> str:
+        if not field_name:
+            return "指标"
+        localized = self._localizations.get(field_name)
+        return localized.display_name if localized is not None else field_name
 
     @staticmethod
     def _is_number(value: Any) -> bool:
@@ -500,7 +525,7 @@ class FactBoundedReportBuilder:
 class FactOutputValidator:
     """Validate externally visible factual fields against a FactSet."""
 
-    _NUMBER = re.compile(r"(?<![A-Za-z0-9_.])-?\d+(?:\.\d+)?")
+    _NUMBER = re.compile(r"(?<![A-Za-z0-9_.])-?\d[\d,]*(?:\.\d+)?")
     _CAUSAL = ("因为", "导致", "原因", "归因于", "由于")
     _TREND = ("上升", "下降", "增长", "减少", "趋势")
 
@@ -604,6 +629,18 @@ class FactOutputValidator:
         for item in facts:
             for value in (item.value, item.values):
                 self._collect_numbers(value, allowed)
+            if isinstance(item.value, (int, float, Decimal)) and not isinstance(
+                item.value, bool
+            ):
+                number = Decimal(str(item.value))
+                allowed.add(self._normalize_number(str(number.quantize(Decimal("0.01")))))
+                measure_name = (item.measure or "").casefold()
+                if any(token in measure_name for token in ("rate", "percent", "percentage")):
+                    allowed.add(
+                        self._normalize_number(
+                            str((number * Decimal("100")).quantize(Decimal("0.01")))
+                        )
+                    )
         return allowed
 
     def _collect_numbers(self, value: Any, output: set[str]) -> None:
@@ -627,7 +664,7 @@ class FactOutputValidator:
     @staticmethod
     def _normalize_number(value: str) -> str:
         try:
-            rendered = format(Decimal(value), "f")
+            rendered = format(Decimal(value.replace(",", "")), "f")
             if "." in rendered:
                 rendered = rendered.rstrip("0").rstrip(".")
             return rendered if rendered != "-0" else "0"

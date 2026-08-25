@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -330,6 +331,102 @@ async def test_fixed_renderer_geometry_is_deterministic_and_data_bound():
     assert 'style="width: 50.06%"' in html
     assert "结果序号 1" in html
     assert "结果序号 2" in html
+
+
+@pytest.mark.parametrize("point_count", [1, 2, 15])
+@pytest.mark.parametrize("endpoint_peak", ["first", "last"])
+def test_line_chart_safe_geometry_keeps_points_and_labels_inside(
+    point_count, endpoint_peak
+):
+    values = list(range(1, point_count + 1))
+    if endpoint_peak == "first":
+        values = list(reversed(values))
+    series = [
+        {"label": f"2026-{index + 1:02d}", "value": value}
+        for index, value in enumerate(values)
+    ]
+    chart = ChartSpec(
+        type="line",
+        title="月度销售趋势",
+        x_field="OrderDate",
+        y_field="Total Sales",
+        visual_type="line",
+        business_role="time_trend",
+        layout_hint="full",
+        series=series,
+    )
+    html = SalesReportRenderer._line_chart(chart)
+
+    safe = {
+        key: float(re.search(fr'data-safe-plot-{key}="([0-9.]+)"', html).group(1))
+        for key in ("left", "right", "top", "bottom")
+    }
+    circles = re.findall(r'<circle cx="([0-9.]+)" cy="([0-9.]+)"[^>]+data-point=', html)
+    assert len(circles) == point_count
+    assert all(safe["left"] <= float(x) <= safe["right"] for x, _ in circles)
+    assert all(safe["top"] <= float(y) <= safe["bottom"] for _, y in circles)
+    assert "2026-01" in html
+    assert f"2026-{point_count:02d}" in html
+
+    axis = re.findall(
+        r'<text x="([0-9.]+)" y="[0-9.]+" text-anchor="(start|middle|end)" '
+        r'data-axis-index="(\d+)"',
+        html,
+    )
+    if point_count == 1:
+        assert axis == [(f'{safe["left"]:.2f}', "middle", "0")]
+    else:
+        assert axis[0][1] == "start"
+        assert axis[1][1] == "end"
+
+    direct = re.findall(
+        r'<text x="([0-9.]+)" y="([0-9.]+)" dy="(-?\d+)" '
+        r'text-anchor="(start|middle|end)" data-direct-index="(\d+)"',
+        html,
+    )
+    assert direct
+    assert all(0 <= float(x) <= SalesReportRenderer._LINE_WIDTH for x, *_ in direct)
+    if point_count > 1:
+        by_index = {int(index): anchor for _, _, _, anchor, index in direct}
+        assert by_index[0] == "start"
+        assert by_index[point_count - 1] == "end"
+
+
+def test_line_chart_preserves_full_long_month_label():
+    chart = ChartSpec(
+        type="line",
+        title="月度趋势",
+        x_field="OrderDate",
+        y_field="Total Sales",
+        visual_type="line",
+        business_role="time_trend",
+        series=[
+            {"label": "2025-01", "value": 1},
+            {"label": "2026-03", "value": 2},
+        ],
+    )
+    html = SalesReportRenderer._line_chart(chart)
+    assert ">2026-03</text>" in html
+    assert 'data-axis-index="1" class="chart-axis-label"' in html
+    assert 'text-anchor="end" data-axis-index="1"' in html
+
+
+@pytest.mark.asyncio
+async def test_report_fluid_layout_and_friendly_model_provenance():
+    report = SalesReportSpecBuilder().build(_assembled()).model_copy(update={
+        "semantic_model_key": "local_desktop:" + "a" * 64,
+        "data_source": "local_desktop:" + "a" * 64,
+        "data_source_display_name": "PowerBIAgent_M3_Rich_Test",
+    })
+    html = await SalesReportRenderer().render(report)
+    assert "width: min(100%, 1280px)" in html
+    assert "repeat(2, minmax(0, 1fr))" in html
+    assert "@media (max-width: 760px)" in html
+    assert "@media (max-width: 430px)" in html
+    assert "@media (min-width: 1440px)" in html
+    assert "PowerBIAgent_M3_Rich_Test" in html
+    assert "local_desktop:" + "a" * 64 in html
+    assert "overflow-wrap: anywhere" in html
 
 
 @pytest.mark.asyncio
@@ -761,6 +858,27 @@ async def test_production_turn_uses_capability_resolved_queries_and_replays():
     assert first["execution_audit"]["renderer_llm_call_count"] == 0
     assert first["execution_audit"]["fallback_count"] == 0
     assert first["execution_audit"]["fake_query_result_count"] == 0
+    timings = first["execution_audit"]["phase_timings_ms"]
+    assert set(timings) == {
+        "intent_llm",
+        "capability_classification",
+        "schema",
+        "member_lookup",
+        "grounding",
+        "mcp_enumerate/connect",
+        "dax",
+        "verified_fact",
+        "answer_llm",
+        "report_plan",
+        "report_query",
+        "report_render",
+        "persistence",
+        "total",
+    }
+    assert timings["report_plan"] > 0
+    assert timings["report_query"] > 0
+    assert timings["report_render"] > 0
+    assert timings["total"] > timings["report_render"]
     assert first["tool_sequence"].count("execute_dax") == 4
     assert first["tool_sequence"].count("render_report") == 1
     assert adapter.execute_count == 4

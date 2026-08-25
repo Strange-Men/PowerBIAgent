@@ -29,6 +29,15 @@ export interface PresentationDataset {
   source_mode: RuntimeMode
   columns: string[]
   rows: PresentationCell[][]
+  formatted_rows?: string[][]
+  display_metadata?: Record<string, {
+    canonical_name: string
+    display_name: string
+    object_identity: string
+    object_type: string
+    localization_source: string
+    schema_identity: string
+  }>
   row_count: number
   truncated: boolean
 }

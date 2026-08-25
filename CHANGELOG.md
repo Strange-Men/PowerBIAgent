@@ -2,6 +2,19 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.5] — 2026-08-25 — COMPLETE
+
+### 语义理解、中文展示、性能与报表视觉最终收口
+
+- 开发前固化三层 capability 合同：deterministic safety fast-path → bounded LLM registry enum/confidence/evidence → deterministic policy；unsupported 必须在 Memory/Grounding/DAX/Power BI 前终止。
+- Localization Registry 通用于任意 runtime schema，按 model/object/type/canonical/locale/source/schema identity 绑定；metadata → glossary → persisted registry → bounded display translation，低置信度回退 humanized/canonical。canonical QueryPlan/DAX/VerifiedFactSet identity 不变。
+- Presentation 只增加 display metadata 与 deterministic formatter；单 scalar 只显示自然中文文本，多 KPI 才使用 cards，grouped/trend 继续按 verified shape 动态投影。
+- 只修复现有 `sales_report`：line safe plot、首尾向内锚点、direct label 防裁切与 fluid responsive layout；不新增模板。
+- 增加 14 阶段安全 timing metadata。同机 Fake profiling 的 M5.4.1 baseline → M5.5 中位数为 scalar `2.436 → 3.006 ms`、grouped `2.485 → 3.513 ms`、report `4.709 → 4.401 ms`；Real scalar/grouped/report total 分别约 `44.65s / 104.46s / 190.98s`，主要长尾来自外部 LLM、MCP/schema 与 report query，未加入无证据 cache。
+- Rich PBIX readonly Browser Acceptance 覆盖 scalar、grouped、2025-05、两类 prediction、delete、PBIX/Measure write 与 report；1920/2560/1280/390 geometry/visual PASS，`2026-03` 与首尾 direct label 完整，所有 automation-owned conversation/report/HTML/SQLite/delete-intent residual 为 0。
+- M5.0—M5.5 已完成，M5 正式结束；prediction engine、write-back、Remote MCP 与新 report template 仍未实现，既有 factual/DAX/resource authority 不变。
+- Prediction engine、write-back、Remote MCP、任意 DAX 与新 report template 均不在本轮实现；M5.5 完成后停止 M5。
+
 ## [M5.4.1] — 2026-08-24
 
 ### 用户设置中心、全量历史资源管理与测试产物治理修复
@@ -12,7 +25,7 @@
 - Codex/pytest/browser/Real/MCP/report tests 必须登记 explicit automation ownership，在 `finally` 中执行正式 cleanup 并验证 conversation/report metadata/HTML/SQLite namespace/delete intent/orphan residual=0；任一残留 Gate FAIL。
 - 历史清理只处理可证明 automation-owned 的 exact resource；无法确认 ownership 的用户数据保留。
 - report rename/archive/restore/delete/tombstone 继续遵守现有 presentation、filesystem、factual metadata 与 durable intent 边界；不修改 TurnPipeline、DAX、Memory、VerifiedFactSet 或 ReportSpec authority。
-- M5.5 语言理解、中文字段、单指标、HTML 视觉与性能继续 Deferred。
+- M5.5 语言理解、中文字段、单指标、HTML 视觉与性能继续 Deferred（当时状态）。
 - 根因已确认：Settings 直接复用 Sidebar 首个 `limit=12` recent page；report 再对该子集聚合并截断到 8；旧“全选”又截断到 20。SQLite server-default 秒级时间与带微秒 cursor 的文本比较还会在同秒数据上重复返回第一页。
 - Settings 改为独立的 active/archived conversation/report cursor query，返回 `total_count`，首屏 20 项并按需加载；SQLite keyset 统一使用 `julianday(timestamp) + stable ID`。Sidebar 仍保持 Recent subset。
 - 全选文案固定为“全选当前已加载”；加载更多后可继续选择。一次确认可选择任意数量，执行器按最多 20 项一组调用正式单资源 API并精确报告 partial failure。
@@ -33,7 +46,7 @@
 - 用户卡片作为设置/已归档/资源管理入口；Sidebar 最近会话/报表独立滚动并可折叠，批量 checkbox 不进 Sidebar。
 - 批量操作一次最多 20 项，只协调正式单资源 API；不新增 `DELETE ALL`，部分失败保留并显示原因，archive ≠ delete。
 - report delete 将保留 presentation tombstone；report rename 只修改 `display_title`，不改 report_id、HTML、content_hash、ReportSpec 或 VerifiedFactSet。rename/delete 不进 ToolGateway，LLM 无权限。
-- M5.5 的语义增强、中文字段、单指标展示、report HTML 视觉与性能 profiling/cache 继续 Deferred。
+- M5.5 的语义增强、中文字段、单指标展示、report HTML 视觉与性能 profiling/cache 继续 Deferred（当时状态）。
 - 新增 `report_presentations` migration `a4f6b8c2d190`；rename/delete/history 共享最后 display title 与 `available | deleted` 状态，conversation delete 清理同 namespace presentation metadata。
 - Rich PBIX Real A/B/C 并发结果分别回到所属 conversation，pending/loading 独立且不自动跳窗；用户卡片、归档恢复、两次 report generation、report rename、delete 后 reload/history tombstone 均通过。本轮 9 个 Real 测试 conversation 与关联 report 已经正式 API 精确清理。
 - Fresh backend full `1790 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `61 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `117`、Repository Safety `290`、Error Ledger `25`、Documentation/Artifact Governance 与 `git diff --check` PASS。
@@ -189,7 +202,7 @@
 - TurnPipeline 将 committed/pending load、context build 与 controller setup 纳入既有 Owner abort 保护；corruption 异常会释放 process-local claim，同一 `request_id` 重试继续立即得到相同 fail-closed，而不是变成永久 waiter。
 - 新增 StateTransition valid inheritance / Mock+Real corruption regressions，以及真实临时 SQLite dispose → fresh engine/repository/service restart regression。损坏 namespace 在 LLM、schema、DAX、Power BI 与新 Memory commit 前失败，memory version 不增长；合法 sibling namespace 正常恢复。
 - 根 `README.md` 重构为长期 Landing Page：Overview、Highlights、How It Works、Truth Boundary、Current Capabilities、Quick Start、Runtime Modes、API、Persistence、Development & Validation、Project Status、Documentation、Scope / Known Limits。只保留有代码/fresh evidence 的能力，并明确 dedicated semantic-model/report-template discovery endpoint 当前未暴露。
-- `AGENTS.md` 新增 README Maintenance Contract；正式 PRD 只同步实现状态；07/08/09 与本文件同步到 M4.4.1。无 schema change、无 Alembic migration；M5 NOT STARTED。
+- `AGENTS.md` 新增 README Maintenance Contract；正式 PRD 只同步实现状态；07/08/09 与本文件同步到 M4.4.1。无 schema change、无 Alembic migration；M5 NOT STARTED（当时状态）。
 - Fresh acceptance：targeted corruption `5 passed`；邻近 Memory/StateTransition/persistence/restart `190 passed`；backend `1686 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture `109`、Repository Safety `239`、Error Ledger `25`、Documentation Governance 与 `git diff --check` PASS。Alembic head 保持 `c8d4e6f2a109`，fresh DB → head 与 head → head 幂等 upgrade 均通过。
 
 **Settings.version:** M4.4.1
@@ -204,7 +217,7 @@
 - 修复 M4.3 delete 的 DB commit → HTML unlink crash window：新增 durable `conversation_delete_intents` tombstone，在删除同 namespace DB state 的同一 SQLite transaction 内保存精确 report IDs 与删除计数；HTML cleanup 成功后才 finalize intent。unlink 失败、cleanup 后 finalize 失败或进程在两者之间退出时，全新实例以相同 `(runtime_mode, conversation_id)` 重试；pending intent 阻止该 namespace 被新 Memory/Snapshot/Report 写入复活。另一 namespace 不受影响。
 - 新增 migration `c8d4e6f2a109`；fresh DB → head 与精确 M4.3 revision `f4c3a2b1907d` → head 均验证通过。没有尝试用 SQLite transaction 原子覆盖 filesystem。
 - Fresh backend regression：`1681 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；Architecture Gate `109` Python files、Repository Safety `239` files、Error Ledger `25` entries、Documentation Governance 与 `git diff --check` 均 PASS。本轮 acceptance 不声称硬件掉电、filesystem/SQLite 自身违反 durability contract 或多进程/分布式事务保证；范围仍是 local single-machine MVP。Report create 对可观察的 metadata-save failure 继续 best-effort unlink，但未新增 durable create journal，因此不保证进程恰在 HTML rename 后、metadata commit 前退出时自动清除无引用文件；该窗口不会生成成功 metadata/Snapshot。
-- **M4 FINAL PASS；M5 NOT STARTED。** 不创建 Tag，不进入 React/Vite、Remote MCP、PostgreSQL、Redis 或分布式事务。
+- **M4 FINAL PASS；M5 NOT STARTED（当时状态）。** 不创建 Tag，不进入 React/Vite、Remote MCP、PostgreSQL、Redis 或分布式事务。
 
 **Settings.version:** M4.4
 
@@ -911,4 +924,4 @@
 
 ---
 
-*最后更新：2026-08-18 | M4.1 — SQLite 记忆与请求快照持久化*
+*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*

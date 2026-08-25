@@ -1,6 +1,6 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M5.3 presentation contract 已实现；M5.3.1 已收紧为只投影 VerifiedFactSet 数据事实覆盖字段。
+> **状态：** M5.5 localization、deterministic formatter 与单 scalar 去冗余合同（COMPLETE）；M5.3/M5.3.1 factual projection 保持不变。
 > **边界：** 本契约只增加安全展示层，不改变 WorkMemory、QueryResult、VerifiedFactSet、ReportSpec 或 ReportArtifact 的事实权威。
 
 ## 一、目标
@@ -40,8 +40,13 @@
       "verified_fact_set_id": "fact-set-...",
       "semantic_model_key": "local_desktop_model",
       "source_mode": "real",
-      "columns": ["Category", "Total Sales"],
+      "columns": ["Category", "[Total Sales]"],
+      "display_metadata": {
+        "Category": {"canonical_name": "Category", "display_name": "产品类别", "object_identity": "field:Sales:Category", "object_type": "field", "localization_source": "glossary", "schema_identity": "..."},
+        "[Total Sales]": {"canonical_name": "[Total Sales]", "display_name": "总销售额", "object_identity": "measure:Sales:Total Sales", "object_type": "measure", "localization_source": "glossary", "schema_identity": "..."}
+      },
       "rows": [["A", 120], ["B", 80]],
+      "formatted_rows": [["A", "120.00"], ["B", "80.00"]],
       "row_count": 2,
       "truncated": false
     }
@@ -73,7 +78,9 @@
 | `verified_fact_set_id` | 证明 dataset 已经过 VerifiedFactSet 边界 |
 | `semantic_model_key` / `source_mode` | 必须与 QueryResult 和 FactSet 一致 |
 | `columns` | 唯一列名；只包含 scalar/grouped/ranking/min/max 数据事实 `source_fields` 覆盖字段，并保持其在 QueryResult 中的原顺序 |
+| `display_metadata` | canonical result field → localized metadata；只允许覆盖 `columns` 中真实存在的 exact identity，包含 object/source/schema identity 且不改变 column key |
 | `rows` | 对 QueryResult rows 做相同列投影；每行长度必须等于 columns 长度 |
+| `formatted_rows` | 与 `rows` 同形的确定性展示字符串；不得反向成为事实值或参与计算 |
 | `row_count` | 必须等于 rows 实际数量 |
 | `truncated` | 原样保留 QueryResult 截断状态 |
 
@@ -81,7 +88,7 @@ builder 仍要求 FactSet 的完整 `result_columns` 与 QueryResult 一致，�
 
 ### 3.2 block 引用
 
-- `metric`：引用 `data_reference`、`value_field` 与 `row_index`；不得内嵌第二份 value。
+- `metric`：只用于多 KPI；引用 `data_reference`、`value_field` 与 `row_index`，并可携带展示 label/formatted text；不得内嵌第二份事实 value。
 - `table`：只引用 dataset；表头和 rows 直接读取 dataset。
 - `chart`：只引用 dataset、`x_field`、`y_field` 与允许的 `visual_type`。
 - `report_attachment`：只携带 canonical `report_id`，查看/下载 URL 仍由受控资源 API 生成。
@@ -92,12 +99,13 @@ builder 仍要求 FactSet 的完整 `result_columns` 与 QueryResult 一致，�
 `StructuredPresentationBuilder` 只消费已经产生的 `CanonicalQueryPlan`、`QueryResult` 与 `VerifiedFactSet`：
 
 1. 总是可以加入真实 terminal text。
-2. scalar fact 产生 `metric` 引用。
-3. grouped fact 且有 rows 时产生 `table`。
-4. grouped result 至少两行、Y 字段全部为数值时才产生 chart。
-5. 时间维度或真实日期值产生 `line`；其他 grouped comparison 产生 `bar`。
-6. report 成功时产生 text + `report_attachment`，不把 ReportSpec 数据复制进 chat dataset。
-7. QueryResult 意外增加但未被数据型 VerifiedFact `source_fields` 覆盖的列时，该列及对应 cell 不进入 dataset。
+2. 单 scalar 只产生使用 localized display name 与 deterministic formatted value 的 text；不产生冗余 `metric`。
+3. 多个独立 scalar KPI 可产生 `metric` 引用。
+4. grouped fact 且有 rows 时产生 `table`。
+5. grouped result 至少两行、Y 字段全部为数值时才产生 chart。
+6. 时间维度或真实日期值产生 `line`；其他 grouped comparison 产生 `bar`。
+7. report 成功时产生 text + `report_attachment`，不把 ReportSpec 数据复制进 chat dataset。
+8. QueryResult 意外增加但未被数据型 VerifiedFact `source_fields` 覆盖的列时，该列及对应 cell 不进入 dataset。
 
 前端不重新判断业务意图，不把普通表格升级成趋势，不修改数据顺序，不计算新指标。
 
@@ -106,7 +114,8 @@ builder 仍要求 FactSet 的完整 `result_columns` 与 QueryResult 一致，�
 | 场景 | 可能展示 |
 |---|---|
 | 普通问答 | text |
-| 单值问答 | text + metric |
+| 单值问答 | 仅 localized + formatted text |
+| 多 KPI | text + metric cards |
 | 分组比较 | text + table；数据满足条件时加 bar |
 | 时间趋势 | text + table；数据满足条件时加 line |
 | 报表生成 | text + report attachment |
@@ -135,12 +144,13 @@ History API 返回保存的 user message、assistant terminal result 和同一 p
 
 ### 指标
 
-- 使用 dataset 的原值进行 locale-safe 展示；不改精度或业务单位。
+- 单 scalar 不渲染 card；多 KPI card 使用后端 display metadata 与 deterministic formatted value。
 - 缺字段或 row 时不渲染。
 
 ### 表格
 
 - columns/rows 原顺序展示。
+- header 使用 `display_metadata[field].display_name`；缺失时使用 canonical fallback，不维护模型专用前端字典。
 - 容器允许键盘聚焦和横向滚动。
 - 不增加前端排序、筛选、分页事实工作台。
 
@@ -161,7 +171,8 @@ History API 返回保存的 user message、assistant terminal result 和同一 p
 
 必须直接覆盖：
 
-- scalar → metric；
+- single scalar → localized formatted text、zero metric card；
+- multi KPI → metric cards；
 - grouped → table + bar；
 - time series → table + line；
 - QueryResult/FactSet 不一致 fail closed；
@@ -171,9 +182,17 @@ History API 返回保存的 user message、assistant terminal result 和同一 p
 - History serialization/restart 后 presentation shape 保持一致；
 - 前端不从 answer/audit 构造事实。
 
+## 九、Localization 与 formatter 边界（M5.5）
+
+- localization record 至少绑定 `semantic_model_key`、exact object identity、object type、canonical name、locale、source 与 schema identity。
+- 优先级固定为 semantic model display metadata → model-scoped glossary → persisted registry → bounded LLM display translation。
+- 只有 runtime schema 中真实存在且 exact identity 已确定的对象可进入翻译；schema identity 变化使 registry hit 失效。LLM 只返回 display label，不能创造字段、修改 QueryPlan/DAX 或改变 VerifiedFactSet。
+- integer、decimal、percentage、date/month、null 由普通代码确定性格式化。presentation 可携带 display value，但 dataset 原始事实值与 canonical field 保持不变。
+- 低置信度翻译使用 humanized 或 canonical fallback，不猜测业务语义。
+
 自动化测试使用临时 SQLite/report root 与唯一 `m53-test-*` 前缀，并在 fixture/finally 中精确清理；不得清空用户 `local_state`。
 
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-24 | M5.3.3 deleted report attachment projection boundary*
+*最后更新：2026-08-25 | M5.5 COMPLETE — localization、formatter 与 single-scalar contract*

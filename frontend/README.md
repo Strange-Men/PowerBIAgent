@@ -2,7 +2,7 @@
 
 ## 状态
 
-**M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成。M5.5 语义/中文字段/视觉/性能继续 Deferred。**
+**M5.5 — 语义理解、中文展示、性能与报表视觉最终收口（COMPLETE）。M5.0—M5.5 已完成，M5 正式结束。**
 
 ## 技术栈
 
@@ -68,6 +68,13 @@ npm run build
 - report 删除保留 history tombstone；report rename 只修改 `display_title`，不改 report_id/HTML/content_hash/ReportSpec/VerifiedFactSet。LLM 无资源变更权限。
 - automation-owned browser/Real/API tests 必须登记 `test_run_id`，在 `finally` 中通过正式 API cleanup 并验证 conversation/report/HTML/SQLite/delete-intent residual=0；未知 ownership 的用户资源不得自动删除。
 
+### M5.5 展示合同
+
+- presentation 同时保留 canonical field identity 与后端提供的 localized display metadata；表头、metric、chart 与 answer 使用 display name，前端不维护 Sales 专用字典。
+- 单 scalar 只显示确定性格式化的自然中文文本，不再生成冗余 KPI card；多 KPI 才使用 cards。
+- grouped 为 text + table，适合比较时加 bar；trend 为 text + table + line。前端不改变 rows、排序或事实值。
+- integer/decimal/percentage/date/month/null 的 display value 来自后端 deterministic formatter；原值继续保留在 verified dataset。
+
 ### AI 回答 — 动态渲染原则
 
 前端**不得**将 AI 回答固定为"文字 → 指标 → 表格 → 图表 → 报表附件"这类每次必现的序列。
@@ -76,7 +83,8 @@ npm run build
 
 - 普通问答：可能只有文字
 - 数据查询：可能是文字 + 表格
-- 简单数字追问：可能只有文字或指标
+- 单 scalar：只有格式化中文文字
+- 多 KPI：才可能显示指标卡
 - 多轮追问：可能只更新文字或表格
 - 比较/趋势且后端提供可视化数据：才显示图表
 - 用户明确要求生成报表且后端真正生成 ReportArtifact：才显示 HTML 报表附件
@@ -187,8 +195,8 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | M5.3.3 | fresh/follow-up/replace、archive/restore、独立 report delete、history race 与 Artifact Governance | ✅ 已完成 |
 | M5.4 | conversation-scoped state、client UUID pending、异会话并发、用户卡片/资源面板、report tombstone/rename | ✅ 已完成 |
 | M5.4.1 | Settings Hub、完整 conversation/report pagination、selection/batch 修复与 test-owned cleanup | ✅ 已完成 |
-| M5.5 | 语义、中文字段、报表视觉、性能 | ⏸ Deferred / NOT STARTED |
+| M5.5 | 语义、中文字段、报表视觉、性能 | ✅ 已完成 |
 
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源与 automation cleanup；M5.5 Deferred*
+*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*

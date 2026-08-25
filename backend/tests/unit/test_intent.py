@@ -12,6 +12,8 @@ import pytest
 from pydantic import ValidationError
 
 from backend.app.intent.models import (
+    CapabilityClass,
+    CapabilityClassification,
     FilterOperator,
     FilterSpec,
     IntentType,
@@ -19,7 +21,9 @@ from backend.app.intent.models import (
 )
 from backend.app.intent.prompt import SYSTEM_PROMPT as INTENT_SYSTEM_PROMPT
 from backend.app.intent.unsupported_policy import (
+    CapabilityPolicyStatus,
     deterministic_unsupported_reason,
+    resolve_capability_policy,
     should_defer_unsupported_to_grounding,
 )
 from backend.app.memory.models import MemoryStatus, StructuredWorkMemory
@@ -370,3 +374,90 @@ class TestUnsupportedRoutingPolicy:
             self._intent(),
             committed=committed,
         ) is False
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "预测明年销售额",
+            "预估明年销售额",
+            "估算明年销售额",
+            "估计下季度销量",
+            "推测明年收入",
+            "假设明年增长10%，销售额会是多少",
+            "明年大概能卖多少",
+            "forecast next year",
+        ],
+    )
+    def test_future_prediction_synonyms_are_high_confidence_fast_path(self, message):
+        reason = deterministic_unsupported_reason(message)
+        assert reason is not None
+        assert "预测" in reason
+
+    def test_approximate_current_fact_read_is_not_prediction(self):
+        assert deterministic_unsupported_reason("总销售额大概是多少？") is None
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "删除这些销售数据",
+            "删掉订单数据",
+            "清掉这些数据",
+            "清空销售数据",
+            "帮我改一下 PBIX 的度量值",
+            "更新 Measure",
+            "写入模型",
+        ],
+    )
+    def test_delete_and_model_write_synonyms_are_fast_path(self, message):
+        assert deterministic_unsupported_reason(message) is not None
+
+    def test_bounded_classifier_dangerous_signal_is_decided_by_policy(self):
+        intent = IntentSpec(
+            intent=IntentType.DATA_QUESTION,
+            confidence=0.9,
+            normalized_question="帮我预测业务走势",
+            capability_classification=CapabilityClassification(
+                capability=CapabilityClass.FUTURE_PREDICTION,
+                confidence=0.92,
+                evidence_span="预测业务走势",
+            ),
+        )
+        decision = resolve_capability_policy("帮我预测业务走势", intent)
+        assert decision.status == CapabilityPolicyStatus.UNSUPPORTED
+
+    @pytest.mark.parametrize(
+        ("classification", "evidence"),
+        [
+            (CapabilityClass.UNKNOWN, "处理一下"),
+            (CapabilityClass.MODEL_WRITE, "not-in-current-input"),
+        ],
+    )
+    def test_ambiguous_or_unproven_classifier_signal_clarifies(
+        self, classification, evidence
+    ):
+        intent = IntentSpec(
+            intent=IntentType.DATA_QUESTION,
+            confidence=0.8,
+            normalized_question="处理一下",
+            capability_classification=CapabilityClassification(
+                capability=classification,
+                confidence=0.9,
+                evidence_span=evidence,
+            ),
+        )
+        decision = resolve_capability_policy("处理一下", intent)
+        assert decision.status == CapabilityPolicyStatus.CLARIFICATION
+
+    def test_read_classifier_never_overrides_normal_read(self):
+        intent = IntentSpec(
+            intent=IntentType.DATA_QUESTION,
+            confidence=0.9,
+            normalized_question="总销售额大概是多少？",
+            capability_classification=CapabilityClassification(
+                capability=CapabilityClass.READ_ANALYSIS,
+                confidence=0.95,
+                evidence_span="总销售额大概是多少",
+            ),
+        )
+        decision = resolve_capability_policy("总销售额大概是多少？", intent)
+        assert decision.status == CapabilityPolicyStatus.SUPPORTED

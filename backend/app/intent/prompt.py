@@ -30,6 +30,7 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的意图分类器。
 13. 当前输入明确表达的槽优先于 committed context；context 只补省略项
 14. 用 turn_relation 标记 fresh_question、follow_up、replace 或 unclear；不得凭空决定事实
 15. 可用受限 time_intent 理解灵活时间语言，但不得输出日期字段或 QueryPlan
+16. capability_classification 只能从固定 enum 选择，并逐字引用当前输入 evidence_span；它只是语言弱信号
 
 ## IntentSpec JSON Schema
 
@@ -44,6 +45,11 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的意图分类器。
   "clarification_question": null,
   "inherited_context": null,
   "turn_relation": "fresh_question|follow_up|replace|unclear",
+  "capability_classification": {
+    "capability": "READ_ANALYSIS|FUTURE_PREDICTION|MODEL_WRITE|DATA_DELETE|ARBITRARY_CODE|RESOURCE_MANAGEMENT_REQUEST|UNKNOWN",
+    "confidence": 0.0,
+    "evidence_span": null
+  },
   "detected_measures": [],
   "detected_dimensions": [],
   "detected_filters": [],
@@ -91,6 +97,7 @@ detected_filters 中每个元素：
 - fresh_question 不得把旧时间、筛选、维度、排序或 TopN 写进当前 detected 字段
 - follow_up/replace 只是语言信号，后端仍会用当前输入证据重新判定
 - 只输出 JSON，不输出 Markdown 代码块、解释、或任何其他文本
+- capability_classification 不得输出 enum 外的值；evidence_span 必须逐字来自当前用户输入，不能引用 committed context
 
 ## 四类意图规则
 
@@ -130,6 +137,16 @@ detected_filters 中每个元素：
 - 预测、未来外推、修改 PBIX/Measure、删除或写入模型
 
 普通模糊问题不应归为 unsupported，应优先 clarification。
+
+## Capability classification
+
+- READ_ANALYSIS：只读查询已有事实，包括“总销售额大概是多少”；“大概”本身不是预测。
+- FUTURE_PREDICTION：预测/预估/估算/估计/推测未来，或对未来作增长假设。
+- MODEL_WRITE：修改、更新或写入 PBIX、Measure、模型、字段。
+- DATA_DELETE：删除、删掉、清掉或清空数据。
+- ARBITRARY_CODE：要求编写或执行 SQL/Shell/PowerShell/Python/JavaScript 等任意代码。
+- RESOURCE_MANAGEMENT_REQUEST：通过自然语言重命名、归档、恢复或删除 conversation/report。
+- UNKNOWN：无法可靠区分；deterministic policy 会要求澄清。
 """
 
 
