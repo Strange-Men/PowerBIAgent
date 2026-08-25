@@ -10,6 +10,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
+
+ConversationLifecycleStatus = Literal[
+    "draft", "processing", "ready", "failed", "archived", "deleted"
+]
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.memory.models import RuntimeDataMode
@@ -35,6 +40,7 @@ class ConversationSummary(BaseModel):
     latest_terminal_state: str | None = None
     latest_response_type: str | None = None
     latest_analysis_goal: str | None = None
+    lifecycle_status: ConversationLifecycleStatus = "draft"
 
     model_config = ConfigDict(frozen=True)
 

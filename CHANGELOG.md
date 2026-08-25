@@ -2,6 +2,24 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.5.1] — 2026-08-25 — COMPLETE
+
+### Real Stress / UX / Semantic Hotfix
+
+- 本轮仅修复真实用户测试暴露的并发稳定性、成员语义、时间分组、失败会话资源生命周期、共享浮层菜单、性能与既有 `sales_report` 可读性问题。
+- M5.5 authority 保持不变；prediction、write-back、Remote MCP、任意 DAX 与新 report template 继续不实现；不合并 main、不创建 Tag。
+- request correlation 记录安全 identity/hash：`conversation_id`、`request_id`、`semantic_model_key`、canonical plan hash/summary、DAX hash、`QueryResult.result_id` 与 `VerifiedFactSet.fact_set_id`；不记录 raw business rows、Secret、full prompt。Rich PBIX 八问与 2/5/10/20 conversation stress 证明 plan/DAX/result/fact/presentation 无跨 conversation 串写，HTTP 500 为 0。
+- Local MCP 从 schema/member/DAX 频繁独立启动 stdio/npx 收口为 semantic-model scoped persistent worker；heavy operation 有界串行，identity/state 不跨 PBIX，worker/cache 同时绑定 opaque model key、Desktop instance identity 与 schema fingerprint；TTL、instance/schema change、stale/reconnect/explicit refresh 失效，绝不 fallback 其他 PBIX，也不缓存事实答案。
+- 新增 Business Member Resolution：deterministic exact/alias → bounded linguistic candidate → runtime ColumnMembers exact validation → canonical member；`华南`、`华南区`、`南区` 等语言变体只有在真实 member 中存在才落地，字段 ownership 不唯一则 clarification，不以字符串堆叠替代 runtime validation。
+- Canonical QueryPlan 新增 deterministic `TemporalGroupingSpec`，Grounding 绑定真实日期字段且 DAX Builder 只编译 registry-supported month/year grain；VerifiedFactSet 验证 derived temporal grouping。每月/按月/每年趋势不再把 TimeRange 当 grouping，unsupported grain 返回 controlled response 而非 HTTP 500。
+- 已有正式 conversation identity 的失败请求持久化 `failed` lifecycle，Settings/recent 可见并可 rename/archive/restore/delete；processing 禁止 destructive mutation，failed 可管理且 restart 后保持一致。已知 LLM/MCP/grounding/temporal/DAX failure 返回稳定安全 `error_type`，500 仅保留真正 server defect。
+- conversation/report 共用 Portal `FloatingActionMenu`，按 trigger rect 自动 above/below 并约束 viewport；消除 overflow/scrollbar/stacking 裁切，支持 outside click、Escape 与焦点回归。真实 Chrome 覆盖首/中/末项、scroll top/middle/bottom、260px Sidebar、100%/125% 等效内容视口，rename/archive/delete 均实际通过。
+- 既有 `sales_report` 使用 deterministic label density：最多 12 个均匀 period，强制 first/last/year boundaries；单年 `01月`，跨年 `25-01`，每个 point 均带完整中文 accessibility label，direct numeric labels 仅保留 endpoints/extrema/notable。1/2/6/12/15/24 point 与 390/768/1080/1280/1440/1920/2560 viewport visual/geometry 通过，无横向滚动或 SVG clipping；未新增模板。
+- Real baseline scalar/grouped/report 约 `44s / 104s / 191s`；warm P50/P95 为 scalar `46ms / 1.11s`、grouped `53ms / 87ms`、trend `56ms / 88ms`，warm report `769ms / 3.51s`（单次 Real warm report `2.913s`，6 条 deterministic query）。2/5/10/20 conversation 分别 `0.110s / 0.261s / 0.726s / 1.289s`，全部成功。
+- Fresh backend focused `209 passed`，full `1902 passed, 1 skipped`；frontend typecheck/lint/build PASS，Vitest `78 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `125`、Repository Safety `307`、Error Ledger `29`、Documentation/Artifact Governance 与 `git diff --check` PASS。所有 automation-owned conversation/report/HTML/SQLite/delete-intent residual=0，未知 ownership 用户资源未删除。
+
+**Settings.version:** M5.5.1
+
 ## [M5.5] — 2026-08-25 — COMPLETE
 
 ### 语义理解、中文展示、性能与报表视觉最终收口
@@ -924,4 +942,4 @@
 
 ---
 
-*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*
+*最后更新：2026-08-25 | M5.5.1 COMPLETE — M5 正式结束*

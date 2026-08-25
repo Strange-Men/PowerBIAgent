@@ -19,6 +19,21 @@ function friendlyBusinessError(response: ChatResponse): string {
   if (errorType.startsWith('deepseek_') || errorType.startsWith('LLM')) {
     return '语言分析服务暂不可用，请稍后重试。'
   }
+  if (errorType === 'llm_service_unavailable') {
+    return '语言分析服务暂不可用，请稍后重试。'
+  }
+  if (errorType === 'mcp_timeout') {
+    return 'Power BI 响应超时，请稍后重试。'
+  }
+  if (errorType === 'mcp_connection_failed') {
+    return '无法连接 Power BI Desktop，请确认 Desktop 和数据模型仍处于打开状态。'
+  }
+  if (errorType === 'dax_execution_failed') {
+    return 'Power BI 查询执行失败，请调整问题后重试。'
+  }
+  if (errorType === 'unsupported_temporal_grouping') {
+    return '当前仅支持按月或按年查看趋势，请调整时间粒度。'
+  }
   if (
     response.powerbi_mode === 'local_mcp' &&
     errorType === 'connection_error'

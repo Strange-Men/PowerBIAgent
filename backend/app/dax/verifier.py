@@ -102,6 +102,27 @@ class RestrictedDAXVerifier:
             else:
                 errors.append("dax_missing_query_plan_dimension")
 
+        temporal_grouping = getattr(plan, "temporal_grouping", None)
+        if temporal_grouping is not None:
+            if temporal_grouping.grain not in {"month", "year"}:
+                errors.append("dax_temporal_grouping_grain_not_supported")
+            if plan.dimensions != [temporal_grouping.group_field]:
+                errors.append("dax_temporal_grouping_dimension_mismatch")
+            group_owners = column_owners.get(temporal_grouping.group_field, set())
+            group_hint = dimension_hints.get(temporal_grouping.group_field)
+            if group_hint is not None:
+                group_owners = {
+                    owner for owner in group_owners if owner == group_hint
+                }
+            date_owners = column_owners.get(temporal_grouping.date_field, set())
+            date_hint = dimension_hints.get(temporal_grouping.date_field)
+            if date_hint is not None:
+                date_owners = {owner for owner in date_owners if owner == date_hint}
+            if len(group_owners) != 1:
+                errors.append("dax_temporal_grouping_field_not_unique")
+            if len(date_owners) != 1:
+                errors.append("dax_temporal_date_field_not_unique")
+
         expected_filters: list[_ObservedFilter] = []
         for item in plan.filters:
             if item.operator != FilterOperator.EQ:

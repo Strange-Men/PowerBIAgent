@@ -125,6 +125,20 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
         for row in rows:
             snapshot = latest_snapshots.get(row.conversation_id)
             memory = latest_memories.get(row.conversation_id)
+            if row.archived_at is not None:
+                lifecycle_status = "archived"
+            elif snapshot is None:
+                lifecycle_status = "draft"
+            elif snapshot.terminal_state in {
+                "validation_failed",
+                "tool_failed",
+                "response_failed",
+                "memory_conflict",
+                "cancelled",
+            }:
+                lifecycle_status = "failed"
+            else:
+                lifecycle_status = "ready"
             summaries.append(
                 ConversationSummary(
                     runtime_mode=runtime_mode,
@@ -141,6 +155,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                         snapshot.response_type if snapshot else None
                     ),
                     latest_analysis_goal=(memory.analysis_goal if memory else None),
+                    lifecycle_status=lifecycle_status,
                 )
             )
         return summaries

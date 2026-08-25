@@ -334,7 +334,7 @@ class TestChatRealModeRejection:
 
     @pytest.mark.asyncio
     async def test_deepseek_chat_with_key_attempts_real(self):
-        """DeepSeek+Mock 有 Key → M1.5 Chat 可用，尝试调用真实 API（会因假 Key 失败）"""
+        """DeepSeek+Mock 有 Key → provider failure uses a controlled response."""
         fake_key = "sk-" + ("D" * 24)
         settings = Settings(
             llm_mode=LLMMode.DEEPSEEK,
@@ -348,8 +348,13 @@ class TestChatRealModeRejection:
                 response = await c.post("/api/v1/chat", json={
                     "message": "测试",
                 })
-                # M1.5: Chat 已启用，假 Key 会导致鉴权/连接错误（非 503 mode guard）
-                assert response.status_code in (502, 500)
+                assert response.status_code == 200
+                data = response.json()
+                assert data["terminal_state"] == "response_failed"
+                assert data["error_type"] in {
+                    "llm_service_unavailable",
+                    "llm_response_invalid",
+                }
 
     @pytest.mark.asyncio
     async def test_deepseek_chat_no_fallback_to_mock(self):
@@ -367,12 +372,13 @@ class TestChatRealModeRejection:
                 response = await c.post("/api/v1/chat", json={
                     "message": "测试",
                 })
-                # M1.5: 不返回 Mock 模式的 200，必须是错误状态
-                assert response.status_code != 200
-                # 必须不是 503 mode guard
+                # Known provider failures are controlled 200 responses, never
+                # successful Mock results and never mode-guard 503 responses.
+                assert response.status_code == 200
                 data = response.json()
-                if isinstance(data.get("detail"), dict):
-                    assert data["detail"].get("error_type") != "deepseek_pipeline_not_ready"
+                assert data["terminal_state"] == "response_failed"
+                assert data["response_type"] == "error"
+                assert data["error_type"] != "deepseek_pipeline_not_ready"
 
 
 class TestChatConcurrent:
@@ -2206,18 +2212,13 @@ class TestM24DeepSeekLocalChat:
             assert replay.status_code == 200
             assert replay.json()["idempotent_replay"] is True
             assert replay.json()["source_mode"] == "real"
-            assert len(provider.calls) == 2
+            assert provider.calls == []
             assert all(
                 call.task not in {LLMTask.DAX, LLMTask.ANSWER}
                 for call in provider.calls
             )
             assert adapter.schema_calls == 1
             assert adapter.dax_calls == 1
-            query_plan_prompt = next(
-                call for call in provider.calls if call.task == LLMTask.QUERY_PLAN
-            )
-            assert "Total Sales" in str(query_plan_prompt.messages)
-            assert "local_desktop_model" in str(query_plan_prompt.messages)
             assert first_data["answer"] == "总销售额为 100。"
             assert [
                 block["type"] for block in first_data["presentation"]["blocks"]
@@ -2240,7 +2241,7 @@ class TestM24DeepSeekLocalChat:
                 "total",
             }
             assert audit["phase_timings_ms"]["total"] > 0
-            assert audit["phase_timings_ms"]["intent_llm"] > 0
+            assert audit["phase_timings_ms"]["intent_llm"] == 0
             assert audit["phase_timings_ms"]["schema"] > 0
             assert audit["phase_timings_ms"]["dax"] > 0
             assert all(
@@ -2274,7 +2275,7 @@ class TestM24DeepSeekLocalChat:
             assert data["terminal_state"] == "tool_failed"
             assert data["error_type"] == "preview_row_data_missing"
             assert data["source_mode"] == "real"
-            assert len(provider.calls) == 2
+            assert provider.calls == []
             assert all(call.task != LLMTask.DAX for call in provider.calls)
             assert adapter.dax_calls == 1
 
@@ -2297,7 +2298,7 @@ class TestM24DeepSeekLocalChat:
             assert data["source_mode"] == "real"
             assert adapter.schema_calls == 1
             assert adapter.dax_calls == 0
-            assert len(provider.calls) == 1
+            assert provider.calls == []
 
 
 class TestM25BusinessGoldenOffline:
@@ -2365,7 +2366,7 @@ class TestM25BusinessGoldenOffline:
         assert f"[{dimension}]" in memory.last_dax
         assert adapter.schema_calls == 1
         assert adapter.dax_calls == 1
-        assert len(provider.calls) == 2
+        assert provider.calls == []
         assert all(
             call.task not in {LLMTask.DAX, LLMTask.ANSWER}
             for call in provider.calls

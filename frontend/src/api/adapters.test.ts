@@ -138,6 +138,25 @@ describe('chatResponseToMessage', () => {
     expect(message.content).toContain('语言分析服务暂不可用')
     expect(message.content).not.toContain('LLMConnectionError')
   })
+
+  it.each([
+    ['llm_service_unavailable', '语言分析服务暂不可用'],
+    ['mcp_timeout', 'Power BI 响应超时'],
+    ['mcp_connection_failed', '无法连接 Power BI Desktop'],
+    ['dax_execution_failed', 'Power BI 查询执行失败'],
+  ])('maps stable error type %s to safe Chinese copy', (errorType, expected) => {
+    const message = chatResponseToMessage(
+      response({
+        terminal_state: 'tool_failed',
+        response_type: 'error',
+        answer: null,
+        error_type: errorType,
+      }),
+    )
+
+    expect(message.content).toContain(expected)
+    expect(message.content).not.toContain(errorType)
+  })
 })
 
 describe('report resource validation', () => {

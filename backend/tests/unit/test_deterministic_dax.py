@@ -14,6 +14,7 @@ from backend.app.schemas.data_contracts import (
     SemanticModelSchema,
     StructuredFilter,
     TableSchema,
+    TemporalGroupingSpec,
     TimeRangeMode,
     TimeRangeSpec,
 )
@@ -83,6 +84,44 @@ def test_supported_shapes_build_and_independent_layer3_pass(plan):
     request = _build(plan)
     assert _layer3(request, plan).is_valid
     assert request.dax == _build(plan).dax
+
+
+def test_temporal_grouping_uses_only_runtime_bound_group_field():
+    schema = _schema()
+    schema.tables[0].columns.append(
+        ColumnSchema(name="YearMonth", data_type="datetime")
+    )
+    plan = _plan(
+        dimensions=["YearMonth"],
+        dimension_tables={"YearMonth": "Sales"},
+        dimension_order="asc",
+        temporal_grouping=TemporalGroupingSpec(
+            date_field="OrderDate", group_field="YearMonth", grain="month"
+        ),
+    )
+
+    request = _build(plan, schema)
+
+    assert "'Sales'[YearMonth]" in request.dax
+    assert _layer3(request, plan, schema).is_valid
+
+
+def test_temporal_grouping_plan_dimension_mismatch_fails_closed():
+    schema = _schema()
+    schema.tables[0].columns.append(
+        ColumnSchema(name="YearMonth", data_type="datetime")
+    )
+    plan = _plan(
+        dimensions=["Category"],
+        temporal_grouping=TemporalGroupingSpec(
+            date_field="OrderDate", group_field="YearMonth", grain="month"
+        ),
+    )
+
+    with pytest.raises(
+        DAXBuildError, match="dax_builder_temporal_grouping_dimension_mismatch"
+    ):
+        _build(plan, schema)
 
 
 def test_filter_without_dimension_never_becomes_group_by():

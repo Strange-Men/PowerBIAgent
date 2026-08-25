@@ -2,6 +2,8 @@
 
 from datetime import date
 
+import pytest
+
 from backend.app.facts import (
     FactBoundedAnswerBuilder,
     FactBoundedReportBuilder,
@@ -16,7 +18,9 @@ from backend.app.schemas.data_contracts import (
     StructuredFilter,
     TimeRangeMode,
     TimeRangeSpec,
+    TemporalGroupingSpec,
 )
+from backend.app.facts.verified import FactVerificationError
 
 
 def _plan(**updates):
@@ -70,6 +74,77 @@ def test_grouped_facts_and_result_set_extrema_are_deterministic():
     ]
     assert (maximum.value, maximum.source_rows) == (20, [1])
     assert (minimum.value, minimum.source_rows) == (10, [0])
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2025-01",
+        "2025/12",
+        "2026-03-01",
+        "2025-05-01T00:00:00",
+        "2025-05-01T00:00:00Z",
+        date(2025, 5, 1),
+    ],
+)
+def test_temporal_month_group_values_are_verified(value):
+    plan = _plan(
+        dimensions=["YearMonth"],
+        temporal_grouping=TemporalGroupingSpec(
+            date_field="OrderDate", group_field="YearMonth", grain="month"
+        ),
+    )
+    result = _result(["Date[YearMonth]", "[Total Sales]"], [[value, 10]])
+
+    facts = VerifiedFactSetBuilder().build(plan, result)
+
+    assert facts.by_type(FactType.GROUPED_METRIC)[0].dimensions == {
+        "YearMonth": value
+    }
+
+
+@pytest.mark.parametrize("value", ["May", "2025-13", "25-01", None])
+def test_invalid_temporal_month_group_value_fails_closed(value):
+    plan = _plan(
+        dimensions=["YearMonth"],
+        temporal_grouping=TemporalGroupingSpec(
+            date_field="OrderDate", group_field="YearMonth", grain="month"
+        ),
+    )
+    result = _result(["Date[YearMonth]", "[Total Sales]"], [[value, 10]])
+
+    with pytest.raises(FactVerificationError, match="fact_temporal_group_value_invalid"):
+        VerifiedFactSetBuilder().build(plan, result)
+
+
+def test_temporal_group_dimension_numbers_are_valid_answer_evidence():
+    plan = _plan(
+        dimensions=["YearMonth"],
+        temporal_grouping=TemporalGroupingSpec(
+            date_field="OrderDate", group_field="YearMonth", grain="month"
+        ),
+    )
+    result = _result(
+        ["Date[YearMonth]", "[Total Sales]"],
+        [["2025-05-01T00:00:00", 536974.85]],
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    answer = FactBoundedAnswerBuilder().build(plan, result, facts)
+
+    assert FactOutputValidator().validate_answer(answer, facts) == []
+
+
+@pytest.mark.parametrize("value", [2025, "2026"])
+def test_temporal_year_group_values_are_verified(value):
+    plan = _plan(
+        dimensions=["Year"],
+        temporal_grouping=TemporalGroupingSpec(
+            date_field="OrderDate", group_field="Year", grain="year"
+        ),
+    )
+    result = _result(["Date[Year]", "[Total Sales]"], [[value, 10]])
+
+    assert VerifiedFactSetBuilder().build(plan, result).row_count == 1
 
 
 def test_topn_without_ties_exposes_result_order_not_business_rank():
@@ -149,6 +224,19 @@ def test_fact_bounded_topn_answer_uses_result_items_for_ties():
     assert "结果第2项" in answer.answer
     assert "第1位" not in answer.answer
     assert "第2位" not in answer.answer
+    assert FactOutputValidator().validate_answer(answer, facts) == []
+
+
+def test_fact_bounded_topn_answer_allows_deterministic_decimal_rounding():
+    plan = _plan(dimensions=["Category"], sort="desc", top_n=2)
+    result = _result(
+        ["[Category]", "[Total Sales]"],
+        [["A", 536974.849999986], ["B", 100000.0]],
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    answer = FactBoundedAnswerBuilder().build(plan, result, facts)
+
+    assert "536,974.85" in answer.answer
     assert FactOutputValidator().validate_answer(answer, facts) == []
 
 

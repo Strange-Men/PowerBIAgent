@@ -10,7 +10,13 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
-from backend.app.intent.models import CapabilityClass, IntentSpec
+from backend.app.intent.models import (
+    CapabilityClass,
+    CapabilityClassification,
+    IntentSpec,
+    IntentType,
+    TurnRelation,
+)
 from backend.app.memory.models import PendingClarificationContext, StructuredWorkMemory
 
 
@@ -42,6 +48,21 @@ _ARBITRARY_CODE = re.compile(
     r"(?:SQL|Shell|PowerShell|Python|JavaScript|任意代码|代码).*(?:执行|运行|编写)",
     re.IGNORECASE,
 )
+_RESOURCE_MUTATION = re.compile(
+    r"(?:删除|删掉|重命名|改名|归档|恢复).*(?:会话|对话|报告|报表)|"
+    r"(?:会话|对话|报告|报表).*(?:删除|删掉|重命名|改名|归档|恢复)",
+    re.IGNORECASE,
+)
+_REPORT_REQUEST = re.compile(r"(?:报表|报告)", re.IGNORECASE)
+_READ_ANALYSIS = re.compile(
+    r"(?:多少|总计|合计|销量|数量|销售额|订单量|利润|收入|成本|金额|件数|"
+    r"按.+(?:列出|统计|汇总)|前\s*\d+|top\s*\d+|最高|最低|趋势)",
+    re.IGNORECASE,
+)
+_BOUNDED_LANGUAGE_REQUIRED = re.compile(
+    r"(?:包含|不包含|大于|小于|超过|低于|等于|不等于|同比|环比|比较|对比)",
+    re.IGNORECASE,
+)
 
 _DETERMINISTICALLY_OUT_OF_SCOPE = tuple(
     re.compile(pattern, re.IGNORECASE)
@@ -68,9 +89,53 @@ def deterministic_unsupported_reason(user_input: str) -> str | None:
         return "当前为只读分析模式，不支持修改、更新或写入 Power BI 模型。"
     if _ARBITRARY_CODE.search(normalized):
         return "当前为只读分析模式，不支持执行任意代码。"
+    if _RESOURCE_MUTATION.search(normalized):
+        return "会话与报表资源管理只能由用户在界面中明确操作，不能通过自然语言执行。"
     if any(pattern.search(normalized) for pattern in _DETERMINISTICALLY_OUT_OF_SCOPE):
         return "当前为只读分析模式，不支持修改、删除、写入模型或执行任意代码。"
     return None
+
+
+def deterministic_read_intent(
+    user_input: str,
+    *,
+    report_template_key: str | None = None,
+) -> IntentSpec | None:
+    """Classify only explicit read/report requests; semantic slots stay unset.
+
+    This fast path removes an avoidable availability dependency for obvious
+    read-only requests.  It does not choose a model object, member, time field,
+    DAX expression, or fact; those remain owned by Grounding and later layers.
+    """
+    normalized = user_input.strip()
+    if (
+        not normalized
+        or deterministic_unsupported_reason(normalized) is not None
+        or _BOUNDED_LANGUAGE_REQUIRED.search(normalized) is not None
+    ):
+        return None
+    report_match = _REPORT_REQUEST.search(normalized)
+    read_match = _READ_ANALYSIS.search(normalized)
+    if report_template_key is not None or report_match is not None:
+        intent_type = IntentType.REPORT_GENERATION
+        evidence = report_match.group(0) if report_match is not None else normalized
+    elif read_match is not None:
+        intent_type = IntentType.DATA_QUESTION
+        evidence = read_match.group(0)
+    else:
+        return None
+    return IntentSpec(
+        intent=intent_type,
+        confidence=1.0,
+        normalized_question=normalized,
+        turn_relation=TurnRelation.UNCLEAR,
+        capability_classification=CapabilityClassification(
+            capability=CapabilityClass.READ_ANALYSIS,
+            confidence=1.0,
+            evidence_span=evidence,
+        ),
+        requested_template=report_template_key,
+    )
 
 
 class CapabilityPolicyStatus(str, Enum):

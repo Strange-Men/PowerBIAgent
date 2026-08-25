@@ -33,6 +33,7 @@ from backend.app.schemas.data_contracts import (
     StructuredFilter,
     TimeRangeMode,
     TimeRangeSpec,
+    TemporalGroupingSpec,
 )
 
 
@@ -76,6 +77,9 @@ class GroundedSemanticDelta(BaseModel):
     time_range: TimeRangeSpec | None = None
     time_specified: bool = False
     clear_time: bool = False
+    temporal_grouping: TemporalGroupingSpec | None = None
+    temporal_grouping_specified: bool = False
+    dimension_order: Literal["asc", "desc"] | None = None
     sort: Literal["asc", "desc"] | None = None
     sort_specified: bool = False
     clear_sort: bool = False
@@ -92,6 +96,7 @@ class GroundingOutcome(BaseModel):
     clarification_question: str | None = None
     intent_disagreements: list[str] = Field(default_factory=list)
     pending_eligible: bool = True
+    error_type: str | None = None
 
 
 class CandidateSelection(BaseModel):
@@ -435,6 +440,69 @@ class ObjectGrounder:
 
 
 class MemberGrounder:
+    _ADMINISTRATIVE_SUFFIXES = ("区域", "地区", "区")
+
+    @classmethod
+    def _linguistic_alias_candidates(
+        cls, field: CatalogObject, requested_value: str
+    ) -> tuple[str, ...]:
+        """Return bounded glossary-owned candidate values, never identities.
+
+        This is morphology over registered aliases, not an utterance list.  A
+        candidate remains non-canonical until it is found exactly in the
+        runtime ColumnMembers result.
+        """
+        requested = normalize_semantic_text(requested_value)
+        bases = {requested}
+        for suffix in cls._ADMINISTRATIVE_SUFFIXES:
+            normalized_suffix = normalize_semantic_text(suffix)
+            if requested.endswith(normalized_suffix) and requested != normalized_suffix:
+                bases.add(requested[: -len(normalized_suffix)])
+
+        targets: list[str] = []
+        for alias, target in field.member_aliases.items():
+            normalized_alias = normalize_semantic_text(alias)
+            matched = normalized_alias in bases
+            if not matched:
+                # Chinese directional abbreviations such as 南区 may match the
+                # tail of a registered business alias such as 华南.  Limit the
+                # rule to one omitted leading ideograph and a one-character
+                # base so arbitrary fuzzy matching is impossible.
+                matched = any(
+                    len(base) == 1
+                    and len(normalized_alias) == 2
+                    and normalized_alias.endswith(base)
+                    for base in bases
+                )
+            if matched and target not in targets:
+                targets.append(target)
+        return tuple(targets)
+
+    @classmethod
+    def linguistic_candidates_in_text(
+        cls, field: CatalogObject, user_input: str
+    ) -> tuple[str, ...]:
+        """Find only morphology derived from this field's registered aliases."""
+        normalized_input = normalize_semantic_text(user_input)
+        targets: list[str] = []
+        for alias, target in field.member_aliases.items():
+            normalized_alias = normalize_semantic_text(alias)
+            forms = {normalized_alias, normalize_semantic_text(str(target))}
+            forms.update(
+                normalized_alias + normalize_semantic_text(suffix)
+                for suffix in cls._ADMINISTRATIVE_SUFFIXES
+            )
+            if len(normalized_alias) == 2:
+                tail = normalized_alias[-1]
+                forms.update(
+                    tail + normalize_semantic_text(suffix)
+                    for suffix in cls._ADMINISTRATIVE_SUFFIXES
+                )
+            if any(form and form in normalized_input for form in forms):
+                if target not in targets:
+                    targets.append(target)
+        return tuple(targets)
+
     @staticmethod
     def resolve(
         field: CatalogObject,
@@ -479,14 +547,19 @@ class MemberGrounder:
                     requested_value=requested_value,
                     method="runtime_normalized_ambiguous",
                 )
-            alias_target = field.member_aliases.get(normalized)
-            if alias_target is not None:
+            alias_targets = MemberGrounder._linguistic_alias_candidates(
+                field, requested_value
+            )
+            if alias_targets:
                 alias_matches = [
                     value
                     for value in members.values
                     if isinstance(value, str)
-                    and normalize_semantic_text(value)
-                    == normalize_semantic_text(alias_target)
+                    and any(
+                        normalize_semantic_text(value)
+                        == normalize_semantic_text(target)
+                        for target in alias_targets
+                    )
                 ]
                 if len(alias_matches) == 1:
                     return MemberGroundingResult(
@@ -494,7 +567,7 @@ class MemberGrounder:
                         field=field,
                         requested_value=requested_value,
                         canonical_value=alias_matches[0],
-                        method="glossary_alias_runtime_verified",
+                        method="linguistic_candidate_runtime_verified",
                     )
                 if len(alias_matches) > 1:
                     return MemberGroundingResult(
@@ -766,7 +839,13 @@ MemberLookup = Callable[[CatalogObject, int], Awaitable[ColumnMembersResult]]
 class SemanticGroundingService:
     """Orchestrate grounding without owning Turn or Memory writes."""
 
-    _TOP_N = re.compile(r"(?:前|top\s*)(\d+)", re.IGNORECASE)
+    _TOP_N = re.compile(
+        r"(?:(?:前|(?:最高|最低)(?:的)?)\s*|top\s*)(\d+)",
+        re.IGNORECASE,
+    )
+    _MONTH_GROUPING = re.compile(r"(?:每\s*个?\s*月|按\s*月|月度).*(?:趋势|销售额|销量)|(?:趋势|销售额|销量).*?(?:每\s*个?\s*月|按\s*月|月度)")
+    _YEAR_GROUPING = re.compile(r"(?:每\s*年|按\s*年|年度).*(?:趋势|销售额|销量)|(?:趋势|销售额|销量).*?(?:每\s*年|按\s*年|年度)")
+    _UNSUPPORTED_GROUPING = re.compile(r"(?:每|按).{0,3}(?:周|季度|日|天).*(?:趋势|销售额|销量)")
 
     def __init__(
         self,
@@ -914,6 +993,11 @@ class SemanticGroundingService:
                         draft_field.canonical_object.aliases
                         if draft_field.canonical_object else ()
                     ),
+                )
+            ) or bool(
+                draft_field.canonical_object
+                and MemberGrounder.linguistic_candidates_in_text(
+                    draft_field.canonical_object, user_input
                 )
             )
             mentioned_field = self.objects.find_mentions(
@@ -1070,6 +1154,59 @@ class SemanticGroundingService:
                 method="no_dimension_requirement",
             ))
 
+        temporal_grain = self._temporal_grain(user_input)
+        if temporal_grain == "unsupported":
+            return self._clarification(
+                GroundingStatus.UNRESOLVED,
+                object_results,
+                member_results,
+                "当前时间分组粒度尚未支持，请使用按月或按年。",
+                disagreements,
+                pending_eligible=False,
+                error_type="unsupported_temporal_grouping",
+            )
+        if temporal_grain in {"month", "year"}:
+            date_fields = tuple(
+                obj for obj in self.catalog.by_type(SemanticObjectType.FIELD)
+                if "date" in obj.data_type.casefold() or "time" in obj.data_type.casefold()
+            )
+            glossary_date_fields = tuple(
+                obj for obj in date_fields
+                if obj.source == SemanticObjectSource.RUNTIME_GLOSSARY
+            )
+            if glossary_date_fields:
+                date_fields = glossary_date_fields
+            group_names = (
+                {"yearmonth", "年月"}
+                if temporal_grain == "month"
+                else {"year", "年份", "年度"}
+            )
+            group_fields = tuple(
+                obj for obj in self.catalog.by_type(SemanticObjectType.FIELD)
+                if normalize_semantic_text(obj.canonical_name) in group_names
+            )
+            if len(date_fields) != 1 or len(group_fields) != 1:
+                return self._clarification(
+                    GroundingStatus.UNRESOLVED if not date_fields or not group_fields else GroundingStatus.AMBIGUOUS,
+                    object_results,
+                    member_results,
+                    "当前模型无法唯一绑定该时间分组，请明确日期字段或改用受支持的时间粒度。",
+                    disagreements,
+                    pending_eligible=False,
+                    error_type="unsupported_temporal_grouping",
+                )
+            date_field = date_fields[0]
+            group_field = group_fields[0]
+            delta.temporal_grouping = TemporalGroupingSpec(
+                date_field=date_field.canonical_name,
+                group_field=group_field.canonical_name,
+                grain=temporal_grain,
+            )
+            delta.temporal_grouping_specified = True
+            delta.dimensions = [group_field.canonical_name]
+            delta.dimension_tables[group_field.canonical_name] = group_field.table_name
+            delta.dimension_order = "asc"
+
         if self.time.is_explicit(user_input, intent.time_intent):
             date_fields = tuple(
                 obj for obj in self.catalog.by_type(SemanticObjectType.FIELD)
@@ -1141,6 +1278,17 @@ class SemanticGroundingService:
             member_results=member_results,
             intent_disagreements=disagreements,
         )
+
+    @classmethod
+    def _temporal_grain(cls, user_input: str) -> str | None:
+        normalized = normalize_semantic_text(user_input)
+        if cls._MONTH_GROUPING.search(normalized):
+            return "month"
+        if cls._YEAR_GROUPING.search(normalized):
+            return "year"
+        if cls._UNSUPPORTED_GROUPING.search(normalized):
+            return "unsupported"
+        return None
 
     def _signals_only_repeat_inherited_measure(
         self,
@@ -1313,6 +1461,14 @@ class SemanticGroundingService:
         )
         candidate_ids = list(mention.candidate_ids)
         normalized_input = normalize_semantic_text(user_input)
+        if not candidate_ids:
+            candidate_ids.extend(
+                field.object_id
+                for field in self.catalog.by_type(SemanticObjectType.FIELD)
+                if MemberGrounder.linguistic_candidates_in_text(
+                    field, user_input
+                )
+            )
         member_only_cue = any(
             term in normalized_input for term in ("只看", "换成", "改成")
         )
@@ -1386,6 +1542,16 @@ class SemanticGroundingService:
                     and normalize_semantic_text(value)
                     == normalize_semantic_text(target)
                 )
+            for target in MemberGrounder.linguistic_candidates_in_text(
+                field, user_input
+            ):
+                field_matches.extend(
+                    value
+                    for value in members.values
+                    if isinstance(value, str)
+                    and normalize_semantic_text(value)
+                    == normalize_semantic_text(target)
+                )
             unique_matches: list[Any] = []
             for value in field_matches:
                 if value not in unique_matches:
@@ -1403,6 +1569,11 @@ class SemanticGroundingService:
                     method="runtime_current_input_member",
                 ))
         if len(matches) > 1:
+            return [], [], member_results, True
+        if candidates and not matches:
+            # A field/member filter was explicitly evidenced but no runtime
+            # member confirmed it.  Never degrade such a request to a scalar
+            # measure-only plan.
             return [], [], member_results, True
 
         filters: list[StructuredFilter] = []
@@ -1434,6 +1605,7 @@ class SemanticGroundingService:
                 rf"各\s*{escaped}",
                 rf"每(?:个)?\s*{escaped}",
                 rf"前\s*\d+\s*个?\s*{escaped}",
+                rf"(?:最高|最低)(?:的)?\s*\d+\s*个?\s*{escaped}",
                 rf"{escaped}\s*(?:排名|排行|分组|分别)",
             )
             if any(re.search(pattern, user_input, re.IGNORECASE) for pattern in patterns):
@@ -1509,6 +1681,7 @@ class SemanticGroundingService:
         disagreements: list[str],
         *,
         pending_eligible: bool = True,
+        error_type: str | None = None,
     ) -> GroundingOutcome:
         return GroundingOutcome(
             status=status,
@@ -1517,4 +1690,5 @@ class SemanticGroundingService:
             clarification_question=question,
             intent_disagreements=disagreements,
             pending_eligible=pending_eligible,
+            error_type=error_type,
         )

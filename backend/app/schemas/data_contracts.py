@@ -80,6 +80,14 @@ class TimeRangeSpec(BaseModel):
         return self.model_dump_json()
 
 
+class TemporalGroupingSpec(BaseModel):
+    """Deterministic grouping over a runtime-owned calendar field."""
+
+    date_field: str = Field(..., min_length=1)
+    group_field: str = Field(..., min_length=1)
+    grain: Literal["month", "year"]
+
+
 # =============================================================================
 # Semantic Model Schema
 # =============================================================================
@@ -196,6 +204,7 @@ class CanonicalQueryPlan(QueryPlan):
     # Presentation ordering never creates business values.  None = keep the
     # verified result order.
     dimension_order: Optional[Literal["asc", "desc"]] = None
+    temporal_grouping: Optional[TemporalGroupingSpec] = None
 
 
 class ColumnMembersRequest(BaseModel):

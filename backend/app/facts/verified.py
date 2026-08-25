@@ -109,6 +109,8 @@ class VerifiedFactSetBuilder:
         measure_fields = [self._require_field(column_map, name) for name in plan.measures]
         if not plan.dimensions and result.row_count > 1:
             raise FactVerificationError("fact_scalar_row_count_invalid")
+        if plan.temporal_grouping is not None:
+            self._validate_temporal_group_values(plan, result, dimension_fields)
 
         fact_set_id = self._fact_set_id(plan, result)
         plan_semantics = plan.model_dump(mode="json")
@@ -291,6 +293,48 @@ class VerifiedFactSetBuilder:
             "truncated": result.truncated,
         }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return "facts-" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+
+    @staticmethod
+    def _validate_temporal_group_values(
+        plan: CanonicalQueryPlan,
+        result: QueryResult,
+        dimension_fields: list[str],
+    ) -> None:
+        grouping = plan.temporal_grouping
+        if grouping is None:
+            return
+        if plan.dimensions != [grouping.group_field] or len(dimension_fields) != 1:
+            raise FactVerificationError("fact_temporal_grouping_dimension_mismatch")
+        source_index = result.columns.index(dimension_fields[0])
+        for row in result.rows:
+            value = row[source_index]
+            if grouping.grain == "year":
+                valid = (
+                    isinstance(value, int)
+                    and not isinstance(value, bool)
+                    and 1000 <= value <= 9999
+                ) or bool(re.fullmatch(r"\d{4}", str(value)))
+            else:
+                valid = VerifiedFactSetBuilder._is_month_value(value)
+            if not valid:
+                raise FactVerificationError("fact_temporal_group_value_invalid")
+
+    @staticmethod
+    def _is_month_value(value: Any) -> bool:
+        if isinstance(value, (date, datetime)):
+            return True
+        text = str(value).strip()
+        match = re.fullmatch(r"(\d{4})[-/](\d{1,2})(?:[-/]\d{1,2})?", text)
+        if match is not None:
+            month = int(match.group(2))
+            return 1 <= month <= 12
+        # Local MCP serializes DateTime-backed YearMonth columns as ISO values.
+        # Validate the shape deterministically; never infer or rewrite a period.
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return 1000 <= parsed.year <= 9999 and 1 <= parsed.month <= 12
 
     @staticmethod
     def _fact(
@@ -627,7 +671,7 @@ class FactOutputValidator:
     def _allowed_numbers(self, facts: list[VerifiedFact]) -> set[str]:
         allowed: set[str] = set()
         for item in facts:
-            for value in (item.value, item.values):
+            for value in (item.value, item.values, item.dimensions):
                 self._collect_numbers(value, allowed)
             if isinstance(item.value, (int, float, Decimal)) and not isinstance(
                 item.value, bool
@@ -647,7 +691,11 @@ class FactOutputValidator:
         if isinstance(value, bool) or value is None:
             return
         if isinstance(value, (int, float, Decimal)):
-            output.add(self._normalize_number(str(value)))
+            number = Decimal(str(value))
+            output.add(self._normalize_number(str(number)))
+            output.add(
+                self._normalize_number(str(number.quantize(Decimal("0.01"))))
+            )
         elif isinstance(value, (date, datetime)):
             for part in self._NUMBER.findall(value.isoformat()):
                 output.add(self._normalize_number(part))

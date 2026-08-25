@@ -333,7 +333,7 @@ async def test_fixed_renderer_geometry_is_deterministic_and_data_bound():
     assert "结果序号 2" in html
 
 
-@pytest.mark.parametrize("point_count", [1, 2, 15])
+@pytest.mark.parametrize("point_count", [1, 2, 6, 12, 15, 24])
 @pytest.mark.parametrize("endpoint_peak", ["first", "last"])
 def test_line_chart_safe_geometry_keeps_points_and_labels_inside(
     point_count, endpoint_peak
@@ -377,7 +377,8 @@ def test_line_chart_safe_geometry_keeps_points_and_labels_inside(
         assert axis == [(f'{safe["left"]:.2f}', "middle", "0")]
     else:
         assert axis[0][1] == "start"
-        assert axis[1][1] == "end"
+        assert axis[-1][1] == "end"
+        assert len(axis) == min(point_count, 12)
 
     direct = re.findall(
         r'<text x="([0-9.]+)" y="([0-9.]+)" dy="(-?\d+)" '
@@ -406,9 +407,49 @@ def test_line_chart_preserves_full_long_month_label():
         ],
     )
     html = SalesReportRenderer._line_chart(chart)
-    assert ">2026-03</text>" in html
+    assert ">26-03</text>" in html
+    assert 'aria-label="2026-03，月度趋势 2.00"' in html
     assert 'data-axis-index="1" class="chart-axis-label"' in html
     assert 'text-anchor="end" data-axis-index="1"' in html
+
+
+def test_line_chart_labels_cross_year_boundary_and_every_point_for_twelve_months():
+    labels = [f"2025-{month:02d}" for month in range(4, 13)] + [
+        f"2026-{month:02d}" for month in range(1, 4)
+    ]
+    chart = ChartSpec(
+        type="line",
+        title="月度销售趋势",
+        x_field="YearMonth",
+        y_field="Total Sales",
+        visual_type="line",
+        business_role="time_trend",
+        series=[
+            {"label": label, "value": index * 1000.25}
+            for index, label in enumerate(labels, start=1)
+        ],
+    )
+
+    html = SalesReportRenderer._line_chart(chart)
+
+    assert html.count('data-axis-index="') == 12
+    assert ">25-12</text>" in html
+    assert ">26-01</text>" in html
+    assert 'aria-label="2025-04，月度销售趋势 1,000.25"' in html
+
+
+def test_line_chart_long_series_keeps_endpoints_and_year_boundaries():
+    labels = [f"2025-{month:02d}" for month in range(1, 13)] + [
+        f"2026-{month:02d}" for month in range(1, 13)
+    ]
+    indexes = SalesReportRenderer._axis_label_indexes([
+        {"label": label, "value": index}
+        for index, label in enumerate(labels)
+    ])
+
+    assert len(indexes) == 12
+    assert {0, 12, 23}.issubset(indexes)
+    assert indexes == sorted(indexes)
 
 
 @pytest.mark.asyncio
@@ -419,7 +460,7 @@ async def test_report_fluid_layout_and_friendly_model_provenance():
         "data_source_display_name": "PowerBIAgent_M3_Rich_Test",
     })
     html = await SalesReportRenderer().render(report)
-    assert "width: min(100%, 1280px)" in html
+    assert "width: min(100%, 1600px)" in html
     assert "repeat(2, minmax(0, 1fr))" in html
     assert "@media (max-width: 760px)" in html
     assert "@media (max-width: 430px)" in html
@@ -883,11 +924,9 @@ async def test_production_turn_uses_capability_resolved_queries_and_replays():
     assert first["tool_sequence"].count("render_report") == 1
     assert adapter.execute_count == 4
     assert repository.store_count == 1
-    assert [call.task.value for call in provider.calls] == [
-        "intent_recognition",
-        "query_plan",
-        "report_intent",
-    ]
+    # Explicit read/report language uses the deterministic intent + empty-draft
+    # fast path; only the bounded report-intent weak signal remains.
+    assert [call.task.value for call in provider.calls] == ["report_intent"]
     assert replay["idempotent_replay"] is True
     assert replay["report"]["report_id"] == first["report"]["report_id"]
     assert replay["tool_sequence"] == []

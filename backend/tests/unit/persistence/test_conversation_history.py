@@ -273,6 +273,44 @@ async def _conversation_row(
 
 class TestRecentConversations:
     @pytest.mark.asyncio
+    async def test_failed_snapshot_is_manageable_across_full_lifecycle(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        snapshot = _snapshot(
+            mode=RuntimeDataMode.REAL,
+            conversation_id="failed-conversation",
+            request_id="failed-request",
+            answer="unused",
+        ).model_copy(update={
+            "terminal_state": "tool_failed",
+            "response_type": "error",
+            "answer": None,
+            "error_type": "mcp_timeout",
+            "user_message": "每个月销售额趋势",
+        })
+        await history_env.snapshot_repository.save(snapshot, RuntimeDataMode.REAL)
+        service = ConversationHistoryService(history_env.repository)
+
+        recent = await service.list_recent(RuntimeDataMode.REAL, limit=20)
+        assert recent.items[0].lifecycle_status == "failed"
+        assert recent.items[0].latest_terminal_state == "tool_failed"
+        renamed = await service.rename(
+            RuntimeDataMode.REAL, "failed-conversation", "失败请求"
+        )
+        assert renamed.title == "失败请求"
+
+        await service.archive(RuntimeDataMode.REAL, "failed-conversation")
+        archived = await service.list_archived(RuntimeDataMode.REAL, limit=20)
+        assert archived.items[0].lifecycle_status == "archived"
+        await service.restore(RuntimeDataMode.REAL, "failed-conversation")
+        restored = await service.list_recent(RuntimeDataMode.REAL, limit=20)
+        assert restored.items[0].lifecycle_status == "failed"
+
+        deleted = await service.delete(RuntimeDataMode.REAL, "failed-conversation")
+        assert deleted.deleted is True
+        assert (await service.list_recent(RuntimeDataMode.REAL, limit=20)).items == []
+
+    @pytest.mark.asyncio
     async def test_first_snapshot_message_sets_title_and_restorable_transcript(
         self, history_env: HistoryEnvironment
     ) -> None:

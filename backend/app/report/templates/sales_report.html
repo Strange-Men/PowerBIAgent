@@ -40,7 +40,7 @@
     line-height: 1.5;
   }
   .report {
-    width: min(100%, 1280px);
+    width: min(100%, 1600px);
     margin: 0 auto;
     padding: clamp(18px, 2.2vw, 32px) clamp(14px, 2.5vw, 32px) 40px;
   }
@@ -267,9 +267,22 @@
   @media (max-width: 430px) {
     .report { padding: 16px 12px 28px; }
     .report-header h1 { font-size: 20px; }
-    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .kpi-grid { grid-template-columns: minmax(0, 1fr); }
     .kpi-value { font-size: 22px; }
-    .bar-row { grid-template-columns: minmax(90px, 30%) 1fr auto; gap: 8px; }
+    .section-card { padding-inline: 12px; overflow: hidden; }
+    .chart-axis-label { font-size: 15px; }
+    .chart-direct-label { font-size: 15px; }
+    .bar-row { grid-template-columns: minmax(0, 1fr) auto; gap: 5px 8px; }
+    .bar-label { grid-column: 1 / -1; }
+    .bar-track { grid-column: 1; }
+    .bar-value { grid-column: 2; }
+    .chart-column { gap: 6px; }
+    .column-value { font-size: 10px; }
+    .donut-legend-item {
+      grid-template-columns: 10px minmax(0, 1fr) auto auto;
+      gap: 5px;
+    }
+    .legend-label { min-width: 0; overflow-wrap: anywhere; }
   }
 </style>
 </head>

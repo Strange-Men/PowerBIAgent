@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.5 — 语义理解、中文展示、性能与报表视觉最终收口（COMPLETE）**。M4.4.2 已最终验收；M5.0—M5.5 已完成，M5 正式结束。
+当前版本：**M5.5.1 — Real Stress / UX / Semantic Hotfix（COMPLETE）**。M4.4.2 已最终验收；M5.5 authority 保持不变。
 
 ## 项目概览
 
@@ -321,6 +321,7 @@ python -m alembic upgrade head
 | M5.4 | 已完成 — conversation-scoped state、client UUID pending session、异会话并发、用户卡片/资源管理、report tombstone/rename |
 | M5.4.1 | 已完成 — Settings 独立全量分页、准确 selection/batch 语义与 automation-owned resource cleanup |
 | M5.5 | 已完成 — 三层 capability、本地化展示、确定性格式化、报表视觉与安全 profiling 最终收口 |
+| M5.5.1 | 已完成 — Real MCP 并发稳定性、成员语义、月/年分组、失败资源生命周期、共享浮层菜单与报表可读性修复 |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -347,4 +348,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*
+*最后更新：2026-08-25 | M5.5.1 COMPLETE — M5 正式结束*

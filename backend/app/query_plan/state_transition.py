@@ -14,6 +14,7 @@ from backend.app.schemas.data_contracts import (
     CanonicalQueryPlan,
     QueryPlan,
     StructuredFilter,
+    TemporalGroupingSpec,
     TimeRangeSpec,
 )
 
@@ -182,12 +183,24 @@ class StateTransitionService:
         previous_measures = list(committed.measures) if committed else []
         previous_dimensions = list(committed.dimensions) if committed else []
         previous_dimension_tables = self._previous_dimension_tables(committed)
+        previous_temporal_grouping = self._previous_temporal_grouping(committed)
+        previous_dimension_order = self._previous_dimension_order(committed)
         previous_filters = self._previous_filters(committed)
         previous_time = self._previous_time(committed)
         previous_sort = committed.sort if committed else None
         previous_top_n = committed.top_n if committed else None
 
         inherit_omitted = inheritance_mode != InheritanceMode.FRESH_QUESTION
+
+        if delta.temporal_grouping_specified:
+            temporal_grouping = delta.temporal_grouping
+            dimension_order = delta.dimension_order
+        elif inherit_omitted:
+            temporal_grouping = previous_temporal_grouping
+            dimension_order = previous_dimension_order
+        else:
+            temporal_grouping = None
+            dimension_order = None
 
         if delta.measures is None:
             measures = previous_measures if inherit_omitted else []
@@ -316,6 +329,8 @@ class StateTransitionService:
             requested_template=canonical_template_key,
             inherited_context=draft.inherited_context,
             is_mock=draft.is_mock,
+            dimension_order=dimension_order,
+            temporal_grouping=temporal_grouping,
         )
         return StateTransitionResult(
             query_plan=plan,
@@ -383,3 +398,34 @@ class StateTransitionService:
                 "committed_memory_dimension_tables_invalid"
             )
         return dict(raw)
+
+    @staticmethod
+    def _previous_temporal_grouping(
+        committed: StructuredWorkMemory | None,
+    ) -> TemporalGroupingSpec | None:
+        if committed is None or committed.last_query_plan is None:
+            return None
+        raw = committed.last_query_plan.get("temporal_grouping")
+        if raw is None:
+            return None
+        try:
+            return TemporalGroupingSpec.model_validate(raw)
+        except (TypeError, ValueError) as exc:
+            raise CommittedMemoryCorruptionError(
+                "committed_memory_temporal_grouping_invalid"
+            ) from exc
+
+    @staticmethod
+    def _previous_dimension_order(
+        committed: StructuredWorkMemory | None,
+    ) -> str | None:
+        if committed is None or committed.last_query_plan is None:
+            return None
+        raw = committed.last_query_plan.get("dimension_order")
+        if raw is None:
+            return None
+        if raw not in {"asc", "desc"}:
+            raise CommittedMemoryCorruptionError(
+                "committed_memory_dimension_order_invalid"
+            )
+        return raw

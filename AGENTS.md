@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.5 — 语义理解、中文展示、性能与报表视觉最终收口（COMPLETE）**。M4.4.2 FINAL PASS；M5.0—M5.5 已完成，M5 正式结束。
+当前版本：**M5.5.1 — Real Stress / UX / Semantic Hotfix（COMPLETE）**。M5.5 authority 保持不变；本轮未扩大产品范围。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -38,6 +38,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.4** 已完成 conversation-scoped UI/runtime state、client UUID provisional conversation、异 conversation 并发/同 conversation 串行、Sidebar pending row、用户卡片资源管理、最多 20 项 bounded bulk orchestration、report tombstone 与 presentation-only `display_title`。新增 migration `a4f6b8c2d190`；Rich PBIX A/B/C 并发、归档恢复、rename/delete/history tombstone 与资源清理 Real Browser Acceptance 通过。M5.5 语言理解、中文字段、性能、HTML 视觉继续 Deferred（当时状态）。**M5.4 COMPLETE。**
 - **M5.4.1** 已完成 Settings 独立全量 cursor pagination、active/archived conversation/report 管理、准确 total/loaded/selected 语义与最多 20 项一组的 bounded execution；同秒 SQLite cursor 使用 `julianday + stable ID` 防止重复页。automation-owned 资源显式登记 ownership，`finally` teardown 后验证 conversation/report/HTML/SQLite/delete-intent residual 为 0；无法证明 ownership 的现有资源一律保留。新增 migration `b7c9d2e4f610`。**M5.4.1 COMPLETE；M5.5 Deferred（当时状态）。**
 - **M5.5** 已完成 deterministic safety fast-path → bounded LLM capability enum → deterministic capability policy；增加 model/object/schema-scoped Localization Registry 与未知字段安全翻译；Presentation 保留 canonical identity 并使用中文 display metadata、确定性数值格式和单 scalar 纯文本策略；修复 `sales_report` SVG safe geometry 与 fluid responsive layout；全阶段 timing 与 Fake/Real profiling 证明外部 LLM/MCP/report query 为主要长尾，未加入无证据 cache。Rich PBIX readonly Browser Acceptance、四宽度 report geometry/visual、全量 tests/gates 与 automation residual=0 通过。Prediction/write-back/Remote MCP/新模板未实现。**M5.5 COMPLETE；M5 正式结束。**
+- **M5.5.1** 已完成 Real 稳定性/UX/语义 hotfix：request correlation 证明 conversation/plan/DAX/QueryResult/FactSet/presentation 不串写；Local MCP 使用 semantic-model/instance/schema-scoped persistent worker 与 bounded heavy-operation concurrency，stale 继续 fail closed；Business Member Resolution 与 deterministic temporal grouping 修复“华南区/南区”和月/年趋势；failed conversation 可持久管理；conversation/report 共用 Portal floating menu；既有 `sales_report` 提升时间轴可读性与 accessibility。2/5/10/20 Real stress、八问 Rich PBIX、Real Browser 菜单与全量 gates 通过，automation residual=0。Prediction/write-back/Remote MCP/新模板仍未实现。**M5.5.1 COMPLETE。**
 
 当前真实主链：
 
@@ -135,4 +136,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*
+*最后更新：2026-08-25 | M5.5.1 COMPLETE — M5 正式结束*

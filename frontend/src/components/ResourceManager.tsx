@@ -642,6 +642,9 @@ function ConversationRow({
       <input aria-label={`选择对话：${conversationTitle(item)}`} type="checkbox" checked={selected} onChange={onToggle} />
       <MessageSquare size={16} />
       <span>{conversationTitle(item)}</span>
+      {item.lifecycle_status === 'failed' ? (
+        <small className="failed-label">失败</small>
+      ) : null}
       <button className="resource-inline-action" type="button" onClick={onRename}>重命名</button>
     </div>
   )

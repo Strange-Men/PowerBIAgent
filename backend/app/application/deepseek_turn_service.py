@@ -13,6 +13,7 @@ M1.6.3 更新：
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime
 from typing import Any, Optional
 
@@ -45,16 +46,28 @@ from backend.app.harness.tool_registry import (
     create_default_tool_gateway,
 )
 from backend.app.harness.validators.validation_service import ValidationService
-from backend.app.intent.deepseek_service import DeepSeekIntentService
+from backend.app.intent.deepseek_service import (
+    DeepSeekIntentService,
+    IntentRecognitionError,
+)
 from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.intent.unsupported_policy import (
     CapabilityPolicyStatus,
+    deterministic_read_intent,
     deterministic_unsupported_reason,
     resolve_capability_policy,
     should_defer_unsupported_to_grounding,
 )
 from backend.app.harness.observability.phase_timing import PhaseTimingCollector
-from backend.app.llm.base import LLMProvider, LLMTask
+from backend.app.llm.base import (
+    LLMConnectionError,
+    LLMProvider,
+    LLMProviderError,
+    LLMRateLimitError,
+    LLMServiceError,
+    LLMTimeoutError,
+    LLMTask,
+)
 from backend.app.localization.registry import LocalizationRegistry
 from backend.app.localization.service import LocalizationService
 from backend.app.memory.models import (
@@ -344,18 +357,77 @@ class DeepSeekTurnService:
             pending_clarification = None
 
         # ── 3. 意图识别 ──
+        intent = deterministic_read_intent(
+            message,
+            report_template_key=report_template_key,
+        )
+        deterministic_intent_used = intent is not None
         intent_service = DeepSeekIntentService(provider=observed, max_format_repairs=1)
-        with phase_timings.measure("intent_llm"):
-            intent = await intent_service.recognize(
-                user_input=message,
-                committed_memory=(
-                    semantic_committed.model_dump() if semantic_committed else None
-                ),
-                semantic_model_key=semantic_model_key,
-                report_template_key=report_template_key,
+        try:
+            if intent is None:
+                with phase_timings.measure("intent_llm"):
+                    intent = await intent_service.recognize(
+                        user_input=message,
+                        committed_memory=(
+                            semantic_committed.model_dump()
+                            if semantic_committed else None
+                        ),
+                        semantic_model_key=semantic_model_key,
+                        report_template_key=report_template_key,
+                    )
+        except (IntentRecognitionError, LLMProviderError) as exc:
+            provider_error: BaseException | None = exc
+            while (
+                provider_error is not None
+                and not isinstance(provider_error, LLMProviderError)
+            ):
+                provider_error = provider_error.__cause__
+            if isinstance(provider_error, LLMTimeoutError):
+                error_type = "llm_service_unavailable"
+            elif isinstance(
+                provider_error,
+                (LLMConnectionError, LLMRateLimitError, LLMServiceError),
+            ):
+                error_type = "llm_service_unavailable"
+            else:
+                error_type = "llm_response_invalid"
+            self.pipeline.fail_controller_safe(
+                controller,
+                TurnState.RESPONSE_FAILED,
+                error_type,
+                trace,
+                trace_id,
+                effective_req_id,
+            )
+            trace.record(
+                "request_failed",
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                error_type=error_type,
+                data_summary={
+                    "conversation_id": effective_conv_id,
+                    "semantic_model_key": semantic_model_key,
+                    "stage": "intent_llm",
+                },
+            )
+            return self._build_result(
+                effective_req_id,
+                effective_conv_id,
+                TurnState.RESPONSE_FAILED.value,
+                intent="",
+                response_type="error",
+                error_type=error_type,
+                trace=trace,
+                trace_id=trace_id,
+                is_mock=False,
+                source_mode=self._source_mode,
+                collector=collector,
             )
         trace.record("intent_classified", trace_id=trace_id, request_id=effective_req_id,
-                     data_summary={"intent": intent.intent.value})
+                     data_summary={
+                         "intent": intent.intent.value,
+                         "deterministic": deterministic_intent_used,
+                     })
 
         with phase_timings.measure("capability_classification"):
             capability_decision = resolve_capability_policy(message, intent)
@@ -543,7 +615,7 @@ class DeepSeekTurnService:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
                 terminal_state=TurnState.TOOL_FAILED,
-                error_type=getattr(e, "error_type", type(e).__name__),
+                error_type=self._safe_tool_error_type(e, "schema"),
                 reason=str(e), stage="schema_fetch", trace_id=trace_id,
                 collector=collector,
             )
@@ -552,16 +624,28 @@ class DeepSeekTurnService:
 
         # ── 8. QueryPlan 生成与验证 ──
         try:
-            qp_service = DeepSeekQueryPlanService(provider=observed, max_format_repairs=1)
-            query_plan = await qp_service.generate(
-                user_input=message, intent=intent, schema=schema,
-                committed_memory=(
-                    semantic_committed.model_dump() if semantic_committed else None
-                ),
-                semantic_model_key=semantic_model_key,
-                report_template_key=report_template_key,
-                enforce_semantic_grounding=not self.powerbi.is_mock,
-            )
+            if deterministic_intent_used and not self.powerbi.is_mock:
+                query_plan = QueryPlan(
+                    normalized_question=message.strip(),
+                    semantic_model_key=semantic_model_key,
+                    requested_template=report_template_key,
+                    is_mock=False,
+                )
+            else:
+                qp_service = DeepSeekQueryPlanService(
+                    provider=observed,
+                    max_format_repairs=1,
+                )
+                query_plan = await qp_service.generate(
+                    user_input=message, intent=intent, schema=schema,
+                    committed_memory=(
+                        semantic_committed.model_dump()
+                        if semantic_committed else None
+                    ),
+                    semantic_model_key=semantic_model_key,
+                    report_template_key=report_template_key,
+                    enforce_semantic_grounding=not self.powerbi.is_mock,
+                )
         except Exception as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
@@ -696,6 +780,10 @@ class DeepSeekTurnService:
                         intent=intent.intent.value,
                         response_type="clarification",
                         clarification_question=grounding.clarification_question,
+                        error_type=(
+                            grounding.error_type
+                            or "semantic_grounding_failed"
+                        ),
                         trace=trace,
                         trace_id=trace_id,
                         is_mock=False,
@@ -874,7 +962,7 @@ class DeepSeekTurnService:
                     controller,
                     trace,
                     terminal_state=TurnState.TOOL_FAILED,
-                    error_type=getattr(e, "error_type", type(e).__name__),
+                    error_type=self._safe_tool_error_type(e, "members"),
                     reason=str(e),
                     stage="member_grounding",
                     trace_id=trace_id,
@@ -917,7 +1005,32 @@ class DeepSeekTurnService:
 
         controller.record_query_plan_valid()
         controller.transition(TurnState.QUERY_VALIDATED)
-        trace.record("query_plan_validated", trace_id=trace_id, request_id=effective_req_id)
+        canonical_plan_payload = query_plan.model_dump(mode="json")
+        canonical_plan_hash = hashlib.sha256(
+            json.dumps(
+                canonical_plan_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        trace.record(
+            "query_plan_validated",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={
+                "conversation_id": effective_conv_id,
+                "semantic_model_key": semantic_model_key,
+                "canonical_plan_hash": canonical_plan_hash,
+                "canonical_plan_summary": {
+                    "measures": list(query_plan.measures),
+                    "dimensions": list(query_plan.dimensions),
+                    "filter_fields": [item.field for item in query_plan.filters],
+                    "has_time_range": query_plan.time_range is not None,
+                    "top_n": query_plan.top_n,
+                },
+            },
+        )
 
         # ── 9. DAX 生成与验证 ──
         try:
@@ -996,8 +1109,19 @@ class DeepSeekTurnService:
                 )
 
         controller.record_dax_valid()
-        trace.record("dax_validated", trace_id=trace_id, request_id=effective_req_id,
-                     data_summary={"is_read_only": safety_result.is_valid})
+        dax_hash = hashlib.sha256(dax_request.dax.encode("utf-8")).hexdigest()
+        trace.record(
+            "dax_validated",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={
+                "conversation_id": effective_conv_id,
+                "semantic_model_key": semantic_model_key,
+                "canonical_plan_hash": canonical_plan_hash,
+                "dax_hash": dax_hash,
+                "is_read_only": safety_result.is_valid,
+            },
+        )
 
         # ── 10. 通过 ToolGateway 执行 DAX 查询 ──
         fixture_key = "data_question" if intent.intent == IntentType.DATA_QUESTION else "report_generation"
@@ -1024,7 +1148,7 @@ class DeepSeekTurnService:
         except ToolTimeoutError as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
-                terminal_state=TurnState.TOOL_FAILED, error_type="timeout",
+                terminal_state=TurnState.TOOL_FAILED, error_type="mcp_timeout",
                 reason=str(e), stage="dax_execution", trace_id=trace_id,
                 collector=collector,
             )
@@ -1032,7 +1156,8 @@ class DeepSeekTurnService:
                 ToolNotRegisteredError, ToolOutputValidationError) as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
-                terminal_state=TurnState.TOOL_FAILED, error_type=type(e).__name__,
+                terminal_state=TurnState.TOOL_FAILED,
+                error_type=self._safe_tool_error_type(e, "dax"),
                 reason=str(e), stage="dax_execution", trace_id=trace_id,
                 collector=collector,
             )
@@ -1047,7 +1172,8 @@ class DeepSeekTurnService:
             controller.transition(TurnState.TOOL_FAILED)
             return self._build_result(
                 effective_req_id, effective_conv_id, "tool_failed",
-                intent=intent.intent.value, error_type=query_result.error.type,
+                intent=intent.intent.value,
+                error_type=self._safe_query_error_type(query_result.error.type),
                 trace=trace, trace_id=trace_id, is_mock=False,
                 source_mode=self._source_mode, collector=collector,
             )
@@ -1077,7 +1203,14 @@ class DeepSeekTurnService:
             "query_result_validated",
             trace_id=trace_id,
             request_id=effective_req_id,
-            data_summary={"source_mode": query_result.source_mode},
+            data_summary={
+                "conversation_id": effective_conv_id,
+                "semantic_model_key": semantic_model_key,
+                "canonical_plan_hash": canonical_plan_hash,
+                "dax_hash": dax_hash,
+                "result_id": query_result.result_id,
+                "source_mode": query_result.source_mode,
+            },
         )
 
         verified_facts: VerifiedFactSet | None = None
@@ -1107,6 +1240,11 @@ class DeepSeekTurnService:
                 trace_id=trace_id,
                 request_id=effective_req_id,
                 data_summary={
+                    "conversation_id": effective_conv_id,
+                    "semantic_model_key": semantic_model_key,
+                    "canonical_plan_hash": canonical_plan_hash,
+                    "dax_hash": dax_hash,
+                    "result_id": query_result.result_id,
                     "fact_set_id": verified_facts.fact_set_id,
                     "fact_count": len(verified_facts.facts),
                     "row_count": verified_facts.row_count,
@@ -1355,11 +1493,21 @@ class DeepSeekTurnService:
             report_data=report_data,
             presentation=presentation,
             execution_audit={
-                "canonical_query_plan": query_plan.model_dump(mode="json"),
+                "conversation_id": effective_conv_id,
+                "request_id": effective_req_id,
+                "semantic_model_key": semantic_model_key,
+                "canonical_query_plan": canonical_plan_payload,
+                "canonical_plan_hash": canonical_plan_hash,
+                "canonical_plan_summary": {
+                    "measures": list(query_plan.measures),
+                    "dimensions": list(query_plan.dimensions),
+                    "filter_fields": [item.field for item in query_plan.filters],
+                    "has_time_range": query_plan.time_range is not None,
+                    "top_n": query_plan.top_n,
+                },
                 "deterministic_dax": not self.powerbi.is_mock,
-                "dax_fingerprint": hashlib.sha256(
-                    dax_request.dax.encode("utf-8")
-                ).hexdigest(),
+                "dax_fingerprint": dax_hash,
+                "dax_hash": dax_hash,
                 "layer3_pass": not self.powerbi.is_mock,
                 "query_result_success": query_result.error is None,
                 "result_id": query_result.result_id,
@@ -1576,7 +1724,9 @@ class DeepSeekTurnService:
                         controller,
                         trace,
                         terminal_state=TurnState.TOOL_FAILED,
-                        error_type=result.error.type,
+                        error_type=self._safe_query_error_type(
+                            result.error.type
+                        ),
                         reason=result.error.type,
                         stage="report_dax_execution",
                         trace_id=trace_id,
@@ -1592,7 +1742,7 @@ class DeepSeekTurnService:
                 controller,
                 trace,
                 terminal_state=TurnState.TOOL_FAILED,
-                error_type=type(exc).__name__,
+                error_type=self._safe_tool_error_type(exc, "dax"),
                 reason=str(exc),
                 stage="report_dax_execution",
                 trace_id=trace_id,
@@ -1804,6 +1954,23 @@ class DeepSeekTurnService:
             request_id=effective_req_id,
             data_summary={"terminal_state": "completed"},
         )
+        report_plan_payloads = {
+            item.requirement_key: item.query_plan.model_dump(mode="json")
+            for item in report_plan.data_plan.queries
+        }
+        report_plan_hashes = {
+            key: hashlib.sha256(json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")).hexdigest()
+            for key, value in report_plan_payloads.items()
+        }
+        report_dax_hashes = {
+            key: hashlib.sha256(request.dax.encode("utf-8")).hexdigest()
+            for key, request in dax_requests.items()
+        }
         return self._build_result(
             effective_req_id,
             effective_conv_id,
@@ -1820,9 +1987,24 @@ class DeepSeekTurnService:
                 report_response["report_id"]
             ),
             execution_audit={
-                "canonical_query_plans": {
-                    item.requirement_key: item.query_plan.model_dump(mode="json")
-                    for item in report_plan.data_plan.queries
+                "conversation_id": effective_conv_id,
+                "request_id": effective_req_id,
+                "semantic_model_key": schema.key,
+                "canonical_query_plans": report_plan_payloads,
+                "canonical_plan_hashes": report_plan_hashes,
+                "canonical_plan_summaries": {
+                    key: {
+                        "measures": list(value.get("measures") or []),
+                        "dimensions": list(value.get("dimensions") or []),
+                        "filter_fields": [
+                            item.get("field")
+                            for item in value.get("filters") or []
+                            if isinstance(item, dict)
+                        ],
+                        "has_time_range": value.get("time_range") is not None,
+                        "top_n": value.get("top_n"),
+                    }
+                    for key, value in report_plan_payloads.items()
                 },
                 "requested_sections": list(signal.requested_ids),
                 "resolved_sections": [
@@ -1834,10 +2016,8 @@ class DeepSeekTurnService:
                 "query_count": len(report_plan.data_plan.queries),
                 "assembled_query_count": len(execution_plan.queries),
                 "deterministic_dax": True,
-                "dax_fingerprints": {
-                    key: hashlib.sha256(request.dax.encode("utf-8")).hexdigest()
-                    for key, request in dax_requests.items()
-                },
+                "dax_fingerprints": report_dax_hashes,
+                "dax_hashes": report_dax_hashes,
                 "layer3_pass": True,
                 "query_result_ids": list(rendered.query_result_ids),
                 "verified_fact_set_ids": list(rendered.verified_fact_set_ids),
@@ -1902,6 +2082,39 @@ class DeepSeekTurnService:
             trace=trace, trace_id=trace_id, is_mock=False,
             source_mode=self._source_mode, collector=collector,
         )
+
+    @staticmethod
+    def _safe_query_error_type(error_type: str) -> str:
+        normalized = error_type.casefold()
+        if normalized == "preview_row_data_missing":
+            return "preview_row_data_missing"
+        if "stale" in normalized:
+            return "stale_instance"
+        if "timeout" in normalized:
+            return "mcp_timeout"
+        if "connection" in normalized or "network" in normalized:
+            return "mcp_connection_failed"
+        return "dax_execution_failed"
+
+    @classmethod
+    def _safe_tool_error_type(cls, exc: Exception, stage: str) -> str:
+        if isinstance(exc, ToolTimeoutError):
+            return "mcp_timeout"
+        raw = str(getattr(exc, "error_type", type(exc).__name__))
+        normalized = raw.casefold()
+        if "stale" in normalized:
+            return "stale_instance"
+        if "timeout" in normalized:
+            return "mcp_timeout"
+        if stage == "dax":
+            return "dax_execution_failed"
+        if (
+            "connection" in normalized
+            or "network" in normalized
+            or "mcp" in normalized
+        ):
+            return "mcp_connection_failed"
+        return "semantic_grounding_failed"
 
     # M1.6.3: 辅助方法委托给共享 TurnPipeline，保证统一行为
 

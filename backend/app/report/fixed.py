@@ -15,6 +15,7 @@ no JS/CDN/external resources.
 
 from __future__ import annotations
 
+import re
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from html import escape
 from pathlib import Path
@@ -247,30 +248,30 @@ class SalesReportRenderer(ReportRenderer):
 
         circles = []
         for index, (value, (x, y)) in enumerate(zip(values, coords)):
+            accessibility_label = (
+                f'{cls._text(points[index]["label"])}，'
+                f'{cls._text(chart.title or chart.y_field)} '
+                f'{cls._number(value, decimals=2)}'
+            )
             circles.append(
                 f'<circle cx="{x}" cy="{y}" r="3.5" '
                 f'fill="{ThemePolicy.SEQUENTIAL_400}" stroke="{ThemePolicy.SURFACE}" '
                 f'stroke-width="1.5" '
                 f'data-point="{index + 1}" '
                 f'data-source-value="{escape(format(value, "f"), quote=True)}" '
-                f'aria-label="{cls._text(chart.y_field)}={cls._number(value, decimals=2)}"/>'
+                f'aria-label="{accessibility_label}"/>'
             )
 
         labels: list[str] = []
-        labeled_indexes: set[int] = set()
-        for index in (0, len(points) - 1):
-            if index not in labeled_indexes:
-                labeled_indexes.add(index)
-                labels.append(cls._axis_period_label(
-                    points[index]["label"],
-                    scale_x(index),
-                    index,
-                    len(points),
-                ))
-        middle = len(points) // 2
-        if len(points) > 2 and middle not in labeled_indexes:
+        label_indexes = cls._axis_label_indexes(points)
+        display_labels = cls._axis_period_display_labels(points, label_indexes)
+        for label_order, index in enumerate(label_indexes):
             labels.append(cls._axis_period_label(
-                points[middle]["label"], scale_x(middle), middle, len(points)
+                display_labels[index],
+                scale_x(index),
+                index,
+                len(points),
+                label_order,
             ))
 
         direct_labels = ""
@@ -325,6 +326,7 @@ class SalesReportRenderer(ReportRenderer):
         x: str,
         index: int,
         point_count: int,
+        label_order: int,
     ) -> str:
         anchor = (
             "middle"
@@ -336,10 +338,102 @@ class SalesReportRenderer(ReportRenderer):
             else "middle"
         )
         return (
-            f'<text x="{x}" y="{cls._LINE_HEIGHT - 8}" text-anchor="{anchor}" '
+            f'<text x="{x}" '
+            f'y="{cls._LINE_HEIGHT - (8 if label_order % 2 else 22)}" '
+            f'text-anchor="{anchor}" '
             f'data-axis-index="{index}" class="chart-axis-label">'
             f'{cls._text(period)}</text>'
         )
+
+    @classmethod
+    def _axis_label_indexes(
+        cls, points: list[dict[str, Any]]
+    ) -> list[int]:
+        """Select a deterministic, readable set of period labels.
+
+        Up to twelve labels are shown.  Endpoints and detected year
+        boundaries are mandatory; remaining slots repeatedly bisect the
+        largest unlabeled gap so longer series remain evenly legible.
+        """
+        count = len(points)
+        if count <= 12:
+            return list(range(count))
+        selected = {0, count - 1}
+        previous_year: str | None = None
+        for index, point in enumerate(points):
+            match = re.match(r"\s*(\d{4})(?:[-/]|年)", str(point["label"]))
+            year = match.group(1) if match else None
+            if year is not None and previous_year is not None and year != previous_year:
+                selected.add(index)
+            if year is not None:
+                previous_year = year
+
+        target = min(12, count)
+        if target > 1:
+            selected.update(
+                round(slot * (count - 1) / (target - 1))
+                for slot in range(target)
+            )
+        while len(selected) > target:
+            removable = [
+                index for index in selected
+                if index not in {0, count - 1}
+                and not cls._is_year_boundary(points, index)
+            ]
+            if not removable:
+                break
+            selected.remove(min(
+                removable,
+                key=lambda index: (
+                    min(abs(index - other) for other in selected if other != index),
+                    -index,
+                ),
+            ))
+        while len(selected) < target:
+            candidate = max(
+                (index for index in range(count) if index not in selected),
+                key=lambda index: (
+                    min(abs(index - chosen) for chosen in selected),
+                    -index,
+                ),
+            )
+            selected.add(candidate)
+        return sorted(selected)
+
+    @staticmethod
+    def _is_year_boundary(points: list[dict[str, Any]], index: int) -> bool:
+        if index <= 0:
+            return False
+        current = re.match(r"\s*(\d{4})(?:[-/]|年)", str(points[index]["label"]))
+        previous = re.match(
+            r"\s*(\d{4})(?:[-/]|年)", str(points[index - 1]["label"])
+        )
+        return bool(current and previous and current.group(1) != previous.group(1))
+
+    @staticmethod
+    def _axis_period_display_labels(
+        points: list[dict[str, Any]], indexes: list[int]
+    ) -> dict[int, str]:
+        parsed: dict[int, tuple[str, str]] = {}
+        for index in indexes:
+            match = re.match(
+                r"\s*(\d{4})[-/](\d{1,2})(?:[-/]|\b)",
+                str(points[index]["label"]),
+            )
+            if match is not None:
+                parsed[index] = (match.group(1), f"{int(match.group(2)):02d}")
+        years = {year for year, _ in parsed.values()}
+        labels: dict[int, str] = {}
+        for index in indexes:
+            raw = str(points[index]["label"])
+            if index in parsed:
+                year, month = parsed[index]
+                labels[index] = (
+                    f"{year[-2:]}-{month}" if len(years) > 1 else f"{month}月"
+                )
+            else:
+                labels[index] = raw if len(raw) <= 10 else raw[:9] + "…"
+        return labels
 
     # ── Donut chart (category composition) ──
 

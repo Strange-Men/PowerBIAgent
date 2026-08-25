@@ -243,6 +243,14 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
+    # Model-scoped Local MCP workers own persistent stdio processes and must be
+    # closed by the same application lifespan that created the adapter.
+    if powerbi_adapter is not None and hasattr(powerbi_adapter, "aclose"):
+        try:
+            await powerbi_adapter.aclose()
+        except Exception:
+            pass
+
     # shutdown — dispose SQLite engine（如有）
     if _engine is not None:
         await dispose_engine(_engine)

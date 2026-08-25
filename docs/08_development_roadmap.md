@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.5 — 语义理解、中文展示、性能与报表视觉最终收口（COMPLETE）；M5 正式结束
+> **状态：** M5.5.1 — Real Stress / UX / Semantic Hotfix（COMPLETE）；M5.5 authority 不变
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -38,6 +38,16 @@
 | **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
 | **M5.4.1** | **Settings 全量资源分页、选择/批量语义与 automation ownership cleanup** | **✅ 已完成** |
 | **M5.5** | **语言理解/中文字段/单指标/报表视觉/性能** | **✅ 已完成** |
+| **M5.5.1** | **真实运行稳定性/成员语义/时间分组/失败资源/菜单/报表可读性** | **✅ 已完成** |
+
+### M5.5.1 — Real Stress / UX / Semantic Hotfix（已完成）
+
+- 以 request correlation hash/identity 证明不同 conversation 的 canonical plan、DAX、QueryResult、VerifiedFactSet 与 presentation 不串写；2/5/10/20 Real stress 全部成功且 HTTP 500=0。
+- Local MCP 使用 semantic-model/instance/schema-scoped persistent worker 和 bounded heavy-operation concurrency；TTL、instance/schema change、stale/reconnect/explicit refresh 触发失效，不跨 PBIX cache 或 fallback。
+- Business Member Resolution 通过 bounded linguistic candidate 加 runtime ColumnMembers exact validation；TemporalGroupingSpec 以真实日期列确定性支持 month/year，能力缺失受控返回。
+- failed conversation 可在 Settings rename/archive/restore/delete；conversation/report 共用 Portal floating menu，Real Chrome 首/中/末、滚动与 100%/125% 缩放验收通过。
+- `sales_report` 时间轴使用确定性密度与跨年标签，每点有完整中文 accessibility label；全部目标 viewport/point-count visual 与 geometry 通过，无新模板。
+- Fresh backend `1902 passed, 1 skipped`，frontend Vitest `78 passed` 且 typecheck/lint/build PASS，Golden `11 passed, 1 manual-real skipped`，全部治理 Gate PASS，automation residual=0。
 
 ### M5.5 — M5 最终收口（已完成）
 
@@ -281,4 +291,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 ---
 
-*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*
+*最后更新：2026-08-25 | M5.5.1 COMPLETE — M5 正式结束*

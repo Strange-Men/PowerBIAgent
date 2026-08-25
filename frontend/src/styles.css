@@ -340,13 +340,12 @@ input:focus-visible {
   background: #e5e5e5;
 }
 
-.conversation-actions-menu {
-  position: absolute;
-  z-index: 50;
-  top: 34px;
-  right: 0;
+.floating-action-menu {
+  position: fixed;
+  z-index: 1000;
   display: grid;
-  width: 132px;
+  width: 148px;
+  max-width: calc(100vw - 16px);
   padding: 6px;
   border: 1px solid #ddd;
   border-radius: 9px;
@@ -354,7 +353,7 @@ input:focus-visible {
   box-shadow: 0 10px 28px rgb(0 0 0 / 13%);
 }
 
-.conversation-actions-menu button {
+.floating-action-menu button {
   display: flex;
   min-height: 34px;
   align-items: center;
@@ -368,15 +367,15 @@ input:focus-visible {
   text-align: left;
 }
 
-.conversation-actions-menu button:hover:not(:disabled) {
+.floating-action-menu button:hover:not(:disabled) {
   background: #f1f1f1;
 }
 
-.conversation-actions-menu .danger-action {
+.floating-action-menu .danger-action {
   color: #b42318;
 }
 
-.conversation-actions-menu button:disabled {
+.floating-action-menu button:disabled {
   cursor: wait;
   opacity: 0.5;
 }

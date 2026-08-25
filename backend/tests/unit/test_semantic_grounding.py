@@ -56,6 +56,7 @@ from backend.app.schemas.data_contracts import (
     SemanticModelSchema,
     StructuredFilter,
     TableSchema,
+    TemporalGroupingSpec,
     TimeRangeMode,
 )
 
@@ -120,6 +121,35 @@ def _catalog(glossary=None):
     return SemanticCatalogBuilder().build_from_data(
         _schema(), glossary or _glossary()
     )
+
+
+def _region_catalog(*, duplicate_member_field: bool = False):
+    schema = _schema()
+    schema.tables[0].columns.append(ColumnSchema(name="Region", data_type="String"))
+    glossary = _glossary()
+    glossary["fields"]["Region"] = {
+        "table_name": "Sales",
+        "object_type": "field",
+        "aliases": ["区域", "地区"],
+        "member_aliases": {
+            "华南": "South",
+            "华东": "East",
+            "华北": "North",
+            "华西": "West",
+        },
+    }
+    if duplicate_member_field:
+        schema.tables[0].columns.append(
+            ColumnSchema(name="Territory", data_type="String")
+        )
+        glossary["fields"]["Territory"] = {
+            "table_name": "Sales",
+            "object_type": "field",
+            "aliases": ["辖区"],
+            "member_aliases": {"华南": "South"},
+        }
+    glossary["schema_fingerprint"] = compute_schema_fingerprint(schema)
+    return SemanticCatalogBuilder().build_from_data(schema, glossary)
 
 
 def _intent(**kwargs) -> IntentSpec:
@@ -730,6 +760,199 @@ class TestMemberAndTimeGrounding:
 
 
 class TestGroundingAuthorityAndStateTransition:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("question", "expected"),
+        [
+            ("华南销售额", "South"),
+            ("华南区销售额", "South"),
+            ("南区销售额", "South"),
+            ("South销售额", "South"),
+            ("东区销售额", "East"),
+            ("华东区销售额", "East"),
+            ("北区销售额", "North"),
+            ("西区销售额", "West"),
+        ],
+    )
+    async def test_business_member_resolution_requires_runtime_confirmation(
+        self, question, expected
+    ):
+        async def lookup(field, limit):
+            assert field.canonical_name == "Region"
+            assert limit == 100
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name="Region",
+                values=["South", "East", "North", "West"],
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(_region_catalog()).ground(
+            question,
+            _intent(detected_measures=["销售额"]),
+            _draft(measures=["Total Sales"]),
+            None,
+            lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.filters == [
+            StructuredFilter(field="Region", value=expected)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_unknown_member_never_falls_back_to_total_sales_only(self):
+        async def lookup(field, _limit):
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name=field.table_name,
+                field_name=field.canonical_name,
+                values=["South", "East", "North", "West"],
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(_region_catalog()).ground(
+            "不存在区域销售额",
+            _intent(detected_measures=["销售额"]),
+            _draft(measures=["Total Sales"]),
+            None,
+            lookup,
+        )
+
+        assert outcome.status == GroundingStatus.AMBIGUOUS
+        assert outcome.delta is None
+
+    @pytest.mark.asyncio
+    async def test_same_member_in_multiple_fields_requires_clarification(self):
+        async def lookup(field, _limit):
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name=field.table_name,
+                field_name=field.canonical_name,
+                values=["South"],
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(
+            _region_catalog(duplicate_member_field=True)
+        ).ground(
+            "南区销售额",
+            _intent(detected_measures=["销售额"]),
+            _draft(measures=["Total Sales"]),
+            None,
+            lookup,
+        )
+
+        assert outcome.status == GroundingStatus.AMBIGUOUS
+        assert outcome.delta is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("question", "expected_grain", "expected_field"),
+        [
+            ("每月销售额趋势", "month", "YearMonth"),
+            ("每个月销售额趋势", "month", "YearMonth"),
+            ("按月销售额", "month", "YearMonth"),
+            ("每年销售额趋势", "year", "Year"),
+        ],
+    )
+    async def test_temporal_grouping_binds_runtime_calendar_field(
+        self, question, expected_grain, expected_field
+    ):
+        schema = _schema()
+        schema.tables[0].columns.extend([
+            ColumnSchema(name="YearMonth", data_type="DateTime"),
+            ColumnSchema(name="Year", data_type="Int64"),
+        ])
+        catalog = SemanticCatalogBuilder().build_from_data(schema, _glossary())
+
+        async def no_lookup(*_):
+            raise AssertionError("member lookup should not run")
+
+        outcome = await SemanticGroundingService(catalog).ground(
+            question,
+            _intent(detected_measures=["销售额"]),
+            _draft(measures=["Total Sales"]),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        transition = StateTransitionService().merge(
+            _draft(), outcome.delta, None,
+            inheritance_mode=InheritanceMode.FRESH_QUESTION,
+        )
+        assert transition.query_plan.temporal_grouping == TemporalGroupingSpec(
+            date_field="OrderDate",
+            group_field=expected_field,
+            grain=expected_grain,
+        )
+        assert transition.query_plan.dimensions == [expected_field]
+        assert transition.query_plan.dimension_order == "asc"
+
+    @pytest.mark.asyncio
+    async def test_unsupported_temporal_grouping_is_controlled(self):
+        async def no_lookup(*_):
+            raise AssertionError("member lookup should not run")
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "按季度销售额趋势",
+            _intent(detected_measures=["销售额"]),
+            _draft(measures=["Total Sales"]),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.UNRESOLVED
+        assert outcome.delta is None
+        assert outcome.pending_eligible is False
+        assert outcome.error_type == "unsupported_temporal_grouping"
+
+    def test_temporal_grouping_fresh_question_clears_and_follow_up_inherits(self):
+        grouping = TemporalGroupingSpec(
+            date_field="OrderDate", group_field="YearMonth", grain="month"
+        )
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+            dimensions=["YearMonth"],
+            last_query_plan={
+                "dimension_tables": {"YearMonth": "Sales"},
+                "dimension_order": "asc",
+                "temporal_grouping": grouping.model_dump(mode="json"),
+            },
+        )
+
+        kept = StateTransitionService().merge(
+            _draft(), GroundedSemanticDelta(), committed,
+            inheritance_mode=InheritanceMode.FOLLOW_UP,
+        ).query_plan
+        cleared = StateTransitionService().merge(
+            _draft(), GroundedSemanticDelta(measures=["Total Quantity"]), committed,
+            inheritance_mode=InheritanceMode.FRESH_QUESTION,
+        ).query_plan
+
+        assert kept.temporal_grouping == grouping
+        assert kept.dimension_order == "asc"
+        assert cleared.temporal_grouping is None
+        assert cleared.dimension_order is None
+
+    def test_corrupt_committed_temporal_grouping_fails_closed(self):
+        committed = StructuredWorkMemory(
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+            last_query_plan={"temporal_grouping": {"grain": "quarter"}},
+        )
+
+        with pytest.raises(
+            CommittedMemoryCorruptionError,
+            match="committed_memory_temporal_grouping_invalid",
+        ):
+            StateTransitionService().merge(
+                _draft(), GroundedSemanticDelta(), committed
+            )
+
     def test_fresh_question_clears_unmentioned_committed_slots(self):
         committed = StructuredWorkMemory(
             state_status=MemoryStatus.COMMITTED,
@@ -822,6 +1045,26 @@ class TestGroundingAuthorityAndStateTransition:
         assert outcome.delta.measures == ["Total Sales"]
         assert outcome.delta.dimensions == ["Product"]
         assert outcome.delta.filters is None
+
+    @pytest.mark.asyncio
+    async def test_highest_count_dimension_is_grouping_not_member_filter(self):
+        async def no_lookup(*_):
+            raise AssertionError("TopN grouping must not trigger member lookup")
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "销售额最高的3个产品",
+            _intent(),
+            _draft(),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.measures == ["Total Sales"]
+        assert outcome.delta.dimensions == ["Product"]
+        assert outcome.delta.filters is None
+        assert outcome.delta.sort == "desc"
+        assert outcome.delta.top_n == 3
 
     @pytest.mark.asyncio
     async def test_runtime_member_discovers_filter_when_weak_draft_omits_it(self):

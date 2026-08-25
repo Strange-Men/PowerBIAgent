@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.5 — 语义理解、中文展示、性能与报表视觉最终收口（COMPLETE）；M5 正式结束
+> **状态：** M5.5.1 — Real Stress / UX / Semantic Hotfix（COMPLETE）；M5.5 authority 不变
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -38,6 +38,7 @@
 | **M5.4** | **conversation-scoped state、异会话并发、用户卡片/资源管理、report tombstone/rename** | **✅ 已完成** |
 | **M5.4.1** | **Settings Hub、全量 conversation/report 分页、准确全选语义与 automation artifact cleanup** | **✅ 已完成** |
 | **M5.5** | **语言理解、字段中文化、视觉与性能优化** | **✅ 已完成** |
+| **M5.5.1** | **真实运行稳定性、成员语义、资源生命周期与报表可读性 hotfix** | **✅ 已完成** |
 
 ## M3 合并与 CI truth
 
@@ -219,4 +220,12 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - teardown 后 conversation/report/HTML/SQLite/delete-intent exact residual=0；无法确认 ownership 的资源未删除。
 - Backend `1797 passed, 1 skipped`；Vitest `69 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `295`、Error Ledger `27`、Documentation/Artifact Governance 与 `git diff --check` PASS。
 
-*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*
+### M5.5.1 fresh evidence
+
+- Rich PBIX 八问与 2/5/10/20 conversation stress 均通过；correlation identity/hash 证明 conversation/request/plan/DAX/QueryResult/FactSet/presentation 不串写，HTTP 500=0。
+- `华南/华南区/南区` 等成员语言变体经 runtime member exact validation 落地；月/年趋势使用正式 deterministic TemporalGroupingSpec；失败 conversation 经 restart 后仍可在 Settings rename/archive/restore/delete。
+- Real Chrome 验证 conversation/report 菜单首/中/末项、scroll top/middle/bottom、260px Sidebar 与 100%/125% 缩放，Portal 无 clipping/stacking/scrollbar 遮挡；rename/archive/delete 均可见可点击。
+- report 1/2/6/12/15/24 point 与 390/768/1080/1280/1440/1920/2560 viewport visual/geometry PASS；warm scalar/grouped/trend P50/P95 分别为 `46ms/1.11s`、`53ms/87ms`、`56ms/88ms`，warm report `769ms/3.51s`。
+- Backend focused `209 passed`、full `1902 passed, 1 skipped`；Vitest `78 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `125`、Repository Safety `307`、Error Ledger `29`、Documentation/Artifact Governance 与 `git diff --check` PASS；automation residual=0。
+
+*最后更新：2026-08-25 | M5.5.1 COMPLETE — M5 正式结束*

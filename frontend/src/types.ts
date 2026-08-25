@@ -117,6 +117,13 @@ export interface ConversationSummary {
   latest_terminal_state: string | null
   latest_response_type: string | null
   latest_analysis_goal: string | null
+  lifecycle_status?:
+    | 'draft'
+    | 'processing'
+    | 'ready'
+    | 'failed'
+    | 'archived'
+    | 'deleted'
   local_status?: 'processing' | 'failed' | 'ready'
   local_error?: string | null
 }

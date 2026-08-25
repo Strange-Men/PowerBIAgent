@@ -1,6 +1,7 @@
 """Power BI Adapter 单元测试。"""
 
 import ast
+import asyncio
 import inspect
 from importlib.metadata import version
 from types import SimpleNamespace
@@ -151,6 +152,48 @@ class FakeLocalMCPClient:
             wire_max_rows=request.max_rows + 1,
             payload=self.dax_snapshot.payload,
         )
+
+
+class ConcurrentLocalMCPClient(FakeLocalMCPClient):
+    def __init__(self) -> None:
+        super().__init__(
+            schema_snapshot=_schema_snapshot(),
+            dax_snapshot=_dax_snapshot(_successful_dax_payload()),
+        )
+        self.active_by_model: dict[str, int] = {}
+        self.max_active_by_model: dict[str, int] = {}
+        self.global_active = 0
+        self.max_global_active = 0
+
+    async def read_semantic_model_schema(
+        self, semantic_model_key: str
+    ) -> LocalMCPSchemaSnapshot:
+        await self._enter(semantic_model_key)
+        try:
+            return await super().read_semantic_model_schema(semantic_model_key)
+        finally:
+            self._leave(semantic_model_key)
+
+    async def execute_dax(self, request: DAXRequest) -> LocalMCPDAXSnapshot:
+        await self._enter(request.semantic_model_key)
+        try:
+            return await super().execute_dax(request)
+        finally:
+            self._leave(request.semantic_model_key)
+
+    async def _enter(self, semantic_model_key: str) -> None:
+        active = self.active_by_model.get(semantic_model_key, 0) + 1
+        self.active_by_model[semantic_model_key] = active
+        self.max_active_by_model[semantic_model_key] = max(
+            self.max_active_by_model.get(semantic_model_key, 0), active
+        )
+        self.global_active += 1
+        self.max_global_active = max(self.max_global_active, self.global_active)
+        await asyncio.sleep(0.005)
+
+    def _leave(self, semantic_model_key: str) -> None:
+        self.active_by_model[semantic_model_key] -= 1
+        self.global_active -= 1
 
 
 class FlakyLocalNetworkClient:
@@ -786,6 +829,166 @@ class TestMockPowerBIAdapter:
 
 
 class TestLocalMCPPowerBIAdapter:
+    @pytest.mark.asyncio
+    async def test_model_session_worker_is_reused_and_explicitly_invalidated(
+        self, monkeypatch
+    ):
+        client = PowerBILocalMCPClient()
+        starts: list[str] = []
+
+        async def fake_worker(semantic_model_key, queue):
+            starts.append(semantic_model_key)
+            while True:
+                work = await queue.get()
+                try:
+                    if work is None:
+                        return
+                    await asyncio.sleep(0.001)
+                    if not work.future.done():
+                        work.future.set_result(semantic_model_key)
+                finally:
+                    queue.task_done()
+
+        async def handler(_client, _protocol, _tools, _connected):
+            return "unused"
+
+        monkeypatch.setattr(client, "_model_session_worker", fake_worker)
+        first, second = await asyncio.gather(
+            client._run_model_session(TEST_MODEL_KEY, handler),
+            client._run_model_session(TEST_MODEL_KEY, handler),
+        )
+
+        assert first == second == TEST_MODEL_KEY
+        assert starts == [TEST_MODEL_KEY]
+
+        await client.invalidate_sessions({TEST_MODEL_KEY})
+        third = await client._run_model_session(TEST_MODEL_KEY, handler)
+        assert third == TEST_MODEL_KEY
+        assert starts == [TEST_MODEL_KEY, TEST_MODEL_KEY]
+        await client.aclose()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("conversation_count", [2, 5, 10, 20])
+    async def test_same_model_heavy_operations_are_bounded(
+        self, conversation_count
+    ):
+        client = ConcurrentLocalMCPClient()
+        adapter = _local_adapter(client)
+        requests = [
+            DAXRequest(
+                semantic_model_key=TEST_MODEL_KEY,
+                dax='EVALUATE ROW("TestValue", 1)',
+                request_id=f"request-{index}",
+            )
+            for index in range(conversation_count)
+        ]
+
+        results = await asyncio.gather(
+            *(adapter.execute_dax(request) for request in requests)
+        )
+
+        assert all(result.error is None for result in results)
+        assert client.max_active_by_model[TEST_MODEL_KEY] == 1
+        assert client.dax_calls == conversation_count
+
+    @pytest.mark.asyncio
+    async def test_different_models_do_not_share_concurrency_state(self):
+        second_key = PowerBILocalMCPClient._desktop_semantic_model_key(
+            process_id=2002,
+            data_source="localhost:54322",
+            start_time="2026-08-24T10:00:00+08:00",
+        )
+        client = ConcurrentLocalMCPClient()
+        adapter = _local_adapter(client)
+
+        await asyncio.gather(*(
+            adapter.execute_dax(DAXRequest(
+                semantic_model_key=key,
+                dax='EVALUATE ROW("TestValue", 1)',
+                request_id=f"request-{index}",
+            ))
+            for index, key in enumerate((TEST_MODEL_KEY, second_key))
+        ))
+
+        assert client.max_active_by_model == {TEST_MODEL_KEY: 1, second_key: 1}
+        assert client.max_global_active == 2
+
+    @pytest.mark.asyncio
+    async def test_concurrent_schema_and_member_requests_are_coalesced(self):
+        client = ConcurrentLocalMCPClient()
+        client.dax_snapshot = _dax_snapshot({
+            "success": True,
+            "operation": "Execute",
+            "data": {
+                "success": True,
+                "rowCount": 2,
+                "columns": [{"name": "[MemberValue]", "ordinal": 0}],
+                "rows": [
+                    {"[MemberValue]": "A"},
+                    {"[MemberValue]": "B"},
+                ],
+            },
+        })
+        adapter = _local_adapter(client)
+
+        schemas = await asyncio.gather(*(
+            adapter.get_semantic_model_schema(TEST_MODEL_KEY) for _ in range(20)
+        ))
+        member_request = ColumnMembersRequest(
+            semantic_model_key=TEST_MODEL_KEY,
+            table_name="Products",
+            field_name="Category",
+            limit=2,
+        )
+        members = await asyncio.gather(*(
+            adapter.get_column_members(member_request) for _ in range(20)
+        ))
+
+        assert all(schema.key == TEST_MODEL_KEY for schema in schemas)
+        assert all(result.values == members[0].values for result in members)
+        assert client.schema_calls == 1
+        assert client.dax_calls == 1
+        assert client.max_active_by_model[TEST_MODEL_KEY] == 1
+
+    @pytest.mark.asyncio
+    async def test_explicit_discovery_refresh_invalidates_model_caches(self):
+        client = FakeLocalMCPClient(
+            schema_snapshot=_schema_snapshot(),
+            discovery_snapshot=_discovery_snapshot(),
+        )
+        adapter = _local_adapter(client)
+
+        await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+        await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+        assert client.schema_calls == 1
+
+        await adapter.discover_semantic_models()
+        await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+
+        assert client.discovery_calls == 1
+        assert client.schema_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_schema_cache_ttl_is_model_scoped_and_expires(self):
+        client = FakeLocalMCPClient(schema_snapshot=_schema_snapshot())
+        adapter = LocalMCPPowerBIAdapter(
+            client=client,
+            max_retries=0,
+            semantic_model_key=TEST_MODEL_KEY,
+            cache_ttl_seconds=1.0,
+        )
+
+        await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+        created_at, identity, schema = adapter._schema_cache[TEST_MODEL_KEY]
+        adapter._schema_cache[TEST_MODEL_KEY] = (
+            created_at - 2.0,
+            identity,
+            schema,
+        )
+        await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+
+        assert client.schema_calls == 2
+
     """M2.1 Local MCP 只验证 stdio、协议、工具与 Desktop 连接。"""
 
     def test_adapter_contract_and_identity(self):

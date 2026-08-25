@@ -932,7 +932,14 @@ export function usePowerBIAgent() {
           local_error: session.error,
         }
       })
-    return [...localRows, ...persisted.values()]
+    const remainingPersisted = [...persisted.values()].map((conversation) => ({
+      ...conversation,
+      local_status:
+        conversation.lifecycle_status === 'failed'
+          ? ('failed' as const)
+          : ('ready' as const),
+    }))
+    return [...localRows, ...remainingPersisted]
   }, [effectiveRuntimeMode, persistedRecent, sessions])
 
   const activeSession = activeConversationId

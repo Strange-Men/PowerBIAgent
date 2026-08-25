@@ -93,6 +93,19 @@ describe('Sidebar conversation management', () => {
     expect(screen.getByRole('menuitem', { name: /归档/ })).toBeInTheDocument()
   })
 
+  it('keeps failed conversations manageable', () => {
+    renderSidebar({
+      ...conversation,
+      lifecycle_status: 'failed',
+      local_status: 'failed',
+      latest_terminal_state: 'tool_failed',
+    })
+    fireEvent.click(screen.getByRole('button', { name: /管理对话：八月销售复盘/ }))
+    expect(screen.getByRole('menuitem', { name: /重命名/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /归档/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /删除/ })).toBeInTheDocument()
+  })
+
   it('renames a conversation through the inline presentation title editor', async () => {
     const { onRename } = renderSidebar()
     fireEvent.click(screen.getByRole('button', { name: /管理对话：八月销售复盘/ }))
@@ -109,6 +122,7 @@ describe('Sidebar conversation management', () => {
     fireEvent.click(trigger)
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
     fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: /归档/ }))
     await waitFor(() => expect(onArchive).toHaveBeenCalledWith(conversation))

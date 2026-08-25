@@ -102,6 +102,24 @@ class DeterministicDAXBuilder:
             raise DAXBuildError("dax_builder_sort_single_measure_required")
 
         ownership = _SchemaOwnership(schema)
+        if plan.temporal_grouping is not None:
+            grouping = plan.temporal_grouping
+            if grouping.grain not in {"month", "year"}:
+                raise DAXBuildError("dax_builder_temporal_grain_unsupported")
+            if plan.dimensions != [grouping.group_field]:
+                raise DAXBuildError(
+                    "dax_builder_temporal_grouping_dimension_mismatch"
+                )
+            _, date_column = ownership.column(
+                grouping.date_field,
+                table=(plan.dimension_tables or {}).get(grouping.date_field),
+            )
+            if not self._is_date_type(date_column.data_type):
+                raise DAXBuildError("dax_builder_temporal_date_field_type_invalid")
+            ownership.column(
+                grouping.group_field,
+                table=(plan.dimension_tables or {}).get(grouping.group_field),
+            )
         measures = [
             (name, ownership.measure(name)[0]) for name in plan.measures
         ]

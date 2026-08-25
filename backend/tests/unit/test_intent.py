@@ -22,6 +22,7 @@ from backend.app.intent.models import (
 from backend.app.intent.prompt import SYSTEM_PROMPT as INTENT_SYSTEM_PROMPT
 from backend.app.intent.unsupported_policy import (
     CapabilityPolicyStatus,
+    deterministic_read_intent,
     deterministic_unsupported_reason,
     resolve_capability_policy,
     should_defer_unsupported_to_grounding,
@@ -410,6 +411,59 @@ class TestUnsupportedRoutingPolicy:
     )
     def test_delete_and_model_write_synonyms_are_fast_path(self, message):
         assert deterministic_unsupported_reason(message) is not None
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "总销售额是多少？",
+            "销量是多少？",
+            "华南区销售额是多少？",
+            "按区域列出销售额",
+            "销售额最高的3个产品",
+            "每个月销售额趋势",
+            "2025年5月销售额",
+        ],
+    )
+    def test_explicit_read_questions_use_deterministic_intent(self, message):
+        intent = deterministic_read_intent(message)
+
+        assert intent is not None
+        assert intent.intent == IntentType.DATA_QUESTION
+        assert intent.detected_measures == []
+        assert intent.detected_dimensions == []
+        assert intent.detected_filters == []
+        assert intent.capability_classification is not None
+        assert (
+            intent.capability_classification.capability
+            == CapabilityClass.READ_ANALYSIS
+        )
+
+    def test_report_request_uses_deterministic_intent_without_choosing_template(self):
+        intent = deterministic_read_intent("生成销售分析报告")
+
+        assert intent is not None
+        assert intent.intent == IntentType.REPORT_GENERATION
+        assert intent.requested_template is None
+
+    @pytest.mark.parametrize(
+        "message",
+        ["删除这个报告", "把会话归档", "恢复这条对话", "重命名报表"],
+    )
+    def test_resource_mutation_never_enters_read_fast_path(self, message):
+        assert deterministic_unsupported_reason(message) is not None
+        assert deterministic_read_intent(message) is None
+
+    def test_ambiguous_follow_up_still_requires_bounded_language_classification(self):
+        assert deterministic_read_intent("南区呢？") is None
+
+    @pytest.mark.parametrize(
+        "message",
+        ["销售额中类别包含 Furniture", "销售额同比去年如何？"],
+    )
+    def test_complex_read_syntax_still_requires_bounded_language_classification(
+        self, message
+    ):
+        assert deterministic_read_intent(message) is None
 
     def test_bounded_classifier_dangerous_signal_is_decided_by_policy(self):
         intent = IntentSpec(

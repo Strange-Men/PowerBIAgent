@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.5 — 语义理解、中文展示、性能与报表视觉最终收口已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0—M5.5 已完成，M5 正式结束；不进入后续里程碑。
+**M5.5.1 — Real Stress / UX / Semantic Hotfix（COMPLETE）。** 基线为 `m5/frontend` 的 M5.5 commit `a197db3ecfe8959f3f8bb79e18d7ee02834fedd3`；仅修复真实用户测试暴露的问题，M5.5 authority 保持不变，未进入后续产品范围。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -25,6 +25,19 @@
 | **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
 | **M5.4.1** | **Settings Hub、全量历史资源分页与 test-owned cleanup** | **✅ 已完成** |
 | **M5.5** | **语义/中文字段/视觉/性能** | **✅ 已完成** |
+| **M5.5.1** | **真实运行稳定性、业务语义、资源生命周期与报表可读性 hotfix** | **✅ 已完成** |
+
+### M5.5.1 final implementation and evidence（COMPLETE）
+
+- correlation evidence 覆盖 conversation/request/model、canonical plan hash/summary、DAX hash、QueryResult/VerifiedFactSet identity；不记录 raw business rows、Secret 或 full prompt。八问 Rich PBIX 与 2/5/10/20 conversation Real stress 均无跨 conversation plan/DAX/result/fact/presentation 串写，HTTP 500=0。
+- Local MCP 使用 semantic-model scoped persistent worker 与 bounded heavy-operation concurrency；identity/cache 绑定 opaque model key、Desktop instance identity、schema fingerprint，stale/instance/schema/TTL/reconnect/explicit refresh 失效，不 fallback 其他 PBIX、不 cache 事实答案。
+- Business Member Resolution 固定为 exact/alias → bounded linguistic candidate → runtime ColumnMembers exact validation → canonical member；字段不唯一 clarification。TemporalGroupingSpec 由 Grounding 绑定真实日期列，DAX 只编译 month/year registry grain，VerifiedFactSet 验证 derived grouping。
+- failed conversation 已成为可持久管理资源；Settings/recent 可见并支持 rename/archive/restore/delete，processing 禁止 destructive mutation。已知 provider/capability failure 返回安全稳定 error_type，500 仅保留 server defect。
+- conversation/report 共用 Portal FloatingActionMenu；Real Chrome 首/中/末、scroll top/middle/bottom、260px Sidebar、100%/125% 等效内容视口、above/below、outside click、Escape/focus 与三项操作全部通过。
+- `sales_report` 时间轴最多显示 12 个确定性均匀 period 并强制 endpoints/year boundaries；单年/月与跨年标签无歧义，每 point 有完整中文 aria label。1/2/6/12/15/24 point 和 390–2560 viewport visual/geometry PASS，无 clipping、横向滚动或无意义大屏空白。
+- 性能由 Real baseline scalar/grouped/report `44s/104s/191s` 降至 warm P50/P95 scalar `46ms/1.11s`、grouped `53ms/87ms`、trend `56ms/88ms`、report `769ms/3.51s`；单次 warm Real report `2.913s`。2/5/10/20 concurrent 分别 `0.110s/0.261s/0.726s/1.289s`。
+- Fresh gates：backend focused `209 passed`、full `1902 passed, 1 skipped`；frontend typecheck/lint/build PASS、Vitest `78 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `125`、Repository Safety `307`、Error Ledger `29`、Documentation/Artifact Governance 与 `git diff --check` PASS。全部 automation-owned conversation/report/HTML/SQLite/delete-intent residual=0，未知 ownership 用户资源未删除。
+- prediction/write-back/Remote MCP/任意 DAX 仍 Deferred；无新 report template、无 migration；TurnPipeline、Deterministic DAX、QueryResult、VerifiedFactSet、Memory、ReportSpec 与 ToolGateway → PowerBIAdapter authority 均未改变。
 
 ### M5.5 final implementation and evidence（COMPLETE）
 
@@ -318,4 +331,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-25 | M5.5 COMPLETE — M5 正式结束*
+*最后更新：2026-08-25 | M5.5.1 COMPLETE — M5 正式结束*

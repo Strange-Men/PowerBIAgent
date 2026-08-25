@@ -21,10 +21,10 @@ import pytest
 from backend.app.application.deepseek_turn_service import DeepSeekTurnService
 from backend.app.application.mock_turn_service import MockTurnService
 from backend.app.application.turn_pipeline import TurnPipeline
-from backend.app.config.settings import Settings
+from backend.app.config.settings import LLMMode, Settings
 from backend.app.harness.models import HarnessConfig
 from backend.app.harness.runtime.turn_controller import TurnController
-from backend.app.llm.base import LLMProvider
+from backend.app.llm.base import LLMProvider, LLMTimeoutError
 from backend.app.llm.mock import MockLLMProvider
 from backend.app.memory.models import (
     MemoryStatus,
@@ -275,6 +275,50 @@ class TestSnapshotSingleWriter:
             # unsupported 是明确业务终态，应保存
             assert result["terminal_state"] in ("unsupported", "clarification_required")
             assert spy_save.call_count == 1, f"业务失败 save 应为 1 次，实际 {spy_save.call_count}"
+
+    @pytest.mark.asyncio
+    async def test_initial_llm_timeout_becomes_durable_failed_snapshot(self):
+        class FailingProvider(LLMProvider):
+            provider_name = "failing-test-provider"
+            is_mock = False
+
+            async def generate(self, request, output_type):
+                raise LLMTimeoutError(
+                    "private upstream detail",
+                    provider=self.provider_name,
+                    retryable=True,
+                )
+
+        snapshots = ResultSnapshotStore()
+        service = DeepSeekTurnService(
+            memory_repo=InMemoryMemoryRepository(),
+            llm_provider=FailingProvider(),
+            powerbi_adapter=MockPowerBIAdapter(),
+            report_renderer=MockReportRenderer(),
+            settings=Settings(
+                _env_file=None,
+                llm_mode=LLMMode.DEEPSEEK,
+                deepseek_api_key="test-key-not-real",
+            ),
+            config=HarnessConfig(),
+            snapshot_store=snapshots,
+        )
+
+        result = await service.execute(
+            message="帮我分析一下",
+            conversation_id="failed-llm-conversation",
+            request_id="failed-llm-request",
+        )
+        snapshot = await snapshots.get(
+            "failed-llm-request", RuntimeDataMode.REAL
+        )
+
+        assert result["terminal_state"] == "response_failed"
+        assert result["error_type"] == "llm_service_unavailable"
+        assert snapshot is not None
+        assert snapshot.conversation_id == "failed-llm-conversation"
+        assert snapshot.user_message == "帮我分析一下"
+        assert snapshot.error_type == "llm_service_unavailable"
 
 
 # ━━━━━━━━━━━━━━━━━ Memory 事务边界测试 ━━━━━━━━━━━━━━━━━
