@@ -1,6 +1,6 @@
 # 12 — 多轮语义、会话与资源生命周期契约
 
-> **状态：** M5.3.3 正式契约；M5.4.1 补充全量资源查询与 automation ownership cleanup
+> **状态：** M5.3.3 正式契约；M5.4.2 固化新 M5.5/M5.6 重建验收边界
 > **边界：** 本契约只收口多轮省略项继承、只读 unsupported、会话 UI 异步一致性、归档/恢复/删除与本地 artifact 生命周期；不改变 M0–M5 Canonical QueryPlan、Deterministic DAX、VerifiedFactSet、Report factual authority。
 
 ## 一、语言理解与 canonical authority
@@ -57,6 +57,17 @@ LLM 的关系草稿不是事实 authority。deterministic policy 必须结合当
 - `改成去年`：`replace`，只替换时间；
 - 证据不足：clarification。
 
+新 M5.5 必须使用以下连续真实 follow-up 验收完整 slot transition：
+
+```text
+2025年5月销售额
+→ 那南区呢
+→ 换成去年
+→ 前三个产品呢
+```
+
+第二轮只 REPLACE 区域 filter，第三轮只 REPLACE time，第四轮形成 Product Top3 ranking；当前轮未重述 measure 不得导致 measure 丢失。若“南区”不能由当前 runtime members 唯一证明，必须 clarification/no-match，旧 filter 或旧 Memory 不得把它变为可执行状态。
+
 ## 四、Memory 与 Pending 边界
 
 - Memory 只继承 last successful committed state，且只服务当前轮真正省略的兼容槽。
@@ -76,6 +87,8 @@ LLM 的关系草稿不是事实 authority。deterministic policy 必须结合当
 - 通过自然语言删除报表资源。
 
 存在 committed Memory 或 pending context 不是放行理由。只有当前输入本身属于已支持的只读数据问答/固定报表语言形态，LLM 的误判才可交给 Grounding 做 capability 判定。unsupported 终态必须满足：无 schema/member/DAX/Power BI/report delete 调用、无 pending、无 Memory commit。
+
+能力近义表达不得依赖无限扩张的 regex；“大概多少”不能仅因含近似词被误判为 prediction。bounded language evidence 只能进入 deterministic capability policy，不能直接放行写入/预测，也不能把只读数据问题错误拒绝。explicit member/filter 一旦 UNRESOLVED 或 AMBIGUOUS，必须 clarification/no-match 且 ZERO DAX。
 
 ## 六、Report ownership
 
@@ -114,6 +127,8 @@ LLM 的关系草稿不是事实 authority。deterministic policy 必须结合当
 - 另一 runtime namespace 不受影响。
 
 三种操作不得共用含糊的“移除”语义。
+
+M5.6 必须让 failed conversation 作为正式 presentation/resource 状态可管理，至少保持可查看失败结果、可重试或可显式删除；不得因 terminal failure 把资源从 Settings 隐形丢失。该展示与管理能力不得把 failed turn 提升为 committed Memory，也不得改变 archive/delete 语义。
 
 ## 八、独立 report delete
 
@@ -185,4 +200,4 @@ Gate 不自动删除、移动或修复用户数据。无法证明为 test-owned 
 
 ---
 
-*创建日期：2026-08-24 | 最后更新：M5.4.1 automation ownership 与零残留 Gate 合同*
+*创建日期：2026-08-24 | 最后更新：2026-08-26 M5.4.2 COMPLETE — M5.5/M5.6 重建验收边界*

@@ -2,6 +2,20 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.4.2] — 2026-08-26
+
+### M5重建基线与后续分阶段开发规划固化（COMPLETE）
+
+- 从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 创建 `m5/rebuild`；M5.4.1 及以前能力保持不变，本轮无生产业务逻辑、schema、migration 或测试代码修改。
+- 原 `m5/frontend` 上的 `a197db3ecfe8959f3f8bb79e18d7ee02834fedd3`（原 M5.5）与 `6d1620a7a7aa04e65692371436d90756fdf5bcc8`（原 M5.5.1）作为研究/失败经验与审计历史保留；不删除、不重写、不 revert、不整体 cherry-pick。新版本必须重新实现并重新 Real Acceptance。
+- 将真实用户测试问题正式纳入工程基线：explicit unresolved member/filter 必须 clarification/no-match 且 ZERO DAX；多轮 measure/time/filter/ranking 正确 KEEP/REPLACE；canonical/display 分离；Answer/Table/Chart 去重复；Settings/Recent/failed resource/menu truth；report 可读性；cold/warm 与 queue/backpressure 独立性能验证。
+- 新路线按 M5.5 Semantic correctness、M5.6 Presentation/Localization/Resource UX truth、M5.7 Report readability、M5.8 MCP performance/resilience 隔离。一个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle；只有 M5.8 完成后才允许 `M5 FINAL`。
+- 新增 Generalization Gate：至少验证 Sales/Retail、Education、Inventory/Operations，并以开发期未知业务模型做最终 holdout；生产代码不得在正式 model-scoped glossary/test fixture 外写死字段、member 或答案，测试答案不得进入 LLM Prompt。
+- 固定完成链：Spec → Failure reproducer → Regression tests → Minimal implementation → Focused Real → Cross-domain → Full gates → User manual acceptance → commit。自动化测试数字不能替代 Real Browser/人工验收。
+- Documentation Governance、Repository Safety（296 files）、Error Ledger（30 entries）、Artifact Governance 与 `git diff --check` 全部 PASS；本轮未运行功能测试，因为没有业务逻辑变化。
+
+**Settings.version:** M5.4.2（仅版本元数据；无生产业务逻辑变化）
+
 ## [M5.4.1] — 2026-08-24
 
 ### 用户设置中心、全量历史资源管理与测试产物治理修复

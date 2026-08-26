@@ -339,6 +339,16 @@ PowerBIAgent/
 - Artifact Governance 对 test-owned conversation、report metadata、HTML、SQLite namespace、pending delete intent、orphan 和 cleanup failure 任一残留 fail closed；Gate 只读，不自动清理用户数据。
 - 历史资源清理必须有 ownership metadata、已知 test namespace/ID、fixture 或 report linkage 证据。仅凭标题或内容猜测为测试资源时必须保留。M5.5 继续 Deferred。
 
+### M5.4.2 重建线与后续开发治理硬规则
+
+- 新开发线固定从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 开始。`m5/frontend`、`a197db3`（原 M5.5）和 `6d1620a`（原 M5.5.1）是必须保留的实验/审计历史；不得 force push、revert、删除、重写或整体 cherry-pick。
+- M5.4.2 只允许 Git 基线和文档/治理变化。若完成本轮必须修改 `backend/app/**`、`frontend/src/**`、backend/frontend tests、schema 或 migration，立即停止并汇报。
+- 新 M5.5—M5.8 按 Semantic → Presentation/Localization/Resource UX → Report → MCP performance/resilience 分阶段推进；一个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
+- explicit unresolved semantic requirement 必须 clarification/no-match 且 ZERO DAX；不得静默移除筛选后执行更宽查询。
+- Generalization Gate 至少覆盖 Sales/Retail、Education、Inventory/Operations，并在最终阶段使用开发期未知业务模型 holdout。测试答案不得写入 LLM Prompt，生产代码不得在正式 model-scoped glossary/test fixture 外写死业务字段、member 或答案。
+- 每轮证据顺序固定为 `Spec → Failure reproducer → Regression tests → Minimal implementation → Focused Real → Cross-domain → Full gates → User manual acceptance → commit`。单独的全量测试通过数不足以宣告 COMPLETE；Real Browser/人工验收是正式 Gate。
+- 只有 M5.8 完成后才允许宣告 `M5 FINAL`。长期合同见 `docs/specs/13_m5_generalization_and_acceptance_contract.md`。
+
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源分页、bounded execution 与 test-owned cleanup*
+*最后更新：2026-08-26 | M5.4.2 COMPLETE — 重建线、里程碑隔离与泛化验收治理*

@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成
+> **状态：** M5.4.2 — M5重建基线与后续分阶段开发规划固化（COMPLETE）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -37,7 +37,47 @@
 | **M5.3.3** | **多轮语义、conversation/report 生命周期与 Artifact Governance 最终收口** | **✅ 已完成** |
 | **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
 | **M5.4.1** | **Settings 全量资源分页、选择/批量语义与 automation ownership cleanup** | **✅ 已完成** |
-| **M5.5** | **语言理解/中文字段/单指标/报表视觉/性能** | **⏸ Deferred / NOT STARTED** |
+| **M5.4.2** | **M5 重建基线、旧实验线审计保留与后续阶段治理** | **✅ COMPLETE** |
+| **M5.5** | **Semantic correctness 与 capability boundary** | **⏳ NOT STARTED** |
+| **M5.6** | **Presentation、Localization 与 Resource UX truth** | **⏳ NOT STARTED** |
+| **M5.7** | **Report readability 与人工视觉验收** | **⏳ NOT STARTED** |
+| **M5.8** | **MCP performance、resilience 与压力验证** | **⏳ NOT STARTED** |
+
+### M5.4.2 — M5 重建基线与规划固化（当前轮）
+
+- 新开发线 `m5/rebuild` 从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 建立；M5.4.1 及以前能力不可回退。
+- 旧 `m5/frontend` 的 `a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）保留为研究/失败经验/审计记录，不删除、不重写、不 revert、不整体 cherry-pick。
+- 旧实验实现与 PASS 不能作为新线完成证据；后续只可参考单项思想，并在所属阶段重新实现、重新回归、重新 Real Acceptance。
+- 本轮只修改文档和治理，不改生产代码、测试代码、schema 或 migration；完成后停止并等待 M5.5 指令。
+
+### 新 M5.5 — Semantic correctness and capability boundary
+
+只开发 semantic grounding、runtime member validation、ambiguity/no-match、multi-turn KEEP/REPLACE、ranking/TopN、temporal semantic contract 与 capability boundary。核心 Gate：explicit unresolved semantic requirement → clarification/no-match → ZERO DAX。
+
+必须覆盖“火星区”无匹配不得 fallback 全国、“华南/华南区/南区”由 runtime member authority 证明、“大概多少”不误判 prediction、readonly capability 近义表达不依赖无限 regex、TopN 不因非必要 LLM failure 失效，以及 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢` 的 slot 继承/替换。禁止 Localization、Report Visual、MCP performance optimization 与 Resource UI 大改。
+
+### 新 M5.6 — Presentation, localization and resource UX truth
+
+只开发 canonical/display separation、model/object/schema-scoped Localization、数字/日期/月格式、Answer/Table/Chart 信息密度、Settings/Recent truth、newest-first、failed resource lifecycle、sticky/scroll/responsive toolbar 与不被 overflow clipping 的 floating menus。
+
+`Answer = 洞察`、`Table = 明细`、`Chart = 趋势/关系`；Answer 不得完整重复 table。内部 canonical time representation 不得原样暴露。禁止修改 Grounding authority、DAX authority 与 MCP architecture。
+
+### 新 M5.7 — Report readability
+
+只开发 report information architecture、responsive layout、plot geometry、axis/tick density、accessibility、visual hierarchy 与 readability。必须处理时间轴跨年识别、card width/height、plot area、无意义空白与 donut/legend 信息密度。正式 Gate 是“普通用户必须能读懂报表”，不能只证明 SVG 未越界。禁止 Semantic logic、MCP optimization 与 resource lifecycle 修改。
+
+### 新 M5.8 — MCP performance and resilience
+
+M5.5—M5.7 冻结后才允许开发 profiling、schema/member/discovery/probe cache、session reuse/persistent worker、bounded concurrency、bounded queue/backpressure、TTL/stale、cold/warm performance、20/50/100 concurrency、PBIX/backend restart、fault injection 与 long soak。不得通过降低 factual validation 换性能；warm latency 不得冒充 cold latency。M5.8 完成全部正式门禁后才允许 `M5 FINAL`。
+
+### Generalization Gate 与永久开发顺序
+
+- 项目不是 Sales Agent。M5.5+ 至少验证 Sales/Retail、Education、Inventory/Operations，最终使用开发期间未知的业务模型 holdout。
+- 生产代码不得在正式 model-scoped glossary/fixture 外写死业务字段、member 或答案；测试答案不得放入 LLM Prompt。
+- 新字段、多相似字段、display rename、table rename、member change、glossary missing 必须 `resolve / clarify / no-match`，禁止猜测。
+- acceptance 从 runtime schema + semantic metadata + runtime members + user question 进入正式 Agent 链，并用独立 deterministic oracle 校验。
+- 一个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle。
+- 每轮固定为 Spec → Failure reproducer → Regression tests → Minimal implementation → Focused Real → Cross-domain → Full gates → User manual acceptance → commit；自动化通过数不能替代 Real Browser/人工验收。
 
 ### M5.4.1 — 全量资源生命周期与测试产物治理（已完成）
 
@@ -264,10 +304,12 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
+- M5.4.2 完成后立即停止；下一步必须等待用户明确批准新版 M5.5，不得提前进入 M5.6—M5.8。
+- 一个 milestone 不得同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle；M5.8 完成前不得宣告 M5 FINAL。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
 - M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.2 truth/persistence boundary final closure FINAL PASS；M5.0—M5.3.3 已完成；禁止 force push。
 
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源与 artifact governance；M5.5 Deferred*
+*最后更新：2026-08-26 | M5.4.2 COMPLETE — M5 重建基线、分阶段路线与 Generalization Gate*

@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成
+> **状态：** M5.4.2 — M5重建基线与后续分阶段开发规划固化（COMPLETE）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -37,7 +37,18 @@
 | **M5.3.3** | **多轮继承语义、conversation/report 生命周期与 Artifact Governance** | **✅ 已完成** |
 | **M5.4** | **conversation-scoped state、异会话并发、用户卡片/资源管理、report tombstone/rename** | **✅ 已完成** |
 | **M5.4.1** | **Settings Hub、全量 conversation/report 分页、准确全选语义与 automation artifact cleanup** | **✅ 已完成** |
-| **M5.5** | **语言理解、字段中文化、视觉与性能优化** | **⏸ Deferred / NOT STARTED** |
+| **M5.4.2** | **M5 重建基线、旧实验线审计保留、分阶段路线与 Generalization Gate** | **✅ COMPLETE** |
+| **M5.5** | **Semantic correctness：Grounding/member/multi-turn/TopN/time/capability** | **⏳ NOT STARTED** |
+| **M5.6** | **Presentation、Localization 与 Resource UX truth** | **⏳ NOT STARTED** |
+| **M5.7** | **Report readability 与 Real Browser 人工视觉 Gate** | **⏳ NOT STARTED** |
+| **M5.8** | **MCP performance/resilience、压力与故障恢复** | **⏳ NOT STARTED** |
+
+## M5 重建决策与历史状态
+
+- 新开发分支为 `m5/rebuild`，唯一基线是 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`。
+- 旧实验线 `m5/frontend`、`a197db3ecfe8959f3f8bb79e18d7ee02834fedd3`（原 M5.5）、`6d1620a7a7aa04e65692371436d90756fdf5bcc8`（原 M5.5.1）永久保留为研究、失败经验与审计记录。
+- 不删除、不重写、不 revert、不整体 cherry-pick 旧实验线。可以参考单项思想，但必须在新阶段重新实现并重新完成 Focused Real、Cross-domain、Full gates 与用户人工验收。
+- M5.4.2 不修改生产业务逻辑；M5.4.1 及以前能力全部保留。完整长期合同见 `docs/specs/13_m5_generalization_and_acceptance_contract.md`。
 
 ## M3 合并与 CI truth
 
@@ -173,7 +184,20 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - 所有 Codex/pytest/browser/Real/MCP/report 自动化资源必须具有 explicit test ownership；`finally` cleanup 后验证 conversation/report metadata/HTML/SQLite namespace/delete intent residual=0，否则 Gate FAIL。
 - 历史清理只处理有 ownership/known namespace/fixture/linkage 证据的 automation-owned 资源；无法确认的资源保留。M5.5 继续 Deferred。
 
+## M5.5—M5.8 隔离边界
+
+- **M5.5** 只处理 Semantic correctness；explicit unresolved member/filter 必须 clarification/no-match 且 ZERO DAX。禁止 Localization、Report Visual、MCP 性能优化与 Resource UI 大改。
+- **M5.6** 只处理 canonical/display separation、Localization、格式化、Answer/Table/Chart 信息密度，以及 Settings/Recent/failed resource/toolbar/menu truth。禁止改变 Grounding、DAX 或 MCP authority。
+- **M5.7** 只处理 report information architecture、responsive、plot geometry、axis/tick、accessibility 与可读性。正式 Gate 是普通用户能读懂，而非仅 SVG 不越界。
+- **M5.8** 只在前三轮冻结后处理 profiling、cache、session reuse、bounded concurrency/queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak；不得降低 factual validation。M5.8 完成前不得声明 M5 FINAL。
+- 每个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
+
 ## 当前真实风险
+
+- 旧实验线真实用户测试暴露：未知 explicit member 可能扩大为无筛选结果、成员别名依赖不足、能力近义词边界脆弱、TopN 受不必要 LLM failure 影响、多轮 slot KEEP/REPLACE 与 canonical time 展示仍需重做验证。
+- Settings/Recent 同步、newest-first、failed conversation 管理、窄 toolbar destructive action 可达性与 floating menu overflow 需要在 M5.6 独立解决。
+- 报表“未裁切”仍不等于可读；时间轴、跨年标签、plot area、空白与 donut/legend 密度必须在 M5.7 经 Real Browser 人工视觉验收。
+- 旧 Real latency 曾达到几十秒至数分钟；persistent worker 仅是候选思路，queue/backpressure/TTL/stale、cold/warm 与 20/50/100 并发必须在 M5.8 独立验证。
 
 - Simple M3 PBIX runtime `OrderDate` 为 `Int64`；Simple 模型无时间趋势能力（TIME_TREND UNAVAILABLE），不得伪装为 DateTime。Rich PBIX `OrderDate` 为 `DateTime` 且含 Date 表，趋势能力真实解析。
 - Capability 目录随 runtime schema 变化；schema 变更需按能力目录重新人工 smoke（不再依赖单一 fingerprint gate）。
@@ -190,6 +214,8 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 | M3.0 main | `e4b5c6c`；CI run `31986207118` success |
 | M3.1 main | `fa4cc0c`；CI run `31989328261` success；开发分支已删除 |
 | **M0—M3 Final Seal** | **`m3.4-m0-m3-final-seal` → `ff8aca23`** |
+| M5.4.1 rebuild baseline | `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` |
+| 原 M5.5 / M5.5.1 实验线 | `m5/frontend`：`a197db3` → `6d1620a`（保留，不是新基线） |
 
 ---
 
@@ -207,4 +233,10 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - teardown 后 conversation/report/HTML/SQLite/delete-intent exact residual=0；无法确认 ownership 的资源未删除。
 - Backend `1797 passed, 1 skipped`；Vitest `69 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `295`、Error Ledger `27`、Documentation/Artifact Governance 与 `git diff --check` PASS。
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源生命周期与 test-owned cleanup*
+### M5.4.2 fresh evidence
+
+- `m5/rebuild` 从 `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 创建；原 `m5/frontend` 仍指向 `6d1620a`，历史未重写。
+- Documentation Governance、Repository Safety（296 files）、Error Ledger（30 entries）、Artifact Governance 与 `git diff --check` PASS。
+- 仅版本元数据与文档/治理文件变化；无生产业务逻辑、测试、schema 或 migration 变化，未开始新版 M5.5。
+
+*最后更新：2026-08-26 | M5.4.2 COMPLETE — M5 重建基线与分阶段治理*

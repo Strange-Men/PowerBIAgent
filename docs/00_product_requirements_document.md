@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v1.9
-> **修订日期：** 2026-08-24
+> **修订版本：** v2.0
+> **修订日期：** 2026-08-26
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** 固化 M5.4.1 Settings Hub、全量 conversation/report 分页、准确选择语义、bounded destructive waves 与 automation-owned artifact teardown；North Star 与 factual authority 不变
+> **本轮修订范围：** M5.4.2 固化 M5 重建基线、旧实验线真实性、M5.5—M5.8 分阶段边界与 Generalization Gate；产品能力保持 M5.4.1
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -23,7 +23,7 @@ Power BI 数据分析 Agent MVP（PowerBIAgent）
 
 完成一套可运行、可验证的 MVP，证明以下链路可行：
 
-当前 M0—M5 已验证的主链为：
+当前 M0—M5.4.1 已验证的主链为：
 
 ```text
 Natural Language
@@ -44,6 +44,8 @@ Natural Language
 固定模板静态 HTML 报表已在 M3 完成并封板；M4 已完成本地持久化、恢复、history/search 与 restart/crash acceptance。M4.4.2 最终关闭 committed Memory 完整 payload、mandatory namespace、terminal Snapshot integrity 等 fail-closed 边界，不改变上述事实链。
 
 MVP 主要供公司内部少量人员使用，暂不处理复杂客户权限和多租户问题。
+
+PowerBIAgent 的产品目标是面向不同 Power BI 业务语义模型的数据分析 Agent，不是只服务固定字段与答案的 Sales Agent。Sales/Retail 可以作为一个验证域，但不能成为生产代码的隐含 schema。
 
 ## 四、目标用户
 
@@ -157,7 +159,7 @@ AI 回答不是只能返回纯文本。同一条 AI 消息现在可以按实际�
 
 ### 前端开发策略
 
-M5.4.1 只修复 Settings 全量资源生命周期与 automation artifact governance。语言理解/近义词、中文字段 Localization Registry、单指标展示策略、report HTML 视觉重构与性能 profiling/cache 全部 Deferred 至 M5.5，本轮不提前开发。
+M5.4.2 只重建 Git 基线并固化文档/治理，不修改前端生产代码。后续按 M5.5 Semantic、M5.6 Presentation/Localization/Resource UX、M5.7 Report、M5.8 MCP performance/resilience 隔离开发，不再把多个域塞入同一 milestone。
 
 ## 七、后端设计
 
@@ -280,7 +282,12 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 11. **M5.3.2 Local MCP 多模型选择与协议稳定性加固** ✅ 已完成 — 多 PBIX 安全枚举、前端单选/刷新、opaque 精确实例绑定、只读 capability probe、stale fail-closed 与 row-limit/truncation 防腐；Remote MCP 继续 Deferred
 12. **M5.3.3 多轮语义、会话资源生命周期与仓库治理最终收口** ✅ 已完成 — LLM flexible draft + deterministic canonical resolution、fresh/follow-up/replace inheritance、unsupported preflight、archive/restore/report delete、conversation stale-response protection 与 Artifact Governance
 13. **M5.4 多会话并发、用户设置与资源管理最终收口** ✅ 已完成 — conversation-scoped state、client UUID pending session、异会话并发、用户卡片/设置、bounded bulk management、report tombstone/rename
-14. **M5.5** Deferred — 语言理解、字段中文化、报表视觉与性能优化未开始
+14. **M5.4.1 Settings 与测试资源治理** ✅ 已完成 — 全量 cursor pagination、准确 selection/batch、automation ownership 与 residual=0
+15. **M5.4.2 M5 重建基线与规划固化** ✅ COMPLETE — 从 `cab40b0` 建立 `m5/rebuild`，只做 Git/文档/治理
+16. **M5.5 Semantic correctness** ⏳ NOT STARTED — Grounding、runtime member、ambiguity/no-match、multi-turn、TopN、time、capability boundary
+17. **M5.6 Presentation/Localization/Resource UX truth** ⏳ NOT STARTED — canonical/display、格式化、信息密度、Settings/Recent/failed resource、toolbar/menu
+18. **M5.7 Report readability** ⏳ NOT STARTED — information architecture、responsive、geometry、axis/tick、accessibility、人工可读性
+19. **M5.8 MCP performance/resilience** ⏳ NOT STARTED — profiling/cache/session reuse、queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak；完成后才允许 M5 FINAL
 
 ## 十二、MVP 暂不包含
 
@@ -330,6 +337,14 @@ MVP 达到以下条件即可视为成功：
 9. Golden Cases 可以重复执行并输出测试结果
 10. React 页面可以完成模型选择、模板选择、提问和结果展示
 
+### M5 Generalization Gate
+
+- 影响语义或展示泛化的新版本至少覆盖 Sales/Retail、Education、Inventory/Operations，并在最终验收使用开发期间未知的业务模型 holdout。
+- 生产代码不得在正式 model-scoped glossary 或明确 fixture 外写死 `Total Sales`、`Region`、`Product`、`StudentCount`、`AttendanceRate`、`InventoryTurnover`、`Warehouse` 或对应答案。
+- acceptance 必须从 `runtime schema + semantic metadata + runtime members + user question` 进入正式 Agent 链，再以独立 deterministic oracle 校验 QueryPlan、DAX、QueryResult 与 VerifiedFactSet；测试答案不得放入 LLM Prompt。
+- 新字段、多相似字段、display rename、table rename、member change、glossary missing 都必须得到 `resolve`、`clarify` 或 `no-match`，禁止猜测和 silent semantic downgrade。
+- explicit unresolved member/filter 必须 clarification/no-match 且 ZERO DAX。Real Browser / 人工验收是正式 Gate，不能以单一自动化通过数替代。
+
 ## 十五、后续扩展方向
 
 当 MVP 验证成功并出现正式客户需求后，再考虑：
@@ -345,4 +360,4 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-24 | M5.4.1 COMPLETE；M5.5 Deferred；North Star 与 factual authority 不变*
+*修订日期：2026-08-26 | M5.4.2 COMPLETE；产品能力保持 M5.4.1；新版 M5.5 未开始*

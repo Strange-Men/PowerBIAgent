@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复**。M4.4.2 FINAL PASS；M5.0—M5.4.1 已完成；M5.5 Deferred。
+当前版本：**M5.4.2 — M5重建基线与后续分阶段开发规划固化（COMPLETE）**。M5.4.1 能力全部保留；新版 M5.5 尚未开始。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -37,6 +37,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.3.3** 已完成多轮与资源生命周期最终收口：当前明确表达 > bounded LLM semantic draft > committed Memory；fresh/follow-up/replace 分离，unsupported 在 Memory/Grounding/DAX 前 fail closed；archive 可恢复且不等于 delete；report 只可由用户显式资源 API 独立删除；前端 history 使用 abort/generation/active identity 防串窗；local_state 与测试 artifact 由长期 ownership/cleanup gate 治理。新增 migration `e7a9c2d4f631`；Rich PBIX 八轮 Real 浏览器与资源生命周期验收通过。M0–M5 factual authority 不变。**M5.3.3 COMPLETE。**
 - **M5.4** 已完成 conversation-scoped UI/runtime state、client UUID provisional conversation、异 conversation 并发/同 conversation 串行、Sidebar pending row、用户卡片资源管理、最多 20 项 bounded bulk orchestration、report tombstone 与 presentation-only `display_title`。新增 migration `a4f6b8c2d190`；Rich PBIX A/B/C 并发、归档恢复、rename/delete/history tombstone 与资源清理 Real Browser Acceptance 通过。M5.5 语言理解、中文字段、性能、HTML 视觉继续 Deferred。**M5.4 COMPLETE。**
 - **M5.4.1** 已完成 Settings 独立全量 cursor pagination、active/archived conversation/report 管理、准确 total/loaded/selected 语义与最多 20 项一组的 bounded execution；同秒 SQLite cursor 使用 `julianday + stable ID` 防止重复页。automation-owned 资源显式登记 ownership，`finally` teardown 后验证 conversation/report/HTML/SQLite/delete-intent residual 为 0；无法证明 ownership 的现有资源一律保留。新增 migration `b7c9d2e4f610`。**M5.4.1 COMPLETE；M5.5 Deferred。**
+- **M5.4.2** 从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 建立 `m5/rebuild`。旧 `m5/frontend` 的 `a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）作为实验/审计记录保留，不删除、不重写、不整体 cherry-pick；新 M5.5—M5.8 必须分域重新实现并重新 Real Acceptance。本轮只做 Git 基线与文档/治理固化，不修改生产业务逻辑。**M5.4.2 COMPLETE。**
 
 当前真实主链：
 
@@ -96,8 +97,13 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 25. M5.4.1：浏览与选择数量不限于 20；单次 destructive execution wave 最多 20 项，前端可把一次用户确认的大批量操作自动分组，继续逐项调用正式单资源 API并精确汇总 partial failure。禁止 `DELETE ALL`。
 26. M5.4.1：Codex acceptance、pytest integration、browser/Real Smoke/MCP/report tests 创建的 conversation/report/file 必须携带可审计 test ownership（至少 test run identity 与 automation owner），在 `finally` 中通过正式 API/repository cleanup 并验证零残留。cleanup failure、pending intent、orphan 或本轮 test SQLite namespace residual 必须使 Gate FAIL。
 27. M5.4.1：test cleanup 只能处理已证明 automation-owned 的资源；标题、问题文本或“看起来像测试”不是 ownership 证据。不得删除无法确认 ownership 的用户资源；M5.5 继续 Deferred。
+28. M5.4.2：新开发线唯一基线为 `cab40b0`；原 M5.5/M5.5.1 只保留为实验历史与单项设计参考。任何新能力必须重新实现、重新回归并重新 Real Acceptance，旧 PASS 不得移植为新线证据。
+29. M5.5—M5.8 必须依次隔离为 Semantic correctness、Presentation/Localization/Resource UX truth、Report readability、MCP performance/resilience。一个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
+30. explicit unresolved semantic requirement 必须 clarification/no-match 且 ZERO DAX；不得把未知 member/filter（例如“火星区”）静默降级为全国或无筛选查询。当前明确表达与 runtime member authority 优先于旧 Memory。
+31. PowerBIAgent 不是 Sales Agent。影响泛化的版本必须至少验证 Sales/Retail、Education、Inventory/Operations，并以未知业务模型做最终 holdout；生产代码不得在正式 model-scoped glossary/test fixture 之外写死业务字段、member 或答案。
+32. 每轮必须执行 `Spec → Failure reproducer → Regression tests → Minimal implementation → Focused Real → Cross-domain → Full gates → User manual acceptance → commit`。自动化通过数不能替代 Real Browser/人工验收；只有 M5.8 全部门禁完成后才允许声明 `M5 FINAL`。完整合同见 `docs/specs/13_m5_generalization_and_acceptance_contract.md`。
 
-同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前开发 M5、开发 Remote MCP；未经用户明确批准不得创建 Tag。
+同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前跨入未批准里程碑、开发 Remote MCP；未经用户明确批准不得创建 Tag。
 
 ## 修改前检查
 
@@ -129,4 +135,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — Settings 全量资源生命周期与 automation 零残留治理；M5.5 Deferred*
+*最后更新：2026-08-26 | M5.4.2 COMPLETE — M5 重建基线、分阶段边界与 Generalization Gate*

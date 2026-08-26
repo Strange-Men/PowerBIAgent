@@ -1,11 +1,11 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-08-24
+> **最后更新：** 2026-08-26
 
 ## 当前阶段
 
-**M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成。** M0–M4 后端保持封板与 FINAL PASS；M5.0—M5.4.1 已完成；M5.5 继续 Deferred。
+**M5.4.2 — M5重建基线与后续分阶段开发规划固化（COMPLETE）。** 当前产品能力保持 M5.4.1；新版 M5.5 尚未开始。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -24,7 +24,21 @@
 | **M5.3.3** | **多轮语义、会话资源生命周期与 Artifact Governance** | **✅ 已完成** |
 | **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
 | **M5.4.1** | **Settings Hub、全量历史资源分页与 test-owned cleanup** | **✅ 已完成** |
-| **M5.5** | **语义/中文字段/视觉/性能** | **⏸ Deferred / NOT STARTED** |
+| **M5.4.2** | **M5 重建基线、实验线审计保留、分阶段路线与 Generalization Gate** | **✅ COMPLETE** |
+| **M5.5** | **Semantic correctness 与 capability boundary** | **⏳ NOT STARTED** |
+| **M5.6** | **Presentation/Localization/Resource UX truth** | **⏳ NOT STARTED** |
+| **M5.7** | **Report readability 与人工视觉验收** | **⏳ NOT STARTED** |
+| **M5.8** | **MCP performance/resilience 与压力验证** | **⏳ NOT STARTED** |
+
+### M5.4.2 current contract
+
+- 当前分支：`m5/rebuild`；基线：M5.4.1 `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`。
+- 旧实验线 `m5/frontend`、`a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）保留为研究/失败经验/审计记录；不删除、不重写、不 revert、不整体 cherry-pick。旧 PASS 不能替代新线 Real Acceptance。
+- 本轮只允许 Git 基线和文档/治理变化；不得修改 `backend/app/**`、`frontend/src/**`、测试、schema 或 migration，不得开始新版 M5.5。
+- M5.4.1 的 Agent-first、Local MCP readonly、多 PBIX opaque exact binding/stale fail closed、事实链、多轮基础语义、conversation-scoped concurrency、Settings 分页、resource lifecycle、ownership/residual=0 全部保留。
+- 后续严格按 M5.5 Semantic、M5.6 Presentation/Localization/Resource UX、M5.7 Report、M5.8 MCP performance/resilience 分域开发；M5.8 完成前不得声明 M5 FINAL。
+- 长期问题与验收合同见 `docs/specs/13_m5_generalization_and_acceptance_contract.md`。其中 explicit unresolved semantic requirement 必须 clarification/no-match 且 ZERO DAX；Generalization Gate 至少覆盖 Sales/Retail、Education、Inventory/Operations 和最终未知模型 holdout。
+- Fresh governance：Documentation Governance、Repository Safety（296 files）、Error Ledger（30 entries）、Artifact Governance 与 `git diff --check` PASS；无功能测试要求，因为本轮未修改业务逻辑。
 
 ### M5.4.1 final implementation and evidence
 
@@ -255,7 +269,7 @@
 
 ## 下一步
 
-M5.4 已完成。下一步必须等待用户明确批准 M5.5；不得自行进入语言理解、中文字段、单指标、HTML 视觉或性能范围。
+完成 M5.4.2 documentation/governance gates、commit 与 push 后立即停止。下一步必须等待用户明确批准新版 M5.5；不得自行进入 M5.5 实现或提前开发 M5.6—M5.8。
 
 ## 关键命令
 
@@ -301,4 +315,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — Settings 全量资源与 automation 零残留治理；M5.5 Deferred*
+*最后更新：2026-08-26 | M5.4.2 COMPLETE — M5 重建基线与后续分阶段治理*

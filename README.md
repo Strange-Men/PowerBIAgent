@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复**。M4.4.2 已最终验收；M5.0—M5.4.1 已完成；M5.5 Deferred。
+当前版本：**M5.4.2 — M5重建基线与后续分阶段开发规划固化（COMPLETE）**。产品能力保持在 M5.4.1；新版 M5.5 尚未开始。
 
 ## 项目概览
 
@@ -318,7 +318,11 @@ python -m alembic upgrade head
 | M5.3.3 | 已完成 — 多轮继承语义、unsupported preflight、archive/restore、独立 report delete、A/B 防串窗与 Artifact Governance |
 | M5.4 | 已完成 — conversation-scoped state、client UUID pending session、异会话并发、用户卡片/资源管理、report tombstone/rename |
 | M5.4.1 | 已完成 — Settings 独立全量分页、准确 selection/batch 语义与 automation-owned resource cleanup |
-| M5.5 | Deferred / NOT STARTED — 语义、中文字段、报表视觉与性能优化不在本轮 |
+| M5.4.2 | 已完成 — 从 M5.4.1 `cab40b0` 建立重建线并固化分阶段开发与泛化验收；无生产功能变化 |
+| M5.5 | NOT STARTED — Semantic correctness、runtime member、multi-turn、TopN、time 与 capability boundary |
+| M5.6 | NOT STARTED — Presentation/Localization/Resource UX truth |
+| M5.7 | NOT STARTED — Report readability 与人工视觉验收 |
+| M5.8 | NOT STARTED — MCP performance、resilience 与压力验证；完成后才允许 M5 FINAL |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -330,6 +334,7 @@ python -m alembic upgrade head
 - [上下文交接](docs/09_context_handoff.md) — 当前代码状态、限制与下一步。
 - [文档地图](docs/index.md) — 文档导航与阅读优先级。
 - [架构决策记录](docs/adr/) — 已接受的 ADR 与权威边界。
+- [M5 泛化与验收契约](docs/specs/13_m5_generalization_and_acceptance_contract.md) — 重建历史、M5.5—M5.8 边界与 Generalization Gate。
 - [AGENTS.md](AGENTS.md) — 代码 Agent 的 Cold Start、Git 与 README 维护约定。
 
 ## 范围与已知限制
@@ -340,9 +345,10 @@ python -m alembic upgrade head
 - 当前报表只有 `sales_report`，内容受 runtime capability 与固定安全设计系统约束。
 - Real Power BI 验收需要 Windows、Node.js 20+、Power BI Desktop 与本地人工 Smoke；CI 不验证 Desktop 在线链。
 - 当前结构化展示支持单值指标、多行表格，以及根据真实 QueryResult 字段引用生成的简单柱状图或折线图；不提供前端排序/筛选工作台、任意 ChartSpec 或前端推断数据。
+- `m5/frontend` 上的 `a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）作为实验/审计历史保留，不是新开发基线；新线从 M5.4.1 `cab40b0` 重新开始，能力必须分阶段重新实现并重新验收。
 
 公司内部专有软件。
 
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源与 test-owned cleanup；M5.5 Deferred*
+*最后更新：2026-08-26 | M5.4.2 COMPLETE — M5 重建基线与分阶段开发治理*

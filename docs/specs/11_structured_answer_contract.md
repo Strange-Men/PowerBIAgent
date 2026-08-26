@@ -1,6 +1,6 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M5.3 presentation contract 已实现；M5.3.1 已收紧为只投影 VerifiedFactSet 数据事实覆盖字段。
+> **状态：** M5.3 presentation contract 已实现；M5.4.2 固化 M5.6 展示重建边界（尚未实现）。
 > **边界：** 本契约只增加安全展示层，不改变 WorkMemory、QueryResult、VerifiedFactSet、ReportSpec 或 ReportArtifact 的事实权威。
 
 ## 一、目标
@@ -173,7 +173,23 @@ History API 返回保存的 user message、assistant terminal result 和同一 p
 
 自动化测试使用临时 SQLite/report root 与唯一 `m53-test-*` 前缀，并在 fixture/finally 中精确清理；不得清空用户 `local_state`。
 
+## 九、M5.6 canonical/display 与信息密度合同
+
+M5.4.2 只记录以下验收目标，不修改当前 presentation 实现：
+
+```text
+Answer = 洞察
+Table = 明细
+Chart = 趋势 / 关系
+```
+
+- Answer 应概括已验证的关键发现，不得逐行完整复述 table；没有新增洞察时允许保持简短。
+- Table 保留已验证明细与必要列；Chart 只表达适合可视化的趋势或关系。三者可以组合，但不得为“内容丰富”重复同一信息。
+- canonical identity/value 与 display metadata 必须分层。Localization、数字/日期/月格式化只能改变标签和显示文本，不得改变 QueryPlan、DAX、QueryResult、VerifiedFactSet 的字段 identity、值、顺序或 provenance。
+- 内部时间 representation（例如 `Year Month=2025-01-01T00:00:00 ...`）不得原样展示给用户；显示层应使用可读的月份/年份格式，同时保留可回指 canonical value 的绑定。
+- M5.6 不得修改 Grounding authority、DAX authority 或 MCP architecture；M5.7 的 report 可读性不在本契约阶段混入。
+
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-24 | M5.3.3 deleted report attachment projection boundary*
+*最后更新：2026-08-26 | M5.4.2 COMPLETE — M5.6 canonical/display 与信息密度目标*

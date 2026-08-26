@@ -3,11 +3,105 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-14 | M2.6.4
+# 最后更新：2026-08-26 | M5.4.2
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-542-001
+  title: Explicit unresolved member 可能静默降级为无筛选查询
+  category: ERR
+  first_detected_version: M5.4.2
+  symptom: 真实用户问题“火星区销售额”可能在 member 无匹配时移除筛选并返回全国销售额；明确但未解析的 semantic requirement 没有稳定保证 ZERO DAX
+  local_evidence: 原 M5.5/M5.5.1 实验线真实用户测试反馈；M5.4.2 只记录问题与 Gate，不把旧实验实现移入新线
+  authoritative_sources:
+  - title: ADR-008 Business Semantic Catalog and Grounding Authority
+    reason: Filter member 必须由已 Ground field 上的 bounded runtime lookup 证明，UNRESOLVED 不得进入 Canonical QueryPlan
+  - title: M5 Generalization and Acceptance Contract
+    reason: explicit unresolved semantic requirement 必须 clarification/no-match 且 ZERO DAX
+  root_cause: 旧实验范围同时改动语义、MCP 与展示，no-match 到执行边界缺少独立 failure reproducer、ZERO-DAX oracle 与跨域验收
+  failed_attempts: []
+  repair_attempt_count: 0
+  final_fix: M5.4.2 仅将问题标为新 M5.5 阻塞性验收项；技术修复必须在 M5.5 通过最小实现、回归、Focused Real 与 Cross-domain 后另行记录
+  regression_tests: []
+  prohibited_patterns:
+  - member 无匹配时删除 filter 并执行更宽查询
+  - 使用旧 committed member 覆盖当前 explicit unresolved member
+  - 以 LLM 猜测或销售字段特判替代 runtime member authority
+  prevention_rules:
+  - explicit unresolved member/filter 只能 clarification 或 no-match
+  - clarification/no-match 必须证明 DAX 和 Power BI 执行调用均为零
+  - 成员别名必须绑定 model/schema/runtime member evidence
+  related_adr: ADR-008
+  related_commits: []
+  status: open
+  events:
+  - date: '2026-08-26'
+    action: discovered
+    version: M5.4.2
+- id: GOV-542-001
+  title: 单一 Milestone 同时大改五个域导致验收结论不可定位
+  category: GOV
+  first_detected_version: M5.4.2
+  symptom: 原 M5.5/M5.5.1 同时覆盖 Semantic、MCP、Presentation、Report、Resource lifecycle；自动化与局部 Real PASS 后，真实用户仍暴露语义、UX、报表、性能和泛化问题
+  local_evidence: m5/frontend 的 a197db3 与 6d1620a 保留为实验/审计记录；新 m5/rebuild 从 cab40b0 重建
+  authoritative_sources:
+  - title: CLAUDE.md 小步迭代与阶段边界规则
+    reason: 每轮必须有单一明确目标，当前轮未验收不得进入下一轮
+  - title: M5 Generalization and Acceptance Contract
+    reason: 固定 M5.5—M5.8 域隔离与完整验收链
+  root_cause: 功能域、性能优化与视觉收口耦合在同一阶段，使 failure reproducer、最小修改、Real 证据和用户验收无法明确归属
+  failed_attempts:
+  - 以全量测试和多项同轮 Real smoke 作为整体完成信号，未能覆盖真实用户可读性与跨域语义风险
+  repair_attempt_count: 0
+  final_fix: M5.4.2 固化 M5.5 Semantic、M5.6 Presentation/Localization/Resource UX、M5.7 Report、M5.8 MCP performance/resilience 四阶段及禁止跨域大改规则
+  regression_tests: []
+  prohibited_patterns:
+  - 一个 milestone 同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle
+  - 仅凭全量自动化通过数宣告 COMPLETE
+  - 用旧实验 PASS 替代新线重新验收
+  prevention_rules:
+  - 每轮按 Spec、复现、回归、最小实现、Focused Real、Cross-domain、Full gates、人工验收、commit 顺序执行
+  - Real Browser 与用户人工验收独立记录
+  - M5.8 完成前不得声明 M5 FINAL
+  related_adr: ADR-005
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-26'
+    action: mitigation
+    version: M5.4.2
+- id: GOV-542-002
+  title: Sales-centric fixtures 与字段名可能伪装为通用语义能力
+  category: GOV
+  first_detected_version: M5.4.2
+  symptom: 只在 Sales/Retail 模型和已知字段上通过测试，不能证明 Agent 面对 Education、Inventory/Operations、rename、member change 或 glossary missing 时不会猜测
+  local_evidence: 原实验线的主要 Real acceptance 以 Rich Sales PBIX 为主；真实用户测试要求建立跨业务域和未知模型 holdout
+  authoritative_sources:
+  - title: ADR-008 Business Semantic Catalog and Grounding Authority
+    reason: canonical identity 只能来自 runtime schema、model-scoped glossary、runtime members 与确定性规则
+  - title: M5 Generalization and Acceptance Contract
+    reason: 定义三业务域、未知模型 holdout、禁止 hardcoded answer 与 silent downgrade
+  root_cause: 验收样本与生产命名高度同构，缺少 schema/member 变异和独立 deterministic oracle，测试可能只证明已知答案路径
+  failed_attempts: []
+  repair_attempt_count: 0
+  final_fix: M5.4.2 建立 Generalization Gate；后续每个相关版本必须跨三个业务域，并在最终阶段使用开发期未知模型重新验收
+  regression_tests: []
+  prohibited_patterns:
+  - 在生产代码写死业务字段、member 或答案
+  - 把测试答案放入 LLM Prompt
+  - 只用主要 Sales 模型宣告通用能力
+  prevention_rules:
+  - 覆盖新字段、多相似字段、display rename、table rename、member change、glossary missing
+  - Agent 只能 resolve、clarify 或 no-match，禁止猜测
+  - 正式链输出必须由独立 deterministic oracle 校验
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-26'
+    action: mitigation
+    version: M5.4.2
 - id: ERR-541-001
   title: Settings 将 Recent 第一页误作全部历史资源
   category: ERR

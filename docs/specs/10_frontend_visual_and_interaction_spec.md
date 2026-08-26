@@ -1,7 +1,7 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.4.1 Settings Hub、全量资源分页与测试产物治理修复已完成
-> **目标阶段：** M5.4.1 固化完整 history resource query、准确 selection/batch 语义、report archive 与 automation cleanup；M5.5 Deferred
+> **状态：** M5.4.2 重建线规划固化（COMPLETE）；当前实现能力保持 M5.4.1
+> **目标阶段：** M5.6 负责 Presentation/Localization/Resource UX truth；M5.7 独立负责 Report readability
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -17,6 +17,14 @@
 ## 二、当前阶段与实施边界
 
 **当前阶段：** M5.4 已将请求与 UI 状态收口到 conversation scope；M5.4.1 已把依赖 Recent 第一页的轻量资源面板修复为独立分页的 Settings Hub。M0–M5 factual authority 保持不变；没有真实 presentation block 时不伪造前端表格或图表。
+
+### 2.1 重建线后续边界
+
+- M5.4.2 只固化规范，不修改 `frontend/src/**`。旧 `m5/frontend` 的原 M5.5/M5.5.1 视觉与 UX 代码不是新线基线。
+- M5.6 才处理 Settings 有 report 但 Recent Reports 不同步、Recent conversation newest-first、failed conversation 正式可管理、toolbar 空间不足时 destructive action 可达，以及 conversation/report floating menu 不被 overflow clipping。
+- toolbar 必须使用 sticky、scroll 或 responsive 策略保持关键操作可达；禁止以窄屏或容器空间不足为由隐藏 destructive action。
+- M5.7 才处理 report card width/height、时间轴跨年识别、plot area、无意义空白、donut/legend 密度、accessibility 与视觉层级。
+- “技术不裁切”不等于“产品可读”。M5.7 必须通过 Real Browser 人工视觉 Gate；M5.6 不修改 report renderer，M5.7 不修改 Semantic/MCP/resource lifecycle。
 
 ## 三、视觉参考图片
 
@@ -470,4 +478,4 @@ Sidebar 在桌面端固定可用高度；“最近对话”与“最近报表”
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — Settings 全量分页、准确选择语义与 report lifecycle*
+*最后更新：2026-08-26 | M5.4.2 COMPLETE — M5.6/M5.7 视觉与交互职责隔离*

@@ -2,7 +2,7 @@
 
 ## 状态
 
-**M5.4.1 — 用户设置中心、全量历史资源管理与测试产物治理修复已完成。M5.5 语义/中文字段/视觉/性能继续 Deferred。**
+**M5.4.2 — M5重建基线与后续分阶段开发规划固化（COMPLETE）。当前前端能力保持 M5.4.1，新版 M5.5 尚未开始。**
 
 ## 技术栈
 
@@ -67,6 +67,13 @@ npm run build
 - “全选当前已加载”只选择已加载资源；选择数量可超过 20。一次用户确认的大批量操作在前端按最多 20 项一组逐项协调正式单资源 API，部分失败精确保留原因。
 - report 删除保留 history tombstone；report rename 只修改 `display_title`，不改 report_id/HTML/content_hash/ReportSpec/VerifiedFactSet。LLM 无资源变更权限。
 - automation-owned browser/Real/API tests 必须登记 `test_run_id`，在 `finally` 中通过正式 API cleanup 并验证 conversation/report/HTML/SQLite/delete-intent residual=0；未知 ownership 的用户资源不得自动删除。
+
+### M5.4.2 重建线边界
+
+- 新开发线从 M5.4.1 `cab40b0` 开始。旧 `m5/frontend` 的原 M5.5/M5.5.1 仅作为实验与审计记录，不是当前实现基线，也不整体 cherry-pick。
+- 本轮不修改 `frontend/src/**`。M5.6 才处理 Settings/Recent 同步、newest-first、failed conversation 管理、sticky/scroll/responsive toolbar 与不被 overflow clipping 的 action menu。
+- M5.7 独立处理报表信息架构、响应式、plot geometry、axis/tick、accessibility 与可读性；“SVG 未越界”不能替代普通用户 Real Browser 人工阅读验收。
+- 前端展示职责固定为 `Answer = 洞察`、`Table = 明细`、`Chart = 趋势/关系`，不得让 Answer 完整复述 table；canonical identity/value 与本地化/格式化 display metadata 必须分离。
 
 ### AI 回答 — 动态渲染原则
 
@@ -162,6 +169,7 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 - `docs/01_product_scope_and_frontend_skeleton.md` — 产品范围与前端骨架
 - `docs/specs/10_frontend_visual_and_interaction_spec.md` — 正式视觉与交互规范
 - `docs/specs/11_structured_answer_contract.md` — 结构化组合回答契约
+- `docs/specs/13_m5_generalization_and_acceptance_contract.md` — M5 重建、分阶段边界、跨域泛化与验收门禁
 
 ## 实现结构
 
@@ -187,8 +195,12 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | M5.3.3 | fresh/follow-up/replace、archive/restore、独立 report delete、history race 与 Artifact Governance | ✅ 已完成 |
 | M5.4 | conversation-scoped state、client UUID pending、异会话并发、用户卡片/资源面板、report tombstone/rename | ✅ 已完成 |
 | M5.4.1 | Settings Hub、完整 conversation/report pagination、selection/batch 修复与 test-owned cleanup | ✅ 已完成 |
-| M5.5 | 语义、中文字段、报表视觉、性能 | ⏸ Deferred / NOT STARTED |
+| M5.4.2 | 重建基线、旧实验线审计保留与分阶段治理 | ✅ COMPLETE |
+| M5.5 | Semantic correctness；不改前端视觉/资源 UX | ⏳ NOT STARTED |
+| M5.6 | Presentation/Localization/Resource UX truth | ⏳ NOT STARTED |
+| M5.7 | Report readability 与人工视觉验收 | ⏳ NOT STARTED |
+| M5.8 | MCP performance/resilience；完成后才允许 M5 FINAL | ⏳ NOT STARTED |
 
 ---
 
-*最后更新：2026-08-24 | M5.4.1 COMPLETE — 全量资源与 automation cleanup；M5.5 Deferred*
+*最后更新：2026-08-26 | M5.4.2 COMPLETE — 重建线与 M5.5—M5.8 阶段隔离*
