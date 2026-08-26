@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.5 — Semantic correctness 与 capability boundary（COMPLETE）
+> **状态：** M5.6 — Presentation、Localization 与 Resource UX truth（COMPLETE）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -39,7 +39,7 @@
 | **M5.4.1** | **Settings 全量资源分页、选择/批量语义与 automation ownership cleanup** | **✅ 已完成** |
 | **M5.4.2** | **M5 重建基线、旧实验线审计保留与后续阶段治理** | **✅ COMPLETE** |
 | **M5.5** | **Semantic correctness 与 capability boundary** | **✅ COMPLETE** |
-| **M5.6** | **Presentation、Localization 与 Resource UX truth** | **⏳ NOT STARTED** |
+| **M5.6** | **Presentation、Localization 与 Resource UX truth** | **✅ COMPLETE** |
 | **M5.7** | **Report readability 与人工视觉验收** | **⏳ NOT STARTED** |
 | **M5.8** | **MCP performance、resilience 与压力验证** | **⏳ NOT STARTED** |
 | **M5.9** | **固定专业销售报表模板与模板选择** | **⏳ NOT STARTED** |
@@ -61,6 +61,12 @@
 
 ### 新 M5.6 — Presentation, localization and resource UX truth
 
+状态为 COMPLETE。P1 docs/contracts → P2 formatter/localization → P3 presentation density → P4 recent resource truth/sorting → P5 failed lifecycle → P6 floating menus → P7 Settings layout → P8 cross-domain → P9 focused tests → P10 full/governance → P11 Real Browser/manual → P12 final docs/full gates/residual/commit/push 已顺序通过。
+
+Localization 必须以 runtime object 为输入，按 `metadata → model-scoped glossary → persisted registry → bounded display translation → safe fallback` 解析 model/object/schema-scoped display binding；canonical identity 与 facts 永不改变。Presentation fixed policy 为 scalar 纯文本、grouped 简短结论 + table（必要时 chart）、trend 简短趋势结论 + table + line，display formatter 覆盖数字、百分比、金额、日期、月份与 null，并禁止 raw timestamp 可见泄漏。
+
+Resource UX 使用同一正式 truth：Settings 全量查询，Sidebar bounded recent projection；reports 仅 active newest-first，conversation 固定 `updated_at DESC, created_at DESC, stable_id DESC`。failed conversation 是持久化可管理资源。conversation/report 共用 Portal floating menu，Settings shell/content/list/toolbar 建立独立 scroll responsibility。
+
 只开发 canonical/display separation、model/object/schema-scoped Localization、数字/日期/月格式、Answer/Table/Chart 信息密度、Settings/Recent truth、newest-first、failed resource lifecycle、sticky/scroll/responsive toolbar 与不被 overflow clipping 的 floating menus。
 
 conversation/report action menu 必须共用同一 Portal/floating layer，采用 viewport-aware above/below positioning，不能被 scroll container、scrollbar 或 stacking context 裁切；禁止两套脆弱定位逻辑。Settings Resource Manager 必须定义 nested scroll contract，并以 sticky 或 scrollable action toolbar 处理 responsive overflow，保证 destructive actions 始终可访问。
@@ -68,6 +74,8 @@ conversation/report action menu 必须共用同一 Portal/floating layer，采�
 正式 Layout Gate 覆盖 first/middle/last row、scroll top/middle/bottom、100%/125% zoom、768/1080/1440 viewport height、Sidebar scroll、Settings nested scroll、destructive action 可达与 floating menu 无裁切。
 
 `Answer = 洞察`、`Table = 明细`、`Chart = 趋势/关系`；Answer 不得完整重复 table。内部 canonical time representation 不得原样暴露。禁止修改 Grounding authority、DAX authority 与 MCP architecture。
+
+Fresh final evidence：backend `1849 passed, 1 skipped`；frontend typecheck/lint/build PASS、Vitest `79 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `120`、Repository Safety `302`、Error Ledger `34`、Documentation/Artifact Governance、compileall、Alembic fresh/head-idempotent 与 `git diff --check` PASS。Rich PBIX 四类问题、failed resource lifecycle、floating menu、Settings Layout Gate 与 automation-owned residual=0 均通过。
 
 ### 新 M5.7 — Report readability
 
@@ -317,7 +325,7 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
-- M5.5 已完成并停止开发；未经新指令不得进入 M5.6—M5.9。
+- M5.5 已完成并停止开发；M5.6 已 COMPLETE，M5.7—M5.9 仍不得进入。
 - 一个 milestone 不得同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle；M5.9 完成前不得宣告 M5 FINAL。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
@@ -332,4 +340,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.9 或 Remote MCP 实现。
 
-*最后更新：2026-08-26 | M5.5 COMPLETE — M5.6—M5.9 NOT STARTED*
+*最后更新：2026-08-26 | M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*

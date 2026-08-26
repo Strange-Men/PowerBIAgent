@@ -357,6 +357,16 @@ PowerBIAgent/
 - 本轮禁止 Localization、Presentation/Resource UX、Report visual/template、MCP performance/cache/session worker、Remote MCP、prediction、write-back 与 arbitrary DAX。
 - M5.6 action menu 与 Settings nested-scroll 修复、M5.9 专业销售模板均只在路线与合同中固化，M5.5 不实现。
 
+### M5.6 Presentation、Localization 与 Resource UX 硬规则
+
+- M5.5 semantic authority 已冻结。本轮不得修改 TurnPipeline、Grounding/StateTransition、runtime member authority、Deterministic DAX、VerifiedFactSet factual authority、Local MCP readonly/stale fail-closed 或 report renderer。
+- `canonical_name` 与 `display_name` 严格分离；display localization 只能绑定 runtime 已存在的 model/object/schema identity。优先级固定为 Power BI metadata → model-scoped glossary → persisted registry → bounded display translation → safe humanized fallback；schema/object identity 变化使缓存失效。
+- deterministic formatter 只产生 presentation value，支持 integer、decimal、percentage、currency/general amount、date、month 与 null；不得改写 QueryResult/VerifiedFactSet 原值、顺序或 provenance。
+- 展示职责为 Answer 洞察、Table 明细、Chart 趋势/关系。scalar 不再附 KPI card；grouped/trend 的 Answer 不得逐行复述 table，raw ISO timestamp 不得进入可见文本。
+- Recent Reports 与 Settings 使用同一正式 report source；Recent conversation 固定 `updated_at DESC, created_at DESC, stable_id DESC`。failed conversation 必须持久化并可 rename/archive/restore/delete，不得用标题或内容猜状态。
+- conversation/report 共用 Portal-based `FloatingActionMenu`；Settings 使用 fixed shell + independent content/list scroll + 始终可达的 resource toolbar。正式 Gate 覆盖首中末行、滚动三位置、100%/125% zoom 与规定 viewport。
+- checkpoint 固定为 P1 docs/contracts → P2 formatter/localization → P3 presentation density → P4 resource truth/sorting → P5 failed lifecycle → P6 floating menus → P7 Settings layout → P8 cross-domain → P9 focused → P10 full/governance → P11 Real/manual → P12 final docs/commit/push。任一 FAIL 不进入下一项。
+
 ---
 
-*最后更新：2026-08-26 | M5.5 COMPLETE — 语义正确性与能力边界；M5.6—M5.9 NOT STARTED*
+*最后更新：2026-08-26 | M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*

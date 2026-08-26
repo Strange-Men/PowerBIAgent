@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.5 — Semantic correctness 与 capability boundary（COMPLETE）**。M5.4.1 产品能力与 M5.4.2 重建治理基线全部保留；M5.6—M5.9 尚未开始。
+当前版本：**M5.6 — Presentation、Localization 与 Resource UX truth（COMPLETE）**。M5.5 Semantic correctness 已冻结；M5.7—M5.9 尚未开始。
 
 ## 项目概览
 
@@ -320,7 +320,7 @@ python -m alembic upgrade head
 | M5.4.1 | 已完成 — Settings 独立全量分页、准确 selection/batch 语义与 automation-owned resource cleanup |
 | M5.4.2 | 已完成 — 从 M5.4.1 `cab40b0` 建立重建线并固化分阶段开发与泛化验收；无生产功能变化 |
 | M5.5 | COMPLETE — Semantic correctness、runtime member、multi-turn、TopN、time 与 capability boundary |
-| M5.6 | NOT STARTED — Presentation/Localization/Resource UX truth；共享 floating menu 与 Settings nested-scroll/action 可达性 |
+| M5.6 | COMPLETE — Presentation/Localization/Resource UX truth；共享 floating menu 与 Settings nested-scroll/action 可达性 |
 | M5.7 | NOT STARTED — Report readability 与人工视觉验收 |
 | M5.8 | NOT STARTED — MCP performance、resilience 与压力验证 |
 | M5.9 | NOT STARTED — 固定专业销售报表模板与“简易模板/销售模板”显式选择；完成后才允许 M5 FINAL |
@@ -352,4 +352,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-26 | M5.5 COMPLETE — M5.6—M5.9 NOT STARTED*
+*最后更新：2026-08-26 | M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*

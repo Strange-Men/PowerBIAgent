@@ -3,25 +3,110 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-26 | M5.5 COMPLETE
+# 最后更新：2026-08-26 | M5.6 COMPLETE
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-560-001
+  title: Presentation 泄漏 canonical timestamp 且 scalar/grouped/trend 信息重复
+  category: ERR
+  first_detected_version: M5.6
+  symptom: scalar 同时显示 answer 与 KPI card，grouped/trend answer 逐行复述完整 table，Year Month canonical ISO timestamp 与未格式化小数直接暴露给用户
+  local_evidence: M5.5 基线 FactBoundedAnswerBuilder 使用 isoformat/str 并逐行枚举 grouped facts，PresentationBuilder 对 scalar 固定追加 metric block
+  authoritative_sources:
+  - title: MDN Intl.NumberFormat
+    reason: language-sensitive number formatting 必须由 deterministic display formatter 完成且不修改底层 value
+  - title: MDN Intl.DateTimeFormat
+    reason: date/month 应以 locale-aware display projection 呈现而不是泄漏内部 ISO representation
+  root_cause: presentation envelope 只有 canonical columns/raw rows，缺少 model/object/schema-scoped display binding、formatted row projection 与按 query shape 控制的信息密度策略
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: M5.6 已实现 model/object/schema-scoped localization、deterministic formatter、formatted row projection 与 scalar/grouped/trend density policy；Sales glossary 补齐 YearMonth temporal binding，使月度趋势可执行且可见层不泄漏 raw ISO timestamp
+  regression_tests:
+  - backend/tests/unit/test_presentation_localization.py
+  - backend/tests/unit/test_presentation_contract.py
+  - backend/tests/unit/test_verified_facts.py
+  - backend/tests/api/test_chat.py
+  - frontend/src/components/AssistantMessage.test.tsx
+  prohibited_patterns:
+  - 修改 QueryResult 或 VerifiedFactSet 原值来获得漂亮显示
+  - 前端按 Total Sales、Region 等业务字段名写死翻译或格式
+  - 让 LLM 创造 runtime schema 不存在的 display object
+  prevention_rules:
+  - canonical/display binding 与 formatted projection 必须保持一对一 shape 和 provenance
+  - scalar 无 metric card，grouped/trend answer 不逐行重复 table
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-26'
+    action: discovered
+    version: M5.6
+  - date: '2026-08-26'
+    action: verified
+    version: M5.6
+- id: ERR-560-002
+  title: Sidebar Recent 与 Settings resource truth、conversation 排序及 failed lifecycle 漂移
+  category: ERR
+  first_detected_version: M5.6
+  symptom: Settings 可见 report 但 Sidebar Recent Reports 为空；最新 conversation 可能位于列表底部；请求失败产生仅前端内存可见且无法完整管理的 ghost session
+  local_evidence: M5.5 基线 Sidebar recent report 按 recent conversation IDs 逐会话拼接；local recent rows 依赖 insertion order/渲染时 now；failed catch 未持久化正式 resource status
+  authoritative_sources:
+  - title: SQLAlchemy 2.0 select.order_by documentation
+    reason: repository newest-first 必须由显式多列 order_by 与同构 cursor contract保证，不能依赖插入顺序
+  - title: M5 Conversation Memory and Resource Lifecycle Contract
+    reason: archive/restore/delete 与 namespace/durable delete 边界已冻结，M5.6 只能统一 presentation/resource truth
+  root_cause: Sidebar report 使用独立拼接 projection，local conversation 缺少稳定 created/updated timestamps，terminal client failure 没有正式持久化 resource metadata
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: M5.6 已统一 managed-report active query、三键降序 cursor、local stable timestamps 与 failed resource metadata；failed conversation 经正式 API 支持 rename/archive/restore/delete 并保持 ZERO Memory commit
+  regression_tests:
+  - backend/tests/api/test_conversation_history.py
+  - backend/tests/unit/persistence/test_conversation_history.py
+  - backend/tests/unit/persistence/test_persistence_baseline.py
+  - frontend/src/api/client.test.ts
+  - frontend/src/hooks/usePowerBIAgent.race.test.tsx
+  - frontend/src/components/Sidebar.test.tsx
+  prohibited_patterns:
+  - 以 conversation/report title、用户名或测试关键字判断资源状态
+  - Sidebar 维护独立 report truth
+  - 依赖 array insertion order 或渲染时动态 now 排序
+  prevention_rules:
+  - reports 使用 Settings 同一 managed resource query 的 active bounded projection
+  - conversation 固定 updated_at、created_at、stable_id 全降序
+  - failed conversation reload/restart 后仍可 rename/archive/restore/delete
+  related_adr: ADR-012
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-26'
+    action: discovered
+    version: M5.6
+  - date: '2026-08-26'
+    action: verified
+    version: M5.6
 - id: ERR-550-001
   title: Conversation/Report action menu 与 Settings 操作区被 overflow 裁切
   category: ERR
   first_detected_version: M5.5
   symptom: M5.4.1 基线的最近对话最后一项与最近报表 action menu 可能被父级 overflow 裁切；Settings 二级资源页过长时 destructive action 可能超出可见区域
-  local_evidence: 用户 M5.5 启动验收反馈；本轮仅固化为 M5.6 regression，不修改前端实现
+  local_evidence: 用户 M5.6 启动验收反馈与 M5.5 基线 Sidebar inline overflow menu/Settings layout production code；M5.6 已进入 P1 合同固化
   authoritative_sources:
   - title: M5 Generalization and Acceptance Contract
     reason: M5.6 独立负责 Presentation/Localization/Resource UX truth，不得混入 M5.5 Semantic
+  - title: React createPortal documentation
+    reason: Portal 可将 floating UI 渲染到 document.body 并脱离父级 overflow/stacking container
+  - title: MDN Element.getBoundingClientRect documentation
+    reason: viewport-relative anchor rect 是 above/below positioning 与 clamp 的正式几何输入
   root_cause: action menu 受 scroll container/stacking context 约束，Settings 缺少明确 nested scroll 与 action toolbar 可达性合同
   failed_attempts: []
-  repair_attempt_count: 0
-  final_fix: M5.5 文档先固化 shared Portal/floating layer、viewport-aware positioning、nested scroll、sticky/scrollable toolbar 与完整 Layout Gate；代码修复留在 M5.6
-  regression_tests: []
+  repair_attempt_count: 1
+  final_fix: M5.6 已实现 conversation/report 共用 FloatingActionMenu Portal、viewport-aware above/below clamp、outside click/Escape/focus restore，以及 Settings fixed shell、nested scroll 与可达 toolbar
+  regression_tests:
+  - frontend/src/components/FloatingActionMenu.test.tsx
+  - frontend/src/components/ResourceManager.test.tsx
+  - frontend/src/components/Sidebar.test.tsx
   prohibited_patterns:
   - conversation/report 各自维护一套易漂移的 menu positioning
   - 以 viewport 或容器空间不足为由隐藏 destructive action
@@ -31,11 +116,17 @@ entries:
   - floating menu 必须脱离裁切容器且 destructive action 始终可访问
   related_adr: null
   related_commits: []
-  status: open
+  status: monitoring
   events:
   - date: '2026-08-26'
     action: discovered
     version: M5.5
+  - date: '2026-08-26'
+    action: in_progress
+    version: M5.6
+  - date: '2026-08-26'
+    action: verified
+    version: M5.6
 - id: GOV-550-001
   title: 专业销售报表模板不得重新授予 LLM 布局或事实权威
   category: GOV

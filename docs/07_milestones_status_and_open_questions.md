@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.5 — Semantic correctness 与 capability boundary（COMPLETE）
+> **状态：** M5.6 — Presentation、Localization 与 Resource UX truth（COMPLETE）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -39,7 +39,7 @@
 | **M5.4.1** | **Settings Hub、全量 conversation/report 分页、准确全选语义与 automation artifact cleanup** | **✅ 已完成** |
 | **M5.4.2** | **M5 重建基线、旧实验线审计保留、分阶段路线与 Generalization Gate** | **✅ COMPLETE** |
 | **M5.5** | **Semantic correctness：Grounding/member/multi-turn/TopN/time/capability** | **✅ COMPLETE** |
-| **M5.6** | **Presentation、Localization 与 Resource UX truth** | **⏳ NOT STARTED** |
+| **M5.6** | **Presentation、Localization 与 Resource UX truth** | **✅ COMPLETE** |
 | **M5.7** | **Report readability 与 Real Browser 人工视觉 Gate** | **⏳ NOT STARTED** |
 | **M5.8** | **MCP performance/resilience、压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.9** | **固定专业销售报表模板与模板选择** | **⏳ NOT STARTED** |
@@ -194,7 +194,12 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - **M5.9** 必须晚于 M5.8，只增加固定专业销售报表模板和显式模板选择。“简易模板”是 M5.7 优化后的现有 `sales_report.html`；“销售模板”使用确定性专业版式。两者都只消费 VerifiedFactSet/ReportData/ReportSpec，不允许 LLM 生成 HTML/CSS/SVG、查询或事实。M5.9 完成前不得声明 M5 FINAL。
 - 每个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
 
-### M5.6 Layout Gate（已规划，未实现）
+### M5.6 执行合同与 Layout Gate（COMPLETE）
+
+- Localization binding 至少包含 model key、runtime object identity/type、canonical/display name、locale、source 与 schema identity；metadata/glossary/registry/bounded translation/fallback 按固定优先级解析，unknown runtime object 不得登记或翻译。
+- presentation formatter 只生成显示值，覆盖 integer、decimal、percentage、currency/general amount、date、month、null；canonical value 不变。scalar 只显示自然语言，grouped/trend 的 Answer 只总结 verified insight，table/chart 承担完整细节。
+- Settings/Recent report 共用正式 resource query；Recent conversation 固定 `updated_at DESC, created_at DESC, stable_id DESC`。failed conversation 持久化后必须支持 rename/archive/restore/delete，且 failed turn 不提交 Memory。
+- conversation/report 共用 Portal-based floating menu；Settings 采用 fixed shell、独立 content/list scroll 与 sticky/scrollable toolbar。不得以 title、“测试”或用户名推断资源状态。
 
 - first/middle/last row；scroll top/middle/bottom；100%/125% zoom；768/1080/1440 viewport height。
 - Sidebar scroll 与 Settings nested scroll 分别验证。
@@ -202,8 +207,8 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 
 ## 当前真实风险
 
-- 旧实验线真实用户测试暴露：未知 explicit member 可能扩大为无筛选结果、成员别名依赖不足、能力近义词边界脆弱、TopN 受不必要 LLM failure 影响、多轮 slot KEEP/REPLACE 与 canonical time 展示仍需重做验证。
-- Settings/Recent 同步、newest-first、failed conversation 管理、窄 toolbar destructive action 可达性与 floating menu overflow 需要在 M5.6 独立解决。
+- M5.5 的 explicit member、runtime alias、TopN、multi-turn slot 与 temporal semantic 风险已关闭；M5.6 的 canonical time 展示与信息密度 Gate 已通过。
+- Settings/Recent truth、newest-first、failed conversation 管理、toolbar 可达性与 floating menu overflow 已在 M5.6 关闭。
 - 报表“未裁切”仍不等于可读；时间轴、跨年标签、plot area、空白与 donut/legend 密度必须在 M5.7 经 Real Browser 人工视觉验收。
 - 旧 Real latency 曾达到几十秒至数分钟；persistent worker 仅是候选思路，queue/backpressure/TTL/stale、cold/warm 与 20/50/100 并发必须在 M5.8 独立验证。
 
@@ -255,4 +260,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - Backend full `1823 passed, 1 skipped`；frontend `69 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `296`、Error Ledger `32`、Documentation/Artifact Governance、compileall 与 Local MCP readonly smoke PASS。
 - Real API 与 Browser 人工验收通过；unknown member 可见 clarification，South 与同会话 Top3 正确完成，automation-owned acceptance residual=0。M5.6—M5.9 均未开始。
 
-*最后更新：2026-08-26 | M5.5 COMPLETE — 语义正确性与能力边界*
+*最后更新：2026-08-26 | M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*

@@ -9,6 +9,30 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class PresentationField(BaseModel):
+    """Display-only metadata bound one-to-one to a canonical result column."""
+
+    canonical_field: str = Field(min_length=1)
+    object_identity: str = Field(min_length=1)
+    object_type: Literal["measure", "field"]
+    canonical_name: str = Field(min_length=1)
+    locale: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    source: Literal[
+        "powerbi_metadata",
+        "model_glossary",
+        "registry",
+        "bounded_translation",
+        "fallback",
+    ]
+    schema_identity: str = Field(min_length=64, max_length=64)
+    format_kind: Literal[
+        "auto", "integer", "decimal", "percentage", "amount", "date", "month", "text"
+    ] = "text"
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class PresentationDataset(BaseModel):
     """The single fact data copy exposed to the frontend for one QueryResult."""
 
@@ -18,6 +42,8 @@ class PresentationDataset(BaseModel):
     source_mode: Literal["mock", "real"]
     columns: list[str]
     rows: list[list[Any]]
+    display_fields: list[PresentationField] = Field(default_factory=list)
+    formatted_rows: list[list[str]] = Field(default_factory=list)
     row_count: int = Field(ge=0)
     truncated: bool = False
 
@@ -31,6 +57,19 @@ class PresentationDataset(BaseModel):
             raise ValueError("presentation_dataset_columns_not_unique")
         if any(len(row) != len(self.columns) for row in self.rows):
             raise ValueError("presentation_dataset_row_shape_mismatch")
+        if self.display_fields and (
+            len(self.display_fields) != len(self.columns)
+            or [field.canonical_field for field in self.display_fields] != self.columns
+        ):
+            raise ValueError("presentation_dataset_display_field_shape_mismatch")
+        if self.display_fields:
+            if (
+                len(self.formatted_rows) != self.row_count
+                or any(len(row) != len(self.columns) for row in self.formatted_rows)
+            ):
+                raise ValueError("presentation_dataset_formatted_row_shape_mismatch")
+        elif self.formatted_rows:
+            raise ValueError("presentation_dataset_display_projection_incomplete")
         return self
 
 

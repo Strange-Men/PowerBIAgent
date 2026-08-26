@@ -340,11 +340,9 @@ input:focus-visible {
   background: #e5e5e5;
 }
 
-.conversation-actions-menu {
-  position: absolute;
-  z-index: 50;
-  top: 34px;
-  right: 0;
+.floating-action-menu {
+  position: fixed;
+  z-index: 1000;
   display: grid;
   width: 132px;
   padding: 6px;
@@ -354,7 +352,7 @@ input:focus-visible {
   box-shadow: 0 10px 28px rgb(0 0 0 / 13%);
 }
 
-.conversation-actions-menu button {
+.floating-action-menu button {
   display: flex;
   min-height: 34px;
   align-items: center;
@@ -368,15 +366,15 @@ input:focus-visible {
   text-align: left;
 }
 
-.conversation-actions-menu button:hover:not(:disabled) {
+.floating-action-menu button:hover:not(:disabled) {
   background: #f1f1f1;
 }
 
-.conversation-actions-menu .danger-action {
+.floating-action-menu .danger-action {
   color: #b42318;
 }
 
-.conversation-actions-menu button:disabled {
+.floating-action-menu button:disabled {
   cursor: wait;
   opacity: 0.5;
 }
@@ -944,14 +942,17 @@ input:focus-visible {
   inset: 0;
   display: grid;
   padding: 24px;
-  overflow-y: auto;
+  overflow: hidden;
   place-items: center;
   background: rgb(0 0 0 / 32%);
 }
 
 .resource-manager {
+  display: flex;
   width: min(1040px, 100%);
-  max-height: min(820px, calc(100dvh - 48px));
+  height: min(820px, calc(100dvh - 48px));
+  min-height: 0;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid #ddd;
   border-radius: 16px;
@@ -960,6 +961,7 @@ input:focus-visible {
 }
 
 .resource-manager > header {
+  flex: 0 0 auto;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1002,6 +1004,7 @@ input:focus-visible {
 }
 
 .resource-manager-notice {
+  flex: 0 0 auto;
   margin: 14px 24px 0 !important;
   padding: 10px 12px;
   border-radius: 8px;
@@ -1012,9 +1015,10 @@ input:focus-visible {
 
 .settings-layout {
   display: grid;
+  min-height: 0;
+  flex: 1;
   grid-template-columns: 176px minmax(0, 1fr);
-  min-height: 560px;
-  max-height: calc(100dvh - 165px);
+  overflow: hidden;
 }
 
 .settings-nav {
@@ -1022,6 +1026,7 @@ input:focus-visible {
   gap: 5px;
   padding: 16px 12px;
   flex-direction: column;
+  overflow-y: auto;
   border-right: 1px solid #e9e9e9;
   background: #fafafa;
 }
@@ -1047,12 +1052,16 @@ input:focus-visible {
 }
 
 .settings-content {
+  display: flex;
   min-width: 0;
+  min-height: 0;
   padding: 18px 20px 22px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .settings-intro {
+  width: 100%;
+  overflow-y: auto;
   padding: 24px;
   border: 1px solid #e4e4e4;
   border-radius: 12px;
@@ -1070,13 +1079,18 @@ input:focus-visible {
 
 .resource-manager-sections {
   display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
 .resource-section {
   display: flex;
-  min-height: 340px;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
   overflow: hidden;
   border: 1px solid #e1e1e1;
@@ -1091,6 +1105,11 @@ input:focus-visible {
   justify-content: space-between;
   gap: 8px;
   padding: 12px;
+}
+
+.resource-section-heading,
+.resource-toolbar {
+  flex: 0 0 auto;
 }
 
 .resource-section-heading {
@@ -1195,18 +1214,24 @@ input:focus-visible {
   color: #b42318;
 }
 
-.resource-section footer {
+.resource-toolbar {
   align-items: flex-end;
+  flex-wrap: wrap;
+  overflow-x: auto;
   border-top: 1px solid #e7e7e7;
+  scrollbar-width: thin;
 }
 
-.resource-section footer > span {
+.resource-toolbar > span {
+  flex: 0 0 auto;
   color: #777;
   font-size: 10px;
 }
 
-.resource-section footer > div {
+.resource-toolbar-actions {
   display: flex;
+  min-width: max-content;
+  margin-left: auto;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
@@ -1549,16 +1574,19 @@ input:focus-visible {
   }
 
   .resource-manager {
-    max-height: calc(100dvh - 24px);
+    height: calc(100dvh - 24px);
   }
 
   .resource-manager-sections {
     grid-template-columns: 1fr;
+    grid-auto-rows: minmax(280px, 1fr);
+    overflow-y: auto;
   }
 
   .settings-layout {
+    min-height: 0;
     grid-template-columns: 1fr;
-    max-height: calc(100dvh - 145px);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .settings-nav {
@@ -1574,7 +1602,12 @@ input:focus-visible {
   }
 
   .resource-section {
+    min-height: 0;
+  }
+
+  .resource-manager-sections .resource-section {
     min-height: 280px;
+    flex: none;
   }
 }
 

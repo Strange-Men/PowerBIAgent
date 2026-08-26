@@ -191,6 +191,20 @@ describe('ResourceManager full-history pagination', () => {
 })
 
 describe('ResourceManager lifecycle operations', () => {
+  it('keeps the resource toolbar outside the independently scrollable list', async () => {
+    setup()
+    fireEvent.click(screen.getByRole('button', { name: /对话管理/ }))
+    await screen.findByText('共 35 项 · 已加载 20 项')
+
+    const list = screen.getByRole('region', { name: '对话管理资源列表' })
+    const toolbar = screen.getByRole('toolbar', { name: '对话管理操作栏' })
+    const dialog = screen.getByRole('dialog', { name: '设置' })
+    expect(dialog.querySelector(':scope > .settings-header')).toBeInTheDocument()
+    expect(dialog.querySelector(':scope > .settings-layout')).toBeInTheDocument()
+    expect(list.nextElementSibling).toBe(toolbar)
+    expect(toolbar).toContainElement(screen.getByRole('button', { name: /批量删除/ }))
+  })
+
   it('passes every loaded selection to one confirmed operation', async () => {
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
     const actions = setup()

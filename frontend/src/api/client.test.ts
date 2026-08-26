@@ -10,6 +10,7 @@ import {
   listManagedReports,
   listRecentConversations,
   listRecentReports,
+  recordFailedConversation,
   renameConversation,
   renameReport,
   restoreConversation,
@@ -198,16 +199,46 @@ describe('API namespace and chat mapping', () => {
   it('keeps report history inside the selected source namespace', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ source_mode: 'real', conversation_id: 'conv-1', items: [], next_cursor: null, total_count: 0 }),
+        JSON.stringify({ source_mode: 'real', status: 'active', items: [], next_cursor: null, total_count: 0 }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    await listRecentReports('real', ['conv-1'])
+    await listRecentReports('real')
 
-    expect(String(fetchMock.mock.calls[0][0])).toContain('source_mode=real')
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain('source_mode=mock')
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      '/api/reports?source_mode=real&status=active&limit=8',
+    )
+  })
+
+  it('records only safe failed-conversation resource metadata', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          runtime_mode: 'real',
+          conversation_id: 'failed-conversation',
+          resource_status: 'failed',
+          last_error_type: 'client_request_failed',
+          updated_at: '2026-08-26T10:00:00',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await recordFailedConversation('real', 'failed-conversation', {
+      title: '失败问题',
+      error_type: 'client_request_failed',
+    })
+
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      '/api/v1/conversations/failed-conversation/failure?runtime_mode=real',
+    )
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ title: '失败问题', error_type: 'client_request_failed' }),
+    })
   })
 
   it('loads all bounded history pages for a complete restored conversation', async () => {

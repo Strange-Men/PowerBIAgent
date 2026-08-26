@@ -39,6 +39,17 @@ fields:
     aliases:
       - 订单日期
       - 销售日期
+  YearMonth:
+    table_name: Date
+    object_type: field
+    required: false
+    aliases:
+      - 月份
+      - 月度
+    temporal_grouping:
+      grain: month
+      date_field: Date
+      date_table_name: Date
   Region:
     table_name: Sales
     object_type: field

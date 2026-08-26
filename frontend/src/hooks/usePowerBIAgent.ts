@@ -9,6 +9,7 @@ import {
   listArchivedConversations,
   listRecentConversations,
   listRecentReports,
+  recordFailedConversation,
   renameConversation,
   renameReport,
   restoreReport,
@@ -35,18 +36,39 @@ import type {
 } from '../types'
 
 const MAX_BATCH_ITEMS = 20
+let lastLocalResourceTimestamp = 0
 
 function newId(): string {
   return globalThis.crypto.randomUUID()
+}
+
+function localResourceNow(): string {
+  lastLocalResourceTimestamp = Math.max(
+    Date.now(),
+    lastLocalResourceTimestamp + 1,
+  )
+  return new Date(lastLocalResourceTimestamp).toISOString()
+}
+
+export function compareConversationRecency(
+  left: ConversationSummary,
+  right: ConversationSummary,
+): number {
+  return right.updated_at.localeCompare(left.updated_at)
+    || right.created_at.localeCompare(left.created_at)
+    || right.conversation_id.localeCompare(left.conversation_id)
 }
 
 function createSession(
   conversationId: string,
   title = '新聊天',
 ): ConversationSession {
+  const timestamp = localResourceNow()
   return {
     clientConversationId: conversationId,
     title,
+    createdAt: timestamp,
+    updatedAt: timestamp,
     messages: [],
     pendingRequests: [],
     sending: false,
@@ -296,10 +318,7 @@ export function usePowerBIAgent() {
         listRecentConversations(mode),
         listArchivedConversations(mode),
       ])
-      const reports = await listRecentReports(
-        mode,
-        page.items.map((item) => item.conversation_id),
-      )
+      const reports = await listRecentReports(mode)
       if (generation !== sidebarRefreshGenerationRef.current) return
       setPersistedRecent(page.items)
       setArchivedConversations(archivedPage.items)
@@ -421,6 +440,7 @@ export function usePowerBIAgent() {
         loadingHistory: false,
         error: null,
         status: 'processing',
+        updatedAt: localResourceNow(),
         restored: false,
       }))
 
@@ -445,6 +465,7 @@ export function usePowerBIAgent() {
           sending: false,
           error: response.error_type ? '当前请求未完成。' : null,
           status: response.error_type ? 'failed' : 'ready',
+          updatedAt: localResourceNow(),
         }))
         if (
           response.error_type === 'stale_instance' ||
@@ -481,7 +502,34 @@ export function usePowerBIAgent() {
           sending: false,
           error: errorText,
           status: 'failed',
+          updatedAt: localResourceNow(),
         }))
+        const failureType =
+          error instanceof Error &&
+          'errorType' in error &&
+          typeof error.errorType === 'string'
+            ? error.errorType
+            : 'client_request_failed'
+        try {
+          const failed = await recordFailedConversation(
+            effectiveRuntimeMode,
+            conversationId,
+            {
+              title: conversationTitle(normalized),
+              error_type: failureType,
+            },
+          )
+          updateSession(conversationId, (session) => ({
+            ...session,
+            serverConversationId: failed.conversation_id,
+            status: 'failed',
+            updatedAt: failed.updated_at,
+          }))
+          await refreshSidebar(effectiveRuntimeMode)
+        } catch {
+          // The original request error remains visible. If the service itself
+          // is unreachable, there is no durable backend available to update.
+        }
       } finally {
         runningConversationIdsRef.current.delete(conversationId)
         if (
@@ -530,7 +578,9 @@ export function usePowerBIAgent() {
         messages: [],
         loadingHistory: true,
         error: null,
-        status: 'ready',
+        status: conversation.resource_status === 'failed' ? 'failed' : 'ready',
+        createdAt: conversation.created_at,
+        updatedAt: conversation.updated_at,
       }))
       try {
         const history = await getConversationHistory(
@@ -560,7 +610,9 @@ export function usePowerBIAgent() {
           messages: restoredMessages,
           loadingHistory: false,
           error: null,
-          status: 'ready',
+          status: conversation.resource_status === 'failed' ? 'failed' : 'ready',
+          createdAt: conversation.created_at,
+          updatedAt: conversation.updated_at,
           restored: true,
         }))
       } catch (error) {
@@ -588,6 +640,8 @@ export function usePowerBIAgent() {
           loadingHistory: false,
           error: errorText,
           status: 'failed',
+          createdAt: conversation.created_at,
+          updatedAt: conversation.updated_at,
         }))
       } finally {
         if (generation === historyGenerationRef.current) {
@@ -619,6 +673,7 @@ export function usePowerBIAgent() {
       updateSession(conversation.conversation_id, (session) => ({
         ...session,
         title: result.title,
+        updatedAt: result.updated_at,
       }))
       await refreshSidebar(effectiveRuntimeMode)
     },
@@ -907,12 +962,15 @@ export function usePowerBIAgent() {
       .map<ConversationSummary>((session) => {
         const stored = persisted.get(session.clientConversationId)
         persisted.delete(session.clientConversationId)
-        const timestamp = new Date().toISOString()
+        const updatedAt = [session.updatedAt, stored?.updated_at]
+          .filter((value): value is string => Boolean(value))
+          .sort()
+          .at(-1) || session.updatedAt
         return {
           runtime_mode: effectiveRuntimeMode,
           conversation_id: session.clientConversationId,
-          created_at: stored?.created_at || timestamp,
-          updated_at: stored?.updated_at || timestamp,
+          created_at: stored?.created_at || session.createdAt,
+          updated_at: updatedAt,
           archived_at: null,
           title: session.title,
           latest_request_id:
@@ -923,6 +981,8 @@ export function usePowerBIAgent() {
               : stored?.latest_terminal_state || null,
           latest_response_type: stored?.latest_response_type || null,
           latest_analysis_goal: stored?.latest_analysis_goal || session.title,
+          resource_status: session.status === 'failed' ? 'failed' : 'ready',
+          last_error_type: stored?.last_error_type || null,
           local_status:
             session.status === 'processing'
               ? 'processing'
@@ -932,7 +992,13 @@ export function usePowerBIAgent() {
           local_error: session.error,
         }
       })
-    return [...localRows, ...persisted.values()]
+    const persistedRows = [...persisted.values()].map((item) => ({
+      ...item,
+      local_status:
+        item.resource_status === 'failed' ? 'failed' as const : 'ready' as const,
+      local_error: item.last_error_type || null,
+    }))
+    return [...localRows, ...persistedRows].sort(compareConversationRecency)
   }, [effectiveRuntimeMode, persistedRecent, sessions])
 
   const activeSession = activeConversationId

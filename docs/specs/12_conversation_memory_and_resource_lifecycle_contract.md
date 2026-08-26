@@ -1,6 +1,6 @@
 # 12 — 多轮语义、会话与资源生命周期契约
 
-> **状态：** M5.3.3 正式契约；M5.5 语义验收已完成，M5.6 Resource UX 增补已规划但未实现
+> **状态：** M5.3.3 正式契约；M5.5 语义验收与 M5.6 Resource UX truth 均已完成
 > **边界：** 本契约只收口多轮省略项继承、只读 unsupported、会话 UI 异步一致性、归档/恢复/删除与本地 artifact 生命周期；不改变 M0–M5 Canonical QueryPlan、Deterministic DAX、VerifiedFactSet、Report factual authority。
 
 ## 一、语言理解与 canonical authority
@@ -128,9 +128,11 @@ LLM 的关系草稿不是事实 authority。deterministic policy 必须结合当
 
 三种操作不得共用含糊的“移除”语义。
 
-M5.6 必须让 failed conversation 作为正式 presentation/resource 状态可管理，至少保持可查看失败结果、可重试或可显式删除；不得因 terminal failure 把资源从 Settings 隐形丢失。该展示与管理能力不得把 failed turn 提升为 committed Memory，也不得改变 archive/delete 语义。
+M5.6 必须让 failed conversation 作为正式、持久化 presentation/resource 状态可管理：Settings 可见，并支持 rename、archive、restore、delete；reload/restart 后状态一致。processing 可暂时禁止 destructive mutation，但 terminal failure 不得变成只有内存中存在的幽灵 session。该展示与管理能力不得把 failed turn 提升为 committed Memory，也不得改变 archive/delete 语义。
 
 conversation/report 的单项 action menu 必须共享 Portal/floating layer 与 viewport-aware above/below positioning，不得被列表 overflow、scrollbar 或 stacking context 裁切。Settings 二级资源页面必须有 nested scroll contract 与 sticky 或 scrollable action toolbar；在首/中/末行、滚动 top/middle/bottom、100%/125% zoom、768/1080/1440 viewport height 下，archive/delete/restore 等关键操作均须可访问。该 M5.6 UI 合同不得改变资源 API、durable delete intent 或 Grounding/DAX/MCP authority。
+
+Recent resource truth 固定如下：Settings 使用完整 namespace-scoped conversation/report pagination；Sidebar 只从同一正式 source 读取 bounded recent projection。Report projection 只包含 active report，并按正式 resource time + stable ID newest-first；rename 后同步，archive 后消失，restore 后重新出现，delete 后仅保留既有 history tombstone 边界。Conversation 固定按 `updated_at DESC, created_at DESC, stable_id DESC`，local pending/failed 也必须保存稳定 timestamps 并与 reload 后服务端顺序一致。
 
 ## 八、独立 report delete
 
@@ -202,4 +204,4 @@ Gate 不自动删除、移动或修复用户数据。无法证明为 test-owned 
 
 ---
 
-*创建日期：2026-08-24 | 最后更新：2026-08-26 M5.5 COMPLETE — 多轮语义已验收，M5.6 Resource UX Gate 未开始*
+*创建日期：2026-08-24 | 最后更新：2026-08-26 M5.6 COMPLETE — Resource UX truth 与 failed lifecycle 已通过*

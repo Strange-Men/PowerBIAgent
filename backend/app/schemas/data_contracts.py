@@ -89,6 +89,8 @@ class ColumnSchema(BaseModel):
     data_type: str
     is_hidden: bool = False
     description: Optional[str] = None
+    display_name: Optional[str] = None
+    format_string: Optional[str] = None
 
 
 class MeasureSchema(BaseModel):
@@ -97,6 +99,8 @@ class MeasureSchema(BaseModel):
     data_type: str = "decimal"
     is_hidden: bool = False
     description: Optional[str] = None
+    display_name: Optional[str] = None
+    format_string: Optional[str] = None
 
 
 class HierarchySchema(BaseModel):
@@ -112,6 +116,7 @@ class TableSchema(BaseModel):
     is_hidden: bool = False
     is_system_managed: bool = False
     description: Optional[str] = None
+    display_name: Optional[str] = None
 
 
 class RelationshipSchema(BaseModel):

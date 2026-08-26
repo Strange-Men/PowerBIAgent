@@ -93,6 +93,18 @@ describe('Sidebar conversation management', () => {
     expect(screen.getByRole('menuitem', { name: /归档/ })).toBeInTheDocument()
   })
 
+  it('keeps rename, archive, and delete available for a failed resource', () => {
+    renderSidebar({
+      ...conversation,
+      resource_status: 'failed',
+      last_error_type: 'powerbi_query_failed',
+    })
+    fireEvent.click(screen.getByRole('button', { name: /管理对话：八月销售复盘/ }))
+    expect(screen.getByRole('menuitem', { name: /重命名/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /归档/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /删除/ })).toBeEnabled()
+  })
+
   it('renames a conversation through the inline presentation title editor', async () => {
     const { onRename } = renderSidebar()
     fireEvent.click(screen.getByRole('button', { name: /管理对话：八月销售复盘/ }))

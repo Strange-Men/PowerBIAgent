@@ -13,6 +13,7 @@ from backend.app.conversation.models import (
     ConversationArchiveResult,
     ConversationHistoryCorruptionError,
     ConversationHistoryItem,
+    ConversationFailureResult,
     ConversationNotFoundError,
     ConversationReportItem,
     ConversationRenameResult,
@@ -44,6 +45,7 @@ from backend.app.persistence.models import (
     WorkMemoryModel,
 )
 from backend.app.persistence.repositories.report_artifact import _model_to_artifact
+from backend.app.persistence.repositories.common import ensure_conversation
 from backend.app.persistence.serialization import json_to_domain
 
 
@@ -141,19 +143,29 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                         snapshot.response_type if snapshot else None
                     ),
                     latest_analysis_goal=(memory.analysis_goal if memory else None),
+                    resource_status=row.resource_status,
+                    last_error_type=row.last_error_type,
                 )
             )
         return summaries
 
     @staticmethod
     def _conversation_cursor_condition(after: ConversationPosition):
-        stored_time = func.julianday(ConversationModel.updated_at)
-        cursor_time = func.julianday(after.updated_at)
+        stored_updated = func.julianday(ConversationModel.updated_at)
+        cursor_updated = func.julianday(after.updated_at)
+        stored_created = func.julianday(ConversationModel.created_at)
+        cursor_created = func.julianday(after.created_at)
         return or_(
-            stored_time < cursor_time,
+            stored_updated < cursor_updated,
             and_(
-                stored_time == cursor_time,
-                ConversationModel.conversation_id > after.conversation_id,
+                stored_updated == cursor_updated,
+                or_(
+                    stored_created < cursor_created,
+                    and_(
+                        stored_created == cursor_created,
+                        ConversationModel.conversation_id < after.conversation_id,
+                    ),
+                ),
             ),
         )
 
@@ -186,7 +198,8 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 .where(and_(*conditions))
                 .order_by(
                     func.julianday(ConversationModel.updated_at).desc(),
-                    ConversationModel.conversation_id.asc(),
+                    func.julianday(ConversationModel.created_at).desc(),
+                    ConversationModel.conversation_id.desc(),
                 )
                 .limit(limit + 1)
             )
@@ -198,6 +211,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             last = page_rows[-1]
             next_position = ConversationPosition(
                 updated_at=last.updated_at,
+                created_at=last.created_at,
                 conversation_id=last.conversation_id,
             )
         return RepositoryPage(
@@ -235,7 +249,8 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 .where(and_(*conditions))
                 .order_by(
                     func.julianday(ConversationModel.updated_at).desc(),
-                    ConversationModel.conversation_id.asc(),
+                    func.julianday(ConversationModel.created_at).desc(),
+                    ConversationModel.conversation_id.desc(),
                 )
                 .limit(limit + 1)
             )
@@ -247,6 +262,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             last = page_rows[-1]
             next_position = ConversationPosition(
                 updated_at=last.updated_at,
+                created_at=last.created_at,
                 conversation_id=last.conversation_id,
             )
         return RepositoryPage(
@@ -593,7 +609,8 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 .where(and_(*conditions))
                 .order_by(
                     func.julianday(ConversationModel.updated_at).desc(),
-                    ConversationModel.conversation_id.asc(),
+                    func.julianday(ConversationModel.created_at).desc(),
+                    ConversationModel.conversation_id.desc(),
                 )
                 .limit(limit + 1)
             )
@@ -605,6 +622,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             last = page_rows[-1]
             next_position = ConversationPosition(
                 updated_at=last.updated_at,
+                created_at=last.created_at,
                 conversation_id=last.conversation_id,
             )
         return RepositoryPage(
@@ -943,6 +961,38 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             runtime_mode=runtime_mode,
             conversation_id=conversation_id,
             title=normalized,
+            updated_at=updated_at,
+        )
+
+    async def record_failed(
+        self,
+        runtime_mode: RuntimeDataMode,
+        conversation_id: str,
+        *,
+        title: str,
+        error_type: str,
+    ) -> ConversationFailureResult:
+        normalized_title = normalize_conversation_title(title)
+        normalized_error = error_type.strip()
+        async with self._session_factory() as session:
+            async with session.begin():
+                await ensure_conversation(
+                    conversation_id, runtime_mode.value, session
+                )
+                row = await self._get_conversation(
+                    session, runtime_mode, conversation_id
+                )
+                if row.title is None:
+                    row.title = normalized_title
+                row.resource_status = "failed"
+                row.last_error_type = normalized_error
+                row.updated_at = datetime.utcnow()
+                await session.flush()
+                updated_at = row.updated_at
+        return ConversationFailureResult(
+            runtime_mode=runtime_mode,
+            conversation_id=conversation_id,
+            last_error_type=normalized_error,
             updated_at=updated_at,
         )
 

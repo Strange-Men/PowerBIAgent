@@ -10,6 +10,7 @@ from typing import Generic, TypeVar
 from backend.app.conversation.models import (
     ConversationArchiveResult,
     ConversationHistoryItem,
+    ConversationFailureResult,
     ConversationReportItem,
     ConversationSummary,
     ConversationRenameResult,
@@ -26,6 +27,7 @@ P = TypeVar("P")
 @dataclass(frozen=True)
 class ConversationPosition:
     updated_at: datetime
+    created_at: datetime
     conversation_id: str
 
 
@@ -137,6 +139,16 @@ class ConversationHistoryRepository(ABC):
     async def rename(
         self, runtime_mode: RuntimeDataMode, conversation_id: str, title: str
     ) -> ConversationRenameResult: ...
+
+    @abstractmethod
+    async def record_failed(
+        self,
+        runtime_mode: RuntimeDataMode,
+        conversation_id: str,
+        *,
+        title: str,
+        error_type: str,
+    ) -> ConversationFailureResult: ...
 
     @abstractmethod
     async def delete(

@@ -1,6 +1,6 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5 COMPLETE；M5.6—M5.9 NOT STARTED
+> **状态：** M5.5 COMPLETE；M5.6 COMPLETE；M5.7—M5.9 NOT STARTED
 > **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.9
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
@@ -131,6 +131,12 @@ Answer 不得完整重复 table。展示层必须保持 canonical/display separa
 - sticky/scroll/responsive toolbar 与 floating menus。
 
 conversation 与 report 必须共用同一 Portal/floating layer action menu，按 viewport 在目标行上方或下方定位；禁止分别维护两套易漂移逻辑，且不得被 scroll container、scrollbar 或 stacking context 裁切。Settings Resource Manager 必须有 nested scroll contract 与 sticky 或 scrollable action toolbar，responsive overflow 不得吞掉 destructive actions。
+
+Localization binding 最小字段固定为 `semantic_model_key / object_identity / object_type / canonical_name / locale / display_name / source / schema_identity`；metadata → model glossary → persisted registry → bounded runtime-object translation → safe fallback 是唯一优先级。canonical identity/value 永不因 display 改变，schema/object identity 变化使旧 cache 失效，unknown object 不可被 LLM 创造。
+
+Presentation density 固定为 scalar 纯自然语言、grouped 简短结论 + table（必要时 chart）、trend 简短趋势洞察 + table + line。formatter 覆盖 integer/decimal/percentage/currency/date/month/null，raw ISO timestamp 不可见；table/chart header 本地化不得依赖 production frontend 的 Sales-specific 字典。
+
+Resource truth 固定为 Settings 全量 query 与 Sidebar 同源 bounded projection；reports active newest-first，conversation `updated_at DESC, created_at DESC, stable_id DESC`。failed conversation 持久化并可 rename/archive/restore/delete，状态只来自正式 backend metadata。
 
 正式 Layout Gate 至少覆盖：first/middle/last row、scroll top/middle/bottom、100%/125% zoom、768/1080/1440 viewport height、Sidebar scroll、Settings nested scroll、destructive action 始终可访问、floating menu 永不裁切。
 
@@ -264,6 +270,12 @@ M5.5 完成证据：
 - backend `1823 passed, 1 skipped`，frontend `69 passed` 且 typecheck/lint/build PASS，Golden `11 passed, 1 manual-real skipped`，全部治理门禁与 Real Browser/manual acceptance PASS；
 - acceptance automation-owned residual=0；未修改 Presentation、Resource UX、Report、MCP performance 或 M5.9 实现。
 
+## 八、M5.6 checkpoint 与完成边界
+
+M5.6 固定顺序为 P1 docs/contracts、P2 formatter/localization、P3 presentation density、P4 recent resource truth/sorting、P5 failed lifecycle、P6 floating menus、P7 Settings layout、P8 cross-domain、P9 focused tests、P10 full regression/governance、P11 Real Browser/manual、P12 final docs/commit/push。任一 checkpoint FAIL 不进入下一项。
+
+完成必须同时证明：canonical/display 严格分离；scalar 去 KPI 冗余；grouped/trend Answer 不复述 table 且无 raw timestamp；Recent Reports/Settings 同 truth；Recent Conversation newest-first；failed conversation 完整 lifecycle；conversation/report menu 不裁切；Settings 长列表 action 始终可达；Sales/Education/Inventory/unknown holdout display 无 production frontend field dictionary；full gates、Rich PBIX Real/manual 与 automation-owned residual=0 全部 PASS。
+
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-08-26 M5.5 COMPLETE — M5.6 Resource UX 与 M5.9 模板规划未开始*
+*创建日期：2026-08-26 | 最后更新：2026-08-26 M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*

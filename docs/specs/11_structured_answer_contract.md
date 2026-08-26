@@ -1,6 +1,6 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M5.3 presentation contract 已实现；M5.4.2 固化 M5.6 展示重建边界（尚未实现）。
+> **状态：** M5.6 Presentation/Localization contract（COMPLETE）。
 > **边界：** 本契约只增加安全展示层，不改变 WorkMemory、QueryResult、VerifiedFactSet、ReportSpec 或 ReportArtifact 的事实权威。
 
 ## 一、目标
@@ -161,7 +161,7 @@ History API 返回保存的 user message、assistant terminal result 和同一 p
 
 必须直接覆盖：
 
-- scalar → metric；
+- scalar → natural-language text only；
 - grouped → table + bar；
 - time series → table + line；
 - QueryResult/FactSet 不一致 fail closed；
@@ -175,7 +175,7 @@ History API 返回保存的 user message、assistant terminal result 和同一 p
 
 ## 九、M5.6 canonical/display 与信息密度合同
 
-M5.4.2 只记录以下验收目标，不修改当前 presentation 实现：
+M5.6 正式实现以下验收合同：
 
 ```text
 Answer = 洞察
@@ -189,7 +189,37 @@ Chart = 趋势 / 关系
 - 内部时间 representation（例如 `Year Month=2025-01-01T00:00:00 ...`）不得原样展示给用户；显示层应使用可读的月份/年份格式，同时保留可回指 canonical value 的绑定。
 - M5.6 不得修改 Grounding authority、DAX authority 或 MCP architecture；M5.7 的 report 可读性不在本契约阶段混入。
 
+### 9.1 Canonical/display binding
+
+每个可展示字段使用以下最小 binding；`columns` 与 raw `rows` 继续保存 canonical identity/value，display metadata 与 formatted row 只是可逆 presentation projection：
+
+```text
+semantic_model_key
+object_identity
+object_type
+canonical_name
+locale
+display_name
+source
+schema_identity
+```
+
+解析优先级固定为 Power BI metadata/display description → model-scoped glossary → persisted registry → bounded LLM display translation → safe humanized canonical fallback。translation 输入只能是 runtime catalog 已存在的 bounded object ID；unknown object、candidate 外 identity 或空 canonical mapping 必须 fail closed。cache/registry key 包含 schema/object identity，任一变化不得命中旧 binding。
+
+### 9.2 Deterministic Presentation Formatter
+
+- 支持 integer、decimal、percentage、currency/general amount、date、month 与 null；例如 `6943997.509999986 → 6,943,997.51`，month canonical `2025-01-01T00:00:00 → 2025年1月`（zh-CN）或 `2025-01`（neutral）。
+- formatter 不改 raw value、row order、source fields 或 provenance。table/chart label 使用 display fields/formatted rows；前端不得按业务字段名猜 format/localization。
+- null 显示为明确占位符；percentage/currency 只由 display format metadata 或显式 presentation format kind 决定，不从字段英文名称猜测。
+
+### 9.3 Density policy
+
+- single scalar：只有简短自然语言 text，不生成 metric/KPI card。
+- grouped：简短结论 + table；有至少两个可比较项且 chart 能表达关系时才加 chart。Answer 只指出 verified extrema/count/关系，不逐行重述。
+- trend：简短趋势结论 + table + line。最高点、回落、回升等措辞只能由 VerifiedFactSet 中真实顺序和值确定；禁止输出 `Year Month=...` 或完整 15 行文本。
+- 1 row 不伪造趋势或多项比较；many rows 仍保持 bounded answer，完整明细由 table/chart 负责。
+
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-26 | M5.4.2 COMPLETE — M5.6 canonical/display 与信息密度目标*
+*最后更新：2026-08-26 | M5.6 COMPLETE — canonical/display、formatter 与 density contract*

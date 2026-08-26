@@ -59,6 +59,51 @@ describe('AssistantMessage dynamic rendering', () => {
     expect(screen.getByRole('img', { name: '销售额随月份变化' })).toBeInTheDocument()
   })
 
+  it('renders backend display bindings and formatted values without changing canonical fields', () => {
+    render(
+      <AssistantMessage
+        message={{
+          id: 'localized', role: 'assistant', kind: 'answer', content: '该期间销售额在 2025年1月达到最高点。',
+          presentation: {
+            version: 1,
+            datasets: [{
+              result_id: 'localized-result',
+              verified_fact_set_id: 'localized-facts',
+              semantic_model_key: 'desktop-model',
+              source_mode: 'real',
+              columns: ['Facts[Year Month]', '[Revenue]'],
+              rows: [['2025-01-01T00:00:00', 6943997.509999986]],
+              display_fields: [
+                {
+                  canonical_field: 'Facts[Year Month]', object_identity: 'field:Facts:Year Month', object_type: 'field',
+                  canonical_name: 'Year Month', locale: 'zh-CN', display_name: '月份', source: 'model_glossary',
+                  schema_identity: 'b'.repeat(64), format_kind: 'month',
+                },
+                {
+                  canonical_field: '[Revenue]', object_identity: 'measure:Facts:Revenue', object_type: 'measure',
+                  canonical_name: 'Revenue', locale: 'zh-CN', display_name: '收入', source: 'bounded_translation',
+                  schema_identity: 'b'.repeat(64), format_kind: 'amount',
+                },
+              ],
+              formatted_rows: [['2025年1月', '6,943,997.51']],
+              row_count: 1,
+              truncated: false,
+            }],
+            blocks: [{ type: 'table', data_reference: 'localized-result', title: '查询明细' }],
+          },
+        }}
+      />,
+    )
+
+    const table = screen.getByRole('table')
+    expect(table).toHaveTextContent('月份')
+    expect(table).toHaveTextContent('收入')
+    expect(table).toHaveTextContent('2025年1月')
+    expect(table).toHaveTextContent('6,943,997.51')
+    expect(table).not.toHaveTextContent('2025-01-01T00:00:00')
+    expect(table).not.toHaveTextContent('Facts[Year Month]')
+  })
+
   it('renders text only when no report artifact exists', () => {
     render(
       <AssistantMessage

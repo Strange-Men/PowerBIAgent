@@ -138,6 +138,29 @@ async def touch_conversation(
     )
 
 
+async def set_conversation_resource_state(
+    conversation_id: str,
+    runtime_mode_value: str,
+    session: AsyncSession,
+    *,
+    status: str,
+    error_type: str | None,
+) -> None:
+    """Persist safe UI resource state without changing Memory/factual truth."""
+    if status not in {"ready", "failed"}:
+        raise PersistenceRepositoryError("conversation_resource_status_invalid")
+    await session.execute(
+        update(ConversationModel)
+        .where(
+            and_(
+                ConversationModel.runtime_mode == runtime_mode_value,
+                ConversationModel.conversation_id == conversation_id,
+            )
+        )
+        .values(resource_status=status, last_error_type=error_type)
+    )
+
+
 async def set_default_conversation_title(
     conversation_id: str,
     runtime_mode_value: str,

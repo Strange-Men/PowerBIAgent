@@ -43,6 +43,8 @@ from backend.app.conversation.models import (
     ConversationNotFoundError,
     ConversationReportPage,
     ConversationRenameRequest,
+    ConversationFailureRequest,
+    ConversationFailureResult,
     ConversationRenameResult,
     ConversationRestoreResult,
     ReportResourcePage,
@@ -386,6 +388,28 @@ async def rename_conversation(
     """Update presentation-only title without changing conversation identity."""
     try:
         return await service.rename(runtime_mode, conversation_id, body.title)
+    except Exception as exc:
+        _raise_conversation_query_error(exc)
+
+
+@router.post(
+    "/api/v1/conversations/{conversation_id}/failure",
+    response_model=ConversationFailureResult,
+)
+async def record_failed_conversation(
+    conversation_id: str,
+    body: ConversationFailureRequest,
+    runtime_mode: RuntimeDataMode,
+    service: ConversationHistoryService = Depends(get_conversation_history_service),
+):
+    """Persist safe failed-resource metadata; never commits Memory or facts."""
+    try:
+        return await service.record_failed(
+            runtime_mode,
+            conversation_id,
+            title=body.title,
+            error_type=body.error_type,
+        )
     except Exception as exc:
         _raise_conversation_query_error(exc)
 

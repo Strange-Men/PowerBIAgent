@@ -106,6 +106,7 @@ from backend.app.facts import (
     FactBoundedReportBuilder,
     FactOutputValidator,
     FactVerificationError,
+    FactType,
     VerifiedFactSet,
     VerifiedFactSetBuilder,
 )
@@ -126,6 +127,13 @@ from backend.app.report.resources import (
     ReportRepository,
 )
 from backend.app.presentation.builder import StructuredPresentationBuilder
+from backend.app.presentation.localization import (
+    BoundedLLMDisplayTranslator,
+    DisplayLocalization,
+    DisplayLocalizationError,
+    DisplayLocalizationService,
+    JsonDisplayLocalizationRegistry,
+)
 from backend.app.presentation.models import PresentationEnvelope
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
@@ -620,6 +628,7 @@ class DeepSeekTurnService:
         # ── 8.1 Business Semantic Grounding ──
         # QueryPlan LLM 在此仅是语言草稿；canonical semantic slots 只能由
         # validated catalog + runtime members + deterministic transition 决定。
+        catalog = None
         if not self.powerbi.is_mock:
             try:
                 catalog = SemanticCatalogBuilder().build(
@@ -1189,13 +1198,81 @@ class DeepSeekTurnService:
         answer_text: Optional[str] = None
         report_data: Optional[dict[str, Any]] = None
         response_type: str = ""
+        display_bindings: dict[str, DisplayLocalization] | None = None
 
         if intent.intent == IntentType.DATA_QUESTION:
             response_type = "answer"
             try:
                 if verified_facts is not None:
+                    if catalog is not None:
+                        verified_fields = {
+                            field
+                            for fact in verified_facts.facts
+                            if fact.fact_type in {
+                                FactType.SCALAR_METRIC,
+                                FactType.GROUPED_METRIC,
+                                FactType.RANKING,
+                                FactType.MAXIMUM,
+                                FactType.MINIMUM,
+                            }
+                            for field in fact.source_fields
+                        }
+                        presentation_fields = [
+                            field
+                            for field in query_result.columns
+                            if field in verified_fields
+                        ]
+                        registry = JsonDisplayLocalizationRegistry(
+                            self.settings.presentation_localization_registry_path
+                        )
+                        localization = DisplayLocalizationService(
+                            catalog,
+                            registry=registry,
+                            translator=BoundedLLMDisplayTranslator(observed),
+                        )
+                        try:
+                            resolved = await localization.resolve_fields(
+                                presentation_fields,
+                                locale="zh-CN",
+                                table_hints=query_plan.dimension_tables,
+                            )
+                        except DisplayLocalizationError as exc:
+                            trace.record(
+                                "presentation_localization_fallback",
+                                trace_id=trace_id,
+                                request_id=effective_req_id,
+                                data_summary={"reason": str(exc)},
+                            )
+                            resolved = await DisplayLocalizationService(
+                                catalog
+                            ).resolve_fields(
+                                presentation_fields,
+                                locale="zh-CN",
+                                table_hints=query_plan.dimension_tables,
+                            )
+                        display_bindings = dict(
+                            zip(presentation_fields, resolved)
+                        )
+                        trace.record(
+                            "presentation_localization_resolved",
+                            trace_id=trace_id,
+                            request_id=effective_req_id,
+                            data_summary={
+                                "field_count": len(resolved),
+                                "sources": sorted({
+                                    item.source.value for item in resolved
+                                }),
+                                "schema_identity": (
+                                    resolved[0].schema_identity
+                                    if resolved else None
+                                ),
+                            },
+                        )
                     response_obj = FactBoundedAnswerBuilder().build(
-                        query_plan, query_result, verified_facts
+                        query_plan,
+                        query_result,
+                        verified_facts,
+                        display_bindings=display_bindings,
                     )
                 else:
                     answer_service = DeepSeekAnswerService(
@@ -1394,6 +1471,7 @@ class DeepSeekTurnService:
                 query_result,
                 verified_facts,
                 answer_text,
+                display_bindings=display_bindings,
             )
         elif report_data is not None:
             presentation = StructuredPresentationBuilder.build_report(

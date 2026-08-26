@@ -2,6 +2,7 @@ import { apiBaseUrl } from '../config'
 import type {
   ChatRequest,
   ChatResponse,
+  ConversationFailureResult,
   ConversationHistoryPage,
   ConversationListPage,
   ConversationReportItem,
@@ -175,11 +176,23 @@ export async function renameConversation(
   runtimeMode: RuntimeMode,
   conversationId: string,
   title: string,
-): Promise<{ title: string }> {
+): Promise<{ title: string; updated_at: string }> {
   const query = queryString({ runtime_mode: runtimeMode })
-  return requestJson<{ title: string }>(
+  return requestJson<{ title: string; updated_at: string }>(
     `/api/v1/conversations/${encodeURIComponent(conversationId)}?${query}`,
     { method: 'PATCH', body: JSON.stringify({ title }) },
+  )
+}
+
+export async function recordFailedConversation(
+  runtimeMode: RuntimeMode,
+  conversationId: string,
+  failure: { title: string; error_type: string },
+): Promise<ConversationFailureResult> {
+  const query = queryString({ runtime_mode: runtimeMode })
+  return requestJson<ConversationFailureResult>(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/failure?${query}`,
+    { method: 'POST', body: JSON.stringify(failure) },
   )
 }
 
@@ -278,21 +291,7 @@ export async function listConversationReports(
 
 export async function listRecentReports(
   sourceMode: RuntimeMode,
-  conversationIds: string[],
 ): Promise<ConversationReportItem[]> {
-  const requests = conversationIds.map((conversationId) =>
-    listConversationReports(sourceMode, conversationId, 6),
-  )
-  const pages = await Promise.allSettled(requests)
-  const reports = pages.flatMap((result) =>
-    result.status === 'fulfilled' ? result.value.items : [],
-  )
-  return reports
-    .filter((report) => !report.archived_at)
-    .filter(
-      (report, index, all) =>
-        all.findIndex((candidate) => candidate.report_id === report.report_id) === index,
-    )
-    .sort((left, right) => right.stored_at.localeCompare(left.stored_at))
-    .slice(0, 8)
+  const page = await listManagedReports(sourceMode, 'active', 8)
+  return page.items
 }

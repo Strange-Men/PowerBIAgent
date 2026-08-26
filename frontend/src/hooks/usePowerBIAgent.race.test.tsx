@@ -8,7 +8,7 @@ import type {
   ConversationSummary,
   RuntimeMode,
 } from '../types'
-import { usePowerBIAgent } from './usePowerBIAgent'
+import { compareConversationRecency, usePowerBIAgent } from './usePowerBIAgent'
 
 const api = vi.hoisted(() => ({
   archiveConversation: vi.fn(),
@@ -21,6 +21,7 @@ const api = vi.hoisted(() => ({
   listRecentReports: vi.fn(),
   renameConversation: vi.fn(),
   renameReport: vi.fn(),
+  recordFailedConversation: vi.fn(),
   restoreConversation: vi.fn(),
   searchConversations: vi.fn(),
   sendChat: vi.fn(),
@@ -42,6 +43,18 @@ function summary(conversationId: string): ConversationSummary {
     latest_analysis_goal: null,
   }
 }
+
+it('sorts conversation resource truth by updated, created, then stable id descending', () => {
+  const rows = [
+    { ...summary('conv-a'), created_at: '2026-08-24T10:00:01', updated_at: '2026-08-24T10:01:00' },
+    { ...summary('conv-b'), created_at: '2026-08-24T10:00:01', updated_at: '2026-08-24T10:01:00' },
+    { ...summary('conv-z'), created_at: '2026-08-24T10:00:00', updated_at: '2026-08-24T10:01:00' },
+    { ...summary('conv-c'), created_at: '2026-08-24T10:03:00', updated_at: '2026-08-24T10:00:00' },
+  ]
+  expect(rows.sort(compareConversationRecency).map((item) => item.conversation_id)).toEqual([
+    'conv-b', 'conv-a', 'conv-z', 'conv-c',
+  ])
+})
 
 function history(
   conversationId: string,
@@ -140,6 +153,38 @@ beforeEach(() => {
       availability_status: 'available',
     }),
   )
+  api.recordFailedConversation.mockResolvedValue({
+    runtime_mode: 'real',
+    conversation_id: 'failed',
+    resource_status: 'failed',
+    last_error_type: 'client_request_failed',
+    updated_at: '2026-08-24T10:05:00',
+  })
+})
+
+it('persists a rejected chat as a manageable failed conversation resource', async () => {
+  api.sendChat.mockRejectedValue(new Error('network failed'))
+  const { result } = renderHook(() => usePowerBIAgent())
+  await waitFor(() => expect(result.current.loadingSemanticModels).toBe(false))
+
+  let conversationId = ''
+  await act(async () => {
+    conversationId = result.current.startNewChat()
+    await result.current.submitMessage('will fail')
+  })
+
+  expect(api.recordFailedConversation).toHaveBeenCalledWith(
+    'real',
+    conversationId,
+    expect.objectContaining({
+      title: 'will fail',
+      error_type: 'client_request_failed',
+    }),
+  )
+  expect(result.current.recentConversations[0]).toMatchObject({
+    conversation_id: conversationId,
+    local_status: 'failed',
+  })
 })
 
 describe('conversation history stale-response protection', () => {

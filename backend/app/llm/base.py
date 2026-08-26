@@ -16,6 +16,7 @@ class LLMTask(str, Enum):
     """LLM 任务类型枚举 — 避免任意字符串拼写错误"""
     INTENT_RECOGNITION = "intent_recognition"
     SEMANTIC_SELECTION = "semantic_selection"
+    DISPLAY_TRANSLATION = "display_translation"
     QUERY_PLAN = "query_plan"
     DAX = "dax"
     ANSWER = "answer"

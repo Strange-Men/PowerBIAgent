@@ -2,6 +2,21 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.6] — 2026-08-26
+
+### Presentation、Localization 与 Resource UX truth 最终收口（COMPLETE）
+
+- 先固化 canonical/display 分离、model/object/schema-scoped Localization、deterministic number/time formatter 与 `Answer = 洞察 / Table = 明细 / Chart = 趋势关系` 合同；single scalar 只保留自然语言文本，grouped/trend 不逐行复述 table，显示层禁止泄漏 raw ISO timestamp。
+- Localization 优先级固定为 Power BI metadata → model-scoped glossary → persisted registry → bounded runtime-object translation → safe humanized fallback；canonical identity、QueryResult/VerifiedFactSet 原值与 provenance 不变，schema/object identity 变化使旧 display cache 失效。
+- Sidebar Recent Reports 固定为 Settings 正式 report source 的 active bounded newest-first projection；conversation 排序固定 `updated_at DESC, created_at DESC, stable_id DESC`。failed conversation 必须成为持久化、可 rename/archive/restore/delete 的正式资源。
+- conversation/report 共用 Portal-based `FloatingActionMenu`，支持 above/below、viewport clamp、outside click、Escape、focus restore 与 resize/scroll 处理；Settings 使用 fixed shell、独立 content/list scroll 与始终可达的 resource toolbar。
+- P1—P12 已顺序完成：Sales/Education/Inventory/unknown holdout display、20/50/100 resources、首中末行、滚动 top/middle/bottom、768/1080/1440 width、600/768/1080 height 与 100%/125% zoom 均通过。
+- Real Rich PBIX 的 scalar/grouped/monthly trend/time-filter 四类问题通过；月度趋势由 Sales model-scoped glossary 的 `YearMonth → Date[Date]` metadata binding 驱动，Answer 只总结峰值/回落/回升，table 使用中文月份且折线图不泄漏 raw ISO timestamp。
+- Fresh backend full `1849 passed, 1 skipped`；frontend typecheck/lint/build PASS、Vitest `79 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `120`、Repository Safety `302`、Error Ledger `34`、Documentation/Artifact Governance、compileall、Alembic fresh/head-idempotent 与 `git diff --check` PASS。automation-owned P11 conversation teardown 后 residual=0。
+- 永久边界：不修改 M5.5 semantic authority、DAX/MCP、report renderer 或 M5.7—M5.9 实现；不修改旧 `m5/frontend`。
+
+**Settings.version:** M5.6
+
 ## [M5.5] — 2026-08-26
 
 ### Semantic correctness 与 capability boundary（COMPLETE）

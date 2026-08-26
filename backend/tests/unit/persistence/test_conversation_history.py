@@ -302,28 +302,29 @@ class TestRecentConversations:
     async def test_recent_order_is_deterministic_with_stable_tie_breaker(
         self, history_env: HistoryEnvironment
     ) -> None:
-        for conversation_id, updated_at in (
-            ("conv-b", UTC_BASE + timedelta(minutes=2)),
-            ("conv-a", UTC_BASE + timedelta(minutes=2)),
-            ("conv-c", UTC_BASE + timedelta(minutes=1)),
+        for conversation_id, created_at, updated_at in (
+            ("conv-z", UTC_BASE, UTC_BASE + timedelta(minutes=2)),
+            ("conv-a", UTC_BASE + timedelta(seconds=1), UTC_BASE + timedelta(minutes=2)),
+            ("conv-b", UTC_BASE + timedelta(seconds=1), UTC_BASE + timedelta(minutes=2)),
+            ("conv-c", UTC_BASE + timedelta(minutes=3), UTC_BASE + timedelta(minutes=1)),
         ):
             await _insert_conversation(
                 history_env.session_factory,
                 mode=RuntimeDataMode.MOCK,
                 conversation_id=conversation_id,
-                created_at=UTC_BASE,
+                created_at=created_at,
                 updated_at=updated_at,
             )
 
         service = ConversationHistoryService(history_env.repository)
         first = await service.list_recent(RuntimeDataMode.MOCK, limit=2)
-        assert [item.conversation_id for item in first.items] == ["conv-a", "conv-b"]
+        assert [item.conversation_id for item in first.items] == ["conv-b", "conv-a"]
         assert first.next_cursor
 
         second = await service.list_recent(
             RuntimeDataMode.MOCK, limit=2, cursor=first.next_cursor
         )
-        assert [item.conversation_id for item in second.items] == ["conv-c"]
+        assert [item.conversation_id for item in second.items] == ["conv-z", "conv-c"]
         assert second.next_cursor is None
 
     @pytest.mark.asyncio
@@ -1007,11 +1008,79 @@ class TestSearch:
             limit=2,
             cursor=first.next_cursor,
         )
-        assert [x.conversation_id for x in first.items] == ["conv-a", "conv-b"]
-        assert [x.conversation_id for x in second.items] == ["conv-c"]
+        assert [x.conversation_id for x in first.items] == ["conv-c", "conv-b"]
+        assert [x.conversation_id for x in second.items] == ["conv-a"]
 
 
 class TestArchiveDeleteAndErrors:
+    @pytest.mark.asyncio
+    async def test_failed_resource_survives_restart_and_full_lifecycle(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        service = ConversationHistoryService(history_env.repository)
+        failed = await service.record_failed(
+            RuntimeDataMode.REAL,
+            "failed-resource",
+            title="失败的销售问题",
+            error_type="client_request_failed",
+        )
+        assert failed.resource_status == "failed"
+
+        restarted = ConversationHistoryService(
+            SQLiteConversationHistoryRepository(history_env.session_factory)
+        )
+        recent = await restarted.list_recent(RuntimeDataMode.REAL, limit=20)
+        assert len(recent.items) == 1
+        assert recent.items[0].resource_status == "failed"
+        assert recent.items[0].last_error_type == "client_request_failed"
+
+        renamed = await restarted.rename(
+            RuntimeDataMode.REAL, "failed-resource", "可管理的失败会话"
+        )
+        assert renamed.title == "可管理的失败会话"
+        await restarted.archive(RuntimeDataMode.REAL, "failed-resource")
+        archived = await restarted.list_archived(RuntimeDataMode.REAL, limit=20)
+        assert archived.items[0].resource_status == "failed"
+        await restarted.restore(RuntimeDataMode.REAL, "failed-resource")
+        restored = await restarted.list_recent(RuntimeDataMode.REAL, limit=20)
+        assert restored.items[0].resource_status == "failed"
+        deleted = await restarted.delete(RuntimeDataMode.REAL, "failed-resource")
+        assert deleted.deleted is True
+        assert (
+            await restarted.list_recent(RuntimeDataMode.REAL, limit=20)
+        ).items == []
+
+    @pytest.mark.asyncio
+    async def test_failed_snapshot_sets_formal_resource_metadata_without_memory_commit(
+        self, history_env: HistoryEnvironment
+    ) -> None:
+        snapshot = _snapshot(
+            mode=RuntimeDataMode.REAL,
+            conversation_id="failed-snapshot",
+            request_id="failed-request",
+            answer=None,
+        ).model_copy(
+            update={
+                "terminal_state": "tool_failed",
+                "response_type": "",
+                "error_type": "powerbi_query_failed",
+                "memory_commit": False,
+            }
+        )
+        await history_env.snapshot_repository.save(snapshot, RuntimeDataMode.REAL)
+
+        item = (
+            await ConversationHistoryService(history_env.repository).list_recent(
+                RuntimeDataMode.REAL, limit=20
+            )
+        ).items[0]
+        assert item.resource_status == "failed"
+        assert item.last_error_type == "powerbi_query_failed"
+        history = await ConversationHistoryService(
+            history_env.repository
+        ).get_history(RuntimeDataMode.REAL, "failed-snapshot", limit=20)
+        assert history.items[0].memory_commit is False
+
     @pytest.mark.asyncio
     async def test_archive_and_delete_affect_one_namespace_only(
         self, history_env: HistoryEnvironment

@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M5.5", frozen=True)
+    version: str = Field(default="M5.6", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -120,6 +120,10 @@ class Settings(BaseSettings):
     report_artifacts_path: str = Field(
         default="local_state/reports",
         description="受管 HTML report 根目录；测试必须覆盖到临时目录",
+    )
+    presentation_localization_registry_path: str = Field(
+        default="local_state/runtime/display_localizations.json",
+        description="model/object/schema-scoped 展示本地化 registry",
     )
 
     @property

@@ -4,7 +4,13 @@ import pytest
 
 from backend.app.facts import VerifiedFactSetBuilder
 from backend.app.presentation.builder import StructuredPresentationBuilder
+from backend.app.presentation.formatter import PresentationFormatKind
+from backend.app.presentation.localization import (
+    DisplayLocalization,
+    DisplayLocalizationSource,
+)
 from backend.app.presentation.models import PresentationEnvelope
+from backend.app.query_plan.semantic_catalog import SemanticObjectType
 from backend.app.schemas.data_contracts import CanonicalQueryPlan, QueryResult
 
 
@@ -28,7 +34,29 @@ def _result(columns: list[str], rows: list[list[object]]) -> QueryResult:
     )
 
 
-def test_scalar_metric_references_the_single_verified_dataset() -> None:
+def _binding(
+    canonical_field: str,
+    canonical_name: str,
+    display_name: str,
+    *,
+    object_type: SemanticObjectType,
+    kind: PresentationFormatKind,
+) -> tuple[str, DisplayLocalization]:
+    return canonical_field, DisplayLocalization(
+        semantic_model_key="model",
+        object_identity=f"{object_type.value}:Facts:{canonical_name}",
+        object_type=object_type,
+        canonical_name=canonical_name,
+        locale="zh-CN",
+        display_name=display_name,
+        source=DisplayLocalizationSource.MODEL_GLOSSARY,
+        schema_identity="b" * 64,
+        data_type="decimal" if object_type == SemanticObjectType.MEASURE else "string",
+        format_kind=kind,
+    )
+
+
+def test_scalar_uses_text_only_without_redundant_metric_card() -> None:
     plan = _plan()
     result = _result(["[Total Sales]"], [[123.5]])
     facts = VerifiedFactSetBuilder().build(plan, result)
@@ -39,10 +67,7 @@ def test_scalar_metric_references_the_single_verified_dataset() -> None:
 
     assert presentation.datasets[0].rows == [[123.5]]
     assert presentation.datasets[0].verified_fact_set_id == facts.fact_set_id
-    metric = next(block for block in presentation.blocks if block.type == "metric")
-    assert metric.data_reference == result.result_id
-    assert metric.value_field == "[Total Sales]"
-    assert not any(block.type in {"table", "chart"} for block in presentation.blocks)
+    assert [block.type for block in presentation.blocks] == ["text"]
 
 
 def test_grouped_result_produces_table_and_bar_without_copying_rows() -> None:
@@ -90,11 +115,9 @@ def test_metric_table_and_chart_references_resolve_to_verified_dataset() -> None
     scalar = StructuredPresentationBuilder.build_answer(
         scalar_plan, scalar_result, scalar_facts, "总销售额为 123.5。"
     )
-    metric = next(block for block in scalar.blocks if block.type == "metric")
     scalar_dataset = scalar.datasets[0]
-    assert metric.data_reference == scalar_dataset.result_id
-    assert metric.value_field in scalar_dataset.columns
-    assert metric.row_index < scalar_dataset.row_count
+    assert [block.type for block in scalar.blocks] == ["text"]
+    assert scalar_dataset.rows == [[123.5]]
 
     grouped_plan = _plan(dimensions=["Category"])
     grouped_result = _result(
@@ -127,6 +150,46 @@ def test_date_dimension_selects_line_chart() -> None:
 
     chart = next(block for block in presentation.blocks if block.type == "chart")
     assert chart.visual_type == "line"
+
+
+def test_display_fields_and_formatted_rows_do_not_change_canonical_facts() -> None:
+    plan = _plan(dimensions=["Year Month"])
+    result = _result(
+        ["Facts[Year Month]", "[Total Sales]"],
+        [["2025-01-01T00:00:00", 6943997.509999986]],
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    display_bindings = dict([
+        _binding(
+            "Facts[Year Month]",
+            "Year Month",
+            "月份",
+            object_type=SemanticObjectType.FIELD,
+            kind=PresentationFormatKind.DATE,
+        ),
+        _binding(
+            "[Total Sales]",
+            "Total Sales",
+            "销售额",
+            object_type=SemanticObjectType.MEASURE,
+            kind=PresentationFormatKind.AMOUNT,
+        ),
+    ])
+
+    presentation = StructuredPresentationBuilder.build_answer(
+        plan,
+        result,
+        facts,
+        "该期间销售额明细如下。",
+        display_bindings=display_bindings,
+    )
+
+    dataset = presentation.datasets[0]
+    assert dataset.columns == result.columns
+    assert dataset.rows == result.rows
+    assert [field.display_name for field in dataset.display_fields] == ["月份", "销售额"]
+    assert dataset.formatted_rows == [["2025年1月", "6,943,997.51"]]
+    assert "2025-01-01T00:00:00" not in str(dataset.formatted_rows)
 
 
 def test_mismatched_fact_authority_fails_closed() -> None:

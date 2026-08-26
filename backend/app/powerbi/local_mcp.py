@@ -1710,6 +1710,7 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                     "systemManaged",
                 ),
                 description=cls._optional_text(raw_table, "description"),
+                display_name=cls._optional_text(raw_table, "displayName"),
             )
 
         if not tables_by_name:
@@ -1728,6 +1729,8 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 data_type=cls._required_schema_text(raw_column, "dataType"),
                 is_hidden=cls._optional_bool(raw_column, "isHidden"),
                 description=cls._optional_text(raw_column, "description"),
+                display_name=cls._optional_text(raw_column, "displayName"),
+                format_string=cls._optional_text(raw_column, "formatString"),
             ))
 
         seen_measures: set[tuple[str, str]] = set()
@@ -1747,6 +1750,8 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 data_type=cls._required_schema_text(raw_measure, "dataType"),
                 is_hidden=cls._optional_bool(raw_measure, "isHidden"),
                 description=cls._optional_text(raw_measure, "description"),
+                display_name=cls._optional_text(raw_measure, "displayName"),
+                format_string=cls._optional_text(raw_measure, "formatString"),
             ))
 
         seen_hierarchies: set[tuple[str, str]] = set()

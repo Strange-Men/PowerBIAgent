@@ -96,6 +96,17 @@ class ConversationModel(Base):
         nullable=True,
         comment="Presentation-only conversation title",
     )
+    resource_status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        server_default="ready",
+        comment="Presentation resource state: ready | failed",
+    )
+    last_error_type: Mapped[Optional[str]] = mapped_column(
+        String(80),
+        nullable=True,
+        comment="Safe terminal/client failure category; never raw error text",
+    )
 
     __table_args__ = (
         Index(
@@ -103,6 +114,7 @@ class ConversationModel(Base):
             "runtime_mode",
             "archived_at",
             "updated_at",
+            "created_at",
             "conversation_id",
         ),
     )

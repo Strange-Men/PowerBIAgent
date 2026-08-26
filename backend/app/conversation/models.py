@@ -35,6 +35,8 @@ class ConversationSummary(BaseModel):
     latest_terminal_state: str | None = None
     latest_response_type: str | None = None
     latest_analysis_goal: str | None = None
+    resource_status: Literal["ready", "failed"] = "ready"
+    last_error_type: str | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -188,6 +190,23 @@ class ConversationRenameResult(BaseModel):
     runtime_mode: RuntimeDataMode
     conversation_id: str
     title: str
+    updated_at: datetime
+
+    model_config = ConfigDict(frozen=True)
+
+
+class ConversationFailureRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+    error_type: str = Field(min_length=1, max_length=80)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ConversationFailureResult(BaseModel):
+    runtime_mode: RuntimeDataMode
+    conversation_id: str
+    resource_status: Literal["failed"] = "failed"
+    last_error_type: str
     updated_at: datetime
 
     model_config = ConfigDict(frozen=True)

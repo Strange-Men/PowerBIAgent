@@ -43,6 +43,7 @@ from backend.app.schemas.data_contracts import (
     PowerBIError,
     QueryPlan,
     QueryResult,
+    RelationshipSchema,
     SemanticModelSchema,
     StructuredFilter,
     TableSchema,
@@ -1300,6 +1301,104 @@ class _M533MultiTurnAdapter(_M24FakeLocalPowerBIAdapter):
         )
 
 
+class _M56MonthlyTrendProvider(LLMProvider):
+    @property
+    def provider_name(self) -> str:
+        return "deepseek"
+
+    @property
+    def is_mock(self) -> bool:
+        return False
+
+    async def generate(self, request, output_type):
+        if request.task == LLMTask.INTENT_RECOGNITION:
+            structured = IntentSpec(
+                intent=IntentType.DATA_QUESTION,
+                confidence=0.99,
+                normalized_question="每个月销售额趋势",
+                detected_measures=["销售额"],
+                turn_relation=TurnRelation.FRESH_QUESTION,
+            )
+        elif request.task == LLMTask.QUERY_PLAN:
+            structured = QueryPlan(
+                normalized_question="每个月销售额趋势",
+                semantic_model_key="local_desktop_model",
+                measures=["Total Sales"],
+            )
+        else:
+            raise AssertionError(f"unexpected LLM task: {request.task}")
+        return LLMResponse(
+            content="{}",
+            structured=structured,
+            model="fake-deepseek",
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        )
+
+
+class _M56MonthlyTrendAdapter(_M24FakeLocalPowerBIAdapter):
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self.last_dax = ""
+
+    async def get_semantic_model_schema(
+        self, semantic_model_key: str
+    ) -> SemanticModelSchema:
+        self.schema_calls += 1
+        assert semantic_model_key == "local_desktop_model"
+        return SemanticModelSchema(
+            name="Local Desktop Model",
+            key=semantic_model_key,
+            tables=[
+                TableSchema(
+                    name="Sales",
+                    columns=[
+                        ColumnSchema(name="Category", data_type="string"),
+                        ColumnSchema(name="Product", data_type="string"),
+                        ColumnSchema(name="OrderDate", data_type="datetime"),
+                    ],
+                    measures=[
+                        MeasureSchema(name="Total Sales", data_type="decimal"),
+                        MeasureSchema(name="Total Quantity", data_type="int64"),
+                    ],
+                ),
+                TableSchema(
+                    name="Date",
+                    columns=[
+                        ColumnSchema(name="Date", data_type="datetime"),
+                        ColumnSchema(name="YearMonth", data_type="datetime"),
+                    ],
+                ),
+            ],
+            relationships=[
+                RelationshipSchema(
+                    from_table="Sales",
+                    from_column="OrderDate",
+                    to_table="Date",
+                    to_column="Date",
+                )
+            ],
+        )
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.dax_calls += 1
+        self.last_dax = request.dax
+        assert "'Date'[YearMonth]" in request.dax
+        return QueryResult(
+            result_id=f"qr-{request.request_id}",
+            semantic_model_key=request.semantic_model_key,
+            columns=["Date[YearMonth]", "[Total Sales]"],
+            rows=[
+                ["2025-01-01T00:00:00", 100.0],
+                ["2025-02-01T00:00:00", 140.0],
+                ["2025-03-01T00:00:00", 90.0],
+                ["2025-04-01T00:00:00", 110.0],
+            ],
+            row_count=4,
+            source_mode="real",
+            request_id=request.request_id,
+        )
+
+
 class _M24PreviewMissingRowsAdapter(_M24FakeLocalPowerBIAdapter):
     async def execute_dax(self, request: DAXRequest) -> QueryResult:
         self.dax_calls += 1
@@ -1596,6 +1695,26 @@ def _patch_m533_multi_turn_composition(monkeypatch):
         deepseek_api_key="test-key-not-real",
     )
     return main_module.create_app(settings=settings), provider
+
+
+def _patch_m56_monthly_trend_composition(monkeypatch):
+    import backend.app.llm.factory as llm_factory
+    import backend.app.main as main_module
+
+    provider = _M56MonthlyTrendProvider()
+    registry = LLMProviderRegistry()
+    registry.register("deepseek", provider, set_default=True)
+    monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+    monkeypatch.setattr(
+        main_module, "LocalMCPPowerBIAdapter", _M56MonthlyTrendAdapter
+    )
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        deepseek_api_key="test-key-not-real",
+    )
+    return main_module.create_app(settings=settings)
 
 
 class _PendingClarificationProvider(LLMProvider):
@@ -2410,7 +2529,11 @@ class TestM24DeepSeekLocalChat:
             )
             assert "Total Sales" in str(query_plan_prompt.messages)
             assert "local_desktop_model" in str(query_plan_prompt.messages)
-            assert first_data["answer"] == "Total Sales为100。"
+            assert first_data["answer"] == "销售额为100.00。"
+            assert [
+                block["type"] for block in first_data["presentation"]["blocks"]
+            ] == ["text"]
+            assert first_data["presentation"]["datasets"][0]["rows"] == [[100.0]]
             audit = first_data["execution_audit"]
             assert audit["deterministic_dax"] is True
             assert audit["layer3_pass"] is True
@@ -2419,6 +2542,61 @@ class TestM24DeepSeekLocalChat:
             assert audit["factual_validation_pass"] is True
             assert audit["llm_dax_call_count"] == 0
             assert audit["memory_version"] == 1
+
+    @pytest.mark.asyncio
+    async def test_monthly_sales_trend_uses_metadata_and_readable_presentation(
+        self, monkeypatch
+    ):
+        app = _patch_m56_monthly_trend_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+
+        async with app.router.lifespan_context(app):
+            adapter = app.state.turn_service.powerbi
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                response = await c.post("/api/v1/chat", json={
+                    "message": "每个月销售额趋势",
+                    "conversation_id": "m56-monthly-sales-trend",
+                    "request_id": "m56-monthly-sales-trend-request",
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+        body = response.json()
+        assert response.status_code == 200, body
+        assert body["terminal_state"] == "completed", (
+            body.get("error_type"), body.get("execution_audit")
+        )
+        assert body["memory_commit"] is True
+        audit = body["execution_audit"]
+        plan = audit["canonical_query_plan"]
+        assert plan["dimensions"] == ["YearMonth"]
+        assert plan["dimension_tables"] == {"YearMonth": "Date"}
+        assert plan["dimension_order"] == "asc"
+        assert audit["dax_executed"] is True
+        assert adapter.dax_calls == 1
+        assert "'Date'[YearMonth]" in adapter.last_dax
+
+        presentation = body["presentation"]
+        assert [block["type"] for block in presentation["blocks"]] == [
+            "text", "table", "chart"
+        ]
+        chart = next(
+            block for block in presentation["blocks"] if block["type"] == "chart"
+        )
+        assert chart["visual_type"] == "line"
+        dataset = presentation["datasets"][0]
+        assert "T00:00:00" not in str(dataset["formatted_rows"])
+        assert [row[0] for row in dataset["formatted_rows"]] == [
+            "2025年1月", "2025年2月", "2025年3月", "2025年4月"
+        ]
+        answer = body["answer"]
+        assert "2025年2月" in answer
+        assert "达到最高点" in answer
+        assert "随后回落" in answer
+        assert "2025年4月出现回升" in answer
+        assert "T00:00:00" not in answer
+        assert "2025年1月" not in answer
+        assert "2025年3月" not in answer
+        assert len(answer) < 180
 
     @pytest.mark.asyncio
     async def test_preview_missing_rows_is_controlled_and_never_falls_back(self, monkeypatch):

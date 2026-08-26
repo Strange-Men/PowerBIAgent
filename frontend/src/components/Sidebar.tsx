@@ -26,7 +26,12 @@ import type {
   ConversationSummary,
   RuntimeMode,
 } from '../types'
+import { FloatingActionMenu } from './FloatingActionMenu'
 import { ResourceManager } from './ResourceManager'
+
+type ActionMenu =
+  | { anchor: HTMLButtonElement; id: string; type: 'conversation' }
+  | { anchor: HTMLButtonElement; id: string; type: 'report' }
 
 interface SidebarProps {
   collapsed: boolean
@@ -100,12 +105,11 @@ export function Sidebar({
   const [searching, setSearching] = useState(false)
   const [searchResults, setSearchResults] = useState<ConversationSummary[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
-  const [actionConversationId, setActionConversationId] = useState<string | null>(null)
+  const [actionMenu, setActionMenu] = useState<ActionMenu | null>(null)
   const [editingConversationId, setEditingConversationId] = useState<string | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   const [managingConversationId, setManagingConversationId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [actionReportId, setActionReportId] = useState<string | null>(null)
   const [managingReportId, setManagingReportId] = useState<string | null>(null)
   const [recentOpen, setRecentOpen] = useState(true)
   const [reportsOpen, setReportsOpen] = useState(true)
@@ -115,8 +119,7 @@ export function Sidebar({
   useEffect(() => {
     const closeMenus = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      setActionConversationId(null)
-      setActionReportId(null)
+      setActionMenu(null)
       setEditingConversationId(null)
       setSearchOpen(false)
       setUserMenuOpen(false)
@@ -126,12 +129,8 @@ export function Sidebar({
       const target = event.target
       if (
         target instanceof Element &&
-        !target.closest('[data-conversation-actions]') &&
-        !target.closest('[data-report-actions]') &&
         !target.closest('[data-account-actions]')
       ) {
-        setActionConversationId(null)
-        setActionReportId(null)
         setUserMenuOpen(false)
       }
     }
@@ -166,7 +165,7 @@ export function Sidebar({
     setActionError(null)
     try {
       await action()
-      setActionConversationId(null)
+      setActionMenu(null)
       setEditingConversationId(null)
     } catch (failure) {
       setActionError(failure instanceof Error ? failure.message : '操作未完成，请稍后重试。')
@@ -183,7 +182,7 @@ export function Sidebar({
     setActionError(null)
     try {
       await action()
-      setActionReportId(null)
+      setActionMenu(null)
     } catch (failure) {
       setActionError(
         failure instanceof Error ? failure.message : '报表操作未完成，请稍后重试。',
@@ -200,6 +199,8 @@ export function Sidebar({
     const title = displayTitle(conversation)
     const isEditing = editingConversationId === conversation.conversation_id
     const busy = managingConversationId === conversation.conversation_id
+    const resourceStatus =
+      conversation.local_status ?? conversation.resource_status ?? 'ready'
     return (
       <div className="sidebar-item-row" data-conversation-actions key={conversation.conversation_id}>
         {isEditing ? (
@@ -221,16 +222,16 @@ export function Sidebar({
               title={title}
               onClick={() => onOpenConversation(conversation)}
             >
-              {conversation.local_status === 'processing' ? (
+              {resourceStatus === 'processing' ? (
                 <LoaderCircle className="pending-spinner" size={16} aria-hidden="true" />
               ) : (
                 <MessageSquare size={16} />
               )}
               <span>{title}</span>
-              {conversation.local_status === 'processing' ? (
+              {resourceStatus === 'processing' ? (
                 <small className="pending-label">正在分析</small>
               ) : null}
-              {conversation.local_status === 'failed' ? (
+              {resourceStatus === 'failed' ? (
                 <small className="failed-label">失败</small>
               ) : null}
             </button>
@@ -239,25 +240,32 @@ export function Sidebar({
               type="button"
               aria-label={`管理对话：${title}`}
               aria-haspopup="menu"
-              aria-expanded={actionConversationId === conversation.conversation_id}
-              onClick={() => setActionConversationId((current) => current === conversation.conversation_id ? null : conversation.conversation_id)}
+              aria-expanded={actionMenu?.type === 'conversation' && actionMenu.id === conversation.conversation_id}
+              onClick={(event) => {
+                const anchor = event.currentTarget
+                setActionMenu((current) => (
+                  current?.type === 'conversation' && current.id === conversation.conversation_id
+                    ? null
+                    : { anchor, id: conversation.conversation_id, type: 'conversation' }
+                ))
+              }}
             >
               <MoreHorizontal size={17} />
             </button>
           </>
         )}
-        {actionConversationId === conversation.conversation_id && !isEditing ? (
-          <div className="conversation-actions-menu" role="menu" aria-label={`对话操作：${title}`}>
-            {conversation.local_status !== 'processing' && conversation.local_status !== 'failed' ? <button type="button" role="menuitem" onClick={() => { setDraftTitle(title); setEditingConversationId(conversation.conversation_id); setActionConversationId(null) }}><Pencil size={15} />重命名</button> : null}
+        {actionMenu?.type === 'conversation' && actionMenu.id === conversation.conversation_id && !isEditing ? (
+          <FloatingActionMenu anchor={actionMenu.anchor} ariaLabel={`对话操作：${title}`} onClose={() => setActionMenu(null)}>
+            {resourceStatus !== 'processing' ? <button type="button" role="menuitem" onClick={() => { setDraftTitle(title); setEditingConversationId(conversation.conversation_id); setActionMenu(null) }}><Pencil size={15} />重命名</button> : null}
             {archived ? (
               <button type="button" role="menuitem" disabled={busy} onClick={() => void manage(conversation, () => onRestore(conversation))}><RotateCcw size={15} />恢复</button>
-            ) : conversation.local_status !== 'processing' && conversation.local_status !== 'failed' ? (
+            ) : resourceStatus !== 'processing' ? (
               <button type="button" role="menuitem" disabled={busy} onClick={() => void manage(conversation, () => onArchive(conversation))}><Archive size={15} />归档</button>
             ) : null}
-            <button className="danger-action" type="button" role="menuitem" disabled={busy || conversation.local_status === 'processing'} onClick={() => {
+            <button className="danger-action" type="button" role="menuitem" disabled={busy || resourceStatus === 'processing'} onClick={() => {
               if (window.confirm(`删除“${title}”及其关联报表？此操作不可撤销。`)) void manage(conversation, () => onDelete(conversation))
             }}><Trash2 size={15} />删除</button>
-          </div>
+          </FloatingActionMenu>
         ) : null}
       </div>
     )
@@ -299,9 +307,16 @@ export function Sidebar({
           {reportsOpen && reports.length === 0 ? <p className="sidebar-state">暂无最近报表</p> : reportsOpen ? reports.map((report) => isUsableReport(report) ? (
             <div className="sidebar-item-row" data-report-actions key={report.report_id}>
               <a className="sidebar-item" href={report.view_reference} target="_blank" rel="noreferrer" title={`查看${report.display_title || '销售分析报告'}`}><FileText size={17} /><span>{report.display_title || '销售分析报告'}</span></a>
-              <button className="conversation-actions-trigger" type="button" aria-label={`管理报表：${report.display_title || '销售分析报告'}`} aria-haspopup="menu" aria-expanded={actionReportId === report.report_id} onClick={() => setActionReportId((current) => current === report.report_id ? null : report.report_id)}><MoreHorizontal size={17} /></button>
-              {actionReportId === report.report_id ? (
-                <div className="conversation-actions-menu" role="menu" aria-label={`报表操作：${report.display_title || '销售分析报告'}`}>
+              <button className="conversation-actions-trigger" type="button" aria-label={`管理报表：${report.display_title || '销售分析报告'}`} aria-haspopup="menu" aria-expanded={actionMenu?.type === 'report' && actionMenu.id === report.report_id} onClick={(event) => {
+                const anchor = event.currentTarget
+                setActionMenu((current) => (
+                  current?.type === 'report' && current.id === report.report_id
+                    ? null
+                    : { anchor, id: report.report_id, type: 'report' }
+                ))
+              }}><MoreHorizontal size={17} /></button>
+              {actionMenu?.type === 'report' && actionMenu.id === report.report_id ? (
+                <FloatingActionMenu anchor={actionMenu.anchor} ariaLabel={`报表操作：${report.display_title || '销售分析报告'}`} onClose={() => setActionMenu(null)}>
                   <button type="button" role="menuitem" disabled={managingReportId === report.report_id} onClick={() => {
                     const title = window.prompt('输入新的报表标题', report.display_title || '销售分析报告')?.trim()
                     if (title) void manageReport(report, () => onRenameReport(report, title))
@@ -312,7 +327,7 @@ export function Sidebar({
                   <button className="danger-action" type="button" role="menuitem" disabled={managingReportId === report.report_id} onClick={() => {
                     if (window.confirm(`删除“${report.display_title || '销售分析报告'}”？此操作不可撤销，但不会删除所属对话。`)) void manageReport(report, () => onDeleteReport(report))
                   }}><Trash2 size={15} />删除报表</button>
-                </div>
+                </FloatingActionMenu>
               ) : null}
             </div>
           ) : null) : null}

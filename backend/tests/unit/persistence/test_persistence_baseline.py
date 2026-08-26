@@ -212,13 +212,63 @@ datefmt = %H:%M:%S
         conn = sqlite3.connect(tmp_db_path)
         cursor = conn.execute("SELECT version_num FROM alembic_version")
         version = cursor.fetchone()[0]
-        assert version == "b7c9d2e4f610"
+        assert version == "c2e4f6a8b130"
         conversation_columns = {
             row[1]
             for row in conn.execute("PRAGMA table_info(conversations)").fetchall()
         }
         conn.close()
         assert "title" in conversation_columns
+        assert "resource_status" in conversation_columns
+        assert "last_error_type" in conversation_columns
+
+    def test_failed_resource_migration_backfills_existing_error_snapshots(self):
+        tmp_db_path = _tmp_db_path()
+        posix_path = Path(tmp_db_path).resolve().as_posix()
+        project_root = Path.cwd().resolve()
+        TestMigrationConstraints._run_alembic_upgrade(
+            tmp_db_path,
+            posix_path,
+            project_root,
+            target="b7c9d2e4f610",
+        )
+        with sqlite3.connect(tmp_db_path) as conn:
+            conn.execute(
+                "INSERT INTO conversations (runtime_mode, conversation_id) "
+                "VALUES (?, ?)",
+                ("real", "failed-before-m56"),
+            )
+            conn.execute(
+                """
+                INSERT INTO result_snapshots (
+                    request_id, runtime_mode, conversation_id,
+                    request_fingerprint_hash, terminal_state, response_type,
+                    payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "failed-request",
+                    "real",
+                    "failed-before-m56",
+                    "f" * 64,
+                    "tool_failed",
+                    "",
+                    json.dumps({"error_type": "powerbi_query_failed"}),
+                ),
+            )
+        TestMigrationConstraints._run_alembic_upgrade(
+            tmp_db_path,
+            posix_path,
+            project_root,
+            target="head",
+        )
+        with sqlite3.connect(tmp_db_path) as conn:
+            row = conn.execute(
+                "SELECT resource_status, last_error_type FROM conversations "
+                "WHERE runtime_mode = ? AND conversation_id = ?",
+                ("real", "failed-before-m56"),
+            ).fetchone()
+        assert row == ("failed", "powerbi_query_failed")
 
     def test_report_presentation_migration_backfills_existing_artifacts(self):
         tmp_db_path = _tmp_db_path()
@@ -805,7 +855,7 @@ datefmt = %H:%M:%S
                 "SELECT version_num FROM alembic_version"
             ).fetchone()[0]
         assert after == ("conversation_delete_intents",)
-        assert version == "b7c9d2e4f610"
+        assert version == "c2e4f6a8b130"
 
     @staticmethod
     def _run_alembic_upgrade(

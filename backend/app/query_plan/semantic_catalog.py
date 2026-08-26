@@ -56,6 +56,8 @@ class CatalogObject(BaseModel):
     table_name: str
     data_type: str
     description: str | None = None
+    display_name: str | None = None
+    format_string: str | None = None
     aliases: tuple[str, ...] = ()
     member_aliases: dict[str, str] = Field(default_factory=dict)
     member_suffixes: tuple[str, ...] = ()
@@ -158,6 +160,8 @@ class SemanticCatalogBuilder:
                     table_name=table.name,
                     data_type=measure.data_type,
                     description=measure.description,
+                    display_name=measure.display_name,
+                    format_string=measure.format_string,
                 )
             for column in table.columns:
                 key = (SemanticObjectType.FIELD, table.name, column.name)
@@ -171,6 +175,8 @@ class SemanticCatalogBuilder:
                     table_name=table.name,
                     data_type=column.data_type,
                     description=column.description,
+                    display_name=column.display_name,
+                    format_string=column.format_string,
                 )
 
         alias_targets: dict[str, set[str]] = {}

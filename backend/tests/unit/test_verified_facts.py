@@ -9,6 +9,12 @@ from backend.app.facts import (
     FactType,
     VerifiedFactSetBuilder,
 )
+from backend.app.presentation.formatter import PresentationFormatKind
+from backend.app.presentation.localization import (
+    DisplayLocalization,
+    DisplayLocalizationSource,
+)
+from backend.app.query_plan.semantic_catalog import SemanticObjectType
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
     CanonicalQueryPlan,
@@ -145,8 +151,9 @@ def test_fact_bounded_topn_answer_uses_result_items_for_ties():
     facts = VerifiedFactSetBuilder().build(plan, result)
     answer = FactBoundedAnswerBuilder().build(plan, result, facts)
 
-    assert "结果第1项" in answer.answer
-    assert "结果第2项" in answer.answer
+    assert "首项" in answer.answer
+    assert "CategoryA" in answer.answer
+    assert "CategoryB" not in answer.answer
     assert "第1位" not in answer.answer
     assert "第2位" not in answer.answer
     assert FactOutputValidator().validate_answer(answer, facts) == []
@@ -202,6 +209,34 @@ def test_fact_bounded_answer_is_accepted_and_invented_number_rejected():
     assert "unverified_numeric_claim" in validator.validate_answer(invented, facts)
 
 
+def test_fact_validator_accepts_deterministic_two_decimal_display_rounding():
+    plan = _plan()
+    result = _result(["[Total Sales]"], [[6943997.509999986]])
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    binding = DisplayLocalization(
+        semantic_model_key="model",
+        object_identity="measure:Sales:Total Sales",
+        object_type=SemanticObjectType.MEASURE,
+        canonical_name="Total Sales",
+        locale="zh-CN",
+        display_name="销售额",
+        source=DisplayLocalizationSource.MODEL_GLOSSARY,
+        schema_identity="b" * 64,
+        data_type="decimal",
+        format_kind=PresentationFormatKind.AMOUNT,
+    )
+
+    answer = FactBoundedAnswerBuilder().build(
+        plan,
+        result,
+        facts,
+        display_bindings={"[Total Sales]": binding},
+    )
+
+    assert answer.answer == "销售额为6,943,997.51。"
+    assert FactOutputValidator().validate_answer(answer, facts) == []
+
+
 def test_invented_ranking_and_causal_claim_are_rejected():
     plan = _plan()
     result = _result()
@@ -222,6 +257,46 @@ def test_group_member_containing_ordinal_word_is_not_a_ranking_claim():
     facts = VerifiedFactSetBuilder().build(plan, result)
     answer = FactBoundedAnswerBuilder().build(plan, result, facts)
 
+    assert FactOutputValidator().validate_answer(answer, facts) == []
+
+
+def test_grouped_answer_is_bounded_and_does_not_repeat_every_table_row():
+    plan = _plan(dimensions=["Category"])
+    result = _result(
+        ["[Category]", "[Total Sales]"],
+        [[f"Category-{index}", index * 10] for index in range(1, 16)],
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+
+    answer = FactBoundedAnswerBuilder().build(plan, result, facts)
+
+    assert "Category-15" in answer.answer
+    assert "Category-1：" not in answer.answer
+    assert len(answer.answer) < 180
+    assert FactOutputValidator().validate_answer(answer, facts) == []
+
+
+def test_monthly_answer_summarizes_peak_and_rebound_without_iso_timestamp():
+    plan = _plan(dimensions=["Year Month"])
+    result = _result(
+        ["[Year Month]", "[Total Sales]"],
+        [
+            ["2025-10-01T00:00:00", 80],
+            ["2025-11-01T00:00:00", 120],
+            ["2025-12-01T00:00:00", 90],
+            ["2026-02-01T00:00:00", 70],
+            ["2026-03-01T00:00:00", 85],
+        ],
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+
+    answer = FactBoundedAnswerBuilder().build(plan, result, facts)
+
+    assert "2025年11月" in answer.answer
+    assert "达到最高点" in answer.answer
+    assert "随后回落" in answer.answer
+    assert "2026年3月出现回升" in answer.answer
+    assert "T00:00:00" not in answer.answer
     assert FactOutputValidator().validate_answer(answer, facts) == []
 
 

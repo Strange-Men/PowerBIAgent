@@ -22,6 +22,18 @@ export interface ReportResource {
 
 export type PresentationCell = string | number | boolean | null
 
+export interface PresentationField {
+  canonical_field: string
+  object_identity: string
+  object_type: 'measure' | 'field'
+  canonical_name: string
+  locale: string
+  display_name: string
+  source: 'powerbi_metadata' | 'model_glossary' | 'registry' | 'bounded_translation' | 'fallback'
+  schema_identity: string
+  format_kind: 'auto' | 'integer' | 'decimal' | 'percentage' | 'amount' | 'date' | 'month' | 'text'
+}
+
 export interface PresentationDataset {
   result_id: string
   verified_fact_set_id: string
@@ -29,6 +41,8 @@ export interface PresentationDataset {
   source_mode: RuntimeMode
   columns: string[]
   rows: PresentationCell[][]
+  display_fields?: PresentationField[]
+  formatted_rows?: string[][]
   row_count: number
   truncated: boolean
 }
@@ -108,8 +122,18 @@ export interface ConversationSummary {
   latest_terminal_state: string | null
   latest_response_type: string | null
   latest_analysis_goal: string | null
+  resource_status?: 'ready' | 'failed'
+  last_error_type?: string | null
   local_status?: 'processing' | 'failed' | 'ready'
   local_error?: string | null
+}
+
+export interface ConversationFailureResult {
+  runtime_mode: RuntimeMode
+  conversation_id: string
+  resource_status: 'failed'
+  last_error_type: string
+  updated_at: string
 }
 
 export interface ConversationListPage {
@@ -233,6 +257,8 @@ export interface ConversationSession {
   clientConversationId: string
   serverConversationId?: string
   title: string
+  createdAt: string
+  updatedAt: string
   messages: ConversationMessage[]
   pendingRequests: string[]
   sending: boolean

@@ -193,6 +193,57 @@ def test_title_rename_is_presentation_only_and_searchable(tmp_path: Path) -> Non
     assert search.json()["items"][0]["conversation_id"] == "shared-api-conversation"
 
 
+def test_failed_conversation_api_creates_a_manageable_resource(
+    tmp_path: Path,
+) -> None:
+    app = _sqlite_app(tmp_path)
+    with TestClient(app) as client:
+        failed = client.post(
+            "/api/v1/conversations/client-failed/failure",
+            params={"runtime_mode": "real"},
+            json={"title": "失败问题", "error_type": "client_request_failed"},
+        )
+        recent = client.get(
+            "/api/v1/conversations",
+            params={"runtime_mode": "real", "limit": 20},
+        )
+        history = client.get(
+            "/api/v1/conversations/client-failed/history",
+            params={"runtime_mode": "real", "limit": 20},
+        )
+        renamed = client.patch(
+            "/api/v1/conversations/client-failed",
+            params={"runtime_mode": "real"},
+            json={"title": "可管理失败会话"},
+        )
+        archived = client.post(
+            "/api/v1/conversations/client-failed/archive",
+            params={"runtime_mode": "real"},
+        )
+        restored = client.post(
+            "/api/v1/conversations/client-failed/restore",
+            params={"runtime_mode": "real"},
+        )
+        deleted = client.delete(
+            "/api/v1/conversations/client-failed",
+            params={"runtime_mode": "real"},
+        )
+
+    assert failed.status_code == 200
+    assert failed.json()["resource_status"] == "failed"
+    item = next(
+        item
+        for item in recent.json()["items"]
+        if item["conversation_id"] == "client-failed"
+    )
+    assert item["last_error_type"] == "client_request_failed"
+    assert history.status_code == 200
+    assert history.json()["items"] == []
+    assert renamed.status_code == archived.status_code == restored.status_code == 200
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+
+
 def test_search_api_namespace_and_declared_content_contract(tmp_path: Path) -> None:
     app = _sqlite_app(tmp_path)
     with TestClient(app) as client:

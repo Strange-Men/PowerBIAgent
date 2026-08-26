@@ -48,6 +48,7 @@ class _CursorPayload(BaseModel):
     ]
     mode: RuntimeDataMode
     timestamp: datetime
+    secondary_timestamp: datetime | None = None
     tie: str
     scope: str
 
@@ -138,6 +139,9 @@ class ConversationHistoryService:
             )
             after = ConversationPosition(
                 updated_at=_normalize_cursor_time(payload.timestamp),
+                created_at=_normalize_cursor_time(
+                    payload.secondary_timestamp or payload.timestamp
+                ),
                 conversation_id=payload.tie,
             )
         page = await self._repository.list_recent(
@@ -151,6 +155,7 @@ class ConversationHistoryService:
                     kind="recent",
                     mode=runtime_mode,
                     timestamp=page.next_position.updated_at,
+                    secondary_timestamp=page.next_position.created_at,
                     tie=page.next_position.conversation_id,
                     scope="",
                 )
@@ -230,6 +235,9 @@ class ConversationHistoryService:
             )
             after = ConversationPosition(
                 updated_at=_normalize_cursor_time(payload.timestamp),
+                created_at=_normalize_cursor_time(
+                    payload.secondary_timestamp or payload.timestamp
+                ),
                 conversation_id=payload.tie,
             )
         page = await self._repository.list_archived(
@@ -243,6 +251,7 @@ class ConversationHistoryService:
                     kind="archived",
                     mode=runtime_mode,
                     timestamp=page.next_position.updated_at,
+                    secondary_timestamp=page.next_position.created_at,
                     tie=page.next_position.conversation_id,
                     scope="",
                 )
@@ -274,6 +283,9 @@ class ConversationHistoryService:
             )
             after = ConversationPosition(
                 updated_at=_normalize_cursor_time(payload.timestamp),
+                created_at=_normalize_cursor_time(
+                    payload.secondary_timestamp or payload.timestamp
+                ),
                 conversation_id=payload.tie,
             )
         page = await self._repository.search(
@@ -290,6 +302,7 @@ class ConversationHistoryService:
                     kind="search",
                     mode=runtime_mode,
                     timestamp=page.next_position.updated_at,
+                    secondary_timestamp=page.next_position.created_at,
                     tie=page.next_position.conversation_id,
                     scope=scope,
                 )
@@ -409,6 +422,30 @@ class ConversationHistoryService:
             raise InvalidConversationQueryError("invalid_conversation_title")
         return await self._repository.rename(
             runtime_mode, conversation_id, normalized
+        )
+
+    async def record_failed(
+        self,
+        runtime_mode: RuntimeDataMode,
+        conversation_id: str,
+        *,
+        title: str,
+        error_type: str,
+    ):
+        normalized_title = title.strip()
+        normalized_error = error_type.strip()
+        if (
+            not normalized_title
+            or len(normalized_title) > 80
+            or not normalized_error
+            or len(normalized_error) > 80
+        ):
+            raise InvalidConversationQueryError("invalid_conversation_failure")
+        return await self._repository.record_failed(
+            runtime_mode,
+            conversation_id,
+            title=normalized_title,
+            error_type=normalized_error,
         )
 
     async def delete(

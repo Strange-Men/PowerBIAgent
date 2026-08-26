@@ -1,6 +1,6 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.5 COMPLETE；M5.6 Resource UX Layout Gate 已规划但未实现
+> **状态：** M5.6 Presentation/Localization/Resource UX truth（COMPLETE）
 > **目标阶段：** M5.6 负责 Presentation/Localization/Resource UX truth；M5.7 独立负责 Report readability
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
@@ -21,7 +21,7 @@
 ### 2.1 重建线后续边界
 
 - M5.4.2 只固化规范，不修改 `frontend/src/**`。旧 `m5/frontend` 的原 M5.5/M5.5.1 视觉与 UX 代码不是新线基线。
-- M5.6 才处理 Settings 有 report 但 Recent Reports 不同步、Recent conversation newest-first、failed conversation 正式可管理、toolbar 空间不足时 destructive action 可达，以及 conversation/report floating menu 不被 overflow clipping。
+- M5.6 正在处理 Settings 有 report 但 Recent Reports 不同步、Recent conversation newest-first、failed conversation 正式可管理、toolbar 空间不足时 destructive action 可达，以及 conversation/report floating menu 不被 overflow clipping。
 - conversation/report action menu 必须复用一个 Portal/floating layer 与一套 viewport-aware above/below positioning；不得分别实现两套定位逻辑，也不得受 scroll container、scrollbar 或 stacking context 裁切。
 - Settings Resource Manager 必须建立 nested scroll contract，并使用 sticky 或 scrollable action toolbar 与 responsive overflow 策略；禁止以 viewport 高度/宽度或容器空间不足为由隐藏 destructive action。
 - Layout Gate 必测 first/middle/last row、scroll top/middle/bottom、100%/125% zoom、768/1080/1440 viewport height、Sidebar scroll、Settings nested scroll，并证明 destructive action 始终可达、floating menu 永不裁切。
@@ -413,6 +413,40 @@ Sidebar 在桌面端固定可用高度；“最近对话”与“最近报表”
 - conversation 支持 rename/archive/delete；report 支持 rename/archive/delete；归档页支持 restore/delete。删除必须确认，archive/restore 不重建事实资源，delete 不得绕过 durable delete intent。
 - report 行与 Sidebar Recent Reports 的 `…` 菜单统一提供“重命名 / 归档 / 删除”。rename 只改 `display_title`；archive 隐藏 recent、保留 HTML/metadata/conversation；delete 清理 managed HTML/factual metadata 并保留最后 title 的 history tombstone。
 
+## 十六 B、M5.6 Resource UX 正式实现合同
+
+### 同一 resource truth
+
+- Settings 使用 namespace-scoped 全量分页；Sidebar Recent Reports 必须调用同一正式 report query，只投影 active、bounded、newest-first subset。rename/archive/restore/delete 后两处视图由同一 metadata 收敛，不维护第二套 private report truth。
+- Recent Conversation 必须显式按 `updated_at DESC, created_at DESC, stable_id DESC` 排序；local pending 创建后写入稳定的 created/updated time 并立即位于顶部，completed/failed 更新 timestamp 后重排，reload 后与 backend truth 一致。
+- failed conversation 必须具有正式 resource status metadata 并可在 Settings 中 rename/archive/restore/delete；不得用 title、report title、用户名或“测试”字样推断 resource type/status。
+
+### Shared FloatingActionMenu
+
+- conversation/report action menu 使用同一组件与 positioning 函数，通过 `createPortal(..., document.body)` 脱离 overflow/stacking container。
+- trigger 的 `getBoundingClientRect()` 是唯一 anchor；优先 below，空间不足选择 above，再对 horizontal/vertical viewport 做安全 margin clamp。
+- 必须支持 outside click、Escape、打开后可键盘访问、关闭后 focus restore；resize/scroll 时重新定位或关闭。禁止按 conversation/report 分别微调 `top/right` CSS。
+
+### Settings nested scroll
+
+```text
+settings modal shell (viewport bounded)
+├─ fixed header
+└─ body
+   ├─ left navigation
+   └─ right content scroll region
+      ├─ resource toolbar (sticky / horizontally scrollable / wrapping)
+      └─ resource list scroll region
+```
+
+shell、body、content 与 list 都必须声明 `min-height: 0`/overflow responsibility；不得靠无限增加 modal/page 高度。archive/delete/restore 等 destructive action 在 20/50/100 resources、首中末行与 scroll top/middle/bottom 始终可达。
+
+### Layout Gate matrix
+
+- Sidebar：conversation/report first/middle/last × scroll top/middle/bottom，最后一项 menu 完整。
+- Settings：20/50/100 resources × first/middle/last × scroll top/middle/bottom，toolbar 可见或可横向/换行访问。
+- viewport：width 768/1080/1440，height 600/768/1080，zoom 100%/125%。证明 menu 不裁切、destructive action 不消失、modal 不超 viewport 且 nested scroll 可用。
+
 ## 十七、当前 MVP 后端能力到 UI 映射
 
 | 能力 | 后端状态 | M5 UI |
@@ -480,4 +514,4 @@ Sidebar 在桌面端固定可用高度；“最近对话”与“最近报表”
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-26 | M5.5 COMPLETE — M5.6 Resource UX Layout Gate 已固化、尚未实现*
+*最后更新：2026-08-26 | M5.6 COMPLETE — Resource UX truth 与 Layout Gate 已通过*

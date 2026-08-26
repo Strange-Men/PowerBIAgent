@@ -34,6 +34,7 @@ from backend.app.persistence.repositories.common import (
     PersistenceRepositoryError,
     ensure_conversation,
     set_default_conversation_title,
+    set_conversation_resource_state,
     touch_conversation,
 )
 
@@ -140,6 +141,13 @@ class SQLiteSnapshotRepository(SnapshotRepository):
                         snapshot.user_message,
                         session,
                     )
+                await set_conversation_resource_state(
+                    snapshot.conversation_id,
+                    mode_value,
+                    session,
+                    status="failed" if snapshot.error_type else "ready",
+                    error_type=snapshot.error_type,
+                )
                 # A completed/terminal snapshot is the durable turn activity
                 # witness used by recent-conversation ordering.
                 await touch_conversation(

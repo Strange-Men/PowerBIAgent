@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
 from typing import Any
 
@@ -347,7 +347,19 @@ class FactBoundedAnswerBuilder:
         plan: CanonicalQueryPlan,
         result: QueryResult,
         facts: VerifiedFactSet,
+        *,
+        display_bindings: dict[str, Any] | None = None,
+        locale: str = "zh-CN",
     ) -> AnswerSpec:
+        # Local import avoids making the factual authority module depend on the
+        # presentation package during module initialization.
+        from backend.app.presentation.formatter import (
+            PresentationFormatKind,
+            PresentationFormatter,
+        )
+
+        formatter = PresentationFormatter(locale=locale)
+        bindings = display_bindings or {}
         used: list[VerifiedFact] = []
         parts: list[str] = []
         metrics: dict[str, Any] = {}
@@ -357,35 +369,80 @@ class FactBoundedAnswerBuilder:
         elif plan.top_n is not None:
             ranking = facts.by_type(FactType.RANKING)[0]
             used.append(ranking)
-            rows = []
-            for item in ranking.values:
-                dimension_text = "，".join(
-                    f"{key}={self._format(value)}"
-                    for key, value in item["dimensions"].items()
-                )
-                rows.append(
-                    f"结果第{item['result_position']}项 {dimension_text}："
-                    f"{item['measure']}={self._format(item['value'])}"
-                )
-            parts.append("TopN结果顺序：" + "；".join(rows) + "。")
+            first = ranking.values[0]
+            dimension_text = self._dimension_text(
+                first["dimensions"],
+                ranking.source_fields,
+                formatter,
+                bindings,
+            )
+            measure_field = ranking.source_fields[-1]
+            measure_label = self._field_label(
+                first["measure"], measure_field, bindings
+            )
+            parts.append(
+                f"TopN结果共返回{len(ranking.values)}项；首项为{dimension_text}，"
+                f"{measure_label}为{self._format_value(first['value'], measure_field, formatter, bindings)}。"
+            )
         elif plan.dimensions:
             grouped = facts.by_type(FactType.GROUPED_METRIC)
-            used.extend(grouped)
-            rows = []
-            for item in grouped[:20]:
-                dimension_text = "，".join(
-                    f"{key}={self._format(value)}"
-                    for key, value in item.dimensions.items()
+            primary = [
+                item for item in grouped if item.measure == plan.measures[0]
+            ]
+            if len(primary) == 1:
+                item = primary[0]
+                used.append(item)
+                dimension_text = self._dimension_text(
+                    item.dimensions,
+                    item.source_fields,
+                    formatter,
+                    bindings,
+                    month=self._is_time_grouped(plan, primary),
                 )
-                rows.append(
-                    f"{dimension_text}：{item.measure}={self._format(item.value)}"
+                measure_field = item.source_fields[-1]
+                parts.append(
+                    f"{dimension_text}的{self._field_label(item.measure or measure_field, measure_field, bindings)}"
+                    f"为{self._format_value(item.value, measure_field, formatter, bindings)}。"
                 )
-            parts.append("；".join(rows) + "。")
+            elif self._is_time_grouped(plan, primary):
+                parts.append(
+                    self._trend_summary(
+                        plan,
+                        facts,
+                        primary,
+                        used,
+                        formatter,
+                        bindings,
+                    )
+                )
+            else:
+                maximum = next(
+                    (
+                        item
+                        for item in facts.by_type(FactType.MAXIMUM)
+                        if item.measure == plan.measures[0]
+                    ),
+                    None,
+                )
+                if maximum is not None:
+                    used.append(maximum)
+                    measure_field = maximum.source_fields[-1]
+                    parts.append(
+                        f"{self._dimension_text(maximum.dimensions, maximum.source_fields, formatter, bindings)}"
+                        f"的{self._field_label(maximum.measure or measure_field, measure_field, bindings)}最高，"
+                        f"为{self._format_value(maximum.value, measure_field, formatter, bindings)}。"
+                    )
+                else:
+                    parts.append(f"共返回{result.row_count}项，完整明细见表格。")
         else:
             scalar = facts.by_type(FactType.SCALAR_METRIC)
             used.extend(scalar)
             for item in scalar:
-                parts.append(f"{item.measure}为{self._format(item.value)}。")
+                source_field = item.source_fields[-1]
+                parts.append(
+                    f"{self._field_label(item.measure or source_field, source_field, bindings)}"
+                    f"为{self._format_value(item.value, source_field, formatter, bindings)}。"
+                )
                 if self._is_number(item.value):
                     metrics[item.measure or "metric"] = item.value
                     metric_provenance[item.measure or "metric"] = {
@@ -397,18 +454,20 @@ class FactBoundedAnswerBuilder:
             used.append(item)
             value = item.value
             parts.append(
-                f"筛选条件：{value['field']}={self._format(value['value'])}。"
+                f"筛选条件：{value['field']}={formatter.format(value['value'])}。"
             )
         for item in facts.by_type(FactType.APPLIED_TIME_RANGE):
             used.append(item)
             value = item.value
             parts.append(
-                f"时间范围：{value['start_date']}至{value['end_date']}。"
+                f"时间范围：{formatter.format(value['start_date'], PresentationFormatKind.DATE)}"
+                f"至{formatter.format(value['end_date'], PresentationFormatKind.DATE)}。"
             )
         metadata = facts.by_type(FactType.RESULT_METADATA)[0]
         used.append(metadata)
         if facts.truncated:
             parts.append("结果已截断，可能不完整。")
+        unique_used = list({item.fact_id: item for item in used}.values())
         text = "".join(parts)
         return AnswerSpec(
             answer=text,
@@ -420,21 +479,138 @@ class FactBoundedAnswerBuilder:
                 "row_count": result.row_count,
                 "source_mode": result.source_mode,
                 "verified_fact_set_id": facts.fact_set_id,
-                "fact_ids": [item.fact_id for item in used],
+                "fact_ids": [item.fact_id for item in unique_used],
                 "metric_provenance": metric_provenance,
             },
             filters=list(plan.filters),
             semantic_model_key=result.semantic_model_key,
             source_mode=result.source_mode,
             verified_fact_set_id=facts.fact_set_id,
-            fact_ids=[item.fact_id for item in used],
+            fact_ids=[item.fact_id for item in unique_used],
         )
 
     @staticmethod
-    def _format(value: Any) -> str:
-        if isinstance(value, (date, datetime)):
-            return value.isoformat()
-        return str(value)
+    def _field_label(
+        canonical_name: str,
+        source_field: str,
+        bindings: dict[str, Any],
+    ) -> str:
+        binding = bindings.get(source_field)
+        return binding.display_name if binding is not None else canonical_name
+
+    @classmethod
+    def _dimension_text(
+        cls,
+        dimensions: dict[str, Any],
+        source_fields: list[str],
+        formatter: Any,
+        bindings: dict[str, Any],
+        *,
+        month: bool = False,
+    ) -> str:
+        from backend.app.presentation.formatter import PresentationFormatKind
+
+        rendered: list[str] = []
+        for index, (canonical_name, value) in enumerate(dimensions.items()):
+            source_field = source_fields[index]
+            label = cls._field_label(canonical_name, source_field, bindings)
+            if month:
+                display_value = formatter.format(
+                    value, PresentationFormatKind.MONTH
+                )
+            else:
+                display_value = cls._format_value(
+                    value, source_field, formatter, bindings
+                )
+            rendered.append(f"{label}{display_value}")
+        return "，".join(rendered)
+
+    @staticmethod
+    def _format_value(
+        value: Any,
+        source_field: str,
+        formatter: Any,
+        bindings: dict[str, Any],
+    ) -> str:
+        binding = bindings.get(source_field)
+        kind = binding.format_kind if binding is not None else None
+        return formatter.format(value) if kind is None else formatter.format(value, kind)
+
+    @staticmethod
+    def _is_time_grouped(
+        plan: CanonicalQueryPlan,
+        grouped: list[VerifiedFact],
+    ) -> bool:
+        dimension_text = " ".join(plan.dimensions).casefold()
+        if any(
+            token in dimension_text
+            for token in ("date", "month", "year", "日期", "月", "年")
+        ):
+            return True
+        if not grouped or not plan.dimensions:
+            return False
+        values = [item.dimensions.get(plan.dimensions[0]) for item in grouped]
+        return all(
+            isinstance(value, (date, datetime))
+            or (
+                isinstance(value, str)
+                and len(value) >= 7
+                and value[:4].isdigit()
+                and value[4] in "-/"
+            )
+            for value in values
+        )
+
+    @classmethod
+    def _trend_summary(
+        cls,
+        plan: CanonicalQueryPlan,
+        facts: VerifiedFactSet,
+        grouped: list[VerifiedFact],
+        used: list[VerifiedFact],
+        formatter: Any,
+        bindings: dict[str, Any],
+    ) -> str:
+        maximum = next(
+            (
+                item
+                for item in facts.by_type(FactType.MAXIMUM)
+                if item.measure == plan.measures[0]
+            ),
+            None,
+        )
+        if maximum is None or not cls._is_number(maximum.value):
+            return f"该期间共返回{facts.row_count}项，完整明细见表格。"
+        used.append(maximum)
+        measure_field = maximum.source_fields[-1]
+        measure_label = cls._field_label(
+            maximum.measure or measure_field, measure_field, bindings
+        )
+        peak_index = maximum.source_rows[0]
+        summary = (
+            f"该期间{measure_label}在"
+            f"{cls._dimension_text(maximum.dimensions, maximum.source_fields, formatter, bindings, month=True)}"
+            f"达到最高点，为{cls._format_value(maximum.value, measure_field, formatter, bindings)}"
+        )
+        after_peak = grouped[peak_index + 1 :]
+        if after_peak and any(
+            cls._is_number(item.value) and item.value < maximum.value
+            for item in after_peak
+        ):
+            summary += "，随后回落"
+        if (
+            len(grouped) >= 2
+            and cls._is_number(grouped[-1].value)
+            and cls._is_number(grouped[-2].value)
+            and grouped[-1].value > grouped[-2].value
+        ):
+            used.extend([grouped[-2], grouped[-1]])
+            summary += (
+                "，并在"
+                f"{cls._dimension_text(grouped[-1].dimensions, grouped[-1].source_fields, formatter, bindings, month=True)}"
+                "出现回升"
+            )
+        return summary + "。"
 
     @staticmethod
     def _is_number(value: Any) -> bool:
@@ -500,7 +676,9 @@ class FactBoundedReportBuilder:
 class FactOutputValidator:
     """Validate externally visible factual fields against a FactSet."""
 
-    _NUMBER = re.compile(r"(?<![A-Za-z0-9_.])-?\d+(?:\.\d+)?")
+    _NUMBER = re.compile(
+        r"(?<![A-Za-z0-9_.])-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?"
+    )
     _CAUSAL = ("因为", "导致", "原因", "归因于", "由于")
     _TREND = ("上升", "下降", "增长", "减少", "趋势")
 
@@ -604,13 +782,20 @@ class FactOutputValidator:
         for item in facts:
             for value in (item.value, item.values):
                 self._collect_numbers(value, allowed)
+            self._collect_numbers(item.dimensions, allowed)
         return allowed
 
     def _collect_numbers(self, value: Any, output: set[str]) -> None:
         if isinstance(value, bool) or value is None:
             return
         if isinstance(value, (int, float, Decimal)):
+            number = Decimal(str(value))
             output.add(self._normalize_number(str(value)))
+            output.add(
+                self._normalize_number(
+                    format(number.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f")
+                )
+            )
         elif isinstance(value, (date, datetime)):
             for part in self._NUMBER.findall(value.isoformat()):
                 output.add(self._normalize_number(part))
@@ -627,7 +812,14 @@ class FactOutputValidator:
     @staticmethod
     def _normalize_number(value: str) -> str:
         try:
-            rendered = format(Decimal(value), "f")
+            normalized = value.replace(",", "")
+            is_percentage = normalized.endswith("%")
+            if is_percentage:
+                normalized = normalized[:-1]
+            number = Decimal(normalized)
+            if is_percentage:
+                number /= Decimal("100")
+            rendered = format(number, "f")
             if "." in rendered:
                 rendered = rendered.rstrip("0").rstrip(".")
             return rendered if rendered != "-0" else "0"

@@ -365,7 +365,7 @@ export function ResourceManager({
         aria-modal="true"
         aria-labelledby="resource-manager-title"
       >
-        <header>
+        <header className="settings-header">
           <div>
             <span className="resource-manager-eyebrow">用户设置</span>
             <h2 id="resource-manager-title">设置</h2>
@@ -642,6 +642,9 @@ function ConversationRow({
       <input aria-label={`选择对话：${conversationTitle(item)}`} type="checkbox" checked={selected} onChange={onToggle} />
       <MessageSquare size={16} />
       <span>{conversationTitle(item)}</span>
+      {item.resource_status === 'failed' || item.local_status === 'failed' ? (
+        <small className="failed-label">失败</small>
+      ) : null}
       <button className="resource-inline-action" type="button" onClick={onRename}>重命名</button>
     </div>
   )
@@ -703,13 +706,13 @@ function ResourceSection({
         <div><h3>{title}</h3><small>共 {totalCount} 项 · 已加载 {loadedCount} 项</small></div>
         <button type="button" disabled={loadedCount === 0} onClick={onSelectLoaded}>全选当前已加载</button>
       </div>
-      <div className="resource-list" aria-busy={loading || loadingMore}>
+      <div className="resource-list" role="region" aria-label={`${title}资源列表`} aria-busy={loading || loadingMore}>
         {loading ? <p>正在加载…</p> : error ? <p className="resource-error">{error}</p> : loadedCount === 0 ? <p>{empty}</p> : children}
         {hasMore ? <button className="resource-load-more" type="button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? '正在加载更多…' : '加载更多'}</button> : loadedCount > 0 ? <p className="resource-list-end">已加载全部 {totalCount} 项</p> : null}
       </div>
-      <footer>
+      <footer className="resource-toolbar" role="toolbar" aria-label={`${title}操作栏`}>
         <span>已选择 {selectedCount} / 共 {totalCount} 项</span>
-        <div>{actions}</div>
+        <div className="resource-toolbar-actions">{actions}</div>
       </footer>
     </section>
   )

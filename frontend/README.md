@@ -2,7 +2,7 @@
 
 ## 状态
 
-**M5.4.2 — M5重建基线与后续分阶段开发规划固化（COMPLETE）。当前前端能力保持 M5.4.1，新版 M5.5 尚未开始。**
+**M5.6 — Presentation、Localization 与 Resource UX truth（COMPLETE）。M5.5 Semantic correctness 已完成并冻结；M5.7—M5.9 尚未开始。**
 
 ## 技术栈
 
@@ -74,6 +74,14 @@ npm run build
 - 本轮不修改 `frontend/src/**`。M5.6 才处理 Settings/Recent 同步、newest-first、failed conversation 管理、sticky/scroll/responsive toolbar 与不被 overflow clipping 的 action menu。
 - M5.7 独立处理报表信息架构、响应式、plot geometry、axis/tick、accessibility 与可读性；“SVG 未越界”不能替代普通用户 Real Browser 人工阅读验收。
 - 前端展示职责固定为 `Answer = 洞察`、`Table = 明细`、`Chart = 趋势/关系`，不得让 Answer 完整复述 table；canonical identity/value 与本地化/格式化 display metadata 必须分离。
+
+### M5.6 前端合同
+
+- dataset 的 canonical columns/raw rows 继续用于 factual binding；header、cell、axis 只消费后端明确提供的 display field/format metadata，不在 production frontend 写 Sales/Education/Inventory 字段字典。
+- single scalar 只渲染自然语言 answer，不再附 metric/KPI card；grouped/trend 的完整细节由 table/chart 承担，raw ISO timestamp 不得出现在可见 answer、cell 或 axis。
+- Sidebar Recent Reports 改为 Settings 正式 managed-report source 的 active bounded projection；Recent Conversation 显式按 updated/created/stable ID 全降序。local pending/failed timestamps 稳定，不能依赖 array insertion order。
+- failed conversation status 来自 backend resource metadata并支持 rename/archive/restore/delete；不得根据标题、问题、“测试”或用户名猜状态。
+- conversation/report 共用 `FloatingActionMenu` Portal contract；Settings modal 使用 fixed header/navigation、right content scroll、resource toolbar 与 resource list scroll。menu 与 destructive action 必须通过规定 viewport/zoom/scroll Layout Gate。
 
 ### AI 回答 — 动态渲染原则
 
@@ -196,11 +204,11 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | M5.4 | conversation-scoped state、client UUID pending、异会话并发、用户卡片/资源面板、report tombstone/rename | ✅ 已完成 |
 | M5.4.1 | Settings Hub、完整 conversation/report pagination、selection/batch 修复与 test-owned cleanup | ✅ 已完成 |
 | M5.4.2 | 重建基线、旧实验线审计保留与分阶段治理 | ✅ COMPLETE |
-| M5.5 | Semantic correctness；不改前端视觉/资源 UX | ⏳ NOT STARTED |
-| M5.6 | Presentation/Localization/Resource UX truth | ⏳ NOT STARTED |
+| M5.5 | Semantic correctness；不改前端视觉/资源 UX | ✅ COMPLETE |
+| M5.6 | Presentation/Localization/Resource UX truth | ✅ COMPLETE |
 | M5.7 | Report readability 与人工视觉验收 | ⏳ NOT STARTED |
 | M5.8 | MCP performance/resilience；完成后才允许 M5 FINAL | ⏳ NOT STARTED |
 
 ---
 
-*最后更新：2026-08-26 | M5.4.2 COMPLETE — 重建线与 M5.5—M5.8 阶段隔离*
+*最后更新：2026-08-26 | M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*

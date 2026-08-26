@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.5 — Semantic correctness 与 capability boundary（COMPLETE）。** M5.4.1 产品能力与 M5.4.2 重建治理基线保持有效；M5.6—M5.9 均未开始。
+**M5.6 — Presentation、Localization 与 Resource UX truth（COMPLETE）。** M5.5 Semantic correctness 已完成并冻结；M5.7—M5.9 均未开始。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -26,7 +26,7 @@
 | **M5.4.1** | **Settings Hub、全量历史资源分页与 test-owned cleanup** | **✅ 已完成** |
 | **M5.4.2** | **M5 重建基线、实验线审计保留、分阶段路线与 Generalization Gate** | **✅ COMPLETE** |
 | **M5.5** | **Semantic correctness 与 capability boundary** | **✅ COMPLETE** |
-| **M5.6** | **Presentation/Localization/Resource UX truth** | **⏳ NOT STARTED** |
+| **M5.6** | **Presentation/Localization/Resource UX truth** | **✅ COMPLETE** |
 | **M5.7** | **Report readability 与人工视觉验收** | **⏳ NOT STARTED** |
 | **M5.8** | **MCP performance/resilience 与压力验证** | **⏳ NOT STARTED** |
 | **M5.9** | **固定专业销售报表模板与模板选择** | **⏳ NOT STARTED** |
@@ -39,7 +39,17 @@
 - authority 保持 TurnPipeline、ToolGateway → PowerBIAdapter、Deterministic DAX、QueryResult、VerifiedFactSet、Memory 与 stale-model fail-closed 不变。
 - Generalization Gate 覆盖 Sales/Retail、Education、Inventory/Operations、未知 holdout 和 schema mutation；生产代码不得加入 sales-specific object/member hardcode。
 - M5.6 action menu clipping/Settings nested-scroll 修复与 M5.9 专业销售模板只完成路线固化，本轮不实现；Localization、Presentation redesign、Report Visual、MCP performance/cache/session worker、Remote MCP 均禁止。
-- checkpoint 固定 S1 docs/contracts → S2 reproducers → S3 capability → S4 object/member → S5 multi-turn → S6 TopN → S7 temporal → S8 cross-domain/schema mutation → S9 focused → S10 full gates → S11 Real/manual → S12 final docs/commit/push。
+
+### M5.6 completed contract
+
+- 用户已在 `m5/rebuild` 的 M5.5 commit `0aa54ba5b4842f0b5faf161f6dcb3969a7db13e9` 上批准 M5.6。只允许 Presentation、Localization 与 Resource UX truth；M5.5 semantic authority、DAX、MCP、report renderer 与 M5.7—M5.9 均冻结。
+- display binding key 至少为 model/object/type/locale/schema identity；解析优先级为 metadata、model glossary、persisted registry、bounded existing-object translation、safe fallback。canonical identity/value/provenance 不变，unknown object 不可创建。
+- scalar 只显示自然语言；grouped/trend 的 Answer 只总结 VerifiedFactSet 中的关键发现，完整明细留给 table/chart；raw ISO timestamp 不得进入可见文本。
+- Settings/Recent report 共用正式 resource source；conversation 按 updated/created/stable ID 全降序。failed conversation 必须持久化且可 rename/archive/restore/delete，不因请求错误成为 ghost session。
+- conversation/report 共用 Portal floating menu；Settings 使用 fixed header/navigation/content scroll/resource toolbar/list scroll。Layout Gate 覆盖首中末、滚动三位置、20/50/100 resources、规定 viewport 与 100%/125% zoom。
+- P1—P12 已顺序通过；最终文档、fresh full gates、residual=0、白名单 commit 与 push 均完成。
+- Rich PBIX `每个月销售额趋势` 由 model-scoped glossary 的 `YearMonth` temporal binding 解析，DAX 正常执行；可见 Answer 只总结峰值/回落/回升，table 为中文月份/金额，line chart 与可见文本均无 raw ISO timestamp。
+- Fresh final gates：backend `1849 passed, 1 skipped`；frontend typecheck/lint/build PASS、Vitest `79 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `120`、Repository Safety `302`、Error Ledger `34`、Documentation/Artifact Governance、compileall、Alembic fresh/head-idempotent 与 `git diff --check` PASS。P11 automation-owned conversation teardown 后 residual=0。
 
 ### M5.4.2 completed contract
 
@@ -289,7 +299,7 @@
 
 ## 下一步
 
-M5.5 已 COMPLETE 并停止开发。M5.6—M5.9 均为 NOT STARTED，必须等待用户明确批准后按路线逐阶段开始。
+M5.5 与 M5.6 均已 COMPLETE 并停止开发。M5.7—M5.9 为 NOT STARTED，必须等待后续明确批准。
 
 ## 关键命令
 
@@ -335,4 +345,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-26 | M5.5 COMPLETE — M5.6—M5.9 NOT STARTED*
+*最后更新：2026-08-26 | M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*
