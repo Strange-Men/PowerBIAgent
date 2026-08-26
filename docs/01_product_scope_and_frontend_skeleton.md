@@ -172,8 +172,8 @@
 #### 报表模板
 - 映射为 chat request 的 `report_template_key`
 - 当前无独立 `/api/report-templates` 端点；继续在 `src/config.ts` 集中登记 production template catalog，当前只有 `sales_report`
-- `report_template_key` 只是用户显式指定的可选 override；未选择时不传该字段
-- 菜单不提供“不使用模板”；未选择不等于“普通问答模式”，问答/多轮/报表仍由后端 intent 自动识别，report intent 可自动选择默认模板
+- `report_template_key` 是报表请求的显式必选字段；未选择模板时不发送隐式 default，report intent 由后端返回 template-required
+- 菜单不提供“不使用模板”；未选择不等于“普通问答模式”，问答/多轮/报表仍由后端 intent 自动识别，但 report intent 缺少显式模板时必须返回 template-required，禁止自动选择默认模板
 - 当前选中项应有清晰状态
 - 未实现或不适用于当前模型的模板必须禁用或隐藏
 

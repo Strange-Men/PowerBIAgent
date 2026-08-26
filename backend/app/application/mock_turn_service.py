@@ -47,6 +47,11 @@ from backend.app.memory.request_fingerprint import (
 )
 from backend.app.memory.result_snapshot import SnapshotRepository
 from backend.app.powerbi.mock import MockPowerBIAdapter
+from backend.app.query_plan.semantic_catalog import compute_schema_fingerprint
+from backend.app.query_plan.template_catalog import (
+    DEFAULT_TEMPLATE_CATALOG,
+    TemplateGroundingStatus,
+)
 from backend.app.report.base import ReportRenderer
 from backend.app.report.mock import MockReportRenderer
 from backend.app.report.resources import ReportArtifact, ReportRepository
@@ -307,6 +312,35 @@ class MockTurnService:
                 conversation_id=effective_conv_id,
             )
 
+        if intent.intent == IntentType.REPORT_GENERATION:
+            template_grounding = DEFAULT_TEMPLATE_CATALOG.ground(
+                message,
+                explicit_template_key=effective_template_key,
+                required=True,
+            )
+            if template_grounding.status != TemplateGroundingStatus.RESOLVED:
+                trace.record(
+                    "request_completed",
+                    trace_id=trace_id,
+                    request_id=effective_req_id,
+                    data_summary={
+                        "terminal_state": "clarification_required",
+                        "reason": template_grounding.method,
+                    },
+                )
+                return self._build_result(
+                    None,
+                    effective_req_id,
+                    "clarification_required",
+                    intent=intent.intent.value,
+                    response_type="clarification",
+                    clarification_question="生成报表前请选择有效的简易模板。",
+                    trace_id=trace_id,
+                    trace=trace,
+                    conversation_id=effective_conv_id,
+                )
+            effective_template_key = template_grounding.canonical_key
+
         # 6. 创建 pending memory — M1.6.3.1: 委托给 TurnPipeline
         base_version = committed.memory_version if committed is not None else 0
         memory = await self.pipeline.create_pending_memory(
@@ -330,6 +364,10 @@ class MockTurnService:
         context["mock_scenario_key"] = resolved_scenario.query_plan_key
         plan_result = await self.llm.run(message, context, QueryPlan)
         query_plan: QueryPlan = plan_result.structured  # type: ignore[assignment]
+        if intent.intent == IntentType.REPORT_GENERATION:
+            query_plan = query_plan.model_copy(
+                update={"requested_template": effective_template_key}
+            )
         trace.record("plan_created", trace_id=trace_id, request_id=effective_req_id)
 
         # 9. 通过 ToolGateway 获取 Schema
@@ -526,6 +564,21 @@ class MockTurnService:
             context["mock_scenario_key"] = resolved_scenario.response_key
             report_result = await self.llm.run(message, context, ReportSpec)
             report_spec: ReportSpec = report_result.structured  # type: ignore[assignment]
+            report_updates: dict[str, Any] = {
+                "template_key": effective_template_key,
+            }
+            if effective_template_key == "sales_report":
+                result_id = query_result.result_id or f"mock-{effective_req_id}"
+                report_updates.update({
+                    "contract_version": "mock-simple-report-v1",
+                    "semantic_model_key": semantic_model_key,
+                    "schema_fingerprint": compute_schema_fingerprint(schema),
+                    "query_result_ids": [result_id],
+                    "verified_fact_set_ids": [f"mock-vfs-{result_id}"],
+                    "data_source": semantic_model_key,
+                    "source_mode": "mock",
+                })
+            report_spec = report_spec.model_copy(update=report_updates)
 
             report_validation = self.validator.validate_report(report_spec, schema, query_result)
             if not report_validation.is_valid:

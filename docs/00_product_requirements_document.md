@@ -4,7 +4,7 @@
 > **修订版本：** v2.1
 > **修订日期：** 2026-08-26
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** 新版 M5.5 Semantic correctness 与 capability boundary 已完成并冻结；M5.6 Presentation、Localization 与 Resource UX truth 已启动，M5.7—M5.9 均未开始
+> **本轮修订范围：** M5.5 Semantic/DAX authority 与 M5.6 Presentation authority 已冻结；M5.7 简易报表视觉与模板必选已完成，M5.8—M5.10 均未开始
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -79,7 +79,7 @@ Agent 查询真实数据，返回文字结论和数据表格。
 
 ### 5.3 报表生成
 
-普通问答、多轮分析和报表生成由后端 intent 自动识别，前端不预先决定“问答还是报表”。用户可以主动选择一个已登记固定模板作为可选 `report_template_key` override；未选择只表示不传 override，不代表“禁止生成报表”。当 intent 为报表生成时，后端仍可按业务规则选择默认模板并生成静态 HTML 报表。当前 production catalog 只有 `sales_report`（“销售分析报告”），未来可扩展多个已登记模板。
+普通问答、多轮分析和报表生成由后端 intent 自动识别，前端不预先决定“问答还是报表”。前端模板选择器只提供 template choice，不增加 Chat/Report 模式切换，也不自行判断 intent。任何报表生成请求必须显式携带 registry-valid `report_template_key`；未选择、unknown 或 stale template 时返回 clarification/template-required 终态，并在 ReportData assembly、ReportSpec、Renderer 与 HTML artifact 前 fail closed。禁止默认 `sales_report`、自动猜模板或 fallback 第一项。当前 production catalog 只有 `sales_report`，产品展示名为“简易模板”。
 
 ## 六、前端设计
 
@@ -159,7 +159,7 @@ AI 回答不是只能返回纯文本。同一条 AI 消息现在可以按实际�
 
 ### 前端开发策略
 
-当前 M5.6 只开发 Presentation/Localization/Resource UX truth。M5.5 Semantic correctness 已冻结；后续 M5.7 Report readability、M5.8 MCP performance/resilience、M5.9 固定专业销售模板仍依次隔离开发，不再把多个域塞入同一 milestone。
+M5.7 已完成且只包含简易报表视觉、响应式可读性与 Report Template Required Gate。M5.5 Semantic/DAX authority 与 M5.6 Presentation authority 已冻结；后续 M5.8 LLM Provider/DeepSeek+Kimi、M5.9 MCP performance/resilience、M5.10 固定专业销售模板与两模板选择依次隔离开发，不把多个域塞入同一 milestone。
 
 M5.6 必须让 conversation/report 共用同一 Portal/floating layer action menu，并按 viewport 在目标行上方或下方定位，禁止被 scroll container、scrollbar 或 stacking context 裁切。Settings Resource Manager 必须定义 nested scroll contract，并以 sticky 或可滚动 action toolbar 保证 destructive actions 在不同 viewport/zoom 下始终可访问。
 
@@ -294,9 +294,10 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 15. **M5.4.2 M5 重建基线与规划固化** ✅ COMPLETE — 从 `cab40b0` 建立 `m5/rebuild`，只做 Git/文档/治理
 16. **M5.5 Semantic correctness** ✅ COMPLETE — Grounding、runtime member、ambiguity/no-match、multi-turn、TopN、time、capability boundary
 17. **M5.6 Presentation/Localization/Resource UX truth** ✅ COMPLETE — canonical/display、格式化、信息密度、Settings/Recent/failed resource、共享 floating menu、nested scroll 与 action toolbar
-18. **M5.7 Report readability** ⏳ NOT STARTED — information architecture、responsive、geometry、axis/tick、accessibility、人工可读性
-19. **M5.8 MCP performance/resilience** ⏳ NOT STARTED — profiling/cache/session reuse、queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak
-20. **M5.9 固定专业销售报表模板与模板选择** ⏳ NOT STARTED — 简易模板保留 M5.7 优化后的 `sales_report.html`；销售模板使用确定性专业版式并显式选择；完成后才允许 M5 FINAL
+18. **M5.7 简易报表视觉 + Report Template Required** ✅ COMPLETE — information architecture、responsive、geometry、axis/tick、accessibility、人工可读性；任何 report request 显式模板必选且失败时 ZERO ReportData/ReportSpec/Renderer/artifact
+19. **M5.8 多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** ⏳ NOT STARTED — `OpenAICompatibleLLMProvider`、`LLMModelProfile`、request/conversation-scoped model selection 与同一 authority/regression contract；不做 MCP 性能优化
+20. **M5.9 MCP performance/resilience** ⏳ NOT STARTED — profiling/cache/session reuse、bounded concurrency/queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak；不改 Semantic/DAX/VerifiedFactSet authority
+21. **M5.10 固定专业销售报表模板与两模板选择** ⏳ NOT STARTED — 简易模板保留 M5.7 优化后的 `sales_report.html`；销售模板使用确定性专业版式并显式选择；只有全部门禁完成后才允许 M5 FINAL
 
 ## 十二、MVP 暂不包含
 
@@ -369,6 +370,6 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-M5.9 已纳入正式路线：用户可明确选择“简易模板”或“销售模板”。销售模板可以包含 sales-specific section，但只消费 runtime schema 与 VerifiedFactSet 已证明的事实；缺少 Forecast/Goal/Pipeline 时必须用当前模型真实支持的销售 section 替代，禁止伪造。任何模板均不允许 LLM 临场生成 HTML/CSS/SVG。
+M5.10 已纳入正式路线：用户可明确选择“简易模板”或“销售模板”。销售模板可以包含 sales-specific section，但只消费 runtime schema 与 VerifiedFactSet 已证明的事实；缺少 Forecast/Goal/Pipeline 时必须用当前模型真实支持的销售 section 替代，禁止伪造。任何模板均不允许 LLM 临场生成 HTML/CSS/SVG。
 
-*修订日期：2026-08-26 | M5.6 COMPLETE；M5.7—M5.9 NOT STARTED*
+*修订日期：2026-08-26 | M5.7 COMPLETE；M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

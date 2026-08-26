@@ -5,10 +5,7 @@
 
 Golden Cases 和内部测试可以通过显式传入 MockScenarioSelection 跳过解析器。
 
-M1.0 修复：
-- 返回 MockScenarioResolution（含 effective_report_template_key）
-- 历史 Mock compatibility 默认报表模板固定为 sales_weekly
-- 客户端未传模板但消息包含报表关键词时，effective_report_template_key 自动填充
+M5.7：报表关键词只识别 intent，不再隐式填充任何模板。
 """
 
 from typing import Optional
@@ -26,11 +23,6 @@ class MockScenarioResolution(BaseModel):
     """
     scenario: MockScenarioSelection
     effective_report_template_key: Optional[str] = None
-
-
-# 默认报表模板 — M1.0 固定
-# M0-M2 fixture compatibility only; not M3 production availability.
-DEFAULT_REPORT_TEMPLATE = "sales_weekly"
 
 
 class MockScenarioResolver:
@@ -110,7 +102,7 @@ class MockScenarioResolver:
                 effective_report_template_key=report_template_key,
             )
 
-        # 3. 包含报表关键词 → report_generation（默认模板 sales_weekly）
+        # 3. 包含报表关键词 → report_generation；模板必须由请求显式提供。
         for kw in cls.REPORT_KEYWORDS:
             if kw in msg_lower:
                 return MockScenarioResolution(
@@ -121,7 +113,7 @@ class MockScenarioResolver:
                         powerbi_key="report_generation",
                         response_key="report_generation",
                     ),
-                    effective_report_template_key=DEFAULT_REPORT_TEMPLATE,
+                    effective_report_template_key=None,
                 )
 
         # 4. 模糊/不明确问题 → clarification

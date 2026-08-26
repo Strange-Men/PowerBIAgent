@@ -1,7 +1,7 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.6 Presentation/Localization/Resource UX truth（COMPLETE）
-> **目标阶段：** M5.6 负责 Presentation/Localization/Resource UX truth；M5.7 独立负责 Report readability
+> **状态：** M5.7 简易报表视觉与模板必选（COMPLETE）
+> **目标阶段：** M5.7 已完成简易报表可读性、显式模板选择与 Report Template Required Gate；M5.8—M5.10 未开始
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -25,7 +25,7 @@
 - conversation/report action menu 必须复用一个 Portal/floating layer 与一套 viewport-aware above/below positioning；不得分别实现两套定位逻辑，也不得受 scroll container、scrollbar 或 stacking context 裁切。
 - Settings Resource Manager 必须建立 nested scroll contract，并使用 sticky 或 scrollable action toolbar 与 responsive overflow 策略；禁止以 viewport 高度/宽度或容器空间不足为由隐藏 destructive action。
 - Layout Gate 必测 first/middle/last row、scroll top/middle/bottom、100%/125% zoom、768/1080/1440 viewport height、Sidebar scroll、Settings nested scroll，并证明 destructive action 始终可达、floating menu 永不裁切。
-- M5.7 才处理 report card width/height、时间轴跨年识别、plot area、无意义空白、donut/legend 密度、accessibility 与视觉层级。
+- M5.7 处理现有 `sales_report.html` 简易模板的 card width/height、时间轴跨年识别、plot area、无意义空白、donut/legend 密度、table、accessibility 与视觉层级。
 - “技术不裁切”不等于“产品可读”。M5.7 必须通过 Real Browser 人工视觉 Gate；M5.6 不修改 report renderer，M5.7 不修改 Semantic/MCP/resource lifecycle。
 
 ## 三、视觉参考图片
@@ -324,9 +324,10 @@
 
 - 映射为 chat request 的 `report_template_key`
 - 实际内容来自已登记模板白名单
-- 当前无独立 `/api/report-templates` 端点；前端集中 catalog 只登记 `sales_report`（“销售分析报告”）
-- 不显示“不使用模板”；默认未选择表示本次请求不传 override，不代表“仅问答”或“禁止报表”
-- 普通问答、多轮和 report intent 由后端自动识别；未传 override 时后端仍可选择默认模板
+- 当前无独立 `/api/report-templates` 端点；前端集中 catalog 只登记 `sales_report`（“简易模板”）
+- 不显示“不使用模板”，也不设置隐式 default；任何报表请求必须先显式选择模板
+- 未选择模板时，用户提出 report intent 仍由后端识别，但前端必须清晰提示“生成报表前请选择模板”，不得补发默认 key
+- 普通问答、多轮和 report intent 仍由后端自动识别；但 report intent 缺少显式模板时只能返回 template-required，不得选择默认模板
 - 用户主动选择的 template override 是单次请求意图，发送后回到未选择状态，避免变成粘性的“报表模式”
 - 当前选中项应有清晰视觉状态
 - 未实现或不适用于当前模型的模板必须禁用或隐藏
@@ -514,4 +515,4 @@ shell、body、content 与 list 都必须声明 `min-height: 0`/overflow respons
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-26 | M5.6 COMPLETE — Resource UX truth 与 Layout Gate 已通过*
+*最后更新：2026-08-26 | M5.7 COMPLETE — 简易模板与 Template Required Gate*

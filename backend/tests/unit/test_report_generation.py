@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -346,6 +347,103 @@ async def test_no_duplicate_table_visual_regression():
     assert "总销量" in html
 
 
+def _trend_chart(point_count: int, *, cross_year: bool = False) -> ChartSpec:
+    start_year = 2025 if cross_year else 2026
+    start_month = 10 if cross_year else 1
+    series = []
+    for index in range(point_count):
+        month_offset = start_month - 1 + index
+        year = start_year + month_offset // 12
+        month = month_offset % 12 + 1
+        value = 9_999_999.99 if index == 0 else 8_888_888.88 if index == point_count - 1 else index + 1
+        series.append({"label": f"{year}-{month:02d}-01T00:00:00", "value": value})
+    return ChartSpec(
+        type="line",
+        title="月度销售趋势",
+        x_field="Order Month",
+        y_field="Total Sales",
+        visual_type="line",
+        business_role="time_trend",
+        layout_hint="full",
+        series=series,
+    )
+
+
+@pytest.mark.parametrize("point_count", [1, 2, 6, 12, 15, 24, 60])
+def test_time_trend_ticks_are_density_aware_and_labels_are_complete(point_count):
+    html = SalesReportRenderer._line_chart(
+        _trend_chart(point_count, cross_year=point_count >= 6)
+    )
+    assert html.count('data-point="') == point_count
+    assert "2025-0" not in html
+    assert "2026-0" not in html
+    assert re.search(r"2025年10月|2026年1月", html)
+    assert 'data-tick-tier="base"' in html
+    if point_count > 4:
+        assert 'data-tick-tier="medium"' in html
+    if point_count > 8:
+        assert 'data-tick-tier="wide"' in html
+    assert html.count("<title>") == point_count
+
+
+def test_time_trend_first_last_and_direct_labels_stay_inside_plot():
+    html = SalesReportRenderer._line_chart(_trend_chart(15, cross_year=True))
+    axis_labels = re.findall(
+        r'<text[^>]+data-tick-index="(\d+)"[^>]+text-anchor="([^"]+)"', html
+    )
+    assert axis_labels[0] == ("0", "middle")
+    assert axis_labels[-1] == ("14", "middle")
+    direct_labels = re.findall(
+        r'<text[^>]+data-direct-index="(\d+)"[^>]+text-anchor="([^"]+)"', html
+    )
+    assert ("0", "start") in direct_labels
+    assert ("14", "end") in direct_labels
+    assert "9,999,999.99" in html
+    assert "8,888,888.88" in html
+
+
+@pytest.mark.asyncio
+async def test_simple_report_responsive_and_accessible_contract():
+    html = await SalesReportRenderer().render(
+        SalesReportSpecBuilder().build(_assembled())
+    )
+    assert 'data-template-name="简易模板"' in html
+    assert "max-width: 1440px" in html
+    assert "min-width: 0" in html
+    assert "overflow-wrap: anywhere" in html
+    assert "@media (min-width: 640px)" in html
+    assert "@media (min-width: 1200px)" in html
+    assert "@media (max-width: 900px)" in html
+    assert "@media (max-width: 430px)" in html
+    assert 'aria-labelledby="section-category_contribution-title"' in html
+    assert 'aria-labelledby="section-top_products-title"' in html
+    assert 'tabindex="0"' in html
+    assert ":focus-visible" in html
+    assert "word-break: break-word" in html
+
+
+def test_donut_long_labels_keep_text_values_and_accessible_names():
+    chart = ChartSpec(
+        type="donut",
+        title="品类销售贡献",
+        x_field="Category",
+        y_field="Total Sales",
+        visual_type="donut",
+        business_role="category_contribution",
+        layout_hint="half",
+        series=[
+            {"label": "企业办公与远程协作设备及配套服务", "value": 700.25},
+            {"label": "家具", "value": 500.25},
+        ],
+    )
+    html = SalesReportRenderer._donut_chart(chart)
+    assert "企业办公与远程协作设备及配套服务" in html
+    assert 'aria-label="企业办公与远程协作设备及配套服务，58.33%"' in html
+    assert 'tabindex="0"' in html
+    assert "700.25" in html
+    assert "58.33%" in html
+
+
 @pytest.mark.asyncio
 async def test_renderer_rejects_incomplete_provenance():
     report = SalesReportSpecBuilder().build(_assembled())
@@ -601,6 +699,7 @@ class _ReportLanguageProvider(LLMProvider):
 
 class _RealReportAdapter(PowerBIAdapter):
     def __init__(self) -> None:
+        self.schema_count = 0
         self.execute_count = 0
 
     @property
@@ -615,6 +714,7 @@ class _RealReportAdapter(PowerBIAdapter):
         return True
 
     async def get_semantic_model_schema(self, semantic_model_key: str):
+        self.schema_count += 1
         assert semantic_model_key == "local_desktop_model"
         return _schema()
 
@@ -664,7 +764,7 @@ async def test_store_failure_never_commits_memory():
         message="生成销售周报",
         conversation_id="conv-store-fail",
         request_id="req-store-fail",
-        report_template_key="sales_weekly",
+        report_template_key="sales_report",
     )
     assert result["terminal_state"] == "response_failed"
     assert result["memory_commit"] is False
@@ -683,7 +783,7 @@ async def test_idempotent_report_replay_reuses_one_artifact():
         "message": "生成销售周报",
         "conversation_id": "conv-report-replay",
         "request_id": "req-report-replay",
-        "report_template_key": "sales_weekly",
+        "report_template_key": "sales_report",
     }
     first = await service.execute(**request)
     replay = await service.execute(**request)
@@ -775,6 +875,52 @@ async def test_production_turn_uses_capability_resolved_queries_and_replays():
     assert replay["tool_sequence"] == []
     assert adapter.execute_count == 4
     assert repository.store_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("template_key", [None, "unknown_template", "sales_weekly"])
+async def test_report_template_required_gate_precedes_planning_and_artifact(
+    template_key,
+):
+    adapter = _RealReportAdapter()
+    provider = _ReportLanguageProvider()
+    repository = _CountingReportRepository()
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        powerbi_local_semantic_model_key="local_desktop_model",
+        max_tool_calls=16,
+    )
+    service = DeepSeekTurnService(
+        memory_repo=InMemoryMemoryRepository(),
+        llm_provider=provider,
+        powerbi_adapter=adapter,
+        report_renderer=SalesReportRenderer(),
+        report_repository=repository,
+        settings=settings,
+        config=HarnessConfig.from_settings(settings),
+    )
+
+    result = await service.execute(
+        message="生成销售分析报表",
+        conversation_id=f"conv-template-required-{template_key or 'missing'}",
+        request_id=f"req-template-required-{template_key or 'missing'}",
+        semantic_model_key="local_desktop_model",
+        report_template_key=template_key,
+    )
+
+    assert result["terminal_state"] == "clarification_required"
+    assert result["response_type"] == "clarification"
+    assert "选择" in result["clarification_question"]
+    assert "模板" in result["clarification_question"]
+    assert result.get("report") is None
+    assert result["memory_commit"] is False
+    assert result["tool_sequence"] == []
+    assert [call.task.value for call in provider.calls] == ["intent_recognition"]
+    assert adapter.schema_count == 0
+    assert adapter.execute_count == 0
+    assert repository.store_count == 0
 
 
 def test_local_reports_and_pbix_are_not_git_tracked():

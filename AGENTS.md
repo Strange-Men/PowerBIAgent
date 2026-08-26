@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.6 — Presentation、Localization 与 Resource UX truth（COMPLETE）**。M5.5 Semantic correctness 已冻结；M5.7—M5.9 尚未开始。
+当前版本：**M5.7 — 简易报表视觉与模板必选（COMPLETE）**。M5.5 Semantic/DAX authority 与 M5.6 Presentation authority 已冻结；M5.8—M5.10 尚未开始。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -37,9 +37,13 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.3.3** 已完成多轮与资源生命周期最终收口：当前明确表达 > bounded LLM semantic draft > committed Memory；fresh/follow-up/replace 分离，unsupported 在 Memory/Grounding/DAX 前 fail closed；archive 可恢复且不等于 delete；report 只可由用户显式资源 API 独立删除；前端 history 使用 abort/generation/active identity 防串窗；local_state 与测试 artifact 由长期 ownership/cleanup gate 治理。新增 migration `e7a9c2d4f631`；Rich PBIX 八轮 Real 浏览器与资源生命周期验收通过。M0–M5 factual authority 不变。**M5.3.3 COMPLETE。**
 - **M5.4** 已完成 conversation-scoped UI/runtime state、client UUID provisional conversation、异 conversation 并发/同 conversation 串行、Sidebar pending row、用户卡片资源管理、最多 20 项 bounded bulk orchestration、report tombstone 与 presentation-only `display_title`。新增 migration `a4f6b8c2d190`；Rich PBIX A/B/C 并发、归档恢复、rename/delete/history tombstone 与资源清理 Real Browser Acceptance 通过。M5.5 语言理解、中文字段、性能、HTML 视觉继续 Deferred。**M5.4 COMPLETE。**
 - **M5.4.1** 已完成 Settings 独立全量 cursor pagination、active/archived conversation/report 管理、准确 total/loaded/selected 语义与最多 20 项一组的 bounded execution；同秒 SQLite cursor 使用 `julianday + stable ID` 防止重复页。automation-owned 资源显式登记 ownership，`finally` teardown 后验证 conversation/report/HTML/SQLite/delete-intent residual 为 0；无法证明 ownership 的现有资源一律保留。新增 migration `b7c9d2e4f610`。**M5.4.1 COMPLETE；M5.5 Deferred。**
-- **M5.4.2** 从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 建立 `m5/rebuild`。旧 `m5/frontend` 的 `a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）作为实验/审计记录保留，不删除、不重写、不整体 cherry-pick；新 M5.5—M5.8 必须分域重新实现并重新 Real Acceptance。本轮只做 Git 基线与文档/治理固化，不修改生产业务逻辑。**M5.4.2 COMPLETE。**
+- **M5.4.2** 从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 建立 `m5/rebuild`。旧 `m5/frontend` 的 `a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）作为实验/审计记录保留，不删除、不重写、不整体 cherry-pick；新 M5.5—M5.10 必须分域重新实现并重新 Real Acceptance。本轮只做 Git 基线与文档/治理固化，不修改生产业务逻辑。**M5.4.2 COMPLETE。**
 - **M5.5** 已完成 semantic correctness、capability boundary、multi-turn slot inheritance、runtime object/member authority、ranking/TopN 与 temporal semantics 的独立重建。explicit unresolved member 已稳定 clarification/no-match 且 ZERO DAX/QueryResult/Memory commit；Sales、Education、Inventory、未知 holdout、schema mutation、Real Rich PBIX 四轮与浏览器人工验收通过。无 schema/migration、Presentation、Report、Resource UX 或 MCP performance 变化。**M5.5 COMPLETE；semantic authority 已冻结。**
-- **M5.6** 已完成 canonical/display 分离、model/object/schema-scoped Localization、deterministic presentation formatting、Answer/Table/Chart 信息密度、Recent/Settings resource truth、failed conversation lifecycle、共享 floating action menu 与 Settings nested scroll/toolbar。**M5.6 COMPLETE；M5.7—M5.9 NOT STARTED。**
+- **M5.6** 已完成 canonical/display 分离、model/object/schema-scoped Localization、deterministic presentation formatting、Answer/Table/Chart 信息密度、Recent/Settings resource truth、failed conversation lifecycle、共享 floating action menu 与 Settings nested scroll/toolbar。**M5.6 COMPLETE。**
+- **M5.7** 已完成现有 `sales_report.html` 的简易模板可读性、响应式视觉与 `Report Template Required` fail-closed Gate。任何 report intent/request 必须显式携带有效 `report_template_key`；缺失、unknown 或 stale template 均在 ReportData/ReportSpec/Renderer/HTML artifact 之前停止。**M5.7 COMPLETE。**
+- **M5.8** 只负责 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek + Kimi-K2.6 与 request/conversation-scoped model selection；不得混入 MCP 性能优化。**M5.8 NOT STARTED。**
+- **M5.9** 只负责 MCP profiling、session reuse、cache、bounded concurrency、bounded queue/backpressure、20/50/100 concurrency 与 restart/fault/soak；不得修改 Semantic/DAX/VerifiedFactSet authority。**M5.9 NOT STARTED。**
+- **M5.10** 只负责“简易模板/销售模板”显式选择与固定专业销售模板；两者都遵守 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed renderer`。**M5.10 NOT STARTED。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。**
 
 当前真实主链：
 
@@ -100,17 +104,22 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 26. M5.4.1：Codex acceptance、pytest integration、browser/Real Smoke/MCP/report tests 创建的 conversation/report/file 必须携带可审计 test ownership（至少 test run identity 与 automation owner），在 `finally` 中通过正式 API/repository cleanup 并验证零残留。cleanup failure、pending intent、orphan 或本轮 test SQLite namespace residual 必须使 Gate FAIL。
 27. M5.4.1：test cleanup 只能处理已证明 automation-owned 的资源；标题、问题文本或“看起来像测试”不是 ownership 证据。不得删除无法确认 ownership 的用户资源；M5.5 继续 Deferred。
 28. M5.4.2：新开发线唯一基线为 `cab40b0`；原 M5.5/M5.5.1 只保留为实验历史与单项设计参考。任何新能力必须重新实现、重新回归并重新 Real Acceptance，旧 PASS 不得移植为新线证据。
-29. M5.5—M5.9 必须依次隔离为 Semantic correctness、Presentation/Localization/Resource UX truth、Report readability、MCP performance/resilience、固定专业销售报表模板与模板选择。一个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
+29. M5.5—M5.10 必须依次隔离为 Semantic correctness、Presentation/Localization/Resource UX truth、简易报表视觉与模板必选、LLM Provider/双模型、MCP performance/resilience、固定专业销售报表模板与两模板选择。一个 milestone 禁止同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle 多个域。
 30. explicit unresolved semantic requirement 必须 clarification/no-match 且 ZERO DAX；不得把未知 member/filter（例如“火星区”）静默降级为全国或无筛选查询。当前明确表达与 runtime member authority 优先于旧 Memory。
 31. PowerBIAgent 不是 Sales Agent。影响泛化的版本必须至少验证 Sales/Retail、Education、Inventory/Operations，并以未知业务模型做最终 holdout；生产代码不得在正式 model-scoped glossary/test fixture 之外写死业务字段、member 或答案。
-32. 每轮必须执行 `Spec → Failure reproducer → Regression tests → Minimal implementation → Focused Real → Cross-domain → Full gates → User manual acceptance → commit`。自动化通过数不能替代 Real Browser/人工验收；新增 M5.9 后，只有 M5.9 全部门禁完成才允许声明 `M5 FINAL`。完整合同见 `docs/specs/13_m5_generalization_and_acceptance_contract.md`。
+32. 每轮必须执行 `Spec → Failure reproducer → Regression tests → Minimal implementation → Focused Real → Cross-domain → Full gates → User manual acceptance → commit`。自动化通过数不能替代 Real Browser/人工验收；只有 M5.10 全部门禁完成后才允许声明 `M5 FINAL`。完整合同见 `docs/specs/13_m5_generalization_and_acceptance_contract.md`。
 33. M5.6 必须以 conversation/report 共用 Portal/floating layer 解决 action menu 裁切，并以 viewport-aware above/below positioning 避开 scroll container、scrollbar 与 stacking context；Settings Resource Manager 必须有 nested scroll contract 与 sticky 或 scrollable action toolbar。正式 Layout Gate 覆盖 first/middle/last row、scroll top/middle/bottom、100%/125% zoom、768/1080/1440 viewport height、Sidebar scroll、Settings nested scroll，并证明 destructive action 始终可达、floating menu 永不裁切。M5.6 不得修改 Grounding/DAX/MCP authority。
-34. M5.9 晚于 M5.8，新增“简易模板”与“销售模板”的显式选择；两者都必须遵守 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed HTML renderer`。专业销售模板可使用 sales-specific section，但不得伪造 Forecast/Goal/Pipeline，LLM 不拥有 HTML layout、query 或 factual authority。
+34. M5.10 晚于 M5.9，新增“简易模板”与“销售模板”的显式选择；两者都必须遵守 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed HTML renderer`。专业销售模板可使用 sales-specific section，但不得伪造 Forecast/Goal/Pipeline，LLM 不拥有 HTML layout、query 或 factual authority。
 35. M5.6：`canonical_name`、runtime object identity、QueryResult/VerifiedFactSet value 与 provenance 永不因本地化改变；`display_name` 只属于 presentation。Localization key 至少包含 semantic model、object identity、object type、locale 与 schema identity，schema/object identity 变化必须使旧 display cache 失效；LLM 只可翻译 runtime 已证明存在的 bounded object candidate。
 36. M5.6：展示职责固定为 `Answer = 结论/洞察`、`Table = 精确明细`、`Chart = 趋势/关系`。single scalar 只显示自然语言文本；grouped 使用简短结论与 table，必要时附 chart；trend 使用简短趋势结论、table 与 line。不得逐行复述 table、泄漏 raw timestamp 或重复堆叠相同事实。
 37. M5.6：Settings 与 Sidebar Recent Reports 必须读取同一正式 report resource source，Sidebar 仅做 active、bounded、newest-first projection；conversation 排序固定为 `updated_at DESC, created_at DESC, stable_id DESC`，不得依赖 array insertion order。
 38. M5.6：failed conversation 是正式、可持久化用户资源，必须支持 Settings 可见、rename、archive、restore、delete；failed turn 仍不得提交 Memory。resource 状态只能来自正式 metadata，不得按 title、用户名或“测试”字样推断。
-39. M5.6：conversation/report 共用 `FloatingActionMenu` Portal positioning contract；Settings shell 固定 header、navigation、content scroll、toolbar 与 list scroll 责任。M5.6 禁止修改 Grounding、DAX、MCP、report renderer 或 M5.9 template。
+39. M5.6：conversation/report 共用 `FloatingActionMenu` Portal positioning contract；Settings shell 固定 header、navigation、content scroll、toolbar 与 list scroll 责任。M5.6 禁止修改 Grounding、DAX、MCP、report renderer 或 M5.10 template。
+40. M5.7：任何 report intent/request 必须显式拥有 registry-valid `report_template_key`。missing/invalid/stale template 必须 clarification/template-required 且 ZERO ReportData assembly、ZERO ReportSpec、ZERO renderer、ZERO HTML artifact；禁止默认 `sales_report`、猜模板或 fallback 第一项。当前唯一公开模板 `sales_report` 的展示名固定为“简易模板”。
+41. M5.7：前端 template selector 只提供显式 choice，不判断用户 intent、不增加 Chat/Report 模式切换；未选模板时不得发送 report request 的隐式 default。Renderer 只消费已验证 ReportData/ReportSpec，不计算业务指标、不查询 Power BI、不调用 LLM、不修改 Memory。
+42. M5.8：只允许 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection；共用同一 authority/regression contract，禁止 MCP performance 改动。
+43. M5.9：只允许 profiling、MCP session reuse/cache、bounded concurrency/queue/backpressure、20/50/100 concurrency 与 restart/fault/soak；禁止修改 Semantic/DAX/VerifiedFactSet authority。
+44. M5.10：只允许固定专业销售模板与“简易模板/销售模板”显式选择；禁止 LLM 临场生成 HTML/CSS/SVG。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前跨入未批准里程碑、开发 Remote MCP；未经用户明确批准不得创建 Tag。
 
@@ -144,4 +153,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-26 | M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*
+*最后更新：2026-08-26 | M5.7 COMPLETE — M5.8—M5.10 NOT STARTED*

@@ -1,6 +1,6 @@
 # 11 — 结构化组合回答契约
 
-> **状态：** M5.6 Presentation/Localization contract（COMPLETE）。
+> **状态：** M5.6 Presentation/Localization contract（COMPLETE）；M5.7 Report Template Required / readability（COMPLETE）。
 > **边界：** 本契约只增加安全展示层，不改变 WorkMemory、QueryResult、VerifiedFactSet、ReportSpec 或 ReportArtifact 的事实权威。
 
 ## 一、目标
@@ -219,7 +219,15 @@ schema_identity
 - trend：简短趋势结论 + table + line。最高点、回落、回升等措辞只能由 VerifiedFactSet 中真实顺序和值确定；禁止输出 `Year Month=...` 或完整 15 行文本。
 - 1 row 不伪造趋势或多项比较；many rows 仍保持 bounded answer，完整明细由 table/chart 负责。
 
+## 十、M5.7 Report Template Required 与简易模板边界
+
+- 任何 report intent/request 必须显式携带 registry-valid `report_template_key`。missing/invalid/stale template 返回 clarification/template-required，且必须在 ReportData assembly、ReportSpec、Renderer 与 HTML artifact 前停止。
+- 当前唯一 production key 为 `sales_report`，产品展示名为“简易模板”。禁止后端默认模板、自动猜模板、fallback 第一项或把未选择解释为许可生成。
+- 前端模板选择器只提供 choice/override，不决定 report intent、不增加 Chat/Report 模式切换器；用户自然语言仍决定分析或报表 intent。
+- Renderer 只消费 VerifiedFactSet 约束下的 ReportData/ReportSpec，视觉优化不得改变事实值、顺序或 provenance，不得查询 Power BI、调用 LLM、修改 Memory 或制造 Forecast/Goal/Pipeline。
+- 时间趋势正式视觉 Gate 覆盖 1/2/6/12/15/24/60 点与 390/768/1080/1440/1920/2560 宽度，确保首尾 tick、长标签、direct label、中文月份与大数值可读且无页面水平滚动。
+
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-26 | M5.6 COMPLETE — canonical/display、formatter 与 density contract*
+*最后更新：2026-08-26 | M5.7 COMPLETE — Template Required 与简易模板可读性 contract*

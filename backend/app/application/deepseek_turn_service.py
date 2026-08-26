@@ -458,6 +458,41 @@ class DeepSeekTurnService:
                 data_summary={"provisional_intent": provisional_intent.value},
             )
 
+        if intent.intent == IntentType.REPORT_GENERATION:
+            template_grounding = DEFAULT_TEMPLATE_CATALOG.ground(
+                message,
+                explicit_template_key=report_template_key,
+                required=True,
+            )
+            if template_grounding.status != TemplateGroundingStatus.RESOLVED:
+                trace.record(
+                    "request_completed",
+                    trace_id=trace_id,
+                    request_id=effective_req_id,
+                    data_summary={
+                        "terminal_state": "clarification_required",
+                        "reason": template_grounding.method,
+                    },
+                )
+                return self._build_result(
+                    effective_req_id,
+                    effective_conv_id,
+                    "clarification_required",
+                    intent=intent.intent.value,
+                    response_type="clarification",
+                    clarification_question="生成报表前请选择有效的简易模板。",
+                    trace=trace,
+                    trace_id=trace_id,
+                    is_mock=False,
+                    source_mode=self._source_mode,
+                    collector=collector,
+                    execution_audit={
+                        **semantic_audit,
+                        "report_template_gate": template_grounding.method,
+                        "committed_memory_mutated": False,
+                    },
+                )
+
         schema: SemanticModelSchema | None = None
         exec_ctx: Any = None
         controller_prepared = False
@@ -580,7 +615,7 @@ class DeepSeekTurnService:
             message,
             weak_requested_template=query_plan.requested_template,
             explicit_template_key=report_template_key,
-            required=intent.intent == IntentType.REPORT_GENERATION,
+            required=False,
         )
         if template_grounding.status in {
             TemplateGroundingStatus.AMBIGUOUS,

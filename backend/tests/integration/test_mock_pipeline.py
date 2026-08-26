@@ -122,7 +122,7 @@ class TestMockReportPipeline:
                 powerbi_key="report_generation",
                 response_key="report_generation",
             ),
-            report_template_key="sales_weekly",
+            report_template_key="sales_report",
         )
         assert result["terminal_state"] == "completed"
         assert result["memory_commit"] is True
@@ -139,7 +139,7 @@ class TestMockReportPipeline:
                 intent_key="report_generation",
                 response_key="fake_field_report",
             ),
-            report_template_key="sales_weekly",
+            report_template_key="sales_report",
         )
         assert result["terminal_state"] == "response_failed"
         assert result["memory_commit"] is False
@@ -555,7 +555,7 @@ class TestProductIds:
                 powerbi_key="report_generation",
                 response_key="report_generation",
             ),
-            report_template_key="sales_weekly",
+            report_template_key="sales_report",
         )
         assert result["terminal_state"] == "completed"
         mem = await service.pipeline.get_memory_by_request_id("req-rpt-id", RuntimeDataMode.MOCK)
@@ -657,7 +657,7 @@ class TestSameRuntimeConcurrent:
                     powerbi_key="report_generation",
                     response_key="report_generation",
                 ),
-                report_template_key="sales_weekly",
+                report_template_key="sales_report",
             )
 
         r_a, r_b = await asyncio.gather(turn_a(), turn_b())
@@ -822,7 +822,7 @@ class TestSameServiceConcurrent:
                     powerbi_key="report_generation",
                     response_key="report_generation",
                 ),
-                report_template_key="sales_weekly",
+                report_template_key="sales_report",
             )
 
         r_a, r_b = await asyncio.gather(turn_a(), turn_b())
@@ -921,7 +921,7 @@ class TestForcedInterleaving:
                     powerbi_key="report_generation",
                     response_key="report_generation",
                 ),
-                report_template_key="sales_weekly",
+                report_template_key="sales_report",
             )
 
         r_a, r_b = await asyncio.gather(turn_a(), turn_b())
@@ -1015,7 +1015,7 @@ class TestForcedInterleaving:
                     powerbi_key="report_generation",
                     response_key="report_generation",
                 ),
-                report_template_key="sales_weekly",
+                report_template_key="sales_report",
             )
 
         r_a, r_b = await asyncio.gather(turn_a(), turn_b())
@@ -1070,7 +1070,7 @@ class TestSameServiceFullToolChainConcurrent:
                 conversation_id="conv-m04-full-b",
                 request_id="req-m04-full-b",
                 semantic_model_key="mock_sales_model",
-                report_template_key="sales_weekly",
+                report_template_key="sales_report",
                 scenario=MockScenarioSelection(
                     intent_key="report_generation",
                     query_plan_key="report_generation",
@@ -1156,7 +1156,7 @@ class TestSameServiceFullToolChainConcurrent:
                     message="生成周报",
                     conversation_id=f"conv-m04-loop-b-{idx}",
                     request_id=f"req-m04-loop-b-{idx}",
-                    report_template_key="sales_weekly",
+                    report_template_key="sales_report",
                     scenario=MockScenarioSelection(
                         intent_key="report_generation",
                         query_plan_key="report_generation",
@@ -1321,7 +1321,7 @@ class TestSameServiceFailAndSuccessConcurrent:
                 message="生成报表",
                 conversation_id="conv-m04-seq-b",
                 request_id="req-m04-seq-b",
-                report_template_key="sales_weekly",
+                report_template_key="sales_report",
                 scenario=MockScenarioSelection(
                     intent_key="report_generation",
                     query_plan_key="report_generation",

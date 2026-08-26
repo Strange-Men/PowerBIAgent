@@ -146,6 +146,7 @@ class TestToolGatewayActualCalls:
             "message": "生成销售周报",
             "conversation_id": "conv-spy-02",
             "request_id": "req-spy-02",
+            "report_template_key": "sales_report",
         })
         assert response.status_code == 200
         data = response.json()

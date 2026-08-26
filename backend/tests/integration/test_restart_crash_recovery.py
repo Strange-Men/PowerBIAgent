@@ -954,7 +954,7 @@ async def test_report_replay_after_restart_uses_filesystem_authority_and_fails_c
         "message": "生成销售周报",
         "conversation_id": "conv-report-restart",
         "request_id": "req-report-restart",
-        "report_template_key": "sales_weekly",
+        "report_template_key": "sales_report",
     }
 
     engine1, sf1, _, reports1 = await _open_runtime(db_path)

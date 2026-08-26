@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.6 — Presentation、Localization 与 Resource UX truth（COMPLETE）
+> **状态：** M5.7 — 简易报表视觉与模板必选（COMPLETE）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -40,9 +40,10 @@
 | **M5.4.2** | **M5 重建基线、旧实验线审计保留、分阶段路线与 Generalization Gate** | **✅ COMPLETE** |
 | **M5.5** | **Semantic correctness：Grounding/member/multi-turn/TopN/time/capability** | **✅ COMPLETE** |
 | **M5.6** | **Presentation、Localization 与 Resource UX truth** | **✅ COMPLETE** |
-| **M5.7** | **Report readability 与 Real Browser 人工视觉 Gate** | **⏳ NOT STARTED** |
-| **M5.8** | **MCP performance/resilience、压力与故障恢复** | **⏳ NOT STARTED** |
-| **M5.9** | **固定专业销售报表模板与模板选择** | **⏳ NOT STARTED** |
+| **M5.7** | **简易报表视觉 + Report Template Required + Real Browser 人工视觉 Gate** | **✅ COMPLETE** |
+| **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **⏳ NOT STARTED** |
+| **M5.9** | **MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
+| **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ## M5 重建决策与历史状态
 
@@ -185,13 +186,14 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - 所有 Codex/pytest/browser/Real/MCP/report 自动化资源必须具有 explicit test ownership；`finally` cleanup 后验证 conversation/report metadata/HTML/SQLite namespace/delete intent residual=0，否则 Gate FAIL。
 - 历史清理只处理有 ownership/known namespace/fixture/linkage 证据的 automation-owned 资源；无法确认的资源保留。M5.5 继续 Deferred。
 
-## M5.5—M5.9 隔离边界
+## M5.5—M5.10 隔离边界
 
 - **M5.5** 只处理 Semantic correctness；explicit unresolved member/filter 必须 clarification/no-match 且 ZERO DAX。禁止 Localization、Report Visual、MCP 性能优化与 Resource UI 大改。
 - **M5.6** 只处理 canonical/display separation、Localization、格式化、Answer/Table/Chart 信息密度，以及 Settings/Recent/failed resource/toolbar/menu truth。conversation/report 必须共用 Portal/floating layer 和 viewport-aware above/below positioning；Settings 必须有 nested scroll contract 与 sticky/scrollable action toolbar。禁止改变 Grounding、DAX 或 MCP authority。
-- **M5.7** 只处理 report information architecture、responsive、plot geometry、axis/tick、accessibility 与可读性。正式 Gate 是普通用户能读懂，而非仅 SVG 不越界。
-- **M5.8** 只在前三轮冻结后处理 profiling、cache、session reuse、bounded concurrency/queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak；不得降低 factual validation。
-- **M5.9** 必须晚于 M5.8，只增加固定专业销售报表模板和显式模板选择。“简易模板”是 M5.7 优化后的现有 `sales_report.html`；“销售模板”使用确定性专业版式。两者都只消费 VerifiedFactSet/ReportData/ReportSpec，不允许 LLM 生成 HTML/CSS/SVG、查询或事实。M5.9 完成前不得声明 M5 FINAL。
+- **M5.7** 已完成现有 `sales_report.html` 的简易模板 information architecture、responsive、plot geometry、axis/tick、accessibility、可读性，以及 `Report Template Required` Gate。missing/invalid/stale template 均为 ZERO ReportData/ReportSpec/Renderer/artifact；42 组 visual matrix、Rich PBIX Real Browser/manual 与 automation-owned residual=0 通过。正式视觉 Gate 是普通用户能读懂，而非仅 SVG 不越界。
+- **M5.8** 只处理 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek + Kimi-K2.6、request/conversation-scoped model selection 与同一 authority/regression contract；禁止 MCP 性能优化。
+- **M5.9** 只在 M5.5—M5.8 冻结后处理 profiling、MCP session reuse/cache、bounded concurrency/queue/backpressure、20/50/100 concurrency、restart/fault/soak；不得降低 factual validation 或修改 Semantic/DAX/VerifiedFactSet authority。
+- **M5.10** 必须晚于 M5.9，只增加固定专业销售报表模板和显式两模板选择。“简易模板”是 M5.7 优化后的现有 `sales_report.html`；“销售模板”使用确定性专业版式。两者都只消费 VerifiedFactSet/ReportData/ReportSpec，不允许 LLM 生成 HTML/CSS/SVG、查询或事实。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
 - 每个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
 
 ### M5.6 执行合同与 Layout Gate（COMPLETE）
@@ -210,7 +212,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - M5.5 的 explicit member、runtime alias、TopN、multi-turn slot 与 temporal semantic 风险已关闭；M5.6 的 canonical time 展示与信息密度 Gate 已通过。
 - Settings/Recent truth、newest-first、failed conversation 管理、toolbar 可达性与 floating menu overflow 已在 M5.6 关闭。
 - 报表“未裁切”仍不等于可读；时间轴、跨年标签、plot area、空白与 donut/legend 密度必须在 M5.7 经 Real Browser 人工视觉验收。
-- 旧 Real latency 曾达到几十秒至数分钟；persistent worker 仅是候选思路，queue/backpressure/TTL/stale、cold/warm 与 20/50/100 并发必须在 M5.8 独立验证。
+- 旧 Real latency 曾达到几十秒至数分钟；persistent worker 仅是候选思路，queue/backpressure/TTL/stale、cold/warm 与 20/50/100 并发必须在 M5.9 独立验证。
 
 - Simple M3 PBIX runtime `OrderDate` 为 `Int64`；Simple 模型无时间趋势能力（TIME_TREND UNAVAILABLE），不得伪装为 DateTime。Rich PBIX `OrderDate` 为 `DateTime` 且含 Date 表，趋势能力真实解析。
 - Capability 目录随 runtime schema 变化；schema 变更需按能力目录重新人工 smoke（不再依赖单一 fingerprint gate）。
@@ -258,6 +260,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - Real Rich PBIX 四轮 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢` 完成 slot-level KEEP/REPLACE；Top3/descending、time filter/grouping 与 prediction/delete capability boundary 正确。
 - Sales、Education、Inventory、未知 opaque holdout 与 display/table rename、相似字段、glossary alias 删除、member change、unknown/ambiguous member mutation 全部通过 deterministic oracle；生产 semantic 代码未引入 sales-specific field/member hardcode。
 - Backend full `1823 passed, 1 skipped`；frontend `69 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `296`、Error Ledger `32`、Documentation/Artifact Governance、compileall 与 Local MCP readonly smoke PASS。
-- Real API 与 Browser 人工验收通过；unknown member 可见 clarification，South 与同会话 Top3 正确完成，automation-owned acceptance residual=0。M5.6—M5.9 均未开始。
+- Real API 与 Browser 人工验收通过；unknown member 可见 clarification，South 与同会话 Top3 正确完成，automation-owned acceptance residual=0。M5.6 与 M5.7 已完成；M5.8—M5.10 未开始。
 
-*最后更新：2026-08-26 | M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*
+*最后更新：2026-08-26 | M5.7 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

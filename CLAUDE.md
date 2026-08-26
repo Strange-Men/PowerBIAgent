@@ -343,11 +343,11 @@ PowerBIAgent/
 
 - 新开发线固定从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 开始。`m5/frontend`、`a197db3`（原 M5.5）和 `6d1620a`（原 M5.5.1）是必须保留的实验/审计历史；不得 force push、revert、删除、重写或整体 cherry-pick。
 - M5.4.2 只允许 Git 基线和文档/治理变化。若完成本轮必须修改 `backend/app/**`、`frontend/src/**`、backend/frontend tests、schema 或 migration，立即停止并汇报。
-- 新 M5.5—M5.9 按 Semantic → Presentation/Localization/Resource UX → Report → MCP performance/resilience → 专业销售模板分阶段推进；一个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
+- 新 M5.5—M5.10 按 Semantic → Presentation/Localization/Resource UX → 简易报表视觉与模板必选 → LLM Provider/双模型 → MCP performance/resilience → 专业销售模板分阶段推进；一个 milestone 禁止同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle 多个域。
 - explicit unresolved semantic requirement 必须 clarification/no-match 且 ZERO DAX；不得静默移除筛选后执行更宽查询。
 - Generalization Gate 至少覆盖 Sales/Retail、Education、Inventory/Operations，并在最终阶段使用开发期未知业务模型 holdout。测试答案不得写入 LLM Prompt，生产代码不得在正式 model-scoped glossary/test fixture 外写死业务字段、member 或答案。
 - 每轮证据顺序固定为 `Spec → Failure reproducer → Regression tests → Minimal implementation → Focused Real → Cross-domain → Full gates → User manual acceptance → commit`。单独的全量测试通过数不足以宣告 COMPLETE；Real Browser/人工验收是正式 Gate。
-- 新增 M5.9 后，只有 M5.9 完成后才允许宣告 `M5 FINAL`。长期合同见 `docs/specs/13_m5_generalization_and_acceptance_contract.md`。
+- 只有 M5.10 全部门禁完成后才允许宣告 `M5 FINAL`。长期合同见 `docs/specs/13_m5_generalization_and_acceptance_contract.md`。
 
 ### M5.5 Semantic correctness 硬规则
 
@@ -355,7 +355,7 @@ PowerBIAgent/
 - canonical object/member identity 只来自 runtime schema、model-scoped glossary、runtime members 与 deterministic rules；bounded LLM 只能选择代码给出的候选 ID。
 - measure、dimensions、filters、time、ranking、sort 必须独立 KEEP/REPLACE/CLEAR；fresh self-contained query 不机械继承旧槽，当前 no-match/ambiguity 不得被 Memory 掩盖。
 - 本轮禁止 Localization、Presentation/Resource UX、Report visual/template、MCP performance/cache/session worker、Remote MCP、prediction、write-back 与 arbitrary DAX。
-- M5.6 action menu 与 Settings nested-scroll 修复、M5.9 专业销售模板均只在路线与合同中固化，M5.5 不实现。
+- M5.6 action menu 与 Settings nested-scroll 修复、M5.10 专业销售模板均只在各自路线与合同中实现，M5.5 不实现。
 
 ### M5.6 Presentation、Localization 与 Resource UX 硬规则
 
@@ -367,6 +367,18 @@ PowerBIAgent/
 - conversation/report 共用 Portal-based `FloatingActionMenu`；Settings 使用 fixed shell + independent content/list scroll + 始终可达的 resource toolbar。正式 Gate 覆盖首中末行、滚动三位置、100%/125% zoom 与规定 viewport。
 - checkpoint 固定为 P1 docs/contracts → P2 formatter/localization → P3 presentation density → P4 resource truth/sorting → P5 failed lifecycle → P6 floating menus → P7 Settings layout → P8 cross-domain → P9 focused → P10 full/governance → P11 Real/manual → P12 final docs/commit/push。任一 FAIL 不进入下一项。
 
+### M5.7 简易报表视觉与模板必选硬规则
+
+- M5.7 只修改现有 fixed report renderer、`sales_report.html` 简易模板的人类可读性，以及前后端显式模板选择 Gate；不得修改 M5.5 Grounding/StateTransition/Deterministic DAX/VerifiedFactSet authority、M5.6 Presentation authority、MCP 或 LLM Provider。
+- 任何 report intent/request 缺失、unknown 或 stale `report_template_key` 时，必须在 ReportData assembly、ReportSpec、Renderer 与 HTML artifact 之前 fail closed；禁止默认、猜测、fallback 第一模板。当前唯一模板 `sales_report` 的产品展示名是“简易模板”。
+- 前端只提供 template choice，不决定 report intent，也不增加 Chat/Report 模式切换器。正式视觉 Gate 覆盖 1/2/6/12/15/24/60 时间点、390/768/1080/1440/1920/2560 宽度、跨年/首尾极值/长标签/大数值/中文月份，以及 KPI、donut/legend、table、accessibility。
+
+### M5.8—M5.10 阶段边界
+
+- M5.8 只实现 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek + Kimi-K2.6、request/conversation-scoped model selection 和同一 authority/regression contract；禁止 MCP 性能优化。
+- M5.9 只实现 MCP profiling、session reuse、cache、bounded concurrency、bounded queue/backpressure、20/50/100 concurrency、restart/fault/soak；禁止修改 Semantic/DAX/VerifiedFactSet authority。
+- M5.10 只实现固定专业销售模板与“简易模板/销售模板”显式选择，固定链为 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed renderer`；禁止 LLM 临场生成 HTML/CSS/SVG。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
+
 ---
 
-*最后更新：2026-08-26 | M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*
+*最后更新：2026-08-26 | M5.7 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

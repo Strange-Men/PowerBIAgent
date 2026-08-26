@@ -1,6 +1,6 @@
 # 12 — 多轮语义、会话与资源生命周期契约
 
-> **状态：** M5.3.3 正式契约；M5.5 语义验收与 M5.6 Resource UX truth 均已完成
+> **状态：** M5.3.3 正式契约；M5.5 语义验收、M5.6 Resource UX truth 与 M5.7 Template Required 均已完成
 > **边界：** 本契约只收口多轮省略项继承、只读 unsupported、会话 UI 异步一致性、归档/恢复/删除与本地 artifact 生命周期；不改变 M0–M5 Canonical QueryPlan、Deterministic DAX、VerifiedFactSet、Report factual authority。
 
 ## 一、语言理解与 canonical authority
@@ -202,6 +202,13 @@ Artifact Governance Gate 必须只读检查并在以下情况失败：
 
 Gate 不自动删除、移动或修复用户数据。无法证明为 test-owned 的既有状态一律按用户数据处理；标题、问题文本或“看起来像测试”不构成 ownership。历史清理或归档必须有 metadata、known test namespace/ID、fixture 或 report linkage 的显式证据，并通过正式资源生命周期操作。
 
+## 十一、M5.7 Template Required 失败资源语义
+
+- missing/invalid/stale `report_template_key` 是 report request 的受控 clarification/template-required 终态，不得创建 ReportData、ReportSpec、ReportArtifact metadata 或 HTML。
+- 失败 turn 继续遵守既有 lifecycle：不得提交 Memory；conversation presentation/resource 可按 M5.6 正式 metadata 保留并可 rename/archive/restore/delete。
+- 用户选择有效“简易模板”后可以用新 request 重试；既有失败 request 不得被改写为成功 artifact，也不得绕过 request/replay identity。
+- 自动化验收创建的 conversation/report/HTML 必须登记 ownership，在 `finally` 中经正式生命周期清理并证明 residual=0；模板缺失失败本身必须证明 artifact residual 为 0。
+
 ---
 
-*创建日期：2026-08-24 | 最后更新：2026-08-26 M5.6 COMPLETE — Resource UX truth 与 failed lifecycle 已通过*
+*创建日期：2026-08-24 | 最后更新：2026-08-26 M5.7 COMPLETE — Template Required failure lifecycle*

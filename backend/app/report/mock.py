@@ -21,9 +21,14 @@ class MockReportRenderer(ReportRenderer):
     - 不写入文件
     """
 
-    # M0-M2 test compatibility only. M3 production availability is owned by
-    # DEFAULT_TEMPLATE_CATALOG and contains only sales_report.
-    ALLOWED_TEMPLATES = {"sales_weekly", "satisfaction", "operating_overview"}
+    # Legacy keys remain for isolated M0-M2 fixtures. API availability is
+    # independently restricted by DEFAULT_TEMPLATE_CATALOG to sales_report.
+    ALLOWED_TEMPLATES = {
+        "sales_report",
+        "sales_weekly",
+        "satisfaction",
+        "operating_overview",
+    }
 
     @property
     def supported_templates(self) -> list[str]:

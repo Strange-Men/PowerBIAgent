@@ -1,7 +1,7 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5 COMPLETE；M5.6 COMPLETE；M5.7—M5.9 NOT STARTED
-> **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.9
+> **状态：** M5.5 COMPLETE；M5.6 COMPLETE；M5.7 COMPLETE；M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立
+> **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.10
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
 
@@ -90,9 +90,9 @@ Answer 不得完整重复 table。展示层必须保持 canonical/display separa
 
 ### 2.5 Performance / MCP lifecycle
 
-旧实验线曾观测到 Real latency 从几十秒到数分钟；schema/member/DAX 重复 session 有明显成本。persistent worker 是可参考思路，但 queue、backpressure、TTL、stale、异常恢复必须在 M5.8 独立压力验证。必须分别报告 cold 与 warm latency，禁止用 warm latency 冒充 cold latency。
+旧实验线曾观测到 Real latency 从几十秒到数分钟；schema/member/DAX 重复 session 有明显成本。persistent worker 是可参考思路，但 queue、backpressure、TTL、stale、异常恢复必须在 M5.9 独立压力验证。必须分别报告 cold 与 warm latency，禁止用 warm latency 冒充 cold latency。
 
-## 三、M5.5—M5.9 分阶段边界
+## 三、M5.5—M5.10 分阶段边界
 
 ### M5.5 — Semantic correctness and capability boundary
 
@@ -142,34 +142,49 @@ Resource truth 固定为 Settings 全量 query 与 Sidebar 同源 bounded projec
 
 禁止修改 Grounding authority、DAX authority 与 MCP architecture。
 
-### M5.7 — Report readability and visual acceptance
+### M5.7 — 简易报表视觉 + Report Template Required
 
 只允许开发：
 
-- report information architecture；
+- 现有 `sales_report.html` 作为“简易模板”的 report information architecture；
 - responsive layout；
 - plot geometry、axis/tick density；
-- accessibility、visual hierarchy 与 report readability。
+- accessibility、visual hierarchy 与 report readability；
+- 前后端显式模板选择与 Report Template Required Gate。
 
-禁止修改 Semantic logic、MCP optimization 与 resource lifecycle。正式 Gate 是“普通用户必须能读懂报表”，不能只证明 SVG 未越界。
+任何 report intent/request 必须显式携带 registry-valid `report_template_key`。missing/invalid/stale template 必须返回 clarification/template-required，并在 ReportData assembly、ReportSpec、Renderer 与 HTML artifact 前停止；禁止默认 `sales_report`、自动猜模板、fallback 第一项或未选择仍继续生成。前端 selector 只提供 template choice，不自行判断 intent，不增加 Chat/Report 模式切换器。
 
-### M5.8 — MCP performance and resilience
+时间趋势 Gate 覆盖 1/2/6/12/15/24/60 点、390/768/1080/1440/1920/2560 宽度、单年/跨年、首尾极值、长标签、大数值与中文月份；first/last tick、direct label 与 tooltip 必须完整可读，无页面水平滚动，tick density 随宽度与点数自适应。KPI/card 不得有巨大空白，donut/legend/table 必须在大小屏可读，semantic heading、accessible name 与 visible focus 必须存在。正式 Gate 是“普通用户必须能读懂报表”，不能只证明 SVG 未越界。
 
-仅在 M5.5—M5.7 分别冻结后开始：
+禁止修改 M5.5 Semantic/StateTransition/DAX/VerifiedFactSet authority、M5.6 Presentation authority、MCP、LLM Provider 或 resource lifecycle；不开发专业销售模板。
+
+### M5.8 — 多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型
+
+仅在 M5.7 冻结后开始，只允许：
+
+- `OpenAICompatibleLLMProvider`；
+- `LLMModelProfile`；
+- DeepSeek + Kimi-K2.6；
+- request/conversation-scoped model selection；
+- 两个模型共用同一 authority 与 regression contract。
+
+禁止 MCP profiling、session reuse、cache、concurrency 或 queue/backpressure 优化；不得改变 Grounding、DAX 或 VerifiedFactSet authority。
+
+### M5.9 — MCP performance and resilience
+
+仅在 M5.8 冻结后开始，只允许：
 
 - profiling；
-- schema/member/discovery/probe cache；
-- session reuse、persistent worker；
-- bounded concurrency、bounded queue/backpressure；
-- cold/warm performance；
+- MCP session reuse 与 cache；
+- bounded concurrency 与 bounded queue/backpressure；
 - 20/50/100 concurrency；
-- PBIX restart、backend restart、fault injection 与 long soak。
+- PBIX/backend restart、fault injection 与 long soak。
 
-任何优化不得降低 schema/member/instance/factual validation，不得绕过 Grounding、Layer 3、VerifiedFactSet 或 stale fail-closed。
+任何优化不得降低 schema/member/instance/factual validation，不得绕过 Grounding、Layer 3、VerifiedFactSet 或 stale fail-closed；禁止修改 Semantic/DAX/VerifiedFactSet authority。
 
-### M5.9 — 固定专业销售报表模板与模板选择
+### M5.10 — 固定专业销售报表模板与两模板选择
 
-M5.9 必须晚于 M5.8，状态为 NOT STARTED：
+M5.10 必须晚于 M5.9，状态为 NOT STARTED：
 
 - “简易模板”= 当前 `sales_report.html` 经 M5.7 可读性优化后的稳定模板；
 - “销售模板”= 按已确认 Power BI 参考报表版式固定制作的专业 sales report HTML；
@@ -184,7 +199,7 @@ VerifiedFactSet
 → deterministic fixed HTML renderer
 ```
 
-LLM 不拥有 HTML layout、factual 或 query authority，不得临场生成 HTML/CSS/SVG。专业销售模板规划包含深色 Header/title/navigation、KPI cards、左侧阶段/漏斗业务区、中部横向业务对比、右侧状态/异常/明细区、下部区域/业务表格、地域视觉、明细表、footer 指标口径与 Last Refresh。若 runtime schema 没有 Forecast/Goal/Pipeline 等事实，必须以真实可支持的 sales-specific section 替代到相同版位，禁止伪造；Agent 主链仍保持跨领域通用。只有 M5.9 完成全部正式 Gate 后才允许声明 `M5 FINAL`。
+LLM 不拥有 HTML layout、factual 或 query authority，不得临场生成 HTML/CSS/SVG。专业销售模板规划包含深色 Header/title/navigation、KPI cards、左侧阶段/漏斗业务区、中部横向业务对比、右侧状态/异常/明细区、下部区域/业务表格、地域视觉、明细表、footer 指标口径与 Last Refresh。若 runtime schema 没有 Forecast/Goal/Pipeline 等事实，必须以真实可支持的 sales-specific section 替代到相同版位，禁止伪造；Agent 主链仍保持跨领域通用。只有 M5.10 完成全部正式 Gate 后才允许声明 `M5 FINAL`。
 
 ## 四、Generalization Gate
 
@@ -268,7 +283,7 @@ M5.5 完成证据：
 - Real Rich PBIX 四轮正确完成 measure/time/filter KEEP/REPLACE 与 Product Top3 descending；
 - Sales、Education、Inventory、未知 opaque holdout、schema mutation 与 capability/temporal gates 通过 deterministic oracle；
 - backend `1823 passed, 1 skipped`，frontend `69 passed` 且 typecheck/lint/build PASS，Golden `11 passed, 1 manual-real skipped`，全部治理门禁与 Real Browser/manual acceptance PASS；
-- acceptance automation-owned residual=0；未修改 Presentation、Resource UX、Report、MCP performance 或 M5.9 实现。
+- acceptance automation-owned residual=0；未修改 Presentation、Resource UX、Report、MCP performance 或 M5.10 实现。
 
 ## 八、M5.6 checkpoint 与完成边界
 
@@ -276,6 +291,14 @@ M5.6 固定顺序为 P1 docs/contracts、P2 formatter/localization、P3 presenta
 
 完成必须同时证明：canonical/display 严格分离；scalar 去 KPI 冗余；grouped/trend Answer 不复述 table 且无 raw timestamp；Recent Reports/Settings 同 truth；Recent Conversation newest-first；failed conversation 完整 lifecycle；conversation/report menu 不裁切；Settings 长列表 action 始终可达；Sales/Education/Inventory/unknown holdout display 无 production frontend field dictionary；full gates、Rich PBIX Real/manual 与 automation-owned residual=0 全部 PASS。
 
+## 九、M5.7 checkpoint 与完成边界
+
+M5.7 固定顺序为 R1 docs/roadmap → R2 template-required failure reproducers → R3 backend gate → R4 frontend explicit selection → R5 responsive geometry → R6 time-axis/labels → R7 donut/table/accessibility → R8 focused regression → R9 full/golden/governance → R10 Real Browser/manual → R11 final docs/commit/push。任一 checkpoint FAIL 不进入下一项。
+
+完成必须同时证明：missing/invalid/stale template 均在 ReportData/ReportSpec/Renderer/artifact 前 fail closed；当前 `sales_report` 正式命名为“简易模板”；1—60 points 与 390—2560 宽度可读；无时间/label clipping、页面水平滚动或巨大无意义空白；donut/legend/table/accessibility 通过；full gates、Rich PBIX Real/manual 与 automation-owned residual=0 全部 PASS。M5.5/M5.6 authority、MCP 与 LLM Provider 不变。
+
+M5.7 已按 R1—R11 顺序完成：template-required spy 证明无模板时只有 intent recognition，ReportData/ReportSpec/Renderer/artifact 均为 0；42 组 visual matrix 与 Rich PBIX Real Browser/manual 通过；automation-owned conversation/report/HTML/SQLite/delete-intent residual=0。M5.8—M5.10 仍为 NOT STARTED，M5 FINAL 尚未成立。
+
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-08-26 M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*
+*创建日期：2026-08-26 | 最后更新：2026-08-26 M5.7 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

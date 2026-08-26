@@ -2,7 +2,7 @@
 
 ## 状态
 
-**M5.6 — Presentation、Localization 与 Resource UX truth（COMPLETE）。M5.5 Semantic correctness 已完成并冻结；M5.7—M5.9 尚未开始。**
+**M5.7 — 简易报表视觉与模板必选（COMPLETE）。M5.5 Semantic/DAX authority 与 M5.6 Presentation authority 已冻结；M5.8—M5.10 尚未开始。**
 
 ## 技术栈
 
@@ -118,11 +118,11 @@ npm run build
 打开后显示两个分组：
 
 1. **数据模型** — 映射为 Chat 请求的 `semantic_model_key`
-2. **报表模板** — 仅在用户主动选择具体模板时映射为 Chat 请求的可选 `report_template_key` override
+2. **报表模板** — 用户主动选择具体模板后映射为 Chat 请求的显式 `report_template_key`
 
 M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI Desktop 实例生成的安全目录。每个 option 有独立 opaque `semantic_model_key`，compatibility probe 与 schema 检查都精确绑定该 option。浏览器只显示安全名称；模型菜单提供刷新和单选。当前选择关闭、重启或 identity 变化后，旧选择被清空并提示刷新后重新选择，不会自动切换到仍存活的另一 PBIX。Mock discovery 仍只暴露正式支持的 `mock_sales_model`。
 
-报表模板暂时没有发现 API，继续由 `src/config.ts` 集中维护 registry-owned 目录。当前只有 `sales_report`，展示名为“销售分析报告”。菜单不提供“不使用模板”：未选择模板只表示本次请求不传 override，普通问答、多轮分析或报表生成仍由后端 intent 自动识别；即使未显式选择，后端也可以按业务规则为报表意图选择默认模板。
+报表模板暂时没有发现 API，继续由 `src/config.ts` 集中维护 registry-owned 目录。当前只有 `sales_report`，展示名为“简易模板”。菜单不提供“不使用模板”，也不设置隐式 default；用户自然语言仍决定普通问答、多轮或 report intent，selector 只提供 template choice。report intent 未选择模板时必须清晰提示并保持 ZERO ReportSpec/Renderer/artifact，选择后可重试。
 
 #### 模型选择器
 
@@ -166,7 +166,7 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | `DELETE /api/reports/{report_id}` | ✅ M5.3.3 显式资源 API | 独立删除 managed report；不删除对话、不属于 Agent tool |
 | `PATCH /api/reports/{report_id}` | ✅ M5.4 已实现 | 只修改 presentation-only `display_title` |
 | `GET /api/v1/semantic-models` | ✅ M5.3.2 多模型逐项 compatibility | 动态加载多个 Desktop 模型、runtime namespace、可选与兼容状态 |
-| `GET /api/report-templates` | ❌ 未实现 | `sales_report` 集中白名单配置 |
+| `GET /api/report-templates` | ❌ 未实现 | `sales_report`（“简易模板”）集中白名单配置；report request 必须显式选择 |
 | `ChatResponse.presentation` | ✅ M5.3 只读展示层 | 动态消费 dataset 引用与 text/metric/table/chart/report blocks |
 | 展示型 transcript/title | ✅ M5.3 | 完整恢复新会话消息、自动标题与重命名；不作为 Memory 事实 |
 | 多轮 Memory 显示 | ✅ 后端已实现 | UI 只展示保存的 transcript/result，不读取 Memory |
@@ -206,9 +206,11 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | M5.4.2 | 重建基线、旧实验线审计保留与分阶段治理 | ✅ COMPLETE |
 | M5.5 | Semantic correctness；不改前端视觉/资源 UX | ✅ COMPLETE |
 | M5.6 | Presentation/Localization/Resource UX truth | ✅ COMPLETE |
-| M5.7 | Report readability 与人工视觉验收 | ⏳ NOT STARTED |
-| M5.8 | MCP performance/resilience；完成后才允许 M5 FINAL | ⏳ NOT STARTED |
+| M5.7 | 简易报表视觉 + Report Template Required + 人工视觉验收 | ✅ COMPLETE |
+| M5.8 | OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 scoped model selection | ⏳ NOT STARTED |
+| M5.9 | MCP performance/resilience、并发与压力验证 | ⏳ NOT STARTED |
+| M5.10 | 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL | ⏳ NOT STARTED |
 
 ---
 
-*最后更新：2026-08-26 | M5.6 COMPLETE — M5.7—M5.9 NOT STARTED*
+*最后更新：2026-08-26 | M5.7 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

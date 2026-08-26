@@ -81,7 +81,8 @@ describe('Composer menus and sending', () => {
     expect(screen.getByText('数据模型')).toBeInTheDocument()
     expect(screen.getByText('报表模板')).toBeInTheDocument()
     expect(screen.queryByText('不使用模板')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /销售分析报告/ }))
+    expect(screen.getByText(/生成报表前请选择模板/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /简易模板/ }))
     expect(onReportTemplateChange).toHaveBeenCalledWith(reportTemplateOptions[0])
   })
 
@@ -102,8 +103,19 @@ describe('Composer menus and sending', () => {
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: '打开数据与报表选项' }))
-    fireEvent.click(screen.getByRole('button', { name: /销售分析报告/ }))
+    fireEvent.click(screen.getByRole('button', { name: /简易模板/ }))
     expect(onReportTemplateChange).toHaveBeenCalledWith(null)
+  })
+
+  it('does not implicitly select a report template and keeps data questions sendable', () => {
+    const { onSend, onReportTemplateChange } = renderComposer()
+    expect(screen.getByText(/未选择报表模板/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('询问你的 Power BI 数据'), {
+      target: { value: '查询销售额' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    expect(onSend).toHaveBeenCalledWith('查询销售额')
+    expect(onReportTemplateChange).not.toHaveBeenCalled()
   })
 
   it('keeps a real DeepSeek-only selector interaction', () => {

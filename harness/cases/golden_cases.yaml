@@ -103,7 +103,7 @@ cases:
       conversation_id: "conv-gc-003"
       request_id: "req-gc-003"
       semantic_model_key: "mock_sales_model"
-      report_template_key: "sales_weekly"
+      report_template_key: "sales_report"
 
     mock_scenario:
       intent_key: "report_generation"
@@ -252,7 +252,7 @@ cases:
       conversation_id: "conv-gc-007"
       request_id: "req-gc-007"
       semantic_model_key: "mock_sales_model"
-      report_template_key: "sales_weekly"
+      report_template_key: "sales_report"
 
     mock_scenario:
       intent_key: "report_generation"

@@ -3,11 +3,49 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-26 | M5.6 COMPLETE
+# 最后更新：2026-08-26 | M5.7 COMPLETE；M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: GOV-570-001
+  title: 报表请求不得在模板缺失时继续或隐式选择默认模板
+  category: GOV
+  first_detected_version: M5.7
+  symptom: 既有 report intent 在未传 report_template_key 时由后端自动选择默认 sales_report，无法证明用户显式选择了固定模板
+  local_evidence: M5.7 启动审计确认 TemplateCatalog.default_for_intent 与前端未选择不传字段共同形成隐式默认路径
+  authoritative_sources:
+  - title: M5.7 Report Template Required contract
+    reason: 任意 report intent/request 都必须显式拥有 registry-valid template key
+  - title: ADR-011 Adaptive Report Planning and Visualization Authority
+    reason: template 与 layout authority 只能属于 registry 和确定性代码
+  root_cause: 历史 M5.2 产品合同把 report_template_key 定义为可选 override，并允许后端为 report intent 选择默认模板
+  failed_attempts: []
+  repair_attempt_count: 0
+  final_fix: M5.7 要求在 ReportData assembly、ReportSpec、Renderer 与 artifact 前验证显式 template key；missing/invalid/stale 均 template-required/fail closed，当前 sales_report 展示为简易模板
+  regression_tests:
+  - backend/tests/api/test_chat.py
+  - backend/tests/unit/test_report_generation.py
+  - backend/tests/unit/test_template_catalog.py
+  - frontend/src/components/Composer.test.tsx
+  prohibited_patterns:
+  - report intent 缺少 template key 时使用默认模板
+  - 自动猜模板或 fallback catalog 第一项
+  - 只在 renderer 内晚失败并留下 ReportSpec 或 artifact
+  prevention_rules:
+  - missing/invalid/stale template 必须 ZERO ReportData/ReportSpec/Renderer/artifact
+  - frontend selector 只提供 choice，不判断 report intent 或增加 Chat/Report 模式
+  - 只有 M5.10 全部门禁完成后才允许声明 M5 FINAL
+  related_adr: ADR-011
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-26'
+    action: discovered
+    version: M5.7
+  - date: '2026-08-26'
+    action: verified
+    version: M5.7
 - id: ERR-560-001
   title: Presentation 泄漏 canonical timestamp 且 scalar/grouped/trend 信息重复
   category: ERR
@@ -132,7 +170,7 @@ entries:
   category: GOV
   first_detected_version: M5.5
   symptom: 新增专业销售版式若未先固化 authority，可能把参考页面误实现为 LLM 临场 HTML/CSS/SVG 或在缺少 Forecast/Goal/Pipeline 时伪造内容
-  local_evidence: 用户新增 M5.9 规划要求；M5.5 仅记录路线，不实现模板
+  local_evidence: 用户新增 M5.10 规划要求；M5.7 只固化路线，不实现专业模板
   authoritative_sources:
   - title: ADR-009 Deterministic Query Execution and Verified Fact Authority
     reason: 所有报表事实必须来自 QueryResult 与 VerifiedFactSet
@@ -141,12 +179,12 @@ entries:
   root_cause: 专业参考版式与当前 runtime capability 之间需要明确的固定模板和 capability substitution 合同
   failed_attempts: []
   repair_attempt_count: 0
-  final_fix: M5.9 固定为晚于 M5.8 的独立 milestone，采用 VerifiedFactSet 到 fixed renderer 的 deterministic chain；本轮只完成文档治理
+  final_fix: M5.10 固定为晚于 M5.9 的独立 milestone，采用 VerifiedFactSet 到 fixed renderer 的 deterministic chain；M5.7 不实现专业模板
   regression_tests: []
   prohibited_patterns:
   - LLM 临场生成 HTML、CSS 或 SVG
   - 缺少 runtime 事实时伪造 Forecast、Goal 或 Pipeline
-  - 在 M5.5 提前实现 M5.9
+  - 在 M5.7 提前实现 M5.10
   prevention_rules:
   - 用户只从 registry-owned 简易模板和销售模板中显式选择
   - sales-specific template 不得把 Agent 主链改为 Sales-specific
@@ -203,12 +241,12 @@ entries:
   - title: CLAUDE.md 小步迭代与阶段边界规则
     reason: 每轮必须有单一明确目标，当前轮未验收不得进入下一轮
   - title: M5 Generalization and Acceptance Contract
-    reason: 固定 M5.5—M5.8 域隔离与完整验收链
+    reason: 固定 M5.5—M5.10 域隔离与完整验收链
   root_cause: 功能域、性能优化与视觉收口耦合在同一阶段，使 failure reproducer、最小修改、Real 证据和用户验收无法明确归属
   failed_attempts:
   - 以全量测试和多项同轮 Real smoke 作为整体完成信号，未能覆盖真实用户可读性与跨域语义风险
   repair_attempt_count: 0
-  final_fix: M5.4.2 固化 M5.5 Semantic、M5.6 Presentation/Localization/Resource UX、M5.7 Report、M5.8 MCP performance/resilience 四阶段及禁止跨域大改规则
+  final_fix: M5.4.2 固化分域重建原则；M5.7 启动时升级为 M5.5 Semantic、M5.6 Presentation/Localization/Resource UX、M5.7 简易报表/模板必选、M5.8 LLM Provider、M5.9 MCP performance、M5.10 专业模板六阶段
   regression_tests: []
   prohibited_patterns:
   - 一个 milestone 同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle
@@ -217,7 +255,7 @@ entries:
   prevention_rules:
   - 每轮按 Spec、复现、回归、最小实现、Focused Real、Cross-domain、Full gates、人工验收、commit 顺序执行
   - Real Browser 与用户人工验收独立记录
-  - M5.8 完成前不得声明 M5 FINAL
+  - M5.10 全部门禁完成前不得声明 M5 FINAL
   related_adr: ADR-005
   related_commits: []
   status: monitoring

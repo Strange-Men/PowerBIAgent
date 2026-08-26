@@ -49,10 +49,7 @@ class TemplateCatalog:
         if len(self._by_key) != len(definitions):
             raise ValueError("template_catalog_duplicate_key")
         if default_key is not None:
-            default = self._by_key.get(default_key)
-            if default is None or not default.allowed:
-                raise ValueError("template_catalog_default_not_allowed")
-        self._default_key = default_key
+            raise ValueError("template_catalog_default_forbidden")
 
         alias_targets: dict[str, set[str]] = {}
         for item in definitions:
@@ -95,6 +92,16 @@ class TemplateCatalog:
                 weak_signal_disagrees=(
                     weak_requested_template not in (None, explicit.key)
                 ),
+            )
+
+        # Report generation always requires an explicit application-owned key.
+        # Natural-language mentions and weak LLM drafts are never template
+        # selection authority, even while the catalog exposes only one option.
+        if required:
+            return TemplateGroundingResult(
+                status=TemplateGroundingStatus.UNRESOLVED,
+                method="required_template_missing",
+                weak_signal_disagrees=weak_requested_template is not None,
             )
 
         normalized_input = normalize_semantic_text(user_input)
@@ -142,17 +149,6 @@ class TemplateCatalog:
         if alias_matches:
             return self._result_from_matches(
                 alias_matches, "approved_alias_exact", weak_requested_template
-            )
-
-        if required and self._default_key is not None:
-            return TemplateGroundingResult(
-                status=TemplateGroundingStatus.RESOLVED,
-                canonical_key=self._default_key,
-                candidate_keys=(self._default_key,),
-                method="backend_default_for_report_intent",
-                weak_signal_disagrees=(
-                    weak_requested_template not in (None, self._default_key)
-                ),
             )
 
         return TemplateGroundingResult(
@@ -209,5 +205,4 @@ DEFAULT_TEMPLATE_CATALOG = TemplateCatalog(
             allowed=False,
         ),
     ),
-    default_key="sales_report",
 )

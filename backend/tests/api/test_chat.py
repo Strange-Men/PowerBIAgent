@@ -126,10 +126,10 @@ class TestChatReportGeneration:
     async def test_report_returns_structured_data(self, client):
         """报表返回 report_id、template_key 和 HTML"""
         response = await client.post("/api/v1/chat", json={
-            "message": "生成销售周报",
+            "message": "生成销售报告",
             "conversation_id": "conv-chat-rpt-001",
             "request_id": "req-chat-rpt-001",
-            "report_template_key": "sales_weekly",
+            "report_template_key": "sales_report",
         })
         assert response.status_code == 200
         data = response.json()
@@ -143,20 +143,66 @@ class TestChatReportGeneration:
         assert data["report"] is not None, "report should not be null"
         report = data["report"]
         assert report["report_id"] != "", "report_id should not be empty"
-        assert report["template_key"] == "sales_weekly"
+        assert report["template_key"] == "sales_report"
         assert report["html"] != "", "html should not be empty"
 
     @pytest.mark.asyncio
     async def test_report_without_template_key(self, client):
-        """无 report_template_key 但消息包含报表关键词 → report_generation"""
+        """报表请求未显式选模板时，必须在任何工具和 artifact 前早停。"""
         response = await client.post("/api/v1/chat", json={
             "message": "生成销售周报",
             "conversation_id": "conv-chat-rpt-002",
         })
         assert response.status_code == 200
         data = response.json()
+        assert data["terminal_state"] == "clarification_required"
         assert data["intent"] == "report_generation"
-        assert data["report"] is not None
+        assert data["response_type"] == "clarification"
+        assert "选择" in data["clarification_question"]
+        assert "模板" in data["clarification_question"]
+        assert data["report"] is None
+        assert data["memory_commit"] is False
+        assert data["tool_sequence"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("template_key", ["unknown_template", "sales_weekly"])
+    async def test_report_with_invalid_or_stale_template_fails_closed(
+        self, client, template_key
+    ):
+        response = await client.post("/api/v1/chat", json={
+            "message": "生成销售报告",
+            "conversation_id": f"conv-chat-invalid-{template_key}",
+            "request_id": f"req-chat-invalid-{template_key}",
+            "report_template_key": template_key,
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["terminal_state"] == "clarification_required"
+        assert data["response_type"] == "clarification"
+        assert data["report"] is None
+        assert data["memory_commit"] is False
+        assert data["tool_sequence"] == []
+
+    @pytest.mark.asyncio
+    async def test_report_retry_succeeds_after_explicit_template_selection(self, client):
+        conversation_id = "conv-chat-template-retry"
+        first = await client.post("/api/v1/chat", json={
+            "message": "生成销售报告",
+            "conversation_id": conversation_id,
+            "request_id": "req-chat-template-retry-missing",
+        })
+        retry = await client.post("/api/v1/chat", json={
+            "message": "生成销售报告",
+            "conversation_id": conversation_id,
+            "request_id": "req-chat-template-retry-valid",
+            "report_template_key": "sales_report",
+        })
+        assert first.json()["report"] is None
+        assert retry.status_code == 200
+        data = retry.json()
+        assert data["terminal_state"] == "completed"
+        assert data["report"]["template_key"] == "sales_report"
+        assert data["tool_sequence"].count("render_report") == 1
 
 
 class TestChatClarification:
@@ -396,7 +442,7 @@ class TestChatConcurrent:
                 "message": "生成销售周报",
                 "conversation_id": "conv-api-conc-b",
                 "request_id": "req-api-conc-b",
-                "report_template_key": "sales_weekly",
+                "report_template_key": "sales_report",
             })
             return r.json()
 
@@ -439,7 +485,7 @@ class TestChatConcurrent:
                 "message": "生成报表",
                 "conversation_id": "conv-api-cc-b",
                 "request_id": "req-api-cc-b",
-                "report_template_key": "sales_weekly",
+                "report_template_key": "sales_report",
             })
             return r.json()
 
@@ -520,7 +566,7 @@ class TestChatM10IdempotentReplay:
             "message": "生成销售周报",
             "conversation_id": "conv-m10-idem-004",
             "request_id": "req-m10-idem-004",
-            "report_template_key": "sales_weekly",
+            "report_template_key": "sales_report",
         }
         r1 = await client.post("/api/v1/chat", json=payload)
         r2 = await client.post("/api/v1/chat", json=payload)
@@ -606,8 +652,8 @@ class TestChatM10ReportTemplate:
     """M1.0: 报表模板测试"""
 
     @pytest.mark.asyncio
-    async def test_default_template_on_report_keywords(self, client):
-        """不传模板但含报表关键词 → 使用 sales_weekly"""
+    async def test_report_keywords_never_select_an_implicit_template(self, client):
+        """报表关键词不能隐式选择默认模板。"""
         response = await client.post("/api/v1/chat", json={
             "message": "生成销售周报",
             "conversation_id": "conv-m10-template-api",
@@ -616,12 +662,13 @@ class TestChatM10ReportTemplate:
         assert response.status_code == 200
         data = response.json()
         assert data["intent"] == "report_generation"
-        assert data["report"] is not None
-        assert data["report"]["template_key"] == "sales_weekly"
+        assert data["terminal_state"] == "clarification_required"
+        assert data["report"] is None
+        assert data["tool_sequence"] == []
 
     @pytest.mark.asyncio
-    async def test_explicit_template_respected(self, client):
-        """显式传模板时优先使用客户端模板"""
+    async def test_unknown_explicit_template_is_rejected(self, client):
+        """未知显式模板不能由 Mock fixture 改写为其他模板。"""
         response = await client.post("/api/v1/chat", json={
             "message": "生成周报",
             "conversation_id": "conv-m10-explicit-template",
@@ -630,9 +677,9 @@ class TestChatM10ReportTemplate:
         })
         assert response.status_code == 200
         data = response.json()
-        assert data["report"] is not None
-        # MockLLM 的 report_generation fixture 固定返回 sales_weekly
-        assert data["report"]["template_key"] == "sales_weekly"
+        assert data["terminal_state"] == "clarification_required"
+        assert data["report"] is None
+        assert data["tool_sequence"] == []
 
     @pytest.mark.asyncio
     async def test_data_question_no_report_template_in_response(self, client):

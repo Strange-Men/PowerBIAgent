@@ -129,6 +129,9 @@ export function Composer({
           <div className="menu-divider" />
           <div className="menu-group">
             <span className="menu-label">报表模板</span>
+            {!reportTemplate ? (
+              <p className="menu-empty-state">生成报表前请选择模板。</p>
+            ) : null}
             {reportTemplateOptions.map((option) => (
               <button
                 className="menu-option"
@@ -150,7 +153,7 @@ export function Composer({
             ))}
           </div>
           <p className="local-catalog-note">
-            数据模型来自后端 Desktop discovery；模板是本地安全 catalog，仅作为本次请求 override。
+            数据模型来自后端 Desktop discovery；模板仅提供显式选择，问题内容仍决定分析或报表意图。
           </p>
         </div>
       ) : null}
@@ -230,7 +233,11 @@ export function Composer({
             ? '正在连接数据模型'
             : semanticModel?.label || semanticModelError || '当前没有可用数据模型'}
         </span>
-        {reportTemplate ? <span>· {reportTemplate.label}</span> : null}
+        {reportTemplate ? (
+          <span>· 已选 {reportTemplate.label}</span>
+        ) : (
+          <span>· 未选择报表模板</span>
+        )}
         {semanticModelCompatibilityNotice ? <span>{semanticModelCompatibilityNotice}</span> : null}
       </div>
     </div>

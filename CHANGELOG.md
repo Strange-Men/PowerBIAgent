@@ -2,6 +2,23 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.7] — 2026-08-26
+
+### 简易报表视觉与模板必选（COMPLETE）
+
+- 路线先行升级为 M5.7—M5.10：M5.7 简易报表视觉 + Report Template Required；M5.8 OpenAI-compatible LLM Provider + DeepSeek/Kimi-K2.6；M5.9 MCP performance/resilience；M5.10 固定专业销售模板与两模板选择。
+- 本轮最高优先级合同：任何 report intent/request 必须显式携带有效 `report_template_key`；missing/invalid/stale template 必须在 ReportData assembly、ReportSpec、Renderer 与 HTML artifact 之前 fail closed，禁止默认 `sales_report`、自动猜测或 fallback 第一项。
+- 当前 `sales_report` 正式展示名为“简易模板”；前端 selector 只提供 template choice，不判断 report intent、不增加 Chat/Report 模式切换。
+- 本轮只优化 fixed renderer 的 responsive geometry、time axis/labels、KPI/card、donut/legend、table 与 accessibility；不修改 M5.5 Semantic/DAX/VerifiedFactSet authority、M5.6 Presentation authority、MCP 或 LLM Provider，不开发 M5.8—M5.10。
+- 只有 M5.10 全部门禁完成后才允许声明 `M5 FINAL`。
+- 后端在 intent 识别后、pending Memory/schema/QueryPlan/ReportData/ReportSpec/renderer/artifact 前校验显式模板；spy regression 证明 missing template 仅发生 `intent_recognition`，其余规划、查询、渲染与落盘计数均为 0。Mock 与 Real 共用同一 fail-closed contract。
+- 简易模板扩大有效 plot area，时间轴按点数与宽度自适应 tick density，并提供完整 tooltip/accessible label；首尾标签、direct label、KPI、donut/legend 与窄屏表格布局均完成 responsive 收口。
+- Browser visual matrix 覆盖 `1/2/6/12/15/24/60` points × `390/768/1080/1440/1920/2560` width 共 42 组，均无页面水平溢出、tick/direct-label 裁切、tick overlap 或 donut/legend overlap。
+- Real Rich PBIX + DeepSeek + Local MCP 验收通过：未选模板两次均返回 template-required 且无 report；显式选择“简易模板”后成功生成 15 点跨年趋势、分类 donut/legend 与区域对比报表，真实分组问答的表格/图表仍正确。两份 report 与 conversation 经正式 API 清理，HTML、SQLite namespace、delete intent 与 ownership registry residual=0。
+- Fresh final gates：backend `1866 passed, 1 skipped`；frontend typecheck/lint/build PASS、Vitest `80 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `120`、Repository Safety `303`、Error Ledger `35`、Documentation/Artifact Governance、compileall 与 `git diff --check` PASS。
+
+**Settings.version:** M5.7
+
 ## [M5.6] — 2026-08-26
 
 ### Presentation、Localization 与 Resource UX truth 最终收口（COMPLETE）
@@ -13,7 +30,7 @@
 - P1—P12 已顺序完成：Sales/Education/Inventory/unknown holdout display、20/50/100 resources、首中末行、滚动 top/middle/bottom、768/1080/1440 width、600/768/1080 height 与 100%/125% zoom 均通过。
 - Real Rich PBIX 的 scalar/grouped/monthly trend/time-filter 四类问题通过；月度趋势由 Sales model-scoped glossary 的 `YearMonth → Date[Date]` metadata binding 驱动，Answer 只总结峰值/回落/回升，table 使用中文月份且折线图不泄漏 raw ISO timestamp。
 - Fresh backend full `1849 passed, 1 skipped`；frontend typecheck/lint/build PASS、Vitest `79 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `120`、Repository Safety `302`、Error Ledger `34`、Documentation/Artifact Governance、compileall、Alembic fresh/head-idempotent 与 `git diff --check` PASS。automation-owned P11 conversation teardown 后 residual=0。
-- 永久边界：不修改 M5.5 semantic authority、DAX/MCP、report renderer 或 M5.7—M5.9 实现；不修改旧 `m5/frontend`。
+- 永久边界：不修改 M5.5 semantic authority、DAX/MCP、report renderer 或当时尚未开始的后续实现；不修改旧 `m5/frontend`。
 
 **Settings.version:** M5.6
 
@@ -24,7 +41,7 @@
 - 按先文档后代码顺序启动新版 M5.5；本阶段仅处理 semantic grounding、runtime object/member authority、explicit no-match/ambiguity、multi-turn slot KEEP/REPLACE、ranking/TopN、temporal semantics 与 readonly capability boundary。
 - 核心阻塞 Gate 固定为 `explicit unresolved semantic requirement → clarification/no-match → ZERO DAX`；同时要求 ZERO QueryResult、ZERO Memory commit，禁止旧 Memory 掩盖当前 no-match/ambiguity。
 - M5.6 增补为 conversation/report 共用 Portal/floating layer、viewport-aware above/below positioning、Settings nested-scroll 与 sticky/scrollable action toolbar，并建立 zoom/viewport/scroll/首中末行 Layout Gate。本轮不实现这些前端变化。
-- 新增 M5.9（晚于 M5.8）：固定专业销售报表模板与“简易模板/销售模板”显式选择。固定链为 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed HTML renderer`；LLM 无 HTML layout/query/factual authority。本轮不实现 M5.9。
+- 新增固定专业销售报表模板与“简易模板/销售模板”显式选择路线；该能力现已顺延为 M5.10（晚于 M5.9）。固定链为 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed HTML renderer`；LLM 无 HTML layout/query/factual authority。
 - M5.5 Generalization Gate 固定覆盖 Sales/Retail、Education、Inventory/Operations、未知 holdout 与 schema mutation；生产语义代码禁止 sales-specific hardcode。
 - 新增 runtime-owned object/member grounding、model-scoped member suffix、显式未知 member fail-closed、确定性中英文 TopN grammar、metadata-driven temporal grouping 与三层 capability enum/policy；LLM 仍只可做 bounded language interpretation，canonical identity、DAX 与事实 authority 不变。
 - 多轮 slot 独立执行 KEEP/REPLACE：Real Rich PBIX 的 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢` 保留兼容 measure/time/filter，并正确替换 year、ranking dimension、sort 与 Top3；fresh self-contained query 不机械继承旧槽。
@@ -41,7 +58,7 @@
 - 从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 创建 `m5/rebuild`；M5.4.1 及以前能力保持不变，本轮无生产业务逻辑、schema、migration 或测试代码修改。
 - 原 `m5/frontend` 上的 `a197db3ecfe8959f3f8bb79e18d7ee02834fedd3`（原 M5.5）与 `6d1620a7a7aa04e65692371436d90756fdf5bcc8`（原 M5.5.1）作为研究/失败经验与审计历史保留；不删除、不重写、不 revert、不整体 cherry-pick。新版本必须重新实现并重新 Real Acceptance。
 - 将真实用户测试问题正式纳入工程基线：explicit unresolved member/filter 必须 clarification/no-match 且 ZERO DAX；多轮 measure/time/filter/ranking 正确 KEEP/REPLACE；canonical/display 分离；Answer/Table/Chart 去重复；Settings/Recent/failed resource/menu truth；report 可读性；cold/warm 与 queue/backpressure 独立性能验证。
-- 新路线按 M5.5 Semantic correctness、M5.6 Presentation/Localization/Resource UX truth、M5.7 Report readability、M5.8 MCP performance/resilience 隔离。一个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle；只有 M5.8 完成后才允许 `M5 FINAL`。
+- 新路线的域隔离原则继续有效；M5.7 启动时已升级为 M5.5 Semantic、M5.6 Presentation/Localization/Resource UX、M5.7 简易报表/模板必选、M5.8 LLM Provider、M5.9 MCP performance、M5.10 专业模板。只有 M5.10 全部门禁完成后才允许 `M5 FINAL`。
 - 新增 Generalization Gate：至少验证 Sales/Retail、Education、Inventory/Operations，并以开发期未知业务模型做最终 holdout；生产代码不得在正式 model-scoped glossary/test fixture 外写死字段、member 或答案，测试答案不得进入 LLM Prompt。
 - 固定完成链：Spec → Failure reproducer → Regression tests → Minimal implementation → Focused Real → Cross-domain → Full gates → User manual acceptance → commit。自动化测试数字不能替代 Real Browser/人工验收。
 - Documentation Governance、Repository Safety（296 files）、Error Ledger（30 entries）、Artifact Governance 与 `git diff --check` 全部 PASS；本轮未运行功能测试，因为没有业务逻辑变化。
@@ -168,7 +185,7 @@
 
 - 统一正式路线为 M5.0 设计/契约、M5.1 React 核心实现、M5.2 Real 业务逻辑、M5.3 视觉交互最终收口；同步 PRD、scope、API、status、roadmap、handoff 与 frontend specs。
 - 新增只读 `GET /api/v1/semantic-models`，通过 `SemanticModelDiscoveryService → ToolGateway → PowerBIAdapter → Local MCP` 发现并验证当前 Desktop 模型；响应排除连接串、端口、进程号、raw MCP、DAX、schema 与 Secret。前端动态使用 catalog/runtime，无模型时禁止发送。
-- 删除“不使用模板”产品模式。`report_template_key` 仅为单次显式 override；后端 report intent 在未选择模板时使用 registry-owned 默认 `sales_report`，disabled/unknown template 继续 fail closed。
+- 删除“不使用模板”产品模式。当时 `report_template_key` 为单次显式 override、未选择时后端使用默认 `sales_report`；该历史行为已由 M5.7 Report Template Required 合同 supersede。
 - 修正前端运行逻辑：conversation/report 查询使用 discovery/runtime namespace，report history 不跨 source mode 聚合；Chat HTTP 200 按 terminal/error/clarification/unsupported/answer 判断业务终态；补充 Desktop、模型、DeepSeek、后端、SQLite history 与一般请求的安全错误文案。
 - 初始 503 根因确认是 `PERSISTENCE_BACKEND=memory`，不是 namespace 或 SQLite 路径；初始 Chat 200 失败根因是前端 Real/`local_desktop_model` 与后端 Mock/`mock_sales_model` 配置错配，终态为 `tool_failed/ToolPolicyDeniedError`。
 - Real acceptance 额外发现并修正两个配置绑定：当前 Desktop schema 的 glossary fingerprint 已在完整对象兼容性检查后更新；本地 `MAX_TOOL_CALLS=3` 低于 full report 的 schema + 4 DAX + render 预算，正式 Real 配置固定为 8。最终 7-turn Real conversation 全部 completed/committed，generic report 未传 template override 仍生成 `sales_report`；recent/search/history/report/view/download 与 restart recovery PASS。

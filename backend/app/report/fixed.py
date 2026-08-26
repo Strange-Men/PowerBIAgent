@@ -18,6 +18,7 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from html import escape
 from pathlib import Path
+import re
 from string import Template
 from typing import Any
 
@@ -54,8 +55,9 @@ class SalesReportRenderer(ReportRenderer):
     _ALLOWED_VISUAL_TYPES = frozenset(item.value for item in VisualType)
     _ALLOWED_LAYOUT_HINTS = frozenset({"full", "half"})
     _MAX_SERIES = 200
-    _LINE_WIDTH = 600
-    _LINE_HEIGHT = 220
+    _LINE_WIDTH = 1000
+    _LINE_HEIGHT = 340
+    _PERIOD_PATTERN = re.compile(r"^(\d{4})-(\d{1,2})(?:-\d{1,2})?(?:[T ].*)?$")
 
     @property
     def supported_templates(self) -> list[str]:
@@ -132,18 +134,22 @@ class SalesReportRenderer(ReportRenderer):
         body_builder: Any,
     ) -> str:
         body = body_builder(chart)
+        title_id = f"section-{key.value}-title"
         return (
-            f'<section class="section-card wide" data-section="{key.value}">'
-            f'<h2 class="section-title">{cls._text(chart.title)}</h2>'
+            f'<section class="section-card wide" data-section="{key.value}" '
+            f'aria-labelledby="{title_id}">'
+            f'<h2 class="section-title" id="{title_id}">{cls._text(chart.title)}</h2>'
             f"{body}"
             "</section>"
         )
 
     @classmethod
     def _half_section(cls, key: SectionKey, chart: ChartSpec) -> str:
+        title_id = f"section-{key.value}-title"
         return (
-            f'<section class="section-card half" data-section="{key.value}">'
-            f'<h2 class="section-title">{cls._text(chart.title)}</h2>'
+            f'<section class="section-card half" data-section="{key.value}" '
+            f'aria-labelledby="{title_id}">'
+            f'<h2 class="section-title" id="{title_id}">{cls._text(chart.title)}</h2>'
             f"{cls._chart_body(chart)}"
             "</section>"
         )
@@ -190,8 +196,8 @@ class SalesReportRenderer(ReportRenderer):
         points = cls._series(chart)
         width = cls._LINE_WIDTH
         height = cls._LINE_HEIGHT
-        pad_left, pad_right = 46, 16
-        pad_top, pad_bottom = 14, 34
+        pad_left, pad_right = 92, 92
+        pad_top, pad_bottom = 44, 56
         plot_w = width - pad_left - pad_right
         plot_h = height - pad_top - pad_bottom
 
@@ -201,13 +207,13 @@ class SalesReportRenderer(ReportRenderer):
         span = maximum - minimum
         if span == 0:
             span = Decimal("1")
-        # 8% headroom so the top label never clips
-        upper = maximum + span * Decimal("0.08")
-        lower = minimum - span * Decimal("0.08")
+        # Headroom keeps large direct labels inside the SVG at extrema.
+        upper = maximum + span * Decimal("0.14")
+        lower = minimum - span * Decimal("0.10")
 
         def scale_x(index: int) -> str:
             x = (
-                pad_left
+                pad_left + plot_w / 2
                 if len(points) == 1
                 else pad_left + index * plot_w / (len(points) - 1)
             )
@@ -238,29 +244,54 @@ class SalesReportRenderer(ReportRenderer):
 
         circles = []
         for index, (value, (x, y)) in enumerate(zip(values, coords)):
+            period_label = cls._period_label(str(points[index]["label"]))
+            value_label = cls._number(value, decimals=2)
             circles.append(
-                f'<circle cx="{x}" cy="{y}" r="3.5" '
+                f'<circle cx="{x}" cy="{y}" r="4" tabindex="0" '
                 f'fill="{ThemePolicy.SEQUENTIAL_400}" stroke="{ThemePolicy.SURFACE}" '
                 f'stroke-width="1.5" '
                 f'data-point="{index + 1}" '
                 f'data-source-value="{escape(format(value, "f"), quote=True)}" '
-                f'aria-label="{cls._text(chart.y_field)}={cls._number(value, decimals=2)}"/>'
+                f'aria-label="{cls._text(period_label)}，{cls._text(chart.y_field)}={value_label}">'
+                f'<title>{cls._text(period_label)}：{value_label}</title></circle>'
             )
 
         labels: list[str] = []
-        labeled_indexes: set[int] = set()
-        for index in (0, len(points) - 1):
-            if index not in labeled_indexes:
-                labeled_indexes.add(index)
-                labels.append(cls._axis_period_label(
-                    points[index]["label"],
-                    scale_x(index),
-                ))
-        middle = len(points) // 2
-        if len(points) > 2 and middle not in labeled_indexes:
+        wide_ordered = cls._tick_indexes(len(points), 10)
+        medium_ordered = tuple(
+            wide_ordered[index]
+            for index in cls._tick_indexes(len(wide_ordered), 6)
+        )
+        base_indexes = {
+            medium_ordered[index]
+            for index in cls._tick_indexes(len(medium_ordered), 3)
+        }
+        medium_indexes = set(medium_ordered)
+        wide_indexes = set(wide_ordered)
+        previous_year: str | None = None
+        for index in sorted(wide_indexes | medium_indexes | base_indexes):
+            tier = (
+                "base"
+                if index in base_indexes
+                else "medium"
+                if index in medium_indexes
+                else "wide"
+            )
+            raw_period = str(points[index]["label"])
+            period_match = cls._PERIOD_PATTERN.fullmatch(raw_period.strip())
+            current_year = period_match.group(1) if period_match else None
+            include_year = (
+                index == 0
+                or current_year is None
+                or current_year != previous_year
+            )
             labels.append(cls._axis_period_label(
-                points[middle]["label"], scale_x(middle)
+                cls._period_label(raw_period, include_year=include_year),
+                scale_x(index),
+                index=index,
+                tier=tier,
             ))
+            previous_year = current_year
 
         direct_labels = ""
         if points:
@@ -272,11 +303,12 @@ class SalesReportRenderer(ReportRenderer):
             for index, value in direct:
                 x, y = coords[index]
                 anchor = (
-                    "end" if index == 0 else "start" if index == len(points) - 1 else "middle"
+                    "start" if index == 0 else "end" if index == len(points) - 1 else "middle"
                 )
                 dy = "-6" if index == max_index else "14"
                 direct_labels += (
-                    f'<text x="{x}" y="{y}" dy="{dy}" text-anchor="{anchor}" '
+                    f'<text x="{x}" y="{y}" dy="{dy}" '
+                    f'data-direct-index="{index}" text-anchor="{anchor}" '
                     f'class="chart-direct-label">'
                     f"{cls._number(value, decimals=2)}</text>"
                 )
@@ -284,7 +316,7 @@ class SalesReportRenderer(ReportRenderer):
         return (
             f'<div class="chart chart-line" data-chart="time_trend">'
             f'<svg viewBox="0 0 {width} {height}" role="img" '
-            f'aria-label="{cls._text(chart.title)}">'
+            f'preserveAspectRatio="none" aria-label="{cls._text(chart.title)}">'
             f'{area}{"".join(circles)}'
             f'<polyline points="{line_points}" fill="none" '
             f'stroke="{ThemePolicy.SEQUENTIAL_550}" stroke-width="2.5" '
@@ -295,12 +327,40 @@ class SalesReportRenderer(ReportRenderer):
         )
 
     @classmethod
-    def _axis_period_label(cls, period: str, x: str) -> str:
-        anchor = "start" if float(x) < 60 else "middle"
+    def _axis_period_label(
+        cls,
+        period: str,
+        x: str,
+        *,
+        index: int,
+        tier: str,
+    ) -> str:
+        # Symmetric horizontal padding keeps endpoint labels inside the viewBox;
+        # centered labels preserve consistent spacing to adjacent ticks.
+        anchor = "middle"
         return (
-            f'<text x="{x}" y="{cls._LINE_HEIGHT - 8}" text-anchor="{anchor}" '
-            f'class="chart-axis-label">{cls._text(period)}</text>'
+            f'<text x="{x}" y="{cls._LINE_HEIGHT - 12}" '
+            f'data-tick-index="{index}" data-tick-tier="{tier}" '
+            f'text-anchor="{anchor}" class="chart-axis-label" '
+            f'aria-label="{cls._text(period)}">{cls._text(period)}</text>'
         )
+
+    @staticmethod
+    def _tick_indexes(point_count: int, maximum: int) -> tuple[int, ...]:
+        if point_count <= maximum:
+            return tuple(range(point_count))
+        return tuple(sorted({
+            round(slot * (point_count - 1) / (maximum - 1))
+            for slot in range(maximum)
+        }))
+
+    @classmethod
+    def _period_label(cls, raw: str, *, include_year: bool = True) -> str:
+        match = cls._PERIOD_PATTERN.fullmatch(raw.strip())
+        if match is None:
+            return raw
+        month = f"{int(match.group(2))}月"
+        return f"{int(match.group(1))}年{month}" if include_year else month
 
     # ── Donut chart (category composition) ──
 
@@ -330,7 +390,11 @@ class SalesReportRenderer(ReportRenderer):
                 f'stroke="{color}" stroke-width="34" pathLength="100" '
                 f'stroke-dasharray="{format(percent, ".2f")} 100" '
                 f'stroke-dashoffset="{format(-cumulative, ".2f")}" '
-                f'stroke-linecap="butt"/>'
+                f'stroke-linecap="butt" tabindex="0" '
+                f'aria-label="{cls._text(item["label"])}，{format(percent, ".2f")}%">'
+                f'<title>{cls._text(item["label"])}：'
+                f'{cls._number(item["value"], decimals=2)}，'
+                f'{format(percent, ".2f")}%</title></circle>'
             )
             cumulative += percent
             legend.append(
@@ -373,7 +437,9 @@ class SalesReportRenderer(ReportRenderer):
             )
             state_class = " negative" if value < 0 else " zero" if value == 0 else ""
             bars.append(
-                f'<div class="column-item{state_class}" data-column="{index + 1}">'
+                f'<div class="column-item{state_class}" data-column="{index + 1}" '
+                f'tabindex="0" aria-label="{cls._text(item["label"])}，'
+                f'{cls._text(chart.y_field)} {cls._number(value, decimals=2)}">'
                 f'<span class="column-value">{cls._number(value, decimals=2)}</span>'
                 f'<div class="column-track" aria-hidden="true">'
                 f'<span class="column-fill" style="height: {format(percent, ".2f")}%" '
@@ -413,7 +479,7 @@ class SalesReportRenderer(ReportRenderer):
                 else ""
             )
             rows.append(
-                f'<div class="bar-row{state_class}" '
+                f'<div class="bar-row{state_class}" tabindex="0" '
                 f'data-source-value="{escape(format(value, "f"), quote=True)}" '
                 f'data-bar-percent="{format(percent, ".2f")}" '
                 f'aria-label="{cls._text(item["label"])}，{cls._text(chart.y_field)} '

@@ -46,7 +46,7 @@ class ChatRequest(BaseModel):
     )
     report_template_key: Optional[str] = Field(
         default=None,
-        description="报表模板标识，仅在报表生成请求时需要",
+        description="报表模板标识；报表生成请求必须显式提供有效 key",
     )
 
     # 禁止客户端直接传 Mock Scenario Key
