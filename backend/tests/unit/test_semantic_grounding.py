@@ -1425,6 +1425,538 @@ class TestGroundingAuthorityAndStateTransition:
         assert outcome.delta is None
 
 
+def _m55_domain_catalog(
+    *,
+    model_key: str,
+    table_name: str,
+    measure_name: str,
+    measure_alias: str,
+    member_field: str,
+    member_field_alias: str,
+    member_aliases: dict[str, str],
+    member_suffixes: list[str],
+    ranking_field: str,
+    ranking_alias: str,
+    runtime_members: list[str],
+    include_month_group: bool = False,
+):
+    columns = [
+        ColumnSchema(name=member_field, data_type="String"),
+        ColumnSchema(name=ranking_field, data_type="String"),
+        ColumnSchema(name="EventDate", data_type="DateTime"),
+    ]
+    if include_month_group:
+        columns.append(ColumnSchema(name="PeriodBucket", data_type="String"))
+    schema = SemanticModelSchema(
+        name=f"Fixture {model_key}",
+        key=model_key,
+        tables=[TableSchema(
+            name=table_name,
+            columns=columns,
+            measures=[MeasureSchema(name=measure_name, data_type="Double")],
+        )],
+    )
+    fields = {
+        member_field: {
+            "table_name": table_name,
+            "object_type": "field",
+            "aliases": [member_field_alias],
+            "member_aliases": member_aliases,
+            "member_suffixes": member_suffixes,
+        },
+        ranking_field: {
+            "table_name": table_name,
+            "object_type": "field",
+            "aliases": [ranking_alias],
+        },
+        "EventDate": {
+            "table_name": table_name,
+            "object_type": "field",
+            "aliases": ["业务日期"],
+        },
+    }
+    if include_month_group:
+        fields["PeriodBucket"] = {
+            "table_name": table_name,
+            "object_type": "field",
+            "aliases": ["月份"],
+            "temporal_grouping": {
+                "grain": "month",
+                "date_field": "EventDate",
+                "date_table_name": table_name,
+            },
+        }
+    glossary = {
+        "version": 1,
+        "semantic_model_key": model_key,
+        "schema_fingerprint": compute_schema_fingerprint(schema),
+        "measures": {
+            measure_name: {
+                "table_name": table_name,
+                "object_type": "measure",
+                "aliases": [measure_alias],
+            }
+        },
+        "fields": fields,
+    }
+    catalog = SemanticCatalogBuilder().build_from_data(schema, glossary)
+    return catalog, runtime_members
+
+
+class TestSemanticCorrectnessFailureReproducers:
+    @staticmethod
+    async def _ground_member(
+        catalog,
+        runtime_members,
+        question,
+        measure_alias,
+        measure_name,
+    ):
+        calls: list[str] = []
+
+        async def lookup(field, limit):
+            calls.append(field.canonical_name)
+            assert limit == 100
+            return ColumnMembersResult(
+                semantic_model_key=catalog.semantic_model_key,
+                table_name=field.table_name,
+                field_name=field.canonical_name,
+                values=runtime_members,
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(catalog).ground(
+            question,
+            _intent(detected_measures=[measure_alias]),
+            QueryPlan(
+                normalized_question=question,
+                semantic_model_key=catalog.semantic_model_key,
+                measures=[measure_name],
+            ),
+            None,
+            lookup,
+        )
+        return outcome, calls
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("question", "expected"),
+        [
+            ("华南销售额", "South"),
+            ("华南区销售额", "South"),
+            ("南区销售额", "South"),
+        ],
+    )
+    async def test_model_scoped_member_variants_require_runtime_confirmation(
+        self, question, expected
+    ):
+        catalog, members = _m55_domain_catalog(
+            model_key="sales_fixture",
+            table_name="SalesFacts",
+            measure_name="NetRevenue",
+            measure_alias="销售额",
+            member_field="MarketArea",
+            member_field_alias="区域",
+            member_aliases={"华南": "South", "南区": "South"},
+            member_suffixes=["区"],
+            ranking_field="SkuName",
+            ranking_alias="产品",
+            runtime_members=["South", "East"],
+        )
+
+        outcome, calls = await self._ground_member(
+            catalog, members, question, "销售额", "NetRevenue"
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.filters == [
+            StructuredFilter(field="MarketArea", value=expected)
+        ]
+        assert calls == ["MarketArea"]
+
+    @pytest.mark.asyncio
+    async def test_explicit_unknown_member_is_no_match_not_broader_query(self):
+        catalog, members = _m55_domain_catalog(
+            model_key="sales_fixture",
+            table_name="SalesFacts",
+            measure_name="NetRevenue",
+            measure_alias="销售额",
+            member_field="MarketArea",
+            member_field_alias="区域",
+            member_aliases={"华南": "South", "南区": "South"},
+            member_suffixes=["区"],
+            ranking_field="SkuName",
+            ranking_alias="产品",
+            runtime_members=["South", "East"],
+        )
+
+        outcome, calls = await self._ground_member(
+            catalog, members, "火星区销售额", "销售额", "NetRevenue"
+        )
+
+        assert outcome.status == GroundingStatus.UNRESOLVED
+        assert outcome.delta is None
+        assert calls == ["MarketArea"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("question", "expected_sort"),
+        [
+            ("前三个产品", "desc"),
+            ("Top 3 产品", "desc"),
+            ("销售额最高的3个产品", "desc"),
+            ("销售额最低的3个产品", "asc"),
+        ],
+    )
+    async def test_ranking_grammar_is_independent_of_weak_draft(
+        self, question, expected_sort
+    ):
+        async def no_lookup(*_):
+            raise AssertionError("ranking dimension must not trigger member lookup")
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            question,
+            _intent(),
+            _draft(),
+            StructuredWorkMemory(
+                state_status=MemoryStatus.COMMITTED,
+                measures=["Total Sales"],
+            ),
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.dimensions == ["Product"]
+        assert outcome.delta.top_n == 3
+        assert outcome.delta.sort == expected_sort
+
+    @pytest.mark.asyncio
+    async def test_temporal_grouping_is_runtime_metadata_driven(self):
+        catalog, _ = _m55_domain_catalog(
+            model_key="education_fixture",
+            table_name="LearningFacts",
+            measure_name="PresenceRatio",
+            measure_alias="出勤率",
+            member_field="CampusNode",
+            member_field_alias="校区",
+            member_aliases={"东校区": "East Campus"},
+            member_suffixes=["校区"],
+            ranking_field="GradeBand",
+            ranking_alias="年级",
+            runtime_members=["East Campus"],
+            include_month_group=True,
+        )
+
+        async def no_lookup(*_):
+            raise AssertionError("temporal grouping must not query members")
+
+        outcome = await SemanticGroundingService(catalog).ground(
+            "每个月出勤率趋势",
+            _intent(detected_measures=["出勤率"]),
+            QueryPlan(
+                normalized_question="每个月出勤率趋势",
+                semantic_model_key="education_fixture",
+                measures=["PresenceRatio"],
+            ),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.dimensions == ["PeriodBucket"]
+        assert outcome.delta.dimension_order == "asc"
+
+    @pytest.mark.asyncio
+    async def test_temporal_grouping_without_runtime_binding_is_controlled(self):
+        async def no_lookup(*_):
+            raise AssertionError("unsupported grouping must not query members")
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "每个月销售额趋势",
+            _intent(detected_measures=["销售额"]),
+            _draft(measures=["Total Sales"]),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.UNRESOLVED
+        assert outcome.delta is None
+        assert outcome.pending_eligible is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        (
+            "model_key", "table_name", "measure_name", "measure_alias",
+            "member_field", "member_alias", "member_suffix", "member_value",
+            "ranking_field", "ranking_alias", "question",
+        ),
+        [
+            (
+                "education_fixture", "LearningFacts", "LearnerCount", "学生数量",
+                "CampusNode", "校区", "校区", "North Campus",
+                "GradeBand", "年级", "北校区学生数量",
+            ),
+            (
+                "inventory_fixture", "StockFacts", "OnHand", "当前库存",
+                "DepotNode", "仓库", "仓", "Depot-A",
+                "ItemClass", "品类", "甲仓当前库存",
+            ),
+        ],
+    )
+    async def test_cross_domain_member_authority(
+        self,
+        model_key,
+        table_name,
+        measure_name,
+        measure_alias,
+        member_field,
+        member_alias,
+        member_suffix,
+        member_value,
+        ranking_field,
+        ranking_alias,
+        question,
+    ):
+        literal = question.removesuffix(measure_alias)
+        catalog, members = _m55_domain_catalog(
+            model_key=model_key,
+            table_name=table_name,
+            measure_name=measure_name,
+            measure_alias=measure_alias,
+            member_field=member_field,
+            member_field_alias=member_alias,
+            member_aliases={literal: member_value},
+            member_suffixes=[member_suffix],
+            ranking_field=ranking_field,
+            ranking_alias=ranking_alias,
+            runtime_members=[member_value],
+        )
+
+        outcome, calls = await self._ground_member(
+            catalog, members, question, measure_alias, measure_name
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.filters == [
+            StructuredFilter(field=member_field, value=member_value)
+        ]
+        assert calls == [member_field]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        (
+            "model_key", "table_name", "measure_name", "measure_alias",
+            "member_field", "member_alias", "member_suffix",
+            "ranking_field", "ranking_alias", "known_member", "unknown_question",
+        ),
+        [
+            (
+                "education_fixture", "LearningFacts", "LearnerCount", "学生数量",
+                "CampusNode", "校区", "校区", "GradeBand", "年级",
+                "North Campus", "火星校区学生数量",
+            ),
+            (
+                "inventory_fixture", "StockFacts", "OnHand", "当前库存",
+                "DepotNode", "仓库", "仓", "ItemClass", "品类",
+                "Depot-A", "火星仓当前库存",
+            ),
+        ],
+    )
+    async def test_cross_domain_unknown_member_and_top_n(
+        self,
+        model_key,
+        table_name,
+        measure_name,
+        measure_alias,
+        member_field,
+        member_alias,
+        member_suffix,
+        ranking_field,
+        ranking_alias,
+        known_member,
+        unknown_question,
+    ):
+        catalog, members = _m55_domain_catalog(
+            model_key=model_key,
+            table_name=table_name,
+            measure_name=measure_name,
+            measure_alias=measure_alias,
+            member_field=member_field,
+            member_field_alias=member_alias,
+            member_aliases={},
+            member_suffixes=[member_suffix],
+            ranking_field=ranking_field,
+            ranking_alias=ranking_alias,
+            runtime_members=[known_member],
+        )
+
+        unknown, calls = await self._ground_member(
+            catalog, members, unknown_question, measure_alias, measure_name
+        )
+        assert unknown.status == GroundingStatus.UNRESOLVED
+        assert calls == [member_field]
+
+        async def no_lookup(*_):
+            raise AssertionError("ranking must not query business members")
+
+        ranking = await SemanticGroundingService(catalog).ground(
+            f"前三个{ranking_alias}",
+            _intent(),
+            QueryPlan(
+                normalized_question=f"前三个{ranking_alias}",
+                semantic_model_key=model_key,
+                measures=[measure_name],
+                dimensions=[ranking_field],
+            ),
+            StructuredWorkMemory(
+                state_status=MemoryStatus.COMMITTED,
+                semantic_model_key=model_key,
+                measures=[measure_name],
+            ),
+            no_lookup,
+        )
+        assert ranking.status == GroundingStatus.RESOLVED
+        assert ranking.delta.dimensions == [ranking_field]
+        assert ranking.delta.top_n == 3
+        assert ranking.delta.sort == "desc"
+
+    @pytest.mark.asyncio
+    async def test_opaque_holdout_model_uses_only_runtime_catalog_authority(self):
+        catalog, members = _m55_domain_catalog(
+            model_key="holdout_7f31c9",
+            table_name="Fact_Q7",
+            measure_name="Metric_Q7",
+            measure_alias="有效载荷",
+            member_field="Node_Q7",
+            member_field_alias="节点",
+            member_aliases={"青节点": "node-green"},
+            member_suffixes=["节点"],
+            ranking_field="Band_Q7",
+            ranking_alias="层级",
+            runtime_members=["node-green", "node-blue"],
+        )
+
+        outcome, calls = await self._ground_member(
+            catalog, members, "青节点有效载荷", "有效载荷", "Metric_Q7"
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.measures == ["Metric_Q7"]
+        assert outcome.delta.filters == [
+            StructuredFilter(field="Node_Q7", value="node-green")
+        ]
+        assert calls == ["Node_Q7"]
+
+
+class TestM55SchemaMutationGate:
+    def test_display_label_and_table_rename_follow_updated_runtime_contract(self):
+        catalog, _ = _m55_domain_catalog(
+            model_key="renamed_fixture",
+            table_name="Fact_Renamed",
+            measure_name="Metric_Renamed",
+            measure_alias="新展示指标",
+            member_field="Group_Renamed",
+            member_field_alias="新展示分组",
+            member_aliases={},
+            member_suffixes=["组"],
+            ranking_field="Rank_Renamed",
+            ranking_alias="新展示层级",
+            runtime_members=[],
+        )
+
+        measure = ObjectGrounder(catalog).find_mentions(
+            "新展示指标是多少",
+            SemanticObjectType.MEASURE,
+            "measure",
+        )
+        stale = ObjectGrounder(catalog).find_mentions(
+            "旧展示指标是多少",
+            SemanticObjectType.MEASURE,
+            "measure",
+        )
+        assert measure.status == GroundingStatus.RESOLVED
+        assert measure.canonical_object.table_name == "Fact_Renamed"
+        assert stale.status == GroundingStatus.NOT_MENTIONED
+
+    def test_similar_field_aliases_are_config_conflict_not_guess(self):
+        schema = _schema()
+        schema.tables[0].columns.extend([
+            ColumnSchema(name="RegionPrimary", data_type="String"),
+            ColumnSchema(name="RegionSecondary", data_type="String"),
+        ])
+        glossary = _glossary()
+        glossary["schema_fingerprint"] = compute_schema_fingerprint(schema)
+        glossary["fields"]["RegionPrimary"] = {
+            "table_name": "Sales", "object_type": "field", "aliases": ["片区"]
+        }
+        glossary["fields"]["RegionSecondary"] = {
+            "table_name": "Sales", "object_type": "field", "aliases": ["片区"]
+        }
+
+        result = ObjectGrounder(
+            SemanticCatalogBuilder().build_from_data(schema, glossary)
+        ).resolve_phrase("片区", SemanticObjectType.FIELD, "filter_field")
+
+        assert result.status == GroundingStatus.CONFIG_CONFLICT
+
+    @pytest.mark.asyncio
+    async def test_removed_alias_and_changed_member_fail_closed(self):
+        catalog, _ = _m55_domain_catalog(
+            model_key="mutation_fixture",
+            table_name="Fact_M",
+            measure_name="Metric_M",
+            measure_alias="现行指标",
+            member_field="Node_M",
+            member_field_alias="节点",
+            member_aliases={"旧节点": "old-runtime-member"},
+            member_suffixes=["节点"],
+            ranking_field="Rank_M",
+            ranking_alias="层级",
+            runtime_members=["new-runtime-member"],
+        )
+
+        outcome, calls = await TestSemanticCorrectnessFailureReproducers._ground_member(
+            catalog,
+            ["new-runtime-member"],
+            "旧节点现行指标",
+            "现行指标",
+            "Metric_M",
+        )
+        assert outcome.status == GroundingStatus.UNRESOLVED
+        assert calls == ["Node_M"]
+
+        no_alias_glossary = {
+            "version": 1,
+            "semantic_model_key": catalog.semantic_model_key,
+            "schema_fingerprint": catalog.schema_fingerprint,
+            "measures": {
+                "Metric_M": {
+                    "table_name": "Fact_M",
+                    "object_type": "measure",
+                    "aliases": [],
+                }
+            },
+            "fields": {},
+        }
+        schema = SemanticModelSchema(
+            name="Mutation",
+            key="mutation_fixture",
+            tables=[TableSchema(
+                name="Fact_M",
+                columns=[ColumnSchema(name="Node_M", data_type="String")],
+                measures=[MeasureSchema(name="Metric_M", data_type="Double")],
+            )],
+        )
+        no_alias = SemanticCatalogBuilder().build_from_data(schema, no_alias_glossary)
+        assert ObjectGrounder(no_alias).find_mentions(
+            "现行指标", SemanticObjectType.MEASURE, "measure"
+        ).status == GroundingStatus.NOT_MENTIONED
+
+
 class TestPendingClarificationContract:
     @staticmethod
     def _resolved(role: str, canonical_name: str) -> ObjectGroundingResult:

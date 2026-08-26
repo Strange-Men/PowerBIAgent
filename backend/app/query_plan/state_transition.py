@@ -110,6 +110,16 @@ class TurnInheritancePolicy:
                 reason="deterministic_time_only_replacement",
             )
 
+        if (
+            delta.measures is None
+            and delta.dimensions
+            and delta.top_n_specified
+        ):
+            return InheritanceDecision(
+                mode=InheritanceMode.FOLLOW_UP,
+                reason="deterministic_ranking_refinement",
+            )
+
         # A grounded measure makes the current question self-contained.  This
         # check intentionally precedes the LLM relation signal so an inherited
         # draft echo cannot turn a complete new question into a follow-up.
@@ -182,6 +192,7 @@ class StateTransitionService:
         previous_measures = list(committed.measures) if committed else []
         previous_dimensions = list(committed.dimensions) if committed else []
         previous_dimension_tables = self._previous_dimension_tables(committed)
+        previous_dimension_order = self._previous_dimension_order(committed)
         previous_filters = self._previous_filters(committed)
         previous_time = self._previous_time(committed)
         previous_sort = committed.sort if committed else None
@@ -212,10 +223,12 @@ class StateTransitionService:
                 SlotTransition.KEEP
                 if inherit_omitted or not previous_dimensions else SlotTransition.CLEAR
             )
+            dimension_order = previous_dimension_order if inherit_omitted else None
         elif not delta.dimensions:
             dimensions = []
             dimension_tables = dict(delta.dimension_tables)
             dimension_transition = SlotTransition.CLEAR
+            dimension_order = None
         else:
             dimensions = delta.dimensions
             dimension_tables = dict(delta.dimension_tables)
@@ -223,6 +236,7 @@ class StateTransitionService:
                 SlotTransition.KEEP
                 if dimensions == previous_dimensions else SlotTransition.REPLACE
             )
+            dimension_order = delta.dimension_order
 
         filters = list(previous_filters) if inherit_omitted else []
         filter_transitions: list[FilterTransition] = []
@@ -302,12 +316,28 @@ class StateTransitionService:
         if not measures:
             raise ValueError("canonical_measure_required")
 
+        active_hint_fields = {
+            *dimensions,
+            *(item.field for item in filters),
+            *([time_range.date_field] if time_range is not None else []),
+        }
+        dimension_tables = {
+            field: table
+            for field, table in {
+                **previous_dimension_tables,
+                **dimension_tables,
+                **delta.dimension_tables,
+            }.items()
+            if field in active_hint_fields
+        }
+
         plan = CanonicalQueryPlan(
             normalized_question=draft.normalized_question,
             semantic_model_key=draft.semantic_model_key,
             measures=measures,
             dimensions=dimensions,
             dimension_tables=dimension_tables or None,
+            dimension_order=dimension_order,
             filters=filters,
             time_range=time_range,
             sort=sort,
@@ -383,3 +413,12 @@ class StateTransitionService:
                 "committed_memory_dimension_tables_invalid"
             )
         return dict(raw)
+
+    @staticmethod
+    def _previous_dimension_order(
+        committed: StructuredWorkMemory | None,
+    ) -> str | None:
+        if committed is None or committed.last_query_plan is None:
+            return None
+        raw = committed.last_query_plan.get("dimension_order")
+        return raw if raw in {"asc", "desc"} else None

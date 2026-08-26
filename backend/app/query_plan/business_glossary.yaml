@@ -48,6 +48,10 @@ fields:
       - 地区
     member_aliases:
       华南: South
+      华南区: South
+      南区: South
       华东: East
       华北: North
       华西: West
+    member_suffixes:
+      - 区

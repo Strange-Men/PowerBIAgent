@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.4.2 — M5重建基线与后续分阶段开发规划固化（COMPLETE）
+> **状态：** M5.5 — Semantic correctness 与 capability boundary（COMPLETE）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -38,12 +38,13 @@
 | **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
 | **M5.4.1** | **Settings 全量资源分页、选择/批量语义与 automation ownership cleanup** | **✅ 已完成** |
 | **M5.4.2** | **M5 重建基线、旧实验线审计保留与后续阶段治理** | **✅ COMPLETE** |
-| **M5.5** | **Semantic correctness 与 capability boundary** | **⏳ NOT STARTED** |
+| **M5.5** | **Semantic correctness 与 capability boundary** | **✅ COMPLETE** |
 | **M5.6** | **Presentation、Localization 与 Resource UX truth** | **⏳ NOT STARTED** |
 | **M5.7** | **Report readability 与人工视觉验收** | **⏳ NOT STARTED** |
 | **M5.8** | **MCP performance、resilience 与压力验证** | **⏳ NOT STARTED** |
+| **M5.9** | **固定专业销售报表模板与模板选择** | **⏳ NOT STARTED** |
 
-### M5.4.2 — M5 重建基线与规划固化（当前轮）
+### M5.4.2 — M5 重建基线与规划固化（已完成）
 
 - 新开发线 `m5/rebuild` 从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 建立；M5.4.1 及以前能力不可回退。
 - 旧 `m5/frontend` 的 `a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）保留为研究/失败经验/审计记录，不删除、不重写、不 revert、不整体 cherry-pick。
@@ -56,9 +57,15 @@
 
 必须覆盖“火星区”无匹配不得 fallback 全国、“华南/华南区/南区”由 runtime member authority 证明、“大概多少”不误判 prediction、readonly capability 近义表达不依赖无限 regex、TopN 不因非必要 LLM failure 失效，以及 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢` 的 slot 继承/替换。禁止 Localization、Report Visual、MCP performance optimization 与 Resource UI 大改。
 
+状态为 COMPLETE。S1 docs/contracts → S2 failure reproducers → S3 capability → S4 object/member → S5 multi-turn → S6 ranking → S7 temporal → S8 cross-domain/schema mutation → S9 focused → S10 full gates → S11 Real/manual 已顺序通过；S12 只执行最终文档、白名单 commit 与 push。M5.6—M5.9 未开始。
+
 ### 新 M5.6 — Presentation, localization and resource UX truth
 
 只开发 canonical/display separation、model/object/schema-scoped Localization、数字/日期/月格式、Answer/Table/Chart 信息密度、Settings/Recent truth、newest-first、failed resource lifecycle、sticky/scroll/responsive toolbar 与不被 overflow clipping 的 floating menus。
+
+conversation/report action menu 必须共用同一 Portal/floating layer，采用 viewport-aware above/below positioning，不能被 scroll container、scrollbar 或 stacking context 裁切；禁止两套脆弱定位逻辑。Settings Resource Manager 必须定义 nested scroll contract，并以 sticky 或 scrollable action toolbar 处理 responsive overflow，保证 destructive actions 始终可访问。
+
+正式 Layout Gate 覆盖 first/middle/last row、scroll top/middle/bottom、100%/125% zoom、768/1080/1440 viewport height、Sidebar scroll、Settings nested scroll、destructive action 可达与 floating menu 无裁切。
 
 `Answer = 洞察`、`Table = 明细`、`Chart = 趋势/关系`；Answer 不得完整重复 table。内部 canonical time representation 不得原样暴露。禁止修改 Grounding authority、DAX authority 与 MCP architecture。
 
@@ -68,7 +75,13 @@
 
 ### 新 M5.8 — MCP performance and resilience
 
-M5.5—M5.7 冻结后才允许开发 profiling、schema/member/discovery/probe cache、session reuse/persistent worker、bounded concurrency、bounded queue/backpressure、TTL/stale、cold/warm performance、20/50/100 concurrency、PBIX/backend restart、fault injection 与 long soak。不得通过降低 factual validation 换性能；warm latency 不得冒充 cold latency。M5.8 完成全部正式门禁后才允许 `M5 FINAL`。
+M5.5—M5.7 冻结后才允许开发 profiling、schema/member/discovery/probe cache、session reuse/persistent worker、bounded concurrency、bounded queue/backpressure、TTL/stale、cold/warm performance、20/50/100 concurrency、PBIX/backend restart、fault injection 与 long soak。不得通过降低 factual validation 换性能；warm latency 不得冒充 cold latency。
+
+### 新 M5.9 — 固定专业销售报表模板与模板选择
+
+M5.9 必须晚于 M5.8，状态为 NOT STARTED。“简易模板”定义为当前 `sales_report.html` 经 M5.7 可读性优化后的稳定模板；新增“销售模板”，按已确认 Power BI 参考报表版式固定实现专业 sales report HTML，并允许用户显式选择两者。
+
+固定架构为 `VerifiedFactSet → ReportData / ReportSpec → template_key → deterministic fixed HTML renderer`。LLM 不拥有 HTML layout、factual 或 query authority，不得每次临场生成 HTML/CSS/SVG。专业模板规划包含深色 Header/title/navigation、KPI cards、左侧阶段/漏斗区、中部横向对比、右侧状态/异常/明细、下部区域/业务表格、地域视觉、明细表及 footer 指标口径 + Last Refresh。runtime schema 不支持 Forecast/Goal/Pipeline 时不得伪造，只能将真实可支持的 sales-specific section 放入相同版位；Agent 主链继续保持跨领域通用。M5.9 完成全部 Gate 后才允许 `M5 FINAL`。
 
 ### Generalization Gate 与永久开发顺序
 
@@ -304,12 +317,19 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
-- M5.4.2 完成后立即停止；下一步必须等待用户明确批准新版 M5.5，不得提前进入 M5.6—M5.8。
-- 一个 milestone 不得同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle；M5.8 完成前不得宣告 M5 FINAL。
+- M5.5 已完成并停止开发；未经新指令不得进入 M5.6—M5.9。
+- 一个 milestone 不得同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle；M5.9 完成前不得宣告 M5 FINAL。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
 - M0—M3 已正式封板（Tag: `m3.4-m0-m3-final-seal`）；M4 backend 已在 M4.4 FINAL PASS，M4.4.2 truth/persistence boundary final closure FINAL PASS；M5.0—M5.3.3 已完成；禁止 force push。
 
 ---
 
-*最后更新：2026-08-26 | M5.4.2 COMPLETE — M5 重建基线、分阶段路线与 Generalization Gate*
+### M5.5 completion evidence
+
+- explicit unresolved → clarification/no-match → ZERO DAX/QueryResult/Memory commit；`火星区` fail closed，`华南/华南区/南区` 由 runtime members 解析。
+- Real Rich PBIX 四轮 slot inheritance、TopN、temporal filter/grouping、prediction/delete unsupported 与 READ_ANALYSIS 问法通过。
+- Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
+- 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.9 或 Remote MCP 实现。
+
+*最后更新：2026-08-26 | M5.5 COMPLETE — M5.6—M5.9 NOT STARTED*

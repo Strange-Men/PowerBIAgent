@@ -1,9 +1,9 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.4.2 COMPLETE
-> **适用范围：** 新 `m5/rebuild` 开发线及后续 M5.5—M5.8
+> **状态：** M5.5 COMPLETE；M5.6—M5.9 NOT STARTED
+> **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.9
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
-> **性质：** 长期工程与验收合同；本轮不修改生产业务逻辑
+> **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
 
 ## 一、重建基线与历史真实性
 
@@ -92,7 +92,7 @@ Answer 不得完整重复 table。展示层必须保持 canonical/display separa
 
 旧实验线曾观测到 Real latency 从几十秒到数分钟；schema/member/DAX 重复 session 有明显成本。persistent worker 是可参考思路，但 queue、backpressure、TTL、stale、异常恢复必须在 M5.8 独立压力验证。必须分别报告 cold 与 warm latency，禁止用 warm latency 冒充 cold latency。
 
-## 三、M5.5—M5.8 分阶段边界
+## 三、M5.5—M5.9 分阶段边界
 
 ### M5.5 — Semantic correctness and capability boundary
 
@@ -108,6 +108,16 @@ Answer 不得完整重复 table。展示层必须保持 canonical/display separa
 
 禁止：Localization、Report Visual、MCP performance optimization、Resource UI 大改。M5.5 的首要验收是 explicit unresolved semantic requirement 必须 clarification/no-match 且 ZERO DAX。
 
+#### M5.5 canonical semantic contract
+
+- object role 固定为 `measure / dimension / filter_field / date_field / ranking_dimension`；解析顺序为 runtime canonical exact → approved model-scoped alias exact → metadata evidence → bounded candidate-ID selection → ambiguous/no-match。
+- business member 与 object grounding 分离：user literal → target field candidate → deterministic alias/morphology candidate → optional bounded language candidate → runtime `ColumnMembers` exact validation → canonical runtime member。无匹配、多个 field 命中或多个 member 候选都不得执行。
+- slot 独立决策 `measure / dimensions / filters / time / ranking / sort`，优先级为 current explicit evidence > current bounded semantic draft > compatible committed Memory。fresh query 清除无关旧槽；follow-up/replace 只继承真正省略的兼容槽。
+- 高置信 ranking grammar 确定性提取“前N个/Top N/最高的N个/最低的N个”的 `top_n`、direction 与 ranking intent；ranking dimension/measure 仍由 runtime grounding 决定，不能由 grammar 猜对象。
+- temporal contract 区分 time filter 与 temporal grouping，首批 registry 支持 explicit month/year、relative month/year、recent N months、bounded range、month/year grouping。runtime 不支持 requested grouping 时 controlled unsupported/clarification，禁止 HTTP 500。
+- capability 使用三层：deterministic safety floor；只输出 `READ_ANALYSIS / FUTURE_PREDICTION / MODEL_WRITE / DATA_DELETE / ARBITRARY_CODE / UNKNOWN` 的 bounded classification；deterministic policy 终审 supported/clarification/unsupported。“大概多少”不得因单一词误判为 prediction。
+- semantic trace 至少记录 request/conversation ID、current explicit slots、inherited slots、object/member grounding status、capability decision、canonical plan summary/hash、DAX executed 与 Memory committed；不得记录 Secret 或 raw full prompt。
+
 ### M5.6 — Presentation, localization and resource UX truth
 
 只允许开发：
@@ -119,6 +129,10 @@ Answer 不得完整重复 table。展示层必须保持 canonical/display separa
 - Settings/Recent resource truth、newest-first；
 - failed resource lifecycle；
 - sticky/scroll/responsive toolbar 与 floating menus。
+
+conversation 与 report 必须共用同一 Portal/floating layer action menu，按 viewport 在目标行上方或下方定位；禁止分别维护两套易漂移逻辑，且不得被 scroll container、scrollbar 或 stacking context 裁切。Settings Resource Manager 必须有 nested scroll contract 与 sticky 或 scrollable action toolbar，responsive overflow 不得吞掉 destructive actions。
+
+正式 Layout Gate 至少覆盖：first/middle/last row、scroll top/middle/bottom、100%/125% zoom、768/1080/1440 viewport height、Sidebar scroll、Settings nested scroll、destructive action 始终可访问、floating menu 永不裁切。
 
 禁止修改 Grounding authority、DAX authority 与 MCP architecture。
 
@@ -145,7 +159,26 @@ Answer 不得完整重复 table。展示层必须保持 canonical/display separa
 - 20/50/100 concurrency；
 - PBIX restart、backend restart、fault injection 与 long soak。
 
-任何优化不得降低 schema/member/instance/factual validation，不得绕过 Grounding、Layer 3、VerifiedFactSet 或 stale fail-closed。只有 M5.8 完成全部正式 Gate 后，才允许声明 `M5 FINAL`。
+任何优化不得降低 schema/member/instance/factual validation，不得绕过 Grounding、Layer 3、VerifiedFactSet 或 stale fail-closed。
+
+### M5.9 — 固定专业销售报表模板与模板选择
+
+M5.9 必须晚于 M5.8，状态为 NOT STARTED：
+
+- “简易模板”= 当前 `sales_report.html` 经 M5.7 可读性优化后的稳定模板；
+- “销售模板”= 按已确认 Power BI 参考报表版式固定制作的专业 sales report HTML；
+- 用户生成报表时可明确选择“简易模板”或“销售模板”。
+
+固定链为：
+
+```text
+VerifiedFactSet
+→ ReportData / ReportSpec
+→ template_key
+→ deterministic fixed HTML renderer
+```
+
+LLM 不拥有 HTML layout、factual 或 query authority，不得临场生成 HTML/CSS/SVG。专业销售模板规划包含深色 Header/title/navigation、KPI cards、左侧阶段/漏斗业务区、中部横向业务对比、右侧状态/异常/明细区、下部区域/业务表格、地域视觉、明细表、footer 指标口径与 Last Refresh。若 runtime schema 没有 Forecast/Goal/Pipeline 等事实，必须以真实可支持的 sales-specific section 替代到相同版位，禁止伪造；Agent 主链仍保持跨领域通用。只有 M5.9 完成全部正式 Gate 后才允许声明 `M5 FINAL`。
 
 ## 四、Generalization Gate
 
@@ -217,6 +250,20 @@ Spec
 
 M5.4.2 只建立 `m5/rebuild` Git 基线并固化本文档及相关治理入口，不修改生产业务逻辑、不改 schema/migration、不开始新版 M5.5。完成后必须停止并等待下一轮明确指令。
 
+## 七、M5.5 checkpoint 与完成边界
+
+M5.5 固定顺序为 S1 docs/contracts、S2 semantic failure reproducers、S3 capability、S4 object/member、S5 multi-turn、S6 ranking/TopN、S7 temporal、S8 cross-domain/schema mutation、S9 focused regression、S10 full backend/golden/governance、S11 Real Browser/manual、S12 final docs/commit/push。任一 checkpoint FAIL 不进入下一项。
+
+完成必须同时证明：explicit unresolved 全部 ZERO DAX/QueryResult/Memory commit；四轮 slot transition、TopN、time filter/grouping、readonly unsupported 正确；Sales/Education/Inventory、未知 holdout 与 schema mutation 全部通过；无 sales-specific production hardcode；full gates 与 Real/manual acceptance 均 PASS。
+
+M5.5 完成证据：
+
+- `火星区` clarification 且 ZERO DAX/QueryResult/Memory commit；`华南/华南区/南区` 通过 runtime members canonicalize 为 `South`；
+- Real Rich PBIX 四轮正确完成 measure/time/filter KEEP/REPLACE 与 Product Top3 descending；
+- Sales、Education、Inventory、未知 opaque holdout、schema mutation 与 capability/temporal gates 通过 deterministic oracle；
+- backend `1823 passed, 1 skipped`，frontend `69 passed` 且 typecheck/lint/build PASS，Golden `11 passed, 1 manual-real skipped`，全部治理门禁与 Real Browser/manual acceptance PASS；
+- acceptance automation-owned residual=0；未修改 Presentation、Resource UX、Report、MCP performance 或 M5.9 实现。
+
 ---
 
-*创建日期：2026-08-26 | M5.4.2 COMPLETE — 重建基线、分阶段边界与 Generalization Gate*
+*创建日期：2026-08-26 | 最后更新：2026-08-26 M5.5 COMPLETE — M5.6 Resource UX 与 M5.9 模板规划未开始*

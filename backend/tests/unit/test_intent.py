@@ -19,6 +19,8 @@ from backend.app.intent.models import (
 )
 from backend.app.intent.prompt import SYSTEM_PROMPT as INTENT_SYSTEM_PROMPT
 from backend.app.intent.unsupported_policy import (
+    CapabilityClass,
+    classify_capability,
     deterministic_unsupported_reason,
     should_defer_unsupported_to_grounding,
 )
@@ -359,6 +361,24 @@ class TestUnsupportedRoutingPolicy:
     )
     def test_deterministic_preflight_rejects_readonly_violations(self, message):
         assert deterministic_unsupported_reason(message) is not None
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "估算明年销售额",
+            "预测明年销售额",
+            "假设明年增长10%",
+        ],
+    )
+    def test_future_projection_is_bounded_unsupported(self, message):
+        assert classify_capability(message) == CapabilityClass.FUTURE_PREDICTION
+        assert deterministic_unsupported_reason(message) is not None
+
+    def test_approximate_wording_for_existing_fact_remains_read_analysis(self):
+        message = "总销售额大概是多少"
+
+        assert classify_capability(message) == CapabilityClass.READ_ANALYSIS
+        assert deterministic_unsupported_reason(message) is None
 
     def test_committed_memory_never_overrides_current_unsupported_request(self):
         committed = StructuredWorkMemory(

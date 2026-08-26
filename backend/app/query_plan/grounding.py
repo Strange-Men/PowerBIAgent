@@ -45,9 +45,14 @@ class GroundingStatus(str, Enum):
     CONFIG_CONFLICT = "CONFIG_CONFLICT"
 
 
+SemanticObjectRole = Literal[
+    "measure", "dimension", "filter_field", "date_field", "ranking_dimension"
+]
+
+
 class ObjectGroundingResult(BaseModel):
     status: GroundingStatus
-    role: Literal["measure", "dimension", "filter_field", "date_field"]
+    role: SemanticObjectRole
     phrase: str = ""
     canonical_object: CatalogObject | None = None
     candidate_ids: tuple[str, ...] = ()
@@ -70,6 +75,7 @@ class GroundedSemanticDelta(BaseModel):
     measures: list[str] | None = None
     dimensions: list[str] | None = None
     dimension_tables: dict[str, str] = Field(default_factory=dict)
+    dimension_order: Literal["asc", "desc"] | None = None
     filters: list[StructuredFilter] | None = None
     remove_filter_fields: list[str] = Field(default_factory=list)
     clear_filters: bool = False
@@ -197,7 +203,7 @@ class ObjectGrounder:
         self,
         phrase: str,
         object_type: SemanticObjectType,
-        role: Literal["measure", "dimension", "filter_field", "date_field"],
+        role: SemanticObjectRole,
     ) -> ObjectGroundingResult:
         normalized = normalize_semantic_text(phrase)
         if not normalized:
@@ -256,7 +262,7 @@ class ObjectGrounder:
         self,
         text: str,
         object_type: SemanticObjectType,
-        role: Literal["measure", "dimension", "filter_field", "date_field"],
+        role: SemanticObjectRole,
     ) -> ObjectGroundingResult:
         normalized_text = normalize_semantic_text(text)
         matched: dict[str, CatalogObject] = {}
@@ -301,7 +307,7 @@ class ObjectGrounder:
         phrase: str,
         user_input: str,
         object_type: SemanticObjectType,
-        role: Literal["measure", "dimension", "filter_field", "date_field"],
+        role: SemanticObjectRole,
         committed_context: str = "",
     ) -> ObjectGroundingResult:
         if self.selector is None:
@@ -404,7 +410,7 @@ class ObjectGrounder:
 
     @staticmethod
     def _resolved(
-        role: Literal["measure", "dimension", "filter_field", "date_field"],
+        role: SemanticObjectRole,
         phrase: str,
         obj: CatalogObject,
         method: str,
@@ -420,7 +426,7 @@ class ObjectGrounder:
 
     @staticmethod
     def _ambiguous(
-        role: Literal["measure", "dimension", "filter_field", "date_field"],
+        role: SemanticObjectRole,
         phrase: str,
         objects: tuple[CatalogObject, ...] | list[CatalogObject],
         method: str,
@@ -766,7 +772,18 @@ MemberLookup = Callable[[CatalogObject, int], Awaitable[ColumnMembersResult]]
 class SemanticGroundingService:
     """Orchestrate grounding without owning Turn or Memory writes."""
 
-    _TOP_N = re.compile(r"(?:前|top\s*)(\d+)", re.IGNORECASE)
+    _RANKING_NUMBER = r"(?:\d+|[零〇一二两三四五六七八九十百]+)"
+    _TOP_N = re.compile(
+        rf"(?:前\s*(?P<front>{_RANKING_NUMBER})\s*个?|"
+        rf"top\s*(?P<top>{_RANKING_NUMBER})|"
+        rf"(?:最高|最大|最多|最低|最小|最少)(?:的)?\s*"
+        rf"(?P<extreme>{_RANKING_NUMBER})\s*个?)",
+        re.IGNORECASE,
+    )
+    _CHINESE_DIGITS = {
+        "零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3,
+        "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+    }
 
     def __init__(
         self,
@@ -876,6 +893,7 @@ class SemanticGroundingService:
                 discovered_objects,
                 discovered_members,
                 discovery_ambiguous,
+                discovery_unresolved,
             ) = await self._discover_runtime_member_filters(
                 user_input, committed, member_lookup
             )
@@ -887,6 +905,14 @@ class SemanticGroundingService:
                     object_results,
                     member_results,
                     "筛选值无法唯一匹配模型中的成员，请明确选择。",
+                    disagreements,
+                )
+            if discovery_unresolved:
+                return self._clarification(
+                    GroundingStatus.UNRESOLVED,
+                    object_results,
+                    member_results,
+                    "筛选值未匹配模型中的任何成员，请确认后重试。",
                     disagreements,
                 )
             grounded_filters.extend(discovered_filters)
@@ -938,6 +964,21 @@ class SemanticGroundingService:
                     )
             if mentioned_field.status != GroundingStatus.NOT_MENTIONED:
                 field_result = mentioned_field
+            elif member_candidates := self._member_evidence_fields(user_input):
+                if len(member_candidates) == 1:
+                    field_result = ObjectGrounder._resolved(
+                        "filter_field",
+                        str(raw_filter.value),
+                        member_candidates[0],
+                        "model_scoped_member_evidence",
+                    )
+                else:
+                    field_result = ObjectGrounder._ambiguous(
+                        "filter_field",
+                        str(raw_filter.value),
+                        member_candidates,
+                        "model_scoped_member_evidence_ambiguous",
+                    )
             elif draft_field_mentioned:
                 # Unknown phrases are current requirements too; preserve their
                 # UNRESOLVED status instead of treating them as omission.
@@ -1015,8 +1056,13 @@ class SemanticGroundingService:
         if grounded_filters:
             delta.filters = grounded_filters
 
+        dimension_role: SemanticObjectRole = (
+            "ranking_dimension"
+            if self._extract_top_n(user_input) is not None
+            else "dimension"
+        )
         current_dimension = self.objects.find_mentions(
-            user_input, SemanticObjectType.FIELD, "dimension"
+            user_input, SemanticObjectType.FIELD, dimension_role
         )
         weak_dimension_phrases = self._current_weak_phrases(
             [*intent.detected_dimensions, *draft.dimensions], user_input
@@ -1038,20 +1084,23 @@ class SemanticGroundingService:
                 remaining = [item for item in remaining if item is not None]
                 if len(remaining) == 1:
                     dimension = ObjectGrounder._resolved(
-                        "dimension", user_input, remaining[0], "current_input_non_filter"
+                        dimension_role,
+                        user_input,
+                        remaining[0],
+                        "current_input_non_filter",
                     )
             if dimension.status == GroundingStatus.NOT_MENTIONED:
                 dimension = self._resolve_unique_weak(
                     weak_dimension_phrases,
                     SemanticObjectType.FIELD,
-                    "dimension",
+                    dimension_role,
                 )
             if dimension.status == GroundingStatus.UNRESOLVED:
                 dimension = await self.objects.select_bounded(
                     dimension.phrase,
                     user_input,
                     SemanticObjectType.FIELD,
-                    "dimension",
+                    dimension_role,
                 )
             object_results.append(dimension)
             if self._requires_clarification(dimension) or not dimension.canonical_object:
@@ -1068,6 +1117,51 @@ class SemanticGroundingService:
                 status=GroundingStatus.NOT_MENTIONED,
                 role="dimension",
                 method="no_dimension_requirement",
+            ))
+
+        grouping_grain = self._temporal_grouping_grain(user_input)
+        if grouping_grain is not None:
+            grouping_fields = [
+                obj
+                for obj in self.catalog.by_type(SemanticObjectType.FIELD)
+                if obj.temporal_grouping is not None
+                and obj.temporal_grouping.grain == grouping_grain
+            ]
+            if len(grouping_fields) != 1:
+                status = (
+                    GroundingStatus.AMBIGUOUS
+                    if len(grouping_fields) > 1
+                    else GroundingStatus.UNRESOLVED
+                )
+                object_results.append(ObjectGroundingResult(
+                    status=status,
+                    role="dimension",
+                    phrase=user_input,
+                    candidate_ids=tuple(item.object_id for item in grouping_fields),
+                    method="temporal_grouping_binding_cardinality",
+                ))
+                return self._clarification(
+                    status,
+                    object_results,
+                    member_results,
+                    "当前模型无法唯一支持请求的时间分组。",
+                    disagreements,
+                    pending_eligible=False,
+                )
+            grouping_field = grouping_fields[0]
+            dimensions = list(delta.dimensions or [])
+            if grouping_field.canonical_name not in dimensions:
+                dimensions.append(grouping_field.canonical_name)
+            delta.dimensions = dimensions
+            delta.dimension_tables[grouping_field.canonical_name] = (
+                grouping_field.table_name
+            )
+            delta.dimension_order = "asc"
+            object_results.append(ObjectGrounder._resolved(
+                "dimension",
+                user_input,
+                grouping_field,
+                "runtime_temporal_grouping_binding",
             ))
 
         if self.time.is_explicit(user_input, intent.time_intent):
@@ -1220,7 +1314,7 @@ class SemanticGroundingService:
         self,
         phrases: list[str],
         object_type: SemanticObjectType,
-        role: Literal["measure", "dimension", "filter_field", "date_field"],
+        role: SemanticObjectRole,
     ) -> ObjectGroundingResult:
         resolved: dict[str, ObjectGroundingResult] = {}
         conflicts: list[ObjectGroundingResult] = []
@@ -1299,6 +1393,7 @@ class SemanticGroundingService:
         list[ObjectGroundingResult],
         list[MemberGroundingResult],
         bool,
+        bool,
     ]:
         """Find explicit runtime members without granting the draft authority.
 
@@ -1313,6 +1408,12 @@ class SemanticGroundingService:
         )
         candidate_ids = list(mention.candidate_ids)
         normalized_input = normalize_semantic_text(user_input)
+        member_evidence_fields = self._member_evidence_fields(user_input)
+        member_evidence_ids = {field.object_id for field in member_evidence_fields}
+        explicit_member_requirement = False
+        for field in member_evidence_fields:
+            candidate_ids.append(field.object_id)
+            explicit_member_requirement = True
         member_only_cue = any(
             term in normalized_input for term in ("只看", "换成", "改成")
         )
@@ -1363,7 +1464,7 @@ class SemanticGroundingService:
                 candidates.append(obj)
                 seen.add(obj.object_id)
         if len(candidates) > 2:
-            return [], [], [], True
+            return [], [], [], True, False
 
         matches: list[tuple[CatalogObject, Any]] = []
         member_results: list[MemberGroundingResult] = []
@@ -1391,7 +1492,7 @@ class SemanticGroundingService:
                 if value not in unique_matches:
                     unique_matches.append(value)
             if len(unique_matches) > 1:
-                return [], [], member_results, True
+                return [], [], member_results, True, False
             if len(unique_matches) == 1:
                 value = unique_matches[0]
                 matches.append((field, value))
@@ -1402,8 +1503,15 @@ class SemanticGroundingService:
                     canonical_value=value,
                     method="runtime_current_input_member",
                 ))
+            elif field.object_id in member_evidence_ids:
+                member_results.append(MemberGroundingResult(
+                    status=GroundingStatus.UNRESOLVED,
+                    field=field,
+                    requested_value="",
+                    method="runtime_no_match_current_literal",
+                ))
         if len(matches) > 1:
-            return [], [], member_results, True
+            return [], [], member_results, True, False
 
         filters: list[StructuredFilter] = []
         objects: list[ObjectGroundingResult] = []
@@ -1416,7 +1524,33 @@ class SemanticGroundingService:
             objects.append(ObjectGrounder._resolved(
                 "filter_field", user_input, field, "runtime_member_field"
             ))
-        return filters, objects, member_results, False
+        return (
+            filters,
+            objects,
+            member_results,
+            False,
+            explicit_member_requirement and not matches,
+        )
+
+    def _member_evidence_fields(self, user_input: str) -> list[CatalogObject]:
+        """Return only catalog fields implicated by current member language."""
+
+        normalized_input = normalize_semantic_text(user_input)
+        candidates: list[CatalogObject] = []
+        for field in self.catalog.by_type(SemanticObjectType.FIELD):
+            if self._field_has_dimension_cue(user_input, field):
+                continue
+            alias_hit = any(
+                alias and alias in normalized_input
+                for alias in field.member_aliases
+            )
+            suffix_hit = any(
+                normalize_semantic_text(suffix) in normalized_input
+                for suffix in field.member_suffixes
+            )
+            if alias_hit or suffix_hit:
+                candidates.append(field)
+        return candidates
 
     def _has_dimension_cue(
         self, user_input: str, result: ObjectGroundingResult
@@ -1433,7 +1567,10 @@ class SemanticGroundingService:
                 rf"按\s*{escaped}",
                 rf"各\s*{escaped}",
                 rf"每(?:个)?\s*{escaped}",
-                rf"前\s*\d+\s*个?\s*{escaped}",
+                rf"前\s*{self._RANKING_NUMBER}\s*个?\s*{escaped}",
+                rf"top\s*{self._RANKING_NUMBER}\s*个?\s*{escaped}",
+                rf"(?:最高|最大|最多|最低|最小|最少)(?:的)?\s*"
+                rf"{self._RANKING_NUMBER}\s*个?\s*{escaped}",
                 rf"{escaped}\s*(?:排名|排行|分组|分别)",
             )
             if any(re.search(pattern, user_input, re.IGNORECASE) for pattern in patterns):
@@ -1450,13 +1587,17 @@ class SemanticGroundingService:
             ),
         )
 
-    @staticmethod
-    def _has_dimension_phrase_cue(user_input: str, phrase: str) -> bool:
+    @classmethod
+    def _has_dimension_phrase_cue(cls, user_input: str, phrase: str) -> bool:
         escaped = re.escape(phrase)
         return any(re.search(pattern, user_input, re.IGNORECASE) for pattern in (
             rf"按\s*{escaped}",
             rf"各\s*{escaped}",
             rf"每(?:个)?\s*{escaped}",
+            rf"前\s*{cls._RANKING_NUMBER}\s*个?\s*{escaped}",
+            rf"top\s*{cls._RANKING_NUMBER}\s*个?\s*{escaped}",
+            rf"(?:最高|最大|最多|最低|最小|最少)(?:的)?\s*"
+            rf"{cls._RANKING_NUMBER}\s*个?\s*{escaped}",
             rf"{escaped}\s*(?:排名|排行|分组|分别)",
         ))
 
@@ -1464,9 +1605,9 @@ class SemanticGroundingService:
     def _ground_analysis(
         cls, user_input: str, draft: QueryPlan, delta: GroundedSemanticDelta
     ) -> None:
-        match = cls._TOP_N.search(user_input)
-        if match:
-            delta.top_n = int(match.group(1))
+        top_n = cls._extract_top_n(user_input)
+        if top_n is not None:
+            delta.top_n = top_n
             delta.top_n_specified = True
         if any(term in user_input for term in ("最高", "最大", "最多")):
             delta.sort = "desc"
@@ -1474,8 +1615,8 @@ class SemanticGroundingService:
         elif any(term in user_input for term in ("最低", "最小", "最少")):
             delta.sort = "asc"
             delta.sort_specified = True
-        elif match and draft.sort in {"asc", "desc"}:
-            delta.sort = draft.sort
+        elif top_n is not None:
+            delta.sort = "desc"
             delta.sort_specified = True
 
         normalized = normalize_semantic_text(user_input)
@@ -1491,6 +1632,45 @@ class SemanticGroundingService:
             delta.clear_sort = True
             delta.top_n = None
             delta.sort = None
+
+    @classmethod
+    def _extract_top_n(cls, user_input: str) -> int | None:
+        match = cls._TOP_N.search(user_input)
+        if match is None:
+            return None
+        raw = next((value for value in match.groupdict().values() if value), "")
+        if raw.isdigit():
+            value = int(raw)
+        else:
+            value = cls._parse_chinese_integer(raw)
+        return value if value is not None and value >= 1 else None
+
+    @classmethod
+    def _parse_chinese_integer(cls, value: str) -> int | None:
+        if not value:
+            return None
+        if "百" in value:
+            left, right = value.split("百", 1)
+            hundreds = cls._CHINESE_DIGITS.get(left, 1) if left else 1
+            tail = cls._parse_chinese_integer(right) if right else 0
+            return None if tail is None else hundreds * 100 + tail
+        if "十" in value:
+            left, right = value.split("十", 1)
+            tens = cls._CHINESE_DIGITS.get(left, 1) if left else 1
+            ones = cls._CHINESE_DIGITS.get(right, 0) if right else 0
+            return tens * 10 + ones
+        digits = [cls._CHINESE_DIGITS.get(char) for char in value]
+        if any(item is None for item in digits):
+            return None
+        return int("".join(str(item) for item in digits))
+
+    @staticmethod
+    def _temporal_grouping_grain(user_input: str) -> Literal["month", "year"] | None:
+        if re.search(r"(?:每(?:个)?月|按月|逐月|月度)", user_input):
+            return "month"
+        if re.search(r"(?:每(?:一)?年|按年|逐年|年度)", user_input):
+            return "year"
+        return None
 
     @staticmethod
     def _requires_clarification(result: ObjectGroundingResult) -> bool:

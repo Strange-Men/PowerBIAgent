@@ -1094,9 +1094,17 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
         super().__init__()
         self.active = "current"
         self.model_key = "local_desktop_model"
+        self.fail_intent_once = False
+        self.fail_query_plan_once = False
 
     async def generate(self, request, output_type):
         self.calls.append(request)
+        if request.task == LLMTask.INTENT_RECOGNITION and self.fail_intent_once:
+            self.fail_intent_once = False
+            raise RuntimeError("injected intent outage")
+        if request.task == LLMTask.QUERY_PLAN and self.fail_query_plan_once:
+            self.fail_query_plan_once = False
+            raise RuntimeError("injected query-plan outage")
         messages = {
             "current": "本月销售额是多少？",
             "absolute": "2025年5月销售额多少？",
@@ -1109,6 +1117,10 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
             "fresh_quantity": "总销量是多少？",
             "failed": "总销售额是多少？",
             "model_switch": "总销售额是多少？",
+            "m55_south": "那南区呢",
+            "m55_last_year": "换成去年",
+            "m55_top_product": "前三个产品呢",
+            "m55_unknown_member": "火星区销售额",
         }
         if request.task == LLMTask.INTENT_RECOGNITION:
             values = {
@@ -1117,13 +1129,16 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
                 "normalized_question": messages[self.active],
             }
             if self.active in {
-                "current", "absolute", "top_region", "failed", "model_switch"
+                "current", "absolute", "top_region", "failed", "model_switch",
+                "m55_unknown_member",
             }:
                 values["detected_measures"] = ["销售额"]
                 values["turn_relation"] = TurnRelation.FRESH_QUESTION
             elif self.active == "fresh_quantity":
                 values["detected_measures"] = ["销量"]
                 values["turn_relation"] = TurnRelation.FRESH_QUESTION
+            elif self.active in {"m55_south", "m55_top_product"}:
+                values["turn_relation"] = TurnRelation.FOLLOW_UP
             else:
                 values["turn_relation"] = (
                     TurnRelation.FOLLOW_UP
@@ -1143,10 +1158,20 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
                 values["detected_time_range"] = messages[self.active]
             if self.active == "top_region":
                 values["detected_dimensions"] = ["区域"]
-            if self.active == "south":
+            if self.active in {"south", "m55_south", "m55_unknown_member"}:
                 values["detected_filters"] = [
-                    {"field": "区域", "operator": "eq", "value": "华南"}
+                    {
+                        "field": "区域",
+                        "operator": "eq",
+                        "value": (
+                            "华南" if self.active == "south"
+                            else "南区" if self.active == "m55_south"
+                            else "火星区"
+                        ),
+                    }
                 ]
+            if self.active == "m55_top_product":
+                values["detected_dimensions"] = ["产品"]
             structured = IntentSpec(**values)
         elif request.task == LLMTask.QUERY_PLAN:
             values = {
@@ -1156,7 +1181,8 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
             if self.active in {
                 "current", "absolute", "last_may", "previous_month",
                 "recent_half", "top_region", "south", "last_year", "failed",
-                "model_switch",
+                "model_switch", "m55_south", "m55_last_year",
+                "m55_top_product", "m55_unknown_member",
             }:
                 values["measures"] = ["Total Sales"]
             else:
@@ -1165,9 +1191,20 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
                 values["dimensions"] = ["Region"]
                 values["sort"] = "desc"
                 values["top_n"] = 3
-            if self.active == "south":
+            if self.active == "m55_top_product":
+                values["dimensions"] = ["Product"]
+                values["sort"] = "desc"
+                values["top_n"] = 3
+            if self.active in {"south", "m55_south", "m55_unknown_member"}:
                 values["filters"] = [
-                    StructuredFilter(field="Region", value="华南")
+                    StructuredFilter(
+                        field="Region",
+                        value=(
+                            "华南" if self.active == "south"
+                            else "南区" if self.active == "m55_south"
+                            else "火星区"
+                        ),
+                    )
                 ]
             if self.active in {
                 "current", "absolute", "last_may", "previous_month", "recent_half", "last_year"
@@ -1232,12 +1269,22 @@ class _M533MultiTurnAdapter(_M24FakeLocalPowerBIAdapter):
         measure = (
             "Total Quantity" if "[Total Quantity]" in request.dax else "Total Sales"
         )
-        if "'Sales'[Region]" in request.dax:
+        if "SUMMARIZECOLUMNS(\n    'Sales'[Region]" in request.dax:
             return QueryResult(
                 result_id=f"qr-{request.request_id}",
                 semantic_model_key=request.semantic_model_key,
                 columns=["Sales[Region]", f"[{measure}]"],
                 rows=[["华南", 100], ["华东", 80], ["华北", 60]],
+                row_count=3,
+                source_mode="real",
+                request_id=request.request_id,
+            )
+        if "SUMMARIZECOLUMNS(\n    'Sales'[Product]" in request.dax:
+            return QueryResult(
+                result_id=f"qr-{request.request_id}",
+                semantic_model_key=request.semantic_model_key,
+                columns=["Sales[Product]", f"[{measure}]"],
+                rows=[["A", 100], ["B", 80], ["C", 60]],
                 row_count=3,
                 source_mode="real",
                 request_id=request.request_id,
@@ -1446,11 +1493,19 @@ def _patch_fake_runtime_glossary(monkeypatch):
                         "aliases": aliases.get(measure.name, []),
                     }
                 for column in table.columns:
-                    glossary["fields"][column.name] = {
+                    metadata = {
                         "table_name": table.name,
                         "object_type": "field",
                         "aliases": aliases.get(column.name, []),
                     }
+                    if column.name == "Region":
+                        metadata["member_aliases"] = {
+                            "华南": "华南",
+                            "华南区": "华南",
+                            "南区": "华南",
+                        }
+                        metadata["member_suffixes"] = ["区"]
+                    glossary["fields"][column.name] = metadata
             return SemanticCatalogBuilder().build_from_data(schema, glossary)
 
     monkeypatch.setattr(
@@ -2030,6 +2085,139 @@ class TestPendingClarificationProductionPath:
 
 class TestM24DeepSeekLocalChat:
     @pytest.mark.asyncio
+    async def test_m55_unknown_member_fails_closed_before_dax_and_commit(
+        self, monkeypatch
+    ):
+        app, provider = _patch_m533_multi_turn_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        provider.active = "m55_unknown_member"
+        conversation_id = "m55-unknown-member"
+
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                dax_calls = service.powerbi.dax_calls
+                response = await client.post("/api/v1/chat", json={
+                    "message": "火星区销售额",
+                    "conversation_id": conversation_id,
+                    "request_id": "m55-unknown-member-request",
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+            body = response.json()
+            assert response.status_code == 200, body
+            assert body["terminal_state"] == "clarification_required"
+            assert body["memory_commit"] is False
+            audit = body["execution_audit"]
+            assert audit["dax_executed"] is False
+            assert audit["memory_committed"] is False
+            assert audit["current_explicit_slots"] == ["filters", "measure"]
+            assert audit["member_grounding_status"][0]["status"] == "UNRESOLVED"
+            assert service.powerbi.dax_calls == dax_calls
+            assert await service.pipeline.get_latest_committed_memory(
+                conversation_id, RuntimeDataMode.REAL
+            ) is None
+
+    @pytest.mark.asyncio
+    async def test_m55_four_turn_slot_inheritance(self, monkeypatch):
+        app, provider = _patch_m533_multi_turn_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        conversation_id = "m55-four-turn"
+
+        async def post(client, active, message):
+            provider.active = active
+            response = await client.post("/api/v1/chat", json={
+                "message": message,
+                "conversation_id": conversation_id,
+                "request_id": f"m55-four-turn-{active}",
+                "semantic_model_key": "local_desktop_model",
+            })
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert body["terminal_state"] == "completed", body
+            audit = body["execution_audit"]
+            assert audit["dax_executed"] is True
+            assert audit["memory_committed"] is True
+            assert len(audit["canonical_plan_hash"]) == 64
+            return audit["canonical_query_plan"]
+
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                first = await post(client, "absolute", "2025年5月销售额")
+                second = await post(client, "m55_south", "那南区呢")
+                third = await post(client, "m55_last_year", "换成去年")
+                fourth = await post(client, "m55_top_product", "前三个产品呢")
+
+        assert first["measures"] == ["Total Sales"]
+        assert first["time_range"]["start_date"] == "2025-05-01"
+        assert second["measures"] == ["Total Sales"]
+        assert second["time_range"]["start_date"] == "2025-05-01"
+        assert second["filters"] == [{
+            "field": "Region", "operator": "eq", "value": "华南"
+        }]
+        assert third["measures"] == ["Total Sales"]
+        assert third["filters"] == second["filters"]
+        assert third["time_range"]["start_date"] == "2025-01-01"
+        assert fourth["measures"] == ["Total Sales"]
+        assert fourth["dimensions"] == ["Product"]
+        assert fourth["sort"] == "desc"
+        assert fourth["top_n"] == 3
+        assert fourth["filters"] == second["filters"]
+        assert fourth["time_range"] == third["time_range"]
+        assert fourth["dimension_tables"] == {
+            "OrderDate": "Sales",
+            "Product": "Sales",
+            "Region": "Sales",
+        }
+
+    @pytest.mark.asyncio
+    async def test_m55_deterministic_semantics_survive_non_authoritative_llm_failure(
+        self, monkeypatch
+    ):
+        app, provider = _patch_m533_multi_turn_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        conversation_id = "m55-llm-fallback"
+
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                provider.active = "absolute"
+                seeded = await client.post("/api/v1/chat", json={
+                    "message": "2025年5月销售额",
+                    "conversation_id": conversation_id,
+                    "request_id": "m55-llm-fallback-seed",
+                    "semantic_model_key": "local_desktop_model",
+                })
+                assert seeded.json()["terminal_state"] == "completed"
+
+                provider.active = "m55_top_product"
+                provider.fail_intent_once = True
+                ranking = await client.post("/api/v1/chat", json={
+                    "message": "前三个产品",
+                    "conversation_id": conversation_id,
+                    "request_id": "m55-intent-fallback",
+                    "semantic_model_key": "local_desktop_model",
+                })
+                ranking_body = ranking.json()
+                assert ranking_body["terminal_state"] == "completed", ranking_body
+                ranking_plan = ranking_body["execution_audit"]["canonical_query_plan"]
+                assert ranking_plan["measures"] == ["Total Sales"]
+                assert ranking_plan["dimensions"] == ["Product"]
+                assert ranking_plan["top_n"] == 3
+                assert ranking_body["execution_audit"]["intent_fallback"] is True
+
+                provider.active = "failed"
+                provider.fail_query_plan_once = True
+                scalar = await client.post("/api/v1/chat", json={
+                    "message": "总销售额是多少？",
+                    "conversation_id": "m55-query-plan-fallback",
+                    "request_id": "m55-query-plan-fallback-request",
+                    "semantic_model_key": "local_desktop_model",
+                })
+                scalar_body = scalar.json()
+                assert scalar_body["terminal_state"] == "completed", scalar_body
+                assert scalar_body["execution_audit"]["query_plan_fallback"] is True
+
+    @pytest.mark.asyncio
     async def test_unsupported_intent_routing_and_memory_boundaries(self, monkeypatch):
         app, provider = _patch_unsupported_routing_composition(monkeypatch)
         transport = ASGITransport(app=app)
@@ -2077,7 +2265,9 @@ class TestM24DeepSeekLocalChat:
         app, provider = _patch_unsupported_routing_composition(monkeypatch)
         transport = ASGITransport(app=app)
         messages = (
+            "估算明年销售额",
             "预测下个月销售额",
+            "假设明年增长10%",
             "帮我修改这个 PBIX 里的度量值",
             "删除所有数据",
         )
@@ -2103,6 +2293,28 @@ class TestM24DeepSeekLocalChat:
                     assert await service.pipeline.get_latest_committed_memory(
                         conversation_id, RuntimeDataMode.REAL
                     ) is None
+
+    @pytest.mark.asyncio
+    async def test_approximate_existing_fact_is_not_prediction(self, monkeypatch):
+        app, provider = _patch_unsupported_routing_composition(monkeypatch)
+        transport = ASGITransport(app=app)
+        provider.active = "normal"
+
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": "总销售额大概是多少",
+                    "conversation_id": "m55-approximate-read",
+                    "request_id": "m55-approximate-read-request",
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+            body = response.json()
+            assert response.status_code == 200, body
+            assert body["terminal_state"] == "completed", body
+            assert body["execution_audit"]["capability_decision"] == "READ_ANALYSIS"
+            assert service.powerbi.dax_calls == 1
 
     @pytest.mark.asyncio
     async def test_catalog_alias_can_correct_intent_clarification(self, monkeypatch):

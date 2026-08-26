@@ -2,6 +2,23 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.5] — 2026-08-26
+
+### Semantic correctness 与 capability boundary（COMPLETE）
+
+- 按先文档后代码顺序启动新版 M5.5；本阶段仅处理 semantic grounding、runtime object/member authority、explicit no-match/ambiguity、multi-turn slot KEEP/REPLACE、ranking/TopN、temporal semantics 与 readonly capability boundary。
+- 核心阻塞 Gate 固定为 `explicit unresolved semantic requirement → clarification/no-match → ZERO DAX`；同时要求 ZERO QueryResult、ZERO Memory commit，禁止旧 Memory 掩盖当前 no-match/ambiguity。
+- M5.6 增补为 conversation/report 共用 Portal/floating layer、viewport-aware above/below positioning、Settings nested-scroll 与 sticky/scrollable action toolbar，并建立 zoom/viewport/scroll/首中末行 Layout Gate。本轮不实现这些前端变化。
+- 新增 M5.9（晚于 M5.8）：固定专业销售报表模板与“简易模板/销售模板”显式选择。固定链为 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed HTML renderer`；LLM 无 HTML layout/query/factual authority。本轮不实现 M5.9。
+- M5.5 Generalization Gate 固定覆盖 Sales/Retail、Education、Inventory/Operations、未知 holdout 与 schema mutation；生产语义代码禁止 sales-specific hardcode。
+- 新增 runtime-owned object/member grounding、model-scoped member suffix、显式未知 member fail-closed、确定性中英文 TopN grammar、metadata-driven temporal grouping 与三层 capability enum/policy；LLM 仍只可做 bounded language interpretation，canonical identity、DAX 与事实 authority 不变。
+- 多轮 slot 独立执行 KEEP/REPLACE：Real Rich PBIX 的 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢` 保留兼容 measure/time/filter，并正确替换 year、ranking dimension、sort 与 Top3；fresh self-contained query 不机械继承旧槽。
+- `火星区销售额` 已证明 clarification、ZERO DAX/QueryResult/Memory commit；`华南/华南区/南区` 均由 runtime members 解析为 canonical `South`。prediction/delete 为 unsupported 且 ZERO DAX，“总销售额大概是多少”保持 READ_ANALYSIS。
+- Sales、Education、Inventory、开发期未知 opaque holdout 与 display/table rename、相似字段、alias 删除、member change/no-match/ambiguity mutation gates 全部通过；无 sales-specific production hardcode。
+- Fresh backend full `1823 passed, 1 skipped`；frontend Vitest `69 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Documentation、Error Ledger（32 entries）、Architecture（118 files）、Repository Safety（296 files）、Artifact Governance、compileall 与 Local MCP readonly smoke PASS。Real Rich PBIX/API/Browser acceptance 通过且 automation-owned residual=0。
+
+**Settings.version:** M5.5
+
 ## [M5.4.2] — 2026-08-26
 
 ### M5重建基线与后续分阶段开发规划固化（COMPLETE）

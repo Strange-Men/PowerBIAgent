@@ -47,7 +47,10 @@ from backend.app.harness.tool_registry import (
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.deepseek_service import DeepSeekIntentService
 from backend.app.intent.models import IntentSpec, IntentType
+from backend.app.intent.service import IntentRecognitionError
 from backend.app.intent.unsupported_policy import (
+    CapabilityClass,
+    classify_capability,
     deterministic_unsupported_reason,
     should_defer_unsupported_to_grounding,
 )
@@ -72,7 +75,10 @@ from backend.app.report.deepseek_report_intent_service import (
 from backend.app.report.intent import resolve_report_intent
 from backend.app.report.plan import ReportPlanError, ReportPlanner
 from backend.app.powerbi.base import PowerBIAdapter
-from backend.app.query_plan.deepseek_service import DeepSeekQueryPlanService
+from backend.app.query_plan.deepseek_service import (
+    DeepSeekQueryPlanService,
+    QueryPlanError,
+)
 from backend.app.query_plan.clarification import PendingClarificationService
 from backend.app.query_plan.grounding import (
     BoundedLLMObjectSelector,
@@ -263,6 +269,21 @@ class DeepSeekTurnService:
         )
         observed = ObservedLLMProvider(self.llm_provider, collector)
 
+        capability = classify_capability(message)
+        semantic_audit: dict[str, Any] = {
+            "request_id": effective_req_id,
+            "conversation_id": effective_conv_id,
+            "capability_decision": capability.value,
+            "dax_executed": False,
+            "memory_committed": False,
+        }
+        trace.record(
+            "capability_decision",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={"decision": capability.value},
+        )
+
         unsupported_reason = deterministic_unsupported_reason(message)
         if unsupported_reason is not None:
             await self.pipeline.clear_pending_clarification(
@@ -290,9 +311,9 @@ class DeepSeekTurnService:
                 source_mode=self._source_mode,
                 collector=collector,
                 execution_audit={
+                    **semantic_audit,
                     "unsupported_preflight": True,
                     "committed_memory_mutated": False,
-                    "dax_executed": False,
                 },
             )
 
@@ -333,14 +354,34 @@ class DeepSeekTurnService:
 
         # ── 3. 意图识别 ──
         intent_service = DeepSeekIntentService(provider=observed, max_format_repairs=1)
-        intent = await intent_service.recognize(
-            user_input=message,
-            committed_memory=(
-                semantic_committed.model_dump() if semantic_committed else None
-            ),
-            semantic_model_key=semantic_model_key,
-            report_template_key=report_template_key,
-        )
+        try:
+            intent = await intent_service.recognize(
+                user_input=message,
+                committed_memory=(
+                    semantic_committed.model_dump() if semantic_committed else None
+                ),
+                semantic_model_key=semantic_model_key,
+                report_template_key=report_template_key,
+            )
+        except IntentRecognitionError:
+            if (
+                capability != CapabilityClass.READ_ANALYSIS
+                or report_template_key is not None
+                or any(term in message for term in ("报告", "周报", "概览", "总览"))
+            ):
+                raise
+            intent = IntentSpec(
+                intent=IntentType.DATA_QUESTION,
+                confidence=0.0,
+                normalized_question=message.strip(),
+            )
+            semantic_audit["intent_fallback"] = True
+            trace.record(
+                "intent_language_draft_unavailable",
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                data_summary={"fallback": "deterministic_grounding_only"},
+            )
         trace.record("intent_classified", trace_id=trace_id, request_id=effective_req_id,
                      data_summary={"intent": intent.intent.value})
 
@@ -384,6 +425,10 @@ class DeepSeekTurnService:
                     trace=trace, trace_id=trace_id, is_mock=False,
                     source_mode=self._source_mode,
                     collector=collector,
+                    execution_audit={
+                        **semantic_audit,
+                        "committed_memory_mutated": False,
+                    },
                 )
 
         if intent.intent == IntentType.CLARIFICATION and not self.powerbi.is_mock:
@@ -488,6 +533,32 @@ class DeepSeekTurnService:
                 semantic_model_key=semantic_model_key,
                 report_template_key=report_template_key,
                 enforce_semantic_grounding=not self.powerbi.is_mock,
+            )
+        except QueryPlanError as e:
+            if intent.intent != IntentType.DATA_QUESTION:
+                return await self._fail_result(
+                    memory,
+                    effective_req_id,
+                    effective_conv_id,
+                    controller,
+                    trace,
+                    terminal_state=TurnState.VALIDATION_FAILED,
+                    error_type=type(e).__name__,
+                    reason=str(e),
+                    stage="query_plan_generation",
+                    trace_id=trace_id,
+                    collector=collector,
+                )
+            query_plan = QueryPlan(
+                normalized_question=message.strip(),
+                semantic_model_key=semantic_model_key,
+            )
+            semantic_audit["query_plan_fallback"] = True
+            trace.record(
+                "query_plan_language_draft_unavailable",
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                data_summary={"fallback": "deterministic_grounding_only"},
             )
         except Exception as e:
             return await self._fail_result(
@@ -595,6 +666,57 @@ class DeepSeekTurnService:
                     _member_lookup,
                     pending=pending_clarification,
                 )
+                grounded_delta = grounding.delta
+                explicit_slots: list[str] = []
+                if grounded_delta is not None:
+                    if grounded_delta.measures is not None:
+                        explicit_slots.append("measure")
+                    if grounded_delta.dimensions is not None:
+                        explicit_slots.append("dimensions")
+                    if grounded_delta.filters or grounded_delta.clear_filters:
+                        explicit_slots.append("filters")
+                    if grounded_delta.time_specified or grounded_delta.clear_time:
+                        explicit_slots.append("time")
+                    if (
+                        grounded_delta.sort_specified
+                        or grounded_delta.top_n_specified
+                        or grounded_delta.clear_sort
+                        or grounded_delta.clear_top_n
+                    ):
+                        explicit_slots.append("ranking")
+                if any(item.role == "filter_field" for item in grounding.object_results):
+                    explicit_slots.append("filters")
+                if grounding.member_results:
+                    explicit_slots.append("filters")
+                for item in grounding.object_results:
+                    if item.status == GroundingStatus.NOT_MENTIONED:
+                        continue
+                    if item.role == "measure":
+                        explicit_slots.append("measure")
+                    elif item.role in {"dimension", "ranking_dimension"}:
+                        explicit_slots.append("dimensions")
+                    elif item.role == "date_field":
+                        explicit_slots.append("time")
+                semantic_audit.update({
+                    "current_explicit_slots": sorted(set(explicit_slots)),
+                    "object_grounding_status": [
+                        {
+                            "role": item.role,
+                            "status": item.status.value,
+                            "method": item.method,
+                            "candidate_count": len(item.candidate_ids),
+                        }
+                        for item in grounding.object_results
+                    ],
+                    "member_grounding_status": [
+                        {
+                            "field_id": item.field.object_id,
+                            "status": item.status.value,
+                            "method": item.method,
+                        }
+                        for item in grounding.member_results
+                    ],
+                })
                 if not grounding.pending_eligible:
                     await self.pipeline.clear_pending_clarification(
                         effective_conv_id, runtime_mode
@@ -626,6 +748,7 @@ class DeepSeekTurnService:
                         source_mode=self._source_mode,
                         collector=collector,
                         execution_audit={
+                            **semantic_audit,
                             "pending_clarification": False,
                             "committed_memory_mutated": False,
                             "schema_fingerprint": catalog.schema_fingerprint,
@@ -684,6 +807,7 @@ class DeepSeekTurnService:
                         source_mode=self._source_mode,
                         collector=collector,
                         execution_audit={
+                            **semantic_audit,
                             "pending_clarification": True,
                             "clarification_chain_id": (
                                 clarification_merge.context.chain_id
@@ -742,6 +866,7 @@ class DeepSeekTurnService:
                         source_mode=self._source_mode,
                         collector=collector,
                         execution_audit={
+                            **semantic_audit,
                             "inheritance_policy": inheritance.reason,
                             "committed_memory_mutated": False,
                         },
@@ -754,6 +879,31 @@ class DeepSeekTurnService:
                     inheritance_mode=inheritance.mode,
                 )
                 query_plan = transition.query_plan
+                inherited_slots = [
+                    slot
+                    for slot, transition_value in (
+                        ("measure", transition.transitions.measure),
+                        ("dimensions", transition.transitions.dimension),
+                        ("time", transition.transitions.time),
+                        ("sort", transition.transitions.sort),
+                        ("top_n", transition.transitions.top_n),
+                    )
+                    if transition_value.value == "KEEP"
+                    and slot not in explicit_slots
+                ]
+                if (
+                    transition_base is not None
+                    and not grounded_delta.filters
+                    and not grounded_delta.clear_filters
+                ):
+                    inherited_slots.append("filters")
+                canonical_plan_hash = hashlib.sha256(
+                    query_plan.model_dump_json().encode("utf-8")
+                ).hexdigest()
+                semantic_audit.update({
+                    "inherited_slots": sorted(set(inherited_slots)),
+                    "canonical_plan_hash": canonical_plan_hash,
+                })
                 trace.record(
                     "semantic_grounding_resolved",
                     trace_id=trace_id,
@@ -773,6 +923,7 @@ class DeepSeekTurnService:
                         "filter_transitions": [
                             item.value for item in transition.transitions.filters
                         ],
+                        **semantic_audit,
                     },
                 )
             except GlossaryCatalogError as e:
@@ -1225,8 +1376,15 @@ class DeepSeekTurnService:
             )
 
         controller.transition(TurnState.COMPLETED)
+        semantic_audit.update({
+            "dax_executed": True,
+            "memory_committed": True,
+        })
         trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
-                    data_summary={"terminal_state": "completed"})
+                    data_summary={
+                        "terminal_state": "completed",
+                        **semantic_audit,
+                    })
 
         # ── 14. 构建结果（Snapshot 由 TurnPipeline.execute() 统一保存） ──
         presentation: PresentationEnvelope | None = None
@@ -1250,6 +1408,7 @@ class DeepSeekTurnService:
             report_data=report_data,
             presentation=presentation,
             execution_audit={
+                **semantic_audit,
                 "canonical_query_plan": query_plan.model_dump(mode="json"),
                 "deterministic_dax": not self.powerbi.is_mock,
                 "dax_fingerprint": hashlib.sha256(

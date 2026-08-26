@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.4.2 — M5重建基线与后续分阶段开发规划固化（COMPLETE）。** 当前产品能力保持 M5.4.1；新版 M5.5 尚未开始。
+**M5.5 — Semantic correctness 与 capability boundary（COMPLETE）。** M5.4.1 产品能力与 M5.4.2 重建治理基线保持有效；M5.6—M5.9 均未开始。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -25,12 +25,23 @@
 | **M5.4** | **多会话并发、用户设置与资源管理最终收口** | **✅ 已完成** |
 | **M5.4.1** | **Settings Hub、全量历史资源分页与 test-owned cleanup** | **✅ 已完成** |
 | **M5.4.2** | **M5 重建基线、实验线审计保留、分阶段路线与 Generalization Gate** | **✅ COMPLETE** |
-| **M5.5** | **Semantic correctness 与 capability boundary** | **⏳ NOT STARTED** |
+| **M5.5** | **Semantic correctness 与 capability boundary** | **✅ COMPLETE** |
 | **M5.6** | **Presentation/Localization/Resource UX truth** | **⏳ NOT STARTED** |
 | **M5.7** | **Report readability 与人工视觉验收** | **⏳ NOT STARTED** |
 | **M5.8** | **MCP performance/resilience 与压力验证** | **⏳ NOT STARTED** |
+| **M5.9** | **固定专业销售报表模板与模板选择** | **⏳ NOT STARTED** |
 
-### M5.4.2 current contract
+### M5.5 current contract
+
+- 当前分支/启动 SHA：`m5/rebuild` / `1e606aaa11cca27e9ea63dc0318b0372b4f91bf7`；远端启动时一致，工作区干净。
+- 唯一目标：Semantic correctness、capability boundary、multi-turn inheritance、runtime object/member authority、ranking/TopN 与 temporal semantic intent。
+- 核心 Gate：explicit unresolved semantic requirement → clarification/no-match → ZERO DAX、ZERO QueryResult、ZERO Memory commit；当前 no-match/ambiguity 不得被旧 Memory 掩盖。
+- authority 保持 TurnPipeline、ToolGateway → PowerBIAdapter、Deterministic DAX、QueryResult、VerifiedFactSet、Memory 与 stale-model fail-closed 不变。
+- Generalization Gate 覆盖 Sales/Retail、Education、Inventory/Operations、未知 holdout 和 schema mutation；生产代码不得加入 sales-specific object/member hardcode。
+- M5.6 action menu clipping/Settings nested-scroll 修复与 M5.9 专业销售模板只完成路线固化，本轮不实现；Localization、Presentation redesign、Report Visual、MCP performance/cache/session worker、Remote MCP 均禁止。
+- checkpoint 固定 S1 docs/contracts → S2 reproducers → S3 capability → S4 object/member → S5 multi-turn → S6 TopN → S7 temporal → S8 cross-domain/schema mutation → S9 focused → S10 full gates → S11 Real/manual → S12 final docs/commit/push。
+
+### M5.4.2 completed contract
 
 - 当前分支：`m5/rebuild`；基线：M5.4.1 `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`。
 - 旧实验线 `m5/frontend`、`a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）保留为研究/失败经验/审计记录；不删除、不重写、不 revert、不整体 cherry-pick。旧 PASS 不能替代新线 Real Acceptance。
@@ -267,9 +278,18 @@
 - `backend/app/config/settings.py`：version → M4.4.2。
 - M4.4.2 FINAL PASS；M5 NOT STARTED；不新增 Tag。
 
+### M5.5 fresh acceptance
+
+- `火星区销售额` clarification 且 ZERO DAX/QueryResult/Memory commit；`华南/华南区/南区` 仅经 runtime member authority 解析为 `South`。
+- Real Rich PBIX 四轮 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢` 正确保留/替换 measure、time、filter、dimension、sort 与 Top3。
+- deterministic ranking grammar、temporal filter/grouping、READ_ANALYSIS 与 prediction/delete unsupported policy 通过；unsupported 同样 ZERO DAX。
+- Sales、Education、Inventory、开发期未知 opaque holdout 与 schema mutation gates 通过；生产 semantic code 无 sales-specific object/member hardcode。
+- Backend full `1823 passed, 1 skipped`；frontend Vitest `69 passed`、typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `296`、Error Ledger `32`、Documentation/Artifact Governance、compileall 与 Local MCP readonly smoke PASS。
+- Real API/Browser/manual acceptance 通过；automation-owned conversation/report/file/SQLite/delete-intent residual=0。用户 `.env` 存在既有格式错误，未修改、未输出内容；不影响本轮已完成的 configured DeepSeek + Local MCP Real acceptance。
+
 ## 下一步
 
-完成 M5.4.2 documentation/governance gates、commit 与 push 后立即停止。下一步必须等待用户明确批准新版 M5.5；不得自行进入 M5.5 实现或提前开发 M5.6—M5.8。
+M5.5 已 COMPLETE 并停止开发。M5.6—M5.9 均为 NOT STARTED，必须等待用户明确批准后按路线逐阶段开始。
 
 ## 关键命令
 
@@ -315,4 +335,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-26 | M5.4.2 COMPLETE — M5 重建基线与后续分阶段治理*
+*最后更新：2026-08-26 | M5.5 COMPLETE — M5.6—M5.9 NOT STARTED*

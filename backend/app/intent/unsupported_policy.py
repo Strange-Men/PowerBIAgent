@@ -3,9 +3,41 @@
 from __future__ import annotations
 
 import re
+from enum import Enum
 
 from backend.app.intent.models import IntentSpec
 from backend.app.memory.models import PendingClarificationContext, StructuredWorkMemory
+
+
+class CapabilityClass(str, Enum):
+    """Closed registry for bounded language classification."""
+
+    READ_ANALYSIS = "READ_ANALYSIS"
+    FUTURE_PREDICTION = "FUTURE_PREDICTION"
+    MODEL_WRITE = "MODEL_WRITE"
+    DATA_DELETE = "DATA_DELETE"
+    ARBITRARY_CODE = "ARBITRARY_CODE"
+    UNKNOWN = "UNKNOWN"
+
+
+_FUTURE_CUE = re.compile(
+    r"(?:明年|下一年|下个月|未来|后续\s*\d*\s*(?:天|周|月|年))",
+    re.IGNORECASE,
+)
+_PROJECTION_CUE = re.compile(
+    r"(?:预测|预估|估算|外推|forecast|假设.*(?:增长|下降|增加|减少))",
+    re.IGNORECASE,
+)
+_MODEL_WRITE = re.compile(
+    r"(?:写入|修改|更新|新增|创建).*(?:模型|字段|度量值|Measure|PBIX|Power\s*BI)",
+    re.IGNORECASE,
+)
+_DATA_DELETE = re.compile(r"(?:删除|清空|销毁).*(?:数据|表|模型)", re.IGNORECASE)
+_ARBITRARY_CODE = re.compile(
+    r"(?:(?:执行|运行|编写).*(?:SQL|Shell|PowerShell|Python|JavaScript|代码)|"
+    r"(?:SQL|Shell|PowerShell|Python|JavaScript|任意代码|代码).*(?:执行|运行))",
+    re.IGNORECASE,
+)
 
 
 _DETERMINISTICALLY_OUT_OF_SCOPE = tuple(
@@ -29,12 +61,15 @@ def deterministic_unsupported_reason(user_input: str) -> str | None:
     normalized = user_input.strip()
     if not normalized:
         return None
-    if re.search(
-        r"(?:预测|预估|外推|forecast).*(?:销售|销量|订单|利润|收入|成本|金额|数据|指标)",
-        normalized,
-        re.IGNORECASE,
-    ):
+    capability = classify_capability(normalized)
+    if capability == CapabilityClass.FUTURE_PREDICTION:
         return "当前只支持基于已存在数据的只读分析，不支持预测或未来外推。"
+    if capability in {
+        CapabilityClass.MODEL_WRITE,
+        CapabilityClass.DATA_DELETE,
+        CapabilityClass.ARBITRARY_CODE,
+    }:
+        return "当前为只读分析模式，不支持修改、删除、写入模型或执行任意代码。"
     if any(pattern.search(normalized) for pattern in _DETERMINISTICALLY_OUT_OF_SCOPE):
         return "当前为只读分析模式，不支持修改、删除、写入模型或执行任意代码。"
     return None
@@ -44,12 +79,36 @@ _DATA_SHAPED = re.compile(
     r"数据|报表|报告|指标|度量|字段|维度|筛选|过滤|"
     r"销售|销量|数量|订单|利润|收入|成本|金额|件数|周转率|"
     r"本月|本年|今年|去年|日期|时间|最近\s*\d+|"
-    r"排名|排行|前\s*\d+|top\s*\d+|最高|最低|最大|最小|"
+    r"排名|排行|前\s*(?:\d+|[零〇一二两三四五六七八九十百]+)|"
+    r"top\s*\d+|最高|最低|最大|最小|"
     r"同比|环比|比较|对比|大于|小于|超过|等于|包含|"
     r"多少|总计|合计|平均"
     r")",
     re.IGNORECASE,
 )
+
+
+def classify_capability(user_input: str) -> CapabilityClass:
+    """Classify into a registry enum without granting execution authority.
+
+    This layer interprets only the requested operation category.  The final
+    supported/unsupported decision remains deterministic policy below.
+    """
+
+    normalized = user_input.strip()
+    if not normalized:
+        return CapabilityClass.UNKNOWN
+    if _DATA_DELETE.search(normalized):
+        return CapabilityClass.DATA_DELETE
+    if _MODEL_WRITE.search(normalized):
+        return CapabilityClass.MODEL_WRITE
+    if _ARBITRARY_CODE.search(normalized):
+        return CapabilityClass.ARBITRARY_CODE
+    if _FUTURE_CUE.search(normalized) and _PROJECTION_CUE.search(normalized):
+        return CapabilityClass.FUTURE_PREDICTION
+    if _DATA_SHAPED.search(normalized):
+        return CapabilityClass.READ_ANALYSIS
+    return CapabilityClass.UNKNOWN
 
 
 def should_defer_unsupported_to_grounding(

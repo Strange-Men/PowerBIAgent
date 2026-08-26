@@ -95,7 +95,10 @@ class PendingClarificationService:
 
         delta = outcome.delta or GroundedSemanticDelta()
         resolved_measures = self._resolved_names(outcome, "measure")
-        resolved_dimensions = self._resolved_names(outcome, "dimension")
+        resolved_dimensions = [
+            *self._resolved_names(outcome, "dimension"),
+            *self._resolved_names(outcome, "ranking_dimension"),
+        ]
         blocked_roles = {
             item.role
             for item in outcome.object_results
@@ -107,7 +110,7 @@ class PendingClarificationService:
         }
         if "measure" in blocked_roles:
             measures = []
-        if "dimension" in blocked_roles:
+        if {"dimension", "ranking_dimension"} & blocked_roles:
             dimensions = []
         if "filter_field" in blocked_roles:
             filters = []
@@ -301,7 +304,7 @@ class PendingClarificationService:
                 continue
             slot: PendingSemanticSlot = (
                 "measure" if item.role == "measure"
-                else "dimension" if item.role == "dimension"
+                else "dimension" if item.role in {"dimension", "ranking_dimension"}
                 else "filter" if item.role == "filter_field"
                 else "time"
             )

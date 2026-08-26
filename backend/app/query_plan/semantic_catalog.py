@@ -11,7 +11,7 @@ import json
 import unicodedata
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,6 +39,16 @@ class SemanticObjectSource(str, Enum):
     RUNTIME_GLOSSARY = "runtime+glossary"
 
 
+class TemporalGroupingBinding(BaseModel):
+    """Model-scoped binding from a grouping grain to runtime-owned fields."""
+
+    grain: Literal["month", "year"]
+    date_field: str
+    date_table_name: str
+
+    model_config = ConfigDict(frozen=True)
+
+
 class CatalogObject(BaseModel):
     object_id: str
     canonical_name: str
@@ -48,6 +58,8 @@ class CatalogObject(BaseModel):
     description: str | None = None
     aliases: tuple[str, ...] = ()
     member_aliases: dict[str, str] = Field(default_factory=dict)
+    member_suffixes: tuple[str, ...] = ()
+    temporal_grouping: TemporalGroupingBinding | None = None
     source: SemanticObjectSource = SemanticObjectSource.RUNTIME
 
     model_config = ConfigDict(frozen=True)
@@ -200,6 +212,18 @@ class SemanticCatalogBuilder:
                     if previous_target is not None and previous_target != clean_target:
                         raise GlossaryCatalogError("glossary_member_alias_conflict")
                     member_aliases[normalized_alias] = clean_target
+                raw_member_suffixes = metadata.get("member_suffixes", [])
+                if not isinstance(raw_member_suffixes, list) or any(
+                    not isinstance(suffix, str) or not suffix.strip()
+                    for suffix in raw_member_suffixes
+                ):
+                    raise GlossaryCatalogError("glossary_member_suffix_invalid")
+                if raw_member_suffixes and object_type != SemanticObjectType.FIELD:
+                    raise GlossaryCatalogError("glossary_member_suffix_object_invalid")
+                member_suffixes = tuple(dict.fromkeys(
+                    unicodedata.normalize("NFKC", suffix).strip()
+                    for suffix in raw_member_suffixes
+                ))
                 if table_name not in all_table_names:
                     if not required:
                         continue
@@ -222,6 +246,36 @@ class SemanticCatalogBuilder:
                     if not required:
                         continue
                     raise GlossaryCatalogError("glossary_unknown_object")
+                raw_temporal = metadata.get("temporal_grouping")
+                temporal_grouping: TemporalGroupingBinding | None = None
+                if raw_temporal is not None:
+                    if object_type != SemanticObjectType.FIELD:
+                        raise GlossaryCatalogError(
+                            "glossary_temporal_grouping_object_invalid"
+                        )
+                    try:
+                        temporal_grouping = TemporalGroupingBinding.model_validate(
+                            raw_temporal
+                        )
+                    except (TypeError, ValueError) as exc:
+                        raise GlossaryCatalogError(
+                            "glossary_temporal_grouping_invalid"
+                        ) from exc
+                    date_key = (
+                        SemanticObjectType.FIELD,
+                        temporal_grouping.date_table_name,
+                        temporal_grouping.date_field,
+                    )
+                    date_object = objects.get(date_key)
+                    if date_object is None:
+                        raise GlossaryCatalogError(
+                            "glossary_temporal_grouping_date_field_missing"
+                        )
+                    date_type = date_object.data_type.casefold()
+                    if "date" not in date_type and "time" not in date_type:
+                        raise GlossaryCatalogError(
+                            "glossary_temporal_grouping_date_field_invalid"
+                        )
                 normalized_seen: set[str] = set()
                 clean_aliases: list[str] = []
                 for alias in aliases:
@@ -237,6 +291,8 @@ class SemanticCatalogBuilder:
                 objects[key] = runtime_object.model_copy(update={
                     "aliases": tuple(clean_aliases),
                     "member_aliases": member_aliases,
+                    "member_suffixes": member_suffixes,
+                    "temporal_grouping": temporal_grouping,
                     "source": SemanticObjectSource.RUNTIME_GLOSSARY,
                 })
 

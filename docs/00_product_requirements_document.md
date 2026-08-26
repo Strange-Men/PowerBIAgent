@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v2.0
+> **修订版本：** v2.1
 > **修订日期：** 2026-08-26
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** M5.4.2 固化 M5 重建基线、旧实验线真实性、M5.5—M5.8 分阶段边界与 Generalization Gate；产品能力保持 M5.4.1
+> **本轮修订范围：** 新版 M5.5 Semantic correctness 与 capability boundary 已完成；M5.6 Resource UX 增补与 M5.9 固定专业销售报表模板规划已先行固化，M5.6—M5.9 均未开始
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -159,7 +159,9 @@ AI 回答不是只能返回纯文本。同一条 AI 消息现在可以按实际�
 
 ### 前端开发策略
 
-M5.4.2 只重建 Git 基线并固化文档/治理，不修改前端生产代码。后续按 M5.5 Semantic、M5.6 Presentation/Localization/Resource UX、M5.7 Report、M5.8 MCP performance/resilience 隔离开发，不再把多个域塞入同一 milestone。
+当前 M5.5 只开发 Semantic correctness 与 capability boundary。后续按 M5.6 Presentation/Localization/Resource UX、M5.7 Report readability、M5.8 MCP performance/resilience、M5.9 固定专业销售模板依次隔离开发，不再把多个域塞入同一 milestone。
+
+M5.6 必须让 conversation/report 共用同一 Portal/floating layer action menu，并按 viewport 在目标行上方或下方定位，禁止被 scroll container、scrollbar 或 stacking context 裁切。Settings Resource Manager 必须定义 nested scroll contract，并以 sticky 或可滚动 action toolbar 保证 destructive actions 在不同 viewport/zoom 下始终可访问。
 
 ## 七、后端设计
 
@@ -284,10 +286,11 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 13. **M5.4 多会话并发、用户设置与资源管理最终收口** ✅ 已完成 — conversation-scoped state、client UUID pending session、异会话并发、用户卡片/设置、bounded bulk management、report tombstone/rename
 14. **M5.4.1 Settings 与测试资源治理** ✅ 已完成 — 全量 cursor pagination、准确 selection/batch、automation ownership 与 residual=0
 15. **M5.4.2 M5 重建基线与规划固化** ✅ COMPLETE — 从 `cab40b0` 建立 `m5/rebuild`，只做 Git/文档/治理
-16. **M5.5 Semantic correctness** ⏳ NOT STARTED — Grounding、runtime member、ambiguity/no-match、multi-turn、TopN、time、capability boundary
-17. **M5.6 Presentation/Localization/Resource UX truth** ⏳ NOT STARTED — canonical/display、格式化、信息密度、Settings/Recent/failed resource、toolbar/menu
+16. **M5.5 Semantic correctness** ✅ COMPLETE — Grounding、runtime member、ambiguity/no-match、multi-turn、TopN、time、capability boundary
+17. **M5.6 Presentation/Localization/Resource UX truth** ⏳ NOT STARTED — canonical/display、格式化、信息密度、Settings/Recent/failed resource、共享 floating menu、nested scroll 与 action toolbar
 18. **M5.7 Report readability** ⏳ NOT STARTED — information architecture、responsive、geometry、axis/tick、accessibility、人工可读性
-19. **M5.8 MCP performance/resilience** ⏳ NOT STARTED — profiling/cache/session reuse、queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak；完成后才允许 M5 FINAL
+19. **M5.8 MCP performance/resilience** ⏳ NOT STARTED — profiling/cache/session reuse、queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak
+20. **M5.9 固定专业销售报表模板与模板选择** ⏳ NOT STARTED — 简易模板保留 M5.7 优化后的 `sales_report.html`；销售模板使用确定性专业版式并显式选择；完成后才允许 M5 FINAL
 
 ## 十二、MVP 暂不包含
 
@@ -360,4 +363,6 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-*修订日期：2026-08-26 | M5.4.2 COMPLETE；产品能力保持 M5.4.1；新版 M5.5 未开始*
+M5.9 已纳入正式路线：用户可明确选择“简易模板”或“销售模板”。销售模板可以包含 sales-specific section，但只消费 runtime schema 与 VerifiedFactSet 已证明的事实；缺少 Forecast/Goal/Pipeline 时必须用当前模型真实支持的销售 section 替代，禁止伪造。任何模板均不允许 LLM 临场生成 HTML/CSS/SVG。
+
+*修订日期：2026-08-26 | M5.5 COMPLETE；M5.6—M5.9 NOT STARTED*

@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.4.2 — M5重建基线与后续分阶段开发规划固化（COMPLETE）
+> **状态：** M5.5 — Semantic correctness 与 capability boundary（COMPLETE）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -38,10 +38,11 @@
 | **M5.4** | **conversation-scoped state、异会话并发、用户卡片/资源管理、report tombstone/rename** | **✅ 已完成** |
 | **M5.4.1** | **Settings Hub、全量 conversation/report 分页、准确全选语义与 automation artifact cleanup** | **✅ 已完成** |
 | **M5.4.2** | **M5 重建基线、旧实验线审计保留、分阶段路线与 Generalization Gate** | **✅ COMPLETE** |
-| **M5.5** | **Semantic correctness：Grounding/member/multi-turn/TopN/time/capability** | **⏳ NOT STARTED** |
+| **M5.5** | **Semantic correctness：Grounding/member/multi-turn/TopN/time/capability** | **✅ COMPLETE** |
 | **M5.6** | **Presentation、Localization 与 Resource UX truth** | **⏳ NOT STARTED** |
 | **M5.7** | **Report readability 与 Real Browser 人工视觉 Gate** | **⏳ NOT STARTED** |
 | **M5.8** | **MCP performance/resilience、压力与故障恢复** | **⏳ NOT STARTED** |
+| **M5.9** | **固定专业销售报表模板与模板选择** | **⏳ NOT STARTED** |
 
 ## M5 重建决策与历史状态
 
@@ -184,13 +185,20 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - 所有 Codex/pytest/browser/Real/MCP/report 自动化资源必须具有 explicit test ownership；`finally` cleanup 后验证 conversation/report metadata/HTML/SQLite namespace/delete intent residual=0，否则 Gate FAIL。
 - 历史清理只处理有 ownership/known namespace/fixture/linkage 证据的 automation-owned 资源；无法确认的资源保留。M5.5 继续 Deferred。
 
-## M5.5—M5.8 隔离边界
+## M5.5—M5.9 隔离边界
 
 - **M5.5** 只处理 Semantic correctness；explicit unresolved member/filter 必须 clarification/no-match 且 ZERO DAX。禁止 Localization、Report Visual、MCP 性能优化与 Resource UI 大改。
-- **M5.6** 只处理 canonical/display separation、Localization、格式化、Answer/Table/Chart 信息密度，以及 Settings/Recent/failed resource/toolbar/menu truth。禁止改变 Grounding、DAX 或 MCP authority。
+- **M5.6** 只处理 canonical/display separation、Localization、格式化、Answer/Table/Chart 信息密度，以及 Settings/Recent/failed resource/toolbar/menu truth。conversation/report 必须共用 Portal/floating layer 和 viewport-aware above/below positioning；Settings 必须有 nested scroll contract 与 sticky/scrollable action toolbar。禁止改变 Grounding、DAX 或 MCP authority。
 - **M5.7** 只处理 report information architecture、responsive、plot geometry、axis/tick、accessibility 与可读性。正式 Gate 是普通用户能读懂，而非仅 SVG 不越界。
-- **M5.8** 只在前三轮冻结后处理 profiling、cache、session reuse、bounded concurrency/queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak；不得降低 factual validation。M5.8 完成前不得声明 M5 FINAL。
+- **M5.8** 只在前三轮冻结后处理 profiling、cache、session reuse、bounded concurrency/queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak；不得降低 factual validation。
+- **M5.9** 必须晚于 M5.8，只增加固定专业销售报表模板和显式模板选择。“简易模板”是 M5.7 优化后的现有 `sales_report.html`；“销售模板”使用确定性专业版式。两者都只消费 VerifiedFactSet/ReportData/ReportSpec，不允许 LLM 生成 HTML/CSS/SVG、查询或事实。M5.9 完成前不得声明 M5 FINAL。
 - 每个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
+
+### M5.6 Layout Gate（已规划，未实现）
+
+- first/middle/last row；scroll top/middle/bottom；100%/125% zoom；768/1080/1440 viewport height。
+- Sidebar scroll 与 Settings nested scroll 分别验证。
+- destructive action 始终可访问；floating menu 不受 scroll container、scrollbar 或 stacking context 裁切。
 
 ## 当前真实风险
 
@@ -239,4 +247,12 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - Documentation Governance、Repository Safety（296 files）、Error Ledger（30 entries）、Artifact Governance 与 `git diff --check` PASS。
 - 仅版本元数据与文档/治理文件变化；无生产业务逻辑、测试、schema 或 migration 变化，未开始新版 M5.5。
 
-*最后更新：2026-08-26 | M5.4.2 COMPLETE — M5 重建基线与分阶段治理*
+### M5.5 fresh evidence
+
+- explicit unresolved member 已由最接近生产入口的回归证明 clarification/no-match、ZERO DAX/QueryResult/Memory commit；`火星区` 不再降级为全国结果，`华南/华南区/南区` 仅在 runtime member authority 支持时 canonicalize 为 `South`。
+- Real Rich PBIX 四轮 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢` 完成 slot-level KEEP/REPLACE；Top3/descending、time filter/grouping 与 prediction/delete capability boundary 正确。
+- Sales、Education、Inventory、未知 opaque holdout 与 display/table rename、相似字段、glossary alias 删除、member change、unknown/ambiguous member mutation 全部通过 deterministic oracle；生产 semantic 代码未引入 sales-specific field/member hardcode。
+- Backend full `1823 passed, 1 skipped`；frontend `69 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `296`、Error Ledger `32`、Documentation/Artifact Governance、compileall 与 Local MCP readonly smoke PASS。
+- Real API 与 Browser 人工验收通过；unknown member 可见 clarification，South 与同会话 Top3 正确完成，automation-owned acceptance residual=0。M5.6—M5.9 均未开始。
+
+*最后更新：2026-08-26 | M5.5 COMPLETE — 语义正确性与能力边界*

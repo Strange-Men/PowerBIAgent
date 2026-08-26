@@ -3,17 +3,75 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-26 | M5.4.2
+# 最后更新：2026-08-26 | M5.5 COMPLETE
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-550-001
+  title: Conversation/Report action menu 与 Settings 操作区被 overflow 裁切
+  category: ERR
+  first_detected_version: M5.5
+  symptom: M5.4.1 基线的最近对话最后一项与最近报表 action menu 可能被父级 overflow 裁切；Settings 二级资源页过长时 destructive action 可能超出可见区域
+  local_evidence: 用户 M5.5 启动验收反馈；本轮仅固化为 M5.6 regression，不修改前端实现
+  authoritative_sources:
+  - title: M5 Generalization and Acceptance Contract
+    reason: M5.6 独立负责 Presentation/Localization/Resource UX truth，不得混入 M5.5 Semantic
+  root_cause: action menu 受 scroll container/stacking context 约束，Settings 缺少明确 nested scroll 与 action toolbar 可达性合同
+  failed_attempts: []
+  repair_attempt_count: 0
+  final_fix: M5.5 文档先固化 shared Portal/floating layer、viewport-aware positioning、nested scroll、sticky/scrollable toolbar 与完整 Layout Gate；代码修复留在 M5.6
+  regression_tests: []
+  prohibited_patterns:
+  - conversation/report 各自维护一套易漂移的 menu positioning
+  - 以 viewport 或容器空间不足为由隐藏 destructive action
+  - 在 M5.5 修改 Resource UX
+  prevention_rules:
+  - Layout Gate 覆盖首中末行、滚动三位置、100%/125% zoom 与 768/1080/1440 viewport height
+  - floating menu 必须脱离裁切容器且 destructive action 始终可访问
+  related_adr: null
+  related_commits: []
+  status: open
+  events:
+  - date: '2026-08-26'
+    action: discovered
+    version: M5.5
+- id: GOV-550-001
+  title: 专业销售报表模板不得重新授予 LLM 布局或事实权威
+  category: GOV
+  first_detected_version: M5.5
+  symptom: 新增专业销售版式若未先固化 authority，可能把参考页面误实现为 LLM 临场 HTML/CSS/SVG 或在缺少 Forecast/Goal/Pipeline 时伪造内容
+  local_evidence: 用户新增 M5.9 规划要求；M5.5 仅记录路线，不实现模板
+  authoritative_sources:
+  - title: ADR-009 Deterministic Query Execution and Verified Fact Authority
+    reason: 所有报表事实必须来自 QueryResult 与 VerifiedFactSet
+  - title: ADR-011 Adaptive Report Planning and Visualization Authority
+    reason: layout/theme/visual policy 与 renderer authority 属于确定性代码
+  root_cause: 专业参考版式与当前 runtime capability 之间需要明确的固定模板和 capability substitution 合同
+  failed_attempts: []
+  repair_attempt_count: 0
+  final_fix: M5.9 固定为晚于 M5.8 的独立 milestone，采用 VerifiedFactSet 到 fixed renderer 的 deterministic chain；本轮只完成文档治理
+  regression_tests: []
+  prohibited_patterns:
+  - LLM 临场生成 HTML、CSS 或 SVG
+  - 缺少 runtime 事实时伪造 Forecast、Goal 或 Pipeline
+  - 在 M5.5 提前实现 M5.9
+  prevention_rules:
+  - 用户只从 registry-owned 简易模板和销售模板中显式选择
+  - sales-specific template 不得把 Agent 主链改为 Sales-specific
+  related_adr: ADR-011
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-26'
+    action: mitigation
+    version: M5.5
 - id: ERR-542-001
   title: Explicit unresolved member 可能静默降级为无筛选查询
   category: ERR
   first_detected_version: M5.4.2
   symptom: 真实用户问题“火星区销售额”可能在 member 无匹配时移除筛选并返回全国销售额；明确但未解析的 semantic requirement 没有稳定保证 ZERO DAX
-  local_evidence: 原 M5.5/M5.5.1 实验线真实用户测试反馈；M5.4.2 只记录问题与 Gate，不把旧实验实现移入新线
+  local_evidence: M5.5 新线 failure reproducer 与生产入口回归证明“火星区销售额”返回 clarification，DAX/QueryResult/Memory commit 均为零；Real Rich PBIX、Sales/Education/Inventory、未知 opaque holdout 与 schema mutation gates 通过
   authoritative_sources:
   - title: ADR-008 Business Semantic Catalog and Grounding Authority
     reason: Filter member 必须由已 Ground field 上的 bounded runtime lookup 证明，UNRESOLVED 不得进入 Canonical QueryPlan
@@ -22,8 +80,10 @@ entries:
   root_cause: 旧实验范围同时改动语义、MCP 与展示，no-match 到执行边界缺少独立 failure reproducer、ZERO-DAX oracle 与跨域验收
   failed_attempts: []
   repair_attempt_count: 0
-  final_fix: M5.4.2 仅将问题标为新 M5.5 阻塞性验收项；技术修复必须在 M5.5 通过最小实现、回归、Focused Real 与 Cross-domain 后另行记录
-  regression_tests: []
+  final_fix: M5.5 将显式 member 与 object grounding 分离，所有 canonical member 必须经目标 runtime field 的 ColumnMembers exact validation；no-match/ambiguity 在 DAX、Power BI 与 Memory commit 前 fail closed，旧 Memory 不得覆盖当前 explicit failure
+  regression_tests:
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/api/test_chat.py
   prohibited_patterns:
   - member 无匹配时删除 filter 并执行更宽查询
   - 使用旧 committed member 覆盖当前 explicit unresolved member
@@ -34,11 +94,14 @@ entries:
   - 成员别名必须绑定 model/schema/runtime member evidence
   related_adr: ADR-008
   related_commits: []
-  status: open
+  status: monitoring
   events:
   - date: '2026-08-26'
     action: discovered
     version: M5.4.2
+  - date: '2026-08-26'
+    action: in_progress
+    version: M5.5
 - id: GOV-542-001
   title: 单一 Milestone 同时大改五个域导致验收结论不可定位
   category: GOV
