@@ -302,7 +302,7 @@ python scripts/check_artifact_governance.py
 python -m alembic upgrade head
 ```
 
-`PowerBIAgent Validation` 在 GitHub Actions 上验证准确的 commit SHA。CI 只使用 Mock/Fake 边界，不持有 DeepSeek Key、Microsoft Token、PBIX 或真实业务数据；真实 Power BI Desktop 验收始终是本地人工 Smoke。
+`PowerBIAgent Validation` 在 GitHub Actions 上验证准确的 commit SHA，并由 `main` / `m5/rebuild` 的 push 或 pull request 触发。Semantic Compatibility Gate 扫描完整 `backend/app/**` production 文本并禁止依赖 known-answer/test oracle，且在 full pytest 前运行。CI 只使用 Mock/Fake 边界，不持有 DeepSeek Key、Microsoft Token、PBIX 或真实业务数据；真实 Power BI Desktop 验收始终是本地人工 Smoke。
 
 ## 项目状态
 

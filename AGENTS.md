@@ -123,7 +123,7 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 43. M5.9：只允许 profiling、MCP session reuse/cache、bounded concurrency/queue/backpressure、20/50/100 concurrency 与 restart/fault/soak；禁止修改 Semantic/DAX/VerifiedFactSet authority。
 44. M5.10：只允许固定专业销售模板与“简易模板/销售模板”显式选择；禁止 LLM 临场生成 HTML/CSS/SVG。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
 45. M5.7.1：日期角色选择优先级固定为用户显式指定 → model-scoped metadata → runtime relationship/default temporal role（仅在可唯一证明时）→ clarification。不得以“模型只有一个 Date/DateTime 字段”为正常执行前提，也不得在多日期角色无唯一证据时猜测。
-46. M5.7.1：benchmark 问题、expected 数值与问题→答案映射不得进入 production prompt/config/glossary/regex/fallback/lookup。Known-answer oracle 必须与 production runtime 隔离；永久 Semantic Compatibility Gate 必须检查 answer leakage、unresolved/invalid member ZERO DAX、time、multi-turn、unsupported、schema mutation、frontend/provider 无 semantic authority。
+46. M5.7.1：benchmark 问题、expected 数值与问题→答案映射不得进入 `backend/app/**` production text/code。Gate 必须覆盖 `.py/.yaml/.yml/.json/.toml`，排除 harness/tests/docs/generated/cache/artifact，并禁止 production import/read/depend on known-answer cases、baseline、oracle 或 test-only truth；合法 model-scoped alias/runtime metadata 不得因裸业务词误报。永久 Semantic Compatibility Gate 同时检查 unresolved/invalid member ZERO DAX、time、multi-turn、unsupported、schema mutation、frontend/provider 无 semantic authority。
 47. M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provider 或 MCP performance；M5.7.2 与 M5.8 保持 NOT STARTED。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前跨入未批准里程碑、开发 Remote MCP；未经用户明确批准不得创建 Tag。

@@ -100,7 +100,7 @@ M5.7 冻结后才允许开发 `OpenAICompatibleLLMProvider`、`LLMModelProfile`�
 - 禁止把 benchmark 问题、expected 数值或问题→答案映射放入 production prompt/config/glossary/regex/fallback/lookup；oracle 只存在于 test/harness 边界。
 - 固定 checkpoint：S1 docs/contract → S2 audit → S3 reproducers → S4 temporal/date-role → S5 object/member/ambiguity → S6 multi-turn/ranking/capability → S7 property/metamorphic → S8 cross-domain/schema mutation/holdout → S9 permanent Gate → S10 full gates → S11 Rich PBIX Real/manual → S12 docs/commit/push。任一失败不得进入下一阶段。
 
-完成证据：date-role 根因已由 production-path reproducer 锁定并以 metadata-driven resolver 通用修复；64 组 seeded wording metamorph、时间/语序/NFKC、unknown/ambiguity、KEEP/REPLACE、TopN、capability、Sales/Education/Inventory/unknown holdout 与 schema mutation 通过。Semantic Compatibility `302 passed`，backend `1901 passed, 1 skipped`，frontend `80 passed` 且 build PASS，Golden `11 passed, 1 manual-real skipped`，全部治理门禁与 Rich PBIX Real/manual PASS，automation-owned residual=0。
+完成证据：date-role 根因已由 production-path reproducer 锁定并以 metadata-driven resolver 通用修复；64 组 seeded wording metamorph、时间/语序/NFKC、unknown/ambiguity、KEEP/REPLACE、TopN、capability、Sales/Education/Inventory/unknown holdout 与 schema mutation 通过。最终治理将 leakage scan 扩大到完整 `backend/app/**` production 文本并禁止 production 依赖 known-answer/test oracle，当前扫描 103 个文件且无违规；`m5/rebuild` push/PR 已纳入正式 CI，Semantic Gate 固定在 full pytest 前。Semantic Compatibility `302 passed`，backend `1908 passed, 1 skipped`，frontend `80 passed` 且 build PASS，Golden `11 passed, 1 manual-real skipped`，全部治理门禁与 Rich PBIX Real/manual PASS，automation-owned residual=0。
 
 M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provider 或 MCP performance。
 

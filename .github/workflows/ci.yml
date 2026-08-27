@@ -1,5 +1,5 @@
 # PowerBIAgent Validation — 版本无关通用 CI
-# 触发: push main, PR 指向 main, workflow_dispatch
+# 触发: push main/m5/rebuild, PR 指向 main/m5/rebuild, workflow_dispatch
 # 环境: windows-latest, Python 3.11, LLM_MODE=mock, POWERBI_MODE=mock
 # 禁止: 真实 API Key, api.deepseek.com, continue-on-error, 无限重试
 
@@ -7,9 +7,9 @@ name: PowerBIAgent Validation
 
 on:
   push:
-    branches: [main]
+    branches: [main, m5/rebuild]
   pull_request:
-    branches: [main]
+    branches: [main, m5/rebuild]
   workflow_dispatch:
 
 permissions:

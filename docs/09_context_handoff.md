@@ -322,8 +322,9 @@
 - P0 根因：完整 SemanticGrounding 在出现显式时间时仍要求唯一 Date/DateTime 或唯一 glossary 日期字段；Rich 模型同时存在 `Sales[OrderDate]`、`Date[Date]` 与 grouping 字段，导致 TimeGrounder 已解析的 `2025-05-01..2025-05-31` 被错误 clarification。
 - 最终 date-role resolver：用户显式日期角色 → 唯一 model-scoped `temporal_role: default` → 唯一 temporal-grouping binding → 唯一 glossary 日期对象 → 唯一 runtime 日期字段 → clarification。无唯一证据、unknown member 与 unsupported capability 均继续 ZERO DAX/Memory commit。
 - 时间解析覆盖绝对月份、`2025-05`、今年/去年指定月份、上月、季度/Q1、最近 N 月与 NFKC 全角；64 组 seeded metamorphic wording、语序/标点、multi-turn KEEP/REPLACE、TopN、Sales/Education/Inventory/unknown holdout 与 schema mutation 均通过。
-- 永久 `scripts/check_semantic_compatibility.py` 已接入 CI，检查 canonical slots、ZERO-DAX 边界、answer leakage、frontend factual authority 与 provider-specific semantic authority；本轮结果 `302 passed`。
-- Fresh final gates：backend `1901 passed, 1 skipped`；frontend Vitest `80 passed`、production build PASS；Golden `11 passed, 1 manual-real skipped`；Repository Safety `306`、Architecture `120`、Error Ledger、Documentation/Artifact Governance、compileall 与 `git diff --check` PASS。
+- 永久 `scripts/check_semantic_compatibility.py` 已接入 CI，检查 canonical slots、ZERO-DAX 边界、answer leakage、frontend factual authority 与 provider-specific semantic authority；最终治理把 leakage scan 扩大到完整 `backend/app/**` production `.py/.yaml/.yml/.json/.toml`，并禁止 production import/read/depend on known-answer cases、baseline、oracle 或 test-only truth。当前扫描 103 个 production backend 文件，无真实 leakage 或非法依赖，Semantic suite 保持 `302 passed`。
+- `PowerBIAgent Validation` 已将 `m5/rebuild` 纳入 push 与 pull request 触发；Semantic Compatibility Gate 固定在 full pytest 之前，不使用真实 Secret、Power BI 或 `.env`。
+- Fresh final gates：backend `1908 passed, 1 skipped`；frontend Vitest `80 passed`、production build PASS；Golden `11 passed, 1 manual-real skipped`；Repository Safety `306`、Architecture `120`、Error Ledger、Documentation/Artifact Governance、compileall 与 `git diff --check` PASS。
 - Rich PBIX API/Browser/manual 覆盖总销售额、绝对/相对月份、趋势、South、unknown member、readonly approximation、future prediction 与四轮 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢`；automation run `m571-real-20260827` 清理后 conversations、work memories、snapshots、reports 与 delete intents residual=0。
 - 未弱化 M5.5 semantic/DAX/VerifiedFactSet authority；未修改报表视觉或 Template/Renderer Registry；未开发 DeepSeek/Kimi；未修改 MCP performance。
 
