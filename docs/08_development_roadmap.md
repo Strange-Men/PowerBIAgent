@@ -102,6 +102,8 @@ M5.7 冻结后才允许开发 `OpenAICompatibleLLMProvider`、`LLMModelProfile`�
 
 完成证据：date-role 根因已由 production-path reproducer 锁定并以 metadata-driven resolver 通用修复；64 组 seeded wording metamorph、时间/语序/NFKC、unknown/ambiguity、KEEP/REPLACE、TopN、capability、Sales/Education/Inventory/unknown holdout 与 schema mutation 通过。最终治理将 leakage scan 扩大到完整 `backend/app/**` production 文本并禁止 production 依赖 known-answer/test oracle，当前扫描 103 个文件且无违规；`m5/rebuild` push/PR 已纳入正式 CI，Semantic Gate 固定在 full pytest 前。Semantic Compatibility `302 passed`，backend `1908 passed, 1 skipped`，frontend `80 passed` 且 build PASS，Golden `11 passed, 1 manual-real skipped`，全部治理门禁与 Rich PBIX Real/manual PASS，automation-owned residual=0。
 
+远程证据：commit `919affd29d6ab35429c6fd6fe55a799f8882b760` 的 `m5/rebuild` push 已触发 [PowerBIAgent Validation #36](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33037609916)；job `98403716751` 与 `5. Semantic Compatibility Gate` step 均为 `completed/success`。
+
 M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provider 或 MCP performance。
 
 ### M5.7.2 — Report Template Architecture Closure

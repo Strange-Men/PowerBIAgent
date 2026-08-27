@@ -16,6 +16,7 @@
 - Rich PBIX Real/API/Browser 验收覆盖总销售额、绝对/相对月份、趋势、South、unknown member、readonly approximation、future prediction 与四轮 KEEP/REPLACE/Top3；automation run `m571-real-20260827` 清理后 conversation/work memory/snapshot/report/delete-intent residual 均为 0。
 - 最终远程治理补强将 answer-leakage 边界从 4 个敏感文件扩大到完整 `backend/app/**` production `.py/.yaml/.yml/.json/.toml`，明确排除 harness/tests/docs/generated/cache/artifact，并通过 AST import 与静态路径/标识检查禁止 production 依赖 known-answer cases、baseline、oracle 或 test-only truth；当前扫描 103 个 production backend 文件，未发现真实 leakage 或非法依赖。
 - `PowerBIAgent Validation` workflow 已将 `m5/rebuild` 纳入 push 与 pull request 触发，Semantic Compatibility Gate 继续位于 full pytest 之前且不可跳过；本地保持 Semantic Compatibility `302 passed`，新增 governance tests 后 backend 为 `1908 passed, 1 skipped`，Golden `11 passed, 1 manual-real skipped`。
+- Remote execution evidence：`m5/rebuild` push commit `919affd29d6ab35429c6fd6fe55a799f8882b760` 已触发 [PowerBIAgent Validation #36](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33037609916)；job `98403716751` success，其中 `5. Semantic Compatibility Gate`、full pytest、Golden 与 strict git check 均为 `completed/success`。
 - M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provider 或 MCP performance。M5.7.2 与 M5.8 均保持 NOT STARTED。
 
 **Settings.version:** M5.7.1

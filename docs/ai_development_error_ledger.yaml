@@ -51,7 +51,7 @@ entries:
   category: GOV
   first_detected_version: M5.7.1
   symptom: 高强度兼容套件若把已知问题、业务数值或问题到答案映射写入 production prompt/config/glossary/regex/fallback，会产生虚假正确率
-  local_evidence: scripts/check_semantic_compatibility.py 已扫描 production prompt/config/glossary、frontend production source 与 semantic authority provider imports；backend/tests/unit/test_semantic_compatibility_gate.py 锁定该治理合同
+  local_evidence: scripts/check_semantic_compatibility.py 已扫描完整 backend/app production .py/.yaml/.yml/.json/.toml、frontend production source 与 semantic authority provider imports，并禁止 production 依赖 known-answer/test oracle；当前 103 个 backend 文件无违规。GitHub Actions run 33037609916 / job 98403716751 的 Semantic Compatibility Gate 为 completed/success。
   authoritative_sources:
   - title: ADR-008 Business Semantic Catalog and Grounding Authority
     reason: glossary 只能描述 model-scoped identity，不能成为答案库
@@ -60,7 +60,7 @@ entries:
   root_cause: 压力回归与 production semantic assets 原先只有人工约束，缺少机器可校验的 benchmark question/value、oracle dependency 与 provider-authority 隔离门禁
   failed_attempts: []
   repair_attempt_count: 0
-  final_fix: 建立永久 Semantic Compatibility Gate；expected 继续只存在于 test/harness oracle，production prompt/config/glossary 禁止 benchmark 完整问题、oracle key 与 distinctive expected value，frontend 禁止 benchmark factual value，semantic authority 禁止 DeepSeek-specific provider import。
+  final_fix: 建立永久 Semantic Compatibility Gate；expected 继续只存在于 test/harness oracle，完整 backend/app production text/code 禁止 benchmark 完整问题、oracle 标识、distinctive expected value 与 known-answer/test oracle import/read dependency，frontend 禁止 benchmark factual value，semantic authority 禁止 DeepSeek-specific provider import；m5/rebuild push/PR 纳入正式 CI。
   regression_tests:
   - backend/tests/unit/test_semantic_compatibility_gate.py
   - backend/tests/unit/test_known_answer_oracle.py
@@ -75,6 +75,7 @@ entries:
   related_adr: ADR-009
   related_commits:
   - 97ea4ab5b0213e19ae021fe8f321dae50444ddc7 M5.7.1_语义可靠性与永久回归防火墙最终收口
+  - 919affd29d6ab35429c6fd6fe55a799f8882b760 M5.7.1_语义回归防火墙远程治理最终收口
   status: resolved
   events:
   - date: '2026-08-27'
@@ -84,6 +85,11 @@ entries:
     action: resolved
     version: M5.7.1
     commit: 97ea4ab5b0213e19ae021fe8f321dae50444ddc7
+  - date: '2026-08-27'
+    action: remote_audit_hardened
+    version: M5.7.1
+    commit: 919affd29d6ab35429c6fd6fe55a799f8882b760
+    evidence: GitHub Actions run 33037609916 / job 98403716751 completed success；Semantic Compatibility Gate completed/success
 - id: GOV-570-001
   title: 报表请求不得在模板缺失时继续或隐式选择默认模板
   category: GOV
