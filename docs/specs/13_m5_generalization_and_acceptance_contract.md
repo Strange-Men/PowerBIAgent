@@ -1,7 +1,7 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5 COMPLETE；M5.6 COMPLETE；M5.7 COMPLETE；M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立
-> **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.10
+> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 COMPLETE；M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立
+> **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.10（含 M5.7.1 / M5.7.2）
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
 
@@ -170,6 +170,35 @@ Resource truth 固定为 Settings 全量 query 与 Sidebar 同源 bounded projec
 
 禁止 MCP profiling、session reuse、cache、concurrency 或 queue/backpressure 优化；不得改变 Grounding、DAX 或 VerifiedFactSet authority。
 
+### M5.7.1 — Semantic Reliability / Regression Firewall
+
+M5.7.1 统一处理 M5.5—M5.7 已暴露的问答语义回归、永久回归防火墙与高强度问答验收。允许修改 Intent、Object/Member/Temporal Grounding、StateTransition、semantic validation、Memory inheritance、Deterministic DAX 邻接验证和 semantic tests；禁止报表视觉、Template/Renderer Registry、LLM Provider、多模型、MCP 性能与 Resource lifecycle 改造。
+
+永久 semantic authority 为：
+
+```text
+runtime schema
++ model-scoped metadata/glossary
++ runtime members
++ explicit user expression
++ compatible committed structured Memory
+→ Semantic Grounding
+→ deterministic StateTransition
+→ deterministic DAX
+→ QueryResult
+→ VerifiedFactSet
+```
+
+日期角色解析固定优先级为：用户显式指定日期角色 → model-scoped metadata → 可由 runtime relationship/default temporal role 唯一证明的角色 → clarification。不得要求模型只存在一个 Date/DateTime 字段；无法唯一证明时必须 fail closed，不得猜测。
+
+永久 Semantic Compatibility Gate 至少验证：已知语义形成正确 canonical slots；unknown/ambiguous object/member ZERO DAX；绝对/相对/季度/recent 时间确定性；多轮 KEEP/REPLACE/CLEAR；TopN/ranking；unsupported ZERO DAX；schema mutation fail closed；Sales/Education/Inventory/unknown holdout；production 无 benchmark-answer leakage；frontend 与 provider 无 factual/canonical semantic authority。
+
+benchmark 问题、expected 数值、问题→答案映射不得进入 production prompt/config/glossary/regex/fallback/hidden lookup。Known-answer oracle 只能位于 test/harness 边界，并且 production runtime 不得依赖它。
+
+### M5.7.2 — Report Template Architecture Closure
+
+M5.7.2 状态为 NOT STARTED，只负责 Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复；M5.7.1 不得提前实现。
+
 ### M5.9 — MCP performance and resilience
 
 仅在 M5.8 冻结后开始，只允许：
@@ -299,6 +328,14 @@ M5.7 固定顺序为 R1 docs/roadmap → R2 template-required failure reproducer
 
 M5.7 已按 R1—R11 顺序完成：template-required spy 证明无模板时只有 intent recognition，ReportData/ReportSpec/Renderer/artifact 均为 0；42 组 visual matrix 与 Rich PBIX Real Browser/manual 通过；automation-owned conversation/report/HTML/SQLite/delete-intent residual=0。M5.8—M5.10 仍为 NOT STARTED，M5 FINAL 尚未成立。
 
+## 十、M5.7.1 checkpoint 与完成边界
+
+固定顺序为 S1 docs/contract、S2 repository semantic audit、S3 known regression reproducers、S4 temporal/date-role fix、S5 object/member/ambiguity、S6 multi-turn/ranking/capability、S7 property/metamorphic stress、S8 cross-domain/schema mutation/holdout、S9 permanent Semantic Compatibility Gate、S10 focused/backend/golden/governance、S11 Rich PBIX Real/manual、S12 final docs/commit/push。任一 checkpoint FAIL 不进入下一项。
+
+完成必须同时证明：`2025年5月销售额` 正确执行；多日期模型在默认角色可证明时解析、否则 clarification；unknown member 不 fallback；多轮 slot 不丢失；TopN/ranking 正确；unsupported ZERO DAX；Sales/Education/Inventory/unknown holdout 与 schema mutation PASS；stress/property suite 和 no-answer-leakage PASS；full regression、Rich PBIX manual 与 automation residual=0；M5.5 authority 未弱化，且未开发 M5.7.2/M5.8+。
+
+M5.7.1 已按 S1—S12 完成：production-path reproducer 证明旧逻辑在 Rich 多日期模型错误依赖 cardinality；最终 date-role resolver 固定为显式角色 → 唯一 `temporal_role: default` → 唯一 temporal-grouping binding → 唯一 glossary 日期对象 → 唯一 runtime 日期字段 → clarification。Semantic Compatibility `302 passed`，backend `1901 passed, 1 skipped`，frontend `80 passed` 且 build PASS，Golden `11 passed, 1 manual-real skipped`，跨域/schema mutation、no-answer-leakage、Rich PBIX Real/manual 与 automation residual=0 均通过。M5.5 authority 保持不变，M5.7.2 / M5.8—M5.10 仍未开始。
+
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-08-26 M5.7 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*创建日期：2026-08-26 | 最后更新：2026-08-27 M5.7.1 COMPLETE — M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

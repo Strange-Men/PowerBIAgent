@@ -519,14 +519,23 @@ class MemberGrounder:
 
 class TimeGrounder:
     _RECENT_MONTHS = re.compile(r"最近\s*(\d+)\s*个?月")
-    _ABSOLUTE_MONTH = re.compile(r"(?<!\d)(\d{4})\s*年\s*(\d{1,2})\s*月")
+    _ABSOLUTE_MONTH = re.compile(
+        r"(?<!\d)(\d{4})\s*年\s*(\d{1,2})\s*月(?:份)?"
+    )
+    _NUMERIC_MONTH = re.compile(
+        r"(?<!\d)(\d{4})\s*[-/]\s*(0?[1-9]|1[0-2])(?!\s*[-/]?\s*\d)"
+    )
     _RELATIVE_NAMED_MONTH = re.compile(
-        r"去年\s*(十[一二]|十二|十|[一二三四五六七八九]|\d{1,2})\s*月"
+        r"(?P<relative>今年|去年)\s*"
+        r"(?P<month>十[一二]|十二|十|[一二三四五六七八九]|\d{1,2})"
+        r"\s*月(?:份)?"
     )
     _QUARTER = re.compile(
         r"(?:(?P<year>\d{4})\s*年|(?P<relative>今年|去年))?\s*"
-        r"第?\s*(?P<quarter>[一二三四1-4])\s*季度"
+        r"(?:第?\s*(?P<quarter>[一二三四1-4])\s*季度|"
+        r"q\s*(?P<q_quarter>[1-4]))"
     )
+    _ABSOLUTE_YEAR = re.compile(r"(?<!\d)(\d{4})\s*年")
     _ISO_DATE = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2})(?!\d)")
     _CHINESE_NUMBER = {
         "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6,
@@ -544,20 +553,29 @@ class TimeGrounder:
     ) -> TimeRangeSpec | None:
         if date_field is None:
             return None
+        normalized_input = normalize_semantic_text(user_input)
         today = self._today()
-        absolute_month = self._ABSOLUTE_MONTH.search(user_input)
+        absolute_month = self._ABSOLUTE_MONTH.search(normalized_input)
         if absolute_month:
             return self._month_range(
                 date_field, int(absolute_month.group(1)), int(absolute_month.group(2))
             )
-        relative_named_month = self._RELATIVE_NAMED_MONTH.search(user_input)
+        numeric_month = self._NUMERIC_MONTH.search(normalized_input)
+        if numeric_month:
+            return self._month_range(
+                date_field, int(numeric_month.group(1)), int(numeric_month.group(2))
+            )
+        relative_named_month = self._RELATIVE_NAMED_MONTH.search(normalized_input)
         if relative_named_month:
-            month = self._parse_number(relative_named_month.group(1))
+            month = self._parse_number(relative_named_month.group("month"))
             if month is not None:
-                return self._month_range(date_field, today.year - 1, month)
-        quarter_match = self._QUARTER.search(user_input)
+                offset = -1 if relative_named_month.group("relative") == "去年" else 0
+                return self._month_range(date_field, today.year + offset, month)
+        quarter_match = self._QUARTER.search(normalized_input)
         if quarter_match:
-            quarter = self._parse_number(quarter_match.group("quarter"))
+            quarter = self._parse_number(
+                quarter_match.group("quarter") or quarter_match.group("q_quarter")
+            )
             raw_year = quarter_match.group("year")
             relative = quarter_match.group("relative")
             year = (
@@ -566,14 +584,14 @@ class TimeGrounder:
             )
             if quarter is not None:
                 return self._quarter_range(date_field, year, quarter)
-        if "上个月" in user_input:
+        if "上个月" in normalized_input or "上月" in normalized_input:
             year, month = self._shift_month(today.year, today.month, -1)
             return self._month_range(date_field, year, month)
-        if "本月" in user_input:
+        if "本月" in normalized_input:
             return self._month_range(
                 date_field, today.year, today.month, mode=TimeRangeMode.CURRENT_MONTH
             )
-        if "今年" in user_input:
+        if "今年" in normalized_input:
             return TimeRangeSpec(
                 date_field=date_field.canonical_name,
                 start_date=date(today.year, 1, 1),
@@ -581,7 +599,7 @@ class TimeGrounder:
                 mode=TimeRangeMode.CURRENT_YEAR,
                 grain="year",
             )
-        if "去年" in user_input:
+        if "去年" in normalized_input:
             previous_year = today.year - 1
             return TimeRangeSpec(
                 date_field=date_field.canonical_name,
@@ -590,8 +608,8 @@ class TimeGrounder:
                 mode=TimeRangeMode.EXPLICIT_RANGE,
                 grain="year",
             )
-        recent = self._RECENT_MONTHS.search(user_input)
-        recent_count = 6 if "最近半年" in user_input else None
+        recent = self._RECENT_MONTHS.search(normalized_input)
+        recent_count = 6 if "最近半年" in normalized_input else None
         if recent:
             recent_count = int(recent.group(1))
         if recent_count is not None:
@@ -610,7 +628,7 @@ class TimeGrounder:
                 mode=TimeRangeMode.RECENT_MONTHS,
                 grain="month",
             )
-        dates = self._ISO_DATE.findall(user_input)
+        dates = self._ISO_DATE.findall(normalized_input)
         if len(dates) == 2:
             try:
                 start, end = (date.fromisoformat(item) for item in dates)
@@ -622,7 +640,10 @@ class TimeGrounder:
                 )
             except ValueError:
                 return None
-        if self._draft_has_current_evidence(user_input, time_intent):
+        absolute_year = self._ABSOLUTE_YEAR.search(normalized_input)
+        if absolute_year:
+            return self._year_range(date_field, int(absolute_year.group(1)))
+        if self._draft_has_current_evidence(normalized_input, time_intent):
             return self._resolve_draft(time_intent, date_field, today)
         return None
 
@@ -630,18 +651,22 @@ class TimeGrounder:
     def is_explicit(
         cls, user_input: str, time_intent: TimeIntentDraft | None = None
     ) -> bool:
+        normalized_input = normalize_semantic_text(user_input)
         return bool(
-            "本月" in user_input
-            or "上个月" in user_input
-            or "今年" in user_input
-            or "去年" in user_input
-            or "最近半年" in user_input
-            or cls._ABSOLUTE_MONTH.search(user_input)
-            or cls._RELATIVE_NAMED_MONTH.search(user_input)
-            or cls._QUARTER.search(user_input)
-            or cls._RECENT_MONTHS.search(user_input)
-            or len(cls._ISO_DATE.findall(user_input)) == 2
-            or cls._draft_has_current_evidence(user_input, time_intent)
+            "本月" in normalized_input
+            or "上个月" in normalized_input
+            or "上月" in normalized_input
+            or "今年" in normalized_input
+            or "去年" in normalized_input
+            or "最近半年" in normalized_input
+            or cls._ABSOLUTE_MONTH.search(normalized_input)
+            or cls._NUMERIC_MONTH.search(normalized_input)
+            or cls._RELATIVE_NAMED_MONTH.search(normalized_input)
+            or cls._QUARTER.search(normalized_input)
+            or cls._RECENT_MONTHS.search(normalized_input)
+            or cls._ABSOLUTE_YEAR.search(normalized_input)
+            or len(cls._ISO_DATE.findall(normalized_input)) == 2
+            or cls._draft_has_current_evidence(normalized_input, time_intent)
         )
 
     @staticmethod
@@ -1165,40 +1190,25 @@ class SemanticGroundingService:
             ))
 
         if self.time.is_explicit(user_input, intent.time_intent):
-            date_fields = tuple(
-                obj for obj in self.catalog.by_type(SemanticObjectType.FIELD)
-                if "date" in obj.data_type.casefold() or "time" in obj.data_type.casefold()
-            )
-            glossary_date_fields = tuple(
-                obj
-                for obj in date_fields
-                if obj.source == SemanticObjectSource.RUNTIME_GLOSSARY
-            )
-            if glossary_date_fields:
-                date_fields = glossary_date_fields
-            if len(date_fields) != 1:
-                candidates = tuple(item.object_id for item in date_fields)
-                date_result = ObjectGroundingResult(
-                    status=(
-                        GroundingStatus.AMBIGUOUS
-                        if len(date_fields) > 1 else GroundingStatus.UNRESOLVED
-                    ),
-                    role="date_field",
-                    phrase=user_input,
-                    candidate_ids=candidates,
-                    method="date_field_cardinality",
-                )
+            date_result = self._resolve_date_field(user_input)
+            if self._requires_clarification(date_result):
                 object_results.append(date_result)
                 return self._clarification(
                     date_result.status, object_results, member_results,
                     "请明确要使用的日期字段。", disagreements,
                 )
-            date_result = ObjectGrounder._resolved(
-                "date_field", user_input, date_fields[0], "unique_runtime_date_field"
-            )
             object_results.append(date_result)
+            date_field = date_result.canonical_object
+            if date_field is None:
+                return self._clarification(
+                    GroundingStatus.UNRESOLVED,
+                    object_results,
+                    member_results,
+                    "请明确要使用的日期字段。",
+                    disagreements,
+                )
             time_range = self.time.ground(
-                user_input, date_fields[0], intent.time_intent
+                user_input, date_field, intent.time_intent
             )
             if time_range is None:
                 return self._clarification(
@@ -1208,8 +1218,8 @@ class SemanticGroundingService:
             delta.time_range = time_range
             delta.time_specified = True
             delta.dimension_tables[
-                date_fields[0].canonical_name
-            ] = date_fields[0].table_name
+                date_field.canonical_name
+            ] = date_field.table_name
 
         self._ground_analysis(user_input, draft, delta)
         if delta.clear_time:
@@ -1234,6 +1244,149 @@ class SemanticGroundingService:
             object_results=object_results,
             member_results=member_results,
             intent_disagreements=disagreements,
+        )
+
+    def _resolve_date_field(self, user_input: str) -> ObjectGroundingResult:
+        date_fields = tuple(
+            obj
+            for obj in self.catalog.by_type(SemanticObjectType.FIELD)
+            if (
+                "date" in obj.data_type.casefold()
+                or "time" in obj.data_type.casefold()
+            )
+            and obj.temporal_grouping is None
+        )
+        if not date_fields:
+            return ObjectGroundingResult(
+                status=GroundingStatus.UNRESOLVED,
+                role="date_field",
+                phrase=user_input,
+                method="runtime_date_field_missing",
+            )
+
+        normalized_input = normalize_semantic_text(user_input)
+        scored_mentions: list[tuple[int, str, CatalogObject]] = []
+        for obj in date_fields:
+            terms = (
+                obj.canonical_name,
+                obj.display_name or "",
+                *obj.aliases,
+            )
+            for term in terms:
+                normalized_term = normalize_semantic_text(term)
+                if normalized_term and normalized_term in normalized_input:
+                    scored_mentions.append((len(normalized_term), normalized_term, obj))
+        if scored_mentions:
+            strongest = max(score for score, _, _ in scored_mentions)
+            strongest_mentions = [
+                (term, obj)
+                for score, term, obj in scored_mentions
+                if score == strongest
+            ]
+            mentioned = {
+                obj.object_id: obj for _, obj in strongest_mentions
+            }
+            conflict_ids = {
+                object_id
+                for term, _ in strongest_mentions
+                for object_id in self.catalog.alias_conflicts.get(term, ())
+            }
+            if conflict_ids:
+                return ObjectGroundingResult(
+                    status=GroundingStatus.CONFIG_CONFLICT,
+                    role="date_field",
+                    phrase=user_input,
+                    candidate_ids=tuple(sorted(conflict_ids)),
+                    method="explicit_date_role_alias_conflict",
+                )
+            if len(mentioned) == 1:
+                return ObjectGrounder._resolved(
+                    "date_field",
+                    user_input,
+                    next(iter(mentioned.values())),
+                    "explicit_current_date_role",
+                )
+            return ObjectGrounder._ambiguous(
+                "date_field",
+                user_input,
+                tuple(mentioned.values()),
+                "multiple_explicit_date_roles",
+            )
+
+        defaults = tuple(
+            obj for obj in date_fields if obj.temporal_role == "default"
+        )
+        if len(defaults) == 1:
+            return ObjectGrounder._resolved(
+                "date_field",
+                user_input,
+                defaults[0],
+                "model_scoped_default_temporal_role",
+            )
+        if len(defaults) > 1:
+            return ObjectGrounder._ambiguous(
+                "date_field",
+                user_input,
+                defaults,
+                "multiple_default_temporal_roles",
+            )
+
+        grouping_targets: dict[str, CatalogObject] = {}
+        for obj in self.catalog.by_type(SemanticObjectType.FIELD):
+            binding = obj.temporal_grouping
+            if binding is None:
+                continue
+            target = next(
+                (
+                    candidate
+                    for candidate in date_fields
+                    if candidate.table_name == binding.date_table_name
+                    and candidate.canonical_name == binding.date_field
+                ),
+                None,
+            )
+            if target is not None:
+                grouping_targets[target.object_id] = target
+        if len(grouping_targets) == 1:
+            return ObjectGrounder._resolved(
+                "date_field",
+                user_input,
+                next(iter(grouping_targets.values())),
+                "unique_temporal_grouping_date_binding",
+            )
+        if len(grouping_targets) > 1:
+            return ObjectGrounder._ambiguous(
+                "date_field",
+                user_input,
+                tuple(grouping_targets.values()),
+                "multiple_temporal_grouping_date_bindings",
+            )
+
+        glossary_dates = tuple(
+            obj
+            for obj in date_fields
+            if obj.source == SemanticObjectSource.RUNTIME_GLOSSARY
+        )
+        if len(glossary_dates) == 1:
+            return ObjectGrounder._resolved(
+                "date_field",
+                user_input,
+                glossary_dates[0],
+                "unique_model_scoped_temporal_object",
+            )
+
+        if len(date_fields) == 1:
+            return ObjectGrounder._resolved(
+                "date_field",
+                user_input,
+                date_fields[0],
+                "unique_runtime_date_field",
+            )
+        return ObjectGrounder._ambiguous(
+            "date_field",
+            user_input,
+            date_fields,
+            "unproven_default_date_role",
         )
 
     def _signals_only_repeat_inherited_measure(

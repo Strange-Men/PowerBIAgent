@@ -39,6 +39,11 @@ fields:
     aliases:
       - 订单日期
       - 销售日期
+  Date:
+    table_name: Date
+    object_type: field
+    required: false
+    temporal_role: default
   YearMonth:
     table_name: Date
     object_type: field

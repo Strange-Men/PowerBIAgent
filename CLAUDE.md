@@ -379,6 +379,14 @@ PowerBIAgent/
 - M5.9 只实现 MCP profiling、session reuse、cache、bounded concurrency、bounded queue/backpressure、20/50/100 concurrency、restart/fault/soak；禁止修改 Semantic/DAX/VerifiedFactSet authority。
 - M5.10 只实现固定专业销售模板与“简易模板/销售模板”显式选择，固定链为 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed renderer`；禁止 LLM 临场生成 HTML/CSS/SVG。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
 
+### M5.7.1 Semantic Reliability / Regression Firewall 硬规则
+
+- M5.7.1 只处理 Intent、Grounding/StateTransition、semantic validation、Memory inheritance、Deterministic DAX 邻接回归与永久 Semantic Compatibility Gate；不开发报表视觉、Template/Renderer Registry、多模型 Provider 或 MCP 性能。
+- `2025年5月销售额` 必须先建立 production-path failure reproducer，再做通用修复；禁止按句子特判。
+- Date role 只能按用户显式角色、model-scoped metadata、可证明的 runtime relationship/default temporal role依次选择；没有唯一证据时 clarification，禁止选择任意 Date/DateTime 字段。
+- 测试答案、已知业务数值和问题→答案映射不得写入 production prompt/config/glossary/regex/fallback/lookup；Known-answer oracle 与 production runtime 必须物理或依赖方向隔离。
+- 后续 M5.7.2 / M5.8 / M5.9 / M5.10 修改前后都必须运行同一 Semantic Compatibility Gate；M5.8 的 DeepSeek/Kimi 必须共享该 Gate。
+
 ---
 
-*最后更新：2026-08-26 | M5.7 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-27 | M5.7.1 COMPLETE — M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

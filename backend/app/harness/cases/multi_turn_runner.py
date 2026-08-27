@@ -190,7 +190,12 @@ class MultiTurnBenchmarkRunner:
     ) -> ConversationEvaluation:
         provider = _ScriptedProvider(fixtures)
         adapter = _ScriptedPowerBIAdapter(query_results)
-        settings = Settings(llm_mode=LLMMode.MOCK, powerbi_mode=PowerBIMode.MOCK)
+        settings = Settings(
+            _env_file=None,
+            llm_mode=LLMMode.MOCK,
+            powerbi_mode=PowerBIMode.MOCK,
+            persistence_backend="memory",
+        )
         app = create_app(settings=settings)
 
         async with app.router.lifespan_context(app):

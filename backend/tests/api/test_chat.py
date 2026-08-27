@@ -1348,6 +1348,69 @@ class _M533MultiTurnAdapter(_M24FakeLocalPowerBIAdapter):
         )
 
 
+class _M571RichTemporalAdapter(_M533MultiTurnAdapter):
+    async def get_semantic_model_schema(self, semantic_model_key: str):
+        self.schema_calls += 1
+        assert semantic_model_key == "local_desktop_model"
+        return SemanticModelSchema(
+            name="Rich Local Model",
+            key=semantic_model_key,
+            tables=[
+                TableSchema(
+                    name="Sales",
+                    columns=[
+                        ColumnSchema(name="Category", data_type="string"),
+                        ColumnSchema(name="Product", data_type="string"),
+                        ColumnSchema(name="OrderDate", data_type="datetime"),
+                        ColumnSchema(name="Region", data_type="string"),
+                    ],
+                    measures=[
+                        MeasureSchema(name="Total Sales", data_type="decimal"),
+                        MeasureSchema(name="Total Quantity", data_type="int64"),
+                    ],
+                ),
+                TableSchema(
+                    name="Date",
+                    columns=[
+                        ColumnSchema(name="Date", data_type="datetime"),
+                        ColumnSchema(name="YearMonth", data_type="datetime"),
+                    ],
+                ),
+            ],
+            relationships=[RelationshipSchema(
+                from_table="Sales",
+                from_column="OrderDate",
+                to_table="Date",
+                to_column="Date",
+                is_active=True,
+            )],
+        )
+
+
+class _M571AmbiguousTemporalAdapter(_M533MultiTurnAdapter):
+    async def get_semantic_model_schema(self, semantic_model_key: str):
+        self.schema_calls += 1
+        assert semantic_model_key == "local_desktop_model"
+        return SemanticModelSchema(
+            name="Ambiguous Local Model",
+            key=semantic_model_key,
+            tables=[TableSchema(
+                name="Sales",
+                columns=[
+                    ColumnSchema(name="Category", data_type="string"),
+                    ColumnSchema(name="Product", data_type="string"),
+                    ColumnSchema(name="OrderDate", data_type="datetime"),
+                    ColumnSchema(name="ShipDate", data_type="datetime"),
+                    ColumnSchema(name="Region", data_type="string"),
+                ],
+                measures=[
+                    MeasureSchema(name="Total Sales", data_type="decimal"),
+                    MeasureSchema(name="Total Quantity", data_type="int64"),
+                ],
+            )],
+        )
+
+
 class _M56MonthlyTrendProvider(LLMProvider):
     @property
     def provider_name(self) -> str:
@@ -1644,6 +1707,28 @@ def _patch_fake_runtime_glossary(monkeypatch):
                         "object_type": "field",
                         "aliases": aliases.get(column.name, []),
                     }
+                    if (
+                        table.name == "Date"
+                        and column.name == "Date"
+                        and any(
+                            candidate.name == "YearMonth"
+                            for candidate in table.columns
+                        )
+                    ):
+                        metadata["temporal_role"] = "default"
+                    if (
+                        table.name == "Date"
+                        and column.name == "YearMonth"
+                        and any(
+                            candidate.name == "Date"
+                            for candidate in table.columns
+                        )
+                    ):
+                        metadata["temporal_grouping"] = {
+                            "grain": "month",
+                            "date_field": "Date",
+                            "date_table_name": "Date",
+                        }
                     if column.name == "Region":
                         metadata["member_aliases"] = {
                             "华南": "华南",
@@ -1723,7 +1808,10 @@ def _patch_unsupported_routing_composition(monkeypatch):
     return main_module.create_app(settings=settings), provider
 
 
-def _patch_m533_multi_turn_composition(monkeypatch):
+def _patch_m533_multi_turn_composition(
+    monkeypatch,
+    adapter_type=_M533MultiTurnAdapter,
+):
     import backend.app.llm.factory as llm_factory
     import backend.app.main as main_module
 
@@ -1733,7 +1821,7 @@ def _patch_m533_multi_turn_composition(monkeypatch):
     monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
     _patch_fake_runtime_glossary(monkeypatch)
     monkeypatch.setattr(
-        main_module, "LocalMCPPowerBIAdapter", _M533MultiTurnAdapter
+        main_module, "LocalMCPPowerBIAdapter", adapter_type
     )
     settings = Settings(
         _env_file=None,
@@ -2250,6 +2338,79 @@ class TestPendingClarificationProductionPath:
 
 
 class TestM24DeepSeekLocalChat:
+    @pytest.mark.asyncio
+    async def test_m571_rich_model_absolute_month_uses_bound_date_role(
+        self, monkeypatch
+    ):
+        app, provider = _patch_m533_multi_turn_composition(
+            monkeypatch, _M571RichTemporalAdapter
+        )
+        provider.active = "absolute"
+        conversation_id = "m571-rich-absolute-month"
+
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                dax_calls = service.powerbi.dax_calls
+                response = await client.post("/api/v1/chat", json={
+                    "message": "2025年5月销售额",
+                    "conversation_id": conversation_id,
+                    "request_id": "m571-rich-absolute-month-request",
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+            body = response.json()
+            assert response.status_code == 200, body
+            assert body["terminal_state"] == "completed", body
+            assert body["memory_commit"] is True
+            audit = body["execution_audit"]
+            assert audit["dax_executed"] is True
+            plan = audit["canonical_query_plan"]
+            assert plan["time_range"]["date_field"] == "Date"
+            assert plan["time_range"]["start_date"] == "2025-05-01"
+            assert plan["time_range"]["end_date"] == "2025-05-31"
+            assert plan["dimension_tables"]["Date"] == "Date"
+            assert service.powerbi.dax_calls == dax_calls + 1
+            committed = await service.pipeline.get_latest_committed_memory(
+                conversation_id, RuntimeDataMode.REAL
+            )
+            assert committed is not None
+            assert committed.time_range is not None
+            assert committed.time_range.date_field == "Date"
+
+    @pytest.mark.asyncio
+    async def test_m571_unproven_date_role_fails_closed_before_dax(
+        self, monkeypatch
+    ):
+        app, provider = _patch_m533_multi_turn_composition(
+            monkeypatch, _M571AmbiguousTemporalAdapter
+        )
+        provider.active = "absolute"
+        conversation_id = "m571-ambiguous-date-role"
+
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                dax_calls = service.powerbi.dax_calls
+                response = await client.post("/api/v1/chat", json={
+                    "message": "2025年5月销售额",
+                    "conversation_id": conversation_id,
+                    "request_id": "m571-ambiguous-date-role-request",
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+            body = response.json()
+            assert response.status_code == 200, body
+            assert body["terminal_state"] == "clarification_required", body
+            assert body["memory_commit"] is False
+            assert body["execution_audit"]["dax_executed"] is False
+            assert service.powerbi.dax_calls == dax_calls
+            assert await service.pipeline.get_latest_committed_memory(
+                conversation_id, RuntimeDataMode.REAL
+            ) is None
+
     @pytest.mark.asyncio
     async def test_m55_unknown_member_fails_closed_before_dax_and_commit(
         self, monkeypatch

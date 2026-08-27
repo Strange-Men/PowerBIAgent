@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.7 — 简易报表视觉与模板必选（COMPLETE）**。M5.5 Semantic/DAX authority 与 M5.6 Presentation authority 已冻结；M5.8—M5.10 尚未开始。
+当前版本：**M5.7.1 — Semantic Reliability / Regression Firewall（COMPLETE）**。M5.5 / M5.6 / M5.7 已封板；M5.7.2 与 M5.8—M5.10 尚未开始。
 
 ## 项目概览
 
@@ -285,6 +285,9 @@ Conversation API 仅在 SQLite 后端可用；namespace 查询参数必填，每
 # 后端完整回归
 python -m pytest backend/tests -q
 
+# 永久语义兼容门禁
+python scripts/check_semantic_compatibility.py
+
 # Golden 用例
 python -m backend.app.harness.cases
 
@@ -322,6 +325,8 @@ python -m alembic upgrade head
 | M5.5 | COMPLETE — Semantic correctness、runtime member、multi-turn、TopN、time 与 capability boundary |
 | M5.6 | COMPLETE — Presentation/Localization/Resource UX truth；共享 floating menu 与 Settings nested-scroll/action 可达性 |
 | M5.7 | COMPLETE — 简易报表视觉、响应式可读性、显式模板必选与人工视觉验收 |
+| M5.7.1 | COMPLETE — 统一语义可靠性、回归防火墙与高强度问答验收 |
+| M5.7.2 | NOT STARTED — Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复 |
 | M5.8 | NOT STARTED — OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection |
 | M5.9 | NOT STARTED — MCP performance、resilience、并发与压力验证 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
@@ -353,4 +358,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-26 | M5.7 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-27 | M5.7.1 COMPLETE — M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

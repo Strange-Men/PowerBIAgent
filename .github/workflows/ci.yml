@@ -61,14 +61,17 @@ jobs:
         run: python scripts/check_documentation_governance.py
 
       # ── Tests ────────────────────────────────────────────────────
-      - name: 5. Full pytest (includes dynamic version consistency)
+      - name: 5. Semantic Compatibility Gate
+        run: python scripts/check_semantic_compatibility.py
+
+      - name: 6. Full pytest (includes dynamic version consistency)
         run: python -m pytest backend/tests -q
 
-      - name: 6. Golden Cases
+      - name: 7. Golden Cases
         run: python -m backend.app.harness.cases
 
       # ── Final checks ─────────────────────────────────────────────
-      - name: 7. Git diff check (strict)
+      - name: 8. Git diff check (strict)
         run: |
           python -c "
           import subprocess, sys

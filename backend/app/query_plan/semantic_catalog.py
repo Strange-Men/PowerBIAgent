@@ -61,6 +61,7 @@ class CatalogObject(BaseModel):
     aliases: tuple[str, ...] = ()
     member_aliases: dict[str, str] = Field(default_factory=dict)
     member_suffixes: tuple[str, ...] = ()
+    temporal_role: Literal["default"] | None = None
     temporal_grouping: TemporalGroupingBinding | None = None
     source: SemanticObjectSource = SemanticObjectSource.RUNTIME
 
@@ -282,6 +283,23 @@ class SemanticCatalogBuilder:
                         raise GlossaryCatalogError(
                             "glossary_temporal_grouping_date_field_invalid"
                         )
+                raw_temporal_role = metadata.get("temporal_role")
+                temporal_role: Literal["default"] | None = None
+                if raw_temporal_role is not None:
+                    if object_type != SemanticObjectType.FIELD:
+                        raise GlossaryCatalogError(
+                            "glossary_temporal_role_object_invalid"
+                        )
+                    if raw_temporal_role != "default":
+                        raise GlossaryCatalogError(
+                            "glossary_temporal_role_invalid"
+                        )
+                    runtime_type = runtime_object.data_type.casefold()
+                    if "date" not in runtime_type and "time" not in runtime_type:
+                        raise GlossaryCatalogError(
+                            "glossary_temporal_role_type_invalid"
+                        )
+                    temporal_role = "default"
                 normalized_seen: set[str] = set()
                 clean_aliases: list[str] = []
                 for alias in aliases:
@@ -298,9 +316,16 @@ class SemanticCatalogBuilder:
                     "aliases": tuple(clean_aliases),
                     "member_aliases": member_aliases,
                     "member_suffixes": member_suffixes,
+                    "temporal_role": temporal_role,
                     "temporal_grouping": temporal_grouping,
                     "source": SemanticObjectSource.RUNTIME_GLOSSARY,
                 })
+
+        default_temporal_roles = [
+            obj for obj in objects.values() if obj.temporal_role == "default"
+        ]
+        if len(default_temporal_roles) > 1:
+            raise GlossaryCatalogError("glossary_default_temporal_role_conflict")
 
         conflicts = {
             alias: tuple(sorted(targets))

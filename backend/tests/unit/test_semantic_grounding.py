@@ -82,6 +82,41 @@ def _schema(*, two_dates: bool = False) -> SemanticModelSchema:
     )
 
 
+def _rich_temporal_schema() -> SemanticModelSchema:
+    return SemanticModelSchema(
+        name="Rich Local",
+        key="local_desktop_model",
+        tables=[
+            TableSchema(
+                name="Sales",
+                columns=[
+                    ColumnSchema(name="Category", data_type="String"),
+                    ColumnSchema(name="Product", data_type="String"),
+                    ColumnSchema(name="OrderDate", data_type="DateTime"),
+                ],
+                measures=[
+                    MeasureSchema(name="Total Sales", data_type="Double"),
+                    MeasureSchema(name="Total Quantity", data_type="Int64"),
+                ],
+            ),
+            TableSchema(
+                name="Date",
+                columns=[
+                    ColumnSchema(name="Date", data_type="DateTime"),
+                    ColumnSchema(name="YearMonth", data_type="DateTime"),
+                ],
+            ),
+        ],
+        relationships=[RelationshipSchema(
+            from_table="Sales",
+            from_column="OrderDate",
+            to_table="Date",
+            to_column="Date",
+            is_active=True,
+        )],
+    )
+
+
 def _glossary(**overrides):
     raw = {
         "version": 1,
@@ -494,10 +529,16 @@ class TestMemberAndTimeGrounding:
         ("phrase", "expected_start", "expected_end"),
         [
             ("2025年5月销售额", date(2025, 5, 1), date(2025, 5, 31)),
+            ("2025年5月份销售额", date(2025, 5, 1), date(2025, 5, 31)),
+            ("2025-05 销售额", date(2025, 5, 1), date(2025, 5, 31)),
             ("去年五月", date(2025, 5, 1), date(2025, 5, 31)),
+            ("今年5月", date(2026, 5, 1), date(2026, 5, 31)),
+            ("上月", date(2026, 7, 1), date(2026, 7, 31)),
             ("上个月", date(2026, 7, 1), date(2026, 7, 31)),
             ("最近半年", date(2026, 3, 1), date(2026, 8, 31)),
             ("今年第一季度", date(2026, 1, 1), date(2026, 3, 31)),
+            ("2025年Q1", date(2025, 1, 1), date(2025, 3, 31)),
+            ("２０２５年５月份", date(2025, 5, 1), date(2025, 5, 31)),
         ],
     )
     def test_time_fast_path_covers_stable_structures(
@@ -509,6 +550,20 @@ class TestMemberAndTimeGrounding:
         result = TimeGrounder(lambda: date(2026, 8, 13)).ground(phrase, field)
         assert result is not None
         assert (result.start_date, result.end_date) == (expected_start, expected_end)
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "2025年5月份销售额",
+            "2025-05 销售额",
+            "今年5月",
+            "上月",
+            "2025年Q1",
+            "２０２５年５月份",
+        ],
+    )
+    def test_time_fast_path_marks_supported_variants_explicit(self, phrase):
+        assert TimeGrounder.is_explicit(phrase)
 
     def test_bounded_time_draft_requires_current_input_evidence(self):
         field = next(
@@ -544,6 +599,114 @@ class TestMemberAndTimeGrounding:
         assert outcome.status == GroundingStatus.RESOLVED
         assert outcome.delta.time_range is not None
         assert outcome.delta.time_range.date_field == "OrderDate"
+
+    @pytest.mark.asyncio
+    async def test_absolute_month_uses_metadata_bound_default_date_role(self):
+        catalog = SemanticCatalogBuilder().build(_rich_temporal_schema())
+
+        async def no_lookup(*_):
+            raise AssertionError("member lookup should not run")
+
+        outcome = await SemanticGroundingService(
+            catalog, today=lambda: date(2026, 8, 13)
+        ).ground(
+            "2025年5月销售额",
+            _intent(
+                detected_measures=["销售额"],
+                detected_time_range="2025年5月",
+            ),
+            _draft(measures=["Total Sales"], time_range="2025年5月"),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.time_range is not None
+        assert outcome.delta.time_range.date_field == "Date"
+        assert outcome.delta.dimension_tables["Date"] == "Date"
+        assert outcome.delta.time_range.start_date == date(2025, 5, 1)
+        assert outcome.delta.time_range.end_date == date(2025, 5, 31)
+
+    @pytest.mark.asyncio
+    async def test_explicit_date_role_overrides_model_default(self):
+        schema = _schema(two_dates=True)
+        glossary = _glossary()
+        glossary["schema_fingerprint"] = compute_schema_fingerprint(schema)
+        glossary["fields"]["OrderDate"]["temporal_role"] = "default"
+        glossary["fields"]["ShipDate"] = {
+            "table_name": "Sales",
+            "object_type": "field",
+            "aliases": ["发货日期"],
+        }
+        catalog = SemanticCatalogBuilder().build_from_data(schema, glossary)
+
+        async def no_lookup(*_):
+            raise AssertionError("date role must not trigger member lookup")
+
+        outcome = await SemanticGroundingService(
+            catalog, today=lambda: date(2026, 8, 13)
+        ).ground(
+            "按发货日期看2025年5月销售额",
+            _intent(detected_measures=["销售额"]),
+            _draft(measures=["Total Sales"]),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.time_range is not None
+        assert outcome.delta.time_range.date_field == "ShipDate"
+
+    @pytest.mark.asyncio
+    async def test_model_scoped_default_date_role_resolves_multiple_dates(self):
+        schema = _schema(two_dates=True)
+        glossary = _glossary()
+        glossary["schema_fingerprint"] = compute_schema_fingerprint(schema)
+        glossary["fields"]["OrderDate"]["temporal_role"] = "default"
+        glossary["fields"]["ShipDate"] = {
+            "table_name": "Sales",
+            "object_type": "field",
+            "aliases": ["发货日期"],
+        }
+        catalog = SemanticCatalogBuilder().build_from_data(schema, glossary)
+
+        async def no_lookup(*_):
+            raise AssertionError("date role must not trigger member lookup")
+
+        outcome = await SemanticGroundingService(
+            catalog, today=lambda: date(2026, 8, 13)
+        ).ground(
+            "2025年5月销售额",
+            _intent(detected_measures=["销售额"]),
+            _draft(measures=["Total Sales"]),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.time_range is not None
+        assert outcome.delta.time_range.date_field == "OrderDate"
+
+    def test_duplicate_model_default_date_roles_are_rejected(self):
+        schema = _schema(two_dates=True)
+        glossary = _glossary()
+        glossary["schema_fingerprint"] = compute_schema_fingerprint(schema)
+        glossary["fields"]["OrderDate"]["temporal_role"] = "default"
+        glossary["fields"]["ShipDate"] = {
+            "table_name": "Sales",
+            "object_type": "field",
+            "aliases": ["发货日期"],
+            "temporal_role": "default",
+        }
+
+        with pytest.raises(
+            GlossaryCatalogError,
+            match="glossary_default_temporal_role_conflict",
+        ):
+            SemanticCatalogBuilder().build_from_data(schema, glossary)
 
     @pytest.mark.asyncio
     async def test_glossary_owner_becomes_canonical_dimension_table_hint(self):

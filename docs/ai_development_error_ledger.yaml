@@ -3,11 +3,77 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-26 | M5.7 COMPLETE；M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立
+# 最后更新：2026-08-27 | M5.7.1 COMPLETE；M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-571-001
+  title: 显式绝对月份在完整 Grounding 中因日期角色解析失败而错误澄清
+  category: ERR
+  first_detected_version: M5.7.1
+  symptom: Rich PBIX 输入“2025年5月销售额”时 TimeGrounder 已可确定范围，但完整 SemanticGrounding 返回“请明确要使用的时间范围”
+  local_evidence: backend/tests/api/test_chat.py 与 backend/tests/unit/test_semantic_grounding.py 已建立 Rich multi-date production-path failure reproducer；修复前 TimeGrounder 可解析月份，但完整 Grounding 因多个日期字段而 clarification
+  authoritative_sources:
+  - title: ADR-008 Business Semantic Catalog and Grounding Authority
+    reason: 时间边界由 deterministic rules 形成，日期字段必须由 runtime/model-scoped authority 唯一证明
+  - title: M5 Generalization and Acceptance Contract
+    reason: explicit semantic evidence 优先，无法唯一证明才 clarification
+  root_cause: SemanticGroundingService 在显式时间出现时仅接受唯一 Date/DateTime 字段或唯一 glossary 日期字段；Rich 模型同时暴露 Sales[OrderDate]、Date[Date] 与 Date[YearMonth]，导致已解析的时间范围在 date-field cardinality 阶段被错误拒绝
+  failed_attempts: []
+  repair_attempt_count: 0
+  final_fix: 新增 model-scoped temporal_role metadata 与 deterministic date-role resolver；按显式角色、唯一 default、唯一 temporal-grouping binding、唯一 glossary 日期对象、唯一 runtime 日期字段依次取证，无法唯一证明则 clarification。TimeGrounder 同时统一 NFKC 并补齐月份、数字年月、相对月份、季度与上月变体。
+  regression_tests:
+  - backend/tests/api/test_chat.py
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/unit/test_semantic_compatibility.py
+  prohibited_patterns:
+  - 针对“2025年5月销售额”写完整句子特判
+  - 无证据选择第一个 Date 或 DateTime 字段
+  - 用旧 Memory 覆盖当前明确时间
+  prevention_rules:
+  - date role 按 explicit role、model metadata、provable runtime relationship/default role 依次选择
+  - 无唯一证据必须 clarification 且 ZERO DAX
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-27'
+    action: discovered
+    version: M5.7.1
+- id: GOV-571-001
+  title: Semantic benchmark 答案不得泄漏到 production runtime
+  category: GOV
+  first_detected_version: M5.7.1
+  symptom: 高强度兼容套件若把已知问题、业务数值或问题到答案映射写入 production prompt/config/glossary/regex/fallback，会产生虚假正确率
+  local_evidence: scripts/check_semantic_compatibility.py 已扫描 production prompt/config/glossary、frontend production source 与 semantic authority provider imports；backend/tests/unit/test_semantic_compatibility_gate.py 锁定该治理合同
+  authoritative_sources:
+  - title: ADR-008 Business Semantic Catalog and Grounding Authority
+    reason: glossary 只能描述 model-scoped identity，不能成为答案库
+  - title: ADR-009 Deterministic Query Execution and Verified Fact Authority
+    reason: 数值与结果事实只能来自 QueryResult 和 VerifiedFactSet
+  root_cause: 压力回归与 production semantic assets 原先只有人工约束，缺少机器可校验的 benchmark question/value、oracle dependency 与 provider-authority 隔离门禁
+  failed_attempts: []
+  repair_attempt_count: 0
+  final_fix: 建立永久 Semantic Compatibility Gate；expected 继续只存在于 test/harness oracle，production prompt/config/glossary 禁止 benchmark 完整问题、oracle key 与 distinctive expected value，frontend 禁止 benchmark factual value，semantic authority 禁止 DeepSeek-specific provider import。
+  regression_tests:
+  - backend/tests/unit/test_semantic_compatibility_gate.py
+  - backend/tests/unit/test_known_answer_oracle.py
+  - scripts/check_semantic_compatibility.py
+  prohibited_patterns:
+  - benchmark expected number in production prompt/config/glossary
+  - question-to-answer production lookup
+  - production import of test or harness oracle
+  prevention_rules:
+  - expected 只存在于 test/harness oracle
+  - Semantic Compatibility Gate 必须执行 answer-leakage scan
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-27'
+    action: discovered
+    version: M5.7.1
 - id: GOV-570-001
   title: 报表请求不得在模板缺失时继续或隐式选择默认模板
   category: GOV

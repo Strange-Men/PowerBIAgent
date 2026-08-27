@@ -1,11 +1,11 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-08-26
+> **最后更新：** 2026-08-27
 
 ## 当前阶段
 
-**M5.7 — 简易报表视觉与模板必选（COMPLETE）。** M5.5 Semantic/DAX authority 与 M5.6 Presentation authority 已冻结；M5.8—M5.10 均未开始；M5 FINAL 尚未成立。
+**M5.7.1 — Semantic Reliability / Regression Firewall（COMPLETE）。** M5.5 / M5.6 / M5.7 已封板；M5.7.2 与 M5.8—M5.10 均未开始；M5 FINAL 尚未成立。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -28,6 +28,8 @@
 | **M5.5** | **Semantic correctness 与 capability boundary** | **✅ COMPLETE** |
 | **M5.6** | **Presentation/Localization/Resource UX truth** | **✅ COMPLETE** |
 | **M5.7** | **简易报表视觉 + Report Template Required + 人工视觉验收** | **✅ COMPLETE** |
+| **M5.7.1** | **统一语义可靠性、回归防火墙与高强度问答验收** | **✅ COMPLETE** |
+| **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复** | **⏳ NOT STARTED** |
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **⏳ NOT STARTED** |
 | **M5.9** | **MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
@@ -315,15 +317,28 @@
 - 本轮 automation-owned conversation、两份 report 与 HTML 已经正式 API 清理；SQLite namespace、delete intent、ownership registry residual=0。
 - Fresh final gates：backend `1866 passed, 1 skipped`；frontend typecheck/lint/build PASS、Vitest `80 passed`；Golden `11 passed, 1 manual-real skipped`；Architecture `120`、Repository Safety `303`、Error Ledger `35`、Documentation/Artifact Governance、compileall 与 `git diff --check` PASS。
 
+### M5.7.1 completed contract and fresh acceptance
+
+- P0 根因：完整 SemanticGrounding 在出现显式时间时仍要求唯一 Date/DateTime 或唯一 glossary 日期字段；Rich 模型同时存在 `Sales[OrderDate]`、`Date[Date]` 与 grouping 字段，导致 TimeGrounder 已解析的 `2025-05-01..2025-05-31` 被错误 clarification。
+- 最终 date-role resolver：用户显式日期角色 → 唯一 model-scoped `temporal_role: default` → 唯一 temporal-grouping binding → 唯一 glossary 日期对象 → 唯一 runtime 日期字段 → clarification。无唯一证据、unknown member 与 unsupported capability 均继续 ZERO DAX/Memory commit。
+- 时间解析覆盖绝对月份、`2025-05`、今年/去年指定月份、上月、季度/Q1、最近 N 月与 NFKC 全角；64 组 seeded metamorphic wording、语序/标点、multi-turn KEEP/REPLACE、TopN、Sales/Education/Inventory/unknown holdout 与 schema mutation 均通过。
+- 永久 `scripts/check_semantic_compatibility.py` 已接入 CI，检查 canonical slots、ZERO-DAX 边界、answer leakage、frontend factual authority 与 provider-specific semantic authority；本轮结果 `302 passed`。
+- Fresh final gates：backend `1901 passed, 1 skipped`；frontend Vitest `80 passed`、production build PASS；Golden `11 passed, 1 manual-real skipped`；Repository Safety `306`、Architecture `120`、Error Ledger、Documentation/Artifact Governance、compileall 与 `git diff --check` PASS。
+- Rich PBIX API/Browser/manual 覆盖总销售额、绝对/相对月份、趋势、South、unknown member、readonly approximation、future prediction 与四轮 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢`；automation run `m571-real-20260827` 清理后 conversations、work memories、snapshots、reports 与 delete intents residual=0。
+- 未弱化 M5.5 semantic/DAX/VerifiedFactSet authority；未修改报表视觉或 Template/Renderer Registry；未开发 DeepSeek/Kimi；未修改 MCP performance。
+
 ## 下一步
 
-M5.5、M5.6 与 M5.7 均已 COMPLETE 并冻结。M5.8—M5.10 为 NOT STARTED；M5 FINAL 仍未成立。
+等待用户明确启动后再进入 M5.7.2；任何后续版本修改前后都必须运行永久 Semantic Compatibility Gate。M5.7.2 / M5.8—M5.10 为 NOT STARTED；M5 FINAL 仍未成立。
 
 ## 关键命令
 
 ```powershell
 # Full test suite
 D:\Conda\envs\PBIAgent\python.exe -m pytest backend\tests -q --asyncio-mode=auto
+
+# Permanent Semantic Compatibility Gate
+D:\Conda\envs\PBIAgent\python.exe scripts\check_semantic_compatibility.py
 
 # Persistence-focused
 D:\Conda\envs\PBIAgent\python.exe -m pytest backend\tests\unit\persistence -v --asyncio-mode=auto
@@ -363,4 +378,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-26 | M5.7 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-27 | M5.7.1 COMPLETE — M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

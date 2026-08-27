@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.7 — 简易报表视觉与模板必选（COMPLETE）
+> **状态：** M5.7.1 — Semantic Reliability / Regression Firewall（COMPLETE）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -41,6 +41,8 @@
 | **M5.5** | **Semantic correctness 与 capability boundary** | **✅ COMPLETE** |
 | **M5.6** | **Presentation、Localization 与 Resource UX truth** | **✅ COMPLETE** |
 | **M5.7** | **简易报表视觉 + Report Template Required** | **✅ COMPLETE** |
+| **M5.7.1** | **统一语义可靠性、回归防火墙与高强度问答验收** | **✅ COMPLETE** |
+| **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复** | **⏳ NOT STARTED** |
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **⏳ NOT STARTED** |
 | **M5.9** | **MCP performance、resilience、并发与压力验证** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
@@ -87,6 +89,24 @@ Fresh final evidence：backend `1849 passed, 1 skipped`；frontend typecheck/lin
 ### 新 M5.8 — 多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型
 
 M5.7 冻结后才允许开发 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek + Kimi-K2.6、request/conversation-scoped model selection 与同一 authority/regression contract。禁止 MCP profiling、cache、session reuse 或并发优化。
+
+### M5.7.1 — Semantic Reliability / Regression Firewall
+
+状态为 COMPLETE。已统一语义可靠性、回归防火墙与高强度问答验收，修复 M5.5—M5.7 暴露的问答语义回归，并建立所有后续版本必须运行的永久 Semantic Compatibility Gate。
+
+- 核心 P0 reproducer：`2025年5月销售额` 已能被 TimeGrounder 解析为 `2025-05-01..2025-05-31`，完整 SemanticGrounding 不得再因 date-field/date-role resolution 错误 clarification。
+- Date role 选择优先级：用户显式日期角色 → model-scoped metadata → 可唯一证明的 runtime relationship/default temporal role → clarification。多 Date/DateTime 字段不是自动失败条件，无证据时也不得猜测。
+- 永久 Gate 覆盖 canonical slots、unresolved/invalid member ZERO DAX、确定性时间、多轮 KEEP/REPLACE、TopN、unsupported ZERO DAX、schema mutation、跨域 holdout、answer leakage、frontend/provider semantic authority。
+- 禁止把 benchmark 问题、expected 数值或问题→答案映射放入 production prompt/config/glossary/regex/fallback/lookup；oracle 只存在于 test/harness 边界。
+- 固定 checkpoint：S1 docs/contract → S2 audit → S3 reproducers → S4 temporal/date-role → S5 object/member/ambiguity → S6 multi-turn/ranking/capability → S7 property/metamorphic → S8 cross-domain/schema mutation/holdout → S9 permanent Gate → S10 full gates → S11 Rich PBIX Real/manual → S12 docs/commit/push。任一失败不得进入下一阶段。
+
+完成证据：date-role 根因已由 production-path reproducer 锁定并以 metadata-driven resolver 通用修复；64 组 seeded wording metamorph、时间/语序/NFKC、unknown/ambiguity、KEEP/REPLACE、TopN、capability、Sales/Education/Inventory/unknown holdout 与 schema mutation 通过。Semantic Compatibility `302 passed`，backend `1901 passed, 1 skipped`，frontend `80 passed` 且 build PASS，Golden `11 passed, 1 manual-real skipped`，全部治理门禁与 Rich PBIX Real/manual PASS，automation-owned residual=0。
+
+M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provider 或 MCP performance。
+
+### M5.7.2 — Report Template Architecture Closure
+
+状态为 NOT STARTED。只负责 Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复；不得在 M5.7.1 提前开发。
 
 ### 新 M5.9 — MCP performance and resilience
 
@@ -347,4 +367,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-08-26 | M5.7 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-27 | M5.7.1 COMPLETE — M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

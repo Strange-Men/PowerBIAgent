@@ -2,6 +2,22 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.7.1] — 2026-08-27
+
+### Semantic Reliability / Regression Firewall（COMPLETE）
+
+- 本轮定义为“统一语义可靠性、回归防火墙与高强度问答验收”；先修复 `2025年5月销售额` 在完整 SemanticGrounding 路径错误要求时间范围的 P0 regression，再扩展到 object/member/temporal/multi-turn/ranking/capability 全域审计。
+- Date-role authority 固定为用户显式角色 → model-scoped metadata → 可唯一证明的 runtime relationship/default temporal role → clarification；禁止把“仅一个 Date/DateTime 字段”作为正常执行前提，也禁止无证据猜角色。
+- 建立永久 Semantic Compatibility Gate，覆盖 canonical slots、ZERO-DAX failure boundaries、时间变体、多轮 KEEP/REPLACE、TopN、unsupported、schema mutation、跨域/unknown holdout、answer leakage、frontend/provider authority。
+- benchmark 问题、expected 数值和问题→答案映射不得进入 production prompt/config/glossary/regex/fallback/lookup；Known-answer oracle 保持 test/harness 隔离。
+- 根因是完整 Grounding 仍以日期字段 cardinality 作为正常前提；Rich 模型的 `Sales[OrderDate]`、`Date[Date]` 与 grouping 字段并存时，即使 TimeGrounder 已解析绝对月份也会错误 clarification。最终 resolver 固定为：显式日期角色 → 唯一 model-scoped `temporal_role: default` → 唯一 temporal-grouping binding → 唯一 glossary 日期对象 → 唯一 runtime 日期字段 → clarification。
+- 时间语法补齐 `2025年5月份`、`2025-05`、今年/去年指定月份、上月、季度/Q1 与 NFKC 全角输入；无可证明日期角色、unknown member、unsupported capability 继续 fail closed 且 ZERO DAX/Memory commit。
+- Fresh final gates：Semantic Compatibility `302 passed`；backend `1901 passed, 1 skipped`；frontend Vitest `80 passed` 且 production build PASS；Golden `11 passed, 1 manual-real skipped`；Repository Safety `306`、Architecture `120`、Error Ledger、Documentation/Artifact Governance、compileall 与 `git diff --check` PASS。
+- Rich PBIX Real/API/Browser 验收覆盖总销售额、绝对/相对月份、趋势、South、unknown member、readonly approximation、future prediction 与四轮 KEEP/REPLACE/Top3；automation run `m571-real-20260827` 清理后 conversation/work memory/snapshot/report/delete-intent residual 均为 0。
+- M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provider 或 MCP performance。M5.7.2 与 M5.8 均保持 NOT STARTED。
+
+**Settings.version:** M5.7.1
+
 ## [M5.7] — 2026-08-26
 
 ### 简易报表视觉与模板必选（COMPLETE）
