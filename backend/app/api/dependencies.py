@@ -20,6 +20,7 @@ from backend.app.application.semantic_model_discovery_service import (
 )
 from backend.app.config.settings import Settings, get_settings
 from backend.app.report.resources import ReportRepository
+from backend.app.report.registry import ReportTemplateRegistry
 
 
 def get_turn_service(request: Request) -> TurnServiceProtocol:
@@ -70,6 +71,13 @@ def get_report_repository(request: Request) -> ReportRepository:
     if repository is None:
         raise RuntimeError("ReportRepository not initialized")
     return repository
+
+
+def get_report_template_registry(request: Request) -> ReportTemplateRegistry:
+    registry = getattr(request.app.state, "report_template_registry", None)
+    if registry is None:
+        raise RuntimeError("ReportTemplateRegistry not initialized")
+    return registry
 
 
 def get_conversation_history_service(request: Request) -> ConversationHistoryService:

@@ -4,6 +4,7 @@ import {
   archiveConversation,
   deleteConversation,
   deleteReport,
+  discoverReportTemplates,
   discoverSemanticModels,
   getConversationHistory,
   listArchivedConversations,
@@ -22,7 +23,7 @@ import {
   conversationTitle,
   historyItemToMessages,
 } from '../api/adapters'
-import { initialRuntimeMode, reportTemplateOptions } from '../config'
+import { initialRuntimeMode } from '../config'
 import type {
   AssistantMessage,
   BatchOperationResult,
@@ -32,6 +33,7 @@ import type {
   ConversationSession,
   ConversationSummary,
   RuntimeMode,
+  ReportTemplateOption,
   SemanticModelOption,
 } from '../types'
 
@@ -124,6 +126,21 @@ export function catalogOptions(items: SemanticModelOption[]): CatalogOption[] {
       compatibilityStatus: item.compatibility_status || 'unavailable',
     }
   })
+}
+
+export function reportTemplateCatalogOptions(
+  items: ReportTemplateOption[],
+): CatalogOption[] {
+  return items
+    .filter((item) => item.availability === 'available')
+    .map((item) => ({
+      key: item.template_key,
+      label: item.display_name,
+      description: item.description,
+      compatible: true,
+      selectable: true,
+      compatibilityStatus: 'compatible',
+    }))
 }
 
 export function reconcileSemanticModelSelection(
@@ -247,6 +264,9 @@ export function usePowerBIAgent() {
   const [selectedReportTemplate, setSelectedReportTemplateState] =
     useState<CatalogOption | null>(null)
   const selectedReportTemplateRef = useRef<CatalogOption | null>(null)
+  const [reportTemplateOptions, setReportTemplateOptions] = useState<CatalogOption[]>([])
+  const [loadingReportTemplates, setLoadingReportTemplates] = useState(true)
+  const [reportTemplateError, setReportTemplateError] = useState<string | null>(null)
 
   const replaceSessions = useCallback(
     (
@@ -366,14 +386,48 @@ export function usePowerBIAgent() {
     }
   }, [refreshSidebar])
 
+  const refreshReportTemplates = useCallback(async () => {
+    setLoadingReportTemplates(true)
+    try {
+      const catalog = await discoverReportTemplates()
+      const options = reportTemplateCatalogOptions(catalog.items)
+      const current = selectedReportTemplateRef.current
+      const selected = current
+        ? options.find((item) => item.key === current.key) || null
+        : null
+      selectedReportTemplateRef.current = selected
+      setSelectedReportTemplateState(selected)
+      setReportTemplateOptions(options)
+      setReportTemplateError(
+        current && !selected
+          ? '当前选择的报表模板已失效，请重新选择。'
+          : options.length === 0
+            ? '当前没有可用报表模板。'
+            : null,
+      )
+    } catch (error) {
+      selectedReportTemplateRef.current = null
+      setSelectedReportTemplateState(null)
+      setReportTemplateOptions([])
+      setReportTemplateError(
+        error instanceof Error ? error.message : '暂时无法获取报表模板。',
+      )
+    } finally {
+      setLoadingReportTemplates(false)
+    }
+  }, [])
+
   useEffect(() => {
-    const timer = window.setTimeout(() => void refreshSemanticModels(), 0)
+    const timer = window.setTimeout(() => {
+      void refreshSemanticModels()
+      void refreshReportTemplates()
+    }, 0)
     return () => {
       window.clearTimeout(timer)
       historyGenerationRef.current += 1
       historyAbortRef.current?.abort()
     }
-  }, [refreshSemanticModels])
+  }, [refreshReportTemplates, refreshSemanticModels])
 
   const selectSemanticModel = useCallback(
     (option: CatalogOption) => {
@@ -1037,6 +1091,8 @@ export function usePowerBIAgent() {
         : null,
     selectedReportTemplate,
     reportTemplateOptions,
+    loadingReportTemplates,
+    reportTemplateError,
     hasRestoredHistory,
     startNewChat,
     submitMessage,

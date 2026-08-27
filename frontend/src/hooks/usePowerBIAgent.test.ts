@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import type { SemanticModelOption } from '../types'
+import type { ReportTemplateOption, SemanticModelOption } from '../types'
 import {
   catalogOptions,
   discoveryErrorMessage,
+  reportTemplateCatalogOptions,
   reconcileSemanticModelSelection,
   withoutDeletedReport,
 } from './usePowerBIAgent'
@@ -25,6 +26,36 @@ describe('semantic-model discovery errors', () => {
     expect(discoveryErrorMessage('unknown_error')).toBe(
       '暂时无法获取可用数据模型。',
     )
+  })
+})
+
+describe('report-template catalog selection', () => {
+  it('maps only backend-available descriptors and carries no default selection', () => {
+    const items: ReportTemplateOption[] = [
+      {
+        template_key: 'sales_report',
+        display_name: '简易模板',
+        description: '适合快速查看关键指标、趋势与分类明细',
+        availability: 'available',
+      },
+      {
+        template_key: 'stale',
+        display_name: '旧模板',
+        description: '不可用',
+        availability: 'unavailable',
+      },
+    ]
+
+    expect(reportTemplateCatalogOptions(items)).toEqual([
+      {
+        key: 'sales_report',
+        label: '简易模板',
+        description: '适合快速查看关键指标、趋势与分类明细',
+        compatible: true,
+        selectable: true,
+        compatibilityStatus: 'compatible',
+      },
+    ])
   })
 })
 

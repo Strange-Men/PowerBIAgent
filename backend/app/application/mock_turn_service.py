@@ -49,7 +49,6 @@ from backend.app.memory.result_snapshot import SnapshotRepository
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.query_plan.semantic_catalog import compute_schema_fingerprint
 from backend.app.query_plan.template_catalog import (
-    DEFAULT_TEMPLATE_CATALOG,
     TemplateGroundingStatus,
 )
 from backend.app.report.base import ReportRenderer
@@ -313,10 +312,10 @@ class MockTurnService:
             )
 
         if intent.intent == IntentType.REPORT_GENERATION:
-            template_grounding = DEFAULT_TEMPLATE_CATALOG.ground(
-                message,
-                explicit_template_key=effective_template_key,
-                required=True,
+            template_grounding = self.pipeline.preflight_report_template(
+                is_report_intent=True,
+                message=message,
+                report_template_key=effective_template_key,
             )
             if template_grounding.status != TemplateGroundingStatus.RESOLVED:
                 trace.record(
@@ -334,7 +333,7 @@ class MockTurnService:
                     "clarification_required",
                     intent=intent.intent.value,
                     response_type="clarification",
-                    clarification_question="生成报表前请选择有效的简易模板。",
+                    clarification_question=self.pipeline.REPORT_TEMPLATE_REQUIRED_MESSAGE,
                     trace_id=trace_id,
                     trace=trace,
                     conversation_id=effective_conv_id,

@@ -54,6 +54,10 @@ from backend.app.memory.result_snapshot import (
     TurnResultSnapshot,
 )
 from backend.app.report.resources import ReportRepository, ReportStorageError
+from backend.app.query_plan.template_catalog import (
+    DEFAULT_TEMPLATE_CATALOG,
+    TemplateGroundingResult,
+)
 from backend.app.presentation.models import PresentationEnvelope
 from backend.app.schemas.data_contracts import UserContext
 
@@ -83,6 +87,24 @@ class TurnPipeline:
         self.snapshot_store = snapshot_store or ResultSnapshotStore()
         self.report_repository = report_repository
         self.context_builder = ContextBuilder(config)
+
+    REPORT_TEMPLATE_REQUIRED_MESSAGE = "生成报表前请选择有效的模板"
+
+    @staticmethod
+    def preflight_report_template(
+        *,
+        is_report_intent: bool,
+        message: str,
+        report_template_key: str | None,
+    ) -> TemplateGroundingResult | None:
+        """Validate an explicit registry-owned template immediately after Intent."""
+        if not is_report_intent:
+            return None
+        return DEFAULT_TEMPLATE_CATALOG.ground(
+            message,
+            explicit_template_key=report_template_key,
+            required=True,
+        )
 
     async def execute(
         self,

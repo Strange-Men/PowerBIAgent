@@ -15,7 +15,7 @@ no JS/CDN/external resources.
 
 from __future__ import annotations
 
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal, InvalidOperation
 from html import escape
 from pathlib import Path
 import re
@@ -29,7 +29,7 @@ from backend.app.report.policy import (
     ThemePolicy,
     VisualType,
 )
-from backend.app.schemas.data_contracts import ChartSpec, KPISpec, ReportSpec
+from backend.app.schemas.data_contracts import ChartSpec, KPISpec, ReportSpec, TableSpec
 
 
 class SalesReportRenderer(ReportRenderer):
@@ -56,7 +56,7 @@ class SalesReportRenderer(ReportRenderer):
     _ALLOWED_LAYOUT_HINTS = frozenset({"full", "half"})
     _MAX_SERIES = 200
     _LINE_WIDTH = 1000
-    _LINE_HEIGHT = 340
+    _LINE_HEIGHT = 380
     _PERIOD_PATTERN = re.compile(r"^(\d{4})-(\d{1,2})(?:-\d{1,2})?(?:[T ].*)?$")
 
     @property
@@ -89,21 +89,25 @@ class SalesReportRenderer(ReportRenderer):
         )
         pair_one_block = self._pair_block(
             charts_by_role,
-            (SectionKey.CATEGORY_CONTRIBUTION, SectionKey.REGION_COMPARISON),
+            (SectionKey.REGION_COMPARISON, SectionKey.CATEGORY_CONTRIBUTION),
         )
-        pair_two_block = self._pair_block(
-            charts_by_role,
-            (SectionKey.TOP_PRODUCTS, SectionKey.TOP_CUSTOMERS),
+        pair_two_block = (
+            self._wide_section(
+                SectionKey.TOP_PRODUCTS,
+                charts_by_role[SectionKey.TOP_PRODUCTS.value],
+                self._chart_body,
+            )
+            if SectionKey.TOP_PRODUCTS.value in charts_by_role
+            else ""
         )
+        detail_block = self._detail_table(report.tables[0]) if report.tables else ""
 
         generated_at = report.generated_at
         if generated_at is None:
             raise ValueError("sales_report_generated_at_required")
         footer_items = [
             f"数据来源：{self._text(report.data_source)}",
-            f"执行模式：{self._text(report.source_mode)}",
-            f"合同版本：{self._text(report.contract_version)}",
-            f"生成时间：{self._text(generated_at.isoformat())}",
+            f"最后刷新：{self._text(generated_at.isoformat())}",
         ]
         html = template.substitute(
             title=self._text(report.title),
@@ -111,6 +115,7 @@ class SalesReportRenderer(ReportRenderer):
             trend_block=trend_block,
             pair_one_block=pair_one_block,
             pair_two_block=pair_two_block,
+            detail_block=detail_block,
             footer=" · ".join(footer_items),
         )
         self._validate_rendered_html(html)
@@ -189,6 +194,28 @@ class SalesReportRenderer(ReportRenderer):
             "</article>"
         )
 
+    @classmethod
+    def _detail_table(cls, table: TableSpec) -> str:
+        headers = "".join(
+            f'<th scope="col">{cls._text(item)}</th>' for item in table.columns
+        )
+        rows = "".join(
+            "<tr>"
+            + "".join(
+                f"<td>{cls._number(value, decimals=2) if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool) else cls._text(value)}</td>"
+                for value in row
+            )
+            + "</tr>"
+            for row in table.rows
+        )
+        return (
+            '<section class="section-card wide" data-section="key_details" '
+            'aria-labelledby="section-key-details-title">'
+            f'<h2 class="section-title" id="section-key-details-title">{cls._text(table.title)}</h2>'
+            '<div class="table-wrap"><table><thead><tr>'
+            f"{headers}</tr></thead><tbody>{rows}</tbody></table></div></section>"
+        )
+
     # ── Line chart (time series) ──
 
     @classmethod
@@ -197,19 +224,12 @@ class SalesReportRenderer(ReportRenderer):
         width = cls._LINE_WIDTH
         height = cls._LINE_HEIGHT
         pad_left, pad_right = 92, 92
-        pad_top, pad_bottom = 44, 56
+        pad_top, pad_bottom = 44, 96
         plot_w = width - pad_left - pad_right
         plot_h = height - pad_top - pad_bottom
 
         values = [Decimal(str(item["value"])) for item in points]
-        minimum = min(values)
-        maximum = max(values)
-        span = maximum - minimum
-        if span == 0:
-            span = Decimal("1")
-        # Headroom keeps large direct labels inside the SVG at extrema.
-        upper = maximum + span * Decimal("0.14")
-        lower = minimum - span * Decimal("0.10")
+        lower, upper, y_ticks = cls._nice_axis(values)
 
         def scale_x(index: int) -> str:
             x = (
@@ -228,12 +248,23 @@ class SalesReportRenderer(ReportRenderer):
             (scale_x(index), scale_y(value))
             for index, value in enumerate(values)
         ]
+        gridlines = []
+        for tick in y_ticks:
+            y = scale_y(tick)
+            tick_label = cls._axis_number(tick)
+            gridlines.append(
+                f'<line class="chart-gridline" x1="{pad_left}" y1="{y}" '
+                f'x2="{width - pad_right}" y2="{y}" '
+                f'aria-label="水平网格线 {tick_label}"/>'
+                f'<text class="chart-y-tick" x="{pad_left - 12}" y="{y}" '
+                f'dy="4" text-anchor="end">{tick_label}</text>'
+            )
         line_points = " ".join(f"{x},{y}" for x, y in coords)
         if len(coords) >= 2:
             area_points = (
-                f"{pad_left},{pad_top + plot_h} "
+                f"{pad_left},{scale_y(lower)} "
                 + line_points
-                + f" {scale_x(len(points) - 1)},{pad_top + plot_h}"
+                + f" {scale_x(len(points) - 1)},{scale_y(lower)}"
             )
             area = (
                 f'<polygon points="{area_points}" fill="{ThemePolicy.SEQUENTIAL_100}" '
@@ -257,41 +288,37 @@ class SalesReportRenderer(ReportRenderer):
             )
 
         labels: list[str] = []
-        wide_ordered = cls._tick_indexes(len(points), 10)
-        medium_ordered = tuple(
-            wide_ordered[index]
-            for index in cls._tick_indexes(len(wide_ordered), 6)
+        year_boundaries = cls._year_boundary_indexes(points)
+        base_indexes = cls._with_required_ticks(
+            cls._tick_indexes(len(points), 3), year_boundaries, len(points)
         )
-        base_indexes = {
-            medium_ordered[index]
-            for index in cls._tick_indexes(len(medium_ordered), 3)
-        }
-        medium_indexes = set(medium_ordered)
-        wide_indexes = set(wide_ordered)
-        previous_year: str | None = None
-        for index in sorted(wide_indexes | medium_indexes | base_indexes):
-            tier = (
-                "base"
-                if index in base_indexes
-                else "medium"
-                if index in medium_indexes
-                else "wide"
+        medium_indexes = cls._with_required_ticks(
+            cls._tick_indexes(len(points), 7), year_boundaries, len(points)
+        )
+        desktop_indexes = (
+            tuple(range(len(points)))
+            if len(points) <= 15
+            else cls._with_required_ticks(
+                cls._tick_indexes(len(points), 12), year_boundaries, len(points)
             )
-            raw_period = str(points[index]["label"])
-            period_match = cls._PERIOD_PATTERN.fullmatch(raw_period.strip())
-            current_year = period_match.group(1) if period_match else None
-            include_year = (
-                index == 0
-                or current_year is None
-                or current_year != previous_year
-            )
-            labels.append(cls._axis_period_label(
-                cls._period_label(raw_period, include_year=include_year),
-                scale_x(index),
-                index=index,
-                tier=tier,
-            ))
-            previous_year = current_year
+        )
+        for tier, indexes in (
+            ("base", base_indexes),
+            ("medium", medium_indexes),
+            ("desktop", desktop_indexes),
+        ):
+            for index in indexes:
+                raw_period = str(points[index]["label"])
+                labels.append(cls._axis_period_label(
+                    cls._period_label(
+                        raw_period,
+                        include_year=index in year_boundaries,
+                    ),
+                    scale_x(index),
+                    index=index,
+                    last_index=len(points) - 1,
+                    tier=tier,
+                ))
 
         direct_labels = ""
         if points:
@@ -316,8 +343,11 @@ class SalesReportRenderer(ReportRenderer):
         return (
             f'<div class="chart chart-line" data-chart="time_trend">'
             f'<svg viewBox="0 0 {width} {height}" role="img" '
-            f'preserveAspectRatio="none" aria-label="{cls._text(chart.title)}">'
-            f'{area}{"".join(circles)}'
+            f'preserveAspectRatio="xMidYMid meet" aria-label="{cls._text(chart.title)}">'
+            f'<text class="chart-y-axis-title" x="24" y="{height / 2:.2f}" '
+            f'text-anchor="middle" transform="rotate(-90 24 {height / 2:.2f})">'
+            f'销售额（元）</text>'
+            f'{"".join(gridlines)}{area}{"".join(circles)}'
             f'<polyline points="{line_points}" fill="none" '
             f'stroke="{ThemePolicy.SEQUENTIAL_550}" stroke-width="2.5" '
             f'stroke-linecap="round" stroke-linejoin="round"/>'
@@ -333,14 +363,23 @@ class SalesReportRenderer(ReportRenderer):
         x: str,
         *,
         index: int,
+        last_index: int,
         tier: str,
     ) -> str:
-        # Symmetric horizontal padding keeps endpoint labels inside the viewBox;
-        # centered labels preserve consistent spacing to adjacent ticks.
+        # The plot has symmetric endpoint padding, so centered labels remain
+        # inside the SVG while preserving even spacing on the desktop tier.
         anchor = "middle"
+        upper_lane = (
+            tier == "base"
+            and index not in {0, last_index}
+            and "年" in period
+        )
+        y = cls._LINE_HEIGHT - (64 if upper_lane else 14)
+        lane = "upper" if upper_lane else "baseline"
         return (
-            f'<text x="{x}" y="{cls._LINE_HEIGHT - 12}" '
+            f'<text x="{x}" y="{y}" '
             f'data-tick-index="{index}" data-tick-tier="{tier}" '
+            f'data-tick-lane="{lane}" '
             f'text-anchor="{anchor}" class="chart-axis-label" '
             f'aria-label="{cls._text(period)}">{cls._text(period)}</text>'
         )
@@ -353,6 +392,59 @@ class SalesReportRenderer(ReportRenderer):
             round(slot * (point_count - 1) / (maximum - 1))
             for slot in range(maximum)
         }))
+
+    @classmethod
+    def _year_boundary_indexes(cls, points: list[dict[str, Any]]) -> tuple[int, ...]:
+        indexes = {0, len(points) - 1}
+        previous_year: str | None = None
+        for index, item in enumerate(points):
+            match = cls._PERIOD_PATTERN.fullmatch(str(item["label"]).strip())
+            year = match.group(1) if match else None
+            if index == 0 or year != previous_year:
+                indexes.add(index)
+            previous_year = year
+        return tuple(sorted(indexes))
+
+    @staticmethod
+    def _with_required_ticks(
+        sampled: tuple[int, ...],
+        required: tuple[int, ...],
+        point_count: int,
+    ) -> tuple[int, ...]:
+        return tuple(sorted({*sampled, *required, 0, point_count - 1}))
+
+    @staticmethod
+    def _axis_number(value: Decimal) -> str:
+        decimals = 0 if value == value.to_integral_value() else 2
+        return format(value, f",.{decimals}f")
+
+    @staticmethod
+    def _nice_axis(values: list[Decimal]) -> tuple[Decimal, Decimal, tuple[Decimal, ...]]:
+        minimum = min(values)
+        maximum = max(values)
+        lower_target = Decimal("0") if minimum >= 0 else minimum
+        upper_target = maximum if maximum > 0 else Decimal("0")
+        raw_step = (upper_target - lower_target) / Decimal("5")
+        if raw_step <= 0:
+            raw_step = Decimal("1")
+        magnitude = Decimal("10") ** raw_step.adjusted()
+        normalized = raw_step / magnitude
+        factor = next(
+            item
+            for item in (Decimal("1"), Decimal("2"), Decimal("5"), Decimal("10"))
+            if normalized <= item
+        )
+        step = factor * magnitude
+        lower = (lower_target / step).to_integral_value(rounding=ROUND_FLOOR) * step
+        upper = (upper_target / step).to_integral_value(rounding=ROUND_CEILING) * step
+        if upper == lower:
+            upper = lower + step
+        ticks: list[Decimal] = []
+        current = lower
+        while current <= upper:
+            ticks.append(current)
+            current += step
+        return lower, upper, tuple(ticks)
 
     @classmethod
     def _period_label(cls, raw: str, *, include_year: bool = True) -> str:
@@ -535,7 +627,7 @@ class SalesReportRenderer(ReportRenderer):
             raise ValueError("sales_report_renderer_template_rejected")
         if report.title != "销售分析报表":
             raise ValueError("sales_report_title_invalid")
-        if report.tables or report.insights or report.filters:
+        if report.insights or report.filters:
             raise ValueError("sales_report_structure_invalid")
         if (
             not report.contract_version
@@ -551,10 +643,29 @@ class SalesReportRenderer(ReportRenderer):
             or report.generated_at is None
         ):
             raise ValueError("sales_report_provenance_invalid")
-        if not report.kpis and not report.charts:
+        if not report.kpis and not report.charts and not report.tables:
             raise ValueError("sales_report_no_sections")
         cls._validate_kpis(report.kpis)
         cls._validate_charts(report.charts)
+        cls._validate_tables(report.tables)
+
+    @classmethod
+    def _validate_tables(cls, tables: list[TableSpec]) -> None:
+        if len(tables) > 1:
+            raise ValueError("sales_report_table_count_invalid")
+        for table in tables:
+            if table.title != "关键明细" or table.columns != ["客户", "销售额（元）"]:
+                raise ValueError("sales_report_table_binding_invalid")
+            if not table.rows or len(table.rows) > 50:
+                raise ValueError("sales_report_table_rows_invalid")
+            for row in table.rows:
+                if (
+                    len(row) != len(table.columns)
+                    or not isinstance(row[0], str)
+                    or not row[0]
+                ):
+                    raise ValueError("sales_report_table_rows_invalid")
+                cls._decimal(row[1])
 
     @classmethod
     def _validate_kpis(cls, kpis: list[KPISpec]) -> None:

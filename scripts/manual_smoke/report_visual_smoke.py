@@ -20,7 +20,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from backend.app.report.fixed import SalesReportRenderer
-from backend.app.schemas.data_contracts import ChartSpec, KPISpec, ReportSpec
+from backend.app.schemas.data_contracts import ChartSpec, KPISpec, ReportSpec, TableSpec
 
 
 SUPPORTED_POINT_COUNTS = frozenset({1, 2, 6, 12, 15, 24, 60})
@@ -47,13 +47,15 @@ def _series(point_count: int) -> list[dict[str, object]]:
 
 
 def build_fixture(point_count: int) -> ReportSpec:
-    ids = ["trend", "category", "region", "products"]
+    ids = ["trend", "category", "region", "products", "customers"]
     return ReportSpec(
         title="销售分析报表",
         template_key="sales_report",
         kpis=[
             KPISpec(name="总销售额", field="Total Sales", value=18_888_888.87, format="currency"),
             KPISpec(name="总销量", field="Total Quantity", value=15_240, format="number"),
+            KPISpec(name="订单数", field="Total Orders", value=2_410, format="number"),
+            KPISpec(name="平均订单金额", field="Average Order Value", value=7_837.71, format="currency"),
         ],
         charts=[
             ChartSpec(
@@ -108,6 +110,13 @@ def build_fixture(point_count: int) -> ReportSpec:
                     {"label": "智能办公终端", "value": 2_900_000, "position": 2},
                     {"label": "会议室显示设备", "value": 2_100_000, "position": 3},
                 ],
+            ),
+        ],
+        tables=[
+            TableSpec(
+                title="关键明细",
+                columns=["客户", "销售额（元）"],
+                rows=[["华东重点客户", 3_200_000], ["华南重点客户", 2_400_000]],
             ),
         ],
         data_source="visual-smoke-fixture",

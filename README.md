@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.7.1 — Semantic Reliability / Regression Firewall（COMPLETE）**。M5.5 / M5.6 / M5.7 已封板；M5.7.2 与 M5.8—M5.10 尚未开始。
+当前版本：**M5.7.2 — Report Template Architecture & Simple Report Quality Closure（COMPLETE）**。M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 已封板；M5.8—M5.10 尚未开始。
 
 ## 项目概览
 
@@ -252,6 +252,7 @@ Local MCP DAX 执行会验证实际 columns/rows/`rowCount` shape，并使用一
 |---|---|---|
 | `GET` | `/health` | 当前 runtime 配置就绪状态 |
 | `GET` | `/api/v1/semantic-models` | 当前 Desktop 模型的安全目录、runtime namespace 与最小 Agent compatibility 状态 |
+| `GET` | `/api/v1/report-templates` | 当前可用的 registry-owned 报表模板只读目录；前端不维护第二份模板 authority |
 | `POST` | `/api/v1/chat` | 非流式数据问答与报表生成 |
 | 字段 | `semantic_model_key` | 从发现目录选择 opaque 模型 key；必须精确绑定当前 Desktop 实例 |
 | 字段 | `report_template_key` | 报表请求必须显式提供的 registry-owned 模板 key；当前仅 `sales_report`（“简易模板”），missing/invalid/stale 均在 ReportSpec/Renderer/artifact 前 fail closed |
@@ -326,7 +327,7 @@ python -m alembic upgrade head
 | M5.6 | COMPLETE — Presentation/Localization/Resource UX truth；共享 floating menu 与 Settings nested-scroll/action 可达性 |
 | M5.7 | COMPLETE — 简易报表视觉、响应式可读性、显式模板必选与人工视觉验收 |
 | M5.7.1 | COMPLETE — 统一语义可靠性、回归防火墙与高强度问答验收 |
-| M5.7.2 | NOT STARTED — Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复 |
+| M5.7.2 | COMPLETE — Report Template Gate 前移、Template/Renderer Registry、后端目录驱动的前端模板选择，以及简易模板视觉与信息架构最终收口 |
 | M5.8 | NOT STARTED — OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection |
 | M5.9 | NOT STARTED — MCP performance、resilience、并发与压力验证 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
@@ -358,4 +359,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-27 | M5.7.1 COMPLETE — M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-27 | M5.7.1 / M5.7.2 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

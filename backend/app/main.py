@@ -58,6 +58,10 @@ from backend.app.powerbi.local_mcp import LocalMCPPowerBIAdapter
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.fixed import SalesReportRenderer
 from backend.app.report.mock import MockReportRenderer
+from backend.app.report.registry import (
+    DEFAULT_REPORT_TEMPLATE_REGISTRY,
+    build_report_dispatcher,
+)
 from backend.app.report.resources import LocalReportRepository
 
 
@@ -153,6 +157,7 @@ async def lifespan(app: FastAPI):
         metadata_repo=report_artifact_repo,
     )
     app.state.report_repository = report_repository
+    app.state.report_template_registry = DEFAULT_REPORT_TEMPLATE_REGISTRY
     if _session_factory is not None:
         app.state.conversation_history_service = ConversationHistoryService(
             SQLiteConversationHistoryRepository(_session_factory),
@@ -185,7 +190,7 @@ async def lifespan(app: FastAPI):
         turn_service = MockTurnService(
             memory_repo=memory_repo,
             powerbi_adapter=powerbi_adapter,
-            report_renderer=MockReportRenderer(),
+            report_renderer=build_report_dispatcher(MockReportRenderer()),
             report_repository=report_repository,
             config=harness_config,
             snapshot_store=snapshot_store,
@@ -217,7 +222,7 @@ async def lifespan(app: FastAPI):
                 snapshot_store=snapshot_store,
                 llm_provider=deepseek_provider,
                 powerbi_adapter=powerbi_adapter,
-                report_renderer=SalesReportRenderer(),
+                report_renderer=build_report_dispatcher(SalesReportRenderer()),
                 report_repository=report_repository,
                 settings=settings,
                 config=harness_config,
@@ -253,6 +258,7 @@ async def lifespan(app: FastAPI):
     app.state.report_repository = None
     app.state.conversation_history_service = None
     app.state.semantic_model_discovery_service = None
+    app.state.report_template_registry = None
     app.state.settings = None
     app.state._persistence_engine = None
 

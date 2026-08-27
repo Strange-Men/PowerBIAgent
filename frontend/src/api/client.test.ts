@@ -4,6 +4,7 @@ import {
   archiveReport,
   deleteConversation,
   deleteReport,
+  discoverReportTemplates,
   discoverSemanticModels,
   getConversationHistory,
   listArchivedConversations,
@@ -192,6 +193,30 @@ describe('API namespace and chat mapping', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/semantic-models',
+      expect.objectContaining({ headers: expect.any(Object) }),
+    )
+  })
+
+  it('loads report templates from the backend-owned catalog', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [{
+            template_key: 'sales_report',
+            display_name: '简易模板',
+            description: '适合快速查看关键指标、趋势与分类明细',
+            availability: 'available',
+          }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await discoverReportTemplates()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/report-templates',
       expect.objectContaining({ headers: expect.any(Object) }),
     )
   })

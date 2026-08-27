@@ -56,6 +56,7 @@ from backend.app.schemas.data_contracts import (
     QueryResult,
     ReportSpec,
     SemanticModelSchema,
+    TableSpec,
     TableSchema,
 )
 
@@ -382,8 +383,30 @@ def test_time_trend_ticks_are_density_aware_and_labels_are_complete(point_count)
     if point_count > 4:
         assert 'data-tick-tier="medium"' in html
     if point_count > 8:
-        assert 'data-tick-tier="wide"' in html
+        assert 'data-tick-tier="desktop"' in html
     assert html.count("<title>") == point_count
+    assert html.count('class="chart-gridline"') >= 4
+    assert html.count('class="chart-y-tick"') >= 4
+    assert 'class="chart-y-axis-title"' in html
+    assert "销售额（元）" in html
+    assert 'preserveAspectRatio="xMidYMid meet"' in html
+
+
+def test_fifteen_month_desktop_axis_keeps_every_month_and_small_tiers_are_deterministic():
+    html = SalesReportRenderer._line_chart(_trend_chart(15, cross_year=True))
+    desktop_indexes = re.findall(
+        r'data-tick-index="(\d+)"[^>]+data-tick-tier="desktop"', html
+    )
+    base_indexes = re.findall(
+        r'data-tick-index="(\d+)"[^>]+data-tick-tier="base"', html
+    )
+    assert desktop_indexes == [str(index) for index in range(15)]
+    assert base_indexes[0] == "0"
+    assert base_indexes[-1] == "14"
+    assert "3" in base_indexes  # 2026-01 year boundary
+    assert html == SalesReportRenderer._line_chart(
+        _trend_chart(15, cross_year=True)
+    )
 
 
 def test_time_trend_first_last_and_direct_labels_stay_inside_plot():
@@ -393,6 +416,18 @@ def test_time_trend_first_last_and_direct_labels_stay_inside_plot():
     )
     assert axis_labels[0] == ("0", "middle")
     assert axis_labels[-1] == ("14", "middle")
+    base_labels = re.findall(
+        r'<text[^>]+data-tick-index="(\d+)"[^>]+data-tick-tier="base"[^>]+'
+        r'text-anchor="([^"]+)"',
+        html,
+    )
+    assert ("3", "middle") in base_labels
+    assert base_labels[-1] == ("14", "middle")
+    assert re.search(
+        r'data-tick-index="3"[^>]+data-tick-tier="base"[^>]+'
+        r'data-tick-lane="upper"',
+        html,
+    )
     direct_labels = re.findall(
         r'<text[^>]+data-direct-index="(\d+)"[^>]+text-anchor="([^"]+)"', html
     )
@@ -420,6 +455,7 @@ async def test_simple_report_responsive_and_accessible_contract():
     assert 'tabindex="0"' in html
     assert ":focus-visible" in html
     assert "word-break: break-word" in html
+    assert ".chart-gridline" in html
 
 
 def test_donut_long_labels_keep_text_values_and_accessible_names():
@@ -535,6 +571,24 @@ async def test_fixed_renderer_rejects_non_sales_report():
         await SalesReportRenderer().render(
             ReportSpec(title="旧模板", template_key="sales_weekly")
         )
+
+
+@pytest.mark.asyncio
+async def test_compact_detail_table_is_rendered_only_from_structured_table_rows():
+    report = SalesReportSpecBuilder().build(_assembled()).model_copy(update={
+        "tables": [
+            TableSpec(
+                title="关键明细",
+                columns=["客户", "销售额（元）"],
+                rows=[["客户甲", 600.0], ["客户乙", 300.25]],
+            )
+        ]
+    })
+    html = await SalesReportRenderer().render(report)
+    assert 'data-section="key_details"' in html
+    assert "关键明细" in html
+    assert "客户甲" in html
+    assert "600.00" in html
 
 
 def test_assembler_and_renderer_have_zero_llm_or_powerbi_authority():
@@ -912,8 +966,7 @@ async def test_report_template_required_gate_precedes_planning_and_artifact(
 
     assert result["terminal_state"] == "clarification_required"
     assert result["response_type"] == "clarification"
-    assert "选择" in result["clarification_question"]
-    assert "模板" in result["clarification_question"]
+    assert result["clarification_question"] == "生成报表前请选择有效的模板"
     assert result.get("report") is None
     assert result["memory_commit"] is False
     assert result["tool_sequence"] == []
@@ -1098,8 +1151,10 @@ def test_full_rich_assembly_produces_kpis_trend_donut_column_and_topn():
         "category_contribution": "donut",
         "region_comparison": "column",
         "top_products": "hbar",
-        "top_customers": "hbar",
     }
+    assert len(spec.tables) == 1
+    assert spec.tables[0].title == "关键明细"
+    assert spec.tables[0].rows == [["客户甲", 600.0], ["客户乙", 300.25]]
 
 
 def test_capability_anti_fake_no_oracle_in_source():

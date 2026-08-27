@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   archiveConversation: vi.fn(),
   deleteConversation: vi.fn(),
   deleteReport: vi.fn(),
+  discoverReportTemplates: vi.fn(),
   discoverSemanticModels: vi.fn(),
   getConversationHistory: vi.fn(),
   listArchivedConversations: vi.fn(),
@@ -135,6 +136,14 @@ beforeEach(() => {
       compatibility_status: 'compatible',
     }],
     error_type: null,
+  })
+  api.discoverReportTemplates.mockResolvedValue({
+    items: [{
+      template_key: 'sales_report',
+      display_name: '简易模板',
+      description: '适合快速查看关键指标、趋势与分类明细',
+      availability: 'available',
+    }],
   })
   api.listRecentConversations.mockResolvedValue({
     runtime_mode: 'real', items: [], next_cursor: null, total_count: 0,

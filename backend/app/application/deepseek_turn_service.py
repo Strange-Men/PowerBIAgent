@@ -459,10 +459,10 @@ class DeepSeekTurnService:
             )
 
         if intent.intent == IntentType.REPORT_GENERATION:
-            template_grounding = DEFAULT_TEMPLATE_CATALOG.ground(
-                message,
-                explicit_template_key=report_template_key,
-                required=True,
+            template_grounding = self.pipeline.preflight_report_template(
+                is_report_intent=True,
+                message=message,
+                report_template_key=report_template_key,
             )
             if template_grounding.status != TemplateGroundingStatus.RESOLVED:
                 trace.record(
@@ -480,7 +480,7 @@ class DeepSeekTurnService:
                     "clarification_required",
                     intent=intent.intent.value,
                     response_type="clarification",
-                    clarification_question="生成报表前请选择有效的简易模板。",
+                    clarification_question=self.pipeline.REPORT_TEMPLATE_REQUIRED_MESSAGE,
                     trace=trace,
                     trace_id=trace_id,
                     is_mock=False,

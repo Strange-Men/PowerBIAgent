@@ -1420,6 +1420,12 @@ input:focus-visible {
   font-weight: 600;
 }
 
+.menu-status {
+  padding: 5px 9px 6px;
+  color: #777;
+  font-size: 11px;
+}
+
 .catalog-refresh {
   display: inline-flex;
   align-items: center;

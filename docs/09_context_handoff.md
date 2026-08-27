@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.7.1 — Semantic Reliability / Regression Firewall（COMPLETE）。** M5.5 / M5.6 / M5.7 已封板；M5.7.2 与 M5.8—M5.10 均未开始；M5 FINAL 尚未成立。
+**M5.7.2 — Report Template Architecture & Simple Report Quality Closure（COMPLETE）。** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 已封板；M5.8—M5.10 均未开始；M5 FINAL 尚未成立。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -29,7 +29,7 @@
 | **M5.6** | **Presentation/Localization/Resource UX truth** | **✅ COMPLETE** |
 | **M5.7** | **简易报表视觉 + Report Template Required + 人工视觉验收** | **✅ COMPLETE** |
 | **M5.7.1** | **统一语义可靠性、回归防火墙与高强度问答验收** | **✅ COMPLETE** |
-| **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复** | **⏳ NOT STARTED** |
+| **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **⏳ NOT STARTED** |
 | **M5.9** | **MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
@@ -329,9 +329,19 @@
 - Rich PBIX API/Browser/manual 覆盖总销售额、绝对/相对月份、趋势、South、unknown member、readonly approximation、future prediction 与四轮 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢`；automation run `m571-real-20260827` 清理后 conversations、work memories、snapshots、reports 与 delete intents residual=0。
 - 未弱化 M5.5 semantic/DAX/VerifiedFactSet authority；未修改报表视觉或 Template/Renderer Registry；未开发 DeepSeek/Kimi；未修改 MCP performance。
 
+### M5.7.2 completed contract and fresh acceptance
+
+- Report Gate 固定在 Intent 后的 `TurnPipeline.preflight_report_template()`；missing/unknown/stale template 使用同一精确提示，DeepSeek spy 证明只调用 `intent_recognition`，schema/DAX/repository/report downstream 均为 0，普通问答不被拦截。
+- 后端以 `ReportTemplateRegistry`、`ReportRendererRegistry` 和 `ReportRendererDispatcher` 建立单一 authority；只读 `GET /api/v1/report-templates` 向前端提供唯一公开的 `sales_report / 简易模板`，无 default、隐式选择或 first-item fallback。
+- 前端删除硬编码模板权威表，动态读取后端目录；未选择显示紧凑状态，显式选择后显示“已选 简易模板”，stale selection 自动清除，聊天区只在真实报表请求失败时显示一次 runtime reminder。
+- 简易模板固定顺序为 4 KPI → 月度趋势 → 区域/品类 → Top 产品 → 关键明细 → 数据来源/最后刷新；趋势包含 deterministic nice Y ticks、水平 gridlines、`销售额（元）`、全部 data points、桌面 15 月完整标签，以及小屏 first/last/year-boundary 双层确定性 tick。
+- 完整 deterministic visual fixture 在 390/768/1440/2560 均无水平滚动或 label overlap，15 点全部保留；1440/2560 显示全部 15 月，完整覆盖区域、品类、Top 产品、关键明细与 footer。Real `PowerBIAgent_M3_Rich_Test` 当前 runtime schema 实际只证明 4 KPI、15 月趋势和品类，Region/Product/Customer 三项被 capability gate 标记 unavailable 并正确省略，未伪造 section。
+- Fresh gates：Semantic Compatibility `304 passed`；backend `1918 passed, 1 skipped`；frontend Vitest `83 passed`、typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；全治理、compileall 与 `git diff --check` PASS。automation run `m572-real-20260827-a1` 的 conversation/report/HTML/delete-intent 与 ownership residual=0。
+- M5.7.1 Semantic/DAX/VerifiedFactSet/Memory authority 未修改；未开发 DeepSeek/Kimi Provider、未修改 MCP、未新增第二模板、无 schema/migration。
+
 ## 下一步
 
-等待用户明确启动后再进入 M5.7.2；任何后续版本修改前后都必须运行永久 Semantic Compatibility Gate。M5.7.2 / M5.8—M5.10 为 NOT STARTED；M5 FINAL 仍未成立。
+等待用户明确启动 M5.8；任何后续版本修改前后都必须运行永久 Semantic Compatibility Gate。M5.8—M5.10 为 NOT STARTED；M5 FINAL 仍未成立。
 
 ## 关键命令
 
@@ -380,4 +390,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-27 | M5.7.1 COMPLETE — M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-27 | M5.7.1 / M5.7.2 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

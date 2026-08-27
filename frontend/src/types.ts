@@ -128,6 +128,17 @@ export interface ConversationSummary {
   local_error?: string | null
 }
 
+export interface ReportTemplateOption {
+  template_key: string
+  display_name: string
+  description: string
+  availability: 'available' | 'unavailable'
+}
+
+export interface ReportTemplateCatalog {
+  items: ReportTemplateOption[]
+}
+
 export interface ConversationFailureResult {
   runtime_mode: RuntimeMode
   conversation_id: string

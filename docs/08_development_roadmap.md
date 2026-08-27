@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.7.1 — Semantic Reliability / Regression Firewall（COMPLETE）
+> **状态：** M5.7.2 — Report Template Architecture & Simple Report Quality Closure（COMPLETE）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -42,7 +42,7 @@
 | **M5.6** | **Presentation、Localization 与 Resource UX truth** | **✅ COMPLETE** |
 | **M5.7** | **简易报表视觉 + Report Template Required** | **✅ COMPLETE** |
 | **M5.7.1** | **统一语义可靠性、回归防火墙与高强度问答验收** | **✅ COMPLETE** |
-| **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复** | **⏳ NOT STARTED** |
+| **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **⏳ NOT STARTED** |
 | **M5.9** | **MCP performance、resilience、并发与压力验证** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
@@ -108,7 +108,7 @@ M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provid
 
 ### M5.7.2 — Report Template Architecture Closure
 
-状态为 NOT STARTED。只负责 Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复；不得在 M5.7.1 提前开发。
+状态为 COMPLETE。Report Template Gate 已集中到 `TurnPipeline.preflight_report_template()`，Mock/DeepSeek 均在 Intent 确认后立即执行；missing/unknown/stale template 统一返回 `生成报表前请选择有效的模板`，并在 schema/QueryPlan/DAX/Power BI/ReportData/ReportSpec/Renderer/HTML 前 ZERO downstream。`ReportTemplateRegistry → renderer_key → ReportRendererRegistry/Dispatcher` 成为单一分发 authority；当前唯一公开模板仍为 `sales_report / 简易模板`，无 default 或 first-item fallback。前端模板列表改为只读后端目录并清除 stale selection。简易模板固定为 KPI → 趋势 → 区域/品类 → Top 产品 → 关键明细 → footer，缺少 verified facts 的 section deterministic omit；趋势补齐 nice Y ticks、水平 gridlines、单位、15 月桌面全标签与小屏 first/last/year-boundary 双层确定性 tick。未扩展到多模型 Provider、MCP 性能优化或第二专业模板；M5.7.1 Semantic authority 保持冻结。
 
 ### 新 M5.9 — MCP performance and resilience
 
@@ -369,4 +369,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-08-27 | M5.7.1 COMPLETE — M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-27 | M5.7.1 / M5.7.2 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

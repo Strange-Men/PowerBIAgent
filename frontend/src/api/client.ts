@@ -15,6 +15,7 @@ import type {
   ReportRestoreResult,
   RuntimeMode,
   SemanticModelCatalog,
+  ReportTemplateCatalog,
 } from '../types'
 
 interface ErrorPayload {
@@ -113,6 +114,10 @@ function friendlyHttpError(status: number, errorType?: string): string {
 
 export async function discoverSemanticModels(): Promise<SemanticModelCatalog> {
   return requestJson<SemanticModelCatalog>('/api/v1/semantic-models')
+}
+
+export async function discoverReportTemplates(): Promise<ReportTemplateCatalog> {
+  return requestJson<ReportTemplateCatalog>('/api/v1/report-templates')
 }
 
 export async function sendChat(body: ChatRequest): Promise<ChatResponse> {

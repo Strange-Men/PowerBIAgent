@@ -1,6 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { reportTemplateOptions } from '../config'
 import type { CatalogOption } from '../types'
 import { Composer } from './Composer'
 
@@ -11,6 +10,14 @@ const semanticModel: CatalogOption = {
   compatible: true,
   selectable: true,
   schemaDrift: false,
+}
+
+const reportTemplate: CatalogOption = {
+  key: 'sales_report',
+  label: '简易模板',
+  description: '适合快速查看关键指标、趋势与分类明细',
+  compatible: true,
+  selectable: true,
 }
 
 function renderComposer(options: CatalogOption[] = [semanticModel]) {
@@ -26,6 +33,9 @@ function renderComposer(options: CatalogOption[] = [semanticModel]) {
       loadingSemanticModels={false}
       semanticModelError={options.length === 0 ? '当前没有可用数据模型。' : null}
       reportTemplate={null}
+      reportTemplateOptions={[reportTemplate]}
+      loadingReportTemplates={false}
+      reportTemplateError={null}
       onSemanticModelChange={onSemanticModelChange}
       onRefreshSemanticModels={onRefreshSemanticModels}
       onReportTemplateChange={onReportTemplateChange}
@@ -51,6 +61,9 @@ describe('Composer menus and sending', () => {
         semanticModelError={null}
         semanticModelCompatibilityNotice="当前模型已连接，但缺少 PowerBIAgent 当前分析所需的部分业务字段或指标。"
         reportTemplate={null}
+        reportTemplateOptions={[reportTemplate]}
+        loadingReportTemplates={false}
+        reportTemplateError={null}
         onSemanticModelChange={vi.fn()}
         onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
         onReportTemplateChange={vi.fn()}
@@ -81,9 +94,10 @@ describe('Composer menus and sending', () => {
     expect(screen.getByText('数据模型')).toBeInTheDocument()
     expect(screen.getByText('报表模板')).toBeInTheDocument()
     expect(screen.queryByText('不使用模板')).not.toBeInTheDocument()
-    expect(screen.getByText(/生成报表前请选择模板/)).toBeInTheDocument()
+    expect(screen.getByText('未选择')).toBeInTheDocument()
+    expect(screen.queryByText(/生成报表前请选择模板/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /简易模板/ }))
-    expect(onReportTemplateChange).toHaveBeenCalledWith(reportTemplateOptions[0])
+    expect(onReportTemplateChange).toHaveBeenCalledWith(reportTemplate)
   })
 
   it('allows a selected template to be cleared without creating a no-template mode', () => {
@@ -95,7 +109,10 @@ describe('Composer menus and sending', () => {
         semanticModelOptions={[semanticModel]}
         loadingSemanticModels={false}
         semanticModelError={null}
-        reportTemplate={reportTemplateOptions[0]}
+        reportTemplate={reportTemplate}
+        reportTemplateOptions={[reportTemplate]}
+        loadingReportTemplates={false}
+        reportTemplateError={null}
         onSemanticModelChange={vi.fn()}
         onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
         onReportTemplateChange={onReportTemplateChange}
@@ -103,6 +120,7 @@ describe('Composer menus and sending', () => {
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: '打开数据与报表选项' }))
+    expect(screen.getByText('已选择')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /简易模板/ }))
     expect(onReportTemplateChange).toHaveBeenCalledWith(null)
   })
@@ -160,6 +178,9 @@ describe('Composer menus and sending', () => {
         loadingSemanticModels={false}
         semanticModelError="Power BI Desktop 未连接，请先打开一个 PBIX 文件。"
         reportTemplate={null}
+        reportTemplateOptions={[reportTemplate]}
+        loadingReportTemplates={false}
+        reportTemplateError={null}
         onSemanticModelChange={vi.fn()}
         onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
         onReportTemplateChange={vi.fn()}
@@ -212,6 +233,9 @@ describe('Composer menus and sending', () => {
         loadingSemanticModels={false}
         semanticModelError="当前选择的数据模型已关闭或失效，请刷新后重新选择。"
         reportTemplate={null}
+        reportTemplateOptions={[reportTemplate]}
+        loadingReportTemplates={false}
+        reportTemplateError={null}
         onSemanticModelChange={vi.fn()}
         onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
         onReportTemplateChange={vi.fn()}
@@ -225,5 +249,28 @@ describe('Composer menus and sending', () => {
     expect(screen.getByText(/已关闭或失效/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
     expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('shows a backend catalog failure without inventing a template option', () => {
+    render(
+      <Composer
+        sending={false}
+        semanticModel={semanticModel}
+        semanticModelOptions={[semanticModel]}
+        loadingSemanticModels={false}
+        semanticModelError={null}
+        reportTemplate={null}
+        reportTemplateOptions={[]}
+        loadingReportTemplates={false}
+        reportTemplateError="暂时无法获取报表模板。"
+        onSemanticModelChange={vi.fn()}
+        onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
+        onReportTemplateChange={vi.fn()}
+        onSend={vi.fn().mockResolvedValue(undefined)}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '打开数据与报表选项' }))
+    expect(screen.getByText('暂时无法获取报表模板。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /简易模板/ })).not.toBeInTheDocument()
   })
 })

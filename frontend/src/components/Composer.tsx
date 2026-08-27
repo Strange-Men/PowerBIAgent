@@ -1,6 +1,5 @@
 import { Check, ChevronDown, Plus, RefreshCw, Send, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { reportTemplateOptions } from '../config'
 import type { CatalogOption } from '../types'
 
 interface ComposerProps {
@@ -11,6 +10,9 @@ interface ComposerProps {
   semanticModelError: string | null
   semanticModelCompatibilityNotice?: string | null
   reportTemplate: CatalogOption | null
+  reportTemplateOptions: CatalogOption[]
+  loadingReportTemplates: boolean
+  reportTemplateError: string | null
   onSemanticModelChange: (option: CatalogOption) => void
   onRefreshSemanticModels: () => Promise<void>
   onReportTemplateChange: (option: CatalogOption | null) => void
@@ -25,6 +27,9 @@ export function Composer({
   semanticModelError,
   semanticModelCompatibilityNotice = null,
   reportTemplate,
+  reportTemplateOptions,
+  loadingReportTemplates,
+  reportTemplateError,
   onSemanticModelChange,
   onRefreshSemanticModels,
   onReportTemplateChange,
@@ -128,9 +133,19 @@ export function Composer({
           </div>
           <div className="menu-divider" />
           <div className="menu-group">
-            <span className="menu-label">报表模板</span>
-            {!reportTemplate ? (
-              <p className="menu-empty-state">生成报表前请选择模板。</p>
+            <div className="menu-heading">
+              <span className="menu-label">报表模板</span>
+              <span className="menu-status">
+                {reportTemplate ? '已选择' : '未选择'}
+              </span>
+            </div>
+            {loadingReportTemplates ? (
+              <p className="menu-empty-state">正在获取报表模板…</p>
+            ) : null}
+            {!loadingReportTemplates && reportTemplateOptions.length === 0 ? (
+              <p className="menu-empty-state">
+                {reportTemplateError || '当前没有可用报表模板。'}
+              </p>
             ) : null}
             {reportTemplateOptions.map((option) => (
               <button

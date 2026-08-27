@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.7.1 — Semantic Reliability / Regression Firewall（COMPLETE）
+> **状态：** M5.7.2 — Report Template Architecture & Simple Report Quality Closure（COMPLETE）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -42,7 +42,7 @@
 | **M5.6** | **Presentation、Localization 与 Resource UX truth** | **✅ COMPLETE** |
 | **M5.7** | **简易报表视觉 + Report Template Required + Real Browser 人工视觉 Gate** | **✅ COMPLETE** |
 | **M5.7.1** | **统一语义可靠性、回归防火墙与高强度问答验收** | **✅ COMPLETE** |
-| **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复** | **⏳ NOT STARTED** |
+| **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **⏳ NOT STARTED** |
 | **M5.9** | **MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
@@ -266,5 +266,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - Backend full `1823 passed, 1 skipped`；frontend `69 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `296`、Error Ledger `32`、Documentation/Artifact Governance、compileall 与 Local MCP readonly smoke PASS。
 - Real API 与 Browser 人工验收通过；unknown member 可见 clarification，South 与同会话 Top3 正确完成，automation-owned acceptance residual=0。M5.6 与 M5.7 已完成；M5.8—M5.10 未开始。
 - M5.7.1 Semantic Compatibility Gate `302 passed`；backend full `1901 passed, 1 skipped`；frontend `80 passed` 且 build PASS；Golden `11 passed, 1 manual-real skipped`；Sales/Education/Inventory/unknown holdout、schema mutation 与 Rich PBIX Real/manual 均通过，automation-owned DB/artifact residual=0。
+- M5.7.2 将 Template Gate 固定在 Intent 后并证明 missing/unknown/stale 时 ZERO schema/DAX/report downstream；建立 Template/Renderer Registry、后端只读模板目录与前端显式选择。简易模板完成 4 KPI、趋势、区域/品类、Top 产品、关键明细、footer 及 Y 轴/grid/15 月/小屏跨年 tick 收口；Semantic Compatibility `304 passed`、backend `1918 passed, 1 skipped`、frontend `83 passed`、Golden `11 passed, 1 manual-real skipped`，automation-owned residual=0。M5.8—M5.10 未开始。
 
-*最后更新：2026-08-27 | M5.7.1 COMPLETE — M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-27 | M5.7.1 / M5.7.2 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

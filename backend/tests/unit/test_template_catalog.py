@@ -60,19 +60,17 @@ def test_unknown_or_disabled_explicit_template_fails_closed():
         assert result.method == "explicit_key_not_allowed"
 
 
-def test_legacy_templates_are_known_but_not_m3_available():
+def test_legacy_templates_are_not_registered_as_production_templates():
     assert DEFAULT_TEMPLATE_CATALOG.allowed_keys == ("sales_report",)
     for key in ("sales_weekly", "satisfaction", "operating_overview"):
         definition = DEFAULT_TEMPLATE_CATALOG.get_definition(key)
-        assert definition is not None
-        assert definition.allowed is False
+        assert definition is None
         result = DEFAULT_TEMPLATE_CATALOG.ground(
             f"生成 {key}", explicit_template_key=key, required=True
         )
         assert result.status == TemplateGroundingStatus.UNRESOLVED
     mentioned = DEFAULT_TEMPLATE_CATALOG.ground("请生成销售周报", required=False)
-    assert mentioned.status == TemplateGroundingStatus.UNRESOLVED
-    assert mentioned.method == "disabled_template_mentioned"
+    assert mentioned.status == TemplateGroundingStatus.NOT_MENTIONED
 
 
 def test_ambiguous_and_disabled_templates_fail_closed():

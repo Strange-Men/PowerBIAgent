@@ -67,6 +67,9 @@ export function App() {
           semanticModelError={app.semanticModelError}
           semanticModelCompatibilityNotice={app.semanticModelCompatibilityNotice}
           reportTemplate={app.selectedReportTemplate}
+          reportTemplateOptions={app.reportTemplateOptions}
+          loadingReportTemplates={app.loadingReportTemplates}
+          reportTemplateError={app.reportTemplateError}
           onSemanticModelChange={app.setSelectedSemanticModel}
           onRefreshSemanticModels={app.refreshSemanticModels}
           onReportTemplateChange={app.setSelectedReportTemplate}

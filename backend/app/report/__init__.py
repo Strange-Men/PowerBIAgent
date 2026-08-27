@@ -29,6 +29,15 @@ from backend.app.report.contracts import (
     TemplateSchemaBinding,
 )
 from backend.app.report.fixed import SalesReportRenderer
+from backend.app.report.registry import (
+    DEFAULT_REPORT_TEMPLATE_REGISTRY,
+    ReportRendererDispatcher,
+    ReportRendererRegistry,
+    ReportTemplateAvailability,
+    ReportTemplateDescriptor,
+    ReportTemplateRegistry,
+    ReportTemplateUnavailableError,
+)
 from backend.app.report.resources import (
     InMemoryReportRepository,
     LocalReportRepository,
@@ -65,6 +74,13 @@ __all__ = [
     "TemplateContract",
     "TemplateSchemaBinding",
     "SalesReportRenderer",
+    "DEFAULT_REPORT_TEMPLATE_REGISTRY",
+    "ReportRendererDispatcher",
+    "ReportRendererRegistry",
+    "ReportTemplateAvailability",
+    "ReportTemplateDescriptor",
+    "ReportTemplateRegistry",
+    "ReportTemplateUnavailableError",
     "InMemoryReportRepository",
     "LocalReportRepository",
     "ReportArtifact",

@@ -7,6 +7,7 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict
 
 from backend.app.query_plan.semantic_catalog import normalize_semantic_text
+from backend.app.report.registry import DEFAULT_REPORT_TEMPLATE_REGISTRY
 
 
 class TemplateGroundingStatus(str, Enum):
@@ -63,6 +64,17 @@ class TemplateCatalog:
     @property
     def allowed_keys(self) -> tuple[str, ...]:
         return tuple(item.key for item in self._definitions if item.allowed)
+
+    @classmethod
+    def from_report_registry(cls) -> "TemplateCatalog":
+        return cls(tuple(
+            TemplateDefinition(
+                key=item.template_key,
+                aliases=item.aliases,
+                allowed=item.availability.value == "available",
+            )
+            for item in DEFAULT_REPORT_TEMPLATE_REGISTRY.descriptors
+        ))
 
     def get_definition(self, key: str) -> TemplateDefinition | None:
         """Return registry metadata without granting availability."""
@@ -181,28 +193,4 @@ class TemplateCatalog:
         )
 
 
-DEFAULT_TEMPLATE_CATALOG = TemplateCatalog(
-    (
-        TemplateDefinition(
-            key="sales_report",
-            aliases=("销售报表", "销售报告"),
-        ),
-        # M0-M2 compatibility keys remain recognizable but are not M3 production
-        # templates. Explicit or language-based requests for them fail closed.
-        TemplateDefinition(
-            key="sales_weekly",
-            aliases=("销售周报", "周报", "销售经营周报"),
-            allowed=False,
-        ),
-        TemplateDefinition(
-            key="satisfaction",
-            aliases=("满意度报告",),
-            allowed=False,
-        ),
-        TemplateDefinition(
-            key="operating_overview",
-            aliases=("经营概览", "经营总览"),
-            allowed=False,
-        ),
-    ),
-)
+DEFAULT_TEMPLATE_CATALOG = TemplateCatalog.from_report_registry()

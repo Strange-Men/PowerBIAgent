@@ -33,6 +33,7 @@ from backend.app.schemas.data_contracts import (
     KPISpec,
     QueryResult,
     ReportSpec,
+    TableSpec,
 )
 
 
@@ -474,10 +475,21 @@ class SalesReportSpecBuilder:
             for item in data.kpis
         ]
         charts: list[ChartSpec] = []
+        tables: list[TableSpec] = []
         for section in data.sections:
             rows = section.values
             row_count = len(rows)
             role = self._section_key_for_requirement(section.requirement_key)
+            if role.value == "top_customers":
+                tables.append(TableSpec(
+                    title="关键明细",
+                    columns=["客户", "销售额（元）"],
+                    rows=[
+                        [self._series_label(item), self._series_value(item)]
+                        for item in rows
+                    ],
+                ))
+                continue
             visual = self._visualization.choose(role, row_count=row_count)
             charts.append(ChartSpec(
                 type="bar",
@@ -508,7 +520,7 @@ class SalesReportSpecBuilder:
             summary="",
             kpis=kpis,
             charts=charts,
-            tables=[],
+            tables=tables,
             insights=[],
             data_source=data.semantic_model_key,
             filters=[],

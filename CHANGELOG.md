@@ -2,6 +2,20 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.7.2] — 2026-08-27
+
+### Report Template Architecture & Simple Report Quality Closure（COMPLETE）
+
+- Template Gate 集中到 Intent 后的 `TurnPipeline.preflight_report_template()`；missing/unknown/stale key 统一返回 `生成报表前请选择有效的模板`，并在 schema、QueryPlan、DAX、Power BI、ReportData、ReportSpec、Renderer 与 HTML artifact 前 fail closed。
+- 新增 `ReportTemplateRegistry`、`ReportRendererRegistry` 与 `ReportRendererDispatcher`，形成 `template_key → renderer_key → renderer` 单一 authority；当前仅公开 `sales_report / 简易模板`，无 default、first-item fallback 或 legacy template 注册。
+- 新增只读 `GET /api/v1/report-templates`；前端删除硬编码模板权威表，改为后端目录驱动的显式选择，自动清除 stale selection，并以紧凑的未选择/已选择状态替代持久 warning。
+- 简易模板固定为 4 KPI → 月度趋势 → 区域/品类 → Top 产品 → 关键明细 → footer；Top Customer 投影为“关键明细”表，缺少 VerifiedFactSet 的 section deterministic omit。
+- 趋势图新增 deterministic nice Y ticks、水平 gridlines、`销售额（元）`、完整 data points、15 月桌面全标签和小屏 first/last/year-boundary 双层确定性 tick；390/768/1440/2560 fixture 与 Real 浏览器矩阵均无横向滚动或 label overlap。
+- Fresh final gates：Semantic Compatibility `304 passed`；backend `1918 passed, 1 skipped`；frontend Vitest `83 passed`、typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；治理、compileall、`git diff --check` 与 automation residual=0。
+- M5.7.1 Semantic/DAX/VerifiedFactSet/Memory authority 保持冻结；未开发 DeepSeek/Kimi Provider、未修改 MCP、未新增第二模板，无 schema/migration。M5.8—M5.10 仍为 NOT STARTED，M5 FINAL 尚未成立。
+
+**Settings.version:** M5.7.2
+
 ## [M5.7.1] — 2026-08-27
 
 ### Semantic Reliability / Regression Firewall（COMPLETE）

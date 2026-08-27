@@ -108,9 +108,9 @@
   .chart { min-width: 0; }
   .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
   .chart-line { width: 100%; }
-  .chart-line svg { height: clamp(190px, 30vw, 430px); }
+  .chart-line svg { height: auto; aspect-ratio: 1000 / 380; }
   .chart-axis-label[data-tick-tier="medium"],
-  .chart-axis-label[data-tick-tier="wide"] { display: none; }
+  .chart-axis-label[data-tick-tier="desktop"] { display: none; }
   .chart-axis-label {
     font-family: var(--font);
     font-size: 30px;
@@ -120,6 +120,13 @@
     font-family: var(--font);
     font-size: 30px;
     fill: var(--ink-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  .chart-gridline { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .chart-y-tick, .chart-y-axis-title {
+    font-family: var(--font);
+    fill: var(--ink-muted);
+    font-size: 24px;
     font-variant-numeric: tabular-nums;
   }
   /* horizontal bars */
@@ -263,20 +270,26 @@
   }
   .table-wrap {
     width: 100%;
-    overflow-x: auto;
+    overflow: hidden;
     border: 1px solid var(--border);
     border-radius: 8px;
   }
-  table { width: 100%; border-collapse: collapse; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   th, td { padding: 10px 12px; text-align: left; word-break: break-word; }
   th { background: var(--surface); font-weight: 600; }
+  tbody tr + tr { border-top: 1px solid var(--border); }
+  td:last-child, th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
   @media (min-width: 640px) {
+    .chart-axis-label[data-tick-tier="base"] { display: none; }
     .chart-axis-label[data-tick-tier="medium"] { display: inline; }
     .chart-axis-label, .chart-direct-label { font-size: 16px; }
+    .chart-y-tick, .chart-y-axis-title { font-size: 15px; }
   }
   @media (min-width: 1200px) {
-    .chart-axis-label[data-tick-tier="wide"] { display: inline; }
+    .chart-axis-label[data-tick-tier="medium"] { display: none; }
+    .chart-axis-label[data-tick-tier="desktop"] { display: inline; }
     .chart-axis-label, .chart-direct-label { font-size: 10px; }
+    .chart-y-tick, .chart-y-axis-title { font-size: 10px; }
   }
   @media (max-width: 900px) {
     .pair { grid-template-columns: 1fr; }
@@ -304,6 +317,7 @@
   ${trend_block}
   ${pair_one_block}
   ${pair_two_block}
+  ${detail_block}
   <footer class="report-footer">${footer}</footer>
 </main>
 </body>

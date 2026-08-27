@@ -21,6 +21,7 @@ from backend.app.api.dependencies import (
     get_mock_turn_service,
     get_conversation_history_service,
     get_report_repository,
+    get_report_template_registry,
     get_semantic_model_discovery_service,
     get_settings_dep,
     get_turn_service,
@@ -86,6 +87,10 @@ from backend.app.report.resources import (
     ReportRestoreResult,
     ReportStorageError,
 )
+from backend.app.report.registry import (
+    ReportTemplateCatalogResponse,
+    ReportTemplateRegistry,
+)
 
 router = APIRouter()
 
@@ -109,6 +114,17 @@ async def discover_semantic_models(
 ):
     """Return safe models currently selectable by the frontend."""
     return await service.discover()
+
+
+@router.get(
+    "/api/v1/report-templates",
+    response_model=ReportTemplateCatalogResponse,
+)
+async def discover_report_templates(
+    registry: ReportTemplateRegistry = Depends(get_report_template_registry),
+):
+    """Return the backend-owned set of currently selectable templates."""
+    return registry.public_catalog()
 
 
 @router.get("/api/reports", response_model=ReportResourcePage)

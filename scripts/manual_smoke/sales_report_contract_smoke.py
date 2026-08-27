@@ -277,7 +277,7 @@ async def _run_smoke(
             and "http://" not in lowered
             and "https://" not in lowered
             and "<link" not in lowered
-            and "<table" not in lowered
+            and "javascript:" not in lowered
             and "url(" not in lowered
             and "src=" not in lowered
         )

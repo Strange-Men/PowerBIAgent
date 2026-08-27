@@ -1,6 +1,6 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 COMPLETE；M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立
+> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 COMPLETE；M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立
 > **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.10（含 M5.7.1 / M5.7.2）
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
@@ -197,7 +197,7 @@ benchmark 问题、expected 数值、问题→答案映射不得进入 productio
 
 ### M5.7.2 — Report Template Architecture Closure
 
-M5.7.2 状态为 NOT STARTED，只负责 Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复；M5.7.1 不得提前实现。
+M5.7.2 状态为 COMPLETE，只负责 Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复；M5.7.1 Semantic authority 保持冻结，未扩展到 M5.8—M5.10。
 
 ### M5.9 — MCP performance and resilience
 
@@ -336,6 +336,10 @@ M5.7 已按 R1—R11 顺序完成：template-required spy 证明无模板时只�
 
 M5.7.1 已按 S1—S12 完成：production-path reproducer 证明旧逻辑在 Rich 多日期模型错误依赖 cardinality；最终 date-role resolver 固定为显式角色 → 唯一 `temporal_role: default` → 唯一 temporal-grouping binding → 唯一 glossary 日期对象 → 唯一 runtime 日期字段 → clarification。Semantic Compatibility `302 passed`，backend `1901 passed, 1 skipped`，frontend `80 passed` 且 build PASS，Golden `11 passed, 1 manual-real skipped`，跨域/schema mutation、no-answer-leakage、Rich PBIX Real/manual 与 automation residual=0 均通过。M5.5 authority 保持不变，M5.7.2 / M5.8—M5.10 仍未开始。
 
+## 十一、M5.7.2 checkpoint 与完成边界
+
+M5.7.2 已完成 Intent 后集中 Template Gate、Template/Renderer Registry 与 Dispatcher、只读后端模板目录、后端目录驱动的前端显式选择，以及简易模板信息架构和时间轴收口。missing/unknown/stale template 统一精确提示并保持 ZERO schema/QueryPlan/DAX/Power BI/ReportData/ReportSpec/Renderer/artifact；无 default、猜测或 first-item fallback。完整 deterministic fixture 在 390/768/1440/2560 覆盖 4 KPI、15 点趋势、区域、品类、Top 产品、关键明细和 footer，均无水平滚动或标签碰撞；Real runtime 仅渲染 schema 可证明的 section，缺失 Region/Product/Customer 时 deterministic omit。Semantic Compatibility `304 passed`，backend `1918 passed, 1 skipped`，frontend `83 passed` 且 typecheck/lint/build PASS，Golden `11 passed, 1 manual-real skipped`，automation-owned residual=0。未修改 M5.7.1 authority，未开发 M5.8/M5.9/M5.10。
+
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-08-27 M5.7.1 COMPLETE — M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*创建日期：2026-08-26 | 最后更新：2026-08-27 M5.7.1 / M5.7.2 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*

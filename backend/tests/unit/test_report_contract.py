@@ -203,9 +203,9 @@ def test_opaque_instance_uses_explicit_registry_binding_scope():
     ("template_key", "status"),
     [
         ("unknown", ReportAvailabilityStatus.UNKNOWN_TEMPLATE),
-        ("sales_weekly", ReportAvailabilityStatus.TEMPLATE_NOT_AVAILABLE),
-        ("satisfaction", ReportAvailabilityStatus.TEMPLATE_NOT_AVAILABLE),
-        ("operating_overview", ReportAvailabilityStatus.TEMPLATE_NOT_AVAILABLE),
+        ("sales_weekly", ReportAvailabilityStatus.UNKNOWN_TEMPLATE),
+        ("satisfaction", ReportAvailabilityStatus.UNKNOWN_TEMPLATE),
+        ("operating_overview", ReportAvailabilityStatus.UNKNOWN_TEMPLATE),
     ],
 )
 def test_unknown_and_legacy_templates_fail_closed(template_key, status):

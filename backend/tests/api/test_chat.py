@@ -158,8 +158,7 @@ class TestChatReportGeneration:
         assert data["terminal_state"] == "clarification_required"
         assert data["intent"] == "report_generation"
         assert data["response_type"] == "clarification"
-        assert "选择" in data["clarification_question"]
-        assert "模板" in data["clarification_question"]
+        assert data["clarification_question"] == "生成报表前请选择有效的模板"
         assert data["report"] is None
         assert data["memory_commit"] is False
         assert data["tool_sequence"] == []
@@ -182,6 +181,21 @@ class TestChatReportGeneration:
         assert data["report"] is None
         assert data["memory_commit"] is False
         assert data["tool_sequence"] == []
+        assert data["clarification_question"] == "生成报表前请选择有效的模板"
+
+    @pytest.mark.asyncio
+    async def test_normal_question_without_template_is_not_intercepted(self, client):
+        response = await client.post("/api/v1/chat", json={
+            "message": "查询销售额",
+            "conversation_id": "conv-chat-no-template-data-question",
+            "request_id": "req-chat-no-template-data-question",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["terminal_state"] == "completed"
+        assert data["intent"] == "data_question"
+        assert data["response_type"] == "answer"
+        assert data["memory_commit"] is True
 
     @pytest.mark.asyncio
     async def test_report_retry_succeeds_after_explicit_template_selection(self, client):
@@ -204,6 +218,23 @@ class TestChatReportGeneration:
         assert data["report"]["template_key"] == "sales_report"
         assert data["tool_sequence"].count("render_report") == 1
 
+
+class TestReportTemplateCatalog:
+    @pytest.mark.asyncio
+    async def test_catalog_exposes_only_backend_registered_available_templates(self, client):
+        response = await client.get("/api/v1/report-templates")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "items": [
+                {
+                    "template_key": "sales_report",
+                    "display_name": "简易模板",
+                    "description": "适合快速查看关键指标、趋势与分类明细",
+                    "availability": "available",
+                }
+            ]
+        }
 
 class TestChatClarification:
     """clarification 真实可达"""
