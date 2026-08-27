@@ -1,6 +1,6 @@
 # PowerBIAgent Validation — 版本无关通用 CI
 # 触发: push main/m5/rebuild, PR 指向 main/m5/rebuild, workflow_dispatch
-# 环境: windows-latest, Python 3.11, LLM_MODE=mock, POWERBI_MODE=mock
+# 环境: windows-latest, Python 3.11, Node.js 24 LTS, LLM_MODE=mock, POWERBI_MODE=mock
 # 禁止: 真实 API Key, api.deepseek.com, continue-on-error, 无限重试
 
 name: PowerBIAgent Validation
@@ -70,8 +70,36 @@ jobs:
       - name: 7. Golden Cases
         run: python -m backend.app.harness.cases
 
+      # ── Frontend validation ──────────────────────────────────────
+      - name: Setup Node.js 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: 8. Frontend tests
+        working-directory: frontend
+        run: npm test
+
+      - name: 9. Frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: 10. Frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: 11. Frontend production build
+        working-directory: frontend
+        run: npm run build
+
       # ── Final checks ─────────────────────────────────────────────
-      - name: 8. Git diff check (strict)
+      - name: 12. Git diff check (strict)
         run: |
           python -c "
           import subprocess, sys

@@ -337,6 +337,7 @@
 - 简易模板固定顺序为 4 KPI → 月度趋势 → 区域/品类 → Top 产品 → 关键明细 → 数据来源/最后刷新；趋势包含 deterministic nice Y ticks、水平 gridlines、`销售额（元）`、全部 data points、桌面 15 月完整标签，以及小屏 first/last/year-boundary 双层确定性 tick。
 - 完整 deterministic visual fixture 在 390/768/1440/2560 均无水平滚动或 label overlap，15 点全部保留；1440/2560 显示全部 15 月，完整覆盖区域、品类、Top 产品、关键明细与 footer。Real `PowerBIAgent_M3_Rich_Test` 当前 runtime schema 实际只证明 4 KPI、15 月趋势和品类，Region/Product/Customer 三项被 capability gate 标记 unavailable 并正确省略，未伪造 section。
 - Fresh gates：Semantic Compatibility `304 passed`；backend `1918 passed, 1 skipped`；frontend Vitest `83 passed`、typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；全治理、compileall 与 `git diff --check` PASS。automation run `m572-real-20260827-a1` 的 conversation/report/HTML/delete-intent 与 ownership residual=0。
+- `PowerBIAgent Validation` 已在既有 security/architecture/docs/Semantic/full pytest/Golden/strict-git gates 之外接入 Node.js 24 LTS + `npm ci`，并将 frontend Vitest、typecheck、lint 与 production build 作为四个不可跳过的远程失败门禁；Vitest 跨文件串行以消除 Windows 冷安装时的 worker 启动竞争，不修改测试断言或超时。final commit SHA 与 Actions run evidence 只在提交后最终报告中记录。
 - M5.7.1 Semantic/DAX/VerifiedFactSet/Memory authority 未修改；未开发 DeepSeek/Kimi Provider、未修改 MCP、未新增第二模板、无 schema/migration。
 
 ## 下一步

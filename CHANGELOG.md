@@ -12,6 +12,7 @@
 - 简易模板固定为 4 KPI → 月度趋势 → 区域/品类 → Top 产品 → 关键明细 → footer；Top Customer 投影为“关键明细”表，缺少 VerifiedFactSet 的 section deterministic omit。
 - 趋势图新增 deterministic nice Y ticks、水平 gridlines、`销售额（元）`、完整 data points、15 月桌面全标签和小屏 first/last/year-boundary 双层确定性 tick；390/768/1440/2560 fixture 与 Real 浏览器矩阵均无横向滚动或 label overlap。
 - Fresh final gates：Semantic Compatibility `304 passed`；backend `1918 passed, 1 skipped`；frontend Vitest `83 passed`、typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；治理、compileall、`git diff --check` 与 automation residual=0。
+- 最终远程治理将 frontend Vitest、typecheck、lint 与 production build 接入同一 `PowerBIAgent Validation` workflow；GitHub Actions 使用 Node.js 24 LTS、仓库 `frontend/package-lock.json` 与 `npm ci`，任一 frontend step 失败即使整个 workflow 失败。Vitest 固定为跨文件串行，避免 Windows 冷安装环境的 worker 启动竞争，同时保留全部测试、断言与超时规则。
 - M5.7.1 Semantic/DAX/VerifiedFactSet/Memory authority 保持冻结；未开发 DeepSeek/Kimi Provider、未修改 MCP、未新增第二模板，无 schema/migration。M5.8—M5.10 仍为 NOT STARTED，M5 FINAL 尚未成立。
 
 **Settings.version:** M5.7.2
