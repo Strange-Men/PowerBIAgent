@@ -35,12 +35,17 @@ entries:
   - date role 按 explicit role、model metadata、provable runtime relationship/default role 依次选择
   - 无唯一证据必须 clarification 且 ZERO DAX
   related_adr: ADR-008
-  related_commits: []
-  status: monitoring
+  related_commits:
+  - 97ea4ab5b0213e19ae021fe8f321dae50444ddc7 M5.7.1_语义可靠性与永久回归防火墙最终收口
+  status: resolved
   events:
   - date: '2026-08-27'
     action: discovered
     version: M5.7.1
+  - date: '2026-08-27'
+    action: resolved
+    version: M5.7.1
+    commit: 97ea4ab5b0213e19ae021fe8f321dae50444ddc7
 - id: GOV-571-001
   title: Semantic benchmark 答案不得泄漏到 production runtime
   category: GOV
@@ -68,12 +73,17 @@ entries:
   - expected 只存在于 test/harness oracle
   - Semantic Compatibility Gate 必须执行 answer-leakage scan
   related_adr: ADR-009
-  related_commits: []
-  status: monitoring
+  related_commits:
+  - 97ea4ab5b0213e19ae021fe8f321dae50444ddc7 M5.7.1_语义可靠性与永久回归防火墙最终收口
+  status: resolved
   events:
   - date: '2026-08-27'
     action: discovered
     version: M5.7.1
+  - date: '2026-08-27'
+    action: resolved
+    version: M5.7.1
+    commit: 97ea4ab5b0213e19ae021fe8f321dae50444ddc7
 - id: GOV-570-001
   title: 报表请求不得在模板缺失时继续或隐式选择默认模板
   category: GOV
