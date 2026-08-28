@@ -1,14 +1,15 @@
 """Power BI Local Modeling MCP Adapter and stdio client boundary.
 
 The official Local MCP SDK, tool names, and raw payloads stay behind the
-existing PowerBIAdapter boundary. Schema reads and DAX execution each use one
-read-only stdio/Desktop connection lifecycle and explicit operation
-whitelists.
+existing PowerBIAdapter boundary. An application-owned read-only stdio session
+is reused across operations while each Desktop access still performs exact
+opaque-identity validation and uses explicit operation whitelists.
 """
 
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import hmac
 import json
@@ -16,6 +17,8 @@ import re
 import secrets
 import shutil
 import tempfile
+import time
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Awaitable, Callable, Protocol, TypeVar
@@ -25,6 +28,14 @@ from mcp.client.stdio import stdio_client
 from mcp.shared.exceptions import MCPError
 from pydantic import ValidationError
 
+from backend.app.core.async_runtime import AsyncSingleFlight, BoundedTTLCache
+from backend.app.core.performance import (
+    PerformanceRecorder,
+    bind_performance_recorder,
+    current_performance_recorder,
+    measure_performance,
+    reset_performance_recorder,
+)
 from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
 from backend.app.powerbi.models import (
     PowerBICompatibilityProbe,
@@ -202,6 +213,16 @@ class LocalMCPConnection(Protocol):
     async def execute_dax(self, request: DAXRequest) -> "LocalMCPDAXSnapshot":
         ...
 
+    async def validate_semantic_model(self, semantic_model_key: str) -> None:
+        ...
+
+    async def aclose(self) -> None:
+        ...
+
+    @property
+    def session_generation(self) -> int:
+        ...
+
 
 @dataclass(frozen=True)
 class LocalMCPSchemaSnapshot:
@@ -270,6 +291,19 @@ class LocalMCPCompatibilitySnapshot:
     dax: LocalMCPDAXSnapshot
 
 
+@dataclass
+class _LocalMCPSessionWorkItem:
+    handler: Callable[
+        [Client, str | None, tuple[DiscoveredLocalTool, ...]],
+        Awaitable[Any],
+    ]
+    future: asyncio.Future[Any]
+    recorder: PerformanceRecorder | None
+
+
+_SESSION_STOP = object()
+
+
 class PowerBILocalMCPClient:
     """Minimal official MCP v2 stdio client for the Microsoft local server."""
 
@@ -280,6 +314,7 @@ class PowerBILocalMCPClient:
         package: str = LOCAL_MCP_PACKAGE,
         readonly: bool = True,
         timeout_seconds: float = 120.0,
+        max_pending_operations: int = 8,
     ) -> None:
         if not executable.strip() or not package.strip():
             raise ValueError("Local MCP executable and package are required")
@@ -287,10 +322,24 @@ class PowerBILocalMCPClient:
             raise ValueError("M2.1 Local MCP must run in read-only mode")
         if timeout_seconds <= 0:
             raise ValueError("Local MCP timeout must be positive")
+        if max_pending_operations <= 0:
+            raise ValueError("Local MCP pending operation bound must be positive")
         self._executable = executable
         self._package = package
         self._readonly = readonly
         self._timeout_seconds = timeout_seconds
+        self._operation_slots = asyncio.Semaphore(max_pending_operations)
+        self._work_queue: asyncio.Queue[_LocalMCPSessionWorkItem | object] = (
+            asyncio.Queue(maxsize=max_pending_operations)
+        )
+        self._worker_lock = asyncio.Lock()
+        self._worker_task: asyncio.Task[None] | None = None
+        self._session_generation = 0
+        self._closed = False
+
+    @property
+    def session_generation(self) -> int:
+        return self._session_generation
 
     async def discover_semantic_models(self) -> LocalMCPDiscoverySnapshot:
         """Enumerate safe opaque identities without selecting by list order."""
@@ -351,6 +400,56 @@ class PowerBILocalMCPClient:
 
         return await self._run_session(_execute)
 
+    async def validate_semantic_model(self, semantic_model_key: str) -> None:
+        """Re-enumerate Desktop and prove the selected opaque identity is unique."""
+
+        async def _validate(
+            client: Client,
+            protocol: str | None,
+            tools: tuple[DiscoveredLocalTool, ...],
+        ) -> None:
+            with measure_performance("desktop_discovery"):
+                _, instances = await self._enumerate_desktop_instances(
+                    client,
+                    protocol,
+                    tools,
+                )
+            matches = [
+                instance
+                for instance in instances
+                if instance.semantic_model_key == semantic_model_key
+            ]
+            if len(matches) != 1:
+                raise LocalMCPConnectionError(
+                    LocalMCPErrorCategory.DESKTOP_STALE_INSTANCE,
+                    "desktop_selected_instance_stale",
+                )
+
+        await self._run_session(_validate)
+
+    async def aclose(self) -> None:
+        """Close the application-owned stdio worker in its owner task."""
+        async with self._worker_lock:
+            if self._closed:
+                worker = self._worker_task
+            else:
+                self._closed = True
+                worker = self._worker_task
+                if worker is not None and not worker.done():
+                    await self._work_queue.put(_SESSION_STOP)
+        if worker is not None:
+            await asyncio.shield(worker)
+
+    async def _ensure_worker(self) -> None:
+        async with self._worker_lock:
+            if self._closed:
+                raise LocalMCPConnectionError(
+                    LocalMCPErrorCategory.MCP_STARTUP,
+                    "local_mcp_client_closed",
+                )
+            if self._worker_task is None or self._worker_task.done():
+                self._worker_task = asyncio.create_task(self._session_worker())
+
     async def _run_session(
         self,
         handler: Callable[
@@ -358,38 +457,167 @@ class PowerBILocalMCPClient:
             Awaitable[_T],
         ],
     ) -> _T:
+        await self._ensure_worker()
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[_T] = loop.create_future()
+        work = _LocalMCPSessionWorkItem(
+            handler=handler,
+            future=future,
+            recorder=current_performance_recorder(),
+        )
+        async with self._operation_slots:
+            await self._work_queue.put(work)
+            return await asyncio.shield(future)
+
+    async def _session_worker(self) -> None:
+        pending: _LocalMCPSessionWorkItem | object | None = None
+        while True:
+            item = pending or await self._work_queue.get()
+            pending = None
+            if item is _SESSION_STOP:
+                return
+            assert isinstance(item, _LocalMCPSessionWorkItem)
+            pending = await self._serve_session(item)
+            if pending is _SESSION_STOP:
+                return
+
+    async def _serve_session(
+        self,
+        first: _LocalMCPSessionWorkItem,
+    ) -> _LocalMCPSessionWorkItem | object | None:
         executable = shutil.which(self._executable)
         if executable is None:
-            raise LocalMCPConnectionError(
+            self._set_work_exception(first, LocalMCPConnectionError(
                 LocalMCPErrorCategory.LOCAL_PREREQUISITE,
                 "local_mcp_executable_missing",
-            )
+            ))
+            return None
 
         args = ["-y", self._package, "--start", "--readonly"]
         parameters = StdioServerParameters(command=executable, args=args)
         with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errlog:
+            token = None
+            stop_requested = False
             try:
-                async with asyncio.timeout(self._timeout_seconds):
-                    transport = stdio_client(parameters, errlog=errlog)
-                    async with Client(
+                if first.recorder is not None:
+                    token = bind_performance_recorder(first.recorder)
+                startup_at = time.monotonic()
+                async with AsyncExitStack() as stack:
+                    async with asyncio.timeout(self._timeout_seconds):
+                        transport = stdio_client(parameters, errlog=errlog)
+                        client = await stack.enter_async_context(Client(
                         transport,
                         raise_exceptions=True,
                         read_timeout_seconds=self._timeout_seconds,
-                    ) as client:
-                        tools = await self._list_all_tools(client)
-                        protocol = (
-                            str(client.protocol_version)
-                            if client.protocol_version is not None
-                            else None
+                        ))
+                    if first.recorder is not None:
+                        first.recorder.record(
+                            "mcp_session_startup",
+                            (time.monotonic() - startup_at) * 1000.0,
+                            session="new",
                         )
-                        return await handler(client, protocol, tools)
-            except LocalMCPConnectionError:
-                raise
+                    with measure_performance("mcp_tool_discovery", cache="miss"):
+                        tools = await self._list_all_tools(client)
+                    protocol = (
+                        str(client.protocol_version)
+                        if client.protocol_version is not None
+                        else None
+                    )
+                    self._session_generation += 1
+                    current: _LocalMCPSessionWorkItem | object = first
+                    is_first = True
+                    while current is not _SESSION_STOP:
+                        assert isinstance(current, _LocalMCPSessionWorkItem)
+                        fatal = await self._execute_work_item(
+                            current,
+                            client,
+                            protocol,
+                            tools,
+                            is_first=is_first,
+                        )
+                        if fatal:
+                            return None
+                        is_first = False
+                        current = await self._work_queue.get()
+                    stop_requested = True
+                    return _SESSION_STOP
+            except LocalMCPConnectionError as exc:
+                if stop_requested:
+                    return _SESSION_STOP
+                self._set_work_exception(first, exc)
             except Exception as exc:
-                raise self._classify_exception(
+                if stop_requested:
+                    return _SESSION_STOP
+                self._set_work_exception(first, self._classify_exception(
                     exc,
                     diagnostic_text=self._read_diagnostic_text(errlog),
-                ) from None
+                ))
+            finally:
+                if token is not None:
+                    reset_performance_recorder(token)
+        return None
+
+    async def _execute_work_item(
+        self,
+        item: _LocalMCPSessionWorkItem,
+        client: Client,
+        protocol: str | None,
+        tools: tuple[DiscoveredLocalTool, ...],
+        *,
+        is_first: bool,
+    ) -> bool:
+        token = (
+            bind_performance_recorder(item.recorder)
+            if item.recorder is not None
+            else None
+        )
+        started_at = time.monotonic()
+        try:
+            if not is_first and item.recorder is not None:
+                item.recorder.record(
+                    "mcp_tool_discovery",
+                    0.0,
+                    cache="hit",
+                    session="reused",
+                )
+            async with asyncio.timeout(self._timeout_seconds):
+                result = await item.handler(client, protocol, tools)
+            if not item.future.done():
+                item.future.set_result(result)
+            if item.recorder is not None:
+                item.recorder.record(
+                    "mcp_session_operation",
+                    (time.monotonic() - started_at) * 1000.0,
+                    session="new" if is_first else "reused",
+                )
+            return False
+        except LocalMCPConnectionError as exc:
+            self._set_work_exception(item, exc)
+            return self._is_session_fatal(exc)
+        except Exception as exc:
+            classified = self._classify_exception(exc, diagnostic_text="")
+            self._set_work_exception(item, classified)
+            return self._is_session_fatal(classified)
+        finally:
+            if token is not None:
+                reset_performance_recorder(token)
+
+    @staticmethod
+    def _set_work_exception(
+        item: _LocalMCPSessionWorkItem,
+        exc: LocalMCPConnectionError,
+    ) -> None:
+        if not item.future.done():
+            item.future.set_exception(exc)
+
+    @staticmethod
+    def _is_session_fatal(exc: LocalMCPConnectionError) -> bool:
+        return exc.category in {
+            LocalMCPErrorCategory.MCP_STARTUP,
+            LocalMCPErrorCategory.MCP_TIMEOUT,
+            LocalMCPErrorCategory.MCP_PROTOCOL,
+            LocalMCPErrorCategory.NETWORK,
+        }
 
     async def _read_schema_in_session(
         self,
@@ -421,28 +649,29 @@ class PowerBILocalMCPClient:
             )
 
         details: dict[str, tuple[dict[str, object], ...]] = {}
-        for tool_name in SCHEMA_READ_OPERATION_WHITELIST:
-            list_payload = await self._call_schema_tool(
-                client,
-                tool_name,
-                "List",
-                connection_name=connected.connection_name,
-            )
-            references = self._schema_references(tool_name, list_payload)
-            if not references:
-                details[tool_name] = ()
-                continue
-            get_payload = await self._call_schema_tool(
-                client,
-                tool_name,
-                "Get",
-                connection_name=connected.connection_name,
-                references=references,
-            )
-            details[tool_name] = self._schema_detail_records(
-                get_payload,
-                expected_count=len(references),
-            )
+        with measure_performance("mcp_schema_read"):
+            for tool_name in SCHEMA_READ_OPERATION_WHITELIST:
+                list_payload = await self._call_schema_tool(
+                    client,
+                    tool_name,
+                    "List",
+                    connection_name=connected.connection_name,
+                )
+                references = self._schema_references(tool_name, list_payload)
+                if not references:
+                    details[tool_name] = ()
+                    continue
+                get_payload = await self._call_schema_tool(
+                    client,
+                    tool_name,
+                    "Get",
+                    connection_name=connected.connection_name,
+                    references=references,
+                )
+                details[tool_name] = self._schema_detail_records(
+                    get_payload,
+                    expected_count=len(references),
+                )
 
         return LocalMCPSchemaSnapshot(
             diagnostics=diagnostics,
@@ -520,11 +749,12 @@ class PowerBILocalMCPClient:
             }
         }
         try:
-            result = await client.call_tool(
-                _DAX_CAPABILITY_TOOL,
-                arguments,
-                read_timeout_seconds=float(request.timeout_seconds),
-            )
+            with measure_performance("mcp_dax_execute"):
+                result = await client.call_tool(
+                    _DAX_CAPABILITY_TOOL,
+                    arguments,
+                    read_timeout_seconds=float(request.timeout_seconds),
+                )
         except TimeoutError:
             raise LocalMCPConnectionError(
                 LocalMCPErrorCategory.DAX_TIMEOUT,
@@ -689,12 +919,13 @@ class PowerBILocalMCPClient:
         require_future_capabilities: bool = True,
     ) -> tuple[LocalMCPDiagnostics, ConnectedLocalDesktop]:
         state = self._session_state(protocol, tools, readonly=self._readonly)
-        _, instances = await self._enumerate_desktop_instances(
-            client,
-            protocol,
-            tools,
-            require_future_capabilities=require_future_capabilities,
-        )
+        with measure_performance("desktop_discovery"):
+            _, instances = await self._enumerate_desktop_instances(
+                client,
+                protocol,
+                tools,
+                require_future_capabilities=require_future_capabilities,
+            )
         matches = [
             instance
             for instance in instances
@@ -711,16 +942,17 @@ class PowerBILocalMCPClient:
                 "desktop_selected_instance_not_unique",
             )
         instance = matches[0]
-        connect_result = await client.call_tool(
-            "connection_operations",
-            {
-                "request": {
-                    "operation": "Connect",
-                    "dataSource": instance.data_source,
-                }
-            },
-            read_timeout_seconds=self._timeout_seconds,
-        )
+        with measure_performance("desktop_connection"):
+            connect_result = await client.call_tool(
+                "connection_operations",
+                {
+                    "request": {
+                        "operation": "Connect",
+                        "dataSource": instance.data_source,
+                    }
+                },
+                read_timeout_seconds=self._timeout_seconds,
+            )
         connect_payload = self._result_payload(connect_result)
         if connect_result.is_error or self._payload_failed(connect_payload):
             if self._payload_permission_denied(connect_payload):
@@ -1330,6 +1562,11 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
         timeout: float = 120.0,
         max_retries: int = 1,
         client: LocalMCPConnection | None = None,
+        discovery_ttl_seconds: float = 5.0,
+        probe_ttl_seconds: float = 15.0,
+        schema_ttl_seconds: float = 30.0,
+        member_ttl_seconds: float = 15.0,
+        cache_max_size: int = 128,
     ) -> None:
         self._executable = executable
         self._package = package
@@ -1338,6 +1575,26 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
         self._timeout = timeout
         self._max_retries = min(max(max_retries, 0), 1)
         self._client = client
+        self._cache_generation = self._client_generation(client)
+        self._discovery_cache: BoundedTTLCache[
+            tuple[int, str], LocalMCPDiscoverySnapshot
+        ] = BoundedTTLCache(max_size=8, ttl_seconds=discovery_ttl_seconds)
+        self._probe_cache: BoundedTTLCache[
+            tuple[int, str], PowerBICompatibilityProbe
+        ] = BoundedTTLCache(max_size=32, ttl_seconds=probe_ttl_seconds)
+        self._schema_cache: BoundedTTLCache[
+            tuple[int, str, str], SemanticModelSchema
+        ] = BoundedTTLCache(max_size=32, ttl_seconds=schema_ttl_seconds)
+        self._schema_fingerprints: dict[tuple[int, str], str] = {}
+        self._member_cache: BoundedTTLCache[
+            tuple[int, str, str, str, str, int], ColumnMembersResult
+        ] = BoundedTTLCache(
+            max_size=cache_max_size,
+            ttl_seconds=member_ttl_seconds,
+        )
+        self._singleflight: AsyncSingleFlight[tuple[object, ...], Any] = (
+            AsyncSingleFlight()
+        )
         self._last_diagnostics = LocalMCPDiagnostics.failure(
             LocalMCPErrorCategory.LOCAL_PREREQUISITE,
             "health_check_not_run",
@@ -1355,6 +1612,14 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
     @property
     def last_diagnostics(self) -> LocalMCPDiagnostics:
         return self._last_diagnostics
+
+    async def aclose(self) -> None:
+        client = self._client
+        self._invalidate_runtime_caches()
+        if client is not None:
+            close = getattr(client, "aclose", None)
+            if close is not None:
+                await close()
 
     async def health_check(self) -> bool:
         if not self._readonly:
@@ -1380,6 +1645,7 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 snapshot = await client.discover_semantic_models()
                 break
             except LocalMCPConnectionError as exc:
+                self._handle_runtime_failure(exc)
                 self._last_diagnostics = LocalMCPDiagnostics.failure(
                     exc.category,
                     exc.error_type,
@@ -1418,24 +1684,54 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 error_type="powerbi_local_mcp_configuration_incomplete",
             )
 
+        self._sync_session_generation(client)
+        cache_key = (self._cache_generation, "real")
+        snapshot = self._discovery_cache.get(cache_key)
+        if snapshot is not None:
+            with measure_performance("desktop_discovery", cache="hit"):
+                return self._catalog_from_discovery(copy.deepcopy(snapshot))
+
+        async def _load_discovery() -> LocalMCPDiscoverySnapshot:
+            with measure_performance("desktop_discovery", cache="miss"):
+                loaded = await self._discover_with_retry(client)
+            self._sync_session_generation(client)
+            self._discovery_cache.put(
+                (self._cache_generation, "real"),
+                copy.deepcopy(loaded),
+            )
+            return loaded
+
+        try:
+            snapshot = await self._singleflight.run(
+                ("discovery", self._cache_generation, "real"),
+                _load_discovery,
+            )
+            return self._catalog_from_discovery(copy.deepcopy(snapshot))
+        except LocalMCPConnectionError as exc:
+            self._handle_runtime_failure(exc)
+            error_type = "semantic_model_discovery_unavailable"
+            if exc.category == LocalMCPErrorCategory.DESKTOP_MULTIPLE_INSTANCES:
+                error_type = "powerbi_multiple_desktop_instances"
+            elif exc.category == LocalMCPErrorCategory.DESKTOP_NOT_FOUND:
+                error_type = "powerbi_desktop_not_connected"
+            elif exc.category == LocalMCPErrorCategory.DESKTOP_CONNECTION:
+                error_type = "powerbi_desktop_connection_failed"
+            return SemanticModelCatalog(
+                runtime_mode="real",
+                error_type=error_type,
+            )
+
+    async def _discover_with_retry(
+        self,
+        client: LocalMCPConnection,
+    ) -> LocalMCPDiscoverySnapshot:
         for attempt in range(self._max_retries + 1):
             try:
                 snapshot = await client.discover_semantic_models()
                 self._last_diagnostics = snapshot.diagnostics
-                return SemanticModelCatalog(
-                    runtime_mode="real",
-                    items=[
-                        SemanticModelOption(
-                            key=model.semantic_model_key,
-                            display_name=model.display_name,
-                            source="local_desktop",
-                            available=True,
-                            connected=True,
-                        )
-                        for model in snapshot.models
-                    ],
-                )
+                return snapshot
             except LocalMCPConnectionError as exc:
+                self._handle_runtime_failure(exc)
                 self._last_diagnostics = LocalMCPDiagnostics.failure(
                     exc.category,
                     exc.error_type,
@@ -1447,20 +1743,29 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 ):
                     await asyncio.sleep(0.25)
                     continue
-                error_type = "semantic_model_discovery_unavailable"
-                if exc.category == LocalMCPErrorCategory.DESKTOP_MULTIPLE_INSTANCES:
-                    error_type = "powerbi_multiple_desktop_instances"
-                elif exc.category == LocalMCPErrorCategory.DESKTOP_NOT_FOUND:
-                    error_type = "powerbi_desktop_not_connected"
-                elif exc.category == LocalMCPErrorCategory.DESKTOP_CONNECTION:
-                    error_type = "powerbi_desktop_connection_failed"
-                return SemanticModelCatalog(
-                    runtime_mode="real",
-                    error_type=error_type,
-                )
+                raise
+        raise LocalMCPConnectionError(
+            LocalMCPErrorCategory.NETWORK,
+            "semantic_model_discovery_unavailable",
+            retryable=True,
+        )
+
+    @staticmethod
+    def _catalog_from_discovery(
+        snapshot: LocalMCPDiscoverySnapshot,
+    ) -> SemanticModelCatalog:
         return SemanticModelCatalog(
             runtime_mode="real",
-            error_type="semantic_model_discovery_unavailable",
+            items=[
+                SemanticModelOption(
+                    key=model.semantic_model_key,
+                    display_name=model.display_name,
+                    source="local_desktop",
+                    available=True,
+                    connected=True,
+                )
+                for model in snapshot.models
+            ],
         )
 
     async def probe_compatibility(
@@ -1477,6 +1782,47 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
             return PowerBICompatibilityProbe(
                 semantic_model_key=semantic_model_key,
                 error_type="powerbi_local_mcp_configuration_incomplete",
+            )
+        self._sync_session_generation(client)
+        cache_key = (self._cache_generation, semantic_model_key)
+        cached = self._probe_cache.get(cache_key)
+        if cached is not None:
+            try:
+                await self._validate_cached_identity(client, semantic_model_key)
+            except LocalMCPConnectionError as exc:
+                self._handle_runtime_failure(exc)
+                return self._failed_probe(semantic_model_key, exc)
+            with measure_performance("compatibility_probe", cache="hit"):
+                return cached.model_copy(deep=True)
+
+        async def _load_probe() -> PowerBICompatibilityProbe:
+            with measure_performance("compatibility_probe", cache="miss"):
+                probe = await self._probe_compatibility_uncached(
+                    semantic_model_key,
+                    client,
+                )
+            self._sync_session_generation(client)
+            if probe.compatible:
+                self._probe_cache.put(
+                    (self._cache_generation, semantic_model_key),
+                    probe.model_copy(deep=True),
+                )
+            return probe
+
+        return await self._singleflight.run(
+            ("probe", self._cache_generation, semantic_model_key),
+            _load_probe,
+        )
+
+    async def _probe_compatibility_uncached(
+        self,
+        semantic_model_key: str,
+        client: LocalMCPConnection,
+    ) -> PowerBICompatibilityProbe:
+        if not self._readonly or not self._is_opaque_instance_key(semantic_model_key):
+            return PowerBICompatibilityProbe(
+                semantic_model_key=semantic_model_key or "invalid",
+                error_type="powerbi_stale_instance",
             )
 
         for attempt in range(self._max_retries + 1):
@@ -1514,6 +1860,7 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                     ),
                 )
             except LocalMCPConnectionError as exc:
+                self._handle_runtime_failure(exc)
                 self._last_diagnostics = LocalMCPDiagnostics.failure(
                     exc.category,
                     exc.error_type,
@@ -1619,7 +1966,6 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 provider=self.PROVIDER_NAME,
                 error_type=LocalMCPErrorCategory.SCHEMA_VALIDATION_FAILED.value,
             )
-
         try:
             client = self._ensure_client()
         except ValueError:
@@ -1628,6 +1974,68 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 provider=self.PROVIDER_NAME,
                 error_type=LocalMCPErrorCategory.LOCAL_PREREQUISITE.value,
             ) from None
+
+        self._sync_session_generation(client)
+        identity_key = (self._cache_generation, semantic_model_key)
+        fingerprint = self._schema_fingerprints.get(identity_key)
+        cached = (
+            self._schema_cache.get((*identity_key, fingerprint))
+            if fingerprint is not None
+            else None
+        )
+        if cached is not None:
+            try:
+                await self._validate_cached_identity(client, semantic_model_key)
+            except LocalMCPConnectionError as exc:
+                self._handle_runtime_failure(exc)
+                raise self._schema_adapter_error(exc) from None
+            with measure_performance("schema_read", cache="hit"):
+                return cached.model_copy(deep=True)
+
+        async def _load_schema() -> SemanticModelSchema:
+            with measure_performance("schema_read", cache="miss"):
+                schema = await self._get_semantic_model_schema_uncached(
+                    semantic_model_key,
+                    client,
+                )
+            self._sync_session_generation(client)
+            schema_fingerprint = self._schema_cache_fingerprint(schema)
+            current_identity = (self._cache_generation, semantic_model_key)
+            previous = self._schema_fingerprints.get(current_identity)
+            if previous is not None and previous != schema_fingerprint:
+                self._member_cache.discard_where(
+                    lambda key: key[0] == self._cache_generation
+                    and key[1] == semantic_model_key
+                )
+            self._schema_fingerprints[current_identity] = schema_fingerprint
+            self._schema_cache.put(
+                (*current_identity, schema_fingerprint),
+                schema.model_copy(deep=True),
+            )
+            return schema
+
+        return await self._singleflight.run(
+            ("schema", self._cache_generation, semantic_model_key),
+            _load_schema,
+        )
+
+    async def _get_semantic_model_schema_uncached(
+        self,
+        semantic_model_key: str,
+        client: LocalMCPConnection,
+    ) -> SemanticModelSchema:
+        if not self._readonly:
+            raise PowerBIAdapterError(
+                "Local MCP schema access requires read-only mode",
+                provider=self.PROVIDER_NAME,
+                error_type=LocalMCPErrorCategory.SCHEMA_VALIDATION_FAILED.value,
+            )
+        if not self._is_opaque_instance_key(semantic_model_key):
+            raise PowerBIAdapterError(
+                "Semantic model key is not configured for Local MCP",
+                provider=self.PROVIDER_NAME,
+                error_type=LocalMCPErrorCategory.SCHEMA_VALIDATION_FAILED.value,
+            )
 
         for attempt in range(self._max_retries + 1):
             try:
@@ -1672,6 +2080,59 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 timeout_seconds=self._timeout,
             )
         return self._client
+
+    @staticmethod
+    def _client_generation(client: object | None) -> int:
+        generation = getattr(client, "session_generation", 0)
+        return generation if isinstance(generation, int) and generation >= 0 else 0
+
+    def _sync_session_generation(self, client: object) -> None:
+        generation = self._client_generation(client)
+        if generation != self._cache_generation:
+            self._invalidate_runtime_caches()
+            self._cache_generation = generation
+
+    def _invalidate_runtime_caches(self) -> None:
+        self._discovery_cache.clear()
+        self._probe_cache.clear()
+        self._schema_cache.clear()
+        self._schema_fingerprints.clear()
+        self._member_cache.clear()
+
+    def _handle_runtime_failure(self, exc: LocalMCPConnectionError) -> None:
+        if exc.category in {
+            LocalMCPErrorCategory.MCP_STARTUP,
+            LocalMCPErrorCategory.MCP_TIMEOUT,
+            LocalMCPErrorCategory.MCP_PROTOCOL,
+            LocalMCPErrorCategory.NETWORK,
+            LocalMCPErrorCategory.DESKTOP_NOT_FOUND,
+            LocalMCPErrorCategory.DESKTOP_CONNECTION,
+            LocalMCPErrorCategory.DESKTOP_MULTIPLE_INSTANCES,
+            LocalMCPErrorCategory.DESKTOP_STALE_INSTANCE,
+        }:
+            self._invalidate_runtime_caches()
+
+    async def _validate_cached_identity(
+        self,
+        client: LocalMCPConnection,
+        semantic_model_key: str,
+    ) -> None:
+        validate = getattr(client, "validate_semantic_model", None)
+        if validate is not None:
+            await self._singleflight.run(
+                (
+                    "identity_validation",
+                    self._cache_generation,
+                    semantic_model_key,
+                ),
+                lambda: validate(semantic_model_key),
+            )
+            self._sync_session_generation(client)
+
+    @staticmethod
+    def _schema_cache_fingerprint(schema: SemanticModelSchema) -> str:
+        payload = schema.model_dump_json(exclude_none=False)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _is_opaque_instance_key(semantic_model_key: str) -> bool:
@@ -1883,10 +2344,13 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
 
         for attempt in range(self._max_retries + 1):
             try:
-                snapshot = await client.execute_dax(request)
+                with measure_performance("dax_execution"):
+                    snapshot = await client.execute_dax(request)
+                self._sync_session_generation(client)
                 self._last_diagnostics = snapshot.diagnostics
                 return await self.normalize_result(snapshot)
             except LocalMCPConnectionError as exc:
+                self._handle_runtime_failure(exc)
                 self._last_diagnostics = LocalMCPDiagnostics.failure(
                     exc.category,
                     exc.error_type,
@@ -1924,6 +2388,49 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 error_type=LocalMCPErrorCategory.DAX_ERROR.value,
             )
         schema = await self.get_semantic_model_schema(request.semantic_model_key)
+        client = self._ensure_client()
+        self._sync_session_generation(client)
+        schema_fingerprint = self._schema_cache_fingerprint(schema)
+        normalized_table = request.table_name.strip().casefold()
+        normalized_field = request.field_name.strip().casefold()
+        cache_key = (
+            self._cache_generation,
+            request.semantic_model_key,
+            schema_fingerprint,
+            normalized_table,
+            normalized_field,
+            request.limit,
+        )
+        cached = self._member_cache.get(cache_key)
+        if cached is not None:
+            with measure_performance("member_lookup", cache="hit"):
+                return cached.model_copy(deep=True)
+
+        async def _load_members() -> ColumnMembersResult:
+            with measure_performance("member_lookup", cache="miss"):
+                result = await self._get_column_members_uncached(request, schema)
+            self._sync_session_generation(client)
+            current_key = (
+                self._cache_generation,
+                request.semantic_model_key,
+                schema_fingerprint,
+                normalized_table,
+                normalized_field,
+                request.limit,
+            )
+            self._member_cache.put(current_key, result.model_copy(deep=True))
+            return result
+
+        return await self._singleflight.run(
+            ("member", *cache_key),
+            _load_members,
+        )
+
+    async def _get_column_members_uncached(
+        self,
+        request: ColumnMembersRequest,
+        schema: SemanticModelSchema,
+    ) -> ColumnMembersResult:
         table = next(
             (
                 item for item in schema.tables

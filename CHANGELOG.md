@@ -2,6 +2,19 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.8.1] — 2026-08-28（COMPLETE）
+
+- 为正式 Turn 增加 request-local monotonic performance trace，仅记录 operation category、`duration_ms`、cache hit/miss 与 session new/reused；覆盖 total、Intent LLM、MCP startup/tool discovery、Desktop discovery/connect、compatibility、schema/catalog/member、grounding、QueryPlan、DAX build/execute、answer/presentation 与 persistence，不记录 Key、Authorization、原始 prompt、PBIX 私密路径或业务数据全集。
+- `PowerBILocalMCPClient` 改为 application-owned read-only stdio owner task；同一 backend 生命周期复用 MCP worker/client 与 tool discovery，并在 session crash 后失效重建、FastAPI shutdown 时 clean close。每次模型访问继续重新枚举 Desktop 并唯一匹配 opaque PBIX identity，不使用 `instances[0]`，不 fallback 其他 PBIX。
+- 新增 process-memory bounded TTL/LRU：discovery 5s、成功 compatibility 15s、schema 30s、member 15s/128 entries；key 包含 MCP session generation、精确 Desktop/semantic model identity、schema fingerprint 与 member table/field/normalized request/limit。Desktop/PBIX/schema/session 变化或 validation failure 均失效。
+- 新增 cancellation-safe per-key async singleflight，覆盖 startup/discovery/probe/schema/identity validation/member；20 路相同 schema/member 回归证明 underlying read 合并为 1，leader failure 不写伪 cache，waiter cancellation 与后续 retry 可恢复。MCP operation 使用最小 bounded semaphore/queue，完整 20/50/100、backpressure/fairness/fault/soak 仍归 M5.9。
+- 优化前 metadata cold/warm：discovery `6297/7860ms`、schema `9078/10172ms`、member `19422/20890ms`、DAX `11047/8094ms`，compatibility startup smoke `33914.6ms`。优化后 fresh sample：discovery `3782/0ms`（MCP startup `3406ms`）、probe `1468/157ms`、schema `422/156ms`、member `515/172ms`；DAX first/second `485/515ms`，证明业务查询未缓存。正式 full-turn 冷启动旅程 `18172ms`；热态连续 10 轮总计 `13000ms`（单轮 `1000–1891ms`），4 路小并发 `3719ms`。外部 LLM 抖动的首两轮为 `9250/17922ms`，未掩盖或冒充稳定 warm 数据。
+- Rich PBIX Real acceptance 覆盖总销售额、2025 年 5 月、华南区、Top3、multi-turn、report、双 Provider 并发/切换与失败边界；优化前后 canonical plan、DAX、QueryResult、Memory、Report 行为不变，cross-provider digests 一致且 residual=0。未缓存 Answer、Report HTML、LLM semantic answer、Canonical QueryPlan、DAX result、QueryResult 或 VerifiedFactSet；未引入 Redis。
+- Fresh local gates：Local MCP focused `91 passed`；Semantic Compatibility `306 passed`（108 production backend files）；backend `1950 passed, 1 skipped`；frontend `86 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Repository Safety `318`、Architecture `125`、Error Ledger `37`、Documentation/Artifact Governance、compileall 与 `git diff --check` PASS。
+- M5.8 Provider、Semantic/Time/Member/TopN、StateTransition、deterministic DAX、VerifiedFactSet/Memory、Report factual authority 与 frontend 业务逻辑均未修改；M5.8.2、完整 M5.9、M5.10 仍为 NOT STARTED，M5 FINAL=false。
+
+**Settings.version:** M5.8.1
+
 ## [M5.8] — 2026-08-28（COMPLETE）
 
 - 新增不可变 `LLMModelProfile`、显式 `LLMProviderRegistry` 与共享 `OpenAICompatibleLLMProvider`；DeepSeek/Kimi K2.6 共用 Chat Completions HTTP/validation 实现，无全局 mutable default、自动路由或 provider fallback。

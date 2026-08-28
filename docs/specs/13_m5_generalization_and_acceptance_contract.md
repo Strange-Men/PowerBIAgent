@@ -1,7 +1,7 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL 尚未成立
-> **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.10（含 M5.7.1 / M5.7.2）
+> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立
+> **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.10（含 M5.7.1 / M5.7.2 / M5.8.1 / M5.8.2）
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
 
@@ -216,13 +216,23 @@ benchmark 问题、expected 数值、问题→答案映射不得进入 productio
 
 M5.7.2 状态为 COMPLETE，只负责 Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复；M5.7.1 Semantic authority 保持冻结，未扩展到 M5.8—M5.10。
 
+### M5.8.1 — 前置性能加速与本地 MCP 会话复用
+
+状态为 COMPLETE。仅前移完整 M5.9 中低风险、语义透明的子集：monotonic stage profiling、application-owned Local MCP session、session 内 tool discovery cache、严格按 runtime/Desktop identity/session generation 隔离的短 TTL discovery/probe/schema cache、按 model/schema/table/field/normalized request/limit 隔离的 bounded member cache、per-key async singleflight 和最小 MCP semaphore。任何 validation failure、Desktop/PBIX identity 或 session generation 变化都必须使相关 cache 失效。
+
+禁止 Redis、跨进程 cache、Answer/Report HTML/LLM semantic answer/QueryResult/VerifiedFactSet/DAX execution result cache，以及 Natural Language → Canonical QueryPlan cache。每个业务 turn 仍必须执行必要 DAX。M5.8 Provider、Semantic/Time/Member/TopN/StateTransition、Deterministic DAX、VerifiedFactSet、Report factual authority 与前端业务 UX 全部冻结。
+
+### M5.8.2 — 自然语言路由与业务语义层增强
+
+状态为 NOT STARTED。用户列出的产品/订单/平均订单金额/能力范围/基础数学/month trend language 等自然语言与业务语义问题只属于本阶段，不得在 M5.8.1 通过 regex、alias、ontology 或 routing 顺手修复。
+
 ### M5.9 — MCP performance and resilience
 
-仅在 M5.8 冻结后开始，只允许：
+M5.8.1 已前移低风险基础设施。M5.9 继续负责完整范围：
 
 - profiling；
-- MCP session reuse 与 cache；
-- bounded concurrency 与 bounded queue/backpressure；
+- session/cache 的高并发、故障与长时稳定性验证；
+- 完整 bounded concurrency 与 bounded queue/backpressure；
 - 20/50/100 concurrency；
 - PBIX/backend restart、fault injection 与 long soak。
 
@@ -359,6 +369,8 @@ M5.7.2 已完成 Intent 后集中 Template Gate、Template/Renderer Registry 与
 
 M5.8 已完成共享 OpenAI-compatible Provider、不可变 DeepSeek/Kimi profiles、显式 request/conversation snapshot selection、统一 error/usage/trace 与 backend-owned frontend selector。Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；并发隔离、mid-conversation switch、unknown/unsupported、固定 `sales_report`、profile mismatch=0 与 residual=0 通过。Fresh Semantic Compatibility `306 passed`，backend `1940 passed, 1 skipped`，frontend `86 passed` 且 typecheck/lint/build PASS，Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。未修改 Semantic/DAX/VerifiedFactSet、M5.7.2 Report 或 MCP；M5.9/M5.10 未开发。
 
+M5.8.1 已完成 application-owned Local MCP session、session-local tool discovery、identity/generation/fingerprint-scoped metadata/member TTL cache、cancellation-safe singleflight、最小 bounded concurrency 与安全 monotonic stage trace。优化后 metadata discovery cold/warm `3782/0ms`、schema `422/156ms`、member `515/172ms`，DAX 两次真实执行 `485/515ms`；full-turn 冷启动旅程 `18172ms`，稳定热态 10 轮 `13000ms`，4 路小并发 `3719ms`。Rich PBIX canonical plan/DAX/QueryResult/Memory/Report 不变且 residual=0；Semantic Compatibility `306 passed`、backend `1950 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped` 与全部治理通过。未引入 Redis 或 factual/semantic result cache，未开发 M5.8.2、完整 M5.9 或 M5.10。
+
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-08-28 M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*创建日期：2026-08-26 | 最后更新：2026-08-28 M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

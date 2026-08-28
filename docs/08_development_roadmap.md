@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.8 — Multi-LLM Provider Abstraction / DeepSeek + Kimi MVP（COMPLETE）
+> **状态：** M5.8.1 — 前置性能加速与本地 MCP 会话复用（COMPLETE）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -44,7 +44,9 @@
 | **M5.7.1** | **统一语义可靠性、回归防火墙与高强度问答验收** | **✅ COMPLETE** |
 | **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
-| **M5.9** | **MCP performance、resilience、并发与压力验证** | **⏳ NOT STARTED** |
+| **M5.8.1** | **前置性能加速与本地 MCP 会话复用** | **✅ COMPLETE** |
+| **M5.8.2** | **自然语言路由与业务语义层增强** | **⏳ NOT STARTED** |
+| **M5.9** | **完整 MCP performance、concurrency、resilience 与 soak** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ### M5.4.2 — M5 重建基线与规划固化（已完成）
@@ -120,9 +122,21 @@ M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provid
 
 状态为 COMPLETE。Report Template Gate 已集中到 `TurnPipeline.preflight_report_template()`，Mock/DeepSeek 均在 Intent 确认后立即执行；missing/unknown/stale template 统一返回 `生成报表前请选择有效的模板`，并在 schema/QueryPlan/DAX/Power BI/ReportData/ReportSpec/Renderer/HTML 前 ZERO downstream。`ReportTemplateRegistry → renderer_key → ReportRendererRegistry/Dispatcher` 成为单一分发 authority；当前唯一公开模板仍为 `sales_report / 简易模板`，无 default 或 first-item fallback。前端模板列表改为只读后端目录并清除 stale selection。简易模板固定为 KPI → 趋势 → 区域/品类 → Top 产品 → 关键明细 → footer，缺少 verified facts 的 section deterministic omit；趋势补齐 nice Y ticks、水平 gridlines、单位、15 月桌面全标签与小屏 first/last/year-boundary 双层确定性 tick。未扩展到多模型 Provider、MCP 性能优化或第二专业模板；M5.7.1 Semantic authority 保持冻结。
 
+### M5.8.1 — 前置性能加速与本地 MCP 会话复用
+
+状态为 COMPLETE。已实现安全 monotonic profiling、application-owned Local MCP persistent session、session 内 tool discovery cache、按 runtime/Desktop identity/session generation 隔离的短 TTL discovery/probe/schema cache、按 model/schema/table/field/normalized request/limit 隔离的 bounded member cache、per-key async singleflight 与最小 MCP semaphore。
+
+所有 schema/member cache hit 必须与重新 runtime read 语义等价；Desktop/PBIX identity、schema fingerprint 或 MCP session generation 变化及 validation failure 必须失效。每个业务问题仍执行必要 DAX；禁止缓存 Answer、Report HTML、LLM semantic answer、QueryResult、VerifiedFactSet、DAX result 或 Natural Language → Canonical QueryPlan。禁止 Redis、跨进程 cache、复杂 queue/backpressure、20/50/100 压测和 long soak。
+
+完成证据：application-owned read-only MCP session、session-local tool discovery、identity/generation/fingerprint-scoped discovery/probe/schema/member TTL cache、cancellation-safe singleflight 与最小 bounded concurrency 已通过 session crash/shutdown、PBIX A/B、Desktop restart/stale、TTL、20 路 schema/member 合并及 failure retry 回归。优化后 discovery cold/warm `3782/0ms`、schema `422/156ms`、member `515/172ms`、DAX 两次真实执行 `485/515ms`；full-turn 冷启动旅程 `18172ms`，稳定热态 10 轮 `13000ms`，小并发 4 轮 `3719ms`。Rich PBIX canonical plan/DAX/QueryResult/Memory/Report 回归一致且 residual=0；全部本地 gates 通过。
+
+### M5.8.2 — 自然语言路由与业务语义层增强
+
+状态为 NOT STARTED。用户问题路由、业务术语、alias/ontology、基础数学、支持范围说明与 bounded month trend language 均属于本阶段；M5.8.1 不得顺手实现。
+
 ### 新 M5.9 — MCP performance and resilience
 
-M5.8 冻结后才允许开发 profiling、MCP session reuse/cache、bounded concurrency、bounded queue/backpressure、20/50/100 concurrency、PBIX/backend restart、fault injection 与 long soak。不得通过降低 factual validation 换性能；不得修改 Semantic/DAX/VerifiedFactSet authority；warm latency 不得冒充 cold latency。
+M5.8.1 只前移低风险 session/cache/singleflight/semaphore 子集。M5.9 继续负责完整 bounded queue/backpressure、20/50/100 concurrency、PBIX/backend restart、fault matrix、remote MCP performance 与 long soak。不得通过降低 factual validation 换性能；不得修改 Semantic/DAX/VerifiedFactSet authority；warm latency 不得冒充 cold latency。
 
 ### 新 M5.10 — 固定专业销售报表模板与两模板选择
 
@@ -364,7 +378,7 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
-- M5.5—M5.7.2 已完成并冻结；当前只允许 M5.8 Provider/Profile/显式模型选择；M5.9—M5.10 仍不得进入。
+- M5.5—M5.8.1 已完成并冻结；M5.8.2、完整 M5.9 与 M5.10 仍不得进入。
 - 一个 milestone 不得同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle；只有 M5.10 全部门禁完成后才允许宣告 M5 FINAL。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
@@ -379,4 +393,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-08-28 | M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-28 | M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

@@ -1,5 +1,6 @@
 """Power BI Adapter 单元测试。"""
 
+import asyncio
 import ast
 import inspect
 from importlib.metadata import version
@@ -7,6 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.app.core.async_runtime import AsyncSingleFlight
+import backend.app.powerbi.local_mcp as local_mcp_module
 from backend.app.harness.models import HarnessConfig
 from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
 from backend.app.harness.tool_registry import (
@@ -97,6 +100,10 @@ class FakeLocalMCPClient:
         self.dax_keys: list[str] = []
         self.discovery_calls = 0
         self.probe_calls: list[str] = []
+        self.session_generation = 1
+        self.validation_calls: list[str] = []
+        self.validation_error: LocalMCPConnectionError | None = None
+        self.close_calls = 0
 
     async def connect_and_discover(self) -> LocalMCPDiagnostics:
         self.calls += 1
@@ -151,6 +158,14 @@ class FakeLocalMCPClient:
             wire_max_rows=request.max_rows + 1,
             payload=self.dax_snapshot.payload,
         )
+
+    async def validate_semantic_model(self, semantic_model_key: str) -> None:
+        self.validation_calls.append(semantic_model_key)
+        if self.validation_error is not None:
+            raise self.validation_error
+
+    async def aclose(self) -> None:
+        self.close_calls += 1
 
 
 class FlakyLocalNetworkClient:
@@ -1458,6 +1473,286 @@ class TestLocalMCPPowerBIAdapter:
         assert "pbix" not in safe_text.lower()
         assert "localhost" not in safe_text.lower()
         assert "connectionstring" not in safe_text.lower()
+
+    @pytest.mark.asyncio
+    async def test_schema_cache_singleflight_ttl_and_session_generation(self):
+        client = FakeLocalMCPClient(schema_snapshot=_schema_snapshot())
+        adapter = LocalMCPPowerBIAdapter(
+            client=client,
+            max_retries=0,
+            schema_ttl_seconds=0.02,
+        )
+
+        schemas = await asyncio.gather(*(
+            adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+            for _ in range(20)
+        ))
+        assert all(schema.key == TEST_MODEL_KEY for schema in schemas)
+        assert client.schema_calls == 1
+
+        await asyncio.sleep(0.03)
+        await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+        assert client.schema_calls == 2
+
+        client.session_generation += 1
+        await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+        assert client.schema_calls == 3
+
+    @pytest.mark.asyncio
+    async def test_discovery_and_successful_probe_use_short_ttl_caches(self):
+        client = FakeLocalMCPClient(
+            discovery_snapshot=_discovery_snapshot(),
+            probe_snapshot=_compatibility_snapshot(),
+        )
+        adapter = LocalMCPPowerBIAdapter(
+            client=client,
+            max_retries=0,
+            discovery_ttl_seconds=0.02,
+            probe_ttl_seconds=0.02,
+        )
+
+        await adapter.discover_semantic_models()
+        await adapter.discover_semantic_models()
+        assert client.discovery_calls == 1
+
+        first = await adapter.probe_compatibility(TEST_MODEL_KEY)
+        second = await adapter.probe_compatibility(TEST_MODEL_KEY)
+        assert first.compatible is second.compatible is True
+        assert client.probe_calls == [TEST_MODEL_KEY]
+
+        await asyncio.sleep(0.03)
+        await adapter.discover_semantic_models()
+        await adapter.probe_compatibility(TEST_MODEL_KEY)
+        assert client.discovery_calls == 2
+        assert client.probe_calls == [TEST_MODEL_KEY, TEST_MODEL_KEY]
+
+    @pytest.mark.asyncio
+    async def test_discovery_failure_is_not_cached_and_retry_recovers(self):
+        client = FakeLocalMCPClient(
+            discovery_error=LocalMCPConnectionError(
+                LocalMCPErrorCategory.MCP_STARTUP,
+                "local_mcp_server_exited",
+            ),
+        )
+        adapter = _local_adapter(client)
+
+        failed = await adapter.discover_semantic_models()
+        assert failed.error_type == "semantic_model_discovery_unavailable"
+        client.discovery_error = None
+        client.discovery_snapshot = _discovery_snapshot()
+        recovered = await adapter.discover_semantic_models()
+        assert len(recovered.items) == 1
+        assert client.discovery_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_schema_cache_isolated_by_pbix_and_stale_validation_clears(self):
+        second_key = PowerBILocalMCPClient._desktop_semantic_model_key(
+            process_id=2002,
+            data_source="localhost:60002",
+            start_time="2026-08-28T10:00:00+08:00",
+        )
+        client = FakeLocalMCPClient(schema_snapshot=_schema_snapshot())
+        adapter = _local_adapter(client)
+
+        await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+        await adapter.get_semantic_model_schema(second_key)
+        assert client.schema_keys == [TEST_MODEL_KEY, second_key]
+
+        client.validation_error = LocalMCPConnectionError(
+            LocalMCPErrorCategory.DESKTOP_STALE_INSTANCE,
+            "desktop_selected_instance_stale",
+        )
+        with pytest.raises(PowerBIAdapterError) as exc_info:
+            await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+        assert exc_info.value.error_type == "DESKTOP_STALE_INSTANCE"
+
+        client.validation_error = None
+        await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+        assert client.schema_keys == [TEST_MODEL_KEY, second_key, TEST_MODEL_KEY]
+
+    @pytest.mark.asyncio
+    async def test_member_cache_singleflight_expiry_and_no_query_result_cache(self):
+        payload = {
+            "success": True,
+            "operation": "Execute",
+            "data": {
+                "success": True,
+                "rowCount": 2,
+                "columns": [{"name": "[MemberValue]", "ordinal": 0}],
+                "rows": [
+                    {"[MemberValue]": "A"},
+                    {"[MemberValue]": "B"},
+                ],
+            },
+        }
+        client = FakeLocalMCPClient(
+            schema_snapshot=_schema_snapshot(),
+            dax_snapshot=_dax_snapshot(payload),
+        )
+        adapter = LocalMCPPowerBIAdapter(
+            client=client,
+            max_retries=0,
+            member_ttl_seconds=0.02,
+        )
+        request = ColumnMembersRequest(
+            semantic_model_key=TEST_MODEL_KEY,
+            table_name="Products",
+            field_name="Category",
+            limit=2,
+        )
+
+        results = await asyncio.gather(*(adapter.get_column_members(request) for _ in range(20)))
+        assert all(result.values == ["A", "B"] for result in results)
+        assert client.schema_calls == 1
+        assert client.dax_calls == 1
+
+        await asyncio.sleep(0.03)
+        await adapter.get_column_members(request)
+        assert client.dax_calls == 2
+
+        business_query = DAXRequest(
+            semantic_model_key=TEST_MODEL_KEY,
+            dax='EVALUATE ROW("Value", 1)',
+        )
+        client.dax_snapshot = _dax_snapshot(
+            _successful_dax_payload(),
+            request=business_query,
+        )
+        await adapter.execute_dax(business_query)
+        await adapter.execute_dax(business_query)
+        assert client.dax_calls == 4
+
+    @pytest.mark.asyncio
+    async def test_failed_schema_singleflight_does_not_poison_retry(self):
+        client = FakeLocalMCPClient(
+            schema_error=LocalMCPConnectionError(
+                LocalMCPErrorCategory.SCHEMA_READ_FAILED,
+                "temporary_schema_failure",
+            ),
+        )
+        adapter = _local_adapter(client)
+
+        failed = await asyncio.gather(*(
+            adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+            for _ in range(20)
+        ), return_exceptions=True)
+        assert all(isinstance(item, PowerBIAdapterError) for item in failed)
+        assert client.schema_calls == 1
+
+        client.schema_error = None
+        client.schema_snapshot = _schema_snapshot()
+        recovered = await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+        assert recovered.key == TEST_MODEL_KEY
+        assert client.schema_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_adapter_shutdown_closes_application_client_once(self):
+        client = FakeLocalMCPClient()
+        adapter = _local_adapter(client)
+        await adapter.aclose()
+        assert client.close_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_singleflight_waiter_cancellation_does_not_cancel_leader(self):
+        singleflight: AsyncSingleFlight[str, int] = AsyncSingleFlight()
+        release = asyncio.Event()
+        calls = 0
+
+        async def load() -> int:
+            nonlocal calls
+            calls += 1
+            await release.wait()
+            return 7
+
+        cancelled_waiter = asyncio.create_task(singleflight.run("schema", load))
+        surviving_waiter = asyncio.create_task(singleflight.run("schema", load))
+        await asyncio.sleep(0)
+        cancelled_waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled_waiter
+        release.set()
+        assert await surviving_waiter == 7
+        assert calls == 1
+
+        assert await singleflight.run("schema", lambda: asyncio.sleep(0, result=8)) == 8
+        assert calls == 1
+
+    @pytest.mark.asyncio
+    async def test_stdio_session_is_reused_and_closed_by_owner_task(self, monkeypatch):
+        sessions: list[SimpleNamespace] = []
+
+        class FakePersistentClient:
+            protocol_version = "2025-11-25"
+
+            def __init__(self, *_: object, **__: object) -> None:
+                self.closed = False
+                sessions.append(self)  # type: ignore[arg-type]
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_: object) -> None:
+                self.closed = True
+
+            async def list_tools(self, *, cursor=None):
+                return SimpleNamespace(tools=[], next_cursor=None)
+
+        monkeypatch.setattr(local_mcp_module.shutil, "which", lambda _: "npx")
+        monkeypatch.setattr(local_mcp_module, "stdio_client", lambda *_args, **_kwargs: object())
+        monkeypatch.setattr(local_mcp_module, "Client", FakePersistentClient)
+        client = PowerBILocalMCPClient(timeout_seconds=1)
+
+        first = await client._run_session(lambda active, *_: asyncio.sleep(0, result=id(active)))
+        second = await client._run_session(lambda active, *_: asyncio.sleep(0, result=id(active)))
+
+        assert first == second
+        assert len(sessions) == 1
+        assert client.session_generation == 1
+        assert sessions[0].closed is False
+        await client.aclose()
+        assert sessions[0].closed is True
+
+    @pytest.mark.asyncio
+    async def test_stdio_crash_invalidates_session_and_later_retry_recovers(self, monkeypatch):
+        sessions: list[object] = []
+
+        class FakePersistentClient:
+            protocol_version = "2025-11-25"
+
+            def __init__(self, *_: object, **__: object) -> None:
+                sessions.append(self)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_: object) -> None:
+                return None
+
+            async def list_tools(self, *, cursor=None):
+                return SimpleNamespace(tools=[], next_cursor=None)
+
+        class BrokenResourceError(Exception):
+            pass
+
+        async def crash(*_: object) -> None:
+            raise BrokenResourceError()
+
+        monkeypatch.setattr(local_mcp_module.shutil, "which", lambda _: "npx")
+        monkeypatch.setattr(local_mcp_module, "stdio_client", lambda *_args, **_kwargs: object())
+        monkeypatch.setattr(local_mcp_module, "Client", FakePersistentClient)
+        client = PowerBILocalMCPClient(timeout_seconds=1)
+
+        with pytest.raises(LocalMCPConnectionError) as exc_info:
+            await client._run_session(crash)
+        assert exc_info.value.category == LocalMCPErrorCategory.MCP_STARTUP
+
+        recovered = await client._run_session(
+            lambda *_: asyncio.sleep(0, result="recovered")
+        )
+        assert recovered == "recovered"
+        assert len(sessions) == 2
+        assert client.session_generation == 2
+        await client.aclose()
 
     def test_desktop_target_parsing_accepts_localhost_only(self):
         instance = {

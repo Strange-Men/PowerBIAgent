@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.8 — Multi-LLM Provider Abstraction / DeepSeek + Kimi MVP（COMPLETE）
+> **状态：** M5.8.1 — 前置性能加速与本地 MCP 会话复用（COMPLETE）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -44,7 +44,9 @@
 | **M5.7.1** | **统一语义可靠性、回归防火墙与高强度问答验收** | **✅ COMPLETE** |
 | **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
-| **M5.9** | **MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
+| **M5.8.1** | **前置性能加速与本地 MCP 会话复用** | **✅ COMPLETE** |
+| **M5.8.2** | **自然语言路由与业务语义层增强** | **⏳ NOT STARTED** |
+| **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ## M5 重建决策与历史状态
@@ -194,9 +196,11 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - **M5.6** 只处理 canonical/display separation、Localization、格式化、Answer/Table/Chart 信息密度，以及 Settings/Recent/failed resource/toolbar/menu truth。conversation/report 必须共用 Portal/floating layer 和 viewport-aware above/below positioning；Settings 必须有 nested scroll contract 与 sticky/scrollable action toolbar。禁止改变 Grounding、DAX 或 MCP authority。
 - **M5.7** 已完成现有 `sales_report.html` 的简易模板 information architecture、responsive、plot geometry、axis/tick、accessibility、可读性，以及 `Report Template Required` Gate。missing/invalid/stale template 均为 ZERO ReportData/ReportSpec/Renderer/artifact；42 组 visual matrix、Rich PBIX Real Browser/manual 与 automation-owned residual=0 通过。正式视觉 Gate 是普通用户能读懂，而非仅 SVG 不越界。
 - **M5.7.1** 已完成 Intent、Object/Member/Temporal Grounding、StateTransition、multi-turn、ranking/capability 与永久 Semantic Compatibility Gate。日期角色来自显式用户角色、model-scoped metadata 或可证明的 runtime relationship/default role；无唯一证据才 clarification。answer leakage scanner 与 frontend/provider authority 检查均通过，未修改报表视觉/Registry、多模型或 MCP 性能。
-- **M5.7.2** 只处理 Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复；当前 NOT STARTED。
-- **M5.8** 只处理 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek + Kimi-K2.6、request/conversation-scoped model selection 与同一 authority/regression contract；禁止 MCP 性能优化。
-- **M5.9** 只在 M5.5—M5.8 冻结后处理 profiling、MCP session reuse/cache、bounded concurrency/queue/backpressure、20/50/100 concurrency、restart/fault/soak；不得降低 factual validation 或修改 Semantic/DAX/VerifiedFactSet authority。
+- **M5.7.2** 已完成 Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复。
+- **M5.8** 已完成并冻结 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek + Kimi-K2.6、request/conversation-scoped model selection 与同一 authority/regression contract。
+- **M5.8.1** 已完成安全 profiling、Local MCP application-owned session reuse、非事实 metadata/member 短 TTL bounded cache、singleflight 与最小 bounded concurrency；未引入 Redis，未缓存事实/答案/DAX/QueryPlan。
+- **M5.8.2** 只处理自然语言路由与业务语义层增强，状态为 NOT STARTED。
+- **M5.9** 继续处理完整 queue/backpressure、20/50/100 concurrency、restart/fault matrix 与 soak；不得降低 factual validation 或修改 Semantic/DAX/VerifiedFactSet authority。
 - **M5.10** 必须晚于 M5.9，只增加固定专业销售报表模板和显式两模板选择。“简易模板”是 M5.7 优化后的现有 `sales_report.html`；“销售模板”使用确定性专业版式。两者都只消费 VerifiedFactSet/ReportData/ReportSpec，不允许 LLM 生成 HTML/CSS/SVG、查询或事实。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
 - 每个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
 
@@ -216,7 +220,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - M5.5 的 explicit member、runtime alias、TopN、multi-turn slot 与 temporal semantic 风险已关闭；M5.6 的 canonical time 展示与信息密度 Gate 已通过。
 - Settings/Recent truth、newest-first、failed conversation 管理、toolbar 可达性与 floating menu overflow 已在 M5.6 关闭。
 - 报表“未裁切”仍不等于可读；时间轴、跨年标签、plot area、空白与 donut/legend 密度必须在 M5.7 经 Real Browser 人工视觉验收。
-- 旧 Real latency 曾达到几十秒至数分钟；persistent worker 仅是候选思路，queue/backpressure/TTL/stale、cold/warm 与 20/50/100 并发必须在 M5.9 独立验证。
+- M5.8.1 已消除每次 operation 重启 Local MCP 的主要成本，并完成短 TTL/stale/cold-warm 小批验证；完整 queue fairness/backpressure、20/50/100 concurrency、fault matrix 与 long soak 仍必须在 M5.9 独立验证。
 
 - Simple M3 PBIX runtime `OrderDate` 为 `Int64`；Simple 模型无时间趋势能力（TIME_TREND UNAVAILABLE），不得伪装为 DateTime。Rich PBIX `OrderDate` 为 `DateTime` 且含 Date 表，趋势能力真实解析。
 - Capability 目录随 runtime schema 变化；schema 变更需按能力目录重新人工 smoke（不再依赖单一 fingerprint gate）。
@@ -276,6 +280,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.9 MCP performance/resilience 与 M5.10 第二报表模板保持 NOT STARTED；M5 FINAL=false。
+- M5.8.1 已完成；M5.8.2、完整 M5.9 与 M5.10 保持 NOT STARTED；M5 FINAL=false。
 
-*最后更新：2026-08-28 | M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-28 | M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

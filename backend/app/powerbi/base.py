@@ -91,6 +91,10 @@ class PowerBIAdapter(ABC):
             compatible=True,
         )
 
+    async def aclose(self) -> None:
+        """Release application-scoped provider resources, when any."""
+        return None
+
     @abstractmethod
     async def execute_dax(self, request: DAXRequest) -> QueryResult:
         """执行 DAX 查询

@@ -107,6 +107,7 @@ from backend.app.dax.deepseek_service import DeepSeekDAXService
 from backend.app.dax.builder import DAXBuildError, DeterministicDAXBuilder
 from backend.app.dax.safety import DAXSafetyValidator
 from backend.app.answer.deepseek_service import DeepSeekAnswerService
+from backend.app.core.performance import measure_performance
 from backend.app.facts import (
     FactBoundedAnswerBuilder,
     FactBoundedReportBuilder,
@@ -414,14 +415,15 @@ class LLMTurnService:
         # ── 3. 意图识别 ──
         intent_service = DeepSeekIntentService(provider=observed, max_format_repairs=1)
         try:
-            intent = await intent_service.recognize(
-                user_input=message,
-                committed_memory=(
-                    semantic_committed.model_dump() if semantic_committed else None
-                ),
-                semantic_model_key=semantic_model_key,
-                report_template_key=report_template_key,
-            )
+            with measure_performance("intent_llm"):
+                intent = await intent_service.recognize(
+                    user_input=message,
+                    committed_memory=(
+                        semantic_committed.model_dump() if semantic_committed else None
+                    ),
+                    semantic_model_key=semantic_model_key,
+                    report_template_key=report_template_key,
+                )
         except IntentRecognitionError:
             if (
                 capability != CapabilityClass.READ_ANALYSIS
@@ -619,15 +621,16 @@ class LLMTurnService:
         # ── 8. QueryPlan 生成与验证 ──
         try:
             qp_service = DeepSeekQueryPlanService(provider=observed, max_format_repairs=1)
-            query_plan = await qp_service.generate(
-                user_input=message, intent=intent, schema=schema,
-                committed_memory=(
-                    semantic_committed.model_dump() if semantic_committed else None
-                ),
-                semantic_model_key=semantic_model_key,
-                report_template_key=report_template_key,
-                enforce_semantic_grounding=not self.powerbi.is_mock,
-            )
+            with measure_performance("query_plan"):
+                query_plan = await qp_service.generate(
+                    user_input=message, intent=intent, schema=schema,
+                    committed_memory=(
+                        semantic_committed.model_dump() if semantic_committed else None
+                    ),
+                    semantic_model_key=semantic_model_key,
+                    report_template_key=report_template_key,
+                    enforce_semantic_grounding=not self.powerbi.is_mock,
+                )
         except QueryPlanError as e:
             if intent.intent != IntentType.DATA_QUESTION:
                 return await self._fail_result(
@@ -718,10 +721,11 @@ class LLMTurnService:
         catalog = None
         if not self.powerbi.is_mock:
             try:
-                catalog = SemanticCatalogBuilder().build(
-                    schema,
-                    glossary_scope_key=self.settings.powerbi_local_semantic_model_key,
-                )
+                with measure_performance("semantic_catalog_build"):
+                    catalog = SemanticCatalogBuilder().build(
+                        schema,
+                        glossary_scope_key=self.settings.powerbi_local_semantic_model_key,
+                    )
                 if pending_clarification is not None and (
                     pending_clarification.semantic_model_key != semantic_model_key
                     or pending_clarification.schema_fingerprint
@@ -754,14 +758,15 @@ class LLMTurnService:
                         controller=controller,
                     )
 
-                grounding = await grounding_service.ground(
-                    message,
-                    intent,
-                    query_plan,
-                    semantic_committed,
-                    _member_lookup,
-                    pending=pending_clarification,
-                )
+                with measure_performance("grounding"):
+                    grounding = await grounding_service.ground(
+                        message,
+                        intent,
+                        query_plan,
+                        semantic_committed,
+                        _member_lookup,
+                        pending=pending_clarification,
+                    )
                 grounded_delta = grounding.delta
                 explicit_slots: list[str] = []
                 if grounded_delta is not None:
@@ -967,13 +972,14 @@ class LLMTurnService:
                             "committed_memory_mutated": False,
                         },
                     )
-                transition = StateTransitionService().merge(
-                    query_plan,
-                    transition_delta,
-                    transition_base,
-                    canonical_template_key=template_grounding.canonical_key,
-                    inheritance_mode=inheritance.mode,
-                )
+                with measure_performance("query_plan"):
+                    transition = StateTransitionService().merge(
+                        query_plan,
+                        transition_delta,
+                        transition_base,
+                        canonical_template_key=template_grounding.canonical_key,
+                        inheritance_mode=inheritance.mode,
+                    )
                 query_plan = transition.query_plan
                 inherited_slots = [
                     slot
@@ -1105,12 +1111,13 @@ class LLMTurnService:
                     request_id=effective_req_id,
                 )
             else:
-                dax_request = DeterministicDAXBuilder().build(
-                    query_plan,
-                    schema,
-                    request_id=effective_req_id,
-                    timeout_seconds=self.settings.powerbi_query_timeout_seconds,
-                )
+                with measure_performance("dax_build"):
+                    dax_request = DeterministicDAXBuilder().build(
+                        query_plan,
+                        schema,
+                        request_id=effective_req_id,
+                        timeout_seconds=self.settings.powerbi_query_timeout_seconds,
+                    )
         except Exception as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
@@ -1355,21 +1362,23 @@ class LLMTurnService:
                                 ),
                             },
                         )
-                    response_obj = FactBoundedAnswerBuilder().build(
-                        query_plan,
-                        query_result,
-                        verified_facts,
-                        display_bindings=display_bindings,
-                    )
+                    with measure_performance("answer_presentation"):
+                        response_obj = FactBoundedAnswerBuilder().build(
+                            query_plan,
+                            query_result,
+                            verified_facts,
+                            display_bindings=display_bindings,
+                        )
                 else:
                     answer_service = DeepSeekAnswerService(
                         provider=observed, max_repairs=1
                     )
-                    response_obj = await answer_service.generate(
-                        user_input=message, intent=intent, query_plan=query_plan,
-                        query_result=query_result, schema=schema,
-                        request_id=effective_req_id,
-                    )
+                    with measure_performance("answer_presentation"):
+                        response_obj = await answer_service.generate(
+                            user_input=message, intent=intent, query_plan=query_plan,
+                            query_result=query_result, schema=schema,
+                            request_id=effective_req_id,
+                        )
             except Exception as e:
                 return await self._fail_result(
                     memory, effective_req_id, effective_conv_id, controller, trace,
@@ -1552,18 +1561,19 @@ class LLMTurnService:
 
         # ── 14. 构建结果（Snapshot 由 TurnPipeline.execute() 统一保存） ──
         presentation: PresentationEnvelope | None = None
-        if verified_facts is not None and answer_text:
-            presentation = StructuredPresentationBuilder.build_answer(
-                query_plan,
-                query_result,
-                verified_facts,
-                answer_text,
-                display_bindings=display_bindings,
-            )
-        elif report_data is not None:
-            presentation = StructuredPresentationBuilder.build_report(
-                report_data["report_id"]
-            )
+        with measure_performance("answer_presentation"):
+            if verified_facts is not None and answer_text:
+                presentation = StructuredPresentationBuilder.build_answer(
+                    query_plan,
+                    query_result,
+                    verified_facts,
+                    answer_text,
+                    display_bindings=display_bindings,
+                )
+            elif report_data is not None:
+                presentation = StructuredPresentationBuilder.build_report(
+                    report_data["report_id"]
+                )
         result = self._build_result(
             effective_req_id, effective_conv_id, "completed",
             intent=intent.intent.value, response_type=response_type,

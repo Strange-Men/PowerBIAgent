@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.8 — Multi-LLM Provider Abstraction / DeepSeek + Kimi MVP（COMPLETE）**。M5.7.1 / M5.7.2 已冻结；M5.9—M5.10 尚未开始，M5 FINAL=false。
+当前版本：**M5.8.1 — 前置性能加速与本地 MCP 会话复用（COMPLETE）**。M5.8 已完成并冻结；M5.8.2、M5.9、M5.10 尚未开始，M5 FINAL=false。
 
 ## 项目概览
 
@@ -337,7 +337,9 @@ python -m alembic upgrade head
 | M5.7.1 | COMPLETE — 统一语义可靠性、回归防火墙与高强度问答验收 |
 | M5.7.2 | COMPLETE — Report Template Gate 前移、Template/Renderer Registry、后端目录驱动的前端模板选择，以及简易模板视觉与信息架构最终收口 |
 | M5.8 | COMPLETE — OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection |
-| M5.9 | NOT STARTED — MCP performance、resilience、并发与压力验证 |
+| M5.8.1 | COMPLETE — 前置性能加速、Local MCP session reuse 与安全进程内 metadata/member cache |
+| M5.8.2 | NOT STARTED — 自然语言路由与业务语义层增强 |
+| M5.9 | NOT STARTED — 完整 MCP performance、resilience、并发与压力验证 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
@@ -367,4 +369,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-28 | M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-08-28 | M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

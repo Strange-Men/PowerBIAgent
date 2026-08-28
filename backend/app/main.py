@@ -240,6 +240,11 @@ async def lifespan(app: FastAPI):
     yield
 
     # shutdown — close each application-scoped provider exactly once.
+    if powerbi_adapter is not None:
+        try:
+            await powerbi_adapter.aclose()
+        except Exception:
+            pass
     try:
         await llm_registry.aclose()
     except Exception:

@@ -27,6 +27,12 @@ from typing import Any, Callable, Optional
 
 from backend.app.harness.models import HarnessConfig
 from backend.app.harness.observability.trace_recorder import TraceRecorder
+from backend.app.core.performance import (
+    PerformanceRecorder,
+    bind_performance_recorder,
+    measure_performance,
+    reset_performance_recorder,
+)
 from backend.app.harness.runtime.context_builder import ContextBuilder
 from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
@@ -125,6 +131,54 @@ class TurnPipeline:
         do_execute: DoExecuteCallback,
         **execute_kwargs: Any,
     ) -> dict[str, Any]:
+        recorder = PerformanceRecorder()
+        token = bind_performance_recorder(recorder)
+        try:
+            result = await self._execute_with_performance_context(
+                message=message,
+                conversation_id=conversation_id,
+                request_id=request_id,
+                semantic_model_key=semantic_model_key,
+                report_template_key=report_template_key,
+                runtime_mode=runtime_mode,
+                is_mock=is_mock,
+                llm_provider_name=llm_provider_name,
+                llm_profile_key=llm_profile_key,
+                llm_model=llm_model,
+                llm_provider_protocol=llm_provider_protocol,
+                powerbi_provider_name=powerbi_provider_name,
+                scenario_fingerprint_hash_inputs=scenario_fingerprint_hash_inputs,
+                do_execute=do_execute,
+                **execute_kwargs,
+            )
+            audit = result.get("execution_audit")
+            if not isinstance(audit, dict):
+                audit = {}
+                result["execution_audit"] = audit
+            audit["performance"] = recorder.summary()
+            return result
+        finally:
+            reset_performance_recorder(token)
+
+    async def _execute_with_performance_context(
+        self,
+        *,
+        message: str,
+        conversation_id: Optional[str],
+        request_id: Optional[str],
+        semantic_model_key: str,
+        report_template_key: Optional[str],
+        runtime_mode: RuntimeDataMode,
+        is_mock: bool,
+        llm_provider_name: str,
+        llm_profile_key: Optional[str] = None,
+        llm_model: str = "",
+        llm_provider_protocol: str = "",
+        powerbi_provider_name: str,
+        scenario_fingerprint_hash_inputs: Optional[dict[str, Any]] = None,
+        do_execute: DoExecuteCallback,
+        **execute_kwargs: Any,
+    ) -> dict[str, Any]:
         """共享 execute 骨架
 
         1. 统一 ID 生成
@@ -157,7 +211,8 @@ class TurnPipeline:
         trace = TraceRecorder(self.config)
 
         # ── 幂等检查 ──
-        snapshot = await self.snapshot_store.get(effective_req_id, runtime_mode)
+        with measure_performance("persistence"):
+            snapshot = await self.snapshot_store.get(effective_req_id, runtime_mode)
         if snapshot is not None:
             fingerprint_matches = snapshot.request_fingerprint_hash == fingerprint_hash
             if not fingerprint_matches and not snapshot.llm_profile_key:
@@ -183,9 +238,10 @@ class TurnPipeline:
 
         # ── Owner/Waiter 协调 ──
         for retry_attempt in range(3):
-            claim_status, claim_future = await self.snapshot_store.claim(
-                effective_req_id, runtime_mode, fingerprint_hash
-            )
+            with measure_performance("persistence"):
+                claim_status, claim_future = await self.snapshot_store.claim(
+                    effective_req_id, runtime_mode, fingerprint_hash
+                )
             if claim_status == IdempotencyClaimStatus.CONFLICT:
                 raise IdempotencyConflictError(
                     request_id=effective_req_id,
@@ -217,9 +273,10 @@ class TurnPipeline:
         # instead of re-executing possible external side effects or fabricating
         # a terminal duplicate from partial Memory.
         try:
-            existing_request_memory = await self.memory_repo.get_by_request_id(
-                effective_req_id, runtime_mode
-            )
+            with measure_performance("persistence"):
+                existing_request_memory = await self.memory_repo.get_by_request_id(
+                    effective_req_id, runtime_mode
+                )
         except Exception:
             await self.snapshot_store.abort(effective_req_id, runtime_mode)
             raise
@@ -236,12 +293,13 @@ class TurnPipeline:
         # ── OWNER: 执行前准备（统一控制面） ──
         try:
             # 加载 committed memory
-            committed = await self.memory_repo.get_latest_committed(
-                effective_conv_id, runtime_mode
-            )
-            pending_clarification = await self.memory_repo.get_pending_clarification(
-                effective_conv_id, runtime_mode
-            )
+            with measure_performance("persistence"):
+                committed = await self.memory_repo.get_latest_committed(
+                    effective_conv_id, runtime_mode
+                )
+                pending_clarification = await self.memory_repo.get_pending_clarification(
+                    effective_conv_id, runtime_mode
+                )
 
             # 构建上下文
             context = self.context_builder.build(
@@ -288,8 +346,9 @@ class TurnPipeline:
             # Presentation transcript metadata is saved beside the terminal
             # snapshot but never written into StructuredWorkMemory.
             result["user_message"] = message
-            await self._save_snapshot(result, runtime_mode, fingerprint_hash)
-            await self.snapshot_store.complete(effective_req_id, runtime_mode)
+            with measure_performance("persistence"):
+                await self._save_snapshot(result, runtime_mode, fingerprint_hash)
+                await self.snapshot_store.complete(effective_req_id, runtime_mode)
             return result
         except Exception:
             await self.snapshot_store.abort(effective_req_id, runtime_mode)
@@ -524,7 +583,8 @@ class TurnPipeline:
             base_memory_version=base_version,
             memory_version=0,
         )
-        await self.memory_repo.create_pending(memory, runtime_mode)
+        with measure_performance("persistence"):
+            await self.memory_repo.create_pending(memory, runtime_mode)
         return memory
 
     async def mark_memory_failed(
@@ -562,7 +622,8 @@ class TurnPipeline:
     ) -> tuple[Optional[StructuredWorkMemory], Optional[str]]:
         """安全 Memory 提交 — 返回 (committed_memory, error_type_or_None)"""
         try:
-            committed_memory = await self.memory_repo.commit(memory, evidence)
+            with measure_performance("persistence"):
+                committed_memory = await self.memory_repo.commit(memory, evidence)
             controller.record_version_matches()
             controller.transition(TurnState.MEMORY_COMMITTED)
             trace.record("memory_committed", trace_id=trace_id, request_id=request_id,

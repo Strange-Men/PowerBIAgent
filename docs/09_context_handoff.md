@@ -1,11 +1,11 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-08-27
+> **最后更新：** 2026-08-28
 
 ## 当前阶段
 
-**M5.8 — Multi-LLM Provider Abstraction / DeepSeek + Kimi MVP（COMPLETE）。** 启动基线为 `m5/rebuild` / `4e9d4226b987ae6ea13fbcddda97ba4f3f692e01`；M5.7.1 / M5.7.2 保持冻结，M5.9—M5.10 未开始，M5 FINAL 尚未成立。
+**M5.8.1 — 前置性能加速与本地 MCP 会话复用（COMPLETE）。** 启动基线为 `m5/rebuild` / `117cafa0d0669d8f1d63c66cd9f87328ab54defa`，且启动时与 `origin/m5/rebuild` 一致、工作区干净；M5.8 保持冻结，M5.8.2 / M5.9 / M5.10 未开始，M5 FINAL 尚未成立。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -31,7 +31,9 @@
 | **M5.7.1** | **统一语义可靠性、回归防火墙与高强度问答验收** | **✅ COMPLETE** |
 | **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
-| **M5.9** | **MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
+| **M5.8.1** | **前置性能加速与本地 MCP 会话复用** | **✅ COMPLETE** |
+| **M5.8.2** | **自然语言路由与业务语义层增强** | **⏳ NOT STARTED** |
+| **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ### M5.7 completed contract
@@ -358,9 +360,17 @@
 - 旧 M2 frozen numeric oracle 与当前 Rich PBIX 值域不同，仅作为协议/控制面观察，不修改 oracle 或生产 Semantic/DAX 迁就旧值。Real 长序列中的偶发 Local MCP `ToolExecutionError` 按基础设施失败记录；独立边界复验全绿，未跨入 M5.9 性能/session/cache 修复。
 - Provider 错误和非 Provider turn 异常均保留安全 public profile/model/protocol；Provider 错误额外携带统一 category/class。响应不包含 Key、Authorization、endpoint、prompt 或原始敏感 payload。
 
+### M5.8.1 实现与 fresh evidence（COMPLETE）
+
+- Local MCP 由 application-owned owner task 持有单一 read-only stdio worker/client；session generation 隔离 tool discovery 与 metadata cache，MCP crash 后安全失效重建，FastAPI shutdown clean close。模型访问仍重新枚举 Desktop 并精确匹配唯一 opaque identity，PBIX 切换/重启/stale/validation failure 均 fail closed，禁止 list-order 选择或 fallback。
+- 进程内 bounded TTL/LRU 仅覆盖 tool discovery、Desktop discovery、成功 compatibility、schema 与 bounded member metadata；member key 包含 semantic model identity、schema fingerprint、table/field/normalized request/limit。per-key async singleflight 合并 startup/discovery/probe/schema/member 重复工作，最小 semaphore/queue 防止无界 MCP operation；未引入 Redis、distributed cache 或完整 M5.9 backpressure/soak。
+- performance trace 使用 monotonic clock，仅含 operation、duration、cache 与 session 状态。优化前 metadata cold/warm 为 discovery `6297/7860ms`、schema `9078/10172ms`、member `19422/20890ms`、DAX `11047/8094ms`；优化后为 discovery `3782/0ms`（startup `3406ms`）、probe `1468/157ms`、schema `422/156ms`、member `515/172ms`、DAX `485/515ms`。full-turn 冷启动旅程 `18172ms`；热态 10 轮 `13000ms`（单轮 `1000–1891ms`），4 路小并发 `3719ms`。首次两轮外部 LLM 波动 `9250/17922ms` 已如实保留。
+- session/cache/stale/failure/cancellation/PBIX isolation 单测 `91 passed`；20 路相同 schema 与 member lookup 各只执行一次 underlying read，failure 不污染 cache，普通 DAX 连续两次均真实执行。Semantic Compatibility `306 passed`（108 production files）；backend `1950 passed, 1 skipped`；frontend `86 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Repository Safety `318`、Architecture `125`、Error Ledger `37`、Documentation/Artifact Governance、compileall 与 `git diff --check` PASS。
+- Rich PBIX Real 双 Provider acceptance 覆盖总销售额、2025 年 5 月、华南区、Top3、multi-turn、report、并发隔离与 mid-conversation switch；canonical plan、DAX、QueryResult、Memory、Report 行为不变，cross-provider plan/result digests 相同，residual=0。Answer/Report HTML/Canonical QueryPlan/DAX result/QueryResult/VerifiedFactSet 均未缓存；M5.8 Provider 与 Semantic/Time/Member/TopN/DAX/Report authority 未修改。
+
 ## 下一步
 
-M5.8 完成后保持冻结。下一阶段仅可按独立合同启动 M5.9 MCP performance/resilience；M5.10 仍须晚于 M5.9。M5 FINAL=false。
+M5.8.1 已完成。下一阶段为 M5.8.2 自然语言路由与业务语义层增强；完整 MCP queue/backpressure、20/50/100、fault/restart/soak 仍属于其后的 M5.9，固定专业销售模板属于 M5.10。三者均未开始，M5 FINAL=false。
 
 ## 关键命令
 
@@ -409,4 +419,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-28 | M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-28 | M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
