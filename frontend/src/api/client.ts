@@ -16,6 +16,7 @@ import type {
   RuntimeMode,
   SemanticModelCatalog,
   ReportTemplateCatalog,
+  LLMProfileCatalog,
 } from '../types'
 
 interface ErrorPayload {
@@ -96,6 +97,9 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function friendlyHttpError(status: number, errorType?: string): string {
+  if (errorType === 'llm_profile_unknown' || errorType === 'llm_profile_unavailable') {
+    return '当前选择的 AI 模型已失效，请刷新后重新选择。'
+  }
   if (errorType === 'conversation_history_requires_sqlite') {
     return '会话持久化未启用，历史记录暂不可用。'
   }
@@ -118,6 +122,10 @@ export async function discoverSemanticModels(): Promise<SemanticModelCatalog> {
 
 export async function discoverReportTemplates(): Promise<ReportTemplateCatalog> {
   return requestJson<ReportTemplateCatalog>('/api/v1/report-templates')
+}
+
+export async function discoverLLMProfiles(): Promise<LLMProfileCatalog> {
+  return requestJson<LLMProfileCatalog>('/api/v1/llm-profiles')
 }
 
 export async function sendChat(body: ChatRequest): Promise<ChatResponse> {

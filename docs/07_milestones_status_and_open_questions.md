@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.7.2 — Report Template Architecture & Simple Report Quality Closure（COMPLETE）
+> **状态：** M5.8 — Multi-LLM Provider Abstraction / DeepSeek + Kimi MVP（COMPLETE）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -43,7 +43,7 @@
 | **M5.7** | **简易报表视觉 + Report Template Required + Real Browser 人工视觉 Gate** | **✅ COMPLETE** |
 | **M5.7.1** | **统一语义可靠性、回归防火墙与高强度问答验收** | **✅ COMPLETE** |
 | **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
-| **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **⏳ NOT STARTED** |
+| **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
 | **M5.9** | **MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
@@ -268,4 +268,14 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - M5.7.1 Semantic Compatibility Gate `302 passed`；backend full `1901 passed, 1 skipped`；frontend `80 passed` 且 build PASS；Golden `11 passed, 1 manual-real skipped`；Sales/Education/Inventory/unknown holdout、schema mutation 与 Rich PBIX Real/manual 均通过，automation-owned DB/artifact residual=0。
 - M5.7.2 将 Template Gate 固定在 Intent 后并证明 missing/unknown/stale 时 ZERO schema/DAX/report downstream；建立 Template/Renderer Registry、后端只读模板目录与前端显式选择。简易模板完成 4 KPI、趋势、区域/品类、Top 产品、关键明细、footer 及 Y 轴/grid/15 月/小屏跨年 tick 收口；Semantic Compatibility `304 passed`、backend `1918 passed, 1 skipped`、frontend `83 passed`、Golden `11 passed, 1 manual-real skipped`，automation-owned residual=0。M5.8—M5.10 未开始。
 
-*最后更新：2026-08-27 | M5.7.1 / M5.7.2 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+### M5.8 完成合同（COMPLETE）
+
+- `LLMProvider` 继续作为上层唯一协议；DeepSeek 与 Kimi 共享一个 `OpenAICompatibleLLMProvider`，差异仅来自不可变 `LLMModelProfile` 与 Secret-bearing runtime configuration，禁止复制 Kimi Turn/Intent/QueryPlan/Answer Service。
+- Provider Registry 只允许 `profile_key → provider/profile` 显式解析，不提供用于用户切换的全局 mutable default。每个 turn 开始时解析并快照 profile，Intent/QueryPlan/Answer 等同轮调用只能使用该快照。
+- 模型选择属于 request/conversation-scoped presentation/runtime choice，不是 factual/semantic state；切换 profile 保留 Structured Memory 与 canonical slots，但 provider opaque session state 不得进入 authoritative Memory。
+- `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
+- DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
+- Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
+- M5.9 MCP performance/resilience 与 M5.10 第二报表模板保持 NOT STARTED；M5 FINAL=false。
+
+*最后更新：2026-08-28 | M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL 尚未成立*

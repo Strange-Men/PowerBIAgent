@@ -460,7 +460,7 @@ shell、body、content 与 list 都必须声明 `min-height: 0`/overflow respons
 | 搜索聊天 | ✅ M4 search API 已完成 | ✅ M5.1 |
 | "查看报表"操作 | ✅ M3 resource API 已完成 | ✅ M5.1 |
 | "下载 HTML"操作 | ✅ M3 resource API 已完成 | ✅ M5.1 |
-| 多模型切换 | DeepSeek 唯一启用 | ✅ M5.1 单选交互 |
+| 多模型切换 | 后端安全 profile 目录；DeepSeek/Kimi K2.6 显式逐轮选择 | 🚧 M5.8 |
 | 响应式布局 | — | ✅ M5.3 desktop/medium/small |
 | semantic_model_key 列表 | ✅ M5.3 最小只读 compatibility | +"菜单展示 Desktop model safe catalog 与兼容状态 |
 | report_template_key 列表 | ❌ 无独立 API | +"菜单只登记 `sales_report` |

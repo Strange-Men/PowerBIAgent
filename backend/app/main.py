@@ -136,7 +136,10 @@ async def lifespan(app: FastAPI):
     # M1.6.2: 统一从 Settings 构建一次 HarnessConfig，显式传给所有 TurnService
     harness_config = HarnessConfig.from_settings(settings)
     turn_service = None
-    _deepseek_provider = None  # 用于 shutdown 关闭
+    from backend.app.llm.factory import build_llm_registry
+
+    llm_registry = build_llm_registry(settings)
+    app.state.llm_provider_registry = llm_registry
 
     # 初始化持久化仓库 — must create before report_repository
     (
@@ -197,7 +200,7 @@ async def lifespan(app: FastAPI):
         )
 
     elif (
-        settings.llm_mode == LLMMode.DEEPSEEK
+        settings.llm_mode in {LLMMode.DEEPSEEK, LLMMode.OPENAI_COMPATIBLE}
         and settings.powerbi_mode in {PowerBIMode.MOCK, PowerBIMode.LOCAL_MCP}
     ):
         if not settings.is_real_ready:
@@ -206,21 +209,16 @@ async def lifespan(app: FastAPI):
         else:
             # DeepSeek + Mock / Local: 只替换 PowerBIAdapter Provider。
             from backend.app.application.deepseek_turn_service import (
-                DeepSeekTurnService,
+                LLMTurnService,
             )
-            from backend.app.llm.factory import build_llm_registry
-
-            registry = build_llm_registry(settings)
-            deepseek_provider = registry.get("deepseek")
-            _deepseek_provider = deepseek_provider
-
             if powerbi_adapter is None:
                 raise RuntimeError("PowerBIAdapter not initialized")
 
-            turn_service = DeepSeekTurnService(
+            turn_service = LLMTurnService(
                 memory_repo=memory_repo,
                 snapshot_store=snapshot_store,
-                llm_provider=deepseek_provider,
+                llm_provider=None,
+                llm_registry=llm_registry,
                 powerbi_adapter=powerbi_adapter,
                 report_renderer=build_report_dispatcher(SalesReportRenderer()),
                 report_repository=report_repository,
@@ -241,12 +239,11 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # shutdown — 关闭 DeepSeek httpx Client（如有）
-    if _deepseek_provider is not None and hasattr(_deepseek_provider, "aclose"):
-        try:
-            await _deepseek_provider.aclose()
-        except Exception:
-            pass
+    # shutdown — close each application-scoped provider exactly once.
+    try:
+        await llm_registry.aclose()
+    except Exception:
+        pass
 
     # shutdown — dispose SQLite engine（如有）
     if _engine is not None:
@@ -259,6 +256,7 @@ async def lifespan(app: FastAPI):
     app.state.conversation_history_service = None
     app.state.semantic_model_discovery_service = None
     app.state.report_template_registry = None
+    app.state.llm_provider_registry = None
     app.state.settings = None
     app.state._persistence_engine = None
 

@@ -117,6 +117,9 @@ class TurnPipeline:
         runtime_mode: RuntimeDataMode,
         is_mock: bool,
         llm_provider_name: str,
+        llm_profile_key: Optional[str] = None,
+        llm_model: str = "",
+        llm_provider_protocol: str = "",
         powerbi_provider_name: str,
         scenario_fingerprint_hash_inputs: Optional[dict[str, Any]] = None,
         do_execute: DoExecuteCallback,
@@ -142,6 +145,8 @@ class TurnPipeline:
             "client_conversation_id": conversation_id,
             "semantic_model_key": semantic_model_key,
             "effective_report_template_key": report_template_key,
+            "llm_profile_key": llm_profile_key or llm_provider_name,
+            "llm_model": llm_model or None,
         }
         if scenario_fingerprint_hash_inputs:
             fingerprint_inputs.update(scenario_fingerprint_hash_inputs)
@@ -154,7 +159,18 @@ class TurnPipeline:
         # ── 幂等检查 ──
         snapshot = await self.snapshot_store.get(effective_req_id, runtime_mode)
         if snapshot is not None:
-            if snapshot.request_fingerprint_hash != fingerprint_hash:
+            fingerprint_matches = snapshot.request_fingerprint_hash == fingerprint_hash
+            if not fingerprint_matches and not snapshot.llm_profile_key:
+                legacy_inputs = {
+                    key: value
+                    for key, value in fingerprint_inputs.items()
+                    if key not in {"llm_profile_key", "llm_model"}
+                }
+                fingerprint_matches = (
+                    snapshot.request_fingerprint_hash
+                    == RequestFingerprint.compute_legacy_hash(**legacy_inputs)
+                )
+            if not fingerprint_matches:
                 raise IdempotencyConflictError(
                     request_id=effective_req_id,
                     detail="request_id has already been used by a different request",
@@ -266,6 +282,9 @@ class TurnPipeline:
                 pending_clarification=pending_clarification,
                 **execute_kwargs,
             )
+            result["llm_profile_key"] = llm_profile_key or llm_provider_name
+            result["llm_model"] = llm_model
+            result["llm_provider_protocol"] = llm_provider_protocol
             # Presentation transcript metadata is saved beside the terminal
             # snapshot but never written into StructuredWorkMemory.
             result["user_message"] = message
@@ -396,6 +415,9 @@ class TurnPipeline:
             "source_mode": snapshot.source_mode,
             "usage": None,
             "allowed_tools": snapshot.allowed_tools,
+            "llm_profile_key": snapshot.llm_profile_key,
+            "llm_model": snapshot.llm_model,
+            "llm_provider_protocol": snapshot.llm_provider_protocol,
             "presentation": snapshot.presentation,
             "idempotent_replay": True,
             "replayed_request_id": snapshot.request_id,
@@ -446,6 +468,9 @@ class TurnPipeline:
             source_mode=result.get("source_mode", "mock"),
             trace_id=result.get("trace_id", ""),
             allowed_tools=result.get("allowed_tools", []),
+            llm_profile_key=result.get("llm_profile_key", ""),
+            llm_model=result.get("llm_model", ""),
+            llm_provider_protocol=result.get("llm_provider_protocol", ""),
             request_fingerprint_hash=fingerprint_hash,
         )
         await self.snapshot_store.save(snapshot, runtime_mode)

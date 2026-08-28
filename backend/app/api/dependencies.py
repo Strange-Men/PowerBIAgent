@@ -21,6 +21,7 @@ from backend.app.application.semantic_model_discovery_service import (
 from backend.app.config.settings import Settings, get_settings
 from backend.app.report.resources import ReportRepository
 from backend.app.report.registry import ReportTemplateRegistry
+from backend.app.llm.registry import LLMProviderRegistry
 
 
 def get_turn_service(request: Request) -> TurnServiceProtocol:
@@ -77,6 +78,13 @@ def get_report_template_registry(request: Request) -> ReportTemplateRegistry:
     registry = getattr(request.app.state, "report_template_registry", None)
     if registry is None:
         raise RuntimeError("ReportTemplateRegistry not initialized")
+    return registry
+
+
+def get_llm_provider_registry(request: Request) -> LLMProviderRegistry:
+    registry = getattr(request.app.state, "llm_provider_registry", None)
+    if registry is None:
+        raise RuntimeError("LLMProviderRegistry not initialized")
     return registry
 
 

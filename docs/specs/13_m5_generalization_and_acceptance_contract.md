@@ -1,6 +1,6 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 COMPLETE；M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立
+> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL 尚未成立
 > **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.10（含 M5.7.1 / M5.7.2）
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
@@ -169,6 +169,23 @@ Resource truth 固定为 Settings 全量 query 与 Sidebar 同源 bounded projec
 - 两个模型共用同一 authority 与 regression contract。
 
 禁止 MCP profiling、session reuse、cache、concurrency 或 queue/backpressure 优化；不得改变 Grounding、DAX 或 VerifiedFactSet authority。
+
+#### M5.8 Provider / selection contract
+
+- `LLMModelProfile` 至少包含 `profile_key`、`display_name`、`provider_protocol`、`base_url`、`model`、`timeout`、协议 capability flags 与可选 pricing metadata；Secret 不属于 public profile。
+- DeepSeek/Kimi 共享唯一 `OpenAICompatibleLLMProvider` HTTP 实现；禁止 `KimiTurnService`、`KimiIntentService`、`KimiQueryPlanService`、`KimiAnswerService` 或复制 client。
+- Registry 以 `profile_key` 显式解析 provider/profile。用户切换不得调用 `set_default()` 或写入任何进程级 mutable default；unknown/stale/unavailable profile 必须 fail closed。
+- Chat request 携带安全 public profile key。每个 turn 在开始时创建 immutable selection snapshot，并注入全部 LLM tasks；in-flight turn 不受 UI 后续切换影响，不允许同一 turn 混用 DeepSeek/Kimi。
+- conversation 可保存安全的 profile identity audit metadata，但 profile 不是 semantic model identity、canonical slot、DAX 或 factual authority。中途切换保留兼容 Structured Memory。
+- OpenAI-compatible wire contract 为 `POST {base_url}/chat/completions`、Bearer auth、`stream=false`、deterministic temperature/config、structured JSON、usage、finish reason 与 timeout。有限 repair 仅允许语法 normalization，不得创造 semantic field/value。
+- 统一错误 taxonomy：`configuration / authentication / rate_limit / timeout / connection / request / service / response_validation`。禁止 provider-specific 上层分支与 silent fallback。
+- trace 至少记录 public `profile_key/provider_protocol/model/task/usage/error_class`；不得记录 API Key、Authorization、secret URL query、完整 prompt 或原始敏感响应。pricing 未配置时 `estimated_cost=null`。
+
+#### M5.8 completion gate
+
+固定顺序为 S1 docs/contract、S2 architecture audit、S3 profile、S4 shared provider、S5 DeepSeek migration、S6 Kimi、S7 request/conversation snapshot、S8 frontend selector、S9 error/usage/trace、S10 concurrency/switch、S11 Semantic Compatibility、S12 full regression、S13 Real DeepSeek/Kimi smoke、S14 final docs/commit/push/remote CI。
+
+必须证明：shared provider、无 Kimi duplicate Service stack、无 global mutable default、in-flight immutable、并发 conversation 不串 profile、mid-conversation switch 保留 canonical state、malformed response fail closed、no fallback/no secret leakage；同一 semantic case contract 在 DeepSeek/Kimi 上比较 canonical/result correctness。Real API 不进入 CI Secret dependency。M5.9/M5.10 不得提前实现。
 
 ### M5.7.1 — Semantic Reliability / Regression Firewall
 
@@ -340,6 +357,8 @@ M5.7.1 已按 S1—S12 完成：production-path reproducer 证明旧逻辑在 Ri
 
 M5.7.2 已完成 Intent 后集中 Template Gate、Template/Renderer Registry 与 Dispatcher、只读后端模板目录、后端目录驱动的前端显式选择，以及简易模板信息架构和时间轴收口。missing/unknown/stale template 统一精确提示并保持 ZERO schema/QueryPlan/DAX/Power BI/ReportData/ReportSpec/Renderer/artifact；无 default、猜测或 first-item fallback。完整 deterministic fixture 在 390/768/1440/2560 覆盖 4 KPI、15 点趋势、区域、品类、Top 产品、关键明细和 footer，均无水平滚动或标签碰撞；Real runtime 仅渲染 schema 可证明的 section，缺失 Region/Product/Customer 时 deterministic omit。Semantic Compatibility `304 passed`，backend `1918 passed, 1 skipped`，frontend `83 passed` 且 typecheck/lint/build PASS，Golden `11 passed, 1 manual-real skipped`，automation-owned residual=0。未修改 M5.7.1 authority，未开发 M5.8/M5.9/M5.10。
 
+M5.8 已完成共享 OpenAI-compatible Provider、不可变 DeepSeek/Kimi profiles、显式 request/conversation snapshot selection、统一 error/usage/trace 与 backend-owned frontend selector。Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；并发隔离、mid-conversation switch、unknown/unsupported、固定 `sales_report`、profile mismatch=0 与 residual=0 通过。Fresh Semantic Compatibility `306 passed`，backend `1940 passed, 1 skipped`，frontend `86 passed` 且 typecheck/lint/build PASS，Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。未修改 Semantic/DAX/VerifiedFactSet、M5.7.2 Report 或 MCP；M5.9/M5.10 未开发。
+
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-08-27 M5.7.1 / M5.7.2 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*创建日期：2026-08-26 | 最后更新：2026-08-28 M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL 尚未成立*

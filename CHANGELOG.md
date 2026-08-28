@@ -2,6 +2,17 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.8] — 2026-08-28（COMPLETE）
+
+- 新增不可变 `LLMModelProfile`、显式 `LLMProviderRegistry` 与共享 `OpenAICompatibleLLMProvider`；DeepSeek/Kimi K2.6 共用 Chat Completions HTTP/validation 实现，无全局 mutable default、自动路由或 provider fallback。
+- 每轮在 TurnService 入口解析并冻结 provider/profile snapshot；profile/model 进入幂等指纹、terminal snapshot、公开响应与安全 trace，Memory 只保留 profile audit identity，不改变 semantic/factual authority。
+- 新增安全 `GET /api/v1/llm-profiles` 与前端目录驱动模型选择器；前端提交时复制 `llm_profile_key`，支持并发会话隔离和同会话下一轮显式切换。
+- Real acceptance 通过正式 discovery 唯一选择 `PowerBIAgent_M3_Rich_Test`，对 DeepSeek/Kimi 运行相同的总额、绝对月份、区域、月趋势、Top3、KEEP/REPLACE、unknown、prediction 与 `sales_report` 合同；两个 profile 的 canonical plan/规范化 QueryResult 一致，并发隔离、mid-conversation switch、profile mismatch=0 与 residual=0 均通过。旧 M2 数值 oracle 与当前 Rich PBIX 不同，未修改 frozen oracle 或生产语义迁就旧值。
+- Provider/错误边界补齐失败响应的安全 public profile/model/protocol/category/class 元数据；不记录 endpoint、Authorization、Key、prompt 或原始响应。Fresh gates：Semantic Compatibility `306 passed`；backend `1940 passed, 1 skipped`；frontend `86 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；全治理与 compileall PASS。
+- M5.7.1 Semantic/DAX/VerifiedFactSet 与 M5.7.2 Report Template/Renderer authority 保持冻结；未开发 M5.9/M5.10，M5 FINAL=false。
+
+**Settings.version:** M5.8
+
 ## [M5.7.2] — 2026-08-27
 
 ### Report Template Architecture & Simple Report Quality Closure（COMPLETE）

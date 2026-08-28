@@ -21,6 +21,7 @@ class AppEnv(str, Enum):
 class LLMMode(str, Enum):
     MOCK = "mock"
     DEEPSEEK = "deepseek"
+    OPENAI_COMPATIBLE = "openai_compatible"
 
 
 class PowerBIMode(str, Enum):
@@ -57,7 +58,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M5.7.2", frozen=True)
+    version: str = Field(default="M5.8", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -66,6 +67,7 @@ class Settings(BaseSettings):
 
     # ── 运行模式 ──────────────────────────────
     llm_mode: LLMMode = Field(default=LLMMode.MOCK)
+    llm_default_profile: str = Field(default="deepseek", min_length=1)
     powerbi_mode: PowerBIMode = Field(default=PowerBIMode.MOCK)
     harness_mode: HarnessMode = Field(default=HarnessMode.STRICT)
 
@@ -73,6 +75,13 @@ class Settings(BaseSettings):
     deepseek_api_key: Optional[SecretStr] = Field(default=None)
     deepseek_base_url: str = Field(default="https://api.deepseek.com/v1")
     deepseek_model: str = Field(default="deepseek-chat")
+
+    # Kimi-K2.6 via a user-configured OpenAI-compatible gateway.  The endpoint
+    # intentionally has no production default because host ownership belongs
+    # to the user's environment.
+    kimi_api_key: Optional[SecretStr] = Field(default=None)
+    kimi_base_url: str = Field(default="")
+    kimi_model: str = Field(default="azure/Kimi-K2.6")
 
     # ── 成本计算（可选） ──────────────────────
     deepseek_input_cost_per_million_tokens: Optional[float] = Field(
@@ -121,6 +130,14 @@ class Settings(BaseSettings):
         default="local_state/reports",
         description="受管 HTML report 根目录；测试必须覆盖到临时目录",
     )
+    kimi_input_cost_per_million_tokens: Optional[float] = Field(
+        default=None, ge=0,
+        description="Kimi 输入价格（美元/百万 Token）。未配置时 estimated_cost_usd=null",
+    )
+    kimi_output_cost_per_million_tokens: Optional[float] = Field(
+        default=None, ge=0,
+        description="Kimi 输出价格（美元/百万 Token）。未配置时 estimated_cost_usd=null",
+    )
     presentation_localization_registry_path: str = Field(
         default="local_state/runtime/display_localizations.json",
         description="model/object/schema-scoped 展示本地化 registry",
@@ -148,7 +165,33 @@ class Settings(BaseSettings):
         if self.deepseek_api_key is None:
             return False
         key = self.deepseek_api_key.get_secret_value()
-        return bool(key and key.strip())
+        return bool(
+            key
+            and key.strip()
+            and self.deepseek_base_url.strip()
+            and self.deepseek_model.strip()
+        )
+
+    @property
+    def is_kimi_configured(self) -> bool:
+        if self.kimi_api_key is None:
+            return False
+        key = self.kimi_api_key.get_secret_value()
+        return bool(
+            key
+            and key.strip()
+            and self.kimi_base_url.strip()
+            and self.kimi_model.strip()
+        )
+
+    def is_llm_profile_configured(self, profile_key: str) -> bool:
+        if profile_key == "mock":
+            return self.llm_mode == LLMMode.MOCK
+        if profile_key == "deepseek":
+            return self.is_deepseek_configured
+        if profile_key == "kimi-k2.6":
+            return self.is_kimi_configured
+        return False
 
     @property
     def is_powerbi_local_mcp_configured(self) -> bool:
@@ -170,8 +213,8 @@ class Settings(BaseSettings):
         这是 configuration ready，不代表 Desktop 此刻 live connected；此属性
         不启动 MCP、不连接 Desktop、不读取 Schema。
         """
-        if self.llm_mode == LLMMode.DEEPSEEK:
-            if not self.is_deepseek_configured:
+        if self.llm_mode in {LLMMode.DEEPSEEK, LLMMode.OPENAI_COMPATIBLE}:
+            if not self.is_llm_profile_configured(self.llm_default_profile):
                 return False
             if self.powerbi_mode == PowerBIMode.MOCK:
                 return True
@@ -184,10 +227,11 @@ class Settings(BaseSettings):
     def local_real_configuration_reasons(self) -> list[str]:
         """Return safe, value-free diagnostics for the supported Real stack."""
         reasons: list[str] = []
-        if self.llm_mode != LLMMode.DEEPSEEK:
-            reasons.append("llm_mode_requires_deepseek")
-        if not self.is_deepseek_configured:
-            reasons.append("deepseek_not_configured")
+        if self.llm_mode not in {LLMMode.DEEPSEEK, LLMMode.OPENAI_COMPATIBLE}:
+            reasons.append("llm_mode_requires_openai_compatible")
+            reasons.append("llm_mode_requires_deepseek")  # legacy diagnostic alias
+        if not self.is_llm_profile_configured(self.llm_default_profile):
+            reasons.append("llm_default_profile_not_configured")
         if self.powerbi_mode != PowerBIMode.LOCAL_MCP:
             reasons.append("powerbi_mode_requires_local_mcp")
         if not self.is_powerbi_local_mcp_configured:
@@ -213,6 +257,7 @@ class Settings(BaseSettings):
             "port": self.port,
             "log_level": self.log_level,
             "llm_mode": self.llm_mode.value,
+            "llm_default_profile": self.llm_default_profile,
             "powerbi_mode": self.powerbi_mode.value,
             "harness_mode": self.harness_mode.value,
             "version": self.version,
@@ -220,6 +265,7 @@ class Settings(BaseSettings):
             "is_real_ready": self.is_real_ready,
             "configuration_ready": self.is_real_ready,
             "deepseek_configured": self.is_deepseek_configured,
+            "kimi_configured": self.is_kimi_configured,
             "powerbi_local_mcp_configured": self.is_powerbi_local_mcp_configured,
             "powerbi_local_mcp_readonly": self.powerbi_local_mcp_readonly,
             "persistence_backend": self.persistence_backend.value,

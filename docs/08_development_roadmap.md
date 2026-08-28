@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.7.2 — Report Template Architecture & Simple Report Quality Closure（COMPLETE）
+> **状态：** M5.8 — Multi-LLM Provider Abstraction / DeepSeek + Kimi MVP（COMPLETE）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -43,7 +43,7 @@
 | **M5.7** | **简易报表视觉 + Report Template Required** | **✅ COMPLETE** |
 | **M5.7.1** | **统一语义可靠性、回归防火墙与高强度问答验收** | **✅ COMPLETE** |
 | **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
-| **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **⏳ NOT STARTED** |
+| **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
 | **M5.9** | **MCP performance、resilience、并发与压力验证** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
@@ -88,7 +88,17 @@ Fresh final evidence：backend `1849 passed, 1 skipped`；frontend typecheck/lin
 
 ### 新 M5.8 — 多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型
 
-M5.7 冻结后才允许开发 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek + Kimi-K2.6、request/conversation-scoped model selection 与同一 authority/regression contract。禁止 MCP profiling、cache、session reuse 或并发优化。
+状态为 COMPLETE。M5.7.1 / M5.7.2 保持冻结；本轮完成 `OpenAICompatibleLLMProvider`、不可变 `LLMModelProfile`、DeepSeek + Kimi-K2.6 profiles、Provider Registry、request/conversation-scoped model selection、provider-independent error/usage/trace 与前端显式模型选择器。
+
+每个 turn 必须在入口按 public `profile_key` 显式 `registry.get(profile_key)` 并取得 provider/profile snapshot；同轮全部 LLM tasks 固定使用该 snapshot。禁止通过 `registry.set_default()` 或其他全局 mutable default 实现模型切换；并发 conversation 不得串模型，UI 在请求发出后的选择变化不得影响 in-flight turn。unknown/stale/unavailable profile fail closed，不自动 fallback。
+
+DeepSeek 与 Kimi 共用 `POST {base_url}/chat/completions`、Bearer auth、非流式 messages/model/structured JSON/usage/finish_reason/timeout 解析；差异只由 profile/config 驱动。错误 taxonomy 固定为 configuration、authentication、rate_limit、timeout、connection、request、service、response_validation。未配置 pricing 时 estimated cost 必须为 null；trace 不记录 Secret、Authorization、含 Secret query 的 URL、完整 prompt 或原始敏感响应。
+
+模型切换不是 factual/semantic state：下一轮可换 profile，同时保留 Structured Memory 与 canonical semantic slots；provider-specific opaque session state 不进入 authoritative Memory。永久链仍为 LLM language draft → Grounding/StateTransition → deterministic DAX → QueryResult → VerifiedFactSet。M5.8 禁止修改 Semantic algorithm、MCP performance、Report architecture 或新增第二模板。
+
+固定 checkpoint：S1 docs/contract → S2 current architecture audit → S3 `LLMModelProfile` → S4 shared provider → S5 DeepSeek migration → S6 Kimi profile → S7 request/conversation snapshot selection → S8 frontend selector → S9 error/usage/trace → S10 concurrency/switch regressions → S11 Semantic Compatibility → S12 full gates → S13 Real DeepSeek/Kimi smoke → S14 docs/commit/push/remote CI。任一 P0 Gate FAIL 不进入下一阶段。
+
+完成证据：DeepSeek/Kimi 在同一 Rich PBIX 问题集上 canonical plan 与规范化 QueryResult 全部一致；KEEP/REPLACE、unknown/unsupported、Top3、绝对月份、趋势、固定 `sales_report`、并发隔离与 mid-conversation switch PASS，profile mismatch=0、DAX/Answer LLM 调用为 0、residual=0。Fresh Semantic Compatibility `306 passed`；backend `1940 passed, 1 skipped`；frontend `86 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Repository Safety `314`、Architecture `123`、Error Ledger `37`、Documentation/Artifact Governance 与 compileall PASS。未修改 Semantic/DAX/VerifiedFactSet、M5.7.2 Report 或 MCP，未开发 M5.9/M5.10。
 
 ### M5.7.1 — Semantic Reliability / Regression Firewall
 
@@ -354,7 +364,7 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
-- M5.5 与 M5.6 已完成并冻结；M5.7 只允许简易报表视觉与模板必选；M5.8—M5.10 仍不得进入。
+- M5.5—M5.7.2 已完成并冻结；当前只允许 M5.8 Provider/Profile/显式模型选择；M5.9—M5.10 仍不得进入。
 - 一个 milestone 不得同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle；只有 M5.10 全部门禁完成后才允许宣告 M5 FINAL。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
@@ -369,4 +379,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-08-27 | M5.7.1 / M5.7.2 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-28 | M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL 尚未成立*

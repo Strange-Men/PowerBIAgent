@@ -6,6 +6,7 @@ export interface ChatRequest {
   request_id: string
   semantic_model_key: string
   report_template_key?: string
+  llm_profile_key?: string
 }
 
 export interface ReportResource {
@@ -88,6 +89,9 @@ export interface ChatResponse {
   source_mode: RuntimeMode | ''
   llm_mode?: string
   powerbi_mode?: string
+  llm_profile_key?: string
+  llm_model?: string
+  llm_provider_protocol?: string
   memory_commit?: boolean
   idempotent_replay: boolean
 }
@@ -126,6 +130,20 @@ export interface ConversationSummary {
   last_error_type?: string | null
   local_status?: 'processing' | 'failed' | 'ready'
   local_error?: string | null
+}
+
+export interface LLMProfileOption {
+  profile_key: string
+  display_name: string
+  provider_protocol: 'mock' | 'openai_chat_completions'
+  model: string
+  available: boolean
+  default: boolean
+  unavailable_reason: string | null
+}
+
+export interface LLMProfileCatalog {
+  items: LLMProfileOption[]
 }
 
 export interface ReportTemplateOption {

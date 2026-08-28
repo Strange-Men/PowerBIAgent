@@ -1,4 +1,4 @@
-"""DeepSeekTurnService — 共享 DeepSeek + PowerBIAdapter 全链路
+"""Provider-independent LLMTurnService (legacy module path retained).
 
 M1.6.3 更新：
 - 真实工具执行统一通过 ToolGateway（create_default_tool_gateway）
@@ -55,6 +55,12 @@ from backend.app.intent.unsupported_policy import (
     should_defer_unsupported_to_grounding,
 )
 from backend.app.llm.base import LLMProvider, LLMTask
+from backend.app.llm.profiles import (
+    LLMCapabilityFlags,
+    LLMModelProfile,
+    LLMProviderProtocol,
+)
+from backend.app.llm.registry import LLMProviderRegistry, LLMProviderSnapshot
 from backend.app.memory.models import (
     PendingClarificationContext,
     RuntimeDataMode,
@@ -148,8 +154,8 @@ from backend.app.schemas.data_contracts import (
 )
 
 
-class DeepSeekTurnService:
-    """DeepSeek + 可注入 PowerBIAdapter 轮次服务
+class LLMTurnService:
+    """OpenAI-compatible LLM + injectable PowerBIAdapter turn service.
 
     完整链路：Intent → Schema → QueryPlan → DAX → QueryResult →
               Answer/ReportSpec → Renderer → Memory Commit
@@ -165,18 +171,35 @@ class DeepSeekTurnService:
     def __init__(
         self,
         memory_repo: MemoryRepository,
-        llm_provider: LLMProvider,
+        llm_provider: LLMProvider | None,
         powerbi_adapter: PowerBIAdapter,
         report_renderer: ReportRenderer,
         settings: Settings,
         config: Optional[HarnessConfig] = None,
         report_repository: ReportRepository | None = None,
         snapshot_store: Optional[SnapshotRepository] = None,  # M4.1
+        llm_registry: LLMProviderRegistry | None = None,
     ):
-        if llm_provider.is_mock:
-            raise ValueError("DeepSeekTurnService 要求非 Mock LLM Provider")
-
-        self.llm_provider = llm_provider
+        # The compatibility ``llm_provider`` path keeps older focused tests and
+        # embeddings working, while production wiring always injects the
+        # application-scoped registry.  Neither path exposes a mutable default.
+        if llm_registry is None:
+            if llm_provider is None:
+                raise ValueError("LLM registry or provider is required")
+            if llm_provider.is_mock:
+                raise ValueError("DeepSeekTurnService 要求非 Mock LLM Provider")
+            compatibility_profile = LLMModelProfile(
+                profile_key="deepseek",
+                display_name="DeepSeek",
+                provider_protocol=LLMProviderProtocol.OPENAI_CHAT_COMPLETIONS,
+                base_url=settings.deepseek_base_url,
+                model=settings.deepseek_model,
+                timeout_seconds=float(settings.request_timeout_seconds),
+                capabilities=LLMCapabilityFlags(),
+            )
+            llm_registry = LLMProviderRegistry()
+            llm_registry.register(compatibility_profile, llm_provider)
+        self.llm_registry = llm_registry
         self.powerbi = powerbi_adapter
         self.report_renderer = report_renderer
         self._report_repository = report_repository
@@ -217,8 +240,14 @@ class DeepSeekTurnService:
         request_id: Optional[str] = None,
         semantic_model_key: str = "mock_sales_model",
         report_template_key: Optional[str] = None,
+        llm_profile_key: Optional[str] = None,
     ) -> dict[str, Any]:
-        """执行完整 DeepSeek Turn 流程 — 委托给共享 TurnPipeline 骨架"""
+        """Execute one turn with one immutable provider/profile snapshot."""
+
+        selected_key = llm_profile_key or self.settings.llm_default_profile
+        provider_snapshot = self.llm_registry.get(selected_key)
+        if provider_snapshot.provider.is_mock:
+            raise ValueError("Real LLM turn cannot select the mock profile")
 
         return await self.pipeline.execute(
             message=message,
@@ -228,7 +257,10 @@ class DeepSeekTurnService:
             report_template_key=report_template_key,
             runtime_mode=RuntimeDataMode.REAL,
             is_mock=False,
-            llm_provider_name="deepseek",
+            llm_provider_name=provider_snapshot.profile.profile_key,
+            llm_profile_key=provider_snapshot.profile.profile_key,
+            llm_model=provider_snapshot.profile.model,
+            llm_provider_protocol=provider_snapshot.profile.provider_protocol.value,
             powerbi_provider_name=self.powerbi.provider_name,
             scenario_fingerprint_hash_inputs={
                 "scenario": None,
@@ -236,6 +268,7 @@ class DeepSeekTurnService:
                 "powerbi_key": None,
             },
             do_execute=self._do_execute,
+            llm_snapshot=provider_snapshot,
         )
 
     # ── 核心执行管线 ──
@@ -251,6 +284,7 @@ class DeepSeekTurnService:
         is_mock: bool,
         llm_provider_name: str,
         powerbi_provider_name: str,
+        llm_snapshot: LLMProviderSnapshot,
         trace: TraceRecorder,
         trace_id: str,
         fingerprint_hash: str,
@@ -271,11 +305,28 @@ class DeepSeekTurnService:
             controller = TurnController(self.config, request_id=effective_req_id)
 
         # ── 1. 每请求独立的 Collector + ObservedProvider ──
+        pricing = llm_snapshot.profile.pricing
         collector = LLMCallCollector(
-            input_cost_per_million=self.settings.deepseek_input_cost_per_million_tokens,
-            output_cost_per_million=self.settings.deepseek_output_cost_per_million_tokens,
+            input_cost_per_million=(
+                pricing.input_cost_per_million_tokens if pricing else None
+            ),
+            output_cost_per_million=(
+                pricing.output_cost_per_million_tokens if pricing else None
+            ),
         )
-        observed = ObservedLLMProvider(self.llm_provider, collector)
+        observed = ObservedLLMProvider(
+            llm_snapshot.provider, collector, profile=llm_snapshot.profile
+        )
+        trace.record(
+            "llm_profile_selected",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={
+                "profile_key": llm_snapshot.profile.profile_key,
+                "provider_protocol": llm_snapshot.profile.provider_protocol.value,
+                "model": llm_snapshot.profile.model,
+            },
+        )
 
         capability = classify_capability(message)
         semantic_audit: dict[str, Any] = {
@@ -521,7 +572,7 @@ class DeepSeekTurnService:
             intent_value=intent.intent.value,
             runtime_mode=runtime_mode,
             is_mock=False,
-            llm_provider_name="deepseek",
+            llm_provider_name=llm_provider_name,
             powerbi_provider_name=powerbi_provider_name,
             base_version=base_version,
         )
@@ -658,6 +709,7 @@ class DeepSeekTurnService:
                 trace=trace,
                 trace_id=trace_id,
                 collector=collector,
+                observed_provider=observed,
             )
 
         # ── 8.1 Business Semantic Grounding ──
@@ -1566,6 +1618,7 @@ class DeepSeekTurnService:
         trace: TraceRecorder,
         trace_id: str,
         collector: LLMCallCollector,
+        observed_provider: ObservedLLMProvider,
     ) -> dict[str, Any]:
         """Execute the adaptive M3.4 sales report inside the active TurnPipeline.
 
@@ -1599,11 +1652,8 @@ class DeepSeekTurnService:
         # counted separately as llm_report_intent_call_count.
         llm_report_intent_ids: tuple[str, ...] = ()
         if not self.powerbi.is_mock:
-            observed_report_intent = ObservedLLMProvider(
-                self.llm_provider, collector
-            )
             llm_report_intent_ids = await DeepSeekReportIntentService(
-                observed_report_intent,
+                observed_provider,
                 max_format_repairs=0,
             ).draft(message)
         signal = resolve_report_intent(message, llm_draft=llm_report_intent_ids)
@@ -2087,6 +2137,18 @@ class DeepSeekTurnService:
         usage: Optional[LLMUsageSummary] = None
         if collector is not None:
             usage = collector.summary()
+            if trace is not None:
+                trace.record(
+                    "llm_usage_summary",
+                    trace_id=trace_id,
+                    request_id=request_id,
+                    data_summary={"calls": usage.calls},
+                    token_usage={
+                        "prompt_tokens": usage.prompt_tokens,
+                        "completion_tokens": usage.completion_tokens,
+                        "total_tokens": usage.total_tokens,
+                    },
+                )
 
         return self.pipeline.build_result(
             request_id=request_id,
@@ -2110,3 +2172,8 @@ class DeepSeekTurnService:
         )
 
     # M1.6.3.2: _build_replay 和 _save_snapshot 已移除 — 统一由 TurnPipeline.execute() 管理
+
+
+# Backward-compatible import name for sealed tests/integrations.  This is one
+# implementation, not a DeepSeek-specific or Kimi-specific service stack.
+DeepSeekTurnService = LLMTurnService

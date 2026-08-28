@@ -61,6 +61,8 @@ def safe_startup_summary(settings: Settings) -> dict[str, object]:
         "max_tool_calls": settings.max_tool_calls,
         "local_mcp_readonly": settings.powerbi_local_mcp_readonly,
         "deepseek_configured": settings.is_deepseek_configured,
+        "kimi_configured": settings.is_kimi_configured,
+        "llm_default_profile": settings.llm_default_profile,
         "real_mode_configuration_complete": (
             settings.is_local_real_configuration_complete
         ),

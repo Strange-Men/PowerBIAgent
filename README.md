@@ -5,13 +5,13 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.7.2 — Report Template Architecture & Simple Report Quality Closure（COMPLETE）**。M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 已封板；M5.8—M5.10 尚未开始。
+当前版本：**M5.8 — Multi-LLM Provider Abstraction / DeepSeek + Kimi MVP（COMPLETE）**。M5.7.1 / M5.7.2 已冻结；M5.9—M5.10 尚未开始，M5 FINAL=false。
 
 ## 项目概览
 
 PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用户。用户用自然语言提出数据问题或报表需求；FastAPI 后端负责语义落地、受限 DAX 构造、Power BI 查询、事实验证、回答与静态 HTML 报表生成。
 
-当前产品形态是 Windows 本地单机 MVP：支持 Mock 离线开发，也支持 DeepSeek + Local MCP + Power BI Desktop 真实链。React 前端通过 Vite 代理接入 FastAPI，并从后端只读发现接口动态选择一个当前打开的 Desktop/PBIX 模型。
+当前产品形态是 Windows 本地单机 MVP：支持 Mock 离线开发，也支持 DeepSeek 或 Kimi K2.6 + Local MCP + Power BI Desktop 真实链。React 前端通过 Vite 代理接入 FastAPI，并从后端只读目录显式选择 LLM profile 与当前打开的 Desktop/PBIX 模型。
 
 ## 核心能力
 
@@ -64,7 +64,8 @@ LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI
 | 多轮 Memory | 当前明确表达 > bounded semantic draft > committed Memory；fresh 清除无关旧槽，follow-up/replace 只继承兼容省略项；模型切换清空旧语义上下文 |
 | 持久化与恢复 | SQLite Memory/Snapshot/报表 metadata；重启重放；不完整崩溃证据受控失败；持久化删除意图 |
 | 历史与搜索 | 仅 SQLite 支持最近会话、展示型 transcript、自动标题/重命名、有界搜索、archive/restore 与永久删除；旧会话只恢复真实已保存内容 |
-| 本地 Power BI | DeepSeek + 只读 Local Modeling MCP + Power BI Desktop；可同时安全枚举多个 PBIX，由前端单选后使用 opaque key 精确绑定；每次 schema/member/DAX 都重新枚举并只连接唯一匹配实例，stale/ambiguous identity fail closed；Real DAX/事实的 LLM 权限为 0 |
+| 多模型 LLM | DeepSeek 与 Kimi K2.6 共享 OpenAI-compatible Provider；每轮按公开 profile key 冻结 provider/model snapshot，无全局 mutable default、自动路由或失败 fallback |
+| 本地 Power BI | DeepSeek/Kimi + 只读 Local Modeling MCP + Power BI Desktop；可同时安全枚举多个 PBIX，由前端单选后使用 opaque key 精确绑定；每次 schema/member/DAX 都重新枚举并只连接唯一匹配实例，stale/ambiguous identity fail closed；Real DAX/事实的 LLM 权限为 0 |
 | React 网页前端 | 完整历史恢复、已归档入口/恢复、独立 report 删除、A/B history stale-response 防护，以及文字/指标/表格/柱状图/折线图/报表附件动态渲染 |
 
 Local MCP 实机基线固定为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，并通过只读 schema + DAX 单行 capability probe 校验协议能力。Remote MCP 继续延期。M5.3.3 不改变 M0–M5 factual authority。
@@ -92,6 +93,7 @@ Real 模式至少需要在本地 `.env` 中配置以下内容；`DEEPSEEK_API_KE
 
 ```dotenv
 LLM_MODE=deepseek
+LLM_DEFAULT_PROFILE=deepseek
 POWERBI_MODE=local_mcp
 PERSISTENCE_BACKEND=sqlite
 MAX_TOOL_CALLS=8
@@ -106,6 +108,9 @@ DEEPSEEK_API_KEY=<用户自己的 Key>
 3. 启动 React 前端。
 4. 打开 `http://127.0.0.1:5173`。
 5. 在“数据模型”菜单确认显示当前 Desktop 模型列表，而不是 Mock 模型；选择本轮要分析的 PBIX。
+6. 在“AI 模型”菜单显式选择 DeepSeek 或已配置的 Kimi K2.6；提交后该轮 profile 不再受后续 UI 切换影响。
+
+Kimi K2.6 使用用户自有的 OpenAI-compatible gateway；生产代码不提供真实 host 或 Key。启用时设置 `LLM_MODE=openai_compatible`、`LLM_DEFAULT_PROFILE=kimi-k2.6`、`KIMI_BASE_URL=<用户 gateway>/v1`、`KIMI_API_KEY=<用户 Key>` 与 `KIMI_MODEL=azure/Kimi-K2.6`。也可同时配置 DeepSeek/Kimi，由前端逐轮显式选择；任一 provider 失败均不会自动切换到另一 provider。
 
 `PERSISTENCE_BACKEND=sqlite` 是最近会话、搜索、历史和报表历史正常工作的前提。启动后可执行以下只读检查：
 
@@ -243,6 +248,7 @@ Local MCP DAX 执行会验证实际 columns/rows/`rowCount` shape，并使用一
 | `mock` | `mock` | 默认离线开发与 CI，不需要 Secret |
 | `deepseek` | `mock` | 真实语言模型 + Mock Power BI 数据 |
 | `deepseek` | `local_mcp` | 真实 DeepSeek + readonly Local MCP + Power BI Desktop |
+| `openai_compatible` | `local_mcp` | DeepSeek/Kimi profile 目录 + readonly Local MCP；默认 profile 由 `LLM_DEFAULT_PROFILE` 指定 |
 
 `remote_mcp` 当前不可用。`PERSISTENCE_BACKEND=memory` 是兼容性默认值，只保留进程内状态；需要重启恢复、历史或搜索时必须显式使用 `PERSISTENCE_BACKEND=sqlite`。
 
@@ -253,8 +259,10 @@ Local MCP DAX 执行会验证实际 columns/rows/`rowCount` shape，并使用一
 | `GET` | `/health` | 当前 runtime 配置就绪状态 |
 | `GET` | `/api/v1/semantic-models` | 当前 Desktop 模型的安全目录、runtime namespace 与最小 Agent compatibility 状态 |
 | `GET` | `/api/v1/report-templates` | 当前可用的 registry-owned 报表模板只读目录；前端不维护第二份模板 authority |
+| `GET` | `/api/v1/llm-profiles` | 安全公开的 LLM profile 目录；不返回 Key 或 base URL |
 | `POST` | `/api/v1/chat` | 非流式数据问答与报表生成 |
 | 字段 | `semantic_model_key` | 从发现目录选择 opaque 模型 key；必须精确绑定当前 Desktop 实例 |
+| 字段 | `llm_profile_key` | 本轮显式选择的公开 LLM profile；进入幂等指纹并在 turn 内冻结 |
 | 字段 | `report_template_key` | 报表请求必须显式提供的 registry-owned 模板 key；当前仅 `sales_report`（“简易模板”），missing/invalid/stale 均在 ReportSpec/Renderer/artifact 前 fail closed |
 | `GET` | `/api/reports/{report_id}` | 查看 repository-owned HTML 报表 |
 | `GET` | `/api/reports/{report_id}/download` | 下载 UTF-8 HTML 报表 |
@@ -328,7 +336,7 @@ python -m alembic upgrade head
 | M5.7 | COMPLETE — 简易报表视觉、响应式可读性、显式模板必选与人工视觉验收 |
 | M5.7.1 | COMPLETE — 统一语义可靠性、回归防火墙与高强度问答验收 |
 | M5.7.2 | COMPLETE — Report Template Gate 前移、Template/Renderer Registry、后端目录驱动的前端模板选择，以及简易模板视觉与信息架构最终收口 |
-| M5.8 | NOT STARTED — OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection |
+| M5.8 | COMPLETE — OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection |
 | M5.9 | NOT STARTED — MCP performance、resilience、并发与压力验证 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
 
@@ -359,4 +367,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-27 | M5.7.1 / M5.7.2 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-28 | M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL=false*

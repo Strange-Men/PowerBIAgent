@@ -1,6 +1,6 @@
 import { Check, ChevronDown, Plus, RefreshCw, Send, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { CatalogOption } from '../types'
+import type { CatalogOption, LLMProfileOption } from '../types'
 
 interface ComposerProps {
   sending: boolean
@@ -13,9 +13,14 @@ interface ComposerProps {
   reportTemplateOptions: CatalogOption[]
   loadingReportTemplates: boolean
   reportTemplateError: string | null
+  llmProfile: LLMProfileOption | null
+  llmProfileOptions: LLMProfileOption[]
+  loadingLLMProfiles: boolean
+  llmProfileError: string | null
   onSemanticModelChange: (option: CatalogOption) => void
   onRefreshSemanticModels: () => Promise<void>
   onReportTemplateChange: (option: CatalogOption | null) => void
+  onLLMProfileChange: (option: LLMProfileOption) => void
   onSend: (content: string) => Promise<void>
 }
 
@@ -30,9 +35,14 @@ export function Composer({
   reportTemplateOptions,
   loadingReportTemplates,
   reportTemplateError,
+  llmProfile,
+  llmProfileOptions,
+  loadingLLMProfiles,
+  llmProfileError,
   onSemanticModelChange,
   onRefreshSemanticModels,
   onReportTemplateChange,
+  onLLMProfileChange,
   onSend,
 }: ComposerProps) {
   const [value, setValue] = useState('')
@@ -45,7 +55,8 @@ export function Composer({
     Boolean(value.trim()) &&
     !sending &&
     semanticModel?.compatible === true &&
-    semanticModel.selectable !== false
+    semanticModel.selectable !== false &&
+    llmProfile?.available === true
 
   useEffect(() => {
     const closeMenus = (event: MouseEvent) => {
@@ -79,6 +90,7 @@ export function Composer({
       sending ||
       !semanticModel?.compatible ||
       semanticModel.selectable === false
+      || !llmProfile?.available
     ) return
     setValue('')
     setAddMenuOpen(false)
@@ -174,20 +186,31 @@ export function Composer({
       ) : null}
 
       {modelMenuOpen ? (
-        <div className="composer-popover model-menu" role="listbox" aria-label="选择模型">
-          <button
-            className="model-option"
-            type="button"
-            role="option"
-            aria-selected="true"
-            onClick={() => setModelMenuOpen(false)}
-          >
-            <span>
-              <strong>DeepSeek</strong>
-              <small>当前可用模型</small>
-            </span>
-            <Check size={17} />
-          </button>
+        <div className="composer-popover model-menu" role="listbox" aria-label="选择 AI 模型">
+          {loadingLLMProfiles ? <p className="menu-empty-state">正在获取 AI 模型…</p> : null}
+          {!loadingLLMProfiles && llmProfileOptions.length === 0 ? (
+            <p className="menu-empty-state">{llmProfileError || '当前没有可用的 AI 模型。'}</p>
+          ) : null}
+          {llmProfileOptions.map((profile) => (
+            <button
+              className="model-option"
+              type="button"
+              role="option"
+              key={profile.profile_key}
+              disabled={!profile.available}
+              aria-selected={llmProfile?.profile_key === profile.profile_key}
+              onClick={() => {
+                onLLMProfileChange(profile)
+                setModelMenuOpen(false)
+              }}
+            >
+              <span>
+                <strong>{profile.display_name}</strong>
+                <small>{profile.available ? profile.model : '当前配置不可用'}</small>
+              </span>
+              {llmProfile?.profile_key === profile.profile_key ? <Check size={17} /> : null}
+            </button>
+          ))}
         </div>
       ) : null}
 
@@ -229,7 +252,7 @@ export function Composer({
             setAddMenuOpen(false)
           }}
         >
-          DeepSeek
+          {llmProfile?.display_name || '选择 AI 模型'}
           <ChevronDown size={16} />
         </button>
         <button

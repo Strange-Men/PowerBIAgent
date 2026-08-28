@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.7.2 — Report Template Architecture & Simple Report Quality Closure（COMPLETE）**。M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 已封板；M5.8—M5.10 尚未开始。
+当前版本：**M5.8 — Multi-LLM Provider Abstraction / DeepSeek + Kimi MVP（COMPLETE）**。M5.7.1 / M5.7.2 已冻结；M5.9—M5.10 尚未开始，M5 FINAL=false。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -43,7 +43,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.7** 已完成现有 `sales_report.html` 的简易模板可读性、响应式视觉与 `Report Template Required` fail-closed Gate。任何 report intent/request 必须显式携带有效 `report_template_key`；缺失、unknown 或 stale template 均在 ReportData/ReportSpec/Renderer/HTML artifact 之前停止。**M5.7 COMPLETE。**
 - **M5.7.1** 已统一语义可靠性、回归防火墙与高强度问答验收；修复 M5.5—M5.7 暴露的语义回归，并建立所有后续版本必须复用的永久 Semantic Compatibility Gate。**M5.7.1 COMPLETE。**
 - **M5.7.2** 已将 Report Template Gate 集中前移至 Intent 后、任何 schema/QueryPlan/DAX/ReportData/ReportSpec/Renderer/artifact 前；建立后端 Template/Renderer Registry 与只读模板目录 API，前端改为消费后端目录并清理 stale selection；简易模板完成 4 KPI、趋势、区域/品类、Top 产品、关键明细、footer 的固定信息架构，以及 Y 轴、nice ticks、gridlines、15 月完整桌面标签和确定性小屏跨年双层 tick。**M5.7.2 COMPLETE。**
-- **M5.8** 只负责 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek + Kimi-K2.6 与 request/conversation-scoped model selection；不得混入 MCP 性能优化。**M5.8 NOT STARTED。**
+- **M5.8** 已完成共享 `OpenAICompatibleLLMProvider`、不可变 `LLMModelProfile`、DeepSeek + Kimi-K2.6、request/conversation-scoped model selection、统一 error/usage/trace 与前端模型选择器。Rich PBIX 双模型 canonical/result、并发隔离、mid-conversation switch、unknown/unsupported、固定报表与 residual=0 验收通过；未混入 MCP 性能优化。**M5.8 COMPLETE。**
 - **M5.9** 只负责 MCP profiling、session reuse、cache、bounded concurrency、bounded queue/backpressure、20/50/100 concurrency 与 restart/fault/soak；不得修改 Semantic/DAX/VerifiedFactSet authority。**M5.9 NOT STARTED。**
 - **M5.10** 只负责“简易模板/销售模板”显式选择与固定专业销售模板；两者都遵守 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed renderer`。**M5.10 NOT STARTED。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。**
 
@@ -124,7 +124,7 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 44. M5.10：只允许固定专业销售模板与“简易模板/销售模板”显式选择；禁止 LLM 临场生成 HTML/CSS/SVG。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
 45. M5.7.1：日期角色选择优先级固定为用户显式指定 → model-scoped metadata → runtime relationship/default temporal role（仅在可唯一证明时）→ clarification。不得以“模型只有一个 Date/DateTime 字段”为正常执行前提，也不得在多日期角色无唯一证据时猜测。
 46. M5.7.1：benchmark 问题、expected 数值与问题→答案映射不得进入 `backend/app/**` production text/code。Gate 必须覆盖 `.py/.yaml/.yml/.json/.toml`，排除 harness/tests/docs/generated/cache/artifact，并禁止 production import/read/depend on known-answer cases、baseline、oracle 或 test-only truth；合法 model-scoped alias/runtime metadata 不得因裸业务词误报。永久 Semantic Compatibility Gate 同时检查 unresolved/invalid member ZERO DAX、time、multi-turn、unsupported、schema mutation、frontend/provider 无 semantic authority。
-47. M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provider 或 MCP performance；M5.7.2 已在 Report Template Architecture 与简易模板质量边界内完成，M5.8 保持 NOT STARTED。
+47. M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provider 或 MCP performance；M5.7.2 已在 Report Template Architecture 与简易模板质量边界内完成，M5.8 已在独立 Provider/Profile 边界内完成。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前跨入未批准里程碑、开发 Remote MCP；未经用户明确批准不得创建 Tag。
 
@@ -158,4 +158,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-27 | M5.7.1 / M5.7.2 COMPLETE — M5.8—M5.10 NOT STARTED*
+*最后更新：2026-08-28 | M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL=false*

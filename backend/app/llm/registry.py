@@ -1,71 +1,119 @@
-"""LLM Provider Registry
+"""Immutable-profile LLM provider registry."""
 
-统一管理所有 Provider 实例。业务层通过 Registry 获取 Provider，不散落模式判断。
-"""
+from __future__ import annotations
 
-from typing import Optional
+from dataclasses import dataclass
 
-from backend.app.llm.base import LLMProvider
+from backend.app.llm.base import LLMConfigurationError, LLMProvider
+from backend.app.llm.profiles import (
+    LLMModelProfile,
+    LLMProfileCatalogItem,
+    LLMProfileCatalogResponse,
+)
+
+
+class LLMProfileUnavailableError(LLMConfigurationError):
+    """A known public profile cannot be used with current configuration."""
+
+
+class LLMProfileNotFoundError(KeyError):
+    """The requested public profile key is not registered."""
+
+
+@dataclass(frozen=True)
+class LLMProviderSnapshot:
+    """The immutable provider/profile pair selected for one turn."""
+
+    profile: LLMModelProfile
+    provider: LLMProvider
+
+
+@dataclass(frozen=True)
+class _RegistryEntry:
+    profile: LLMModelProfile
+    provider: LLMProvider | None
+    unavailable_reason: str | None = None
 
 
 class LLMProviderRegistry:
-    """LLM Provider 注册表
+    """Explicit profile registry with no process-global mutable default."""
 
-    用法:
-        registry = LLMProviderRegistry()
-        registry.register("mock", mock_provider)
-        registry.register("deepseek", deepseek_provider)
-        provider = registry.get()  # 使用默认 Provider
-    """
+    def __init__(self) -> None:
+        self._entries: dict[str, _RegistryEntry] = {}
 
-    def __init__(self):
-        self._providers: dict[str, LLMProvider] = {}
-        self._default: Optional[str] = None
+    def register(
+        self,
+        profile: LLMModelProfile,
+        provider: LLMProvider | None,
+        *,
+        unavailable_reason: str | None = None,
+    ) -> None:
+        key = profile.profile_key
+        if key in self._entries:
+            raise ValueError(f"LLM profile '{key}' already registered")
+        if provider is None and not unavailable_reason:
+            raise ValueError("unavailable profile requires a safe reason")
+        self._entries[key] = _RegistryEntry(profile, provider, unavailable_reason)
 
-    def register(self, name: str, provider: LLMProvider, set_default: bool = False) -> None:
-        """注册 Provider
+    def get(self, profile_key: str) -> LLMProviderSnapshot:
+        try:
+            entry = self._entries[profile_key]
+        except KeyError:
+            raise LLMProfileNotFoundError(
+                f"LLM profile '{profile_key}' not found. Available: {self.list_profiles()}"
+            ) from None
+        if entry.provider is None:
+            raise LLMProfileUnavailableError(
+                "Selected LLM profile is unavailable",
+                provider=profile_key,
+                retryable=False,
+                error_code="profile_unavailable",
+            )
+        return LLMProviderSnapshot(profile=entry.profile, provider=entry.provider)
 
-        Args:
-            name: Provider 名称（如 "mock", "deepseek"）
-            provider: Provider 实例
-            set_default: 是否设为默认
-        """
-        if name in self._providers:
-            raise ValueError(f"Provider '{name}' already registered")
-        self._providers[name] = provider
-        if set_default or self._default is None:
-            self._default = name
-
-    def get(self, name: Optional[str] = None) -> LLMProvider:
-        """获取 Provider
-
-        Args:
-            name: Provider 名称，为 None 时使用默认
-
-        Returns:
-            LLMProvider 实例
-
-        Raises:
-            KeyError: Provider 未注册
-        """
-        key = name or self._default
-        if key is None:
-            raise KeyError("No provider registered")
-        if key not in self._providers:
-            raise KeyError(f"Provider '{key}' not found. Available: {list(self._providers.keys())}")
-        return self._providers[key]
+    def list_profiles(self) -> list[str]:
+        return list(self._entries)
 
     def list_providers(self) -> list[str]:
-        """列出所有已注册的 Provider 名称"""
-        return list(self._providers.keys())
+        """Compatibility name; returns profile keys, not mutable defaults."""
+        return self.list_profiles()
 
-    @property
-    def default_name(self) -> Optional[str]:
-        """当前默认 Provider 名称"""
-        return self._default
+    def public_catalog(
+        self,
+        *,
+        default_profile_key: str,
+        include_keys: set[str] | None = None,
+    ) -> LLMProfileCatalogResponse:
+        items = []
+        for key, entry in self._entries.items():
+            if include_keys is not None and key not in include_keys:
+                continue
+            items.append(
+                LLMProfileCatalogItem(
+                    profile_key=key,
+                    display_name=entry.profile.display_name,
+                    provider_protocol=entry.profile.provider_protocol,
+                    model=entry.profile.model,
+                    available=entry.provider is not None,
+                    default=key == default_profile_key,
+                    unavailable_reason=entry.unavailable_reason,
+                )
+            )
+        return LLMProfileCatalogResponse(items=items)
 
-    def set_default(self, name: str) -> None:
-        """设置默认 Provider"""
-        if name not in self._providers:
-            raise KeyError(f"Provider '{name}' not registered")
-        self._default = name
+    async def aclose(self) -> None:
+        closed: set[int] = set()
+        for entry in self._entries.values():
+            provider = entry.provider
+            if provider is None or id(provider) in closed:
+                continue
+            closed.add(id(provider))
+            close = getattr(provider, "aclose", None)
+            if close is not None:
+                await close()
+
+    def __repr__(self) -> str:
+        availability = {
+            key: entry.provider is not None for key, entry in self._entries.items()
+        }
+        return f"LLMProviderRegistry(profiles={availability!r})"

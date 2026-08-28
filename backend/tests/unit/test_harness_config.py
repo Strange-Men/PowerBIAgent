@@ -303,7 +303,7 @@ class TestMainLifespanConfig:
             mock_provider.provider_name = "deepseek"
 
             with patch(
-                "backend.app.llm.factory.DeepSeekLLMProvider",
+                "backend.app.llm.factory.OpenAICompatibleLLMProvider",
                 return_value=mock_provider,
             ):
                 with patch.object(mock_provider, "aclose", AsyncMock()):

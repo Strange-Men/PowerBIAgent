@@ -35,8 +35,9 @@
 | ADR-010 | [Deterministic Report Template and Data Plan Authority](ADR-010_deterministic_report_template_and_data_plan_authority.md) | accepted（固定事实边界有效；固定四查询限制由 ADR-011 supersede） | 2026-08-17 |
 | ADR-011 | [Adaptive Report Planning and Visualization Authority](ADR-011_adaptive_report_planning_and_visualization_authority.md) | accepted | 2026-08-17 |
 | ADR-012 | [Local Persistence Architecture and Storage Foundation](ADR-012_local_persistence_architecture.md) | accepted | 2026-08-18 |
+| ADR-013 | [LLM Model Profiles and Request-Scoped Provider Selection](ADR-013_llm_model_profiles_and_request_scoped_provider_selection.md) | accepted | 2026-08-27 |
 
-当前开发最重要的 active 决策为 ADR-005—ADR-012：ADR-005 约束统一控制面，ADR-006/007 分别约束 Deferred Remote 与当前 Local Provider，ADR-008/009 分别约束 canonical business semantics 与 deterministic execution / VerifiedFactSet，ADR-010 约束 M3 固定事实边界（固定四查询限制由 ADR-011 supersede），ADR-011 约束自适应报表规划与可视化权限，ADR-012 约束 SQLite/Repository/HTML authority 及 M4.4 restart/delete recovery。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
+当前开发最重要的 active 决策为 ADR-005—ADR-013：ADR-005 约束统一控制面，ADR-006/007 分别约束 Deferred Remote 与当前 Local Provider，ADR-008/009 分别约束 canonical business semantics 与 deterministic execution / VerifiedFactSet，ADR-010 约束 M3 固定事实边界（固定四查询限制由 ADR-011 supersede），ADR-011 约束自适应报表规划与可视化权限，ADR-012 约束 SQLite/Repository/HTML authority 及 M4.4 restart/delete recovery，ADR-013 约束共享 OpenAI-compatible Provider 与 request-scoped immutable profile selection。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
 
 ## ADR 详情
 
@@ -86,10 +87,14 @@ Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code�
 
 正式正文见 [ADR-012 独立文件](ADR-012_local_persistence_architecture.md)。核心决策：SQLite + SQLAlchemy Async + aiosqlite + Alembic 技术栈；数据库是 persistence provider，不是新的 business authority；ORM 持久化模型与业务 domain model 分离；JSON TEXT 列保存结构化 payload；HTML 文件继续存在文件系统；M4.4 以 terminal Snapshot、filesystem HTML 与 durable delete intent 固化 restart/crash recovery boundary。
 
+### ADR-013 — LLM Model Profiles and Request-Scoped Provider Selection
+
+正式正文见 [ADR-013 独立文件](ADR-013_llm_model_profiles_and_request_scoped_provider_selection.md)。核心决策：DeepSeek/Kimi 共享 OpenAI-compatible Provider；profile 是不可变协议/模型配置；每轮显式解析并固定 snapshot，禁止全局 mutable default、隐式混用与自动 fallback；provider 永不取得 semantic/DAX/factual authority。
+
 ### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面
 
 Execution、Tooling、Context、Lifecycle、Observability、Verification、Governance 七层职责。无 Docker/LangGraph/OpenTelemetry。
 
 ---
 
-*最后更新：2026-08-20 | M4.4 更新 ADR-012 restart/crash closure*
+*最后更新：2026-08-27 | M5.8 新增 ADR-013 request-scoped multi-LLM selection*

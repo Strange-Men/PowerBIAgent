@@ -179,35 +179,32 @@ class TestProviderRegistry:
     """Provider Registry 测试"""
 
     def test_register_and_get(self, registry, mock_provider):
-        registry.register("mock", mock_provider)
-        assert registry.get("mock") is mock_provider
+        from backend.app.llm.profiles import mock_profile
+        registry.register(mock_profile(), mock_provider)
+        assert registry.get("mock").provider is mock_provider
 
-    def test_default_provider(self, registry, mock_provider):
-        registry.register("mock", mock_provider)
-        assert registry.get() is mock_provider  # 自动设为默认
-
-    def test_set_default(self, registry, mock_provider):
-        registry.register("mock", mock_provider)
-        # 第二个 provider 需要通过名称区分
-        registry.set_default("mock")
-        assert registry.default_name == "mock"
-        assert registry.get() is mock_provider
+    def test_registry_has_no_mutable_default(self, registry, mock_provider):
+        from backend.app.llm.profiles import mock_profile
+        registry.register(mock_profile(), mock_provider)
+        assert not hasattr(registry, "set_default")
+        with pytest.raises(TypeError):
+            registry.get()
 
     def test_list_providers(self, registry, mock_provider):
-        registry.register("mock", mock_provider)
-        registry.register("deepseek_placeholder", mock_provider)
+        from backend.app.llm.profiles import mock_profile
+        registry.register(mock_profile(), mock_provider)
         names = registry.list_providers()
         assert "mock" in names
-        assert "deepseek_placeholder" in names
 
     def test_get_nonexistent_raises(self, registry):
         with pytest.raises(KeyError):
             registry.get("nonexistent")
 
     def test_duplicate_register_raises(self, registry, mock_provider):
-        registry.register("mock", mock_provider)
+        from backend.app.llm.profiles import mock_profile
+        registry.register(mock_profile(), mock_provider)
         with pytest.raises(ValueError):
-            registry.register("mock", mock_provider)
+            registry.register(mock_profile(), mock_provider)
 
     def test_is_mock_property(self, mock_provider):
         """Provider 应明确标识是否为 Mock"""

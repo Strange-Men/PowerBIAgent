@@ -25,6 +25,7 @@ from backend.app.intent.models import (
     TurnRelation,
 )
 from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
+from backend.app.llm.profiles import LLMModelProfile, LLMProviderProtocol
 from backend.app.llm.registry import LLMProviderRegistry
 from backend.app.main import create_app
 from backend.app.memory.models import RuntimeDataMode
@@ -48,6 +49,24 @@ from backend.app.schemas.data_contracts import (
     StructuredFilter,
     TableSchema,
 )
+
+
+def _llm_test_profile(
+    profile_key: str = "deepseek",
+    model: str = "fake-deepseek",
+) -> LLMModelProfile:
+    return LLMModelProfile(
+        profile_key=profile_key,
+        display_name="DeepSeek" if profile_key == "deepseek" else "Kimi K2.6",
+        provider_protocol=LLMProviderProtocol.OPENAI_CHAT_COMPLETIONS,
+        base_url="https://llm.invalid/v1",
+        model=model,
+        timeout_seconds=30,
+    )
+
+
+def _deepseek_test_profile() -> LLMModelProfile:
+    return _llm_test_profile()
 
 
 @pytest_asyncio.fixture
@@ -408,7 +427,7 @@ class TestChatRealModeRejection:
                 })
                 assert response.status_code == 503
                 data = response.json()
-                assert data["detail"]["error_type"] == "deepseek_api_key_missing"
+            assert data["detail"]["error_type"] == "llm_default_profile_not_configured"
 
     @pytest.mark.asyncio
     async def test_deepseek_chat_with_key_attempts_real(self):
@@ -1783,7 +1802,7 @@ def _patch_m25_business_golden_composition(
     import backend.app.main as main_module
 
     registry = LLMProviderRegistry()
-    registry.register("deepseek", provider, set_default=True)
+    registry.register(_deepseek_test_profile(), provider)
     monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
     _patch_fake_runtime_glossary(monkeypatch)
     monkeypatch.setattr(
@@ -1804,7 +1823,7 @@ def _patch_m24_local_composition(monkeypatch, adapter_type):
 
     provider = _M24ScriptedDeepSeekProvider()
     registry = LLMProviderRegistry()
-    registry.register("deepseek", provider, set_default=True)
+    registry.register(_deepseek_test_profile(), provider)
     monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
     _patch_fake_runtime_glossary(monkeypatch)
     monkeypatch.setattr(main_module, "LocalMCPPowerBIAdapter", adapter_type)
@@ -1824,7 +1843,7 @@ def _patch_unsupported_routing_composition(monkeypatch):
 
     provider = _UnsupportedRoutingProvider()
     registry = LLMProviderRegistry()
-    registry.register("deepseek", provider, set_default=True)
+    registry.register(_deepseek_test_profile(), provider)
     monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
     _patch_fake_runtime_glossary(monkeypatch)
     monkeypatch.setattr(
@@ -1848,7 +1867,7 @@ def _patch_m533_multi_turn_composition(
 
     provider = _M533MultiTurnProvider()
     registry = LLMProviderRegistry()
-    registry.register("deepseek", provider, set_default=True)
+    registry.register(_deepseek_test_profile(), provider)
     monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
     _patch_fake_runtime_glossary(monkeypatch)
     monkeypatch.setattr(
@@ -1869,7 +1888,7 @@ def _patch_m56_monthly_trend_composition(monkeypatch):
 
     provider = _M56MonthlyTrendProvider()
     registry = LLMProviderRegistry()
-    registry.register("deepseek", provider, set_default=True)
+    registry.register(_deepseek_test_profile(), provider)
     monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
     monkeypatch.setattr(
         main_module, "LocalMCPPowerBIAdapter", _M56MonthlyTrendAdapter
@@ -2067,7 +2086,7 @@ def _patch_pending_clarification_composition(monkeypatch):
 
     provider = _PendingClarificationProvider()
     registry = LLMProviderRegistry()
-    registry.register("deepseek", provider, set_default=True)
+    registry.register(_deepseek_test_profile(), provider)
     monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
     _patch_fake_runtime_glossary(monkeypatch)
     monkeypatch.setattr(
@@ -2698,7 +2717,7 @@ class TestM24DeepSeekLocalChat:
 
         provider = ClarifyingProvider()
         registry = LLMProviderRegistry()
-        registry.register("deepseek", provider, set_default=True)
+        registry.register(_deepseek_test_profile(), provider)
         monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
         _patch_fake_runtime_glossary(monkeypatch)
         monkeypatch.setattr(main_module, "LocalMCPPowerBIAdapter", _M24FakeLocalPowerBIAdapter)
@@ -2978,3 +2997,110 @@ class TestM25BusinessGoldenOffline:
             "raw_response",
         }
         assert all(forbidden_keys.isdisjoint(case) for case in BUSINESS_GOLDEN_CASES)
+
+
+class TestM58RequestScopedProfileSelection:
+    @staticmethod
+    def _app(monkeypatch):
+        import backend.app.llm.factory as llm_factory
+        import backend.app.main as main_module
+
+        deepseek = _M533MultiTurnProvider()
+        kimi = _M533MultiTurnProvider()
+        registry = LLMProviderRegistry()
+        registry.register(_llm_test_profile("deepseek", "fake-deepseek"), deepseek)
+        registry.register(_llm_test_profile("kimi-k2.6", "azure/Kimi-K2.6"), kimi)
+        monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+        _patch_fake_runtime_glossary(monkeypatch)
+        monkeypatch.setattr(
+            main_module, "LocalMCPPowerBIAdapter", _M533MultiTurnAdapter
+        )
+        settings = Settings(
+            _env_file=None,
+            llm_mode=LLMMode.OPENAI_COMPATIBLE,
+            llm_default_profile="deepseek",
+            powerbi_mode=PowerBIMode.LOCAL_MCP,
+            deepseek_api_key="test-key-not-real",
+        )
+        return main_module.create_app(settings=settings), deepseek, kimi
+
+    @pytest.mark.asyncio
+    async def test_two_conversations_do_not_cross_contaminate_profiles(self, monkeypatch):
+        app, deepseek, kimi = self._app(monkeypatch)
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                responses = await asyncio.gather(
+                    client.post(
+                        "/api/v1/chat",
+                        json={
+                            "message": "本月销售额是多少？",
+                            "conversation_id": "m58-conv-deepseek",
+                            "request_id": "m58-req-deepseek",
+                            "semantic_model_key": "local_desktop_model",
+                            "llm_profile_key": "deepseek",
+                        },
+                    ),
+                    client.post(
+                        "/api/v1/chat",
+                        json={
+                            "message": "本月销售额是多少？",
+                            "conversation_id": "m58-conv-kimi",
+                            "request_id": "m58-req-kimi",
+                            "semantic_model_key": "local_desktop_model",
+                            "llm_profile_key": "kimi-k2.6",
+                        },
+                    ),
+                )
+
+        assert [response.status_code for response in responses] == [200, 200]
+        assert [response.json()["llm_profile_key"] for response in responses] == [
+            "deepseek",
+            "kimi-k2.6",
+        ]
+        assert deepseek.calls and kimi.calls
+
+    @pytest.mark.asyncio
+    async def test_mid_conversation_switch_preserves_canonical_memory(self, monkeypatch):
+        app, deepseek, kimi = self._app(monkeypatch)
+        kimi.active = "m55_south"
+        conversation_id = "m58-profile-switch"
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                first = await client.post(
+                    "/api/v1/chat",
+                    json={
+                        "message": "本月销售额是多少？",
+                        "conversation_id": conversation_id,
+                        "request_id": "m58-profile-switch-1",
+                        "semantic_model_key": "local_desktop_model",
+                        "llm_profile_key": "deepseek",
+                    },
+                )
+                second = await client.post(
+                    "/api/v1/chat",
+                    json={
+                        "message": "那南区呢",
+                        "conversation_id": conversation_id,
+                        "request_id": "m58-profile-switch-2",
+                        "semantic_model_key": "local_desktop_model",
+                        "llm_profile_key": "kimi-k2.6",
+                    },
+                )
+                memory = await app.state.turn_service.pipeline.get_latest_committed_memory(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+
+        assert first.status_code == second.status_code == 200
+        assert first.json()["llm_profile_key"] == "deepseek"
+        assert second.json()["llm_profile_key"] == "kimi-k2.6"
+        assert memory is not None
+        assert memory.measures == ["Total Sales"]
+        assert memory.time_range is not None
+        assert memory.filters[0]["value"] == "华南"
+        assert memory.llm_provider == "kimi-k2.6"
+        assert "provider" not in memory.last_query_plan
+        assert deepseek.calls and kimi.calls

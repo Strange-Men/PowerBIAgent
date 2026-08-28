@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { CatalogOption } from '../types'
+import type { CatalogOption, LLMProfileOption } from '../types'
 import { Composer } from './Composer'
 
 const semanticModel: CatalogOption = {
@@ -20,13 +20,44 @@ const reportTemplate: CatalogOption = {
   selectable: true,
 }
 
+const deepSeekProfile: LLMProfileOption = {
+  profile_key: 'deepseek',
+  display_name: 'DeepSeek',
+  provider_protocol: 'openai_chat_completions',
+  model: 'deepseek-chat',
+  available: true,
+  default: true,
+  unavailable_reason: null,
+}
+
+const kimiProfile: LLMProfileOption = {
+  profile_key: 'kimi-k2.6',
+  display_name: 'Kimi K2.6',
+  provider_protocol: 'openai_chat_completions',
+  model: 'azure/Kimi-K2.6',
+  available: true,
+  default: false,
+  unavailable_reason: null,
+}
+
+const llmProps = {
+  llmProfile: deepSeekProfile,
+  llmProfileOptions: [deepSeekProfile, kimiProfile],
+  loadingLLMProfiles: false,
+  llmProfileError: null,
+  onLLMProfileChange: vi.fn(),
+}
+
 function renderComposer(options: CatalogOption[] = [semanticModel]) {
   const onSend = vi.fn().mockResolvedValue(undefined)
   const onSemanticModelChange = vi.fn()
   const onRefreshSemanticModels = vi.fn().mockResolvedValue(undefined)
   const onReportTemplateChange = vi.fn()
+  const onLLMProfileChange = vi.fn()
   render(
     <Composer
+      {...llmProps}
+      onLLMProfileChange={onLLMProfileChange}
       sending={false}
       semanticModel={options[0] ?? null}
       semanticModelOptions={options}
@@ -47,6 +78,7 @@ function renderComposer(options: CatalogOption[] = [semanticModel]) {
     onSemanticModelChange,
     onRefreshSemanticModels,
     onReportTemplateChange,
+    onLLMProfileChange,
   }
 }
 
@@ -54,6 +86,7 @@ describe('Composer menus and sending', () => {
   it('keeps a truly incompatible model visible and disables sending', () => {
     render(
       <Composer
+        {...llmProps}
         sending={false}
         semanticModel={{ ...semanticModel, compatible: false, selectable: false }}
         semanticModelOptions={[{ ...semanticModel, compatible: false, selectable: false }]}
@@ -104,6 +137,7 @@ describe('Composer menus and sending', () => {
     const onReportTemplateChange = vi.fn()
     render(
       <Composer
+        {...llmProps}
         sending={false}
         semanticModel={semanticModel}
         semanticModelOptions={[semanticModel]}
@@ -136,14 +170,14 @@ describe('Composer menus and sending', () => {
     expect(onReportTemplateChange).not.toHaveBeenCalled()
   })
 
-  it('keeps a real DeepSeek-only selector interaction', () => {
-    renderComposer()
+  it('selects a backend-catalog Kimi profile explicitly', () => {
+    const { onLLMProfileChange } = renderComposer()
     fireEvent.click(screen.getByRole('button', { name: /DeepSeek/ }))
 
-    expect(screen.getByRole('listbox', { name: '选择模型' })).toBeInTheDocument()
+    expect(screen.getByRole('listbox', { name: '选择 AI 模型' })).toBeInTheDocument()
     expect(screen.getAllByText('DeepSeek').length).toBeGreaterThan(1)
-    expect(screen.queryByText('Mock')).not.toBeInTheDocument()
-    expect(screen.queryByText('GPT-5.6')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('option', { name: /Kimi K2.6/ }))
+    expect(onLLMProfileChange).toHaveBeenCalledWith(kimiProfile)
   })
 
   it('disables empty submit and sends non-empty content', () => {
@@ -172,6 +206,7 @@ describe('Composer menus and sending', () => {
   it('shows a safe Desktop disconnected state without internal diagnostics', () => {
     render(
       <Composer
+        {...llmProps}
         sending={false}
         semanticModel={null}
         semanticModelOptions={[]}
@@ -227,6 +262,7 @@ describe('Composer menus and sending', () => {
     const onSend = vi.fn()
     render(
       <Composer
+        {...llmProps}
         sending={false}
         semanticModel={null}
         semanticModelOptions={[]}
@@ -254,6 +290,7 @@ describe('Composer menus and sending', () => {
   it('shows a backend catalog failure without inventing a template option', () => {
     render(
       <Composer
+        {...llmProps}
         sending={false}
         semanticModel={semanticModel}
         semanticModelOptions={[semanticModel]}

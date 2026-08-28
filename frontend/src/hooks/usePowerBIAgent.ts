@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  ApiError,
   archiveReport,
   archiveConversation,
   deleteConversation,
   deleteReport,
   discoverReportTemplates,
+  discoverLLMProfiles,
   discoverSemanticModels,
   getConversationHistory,
   listArchivedConversations,
@@ -35,6 +37,7 @@ import type {
   RuntimeMode,
   ReportTemplateOption,
   SemanticModelOption,
+  LLMProfileOption,
 } from '../types'
 
 const MAX_BATCH_ITEMS = 20
@@ -267,6 +270,12 @@ export function usePowerBIAgent() {
   const [reportTemplateOptions, setReportTemplateOptions] = useState<CatalogOption[]>([])
   const [loadingReportTemplates, setLoadingReportTemplates] = useState(true)
   const [reportTemplateError, setReportTemplateError] = useState<string | null>(null)
+  const [llmProfileOptions, setLLMProfileOptions] = useState<LLMProfileOption[]>([])
+  const [selectedLLMProfile, setSelectedLLMProfileState] =
+    useState<LLMProfileOption | null>(null)
+  const selectedLLMProfileRef = useRef<LLMProfileOption | null>(null)
+  const [loadingLLMProfiles, setLoadingLLMProfiles] = useState(true)
+  const [llmProfileError, setLLMProfileError] = useState<string | null>(null)
 
   const replaceSessions = useCallback(
     (
@@ -417,17 +426,59 @@ export function usePowerBIAgent() {
     }
   }, [])
 
+  const refreshLLMProfiles = useCallback(async () => {
+    setLoadingLLMProfiles(true)
+    try {
+      const catalog = await discoverLLMProfiles()
+      const current = selectedLLMProfileRef.current
+      const selected = current
+        ? catalog.items.find(
+            (item) => item.profile_key === current.profile_key && item.available,
+          ) || null
+        : catalog.items.find((item) => item.default && item.available)
+          || catalog.items.find((item) => item.available)
+          || null
+      selectedLLMProfileRef.current = selected
+      setSelectedLLMProfileState(selected)
+      setLLMProfileOptions(catalog.items)
+      setLLMProfileError(
+        current && !selected
+          ? '当前选择的 AI 模型已失效，请刷新后重新选择。'
+          : selected
+            ? null
+            : '当前没有可用的 AI 模型。',
+      )
+    } catch (error) {
+      selectedLLMProfileRef.current = null
+      setSelectedLLMProfileState(null)
+      setLLMProfileOptions([])
+      setLLMProfileError(
+        error instanceof Error ? error.message : '暂时无法获取 AI 模型目录。',
+      )
+    } finally {
+      setLoadingLLMProfiles(false)
+    }
+  }, [])
+
+  const selectLLMProfile = useCallback((profile: LLMProfileOption) => {
+    if (!profile.available) return
+    selectedLLMProfileRef.current = profile
+    setSelectedLLMProfileState(profile)
+    setLLMProfileError(null)
+  }, [])
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshSemanticModels()
       void refreshReportTemplates()
+      void refreshLLMProfiles()
     }, 0)
     return () => {
       window.clearTimeout(timer)
       historyGenerationRef.current += 1
       historyAbortRef.current?.abort()
     }
-  }, [refreshReportTemplates, refreshSemanticModels])
+  }, [refreshLLMProfiles, refreshReportTemplates, refreshSemanticModels])
 
   const selectSemanticModel = useCallback(
     (option: CatalogOption) => {
@@ -461,7 +512,13 @@ export function usePowerBIAgent() {
     async (content: string) => {
       const normalized = content.trim()
       const model = selectedSemanticModelRef.current
-      if (!normalized || !model?.compatible || model.selectable === false) return
+      const llmProfile = selectedLLMProfileRef.current
+      if (
+        !normalized ||
+        !model?.compatible ||
+        model.selectable === false ||
+        !llmProfile?.available
+      ) return
 
       let conversationId = activeConversationIdRef.current
       if (!conversationId) {
@@ -504,6 +561,7 @@ export function usePowerBIAgent() {
           conversation_id: conversationId,
           request_id: id,
           semantic_model_key: model.key,
+          llm_profile_key: llmProfile.profile_key,
           ...(template ? { report_template_key: template.key } : {}),
         })
         if (response.conversation_id !== conversationId) {
@@ -537,6 +595,15 @@ export function usePowerBIAgent() {
             : effectiveRuntimeMode,
         )
       } catch (error) {
+        if (
+          error instanceof ApiError &&
+          (error.errorType === 'llm_profile_unknown' ||
+            error.errorType === 'llm_profile_unavailable')
+        ) {
+          selectedLLMProfileRef.current = null
+          setSelectedLLMProfileState(null)
+          setLLMProfileError('当前选择的 AI 模型已失效，请刷新后重新选择。')
+        }
         const errorText =
           error instanceof Error
             ? error.message
@@ -1083,6 +1150,12 @@ export function usePowerBIAgent() {
     loadingSemanticModels,
     semanticModelError,
     selectedSemanticModel,
+    llmProfileOptions,
+    selectedLLMProfile,
+    loadingLLMProfiles,
+    llmProfileError,
+    refreshLLMProfiles,
+    setSelectedLLMProfile: selectLLMProfile,
     semanticModelCompatibilityNotice:
       selectedSemanticModel && !selectedSemanticModel.compatible
         ? selectedSemanticModel.compatibilityStatus === 'incompatible'

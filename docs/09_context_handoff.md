@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.7.2 — Report Template Architecture & Simple Report Quality Closure（COMPLETE）。** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 已封板；M5.8—M5.10 均未开始；M5 FINAL 尚未成立。
+**M5.8 — Multi-LLM Provider Abstraction / DeepSeek + Kimi MVP（COMPLETE）。** 启动基线为 `m5/rebuild` / `4e9d4226b987ae6ea13fbcddda97ba4f3f692e01`；M5.7.1 / M5.7.2 保持冻结，M5.9—M5.10 未开始，M5 FINAL 尚未成立。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -30,7 +30,7 @@
 | **M5.7** | **简易报表视觉 + Report Template Required + 人工视觉验收** | **✅ COMPLETE** |
 | **M5.7.1** | **统一语义可靠性、回归防火墙与高强度问答验收** | **✅ COMPLETE** |
 | **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
-| **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **⏳ NOT STARTED** |
+| **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
 | **M5.9** | **MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
@@ -340,9 +340,27 @@
 - `PowerBIAgent Validation` 已在既有 security/architecture/docs/Semantic/full pytest/Golden/strict-git gates 之外接入 Node.js 24 LTS + `npm ci`，并将 frontend Vitest、typecheck、lint 与 production build 作为四个不可跳过的远程失败门禁；Vitest 跨文件串行以消除 Windows 冷安装时的 worker 启动竞争，不修改测试断言或超时。final commit SHA 与 Actions run evidence 只在提交后最终报告中记录。
 - M5.7.1 Semantic/DAX/VerifiedFactSet/Memory authority 未修改；未开发 DeepSeek/Kimi Provider、未修改 MCP、未新增第二模板、无 schema/migration。
 
+## M5.8 完成合同
+
+- 唯一范围：共享 OpenAI-compatible Provider、`LLMModelProfile`、DeepSeek/Kimi profiles、显式 request/conversation selection、统一 error/usage/trace 与前端选择器。
+- 每个 turn 在入口解析 public profile key 并固定 provider/profile snapshot；禁止 global mutable default、自动路由、ensemble 与 DeepSeek↔Kimi fallback。同轮 Intent/QueryPlan/Answer 不得隐式混用 provider。
+- 新会话使用提交时显式选择；同会话下一轮可切换。切换不清空 Structured Memory/canonical slots，也不把 provider opaque session state升级为 factual/semantic authority。
+- malformed/wrong-shape structured output 最终以 provider-independent validation error fail closed；不得创造缺失 semantic field/value，错误 turn 不得错误提交 authoritative Memory/facts。
+- trace 仅含 public profile/model/protocol/task/usage/error class；Key、Authorization、Secret URL query、完整 prompt 与原始敏感响应禁止记录。pricing 缺失时 estimated cost 为 null。
+- M5.7.1 Semantic/DAX/VerifiedFactSet/Memory 与 M5.7.2 Report Template/Renderer authority 均冻结；禁止 MCP 性能、第二模板、Remote MCP、多模态、LangGraph、多 Agent。
+- 固定 checkpoint 为 S1—S14；S1—S13 与本地 S14 gates 已完成，最终 commit/push/exact-HEAD CI 证据以本轮交付为准。
+
+### M5.8 实现与 fresh evidence（COMPLETE）
+
+- 已实现不可变 profile、共享 OpenAI-compatible HTTP Provider、显式 Registry、request-scoped snapshot、DeepSeek/Kimi 配置与目录、统一 error/usage/trace，以及 frontend backend-owned 模型选择；无 `set_default()`、自动路由或 provider fallback。
+- focused Provider/API/selection/concurrency/switch tests 已通过；CI 等价 Mock/Memory full backend 为 `1940 passed, 1 skipped`；永久 Semantic Compatibility 为 `306 passed`（106 个 production backend files）；Golden `11 passed, 1 manual skip`；frontend 为 `86 passed`，typecheck/lint/build 通过；Repository Safety `314`、Architecture `123`、Error Ledger `37`、Documentation/Artifact Governance、compileall 与 `git diff --check` 通过。
+- Real DeepSeek/Kimi 均已配置并对同一 `PowerBIAgent_M3_Rich_Test` 运行总销售额、2025 年 5 月、区域、月趋势、Top3、四轮 KEEP/REPLACE、unknown member、prediction 与 `sales_report`。两个 profile 的 canonical plan/规范化 QueryResult 相同；profile mismatch=0、并发隔离、mid-conversation switch、DAX/Answer LLM 调用为 0、固定报表与 residual=0 均通过。
+- 旧 M2 frozen numeric oracle 与当前 Rich PBIX 值域不同，仅作为协议/控制面观察，不修改 oracle 或生产 Semantic/DAX 迁就旧值。Real 长序列中的偶发 Local MCP `ToolExecutionError` 按基础设施失败记录；独立边界复验全绿，未跨入 M5.9 性能/session/cache 修复。
+- Provider 错误和非 Provider turn 异常均保留安全 public profile/model/protocol；Provider 错误额外携带统一 category/class。响应不包含 Key、Authorization、endpoint、prompt 或原始敏感 payload。
+
 ## 下一步
 
-等待用户明确启动 M5.8；任何后续版本修改前后都必须运行永久 Semantic Compatibility Gate。M5.8—M5.10 为 NOT STARTED；M5 FINAL 仍未成立。
+M5.8 完成后保持冻结。下一阶段仅可按独立合同启动 M5.9 MCP performance/resilience；M5.10 仍须晚于 M5.9。M5 FINAL=false。
 
 ## 关键命令
 
@@ -391,4 +409,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-27 | M5.7.1 / M5.7.2 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-28 | M5.7.1 / M5.7.2 / M5.8 COMPLETE；M5.9—M5.10 NOT STARTED；M5 FINAL 尚未成立*

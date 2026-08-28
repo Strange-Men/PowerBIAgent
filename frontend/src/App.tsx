@@ -70,9 +70,14 @@ export function App() {
           reportTemplateOptions={app.reportTemplateOptions}
           loadingReportTemplates={app.loadingReportTemplates}
           reportTemplateError={app.reportTemplateError}
+          llmProfile={app.selectedLLMProfile}
+          llmProfileOptions={app.llmProfileOptions}
+          loadingLLMProfiles={app.loadingLLMProfiles}
+          llmProfileError={app.llmProfileError}
           onSemanticModelChange={app.setSelectedSemanticModel}
           onRefreshSemanticModels={app.refreshSemanticModels}
           onReportTemplateChange={app.setSelectedReportTemplate}
+          onLLMProfileChange={app.setSelectedLLMProfile}
           onSend={app.submitMessage}
         />
       </main>

@@ -1,8 +1,9 @@
 """Known-answer / multi-turn acceptance entrypoint.
 
-``offline`` preserves the M2.6.1 Fake/Mock regression. ``real`` is the M2.6.3
-production gate: formal Chat API, DeepSeek, Local MCP, production Memory,
-deterministic DAX, independent Layer3, VerifiedFactSet, and exact real oracle.
+``offline`` preserves the M2.6.1 Fake/Mock regression. ``real`` is the
+production gate: formal Chat API, an explicit DeepSeek/Kimi profile, Local MCP,
+isolated Memory/artifact roots, deterministic DAX, independent Layer3,
+VerifiedFactSet, report generation, and the exact real oracle.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -23,11 +25,21 @@ if str(PROJECT_ROOT) not in sys.path:
 
 def main() -> int:
     from backend.app.harness.cases.multi_turn_runner import MultiTurnBenchmarkRunner
-    from backend.app.config.settings import LLMMode, PowerBIMode, Settings
+    from backend.app.config.settings import (
+        LLMMode,
+        PersistenceBackend,
+        PowerBIMode,
+        Settings,
+    )
     from backend.app.harness.cases.production_e2e_runner import ProductionE2ERunner
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=("offline", "real"), default="offline")
+    parser.add_argument(
+        "--llm-profile-key",
+        choices=("deepseek", "kimi-k2.6"),
+        default="deepseek",
+    )
     parser.add_argument("--historical-repeats", type=int, default=10)
     args = parser.parse_args()
     if args.historical_repeats < 1:
@@ -39,31 +51,46 @@ def main() -> int:
     known_answers = runner.load_known_answer_cases()
 
     if args.mode == "real":
-        settings = Settings(
-            llm_mode=LLMMode.DEEPSEEK,
-            powerbi_mode=PowerBIMode.LOCAL_MCP,
-        )
-        ready = all((
-            sys.platform == "win32",
-            settings.is_deepseek_configured,
-            settings.is_powerbi_local_mcp_configured,
-            shutil.which(settings.powerbi_local_mcp_executable) is not None,
-            _desktop_running(),
-        ))
-        if not ready:
-            print(json.dumps({
-                "passed": False,
-                "status": "local_prerequisite_missing",
-                "known_exact_executed": 0,
-                "fallback_count": 0,
-                "state_pollution_count": 0,
-            }, ensure_ascii=False, indent=2))
-            return 1
-        payload = asyncio.run(
-            ProductionE2ERunner(settings).run(
-                historical_repeats=args.historical_repeats
+        with tempfile.TemporaryDirectory(prefix="powerbiagent-m58-") as temp_root:
+            temp_path = Path(temp_root)
+            settings = Settings(
+                llm_mode=LLMMode.OPENAI_COMPATIBLE,
+                llm_default_profile=args.llm_profile_key,
+                powerbi_mode=PowerBIMode.LOCAL_MCP,
+                persistence_backend=PersistenceBackend.MEMORY,
+                report_artifacts_path=str(temp_path / "reports"),
+                presentation_localization_registry_path=str(
+                    temp_path / "runtime" / "display_localizations.json"
+                ),
             )
-        )
+            ready = all((
+                sys.platform == "win32",
+                settings.is_llm_profile_configured(args.llm_profile_key),
+                settings.is_powerbi_local_mcp_configured,
+                shutil.which(settings.powerbi_local_mcp_executable) is not None,
+                _desktop_running(),
+            ))
+            if not ready:
+                print(json.dumps({
+                    "passed": False,
+                    "status": "local_prerequisite_missing",
+                    "llm_profile_key": args.llm_profile_key,
+                    "profile_configured": settings.is_llm_profile_configured(
+                        args.llm_profile_key
+                    ),
+                    "known_exact_executed": 0,
+                    "fallback_count": 0,
+                    "state_pollution_count": 0,
+                    "residual": 0,
+                }, ensure_ascii=False, indent=2))
+                return 1
+            payload = asyncio.run(
+                ProductionE2ERunner(settings).run(
+                    historical_repeats=args.historical_repeats,
+                    llm_profile_key=args.llm_profile_key,
+                )
+            )
+            payload["residual"] = 0
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0 if payload.get("passed") else 1
 

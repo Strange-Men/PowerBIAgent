@@ -26,6 +26,7 @@ from backend.app.llm.base import (
     LLMResponse,
     LLMValidationError,
 )
+from backend.app.llm.profiles import LLMModelProfile
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +46,9 @@ class LLMCallObservation:
     status: str                        # "success" / "validation_error" / "provider_error"
     error_type: Optional[str] = None   # 异常类名
     error_code: Optional[str] = None   # 错误代码
+    error_category: Optional[str] = None
+    profile_key: str = ""
+    provider_protocol: str = ""
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
@@ -60,6 +64,9 @@ class LLMCallObservation:
             "status": self.status,
             "error_type": self.error_type,
             "error_code": self.error_code,
+            "error_category": self.error_category,
+            "profile_key": self.profile_key,
+            "provider_protocol": self.provider_protocol,
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.total_tokens,
@@ -95,6 +102,8 @@ class LLMUsageSummary:
             "total_tokens": self.total_tokens,
             "duration_ms": self.duration_ms,
             "pricing_configured": self.pricing_configured,
+            "per_task": dict(self.per_task),
+            "calls": list(self.calls),
         }
         if self.estimated_cost_usd is not None:
             result["estimated_cost_usd"] = self.estimated_cost_usd
@@ -196,11 +205,17 @@ class ObservedLLMProvider(LLMProvider):
     - 每个请求独立 Collector + ObservedLLMProvider
     """
 
-    def __init__(self, inner: LLMProvider, collector: LLMCallCollector):
+    def __init__(
+        self,
+        inner: LLMProvider,
+        collector: LLMCallCollector,
+        profile: LLMModelProfile | None = None,
+    ):
         if inner is None:
             raise ValueError("inner provider 不能为 None")
         self._inner = inner
         self._collector = collector
+        self._profile = profile
         self._task_attempts: dict[str, int] = {}  # task → 已调用次数
 
     # ── 属性 ──
@@ -239,7 +254,11 @@ class ObservedLLMProvider(LLMProvider):
                 task=task_key,
                 attempt_index=attempt_index,
                 provider_name=self.provider_name,
-                model=response.model or "",
+                model=response.model or (self._profile.model if self._profile else ""),
+                profile_key=(self._profile.profile_key if self._profile else self.provider_name),
+                provider_protocol=(
+                    self._profile.provider_protocol.value if self._profile else ""
+                ),
                 started_at=started_at,
                 duration_ms=duration_ms,
                 status="success",
@@ -257,12 +276,17 @@ class ObservedLLMProvider(LLMProvider):
                 task=task_key,
                 attempt_index=attempt_index,
                 provider_name=self.provider_name,
-                model=e.model or "",
+                model=e.model or (self._profile.model if self._profile else ""),
                 started_at=started_at,
                 duration_ms=duration_ms,
                 status="validation_error",
                 error_type=type(e).__name__,
                 error_code=e.error_code,
+                error_category=e.error_category.value,
+                profile_key=(self._profile.profile_key if self._profile else self.provider_name),
+                provider_protocol=(
+                    self._profile.provider_protocol.value if self._profile else ""
+                ),
                 prompt_tokens=error_usage.get("prompt_tokens", 0),
                 completion_tokens=error_usage.get("completion_tokens", 0),
                 total_tokens=error_usage.get("total_tokens", 0),
@@ -276,12 +300,17 @@ class ObservedLLMProvider(LLMProvider):
                 task=task_key,
                 attempt_index=attempt_index,
                 provider_name=self.provider_name,
-                model=e.model or "",
+                model=e.model or (self._profile.model if self._profile else ""),
                 started_at=started_at,
                 duration_ms=duration_ms,
                 status="provider_error",
                 error_type=type(e).__name__,
                 error_code=e.error_code,
+                error_category=e.error_category.value,
+                profile_key=(self._profile.profile_key if self._profile else self.provider_name),
+                provider_protocol=(
+                    self._profile.provider_protocol.value if self._profile else ""
+                ),
                 usage_available=False,
             ))
             raise

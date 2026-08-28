@@ -10,23 +10,38 @@ import type {
 } from '../types'
 import { compareConversationRecency, usePowerBIAgent } from './usePowerBIAgent'
 
-const api = vi.hoisted(() => ({
-  archiveConversation: vi.fn(),
-  deleteConversation: vi.fn(),
-  deleteReport: vi.fn(),
-  discoverReportTemplates: vi.fn(),
-  discoverSemanticModels: vi.fn(),
-  getConversationHistory: vi.fn(),
-  listArchivedConversations: vi.fn(),
-  listRecentConversations: vi.fn(),
-  listRecentReports: vi.fn(),
-  renameConversation: vi.fn(),
-  renameReport: vi.fn(),
-  recordFailedConversation: vi.fn(),
-  restoreConversation: vi.fn(),
-  searchConversations: vi.fn(),
-  sendChat: vi.fn(),
-}))
+const api = vi.hoisted(() => {
+  class ApiError extends Error {
+    readonly status: number
+    readonly errorType?: string
+
+    constructor(message: string, status: number, errorType?: string) {
+      super(message)
+      this.status = status
+      this.errorType = errorType
+    }
+  }
+
+  return {
+    ApiError,
+    archiveConversation: vi.fn(),
+    deleteConversation: vi.fn(),
+    deleteReport: vi.fn(),
+    discoverReportTemplates: vi.fn(),
+    discoverLLMProfiles: vi.fn(),
+    discoverSemanticModels: vi.fn(),
+    getConversationHistory: vi.fn(),
+    listArchivedConversations: vi.fn(),
+    listRecentConversations: vi.fn(),
+    listRecentReports: vi.fn(),
+    renameConversation: vi.fn(),
+    renameReport: vi.fn(),
+    recordFailedConversation: vi.fn(),
+    restoreConversation: vi.fn(),
+    searchConversations: vi.fn(),
+    sendChat: vi.fn(),
+  }
+})
 
 vi.mock('../api/client', () => api)
 
@@ -144,6 +159,28 @@ beforeEach(() => {
       description: '适合快速查看关键指标、趋势与分类明细',
       availability: 'available',
     }],
+  })
+  api.discoverLLMProfiles.mockResolvedValue({
+    items: [
+      {
+        profile_key: 'deepseek',
+        display_name: 'DeepSeek',
+        provider_protocol: 'openai_chat_completions',
+        model: 'deepseek-chat',
+        available: true,
+        default: true,
+        unavailable_reason: null,
+      },
+      {
+        profile_key: 'kimi-k2.6',
+        display_name: 'Kimi K2.6',
+        provider_protocol: 'openai_chat_completions',
+        model: 'azure/Kimi-K2.6',
+        available: true,
+        default: false,
+        unavailable_reason: null,
+      },
+    ],
   })
   api.listRecentConversations.mockResolvedValue({
     runtime_mode: 'real', items: [], next_cursor: null, total_count: 0,
@@ -278,6 +315,58 @@ describe('conversation history stale-response protection', () => {
 })
 
 describe('conversation-owned chat concurrency', () => {
+  it('captures the selected profile per request across concurrent conversations', async () => {
+    const pending = new Map<string, ReturnType<typeof deferred<ChatResponse>>>()
+    api.sendChat.mockImplementation((body: ChatRequest) => {
+      const task = deferred<ChatResponse>()
+      pending.set(body.message, task)
+      return task.promise
+    })
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(result.current.loadingLLMProfiles).toBe(false))
+
+    let deepseekRequest!: Promise<void>
+    let kimiRequest!: Promise<void>
+    act(() => {
+      result.current.startNewChat()
+      deepseekRequest = result.current.submitMessage('DeepSeek request')
+    })
+    act(() => {
+      result.current.setSelectedLLMProfile(result.current.llmProfileOptions[1])
+      result.current.startNewChat()
+      kimiRequest = result.current.submitMessage('Kimi request')
+    })
+    await waitFor(() => expect(api.sendChat).toHaveBeenCalledTimes(2))
+    const deepseekBody = api.sendChat.mock.calls[0][0] as ChatRequest
+    const kimiBody = api.sendChat.mock.calls[1][0] as ChatRequest
+    expect(deepseekBody.llm_profile_key).toBe('deepseek')
+    expect(kimiBody.llm_profile_key).toBe('kimi-k2.6')
+
+    await act(async () => {
+      pending.get('DeepSeek request')!.resolve(response(deepseekBody, 'deep result'))
+      pending.get('Kimi request')!.resolve(response(kimiBody, 'kimi result'))
+      await Promise.all([deepseekRequest, kimiRequest])
+    })
+  })
+
+  it('uses a newly selected profile on the next turn without changing the prior request', async () => {
+    api.sendChat.mockImplementation((body: ChatRequest) =>
+      Promise.resolve(response(body, `${body.llm_profile_key} result`)),
+    )
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(result.current.loadingLLMProfiles).toBe(false))
+
+    act(() => { result.current.startNewChat() })
+    await act(async () => { await result.current.submitMessage('first turn') })
+    act(() => {
+      result.current.setSelectedLLMProfile(result.current.llmProfileOptions[1])
+    })
+    await act(async () => { await result.current.submitMessage('second turn') })
+
+    expect((api.sendChat.mock.calls[0][0] as ChatRequest).llm_profile_key).toBe('deepseek')
+    expect((api.sendChat.mock.calls[1][0] as ChatRequest).llm_profile_key).toBe('kimi-k2.6')
+  })
+
   it('does not project A loading into a newly opened idle B', async () => {
     const pending = deferred<ChatResponse>()
     api.sendChat.mockImplementation(() => pending.promise)

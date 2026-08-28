@@ -22,6 +22,7 @@ from backend.app.api.dependencies import (
     get_conversation_history_service,
     get_report_repository,
     get_report_template_registry,
+    get_llm_provider_registry,
     get_semantic_model_discovery_service,
     get_settings_dep,
     get_turn_service,
@@ -75,6 +76,12 @@ from backend.app.memory.request_fingerprint import (
     IdempotencyConflictError,
     IdempotencyCoordinationError,
 )
+from backend.app.llm.profiles import LLMProfileCatalogResponse
+from backend.app.llm.registry import (
+    LLMProfileNotFoundError,
+    LLMProfileUnavailableError,
+    LLMProviderRegistry,
+)
 from backend.app.memory.models import RuntimeDataMode
 from backend.app.powerbi.models import SemanticModelCatalog
 from backend.app.report.resources import (
@@ -93,6 +100,52 @@ from backend.app.report.registry import (
 )
 
 router = APIRouter()
+
+
+def _llm_error_content(
+    *,
+    detail: str,
+    error_type: str,
+    request_id: str,
+    requested_profile_key: str | None,
+    settings: Settings,
+    registry: LLMProviderRegistry,
+    error: Exception | None = None,
+) -> dict[str, str]:
+    """Build a credential-free provider error envelope for one frozen turn."""
+
+    provider_key = str(getattr(error, "provider", "") or "").strip()
+    profile_key = provider_key or requested_profile_key or settings.llm_default_profile
+    catalog = registry.public_catalog(
+        default_profile_key=settings.llm_default_profile,
+        include_keys={profile_key},
+    )
+    item = catalog.items[0] if catalog.items else None
+    category = getattr(error, "error_category", None)
+    category_value = getattr(category, "value", "")
+    if isinstance(error, (LLMProfileNotFoundError, LLMProfileUnavailableError)):
+        category_value = "configuration"
+    return {
+        "detail": detail,
+        "error_type": error_type,
+        "request_id": request_id,
+        "llm_profile_key": profile_key,
+        "llm_model": item.model if item is not None else "",
+        "llm_provider_protocol": (
+            item.provider_protocol.value if item is not None else ""
+        ),
+        "llm_error_category": category_value,
+        "llm_error_class": type(error).__name__ if error is not None else "",
+    }
+
+
+@router.get("/api/v1/llm-profiles", response_model=LLMProfileCatalogResponse)
+async def list_llm_profiles(
+    settings: Settings = Depends(get_settings_dep),
+    registry: LLMProviderRegistry = Depends(get_llm_provider_registry),
+):
+    """Return safe public profile metadata; never credentials or base URLs."""
+    return registry.public_catalog(default_profile_key=settings.llm_default_profile)
 
 
 def _raise_conversation_query_error(exc: Exception) -> None:
@@ -465,9 +518,11 @@ async def health(
     reasons: list[str] = []
 
     if not ready:
-        if settings.llm_mode == LLMMode.DEEPSEEK:
-            if not settings.is_deepseek_configured:
-                reasons.append("deepseek_api_key_missing")
+        if settings.llm_mode in {LLMMode.DEEPSEEK, LLMMode.OPENAI_COMPATIBLE}:
+            if not settings.is_llm_profile_configured(settings.llm_default_profile):
+                reasons.append("llm_default_profile_not_configured")
+                if settings.llm_default_profile == "deepseek":
+                    reasons.append("deepseek_api_key_missing")
         if settings.powerbi_mode == PowerBIMode.REMOTE_MCP:
             reasons.append("powerbi_remote_mcp_not_implemented")
         if (
@@ -477,8 +532,9 @@ async def health(
             reasons.append("powerbi_local_mcp_configuration_incomplete")
         if (
             settings.powerbi_mode == PowerBIMode.LOCAL_MCP
-            and settings.llm_mode != LLMMode.DEEPSEEK
+            and settings.llm_mode not in {LLMMode.DEEPSEEK, LLMMode.OPENAI_COMPATIBLE}
         ):
+            reasons.append("powerbi_local_mcp_requires_openai_compatible_llm")
             reasons.append("powerbi_local_mcp_requires_deepseek")
 
     response.status_code = 200 if ready else 503
@@ -499,6 +555,8 @@ async def health(
         max_tool_calls=settings.max_tool_calls,
         local_mcp_readonly=settings.powerbi_local_mcp_readonly,
         deepseek_configured=settings.is_deepseek_configured,
+        kimi_configured=settings.is_kimi_configured,
+        llm_default_profile=settings.llm_default_profile,
         real_mode_configuration_complete=(
             settings.is_local_real_configuration_complete
         ),
@@ -513,6 +571,7 @@ async def chat(
     body: ChatRequest,
     request: Request,
     settings: Settings = Depends(get_settings_dep),
+    registry: LLMProviderRegistry = Depends(get_llm_provider_registry),
 ):
     """非流式对话 — M1.5
 
@@ -523,12 +582,15 @@ async def chat(
     """
 
     # ── 模式守卫 ──
-    if settings.llm_mode == LLMMode.DEEPSEEK and not settings.is_deepseek_configured:
+    if (
+        settings.llm_mode in {LLMMode.DEEPSEEK, LLMMode.OPENAI_COMPATIBLE}
+        and not settings.is_llm_profile_configured(settings.llm_default_profile)
+    ):
         raise HTTPException(
             status_code=503,
             detail={
-                "detail": "DeepSeek API Key 未配置。请在 .env 中设置 DEEPSEEK_API_KEY。",
-                "error_type": "deepseek_api_key_missing",
+                "detail": "默认 LLM profile 未配置。",
+                "error_type": "llm_default_profile_not_configured",
             },
         )
 
@@ -542,12 +604,12 @@ async def chat(
         )
 
     if settings.powerbi_mode == PowerBIMode.LOCAL_MCP:
-        if settings.llm_mode != LLMMode.DEEPSEEK:
+        if settings.llm_mode not in {LLMMode.DEEPSEEK, LLMMode.OPENAI_COMPATIBLE}:
             raise HTTPException(
                 status_code=503,
                 detail={
-                    "detail": "Local MCP Chat 需要 DeepSeek 模式。",
-                    "error_type": "powerbi_local_mcp_requires_deepseek",
+                    "detail": "Local MCP Chat 需要 OpenAI-compatible LLM 模式。",
+                    "error_type": "powerbi_local_mcp_requires_openai_compatible_llm",
                 },
             )
         if not settings.is_powerbi_local_mcp_configured:
@@ -573,6 +635,33 @@ async def chat(
             request_id=body.request_id,
             semantic_model_key=body.semantic_model_key,
             report_template_key=body.report_template_key,
+            llm_profile_key=body.llm_profile_key,
+        )
+    except LLMProfileNotFoundError as e:
+        return JSONResponse(
+            status_code=422,
+            content=_llm_error_content(
+                detail="所选 LLM profile 不存在，请刷新模型目录。",
+                error_type="llm_profile_unknown",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+                error=e,
+            ),
+        )
+    except LLMProfileUnavailableError as e:
+        return JSONResponse(
+            status_code=503,
+            content=_llm_error_content(
+                detail="所选 LLM profile 当前不可用，请重新选择。",
+                error_type="llm_profile_unavailable",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+                error=e,
+            ),
         )
     except IdempotencyConflictError as e:
         return JSONResponse(
@@ -595,140 +684,199 @@ async def chat(
     except LLMAuthenticationError as e:
         return JSONResponse(
             status_code=502,
-            content={
-                "detail": "LLM 鉴权失败。请检查 API Key。",
-                "error_type": "deepseek_authentication_failed",
-                "request_id": body.request_id or "",
-            },
+            content=_llm_error_content(
+                detail="LLM 鉴权失败。请检查 API Key。",
+                error_type="llm_authentication_failed",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+                error=e,
+            ),
         )
     except LLMRateLimitError as e:
         return JSONResponse(
             status_code=503,
-            content={
-                "detail": "LLM 请求频率超限，请稍后重试。",
-                "error_type": "deepseek_rate_limited",
-                "request_id": body.request_id or "",
-            },
+            content=_llm_error_content(
+                detail="LLM 请求频率超限，请稍后重试。",
+                error_type="llm_rate_limited",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+                error=e,
+            ),
         )
     except LLMTimeoutError as e:
         return JSONResponse(
             status_code=504,
-            content={
-                "detail": "LLM 请求超时。",
-                "error_type": "deepseek_timeout",
-                "request_id": body.request_id or "",
-            },
+            content=_llm_error_content(
+                detail="LLM 请求超时。",
+                error_type="llm_timeout",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+                error=e,
+            ),
         )
     except LLMConnectionError as e:
         return JSONResponse(
             status_code=502,
-            content={
-                "detail": "LLM 连接失败，请稍后重试。",
-                "error_type": "deepseek_connection_failed",
-                "request_id": body.request_id or "",
-            },
+            content=_llm_error_content(
+                detail="LLM 连接失败，请稍后重试。",
+                error_type="llm_connection_failed",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+                error=e,
+            ),
         )
     except LLMServiceError as e:
         return JSONResponse(
             status_code=502 if e.status_code and e.status_code < 503 else 503,
-            content={
-                "detail": "LLM 服务暂时不可用，请稍后重试。",
-                "error_type": "deepseek_service_unavailable",
-                "request_id": body.request_id or "",
-            },
+            content=_llm_error_content(
+                detail="LLM 服务暂时不可用，请稍后重试。",
+                error_type="llm_service_unavailable",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+                error=e,
+            ),
         )
     except LLMConfigurationError as e:
         # M1.6.4: 根据 error_code 区分配置错误类型
         if e.error_code == "insufficient_balance":
             return JSONResponse(
                 status_code=402,
-                content={
-                    "detail": "DeepSeek 账户余额不足，请充值后重试。",
-                    "error_type": "deepseek_insufficient_balance",
-                    "request_id": body.request_id or "",
-                },
+                content=_llm_error_content(
+                    detail="LLM 账户余额不足，请检查所选 provider。",
+                    error_type="llm_insufficient_balance",
+                    request_id=body.request_id or "",
+                    requested_profile_key=body.llm_profile_key,
+                    settings=settings,
+                    registry=registry,
+                    error=e,
+                ),
             )
         elif e.error_code == "invalid_base_url":
             return JSONResponse(
                 status_code=503,
-                content={
-                    "detail": "LLM 配置错误：Base URL 无效。",
-                    "error_type": "deepseek_invalid_base_url",
-                    "request_id": body.request_id or "",
-                },
+                content=_llm_error_content(
+                    detail="LLM 配置错误：Base URL 无效。",
+                    error_type="llm_invalid_base_url",
+                    request_id=body.request_id or "",
+                    requested_profile_key=body.llm_profile_key,
+                    settings=settings,
+                    registry=registry,
+                    error=e,
+                ),
             )
         elif e.error_code == "invalid_model":
             return JSONResponse(
                 status_code=503,
-                content={
-                    "detail": "LLM 配置错误：模型名称无效。",
-                    "error_type": "deepseek_invalid_model",
-                    "request_id": body.request_id or "",
-                },
+                content=_llm_error_content(
+                    detail="LLM 配置错误：模型名称无效。",
+                    error_type="llm_invalid_model",
+                    request_id=body.request_id or "",
+                    requested_profile_key=body.llm_profile_key,
+                    settings=settings,
+                    registry=registry,
+                    error=e,
+                ),
             )
         elif e.error_code == "api_key_missing":
             return JSONResponse(
                 status_code=503,
-                content={
-                    "detail": "LLM 配置错误：API Key 未配置。",
-                    "error_type": "deepseek_api_key_missing",
-                    "request_id": body.request_id or "",
-                },
+                content=_llm_error_content(
+                    detail="LLM 配置错误：API Key 未配置。",
+                    error_type="llm_api_key_missing",
+                    request_id=body.request_id or "",
+                    requested_profile_key=body.llm_profile_key,
+                    settings=settings,
+                    registry=registry,
+                    error=e,
+                ),
             )
         else:
             # M1.6.5: 未知配置错误返回通用脱敏 error_type，不伪装为 api_key_missing
             return JSONResponse(
                 status_code=503,
-                content={
-                    "detail": "LLM 配置错误。",
-                    "error_type": "deepseek_configuration_error",
-                    "request_id": body.request_id or "",
-                },
+                content=_llm_error_content(
+                    detail="LLM 配置错误。",
+                    error_type="llm_configuration_error",
+                    request_id=body.request_id or "",
+                    requested_profile_key=body.llm_profile_key,
+                    settings=settings,
+                    registry=registry,
+                    error=e,
+                ),
             )
     except LLMRequestError as e:
         return JSONResponse(
             status_code=502,
-            content={
-                "detail": "LLM 请求参数错误。",
-                "error_type": "deepseek_request_error",
-                "request_id": body.request_id or "",
-            },
+            content=_llm_error_content(
+                detail="LLM 请求参数错误。",
+                error_type="llm_request_error",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+                error=e,
+            ),
         )
     except LLMResponseError as e:
         return JSONResponse(
             status_code=502,
-            content={
-                "detail": "LLM 响应解析失败。",
-                "error_type": "deepseek_response_error",
-                "request_id": body.request_id or "",
-            },
+            content=_llm_error_content(
+                detail="LLM 响应解析失败。",
+                error_type="llm_response_error",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+                error=e,
+            ),
         )
     except LLMValidationError as e:
         return JSONResponse(
             status_code=502,
-            content={
-                "detail": "LLM 输出校验失败。",
-                "error_type": "deepseek_validation_error",
-                "request_id": body.request_id or "",
-            },
+            content=_llm_error_content(
+                detail="LLM 输出校验失败。",
+                error_type="llm_validation_error",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+                error=e,
+            ),
         )
     except LLMProviderError as e:
         return JSONResponse(
             status_code=502,
-            content={
-                "detail": "LLM 服务异常。",
-                "error_type": "deepseek_provider_error",
-                "request_id": body.request_id or "",
-            },
+            content=_llm_error_content(
+                detail="LLM 服务异常。",
+                error_type="llm_provider_error",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+                error=e,
+            ),
         )
     except Exception:
-        raise HTTPException(
+        return JSONResponse(
             status_code=500,
-            detail={
-                "detail": "Internal server error",
-                "error_type": "internal_error",
-                "request_id": body.request_id or "",
-            },
+            content=_llm_error_content(
+                detail="Internal server error",
+                error_type="internal_error",
+                request_id=body.request_id or "",
+                requested_profile_key=body.llm_profile_key,
+                settings=settings,
+                registry=registry,
+            ),
         )
 
     # ── 构建结构化 report 响应 ──
@@ -780,6 +928,9 @@ async def chat(
         idempotent_replay=result.get("idempotent_replay", False),
         replayed_request_id=result.get("replayed_request_id"),
         llm_mode=settings.llm_mode.value,
+        llm_profile_key=result.get("llm_profile_key", ""),
+        llm_model=result.get("llm_model", ""),
+        llm_provider_protocol=result.get("llm_provider_protocol", ""),
         powerbi_mode=settings.powerbi_mode.value,
         source_mode=result.get("source_mode", "mock"),
         usage=usage_dict,

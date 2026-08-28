@@ -2,7 +2,7 @@
 
 ## 状态
 
-**M5.7 — 简易报表视觉与模板必选（COMPLETE）。M5.5 Semantic/DAX authority 与 M5.6 Presentation authority 已冻结；M5.8—M5.10 尚未开始。**
+**M5.8 — Multi-LLM Provider / DeepSeek + Kimi MVP（IN PROGRESS）。M5.5 Semantic/DAX authority、M5.6 Presentation authority 与 M5.7.2 Report authority 已冻结；M5.9—M5.10 尚未开始。**
 
 ## 技术栈
 
@@ -122,17 +122,17 @@ npm run build
 
 M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI Desktop 实例生成的安全目录。每个 option 有独立 opaque `semantic_model_key`，compatibility probe 与 schema 检查都精确绑定该 option。浏览器只显示安全名称；模型菜单提供刷新和单选。当前选择关闭、重启或 identity 变化后，旧选择被清空并提示刷新后重新选择，不会自动切换到仍存活的另一 PBIX。Mock discovery 仍只暴露正式支持的 `mock_sales_model`。
 
-报表模板暂时没有发现 API，继续由 `src/config.ts` 集中维护 registry-owned 目录。当前只有 `sales_report`，展示名为“简易模板”。菜单不提供“不使用模板”，也不设置隐式 default；用户自然语言仍决定普通问答、多轮或 report intent，selector 只提供 template choice。report intent 未选择模板时必须清晰提示并保持 ZERO ReportSpec/Renderer/artifact，选择后可重试。
+报表模板由 `GET /api/v1/report-templates` 返回 registry-owned 目录。当前只有 `sales_report`，展示名为“简易模板”。菜单不提供“不使用模板”，也不设置隐式 default；用户自然语言仍决定普通问答、多轮或 report intent，selector 只提供 template choice。report intent 未选择模板时必须清晰提示并保持 ZERO ReportSpec/Renderer/artifact，选择后可重试。
 
-#### 模型选择器
+#### AI 模型选择器
 
 - 点击模型 pill 打开下拉卡片
-- 卡片中只显示 **DeepSeek**
+- 目录来自后端 `GET /api/v1/llm-profiles`，只显示公开 profile/model 信息，不包含 Secret 或 base URL
+- 可显式选择 **DeepSeek** 或 **Kimi K2.6**；不可用项禁用，stale selection 清空并要求重选
+- 每次提交复制当时的 `llm_profile_key`，之后的 UI 切换不改变已在途请求
 - 单选，默认选中，有选中状态
-- 不展示 Mock
-- 不展示 GPT-5.6 或任何未真实接入模型
-- 不承诺当前多模型能力
-- 保留未来增加模型的 UI 扩展空间
+- Mock runtime 只展示后端正式公开的 Mock profile；Real runtime 展示配置目录中的 DeepSeek/Kimi
+- 不展示 GPT-5.6 或任何未由后端目录真实接入的模型
 
 ### 视觉原则
 
@@ -207,7 +207,7 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | M5.5 | Semantic correctness；不改前端视觉/资源 UX | ✅ COMPLETE |
 | M5.6 | Presentation/Localization/Resource UX truth | ✅ COMPLETE |
 | M5.7 | 简易报表视觉 + Report Template Required + 人工视觉验收 | ✅ COMPLETE |
-| M5.8 | OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 scoped model selection | ⏳ NOT STARTED |
+| M5.8 | OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 scoped model selection | 🚧 IN PROGRESS |
 | M5.9 | MCP performance/resilience、并发与压力验证 | ⏳ NOT STARTED |
 | M5.10 | 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL | ⏳ NOT STARTED |
 

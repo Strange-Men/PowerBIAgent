@@ -24,6 +24,7 @@ class TurnServiceProtocol(Protocol):
         request_id: Optional[str] = None,
         semantic_model_key: str = "mock_sales_model",
         report_template_key: Optional[str] = None,
+        llm_profile_key: Optional[str] = None,
     ) -> dict[str, Any]:
         """执行完整 Turn 流程
 
@@ -33,6 +34,7 @@ class TurnServiceProtocol(Protocol):
             request_id: 请求 ID（None 时服务端生成）
             semantic_model_key: 语义模型标识
             report_template_key: 报表模板标识
+            llm_profile_key: 本轮显式选择的公开 LLM profile key
 
         Returns:
             统一结果字典，包含 request_id, conversation_id, terminal_state,

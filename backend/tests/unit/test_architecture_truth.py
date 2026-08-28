@@ -270,8 +270,8 @@ class TestAPIErrorMappingHasAllExceptionTypes:
         with open(source, "r", encoding="utf-8") as f:
             content = f.read()
         # insufficient_balance 必须有专用 error_type
-        assert "deepseek_insufficient_balance" in content, (
-            "routes.py 中 402 余额不足应使用 deepseek_insufficient_balance"
+        assert "llm_insufficient_balance" in content, (
+            "routes.py 中 402 余额不足应使用 provider-independent llm_insufficient_balance"
         )
 
 
@@ -361,7 +361,7 @@ class TestHTTPXTimeoutClassification:
     @staticmethod
     def _read_deepseek_source() -> str:
         path = os.path.join(
-            os.path.dirname(__file__), "..", "..", "app", "llm", "deepseek.py"
+            os.path.dirname(__file__), "..", "..", "app", "llm", "openai_compatible.py"
         )
         path = os.path.normpath(path)
         with open(path, "r", encoding="utf-8") as f:
@@ -382,7 +382,7 @@ class TestHTTPXConnectionErrorClassification:
     def test_httpx_exception_has_error_code(self, exc_name, error_code):
         """每个 HTTPX 异常在 deepseek.py 中有对应 error_code"""
         path = os.path.join(
-            os.path.dirname(__file__), "..", "..", "app", "llm", "deepseek.py"
+            os.path.dirname(__file__), "..", "..", "app", "llm", "openai_compatible.py"
         )
         path = os.path.normpath(path)
         with open(path, "r", encoding="utf-8") as f:

@@ -113,7 +113,7 @@ class TestLLMAuthenticationError:
                 })
         assert response.status_code == 502
         data = response.json()
-        assert data["error_type"] == "deepseek_authentication_failed"
+        assert data["error_type"] == "llm_authentication_failed"
         assert "detail" in data
         assert "request_id" in data
         # 不泄漏异常字符串
@@ -151,7 +151,7 @@ class TestLLMConfigurationErrorAPIKeyMissing:
                 })
         assert response.status_code == 503
         data = response.json()
-        assert data["error_type"] == "deepseek_api_key_missing"
+        assert data["error_type"] == "llm_api_key_missing"
         assert "detail" in data
         assert "request_id" in data
 
@@ -180,7 +180,7 @@ class TestLLMConfigurationErrorInsufficientBalance:
                 })
         assert response.status_code == 402
         data = response.json()
-        assert data["error_type"] == "deepseek_insufficient_balance"
+        assert data["error_type"] == "llm_insufficient_balance"
         assert "detail" in data
 
 
@@ -208,7 +208,7 @@ class TestLLMConfigurationErrorInvalidBaseURL:
                 })
         assert response.status_code == 503
         data = response.json()
-        assert data["error_type"] == "deepseek_invalid_base_url"
+        assert data["error_type"] == "llm_invalid_base_url"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -235,7 +235,7 @@ class TestLLMConfigurationErrorInvalidModel:
                 })
         assert response.status_code == 503
         data = response.json()
-        assert data["error_type"] == "deepseek_invalid_model"
+        assert data["error_type"] == "llm_invalid_model"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -272,8 +272,8 @@ class TestLLMConfigurationErrorUnknown:
             f"未知配置错误不得伪装为deepseek_api_key_missing: got={data['error_type']}"
         )
         # 应是通用配置错误
-        assert data["error_type"] == "deepseek_configuration_error", (
-            f"未知配置错误应返回deepseek_configuration_error: got={data['error_type']}"
+        assert data["error_type"] == "llm_configuration_error", (
+            f"未知配置错误应返回llm_configuration_error: got={data['error_type']}"
         )
 
     @pytest.mark.asyncio
@@ -321,7 +321,7 @@ class TestLLMRequestError:
                 })
         assert response.status_code == 502
         data = response.json()
-        assert data["error_type"] == "deepseek_request_error"
+        assert data["error_type"] == "llm_request_error"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -347,7 +347,7 @@ class TestLLMResponseError:
                 })
         assert response.status_code == 502
         data = response.json()
-        assert data["error_type"] == "deepseek_response_error"
+        assert data["error_type"] == "llm_response_error"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -374,7 +374,7 @@ class TestLLMValidationError:
                 })
         assert response.status_code == 502
         data = response.json()
-        assert data["error_type"] == "deepseek_validation_error"
+        assert data["error_type"] == "llm_validation_error"
         # 不得泄漏校验错误详情
         assert "Schema validation failed" not in str(data)
 
@@ -403,7 +403,7 @@ class TestLLMTimeoutError:
                 })
         assert response.status_code == 504
         data = response.json()
-        assert data["error_type"] == "deepseek_timeout"
+        assert data["error_type"] == "llm_timeout"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -430,7 +430,7 @@ class TestLLMConnectionError:
                 })
         assert response.status_code == 502
         data = response.json()
-        assert data["error_type"] == "deepseek_connection_failed"
+        assert data["error_type"] == "llm_connection_failed"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -457,7 +457,7 @@ class TestLLMRateLimitError:
                 })
         assert response.status_code == 503
         data = response.json()
-        assert data["error_type"] == "deepseek_rate_limited"
+        assert data["error_type"] == "llm_rate_limited"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -484,7 +484,7 @@ class TestLLMServiceError:
                 })
         assert response.status_code == 502
         data = response.json()
-        assert data["error_type"] == "deepseek_service_unavailable"
+        assert data["error_type"] == "llm_service_unavailable"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -515,7 +515,7 @@ class TestLLMProviderError:
         )
         assert response.status_code == 502
         data = response.json()
-        assert data["error_type"] == "deepseek_provider_error"
+        assert data["error_type"] == "llm_provider_error"
         # 不得泄漏原始异常
         assert "Unknown provider error" not in str(data)
 

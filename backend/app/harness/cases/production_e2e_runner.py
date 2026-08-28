@@ -1,8 +1,10 @@
-"""Production M2 acceptance through the formal Chat API and real Memory.
+"""Production acceptance through the formal Chat API and real Memory.
 
 This runner is deliberately observational.  It may capture ToolGateway outputs
 for the independent known-answer oracle, but it never supplies semantic state
-or replaces committed Memory.  The single frozen failure-recovery turn uses a
+or replaces committed Memory.  The selected public LLM profile is submitted on
+every turn and verified from the response without mutating a shared provider.
+The single frozen failure-recovery turn uses a
 deterministic QueryResult error and is reported separately from successful
 Local MCP queries.
 """
@@ -24,7 +26,7 @@ from backend.app.harness.cases.benchmark_models import (
 from backend.app.harness.cases.multi_turn_runner import MultiTurnBenchmarkRunner
 from backend.app.harness.oracles.known_answer import BaselineSource
 from backend.app.harness.tool_registry import TOOL_NAME_DAX
-from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
+from backend.app.llm.base import LLMTask
 from backend.app.main import create_app
 from backend.app.memory.models import (
     MemoryStatus,
@@ -33,26 +35,6 @@ from backend.app.memory.models import (
     StructuredWorkMemory,
 )
 from backend.app.schemas.data_contracts import DAXRequest, PowerBIError, QueryResult
-
-
-class _TaskCountingProvider(LLMProvider):
-    """Observe task kinds without retaining prompts or model responses."""
-
-    def __init__(self, inner: LLMProvider):
-        self._inner = inner
-        self.task_counts = {task: 0 for task in LLMTask}
-
-    @property
-    def provider_name(self) -> str:
-        return self._inner.provider_name
-
-    @property
-    def is_mock(self) -> bool:
-        return self._inner.is_mock
-
-    async def generate(self, request: LLMRequest, output_type: type) -> LLMResponse:
-        self.task_counts[request.task] += 1
-        return await self._inner.generate(request, output_type)
 
 
 def exact_known_answer_schedule(
@@ -69,7 +51,13 @@ class ProductionE2ERunner:
         self.settings = settings
         self.benchmark = MultiTurnBenchmarkRunner()
 
-    async def run(self, *, historical_repeats: int = 10) -> dict[str, Any]:
+    async def run(
+        self,
+        *,
+        historical_repeats: int = 10,
+        llm_profile_key: str | None = None,
+    ) -> dict[str, Any]:
+        selected_profile_key = llm_profile_key or self.settings.llm_default_profile
         known_cases = exact_known_answer_schedule(
             self.benchmark.load_known_answer_cases()
         )
@@ -112,11 +100,12 @@ class ProductionE2ERunner:
         top_n_known_passed = 0
         top_n_boundary_ties_observed = 0
         top_n_tie_answers_truth_safe = 0
+        profile_mismatch_count = 0
+        llm_task_counts = {task: 0 for task in LLMTask}
+        report_result: dict[str, Any] | None = None
 
         async with app.router.lifespan_context(app):
             service = app.state.turn_service
-            observed_provider = _TaskCountingProvider(service.llm_provider)
-            service.llm_provider = observed_provider
             original_gateway_execute = service.tool_gateway.execute
             dax_tool = service.tool_gateway.get_tool(TOOL_NAME_DAX)
             original_dax_handler = dax_tool.handler
@@ -167,6 +156,22 @@ class ProductionE2ERunner:
             transport = ASGITransport(app=app, raise_app_exceptions=True)
 
             async with AsyncClient(transport=transport, base_url="http://test") as client:
+                discovery_response = await client.get("/api/v1/semantic-models")
+                discovery_body = discovery_response.json()
+                selectable_models = [
+                    item
+                    for item in discovery_body.get("items", [])
+                    if item.get("selectable") is True
+                ]
+                if discovery_response.status_code != 200 or len(selectable_models) != 1:
+                    return {
+                        "passed": False,
+                        "status": discovery_body.get("error_type")
+                        or "semantic_model_selection_required",
+                        "llm_profile_key": selected_profile_key,
+                        "selectable_model_count": len(selectable_models),
+                    }
+                semantic_model_key = selectable_models[0]["key"]
 
                 async def execute(
                     *,
@@ -177,6 +182,7 @@ class ProductionE2ERunner:
                     inject_failure: bool = False,
                 ) -> dict[str, Any]:
                     nonlocal active_request_id, fallback_count, pollution_count
+                    nonlocal profile_mismatch_count
                     request_id = f"m263-{name}-{uuid.uuid4().hex}"
                     before = await service.pipeline.get_latest_committed_memory(
                         conversation_id, RuntimeDataMode.REAL
@@ -194,15 +200,22 @@ class ProductionE2ERunner:
                                 "message": message,
                                 "conversation_id": conversation_id,
                                 "request_id": request_id,
-                                "semantic_model_key": (
-                                    self.settings.powerbi_local_semantic_model_key
-                                ),
+                                "semantic_model_key": semantic_model_key,
+                                "llm_profile_key": selected_profile_key,
                             },
                         )
                     finally:
                         active_request_id = ""
 
                     body = response.json()
+                    if body.get("llm_profile_key") != selected_profile_key:
+                        profile_mismatch_count += 1
+                    usage = body.get("usage") or {}
+                    per_task = usage.get("per_task") or {}
+                    for task in LLMTask:
+                        count = per_task.get(task.value, 0)
+                        if isinstance(count, int) and not isinstance(count, bool):
+                            llm_task_counts[task] += count
                     request_memory = await service.pipeline.get_memory_by_request_id(
                         request_id, RuntimeDataMode.REAL
                     )
@@ -403,6 +416,48 @@ class ProductionE2ERunner:
                         }
                     )
 
+                report_request_id = f"m58-report-{uuid.uuid4().hex}"
+                report_response = await client.post(
+                    "/api/v1/chat",
+                    json={
+                        "message": "生成销售分析报告",
+                        "conversation_id": f"m58-report-{uuid.uuid4().hex}",
+                        "request_id": report_request_id,
+                        "semantic_model_key": semantic_model_key,
+                        "llm_profile_key": selected_profile_key,
+                        "report_template_key": "sales_report",
+                    },
+                )
+                report_body = report_response.json()
+                if report_body.get("llm_profile_key") != selected_profile_key:
+                    profile_mismatch_count += 1
+                report_usage = report_body.get("usage") or {}
+                report_per_task = report_usage.get("per_task") or {}
+                for task in LLMTask:
+                    count = report_per_task.get(task.value, 0)
+                    if isinstance(count, int) and not isinstance(count, bool):
+                        llm_task_counts[task] += count
+                report = report_body.get("report") or {}
+                report_audit = report_body.get("execution_audit") or {}
+                report_result = {
+                    "passed": bool(
+                        report_response.status_code == 200
+                        and report_body.get("terminal_state") == "completed"
+                        and report_body.get("source_mode") == "real"
+                        and report_body.get("llm_profile_key") == selected_profile_key
+                        and report.get("template_key") == "sales_report"
+                        and bool(report.get("report_id"))
+                        and report_audit.get("deterministic_dax") is True
+                        and report_audit.get("layer3_pass") is True
+                        and report_audit.get("factual_validation_pass") is True
+                        and report_audit.get("llm_dax_call_count") == 0
+                        and report_audit.get("renderer_llm_call_count") == 0
+                    ),
+                    "http_status": report_response.status_code,
+                    "terminal_state": report_body.get("terminal_state"),
+                    "template_key": report.get("template_key"),
+                }
+
         known_passed = sum(item["passed"] for item in known_results)
         holdouts = [item for item in known_results if item["holdout"]]
         conversation_turns = [
@@ -422,10 +477,15 @@ class ProductionE2ERunner:
             and top_n_known_executed > 0
             and top_n_known_passed == top_n_known_executed
             and top_n_tie_answers_truth_safe == top_n_boundary_ties_observed
-            and observed_provider.task_counts[LLMTask.DAX] == 0
-            and observed_provider.task_counts[LLMTask.ANSWER] == 0
+            and llm_task_counts[LLMTask.DAX] == 0
+            and llm_task_counts[LLMTask.ANSWER] == 0
+            and profile_mismatch_count == 0
+            and report_result is not None
+            and report_result["passed"]
             and all(count == 0 for count in known_error_counts.values()),
             "status": "pass",
+            "llm_profile_key": selected_profile_key,
+            "profile_mismatch_count": profile_mismatch_count,
             "known_exact_executed": len(known_results),
             "known_exact_passed": known_passed,
             "holdouts_executed": len(holdouts),
@@ -449,10 +509,11 @@ class ProductionE2ERunner:
             "fallback_count": fallback_count,
             "state_pollution_count": pollution_count,
             "llm_task_counts": {
-                task.value: observed_provider.task_counts[task] for task in LLMTask
+                task.value: llm_task_counts[task] for task in LLMTask
             },
-            "dax_llm_calls": observed_provider.task_counts[LLMTask.DAX],
-            "answer_llm_calls": observed_provider.task_counts[LLMTask.ANSWER],
+            "dax_llm_calls": llm_task_counts[LLMTask.DAX],
+            "answer_llm_calls": llm_task_counts[LLMTask.ANSWER],
+            "report": report_result,
             "known_dax_error_counts": known_error_counts,
             "known_cases": known_results,
             "conversations": conversation_results,

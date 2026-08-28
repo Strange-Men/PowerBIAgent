@@ -96,6 +96,14 @@ class RequestFingerprint(BaseModel):
         description="客户端原始 conversation_id，未传时保持 None",
     )
     semantic_model_key: str = Field(description="语义模型标识")
+    llm_profile_key: Optional[str] = Field(
+        default=None,
+        description="本轮显式解析后的 LLM profile；属于执行身份而非语义事实",
+    )
+    llm_model: Optional[str] = Field(
+        default=None,
+        description="本轮 profile 的公开模型标识",
+    )
     effective_report_template_key: Optional[str] = Field(
         default=None,
         description="已解析完成的生效报表模板 Key",
@@ -124,6 +132,8 @@ class RequestFingerprint(BaseModel):
             "client_conversation_id": self.client_conversation_id,
             "effective_report_template_key": self.effective_report_template_key,
             "intent_key": self.intent_key,
+            "llm_model": self.llm_model,
+            "llm_profile_key": self.llm_profile_key,
             "message": self.message,
             "powerbi_key": self.powerbi_key,
             "scenario": (
@@ -155,6 +165,8 @@ class RequestFingerprint(BaseModel):
         client_conversation_id: Optional[str] = None,
         semantic_model_key: str = "mock_sales_model",
         effective_report_template_key: Optional[str] = None,
+        llm_profile_key: Optional[str] = None,
+        llm_model: Optional[str] = None,
         scenario: Optional[ScenarioFingerprint] = None,
         intent_key: Optional[str] = None,
         powerbi_key: Optional[str] = None,
@@ -169,6 +181,8 @@ class RequestFingerprint(BaseModel):
             client_conversation_id=client_conversation_id,
             semantic_model_key=semantic_model_key,
             effective_report_template_key=effective_report_template_key,
+            llm_profile_key=llm_profile_key,
+            llm_model=llm_model,
             scenario=scenario,
             intent_key=intent_key,
             powerbi_key=powerbi_key,
@@ -181,6 +195,8 @@ class RequestFingerprint(BaseModel):
         client_conversation_id: Optional[str] = None,
         semantic_model_key: str = "mock_sales_model",
         effective_report_template_key: Optional[str] = None,
+        llm_profile_key: Optional[str] = None,
+        llm_model: Optional[str] = None,
         scenario: Optional[ScenarioFingerprint] = None,
         intent_key: Optional[str] = None,
         powerbi_key: Optional[str] = None,
@@ -191,10 +207,41 @@ class RequestFingerprint(BaseModel):
             client_conversation_id=client_conversation_id,
             semantic_model_key=semantic_model_key,
             effective_report_template_key=effective_report_template_key,
+            llm_profile_key=llm_profile_key,
+            llm_model=llm_model,
             scenario=scenario,
             intent_key=intent_key,
             powerbi_key=powerbi_key,
         ).hash()
+
+    @classmethod
+    def compute_legacy_hash(
+        cls,
+        message: str,
+        client_conversation_id: Optional[str] = None,
+        semantic_model_key: str = "mock_sales_model",
+        effective_report_template_key: Optional[str] = None,
+        scenario: Optional[ScenarioFingerprint] = None,
+        intent_key: Optional[str] = None,
+        powerbi_key: Optional[str] = None,
+    ) -> str:
+        """M5.7.2-compatible hash for replaying pre-M5.8 snapshots only."""
+        canonical = {
+            "client_conversation_id": client_conversation_id,
+            "effective_report_template_key": effective_report_template_key,
+            "intent_key": intent_key,
+            "message": message.strip(),
+            "powerbi_key": powerbi_key,
+            "scenario": scenario.model_dump() if scenario is not None else None,
+            "semantic_model_key": semantic_model_key,
+        }
+        serialized = json.dumps(
+            canonical,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     def __repr__(self) -> str:
         """安全 repr — 不暴露原始 message 和完整请求内容"""

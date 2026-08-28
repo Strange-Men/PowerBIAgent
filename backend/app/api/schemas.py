@@ -48,6 +48,13 @@ class ChatRequest(BaseModel):
         default=None,
         description="报表模板标识；报表生成请求必须显式提供有效 key",
     )
+    llm_profile_key: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9._-]*$",
+        description="本轮显式选择的公开 LLM profile key",
+    )
 
     # 禁止客户端直接传 Mock Scenario Key
     model_config = {"extra": "forbid"}
@@ -121,6 +128,9 @@ class ChatResponse(BaseModel):
 
     # M1.5: 模式与使用统计字段
     llm_mode: str = Field(default="", description="LLM 模式：mock / deepseek")
+    llm_profile_key: str = Field(default="", description="本轮冻结的 LLM profile")
+    llm_model: str = Field(default="", description="本轮冻结的公开模型标识")
+    llm_provider_protocol: str = Field(default="", description="公开 provider 协议")
     powerbi_mode: str = Field(
         default="",
         description="Power BI 模式：mock / local_mcp / remote_mcp（Deferred）",
@@ -130,7 +140,8 @@ class ChatResponse(BaseModel):
         default=None,
         description="LLM 使用统计：call_count, repair_count, prompt_tokens, "
                     "completion_tokens, total_tokens, duration_ms, "
-                    "estimated_cost_usd, pricing_configured",
+                    "estimated_cost_usd, pricing_configured, per_task, calls；"
+                    "calls 仅含安全 provider/task/usage/error 元数据",
     )
     execution_audit: Optional[dict[str, Any]] = Field(
         default=None,
@@ -162,6 +173,8 @@ class HealthResponse(BaseModel):
     max_tool_calls: int
     local_mcp_readonly: bool
     deepseek_configured: bool
+    kimi_configured: bool = False
+    llm_default_profile: str = ""
     real_mode_configuration_complete: bool
     real_mode_reasons: list[str] = Field(default_factory=list)
     harness_mode: str

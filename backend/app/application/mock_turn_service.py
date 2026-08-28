@@ -164,6 +164,7 @@ class MockTurnService:
         request_id: Optional[str] = None,
         semantic_model_key: str = "mock_sales_model",
         report_template_key: Optional[str] = None,
+        llm_profile_key: Optional[str] = None,
         scenario: Optional[MockScenarioSelection] = None,
         intent_key: Optional[str] = None,
         powerbi_key: Optional[str] = None,
@@ -198,6 +199,8 @@ class MockTurnService:
                 resolved_scenario = resolution.scenario
                 effective_template_key = resolution.effective_report_template_key
 
+        if llm_profile_key not in {None, "mock"}:
+            raise KeyError(f"LLM profile '{llm_profile_key}' is unavailable in Mock mode")
         runtime_mode = RuntimeDataMode.MOCK if self.config.is_mock else RuntimeDataMode.REAL
 
         # ── 将 MockScenarioSelection 转换为 Memory 层 ScenarioFingerprint ──
@@ -221,6 +224,9 @@ class MockTurnService:
             runtime_mode=runtime_mode,
             is_mock=True,
             llm_provider_name="mock",
+            llm_profile_key="mock",
+            llm_model="mock-llm",
+            llm_provider_protocol="mock",
             powerbi_provider_name="mock_powerbi",
             scenario_fingerprint_hash_inputs={
                 "scenario": scenario_fp,

@@ -5,6 +5,7 @@ import {
   deleteConversation,
   deleteReport,
   discoverReportTemplates,
+  discoverLLMProfiles,
   discoverSemanticModels,
   getConversationHistory,
   listArchivedConversations,
@@ -24,6 +25,19 @@ afterEach(() => {
 })
 
 describe('API namespace and chat mapping', () => {
+  it('loads the backend-owned public LLM profile catalog', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await discoverLLMProfiles()
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/llm-profiles')
+  })
+
   it('sends the explicit runtime namespace for recent conversations', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
@@ -68,6 +82,7 @@ describe('API namespace and chat mapping', () => {
       conversation_id: 'conv-1',
       semantic_model_key: 'local_desktop_model',
       report_template_key: 'sales_report',
+      llm_profile_key: 'kimi-k2.6',
     })
 
     const init = fetchMock.mock.calls[0][1] as RequestInit
@@ -77,6 +92,7 @@ describe('API namespace and chat mapping', () => {
       conversation_id: 'conv-1',
       semantic_model_key: 'local_desktop_model',
       report_template_key: 'sales_report',
+      llm_profile_key: 'kimi-k2.6',
     })
   })
 

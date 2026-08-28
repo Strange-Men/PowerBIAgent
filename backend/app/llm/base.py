@@ -27,6 +27,19 @@ class LLMTask(str, Enum):
     REPORT_INTENT = "report_intent"
 
 
+class LLMErrorCategory(str, Enum):
+    """Provider-independent failure taxonomy exposed to upper layers."""
+
+    CONFIGURATION = "configuration"
+    AUTHENTICATION = "authentication"
+    RATE_LIMIT = "rate_limit"
+    TIMEOUT = "timeout"
+    CONNECTION = "connection"
+    REQUEST = "request"
+    SERVICE = "service"
+    RESPONSE_VALIDATION = "response_validation"
+
+
 @dataclass
 class LLMRequest:
     """统一的 LLM 请求结构"""
@@ -97,6 +110,7 @@ class LLMProviderError(Exception):
         usage: dict[str, int] | None = None,
         model: str | None = None,
         finish_reason: str | None = None,
+        error_category: LLMErrorCategory | None = None,
     ):
         super().__init__(message)
         self.provider = provider
@@ -106,46 +120,49 @@ class LLMProviderError(Exception):
         self.usage = usage
         self.model = model
         self.finish_reason = finish_reason
+        self.error_category = error_category or self.DEFAULT_CATEGORY
+
+    DEFAULT_CATEGORY = LLMErrorCategory.SERVICE
 
 
 class LLMConfigurationError(LLMProviderError):
     """LLM 配置错误 — Key 缺失、Base URL 为空、Model 为空等"""
-    pass
+    DEFAULT_CATEGORY = LLMErrorCategory.CONFIGURATION
 
 
 class LLMAuthenticationError(LLMProviderError):
     """LLM 鉴权失败 — HTTP 401/403"""
-    pass
+    DEFAULT_CATEGORY = LLMErrorCategory.AUTHENTICATION
 
 
 class LLMRateLimitError(LLMProviderError):
     """LLM 限流 — HTTP 429"""
-    pass
+    DEFAULT_CATEGORY = LLMErrorCategory.RATE_LIMIT
 
 
 class LLMConnectionError(LLMProviderError):
     """LLM 连接错误 — ConnectError/DNS"""
-    pass
+    DEFAULT_CATEGORY = LLMErrorCategory.CONNECTION
 
 
 class LLMRequestError(LLMProviderError):
     """LLM 请求错误 — HTTP 400/404/422、messages 非法等"""
-    pass
+    DEFAULT_CATEGORY = LLMErrorCategory.REQUEST
 
 
 class LLMServiceError(LLMProviderError):
     """LLM 服务端错误 — HTTP 5xx"""
-    pass
+    DEFAULT_CATEGORY = LLMErrorCategory.SERVICE
 
 
 class LLMResponseError(LLMProviderError):
     """LLM 响应解析错误 — HTTP Body 非法 JSON、choices 缺失等"""
-    pass
+    DEFAULT_CATEGORY = LLMErrorCategory.RESPONSE_VALIDATION
 
 
 class LLMTimeoutError(LLMProviderError):
     """LLM 调用超时"""
-    pass
+    DEFAULT_CATEGORY = LLMErrorCategory.TIMEOUT
 
 
 class LLMValidationError(LLMProviderError):
@@ -172,6 +189,8 @@ class LLMValidationError(LLMProviderError):
             model=model,
             finish_reason=finish_reason,
         )
+
+    DEFAULT_CATEGORY = LLMErrorCategory.RESPONSE_VALIDATION
 
 
 class LLMScenarioNotFoundError(LLMProviderError):

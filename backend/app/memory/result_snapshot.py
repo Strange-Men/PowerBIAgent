@@ -99,6 +99,18 @@ class TurnResultSnapshot(BaseModel):
     )
     trace_id: str = Field(default="")
     allowed_tools: list[str] = Field(default_factory=list)
+    llm_profile_key: str = Field(
+        default="",
+        description="本轮冻结的公开 LLM profile，仅作执行审计",
+    )
+    llm_model: str = Field(
+        default="",
+        description="本轮冻结的公开模型标识，仅作执行审计",
+    )
+    llm_provider_protocol: str = Field(
+        default="",
+        description="本轮冻结的公开 provider 协议，仅作执行审计",
+    )
 
     # ── M1.0.1: 请求指纹 Hash ──
     request_fingerprint_hash: str = Field(

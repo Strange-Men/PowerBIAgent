@@ -16,8 +16,8 @@ from __future__ import annotations
 import pytest
 
 from backend.app.config.settings import Settings
-from backend.app.llm.base import LLMConfigurationError
 from backend.app.llm.factory import build_llm_registry
+from backend.app.llm.registry import LLMProfileUnavailableError
 
 
 class TestMockModeFactory:
@@ -30,8 +30,7 @@ class TestMockModeFactory:
             powerbi_mode="mock",
         )
         registry = build_llm_registry(settings)
-        assert registry.default_name == "mock"
-        provider = registry.get()
+        provider = registry.get("mock").provider
         assert provider.provider_name == "mock"
         assert provider.is_mock is True
 
@@ -43,7 +42,7 @@ class TestMockModeFactory:
             deepseek_api_key=None,
         )
         registry = build_llm_registry(settings)
-        assert registry.get().provider_name == "mock"
+        assert registry.get("mock").provider.provider_name == "mock"
 
     def test_mock_mode_no_network_client(self):
         """Mock 模式不创建网络 Client"""
@@ -52,7 +51,7 @@ class TestMockModeFactory:
             powerbi_mode="mock",
         )
         registry = build_llm_registry(settings)
-        assert registry.get().is_mock is True
+        assert registry.get("mock").provider.is_mock is True
 
 
 class TestDeepSeekModeFactory:
@@ -65,8 +64,9 @@ class TestDeepSeekModeFactory:
             powerbi_mode="mock",
             deepseek_api_key=None,
         )
-        with pytest.raises(LLMConfigurationError, match="API Key"):
-            build_llm_registry(settings)
+        registry = build_llm_registry(settings)
+        with pytest.raises(LLMProfileUnavailableError):
+            registry.get("deepseek")
 
     def test_deepseek_mode_with_key_registers_both(self):
         """DeepSeek 配置完整时注册 Mock + DeepSeek"""
@@ -94,8 +94,7 @@ class TestDeepSeekModeFactory:
             deepseek_model="deepseek-chat",
         )
         registry = build_llm_registry(settings)
-        assert registry.default_name == "deepseek"
-        provider = registry.get()
+        provider = registry.get("deepseek").provider
         assert provider.provider_name == "deepseek"
         assert provider.is_mock is False
 
@@ -110,7 +109,7 @@ class TestDeepSeekModeFactory:
             deepseek_model="deepseek-chat",
         )
         registry = build_llm_registry(settings)
-        mock = registry.get("mock")
+        mock = registry.get("mock").provider
         assert mock.provider_name == "mock"
         assert mock.is_mock is True
 
@@ -128,6 +127,6 @@ class TestRegistryIsolation:
 
         assert r1 is not r2
         # 各自有独立的 Provider 实例
-        p1 = r1.get("mock")
-        p2 = r2.get("mock")
+        p1 = r1.get("mock").provider
+        p2 = r2.get("mock").provider
         assert p1 is not p2
