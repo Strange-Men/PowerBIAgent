@@ -24,7 +24,7 @@ from backend.app.query_plan.grounding import (
     GroundingOutcome,
     GroundingStatus,
 )
-from backend.app.schemas.data_contracts import StructuredFilter
+from backend.app.schemas.data_contracts import QueryShape, StructuredFilter
 
 
 class ClarificationMergeResult(BaseModel):
@@ -88,12 +88,15 @@ class PendingClarificationService:
         time_range = previous.time_range if previous else None
         sort = previous.sort if previous else None
         top_n = previous.top_n if previous else None
+        query_shape = previous.query_shape if previous else None
         provenance = {
             key: list(values)
             for key, values in (previous.slot_provenance.items() if previous else [])
         }
 
         delta = outcome.delta or GroundedSemanticDelta()
+        if delta.query_shape is not None:
+            query_shape = delta.query_shape
         resolved_measures = self._resolved_names(outcome, "measure")
         resolved_dimensions = [
             *self._resolved_names(outcome, "dimension"),
@@ -199,7 +202,7 @@ class PendingClarificationService:
             )
 
         missing = self._missing_slots(
-            measures, dimensions, sort, top_n, outcome
+            measures, dimensions, sort, top_n, outcome, query_shape
         )
         now = datetime.utcnow()
         context_values = dict(
@@ -207,6 +210,7 @@ class PendingClarificationService:
             semantic_model_key=semantic_model_key,
             schema_fingerprint=schema_fingerprint,
             intent=intent,  # type: ignore[arg-type]
+            query_shape=query_shape,
             measures=measures,
             dimensions=dimensions,
             filters=filters,
@@ -286,12 +290,22 @@ class PendingClarificationService:
         sort: str | None,
         top_n: int | None,
         outcome: GroundingOutcome,
+        query_shape: QueryShape | None,
     ) -> list[PendingSemanticSlot]:
         missing: list[PendingSemanticSlot] = []
-        if not measures:
+        effective_shape = query_shape or QueryShape.SCALAR
+        if not measures and effective_shape != QueryShape.ENTITY_LIST:
             missing.append("measure")
+        dimension_required = effective_shape in {
+            QueryShape.ENTITY_LIST,
+            QueryShape.GROUPED,
+            QueryShape.RANKING,
+            QueryShape.MEMBER_SET,
+            QueryShape.TREND,
+            QueryShape.BOUNDED_TREND,
+        }
         ranking_requested = top_n is not None or sort is not None
-        if ranking_requested and not dimensions:
+        if (dimension_required or ranking_requested) and not dimensions:
             missing.append("dimension")
         if top_n is not None and sort is None:
             missing.append("analysis")
@@ -340,6 +354,7 @@ class PendingClarificationService:
     @staticmethod
     def _to_delta(context: PendingClarificationContext) -> GroundedSemanticDelta:
         return GroundedSemanticDelta(
+            query_shape=context.query_shape,
             measures=list(context.measures),
             dimensions=list(context.dimensions),
             filters=list(context.filters),
@@ -359,6 +374,8 @@ class PendingClarificationService:
         if {"measure", "dimension"}.issubset(slots):
             return "请分别明确要比较的业务指标和分析维度。"
         if "measure" in slots:
+            if slots == {"measure"} and outcome.clarification_question:
+                return outcome.clarification_question
             return "请明确要使用的业务指标。"
         if "dimension" in slots:
             return "请明确要按哪个分析维度比较。"

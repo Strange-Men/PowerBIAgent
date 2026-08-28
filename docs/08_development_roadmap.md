@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.8.1 — 前置性能加速与本地 MCP 会话复用（COMPLETE）
+> **状态：** M5.8.2 — 通用自然语言路由与查询形态收口（COMPLETE）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -45,7 +45,8 @@
 | **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
 | **M5.8.1** | **前置性能加速与本地 MCP 会话复用** | **✅ COMPLETE** |
-| **M5.8.2** | **自然语言路由与业务语义层增强** | **⏳ NOT STARTED** |
+| **M5.8.2** | **通用自然语言路由与查询形态收口** | **✅ COMPLETE** |
+| **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **⏳ NOT STARTED** |
 | **M5.9** | **完整 MCP performance、concurrency、resilience 与 soak** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
@@ -132,7 +133,15 @@ M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provid
 
 ### M5.8.2 — 自然语言路由与业务语义层增强
 
-状态为 NOT STARTED。用户问题路由、业务术语、alias/ontology、基础数学、支持范围说明与 bounded month trend language 均属于本阶段；M5.8.1 不得顺手实现。
+状态为 COMPLETE。共享 TurnPipeline 在 Semantic Grounding 前以 code-owned Router 区分 BUSINESS_DATA_QUERY、REPORT_REQUEST、PRODUCT_HELP、SYSTEM_INFO、DETERMINISTIC_CALC 与 UNSUPPORTED_GENERAL；Router 不解析 measure/dimension/member/date identity 或事实。业务链新增 SCALAR、ENTITY_LIST、GROUPED、RANKING、MEMBER_SET、FILTERED_AGGREGATION、TREND、BOUNDED_TREND，并按 shape 决定 required slots；仅槽位式多轮表达继承已提交 shape。
+
+Deterministic DAX/Layer 3 已支持 dimension-only distinct、runtime-validated `IN_SET`、Top1 与 bounded month range；任一 unknown member、反向日期或 unresolved explicit slot 均 ZERO DAX。Product Help、公开模型信息、基础 Decimal 算术与 unsupported identity 直接返回且 ZERO schema/member/DAX/semantic Memory mutation。Sales/Education/Inventory/unknown holdout 六类核心 shape、schema mutation、benchmark leakage、Rich PBIX 15 项 Real 题集与 residual=0 均通过。
+
+Fresh evidence：Semantic Compatibility `421 passed`（109 production backend files）；backend `2046 passed, 1 skipped`；frontend `86 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Repository Safety `323`、Architecture `126`、Error Ledger `37`、Documentation/Artifact Governance、compileall 与 `git diff --check` PASS。M5.8.1 性能复验保持 session reuse/cache，稳定 10 轮 `16156ms`、4 路并发 `4469ms`；未修改 MCP performance architecture、Provider 或 Report renderer/template。
+
+### M5.8.3 — MCP-driven 通用模型语义适配
+
+状态为 NOT STARTED。任意 PBIX 的 `ModelSemanticContext`、自动 business binding 与更广泛的 runtime semantic adaptation 只属于本阶段；禁止用跨行业 global glossary、ontology/RAG/vector DB 替代 runtime authority。
 
 ### 新 M5.9 — MCP performance and resilience
 
@@ -378,7 +387,7 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
-- M5.5—M5.8.1 已完成并冻结；M5.8.2、完整 M5.9 与 M5.10 仍不得进入。
+- M5.5—M5.8.2 已完成并冻结；M5.8.3、完整 M5.9 与 M5.10 仍不得进入。
 - 一个 milestone 不得同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle；只有 M5.10 全部门禁完成后才允许宣告 M5 FINAL。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
@@ -393,4 +402,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-08-28 | M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-28 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

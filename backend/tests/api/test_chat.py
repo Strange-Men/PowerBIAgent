@@ -1729,10 +1729,14 @@ def _patch_fake_runtime_glossary(monkeypatch):
     aliases = {
         "Total Sales": ["销售额", "总销售额", "销售金额"],
         "Total Quantity": ["销量", "总数量", "销售数量", "件数", "多少件"],
+        "Total Orders": ["订单数", "总订单数"],
+        "Average Order Value": ["平均订单金额", "平均订单额"],
         "Category": ["类别", "品类"],
         "Product": ["产品", "商品"],
         "Region": ["区域", "地区"],
         "OrderDate": ["订单日期", "销售日期"],
+        "Date": ["日期"],
+        "YearMonth": ["月份", "月度"],
     }
 
     class _TestCatalogBuilder:
@@ -1786,6 +1790,12 @@ def _patch_fake_runtime_glossary(monkeypatch):
                             "南区": "华南",
                         }
                         metadata["member_suffixes"] = ["区"]
+                    if column.name == "Product":
+                        metadata["member_aliases"] = {
+                            "手机": "手机",
+                            "笔记本": "笔记本",
+                            "电脑": "电脑",
+                        }
                     glossary["fields"][column.name] = metadata
             return SemanticCatalogBuilder().build_from_data(schema, glossary)
 
@@ -2899,6 +2909,308 @@ class TestM24DeepSeekLocalChat:
             assert adapter.schema_calls == 1
             assert adapter.dax_calls == 0
             assert len(provider.calls) == 1
+
+
+class _M582ShapeProvider(LLMProvider):
+    def __init__(self, question: str) -> None:
+        self.question = question
+        self.calls: list[LLMRequest] = []
+
+    @property
+    def provider_name(self) -> str:
+        return "deepseek"
+
+    @property
+    def is_mock(self) -> bool:
+        return False
+
+    async def generate(self, request, output_type):
+        self.calls.append(request)
+        text = self.question
+        if request.task == LLMTask.INTENT_RECOGNITION:
+            measures = []
+            dimensions = []
+            if "平均订单" in text:
+                measures = ["平均订单金额"]
+            elif "订单数" in text:
+                measures = ["总订单数"]
+            elif "销量" in text:
+                measures = ["销量"]
+            elif "销售额" in text:
+                measures = ["销售额"]
+            if "产品" in text:
+                dimensions = ["产品"]
+            structured = IntentSpec(
+                intent=IntentType.DATA_QUESTION,
+                confidence=0.99,
+                normalized_question=text,
+                detected_measures=measures,
+                detected_dimensions=dimensions,
+                detected_time_range=(text if "2025年8月" in text else None),
+            )
+        elif request.task == LLMTask.QUERY_PLAN:
+            measures = []
+            dimensions = []
+            if "平均订单" in text:
+                measures = ["Average Order Value"]
+            elif "订单数" in text:
+                measures = ["Total Orders"]
+            elif "销量" in text:
+                measures = ["Total Quantity"]
+            elif "销售额" in text:
+                measures = ["Total Sales"]
+            if "产品" in text:
+                dimensions = ["Product"]
+            structured = QueryPlan(
+                normalized_question=text,
+                semantic_model_key="local_desktop_model",
+                measures=measures,
+                dimensions=dimensions,
+                time_range=(text if "2025年8月" in text else None),
+            )
+        else:
+            raise AssertionError(f"unexpected LLM task: {request.task}")
+        return LLMResponse(
+            content="{}",
+            structured=structured,
+            model="fake-deepseek",
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        )
+
+
+class _M582ShapeAdapter(_M24FakeLocalPowerBIAdapter):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.last_dax = ""
+        self.member_calls = 0
+
+    async def get_semantic_model_schema(self, semantic_model_key: str):
+        self.schema_calls += 1
+        return SemanticModelSchema(
+            name="M5.8.2 fixture",
+            key=semantic_model_key,
+            tables=[
+                TableSchema(
+                    name="Sales",
+                    columns=[
+                        ColumnSchema(name="Product", data_type="string"),
+                        ColumnSchema(name="Category", data_type="string"),
+                        ColumnSchema(name="OrderDate", data_type="datetime"),
+                        ColumnSchema(name="Region", data_type="string"),
+                    ],
+                    measures=[
+                        MeasureSchema(name="Total Sales", data_type="decimal"),
+                        MeasureSchema(name="Total Quantity", data_type="int64"),
+                        MeasureSchema(name="Total Orders", data_type="int64"),
+                        MeasureSchema(name="Average Order Value", data_type="decimal"),
+                    ],
+                ),
+                TableSchema(
+                    name="Date",
+                    columns=[
+                        ColumnSchema(name="Date", data_type="datetime"),
+                        ColumnSchema(name="YearMonth", data_type="datetime"),
+                    ],
+                ),
+            ],
+            relationships=[RelationshipSchema(
+                from_table="Sales",
+                from_column="OrderDate",
+                to_table="Date",
+                to_column="Date",
+                is_active=True,
+            )],
+        )
+
+    async def get_column_members(self, request: ColumnMembersRequest):
+        self.member_calls += 1
+        assert request.field_name == "Product"
+        return ColumnMembersResult(
+            semantic_model_key=request.semantic_model_key,
+            table_name=request.table_name,
+            field_name=request.field_name,
+            values=["手机", "笔记本", "电脑"],
+            source_mode="real",
+        )
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.dax_calls += 1
+        self.last_dax = request.dax
+        if "'Date'[YearMonth]" in request.dax:
+            columns = ["Date[YearMonth]", "[Total Sales]"]
+            rows = [["2025-08-01", 80], ["2026-01-01", 100]]
+        elif (
+            "SUMMARIZECOLUMNS(\n    'Sales'[Product]," in request.dax
+            and "[Total Quantity]" in request.dax
+        ):
+            columns = ["Sales[Product]", "[Total Quantity]"]
+            rows = [["手机", 20], ["笔记本", 10]]
+        elif "'Sales'[Product]" in request.dax and "[Total Quantity]" not in request.dax:
+            columns = ["Sales[Product]"]
+            rows = [["手机"], ["笔记本"], ["电脑"]]
+        elif "[Average Order Value]" in request.dax:
+            columns, rows = ["[Average Order Value]"], [[125.5]]
+        elif "[Total Orders]" in request.dax:
+            columns, rows = ["[Total Orders]"], [[8]]
+        else:
+            columns, rows = ["[Total Quantity]"], [[30]]
+        return QueryResult(
+            result_id=f"qr-{request.request_id}",
+            semantic_model_key=request.semantic_model_key,
+            columns=columns,
+            rows=rows,
+            row_count=len(rows),
+            source_mode="real",
+            request_id=request.request_id,
+        )
+
+
+def _patch_m582_shape_composition(monkeypatch, question: str):
+    import backend.app.llm.factory as llm_factory
+    import backend.app.main as main_module
+
+    provider = _M582ShapeProvider(question)
+    registry = LLMProviderRegistry()
+    registry.register(_deepseek_test_profile(), provider)
+    monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+    _patch_fake_runtime_glossary(monkeypatch)
+    monkeypatch.setattr(main_module, "LocalMCPPowerBIAdapter", _M582ShapeAdapter)
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        deepseek_api_key="test-key-not-real",
+    )
+    return main_module.create_app(settings=settings), provider
+
+
+class TestM582ProductionRoutingAndShapes:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("question", "response_type", "fragment"),
+        [
+            ("你支持回答哪些问题？", "answer", "指标查询"),
+            ("数据分析支持的范围在哪", "answer", "不预测"),
+            ("你是什么模型", "answer", "DeepSeek"),
+            ("1+1等于几", "answer", "2"),
+            ("50乘50是几", "answer", "2500"),
+            ("我是谁", "unsupported", "无法判断"),
+        ],
+    )
+    async def test_non_business_routes_are_zero_llm_schema_dax_and_memory(
+        self, monkeypatch, question, response_type, fragment
+    ):
+        app, provider = _patch_m582_shape_composition(monkeypatch, question)
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": question,
+                    "conversation_id": str(uuid.uuid4()),
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+        body = response.json()
+        visible_text = body.get("answer") or body.get("unsupported_reason") or ""
+        assert response.status_code == 200, body
+        assert body["response_type"] == response_type
+        assert fragment in visible_text
+        assert body["memory_commit"] is False
+        assert body["tool_sequence"] == []
+        assert provider.calls == []
+        assert service.powerbi.schema_calls == 0
+        assert service.powerbi.dax_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_report_route_reaches_template_gate_before_schema(self, monkeypatch):
+        question = "生成销售报表"
+        app, provider = _patch_m582_shape_composition(monkeypatch, question)
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": question,
+                    "conversation_id": str(uuid.uuid4()),
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+        body = response.json()
+        assert body["terminal_state"] == "clarification_required"
+        assert body["clarification_question"] == "生成报表前请选择有效的模板"
+        assert service.powerbi.schema_calls == 0
+        assert service.powerbi.dax_calls == 0
+        assert len(provider.calls) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("question", "shape", "measure", "dimension"),
+        [
+            ("平均订单金额是多少", "scalar", "Average Order Value", None),
+            ("总订单数是多少", "scalar", "Total Orders", None),
+            ("我们销售了哪些产品？", "entity_list", None, "Product"),
+            ("销量最高的是哪款产品？", "ranking", "Total Quantity", "Product"),
+            ("手机和笔记本的销量分别是多少？", "member_set", "Total Quantity", "Product"),
+            ("手机和电脑加起来销量是多少", "filtered_aggregation", "Total Quantity", None),
+            ("2025年8月到2026年1月销售额月趋势", "bounded_trend", "Total Sales", "YearMonth"),
+            ("从2025年8月至2026年1月按月看销售额", "bounded_trend", "Total Sales", "YearMonth"),
+        ],
+    )
+    async def test_formal_pipeline_executes_each_shape(
+        self, monkeypatch, question, shape, measure, dimension
+    ):
+        app, _ = _patch_m582_shape_composition(monkeypatch, question)
+        request_id = str(uuid.uuid4())
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": question,
+                    "conversation_id": str(uuid.uuid4()),
+                    "request_id": request_id,
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+        body = response.json()
+        assert response.status_code == 200, body
+        assert body["terminal_state"] == "completed", body
+        plan = body["execution_audit"]["canonical_query_plan"]
+        assert plan["query_shape"] == shape
+        assert plan["measures"] == ([] if measure is None else [measure])
+        assert plan["dimensions"] == ([] if dimension is None else [dimension])
+        assert body["execution_audit"]["dax_executed"] is True
+        assert body["memory_commit"] is True
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_best_asks_only_for_measure_and_executes_zero_dax(
+        self, monkeypatch
+    ):
+        app, _ = _patch_m582_shape_composition(monkeypatch, "哪些产品卖得最好？")
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": "哪些产品卖得最好？",
+                    "conversation_id": str(uuid.uuid4()),
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+            dax_calls = service.powerbi.dax_calls
+
+        body = response.json()
+        assert body["terminal_state"] == "clarification_required", body
+        assert body["clarification_question"] == "请明确用于判断排名的业务指标。"
+        assert body["execution_audit"]["missing_slots"] == ["measure"]
+        assert dax_calls == 0
+        assert body["memory_commit"] is False
 
 
 class TestM25BusinessGoldenOffline:

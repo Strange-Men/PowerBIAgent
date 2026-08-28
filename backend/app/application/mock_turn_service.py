@@ -31,6 +31,7 @@ from backend.app.harness.runtime.turn_controller import TurnController, TurnStat
 from backend.app.harness.observability.trace_recorder import TraceRecorder
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.models import IntentSpec, IntentType
+from backend.app.intent.question_router import QuestionRoute, QuestionRoutingDecision
 from backend.app.llm.base import LLMRequest, LLMTask
 from backend.app.llm.mock import MockLLMProvider
 from backend.app.memory.models import (
@@ -224,6 +225,7 @@ class MockTurnService:
             runtime_mode=runtime_mode,
             is_mock=True,
             llm_provider_name="mock",
+            llm_display_name="Mock",
             llm_profile_key="mock",
             llm_model="mock-llm",
             llm_provider_protocol="mock",
@@ -258,6 +260,7 @@ class MockTurnService:
         context: Optional[dict[str, Any]] = None,
         committed: Optional[StructuredWorkMemory] = None,
         pending_clarification: Optional[PendingClarificationContext] = None,
+        question_routing: QuestionRoutingDecision | None = None,
     ) -> dict[str, Any]:
         """Owner 执行 Mock LLM 管线（控制面由共享 TurnPipeline 骨架提供）"""
         # 确保 resolved_scenario 有效
@@ -287,6 +290,14 @@ class MockTurnService:
         context["mock_scenario_key"] = resolved_scenario.intent_key
         intent_result = await self.llm.run(message, context, IntentSpec)
         intent: IntentSpec = intent_result.structured  # type: ignore[assignment]
+        if question_routing is not None:
+            if question_routing.route == QuestionRoute.REPORT_REQUEST:
+                intent = intent.model_copy(update={
+                    "intent": IntentType.REPORT_GENERATION,
+                    "needs_clarification": False,
+                    "clarification_question": None,
+                    "unsupported_reason": None,
+                })
         trace.record("intent_classified", trace_id=trace_id, request_id=effective_req_id,
                      data_summary={"intent": intent.intent.value})
 
@@ -369,6 +380,10 @@ class MockTurnService:
         context["mock_scenario_key"] = resolved_scenario.query_plan_key
         plan_result = await self.llm.run(message, context, QueryPlan)
         query_plan: QueryPlan = plan_result.structured  # type: ignore[assignment]
+        if question_routing is not None:
+            query_plan = query_plan.model_copy(update={
+                "query_shape": question_routing.query_shape,
+            })
         if intent.intent == IntentType.REPORT_GENERATION:
             query_plan = query_plan.model_copy(
                 update={"requested_template": effective_template_key}

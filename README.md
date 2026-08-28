@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.8.1 — 前置性能加速与本地 MCP 会话复用（COMPLETE）**。M5.8 已完成并冻结；M5.8.2、M5.9、M5.10 尚未开始，M5 FINAL=false。
+当前版本：**M5.8.2 — 通用自然语言路由与查询形态收口（COMPLETE）**。M5.8/M5.8.1 保持冻结；M5.8.3、M5.9、M5.10 尚未开始，M5 FINAL=false。
 
 ## 项目概览
 
@@ -16,6 +16,7 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 ## 核心能力
 
 - 自然语言 Power BI 数据问答，Mock 与 Real 共用同一 TurnPipeline 执行骨架。
+- Semantic Grounding 前的 Question Router 区分数据查询、报表、产品帮助、公开模型信息、安全基础算术与不支持的一般问题；非业务 turn 不读取 schema、不执行 DAX、不污染 semantic Memory。
 - Business Semantic Grounding 将用户表达绑定到 runtime schema、模型专属 glossary 与 runtime members。
 - Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界。
@@ -59,7 +60,8 @@ LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI
 
 | 领域 | 已实现能力 |
 |---|---|
-| 数据问答 | Measure、Dimension、`EQ` filter、确定性时间范围、单 Measure Sort/TopN 的受限自然语言查询 |
+| 数据问答 | SCALAR、dimension-only ENTITY_LIST、GROUPED、RANKING/Top1、runtime-validated MEMBER_SET/`IN_SET`、FILTERED_AGGREGATION、TREND 与 BOUNDED_TREND；只澄清当前 shape 真正缺失的槽位 |
+| 非业务路由 | code-owned 产品能力说明、公开 LLM profile 信息、安全 Decimal 基础算术与明确 unsupported；ZERO schema/member/DAX/semantic Memory mutation |
 | 报表 | 唯一正式“简易模板” `sales_report`；显式 `report_template_key` 必选；schema-aware capability planning；固定安全静态 HTML；查看/下载资源 |
 | 多轮 Memory | 当前明确表达 > bounded semantic draft > committed Memory；fresh 清除无关旧槽，follow-up/replace 只继承兼容省略项；模型切换清空旧语义上下文 |
 | 持久化与恢复 | SQLite Memory/Snapshot/报表 metadata；重启重放；不完整崩溃证据受控失败；持久化删除意图 |
@@ -338,7 +340,8 @@ python -m alembic upgrade head
 | M5.7.2 | COMPLETE — Report Template Gate 前移、Template/Renderer Registry、后端目录驱动的前端模板选择，以及简易模板视觉与信息架构最终收口 |
 | M5.8 | COMPLETE — OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection |
 | M5.8.1 | COMPLETE — 前置性能加速、Local MCP session reuse 与安全进程内 metadata/member cache |
-| M5.8.2 | NOT STARTED — 自然语言路由与业务语义层增强 |
+| M5.8.2 | COMPLETE — Question Router、通用 Query Shape、minimal clarification、dimension-only/Top1/member-set/bounded trend 与安全 calculator/help/system-info |
+| M5.8.3 | NOT STARTED — MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配 |
 | M5.9 | NOT STARTED — 完整 MCP performance、resilience、并发与压力验证 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
 
@@ -369,4 +372,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-28 | M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-08-28 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

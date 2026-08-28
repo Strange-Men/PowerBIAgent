@@ -2,6 +2,20 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.8.2] — 2026-08-28（COMPLETE）
+
+- 在共享 `TurnPipeline` 的 Semantic Grounding 前新增 code-owned Question Router，固定区分 BUSINESS_DATA_QUERY、REPORT_REQUEST、PRODUCT_HELP、SYSTEM_INFO、DETERMINISTIC_CALC 与 UNSUPPORTED_GENERAL。非业务 turn 在 Context/LLM/schema/member/DAX 前直接终止，`memory_commit=false`，不清除既有 PendingClarification；报表请求仍进入 M5.7.2 Template Gate。
+- 新增领域无关 Query Shape：SCALAR、ENTITY_LIST、GROUPED、RANKING、MEMBER_SET、FILTERED_AGGREGATION、TREND、BOUNDED_TREND。required slots 改为 shape-specific；dimension-only 查询不再要求 measure，极值问法确定性形成 Top1，只对真正缺失的排名指标做 minimal clarification。
+- Member Grounding 支持同字段多成员逐项 runtime 验证，全部唯一命中后形成 canonical `IN_SET`；任一 unknown/ambiguous 均在 DAX 前 fail closed。Deterministic DAX Builder 与独立 verifier 同步支持 dimension-only distinct 与 `IN_SET`，VerifiedFactSet/Presentation 仅投影真实实体结果。
+- TimeGrounder 确定性支持六种跨月区间表达并形成首尾月闭区间；反向范围 clarification/ZERO DAX。多轮 shape 仅在明确新结构时替换，槽位式 follow-up 继承已提交 shape；`销售额 → 各地区 → 最高 → 换销量 → 只看华南` 的 KEEP/REPLACE 合同通过。
+- 新增有限长度、嵌套与数值幅度的 Decimal 递归下降计算器；不使用 `eval`/`exec`。Product Help 只读 code-owned capability contract；System Info 只返回当前 profile 的公开 display name。
+- Sales/Education/Inventory/unknown holdout 对 SCALAR/ENTITY_LIST/GROUPED/RANKING/MEMBER_SET/TREND 的 runtime-catalog grounding 全部通过；schema mutation、unknown member、unresolved slot 与 benchmark leakage 保持 fail closed。
+- Fresh gates：Semantic Compatibility `421 passed`（109 production backend files）；backend `2046 passed, 1 skipped`；frontend `86 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Repository Safety `323`、Architecture `126`、Error Ledger `37`、Documentation/Artifact Governance、compileall 与 `git diff --check` PASS。
+- Rich PBIX Real 15 项题集全部通过，业务 shape、minimal clarification、member no-match ZERO DAX 与六类 non-business ZERO schema/DAX/Memory 均符合合同，residual=0。M5.8.1 性能复验保持 metadata cache/session reuse，稳定 10 轮 `16156ms`、4 路并发 `4469ms`；外部 LLM 长尾单独记录，不归因于 MCP 回退。
+- 未开发 M5.8.3 ModelSemanticContext、M5.9 或 M5.10；未修改 M5.8.1 MCP session/cache/singleflight/concurrency、Provider、Report renderer/template 或事实权威；未引入 Redis/RAG/Ontology。M5 FINAL=false。
+
+**Settings.version:** M5.8.2
+
 ## [M5.8.1] — 2026-08-28（COMPLETE）
 
 - 为正式 Turn 增加 request-local monotonic performance trace，仅记录 operation category、`duration_ms`、cache hit/miss 与 session new/reused；覆盖 total、Intent LLM、MCP startup/tool discovery、Desktop discovery/connect、compatibility、schema/catalog/member、grounding、QueryPlan、DAX build/execute、answer/presentation 与 persistence，不记录 Key、Authorization、原始 prompt、PBIX 私密路径或业务数据全集。

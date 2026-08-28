@@ -13,6 +13,7 @@ from backend.app.query_plan.grounding import GroundedSemanticDelta
 from backend.app.schemas.data_contracts import (
     CanonicalQueryPlan,
     QueryPlan,
+    QueryShape,
     StructuredFilter,
     TimeRangeSpec,
 )
@@ -127,6 +128,14 @@ class TurnInheritancePolicy:
             return InheritanceDecision(
                 mode=InheritanceMode.FRESH_QUESTION,
                 reason="current_grounded_measure_is_self_contained",
+            )
+        if (
+            delta.query_shape == QueryShape.ENTITY_LIST
+            and delta.dimensions
+        ):
+            return InheritanceDecision(
+                mode=InheritanceMode.FRESH_QUESTION,
+                reason="current_entity_list_is_self_contained",
             )
         if intent.turn_relation == TurnRelation.REPLACE and has_current_slot:
             return InheritanceDecision(
@@ -311,10 +320,13 @@ class StateTransitionService:
                 if inherit_omitted or previous_top_n is None else SlotTransition.CLEAR
             )
 
+        query_shape = delta.query_shape or draft.query_shape
         if top_n is not None and sort is None:
             raise ValueError("canonical_top_n_requires_sort")
-        if not measures:
+        if not measures and query_shape != QueryShape.ENTITY_LIST:
             raise ValueError("canonical_measure_required")
+        if query_shape == QueryShape.ENTITY_LIST and not dimensions:
+            raise ValueError("canonical_entity_list_dimension_required")
 
         active_hint_fields = {
             *dimensions,
@@ -334,6 +346,7 @@ class StateTransitionService:
         plan = CanonicalQueryPlan(
             normalized_question=draft.normalized_question,
             semantic_model_key=draft.semantic_model_key,
+            query_shape=query_shape,
             measures=measures,
             dimensions=dimensions,
             dimension_tables=dimension_tables or None,

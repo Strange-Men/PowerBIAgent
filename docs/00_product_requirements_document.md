@@ -296,10 +296,13 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 17. **M5.6 Presentation/Localization/Resource UX truth** ✅ COMPLETE — canonical/display、格式化、信息密度、Settings/Recent/failed resource、共享 floating menu、nested scroll 与 action toolbar
 18. **M5.7 简易报表视觉 + Report Template Required** ✅ COMPLETE — information architecture、responsive、geometry、axis/tick、accessibility、人工可读性；任何 report request 显式模板必选且失败时 ZERO ReportData/ReportSpec/Renderer/artifact
 19. **M5.7.1 Semantic Reliability / Regression Firewall** ✅ COMPLETE — 统一语义可靠性、永久回归防火墙、高强度问答与跨域/schema mutation 验收；不开发报表、多模型或 MCP 性能
-20. **M5.7.2 Report Template Architecture Closure** ⏳ NOT STARTED — Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复
-21. **M5.8 多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** ⏳ NOT STARTED — `OpenAICompatibleLLMProvider`、`LLMModelProfile`、request/conversation-scoped model selection 与同一 authority/regression contract；不做 MCP 性能优化
-22. **M5.9 MCP performance/resilience** ⏳ NOT STARTED — profiling/cache/session reuse、bounded concurrency/queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak；不改 Semantic/DAX/VerifiedFactSet authority
-23. **M5.10 固定专业销售报表模板与两模板选择** ⏳ NOT STARTED — 简易模板保留 M5.7 优化后的 `sales_report.html`；销售模板使用确定性专业版式并显式选择；只有全部门禁完成后才允许 M5 FINAL
+20. **M5.7.2 Report Template Architecture Closure** ✅ COMPLETE — Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复
+21. **M5.8 多 LLM Provider抽象 + DeepSeek/Kimi 最小双模型** ✅ COMPLETE — `OpenAICompatibleLLMProvider`、`LLMModelProfile`、request/conversation-scoped model selection 与同一 authority/regression contract
+22. **M5.8.1 前置性能加速与 Local MCP 会话复用** ✅ COMPLETE — application-owned session、短 TTL metadata/member cache、singleflight 与最小 bounded concurrency
+23. **M5.8.2 通用自然语言路由与查询形态收口** ✅ COMPLETE — Question Router、八类 Query Shape、minimal clarification、安全 calculator/help/system-info、dimension-only/Top1/member-set/bounded trend
+24. **M5.8.3 MCP-driven ModelSemanticContext** ⏳ NOT STARTED — 任意 PBIX 通用语义适配；不得以 global ontology/RAG 替代 runtime authority
+25. **M5.9 MCP performance/resilience** ⏳ NOT STARTED — profiling/cache/session reuse、bounded concurrency/queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak；不改 Semantic/DAX/VerifiedFactSet authority
+26. **M5.10 固定专业销售报表模板与两模板选择** ⏳ NOT STARTED — 简易模板保留 M5.7 优化后的 `sales_report.html`；销售模板使用确定性专业版式并显式选择；只有全部门禁完成后才允许 M5 FINAL
 
 ## 十二、MVP 暂不包含
 
@@ -374,4 +377,4 @@ MVP 达到以下条件即可视为成功：
 
 M5.10 已纳入正式路线：用户可明确选择“简易模板”或“销售模板”。销售模板可以包含 sales-specific section，但只消费 runtime schema 与 VerifiedFactSet 已证明的事实；缺少 Forecast/Goal/Pipeline 时必须用当前模型真实支持的销售 section 替代，禁止伪造。任何模板均不允许 LLM 临场生成 HTML/CSS/SVG。
 
-*修订日期：2026-08-27 | M5.7.1 COMPLETE；M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*修订日期：2026-08-28 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

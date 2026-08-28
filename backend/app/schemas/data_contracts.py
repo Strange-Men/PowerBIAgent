@@ -37,7 +37,7 @@ class FilterCapabilityStatus(str, Enum):
 FILTER_OPERATOR_CAPABILITIES: dict[FilterOperator, FilterCapabilityStatus] = {
     operator: (
         FilterCapabilityStatus.SUPPORTED
-        if operator == FilterOperator.EQ
+        if operator in {FilterOperator.EQ, FilterOperator.IN_SET}
         else FilterCapabilityStatus.NOT_VERIFIED
     )
     for operator in FilterOperator
@@ -163,10 +163,24 @@ class SemanticModelSchema(BaseModel):
 # QueryPlan
 # =============================================================================
 
+class QueryShape(str, Enum):
+    """Deterministic query result shape; never a semantic object authority."""
+
+    SCALAR = "scalar"
+    ENTITY_LIST = "entity_list"
+    GROUPED = "grouped"
+    RANKING = "ranking"
+    MEMBER_SET = "member_set"
+    FILTERED_AGGREGATION = "filtered_aggregation"
+    TREND = "trend"
+    BOUNDED_TREND = "bounded_trend"
+
+
 class QueryPlan(BaseModel):
     """查询计划 — 从意图到结构化查询的描述"""
     normalized_question: str = Field(..., min_length=1)
     semantic_model_key: str = Field(..., min_length=1)
+    query_shape: Optional[QueryShape] = None
     measures: list[str] = Field(default_factory=list)
     dimensions: list[str] = Field(default_factory=list)
     filters: list[StructuredFilter] = Field(default_factory=list)

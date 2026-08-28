@@ -26,6 +26,7 @@ class StructuredPresentationBuilder:
     """Create UI blocks from one already verified QueryResult/FactSet pair."""
 
     _DATA_FACT_TYPES = frozenset({
+        FactType.ENTITY_VALUE,
         FactType.SCALAR_METRIC,
         FactType.GROUPED_METRIC,
         FactType.RANKING,
@@ -55,12 +56,13 @@ class StructuredPresentationBuilder:
         blocks: list[object] = [TextPresentationBlock(content=answer_text)]
 
         grouped = facts.by_type(FactType.GROUPED_METRIC)
-        if grouped and dataset.rows:
+        entities = facts.by_type(FactType.ENTITY_VALUE)
+        if (grouped or entities) and dataset.rows:
             blocks.append(
                 TablePresentationBlock(data_reference=result.result_id)
             )
-            first = grouped[0]
-            if len(first.source_fields) >= 2:
+            first = grouped[0] if grouped else None
+            if first is not None and len(first.source_fields) >= 2:
                 x_field = first.source_fields[0]
                 y_field = first.source_fields[-1]
                 y_index = dataset.columns.index(y_field)

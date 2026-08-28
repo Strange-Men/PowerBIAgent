@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.8.1 — 前置性能加速与本地 MCP 会话复用（COMPLETE）
+> **状态：** M5.8.2 — 通用自然语言路由与查询形态收口（COMPLETE）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -45,7 +45,8 @@
 | **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
 | **M5.8.1** | **前置性能加速与本地 MCP 会话复用** | **✅ COMPLETE** |
-| **M5.8.2** | **自然语言路由与业务语义层增强** | **⏳ NOT STARTED** |
+| **M5.8.2** | **通用自然语言路由与查询形态收口** | **✅ COMPLETE** |
+| **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **⏳ NOT STARTED** |
 | **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
@@ -199,7 +200,8 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - **M5.7.2** 已完成 Report Template Gate 前移、Template/Renderer Registry、简易模板视觉与信息架构最终修复。
 - **M5.8** 已完成并冻结 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek + Kimi-K2.6、request/conversation-scoped model selection 与同一 authority/regression contract。
 - **M5.8.1** 已完成安全 profiling、Local MCP application-owned session reuse、非事实 metadata/member 短 TTL bounded cache、singleflight 与最小 bounded concurrency；未引入 Redis，未缓存事实/答案/DAX/QueryPlan。
-- **M5.8.2** 只处理自然语言路由与业务语义层增强，状态为 NOT STARTED。
+- **M5.8.2** 已完成 Question Router、八类 Query Shape、shape-specific required slots、minimal clarification、安全 calculator/help/system-info、dimension-only/Top1/member-set/bounded trend 与跨域语义防火墙；非业务 turn ZERO schema/member/DAX/semantic Memory mutation。
+- **M5.8.3** 只处理 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配，状态为 NOT STARTED。
 - **M5.9** 继续处理完整 queue/backpressure、20/50/100 concurrency、restart/fault matrix 与 soak；不得降低 factual validation 或修改 Semantic/DAX/VerifiedFactSet authority。
 - **M5.10** 必须晚于 M5.9，只增加固定专业销售报表模板和显式两模板选择。“简易模板”是 M5.7 优化后的现有 `sales_report.html`；“销售模板”使用确定性专业版式。两者都只消费 VerifiedFactSet/ReportData/ReportSpec，不允许 LLM 生成 HTML/CSS/SVG、查询或事实。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
 - 每个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
@@ -280,6 +282,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.8.1 已完成；M5.8.2、完整 M5.9 与 M5.10 保持 NOT STARTED；M5 FINAL=false。
+- M5.8.2 已完成；M5.8.3、完整 M5.9 与 M5.10 保持 NOT STARTED；M5 FINAL=false。
 
-*最后更新：2026-08-28 | M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-28 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

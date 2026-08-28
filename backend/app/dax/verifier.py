@@ -104,7 +104,7 @@ class RestrictedDAXVerifier:
 
         expected_filters: list[_ObservedFilter] = []
         for item in plan.filters:
-            if item.operator != FilterOperator.EQ:
+            if item.operator not in {FilterOperator.EQ, FilterOperator.IN_SET}:
                 errors.append("dax_filter_operator_not_supported")
                 continue
             owners = column_owners.get(item.field, set())
@@ -114,14 +114,28 @@ class RestrictedDAXVerifier:
             if len(owners) != 1 or item.field in measure_owners:
                 errors.append("dax_filter_ownership_not_unique")
                 continue
-            expected_filters.append(_ObservedFilter(
-                _Ref(next(iter(owners)), item.field),
-                self._canonical_value(
+            canonical_value = (
+                tuple(
+                    self._canonical_value(
+                        value,
+                        self._column_type(
+                            schema, next(iter(owners)), item.field
+                        ),
+                    )
+                    for value in item.value
+                )
+                if item.operator == FilterOperator.IN_SET
+                and isinstance(item.value, (list, tuple))
+                else self._canonical_value(
                     item.value,
                     self._column_type(
                         schema, next(iter(owners)), item.field
                     ),
-                ),
+                )
+            )
+            expected_filters.append(_ObservedFilter(
+                _Ref(next(iter(owners)), item.field),
+                canonical_value,
             ))
         if parsed.filters != expected_filters:
             if any(item not in expected_filters for item in parsed.filters):
@@ -229,8 +243,13 @@ class RestrictedDAXVerifier:
                 filter_ref = self._qualified_ref(treatas_args[1])
                 if value_match is None or filter_ref is None:
                     raise RestrictedDAXParseError("dax_filter_structure_not_verifiable")
+                literal_parts = self._split(value_match.group(1))
+                parsed_values = tuple(
+                    self._parse_literal(item) for item in literal_parts
+                )
                 parsed.filters.append(_ObservedFilter(
-                    filter_ref, self._parse_literal(value_match.group(1))
+                    filter_ref,
+                    parsed_values[0] if len(parsed_values) == 1 else parsed_values,
                 ))
                 index += 1
                 continue
@@ -259,6 +278,8 @@ class RestrictedDAXVerifier:
             raise RestrictedDAXParseError(
                 "dax_summarizecolumns_filter_after_name_expression"
             )
+        if not remaining and parsed.dimensions:
+            return parsed
         if not remaining:
             raise RestrictedDAXParseError("dax_measure_expression_not_allowed")
         if len(remaining) % 2:

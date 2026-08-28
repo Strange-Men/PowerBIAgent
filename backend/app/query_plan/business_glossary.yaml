@@ -19,6 +19,20 @@ measures:
       - 销售数量
       - 件数
       - 多少件
+  Total Orders:
+    table_name: Sales
+    object_type: measure
+    required: false
+    aliases:
+      - 订单数
+      - 总订单数
+  Average Order Value:
+    table_name: Sales
+    object_type: measure
+    required: false
+    aliases:
+      - 平均订单金额
+      - 平均订单额
 
 fields:
   Category:
@@ -33,6 +47,10 @@ fields:
     aliases:
       - 产品
       - 商品
+    member_aliases:
+      手机: 手机
+      笔记本: 笔记本
+      电脑: 电脑
   OrderDate:
     table_name: Sales
     object_type: field

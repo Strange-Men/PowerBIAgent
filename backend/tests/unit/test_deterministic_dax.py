@@ -11,6 +11,7 @@ from backend.app.schemas.data_contracts import (
     ColumnSchema,
     FilterOperator,
     MeasureSchema,
+    QueryShape,
     SemanticModelSchema,
     StructuredFilter,
     TableSchema,
@@ -90,6 +91,32 @@ def test_filter_without_dimension_never_becomes_group_by():
     request = _build(plan)
     assert "TREATAS({\"Furniture\"}, 'Sales'[Category])" in request.dax
     assert request.dax.index("TREATAS") < request.dax.index('"Total Sales"')
+    assert _layer3(request, plan).is_valid
+
+
+def test_entity_list_builds_dimension_only_distinct_query():
+    plan = _plan(
+        query_shape=QueryShape.ENTITY_LIST,
+        measures=[],
+        dimensions=["Product"],
+    )
+
+    request = _build(plan)
+
+    assert request.dax == "EVALUATE\nSUMMARIZECOLUMNS(\n    'Sales'[Product]\n)"
+    assert _layer3(request, plan).is_valid
+
+
+def test_in_set_filter_is_literalized_and_independently_verified():
+    plan = _plan(filters=[StructuredFilter(
+        field="Product",
+        operator=FilterOperator.IN_SET,
+        value=["Phone", "Laptop"],
+    )])
+
+    request = _build(plan)
+
+    assert 'TREATAS({"Phone", "Laptop"}, \'Sales\'[Product])' in request.dax
     assert _layer3(request, plan).is_valid
 
 

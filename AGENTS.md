@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.8.1 — 前置性能加速与本地 MCP 会话复用（COMPLETE）**。M5.8 已完成并冻结；M5.8.2、M5.9、M5.10 尚未开始，M5 FINAL=false。
+当前版本：**M5.8.2 — 通用自然语言路由与查询形态收口（COMPLETE）**。M5.8/M5.8.1 保持冻结；M5.8.3、M5.9、M5.10 尚未开始，M5 FINAL=false。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -45,7 +45,8 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.7.2** 已将 Report Template Gate 集中前移至 Intent 后、任何 schema/QueryPlan/DAX/ReportData/ReportSpec/Renderer/artifact 前；建立后端 Template/Renderer Registry 与只读模板目录 API，前端改为消费后端目录并清理 stale selection；简易模板完成 4 KPI、趋势、区域/品类、Top 产品、关键明细、footer 的固定信息架构，以及 Y 轴、nice ticks、gridlines、15 月完整桌面标签和确定性小屏跨年双层 tick。**M5.7.2 COMPLETE。**
 - **M5.8** 已完成共享 `OpenAICompatibleLLMProvider`、不可变 `LLMModelProfile`、DeepSeek + Kimi-K2.6、request/conversation-scoped model selection、统一 error/usage/trace 与前端模型选择器。Rich PBIX 双模型 canonical/result、并发隔离、mid-conversation switch、unknown/unsupported、固定报表与 residual=0 验收通过；未混入 MCP 性能优化。**M5.8 COMPLETE。**
 - **M5.8.1** 已完成前置性能加速与本地 MCP 会话复用：安全 monotonic profiling、application-owned Local MCP session reuse、非事实 metadata/member 短 TTL bounded cache、per-key async singleflight 与最小 MCP 并发保护均已落地；未引入 Redis，未缓存答案/QueryResult/VerifiedFactSet/DAX 结果/Canonical QueryPlan，M5.8 Provider 与 Semantic/DAX/Report authority 保持冻结。**M5.8.1 COMPLETE。**
-- **M5.8.2** 负责自然语言路由与业务语义层增强；不得混入 M5.8.1。**M5.8.2 NOT STARTED。**
+- **M5.8.2** 已完成 code-owned Question Router、通用 Query Shape、shape-specific required slots、minimal clarification、安全 calculator/help/system-info、dimension-only distinct、Top1、runtime-validated member set/`IN_SET` 与 bounded month trend；非业务 turn 在 schema/member/DAX 前终止且不污染 semantic Memory。M5.8.1 保持冻结。**M5.8.2 COMPLETE。**
+- **M5.8.3** 负责 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配。**M5.8.3 NOT STARTED。**
 - **M5.9** 只负责 MCP profiling、session reuse、cache、bounded concurrency、bounded queue/backpressure、20/50/100 concurrency 与 restart/fault/soak；不得修改 Semantic/DAX/VerifiedFactSet authority。**M5.9 NOT STARTED。**
 - **M5.10** 只负责“简易模板/销售模板”显式选择与固定专业销售模板；两者都遵守 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed renderer`。**M5.10 NOT STARTED。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。**
 
@@ -122,7 +123,7 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 40. M5.7：任何 report intent/request 必须显式拥有 registry-valid `report_template_key`。missing/invalid/stale template 必须 clarification/template-required 且 ZERO ReportData assembly、ZERO ReportSpec、ZERO renderer、ZERO HTML artifact；禁止默认 `sales_report`、猜模板或 fallback 第一项。当前唯一公开模板 `sales_report` 的展示名固定为“简易模板”。
 41. M5.7：前端 template selector 只提供显式 choice，不判断用户 intent、不增加 Chat/Report 模式切换；未选模板时不得发送 report request 的隐式 default。Renderer 只消费已验证 ReportData/ReportSpec，不计算业务指标、不查询 Power BI、不调用 LLM、不修改 Memory。
 42. M5.8：只允许 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection；共用同一 authority/regression contract，现已完成并冻结。
-43. M5.8.1：只允许安全 profiling、application-owned Local MCP session reuse、tool/discovery/probe/schema/member 短 TTL bounded cache、per-key async singleflight 与最小 bounded concurrency；禁止 Redis、factual result cache、Semantic Plan cache、语义/DAX/Provider/Report/前端业务改动。M5.8.2：只负责自然语言路由与业务语义层增强，尚未开始。
+43. M5.8.1：只允许安全 profiling、application-owned Local MCP session reuse、tool/discovery/probe/schema/member 短 TTL bounded cache、per-key async singleflight 与最小 bounded concurrency；禁止 Redis、factual result cache、Semantic Plan cache、语义/DAX/Provider/Report/前端业务改动。M5.8.2 已完成自然语言路由与通用 Query Shape；M5.8.3 才负责 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配，尚未开始。
 44. M5.9：保留完整 MCP performance/resilience：bounded queue/backpressure、20/50/100 concurrency、restart/fault matrix 与 soak；禁止修改 Semantic/DAX/VerifiedFactSet authority。
 45. M5.10：只允许固定专业销售模板与“简易模板/销售模板”显式选择；禁止 LLM 临场生成 HTML/CSS/SVG。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
 46. M5.7.1：日期角色选择优先级固定为用户显式指定 → model-scoped metadata → runtime relationship/default temporal role（仅在可唯一证明时）→ clarification。不得以“模型只有一个 Date/DateTime 字段”为正常执行前提，也不得在多日期角色无唯一证据时猜测。
@@ -161,4 +162,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-28 | M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-08-28 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

@@ -12,6 +12,7 @@ from backend.app.schemas.data_contracts import (
     ColumnSchema,
     DAXRequest,
     FilterOperator,
+    QueryShape,
     SemanticModelSchema,
 )
 
@@ -90,8 +91,10 @@ class DeterministicDAXBuilder:
             raise DAXBuildError("dax_builder_model_mismatch")
         if plan.comparison_mode is not None:
             raise DAXBuildError("dax_builder_comparison_unsupported")
-        if not plan.measures:
+        if not plan.measures and plan.query_shape != QueryShape.ENTITY_LIST:
             raise DAXBuildError("dax_builder_measure_required")
+        if plan.query_shape == QueryShape.ENTITY_LIST and not plan.dimensions:
+            raise DAXBuildError("dax_builder_entity_list_dimension_required")
         if len(set(plan.measures)) != len(plan.measures):
             raise DAXBuildError("dax_builder_duplicate_measure")
         if len(set(plan.dimensions)) != len(plan.dimensions):
@@ -118,12 +121,22 @@ class DeterministicDAXBuilder:
             self._qualified(table, name) for name, table, _ in dimensions
         ]
         for item in plan.filters:
-            if item.operator != FilterOperator.EQ:
+            if item.operator not in {FilterOperator.EQ, FilterOperator.IN_SET}:
                 raise DAXBuildError("dax_builder_filter_operator_unsupported")
             table, column = ownership.column(
                 item.field, table=dimension_hints.get(item.field)
             )
-            literal = self._literal(item.value, column.data_type)
+            values = (
+                item.value
+                if item.operator == FilterOperator.IN_SET
+                and isinstance(item.value, (list, tuple))
+                else [item.value]
+            )
+            if item.operator == FilterOperator.IN_SET and not values:
+                raise DAXBuildError("dax_builder_in_set_values_required")
+            literal = ", ".join(
+                self._literal(value, column.data_type) for value in values
+            )
             arguments.append(
                 f"TREATAS({{{literal}}}, {self._qualified(table, item.field)})"
             )

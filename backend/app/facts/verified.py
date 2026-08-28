@@ -26,6 +26,7 @@ from backend.app.schemas.data_contracts import (
 
 
 class FactType(str, Enum):
+    ENTITY_VALUE = "entity_value"
     SCALAR_METRIC = "scalar_metric"
     GROUPED_METRIC = "grouped_metric"
     RANKING = "ranking"
@@ -134,6 +135,21 @@ class VerifiedFactSetBuilder:
                     source_rows=[row_index],
                     operation="direct_result_projection",
                     measure=measure,
+                    dimensions=dimensions,
+                    filters=plan.filters,
+                    time_range=plan.time_range,
+                    result=result,
+                    plan_semantics=plan_semantics,
+                ))
+            if plan.dimensions and not plan.measures:
+                facts.append(self._fact(
+                    fact_set_id,
+                    len(facts),
+                    FactType.ENTITY_VALUE,
+                    value=dimensions,
+                    source_fields=list(dimension_fields),
+                    source_rows=[row_index],
+                    operation="direct_distinct_entity_projection",
                     dimensions=dimensions,
                     filters=plan.filters,
                     time_range=plan.time_range,
@@ -384,6 +400,10 @@ class FactBoundedAnswerBuilder:
                 f"TopN结果共返回{len(ranking.values)}项；首项为{dimension_text}，"
                 f"{measure_label}为{self._format_value(first['value'], measure_field, formatter, bindings)}。"
             )
+        elif plan.dimensions and not plan.measures:
+            entities = facts.by_type(FactType.ENTITY_VALUE)
+            used.extend(entities)
+            parts.append(f"共返回{result.row_count}项，完整列表见表格。")
         elif plan.dimensions:
             grouped = facts.by_type(FactType.GROUPED_METRIC)
             primary = [

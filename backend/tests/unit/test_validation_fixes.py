@@ -1652,10 +1652,13 @@ class TestM24QueryPlanSemanticGrounding:
         assert FILTER_OPERATOR_CAPABILITIES[FilterOperator.EQ] == (
             FilterCapabilityStatus.SUPPORTED
         )
+        assert FILTER_OPERATOR_CAPABILITIES[FilterOperator.IN_SET] == (
+            FilterCapabilityStatus.SUPPORTED
+        )
         assert all(
             status == FilterCapabilityStatus.NOT_VERIFIED
             for operator, status in FILTER_OPERATOR_CAPABILITIES.items()
-            if operator != FilterOperator.EQ
+            if operator not in {FilterOperator.EQ, FilterOperator.IN_SET}
         )
 
     def test_numeric_column_cannot_be_used_as_measure(self):

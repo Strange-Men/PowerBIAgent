@@ -1,6 +1,6 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立
+> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立
 > **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.10（含 M5.7.1 / M5.7.2 / M5.8.1 / M5.8.2）
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
@@ -224,7 +224,11 @@ M5.7.2 状态为 COMPLETE，只负责 Report Template Gate 前移、Template/Ren
 
 ### M5.8.2 — 自然语言路由与业务语义层增强
 
-状态为 NOT STARTED。用户列出的产品/订单/平均订单金额/能力范围/基础数学/month trend language 等自然语言与业务语义问题只属于本阶段，不得在 M5.8.1 通过 regex、alias、ontology 或 routing 顺手修复。
+状态为 COMPLETE。Question Router 只决定产品能力类别；非业务 turn 在正式 Grounding 前返回并保持 ZERO schema/member/DAX/semantic Memory mutation。业务问题由领域无关 Query Shape 决定 required slots，canonical identity 与事实仍只来自 runtime catalog/member、Grounding/StateTransition、Deterministic DAX、QueryResult 与 VerifiedFactSet。已实现 dimension-only、Top1、runtime-validated member set/`IN_SET`、filtered aggregation、bounded trend、minimal clarification 与多轮 shape 继承。
+
+### M5.8.3 — MCP-driven ModelSemanticContext
+
+状态为 NOT STARTED。任意 PBIX 自动形成 model semantic context/business binding、通用 runtime semantic adaptation 只属于本阶段；不得以 global glossary、ontology、RAG、embedding、vector DB 或 knowledge graph 绕过 runtime authority。
 
 ### M5.9 — MCP performance and resilience
 
@@ -371,6 +375,8 @@ M5.8 已完成共享 OpenAI-compatible Provider、不可变 DeepSeek/Kimi profil
 
 M5.8.1 已完成 application-owned Local MCP session、session-local tool discovery、identity/generation/fingerprint-scoped metadata/member TTL cache、cancellation-safe singleflight、最小 bounded concurrency 与安全 monotonic stage trace。优化后 metadata discovery cold/warm `3782/0ms`、schema `422/156ms`、member `515/172ms`，DAX 两次真实执行 `485/515ms`；full-turn 冷启动旅程 `18172ms`，稳定热态 10 轮 `13000ms`，4 路小并发 `3719ms`。Rich PBIX canonical plan/DAX/QueryResult/Memory/Report 不变且 residual=0；Semantic Compatibility `306 passed`、backend `1950 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped` 与全部治理通过。未引入 Redis 或 factual/semantic result cache，未开发 M5.8.2、完整 M5.9 或 M5.10。
 
+M5.8.2 已完成 Question Router、八类通用 Query Shape、shape-specific clarification、安全 calculator/help/system-info、dimension-only distinct、Top1、runtime-validated `IN_SET` 与 bounded month range。Sales/Education/Inventory/unknown holdout、schema mutation、unknown/unresolved ZERO DAX 与 15 项 Rich PBIX Real 题集通过，residual=0；Semantic Compatibility `421 passed`、backend `2046 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped` 与全部治理通过。M5.8.3/M5.9/M5.10 未开发，M5 FINAL=false。
+
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-08-28 M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*创建日期：2026-08-26 | 最后更新：2026-08-28 M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

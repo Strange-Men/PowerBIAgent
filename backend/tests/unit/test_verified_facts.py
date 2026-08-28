@@ -19,6 +19,7 @@ from backend.app.schemas.data_contracts import (
     AnswerSpec,
     CanonicalQueryPlan,
     QueryResult,
+    QueryShape,
     StructuredFilter,
     TimeRangeMode,
     TimeRangeSpec,
@@ -59,6 +60,25 @@ def test_scalar_fact_has_direct_row_provenance():
     assert metric.source_rows == [0]
     assert metric.provenance.result_id == "result-1"
     assert metric.provenance.source_mode == "real"
+
+
+def test_entity_list_is_verified_and_presented_without_a_measure():
+    plan = _plan(
+        query_shape=QueryShape.ENTITY_LIST,
+        measures=[],
+        dimensions=["Product"],
+    )
+    result = _result(["Sales[Product]"], [["Phone"], ["Laptop"]])
+
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    answer = FactBoundedAnswerBuilder().build(plan, result, facts)
+
+    assert [item.value for item in facts.by_type(FactType.ENTITY_VALUE)] == [
+        {"Product": "Phone"},
+        {"Product": "Laptop"},
+    ]
+    assert "共返回2项" in answer.answer
+    assert FactOutputValidator().validate_answer(answer, facts) == []
 
 
 def test_grouped_facts_and_result_set_extrema_are_deterministic():

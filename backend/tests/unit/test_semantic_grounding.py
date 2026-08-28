@@ -13,6 +13,7 @@ from backend.app.intent.models import (
     TimeIntentKind,
     TurnRelation,
 )
+from backend.app.intent.question_router import QuestionRouter
 from backend.app.memory.models import (
     MemoryStatus,
     PendingClarificationContext,
@@ -52,6 +53,7 @@ from backend.app.schemas.data_contracts import (
     ColumnSchema,
     MeasureSchema,
     QueryPlan,
+    QueryShape,
     RelationshipSchema,
     SemanticModelSchema,
     StructuredFilter,
@@ -2118,6 +2120,581 @@ class TestM55SchemaMutationGate:
         assert ObjectGrounder(no_alias).find_mentions(
             "现行指标", SemanticObjectType.MEASURE, "measure"
         ).status == GroundingStatus.NOT_MENTIONED
+
+
+class TestM582QueryShapes:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        (
+            "model_key", "table_name", "measure_name", "measure_alias",
+            "member_field", "member_field_alias", "member_values",
+            "ranking_field", "ranking_alias",
+        ),
+        [
+            (
+                "sales_fixture", "SalesFacts", "NetRevenue", "销售额",
+                "MarketArea", "区域", (("华南", "South"), ("华东", "East")),
+                "SkuName", "产品",
+            ),
+            (
+                "education_fixture", "LearningFacts", "LearnerCount", "学生数量",
+                "CampusNode", "校区", (("东校区", "East Campus"), ("西校区", "West Campus")),
+                "CourseNode", "课程",
+            ),
+            (
+                "inventory_fixture", "StockFacts", "OnHand", "当前库存",
+                "DepotNode", "仓库", (("甲仓", "Depot-A"), ("乙仓", "Depot-B")),
+                "ItemClass", "品类",
+            ),
+            (
+                "holdout_7f31c9", "Fact_Q7", "Metric_Q7", "有效载荷",
+                "Node_Q7", "节点", (("青节点", "node-green"), ("蓝节点", "node-blue")),
+                "Band_Q7", "层级",
+            ),
+        ],
+    )
+    async def test_core_query_shapes_are_grounded_from_each_runtime_catalog(
+        self,
+        model_key,
+        table_name,
+        measure_name,
+        measure_alias,
+        member_field,
+        member_field_alias,
+        member_values,
+        ranking_field,
+        ranking_alias,
+    ):
+        alias_map = dict(member_values)
+        catalog, runtime_members = _m55_domain_catalog(
+            model_key=model_key,
+            table_name=table_name,
+            measure_name=measure_name,
+            measure_alias=measure_alias,
+            member_field=member_field,
+            member_field_alias=member_field_alias,
+            member_aliases=alias_map,
+            member_suffixes=[member_field_alias],
+            ranking_field=ranking_field,
+            ranking_alias=ranking_alias,
+            runtime_members=list(alias_map.values()),
+            include_month_group=True,
+        )
+
+        async def lookup(field, limit):
+            assert limit == 100
+            assert field.canonical_name == member_field
+            return ColumnMembersResult(
+                semantic_model_key=model_key,
+                table_name=table_name,
+                field_name=member_field,
+                values=runtime_members,
+                source_mode="real",
+            )
+
+        cases = [
+            (
+                f"{measure_alias}是多少",
+                QueryShape.SCALAR,
+                [measure_name],
+                None,
+            ),
+            (
+                f"有哪些{ranking_alias}",
+                QueryShape.ENTITY_LIST,
+                None,
+                [ranking_field],
+            ),
+            (
+                f"各{ranking_alias}{measure_alias}",
+                QueryShape.GROUPED,
+                [measure_name],
+                [ranking_field],
+            ),
+            (
+                f"{measure_alias}最高的是哪个{ranking_alias}",
+                QueryShape.RANKING,
+                [measure_name],
+                [ranking_field],
+            ),
+            (
+                f"{member_values[0][0]}和{member_values[1][0]}的"
+                f"{measure_alias}分别是多少",
+                QueryShape.MEMBER_SET,
+                [measure_name],
+                [member_field],
+            ),
+            (
+                f"过去12个月{measure_alias}趋势",
+                QueryShape.TREND,
+                [measure_name],
+                ["PeriodBucket"],
+            ),
+        ]
+
+        for question, shape, measures, dimensions in cases:
+            outcome = await SemanticGroundingService(
+                catalog, today=lambda: date(2026, 8, 28)
+            ).ground(
+                question,
+                _intent(
+                    normalized_question=question,
+                    detected_measures=([measure_alias] if measures else []),
+                    detected_dimensions=(
+                        [ranking_alias]
+                        if dimensions == [ranking_field]
+                        else []
+                    ),
+                    detected_time_range=(
+                        "过去12个月" if shape == QueryShape.TREND else None
+                    ),
+                ),
+                QueryPlan(
+                    normalized_question=question,
+                    semantic_model_key=model_key,
+                    measures=(measures or []),
+                    dimensions=(
+                        [ranking_field]
+                        if dimensions == [ranking_field]
+                        else []
+                    ),
+                ),
+                None,
+                lookup,
+                query_shape=shape,
+            )
+
+            assert outcome.status == GroundingStatus.RESOLVED, (
+                model_key, question, outcome
+            )
+            assert outcome.delta is not None
+            assert outcome.delta.query_shape == shape
+            assert outcome.delta.measures == measures
+            assert outcome.delta.dimensions == dimensions
+            if shape == QueryShape.RANKING:
+                assert outcome.delta.top_n == 1
+                assert outcome.delta.sort == "desc"
+            if shape == QueryShape.MEMBER_SET:
+                assert outcome.delta.filters == [StructuredFilter(
+                    field=member_field,
+                    operator="in",
+                    value=list(alias_map.values()),
+                )]
+
+    def test_optional_rich_sales_measure_aliases_are_runtime_validated(self):
+        schema = _schema()
+        schema.tables[0].measures.extend([
+            MeasureSchema(name="Total Orders", data_type="Int64"),
+            MeasureSchema(name="Average Order Value", data_type="Double"),
+        ])
+        catalog = SemanticCatalogBuilder().build(schema)
+        grounder = ObjectGrounder(catalog)
+
+        orders = grounder.find_mentions(
+            "总订单数是多少", SemanticObjectType.MEASURE, "measure"
+        )
+        average = grounder.find_mentions(
+            "平均订单金额是多少", SemanticObjectType.MEASURE, "measure"
+        )
+
+        assert orders.canonical_object is not None
+        assert orders.canonical_object.canonical_name == "Total Orders"
+        assert average.canonical_object is not None
+        assert average.canonical_object.canonical_name == "Average Order Value"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        (
+            "model_key", "table_name", "measure_name", "measure_alias",
+            "ranking_field", "ranking_alias", "question",
+        ),
+        [
+            (
+                "education_fixture", "LearningFacts", "AverageScore", "平均分",
+                "StudentNode", "学生", "平均分最高的是哪个学生",
+            ),
+            (
+                "inventory_fixture", "StockFacts", "OnHand", "当前库存",
+                "WarehouseNode", "仓库", "当前库存最低的是哪个仓库",
+            ),
+            (
+                "holdout_7f31c9", "Fact_Q7", "Metric_Q7", "有效载荷",
+                "Band_Q7", "层级", "有效载荷最高的是哪个层级",
+            ),
+        ],
+    )
+    async def test_top_one_shape_is_cross_domain(
+        self,
+        model_key,
+        table_name,
+        measure_name,
+        measure_alias,
+        ranking_field,
+        ranking_alias,
+        question,
+    ):
+        catalog, _ = _m55_domain_catalog(
+            model_key=model_key,
+            table_name=table_name,
+            measure_name=measure_name,
+            measure_alias=measure_alias,
+            member_field="FilterNode",
+            member_field_alias="筛选项",
+            member_aliases={},
+            member_suffixes=["筛选项"],
+            ranking_field=ranking_field,
+            ranking_alias=ranking_alias,
+            runtime_members=[],
+        )
+
+        async def no_lookup(*_):
+            raise AssertionError("ranking must not query members")
+
+        outcome = await SemanticGroundingService(catalog).ground(
+            question,
+            _intent(detected_measures=[measure_alias], detected_dimensions=[ranking_alias]),
+            QueryPlan(
+                normalized_question=question,
+                semantic_model_key=model_key,
+                measures=[measure_name],
+                dimensions=[ranking_field],
+            ),
+            None,
+            no_lookup,
+            query_shape=QueryShape.RANKING,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.measures == [measure_name]
+        assert outcome.delta.dimensions == [ranking_field]
+        assert outcome.delta.top_n == 1
+        assert outcome.delta.sort in {"asc", "desc"}
+
+    @pytest.mark.asyncio
+    async def test_entity_list_resolves_dimension_without_measure_or_member_lookup(self):
+        async def no_lookup(*_):
+            raise AssertionError("entity list must not query members")
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "我们销售了哪些产品？",
+            _intent(detected_dimensions=["产品"]),
+            _draft(dimensions=["Product"], query_shape=QueryShape.ENTITY_LIST),
+            None,
+            no_lookup,
+            query_shape=QueryShape.ENTITY_LIST,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.query_shape == QueryShape.ENTITY_LIST
+        assert outcome.delta.measures is None
+        assert outcome.delta.dimensions == ["Product"]
+
+        transition = StateTransitionService().merge(
+            _draft(query_shape=QueryShape.ENTITY_LIST),
+            outcome.delta,
+            None,
+            inheritance_mode=InheritanceMode.FRESH_QUESTION,
+        )
+        assert transition.query_plan.measures == []
+        assert transition.query_plan.dimensions == ["Product"]
+        assert transition.query_plan.query_shape == QueryShape.ENTITY_LIST
+
+    @pytest.mark.asyncio
+    async def test_implicit_extreme_is_top_one_with_proven_dimension(self):
+        async def no_lookup(*_):
+            raise AssertionError("ranking dimension must not query members")
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "销量最高的是哪款产品？",
+            _intent(detected_measures=["销量"], detected_dimensions=["产品"]),
+            _draft(measures=["Total Quantity"], dimensions=["Product"]),
+            None,
+            no_lookup,
+            query_shape=QueryShape.RANKING,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.measures == ["Total Quantity"]
+        assert outcome.delta.dimensions == ["Product"]
+        assert outcome.delta.sort == "desc"
+        assert outcome.delta.top_n == 1
+
+    @pytest.mark.asyncio
+    async def test_ranking_clarification_keeps_proven_dimension_and_asks_only_measure(self):
+        async def no_lookup(*_):
+            raise AssertionError("ranking dimension must not query members")
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            "哪些产品卖得最好？",
+            _intent(detected_dimensions=["产品"], detected_measures=["卖得最好"]),
+            _draft(dimensions=["Product"]),
+            None,
+            no_lookup,
+            query_shape=QueryShape.RANKING,
+        )
+        merged = PendingClarificationService().merge(
+            previous=None,
+            outcome=outcome,
+            user_input="哪些产品卖得最好？",
+            conversation_id="minimal-ranking",
+            request_id="ranking-1",
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint=compute_schema_fingerprint(_schema()),
+            runtime_mode=RuntimeDataMode.REAL,
+            intent="data_question",
+            committed=None,
+        )
+
+        assert outcome.status == GroundingStatus.UNRESOLVED
+        assert merged.context.dimensions == ["Product"]
+        assert merged.context.missing_slots == ["measure"]
+        assert merged.clarification_question == "请明确用于判断排名的业务指标。"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("question", "shape", "expected_dimensions"),
+        [
+            ("手机和笔记本的销量分别是多少？", QueryShape.MEMBER_SET, ["Product"]),
+            ("手机和电脑加起来销量是多少", QueryShape.FILTERED_AGGREGATION, None),
+        ],
+    )
+    async def test_member_set_requires_every_runtime_member(
+        self, question, shape, expected_dimensions
+    ):
+        glossary = _glossary()
+        glossary["fields"]["Product"]["member_aliases"] = {
+            "手机": "Phone",
+            "笔记本": "Laptop",
+            "电脑": "Computer",
+        }
+        catalog = _catalog(glossary)
+
+        async def lookup(field, limit):
+            assert field.canonical_name == "Product"
+            assert limit == 100
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name="Product",
+                values=["Phone", "Laptop", "Computer"],
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(catalog).ground(
+            question,
+            _intent(detected_measures=["销量"]),
+            _draft(measures=["Total Quantity"]),
+            None,
+            lookup,
+            query_shape=shape,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.dimensions == expected_dimensions
+        assert outcome.delta.filters == [StructuredFilter(
+            field="Product",
+            operator="in",
+            value=(
+                ["Phone", "Laptop"]
+                if shape == QueryShape.MEMBER_SET
+                else ["Phone", "Computer"]
+            ),
+        )]
+
+    @pytest.mark.asyncio
+    async def test_unknown_member_in_set_fails_closed(self):
+        glossary = _glossary()
+        glossary["fields"]["Product"]["member_aliases"] = {
+            "手机": "Phone",
+            "笔记本": "Laptop",
+        }
+        catalog = _catalog(glossary)
+
+        async def lookup(field, limit):
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name=field.canonical_name,
+                values=["Phone"],
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(catalog).ground(
+            "手机和笔记本的销量分别是多少？",
+            _intent(detected_measures=["销量"]),
+            _draft(measures=["Total Quantity"]),
+            None,
+            lookup,
+            query_shape=QueryShape.MEMBER_SET,
+        )
+
+        assert outcome.status == GroundingStatus.UNRESOLVED
+        assert outcome.delta is None
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "2025年8月到2026年1月",
+            "2025年8月至2026年1月",
+            "从2025年8月到2026年1月",
+            "从2025年8月至2026年1月",
+            "2025-08 到 2026-01",
+            "2025-08 ~ 2026-01",
+        ],
+    )
+    def test_bounded_month_range_variants(self, phrase):
+        field = next(
+            item for item in _catalog().objects
+            if item.canonical_name == "OrderDate"
+        )
+
+        result = TimeGrounder().ground(phrase, field)
+
+        assert result is not None
+        assert result.start_date == date(2025, 8, 1)
+        assert result.end_date == date(2026, 1, 31)
+        assert result.grain == "month"
+
+    def test_reversed_bounded_month_range_is_invalid(self):
+        field = next(
+            item for item in _catalog().objects
+            if item.canonical_name == "OrderDate"
+        )
+        assert TimeGrounder().ground("2026年1月到2025年8月", field) is None
+
+    @pytest.mark.asyncio
+    async def test_shape_and_slots_survive_generic_multiturn_sequence(self):
+        glossary = _glossary()
+        glossary["fields"]["Category"].update({
+            "aliases": ["类别", "地区"],
+            "member_aliases": {"华南": "South"},
+        })
+        catalog = _catalog(glossary)
+        grounding = SemanticGroundingService(catalog)
+        router = QuestionRouter()
+
+        async def lookup(field, limit):
+            assert field.canonical_name == "Category"
+            assert limit == 100
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name="Category",
+                values=["South", "East"],
+                source_mode="real",
+            )
+
+        def committed_from(plan, version):
+            return StructuredWorkMemory(
+                conversation_id="m582-multiturn",
+                request_id=f"m582-{version}",
+                semantic_model_key="local_desktop_model",
+                state_status=MemoryStatus.COMMITTED,
+                measures=list(plan.measures),
+                dimensions=list(plan.dimensions),
+                filters=[item.model_dump(mode="json") for item in plan.filters],
+                time_range=plan.time_range,
+                sort=plan.sort,
+                top_n=plan.top_n,
+                last_query_plan=plan.model_dump(mode="json"),
+                memory_version=version,
+            )
+
+        async def execute(
+            question,
+            *,
+            intent,
+            draft,
+            committed,
+        ):
+            decision = router.route(question)
+            outcome = await grounding.ground(
+                question,
+                intent,
+                draft.model_copy(update={"query_shape": decision.query_shape}),
+                committed,
+                lookup,
+                query_shape=decision.query_shape,
+            )
+            assert outcome.status == GroundingStatus.RESOLVED
+            assert outcome.delta is not None
+            inheritance = TurnInheritancePolicy.decide(
+                question, intent, outcome.delta, committed
+            )
+            assert not inheritance.requires_clarification
+            return StateTransitionService().merge(
+                draft,
+                outcome.delta,
+                committed,
+                inheritance_mode=inheritance.mode,
+            ).query_plan
+
+        plan = await execute(
+            "销售额是多少",
+            intent=_intent(detected_measures=["销售额"]),
+            draft=_draft(measures=["Total Sales"]),
+            committed=None,
+        )
+        assert plan.query_shape == QueryShape.SCALAR
+        memory = committed_from(plan, 1)
+
+        plan = await execute(
+            "那各地区呢",
+            intent=_intent(
+                detected_dimensions=["地区"],
+                turn_relation=TurnRelation.FOLLOW_UP,
+            ),
+            draft=_draft(dimensions=["Category"]),
+            committed=memory,
+        )
+        assert plan.query_shape == QueryShape.GROUPED
+        assert plan.measures == ["Total Sales"]
+        assert plan.dimensions == ["Category"]
+        memory = committed_from(plan, 2)
+
+        plan = await execute(
+            "最高的是哪个",
+            intent=_intent(turn_relation=TurnRelation.FOLLOW_UP),
+            draft=_draft(),
+            committed=memory,
+        )
+        assert plan.query_shape == QueryShape.RANKING
+        assert plan.measures == ["Total Sales"]
+        assert plan.dimensions == ["Category"]
+        assert plan.sort == "desc"
+        assert plan.top_n == 1
+        memory = committed_from(plan, 3)
+
+        plan = await execute(
+            "换成销量",
+            intent=_intent(
+                detected_measures=["销量"],
+                turn_relation=TurnRelation.REPLACE,
+            ),
+            draft=_draft(measures=["Total Quantity"]),
+            committed=memory,
+        )
+        assert plan.query_shape == QueryShape.RANKING
+        assert plan.measures == ["Total Quantity"]
+        assert plan.dimensions == ["Category"]
+        assert plan.top_n == 1
+        memory = committed_from(plan, 4)
+
+        plan = await execute(
+            "只看华南",
+            intent=_intent(turn_relation=TurnRelation.FOLLOW_UP),
+            draft=_draft(),
+            committed=memory,
+        )
+        assert plan.query_shape == QueryShape.RANKING
+        assert plan.filters == [StructuredFilter(field="Category", value="South")]
+        assert plan.measures == ["Total Quantity"]
+        assert plan.dimensions == ["Category"]
+        assert plan.top_n == 1
 
 
 class TestPendingClarificationContract:

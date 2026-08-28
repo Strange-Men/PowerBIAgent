@@ -36,6 +36,11 @@ from backend.app.core.performance import (
 from backend.app.harness.runtime.context_builder import ContextBuilder
 from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
+from backend.app.intent.question_router import (
+    QuestionRoute,
+    QuestionRouter,
+    QuestionRoutingDecision,
+)
 from backend.app.memory.models import (
     MemoryStatus,
     PendingClarificationContext,
@@ -123,6 +128,7 @@ class TurnPipeline:
         runtime_mode: RuntimeDataMode,
         is_mock: bool,
         llm_provider_name: str,
+        llm_display_name: str = "",
         llm_profile_key: Optional[str] = None,
         llm_model: str = "",
         llm_provider_protocol: str = "",
@@ -143,6 +149,7 @@ class TurnPipeline:
                 runtime_mode=runtime_mode,
                 is_mock=is_mock,
                 llm_provider_name=llm_provider_name,
+                llm_display_name=llm_display_name,
                 llm_profile_key=llm_profile_key,
                 llm_model=llm_model,
                 llm_provider_protocol=llm_provider_protocol,
@@ -171,6 +178,7 @@ class TurnPipeline:
         runtime_mode: RuntimeDataMode,
         is_mock: bool,
         llm_provider_name: str,
+        llm_display_name: str = "",
         llm_profile_key: Optional[str] = None,
         llm_model: str = "",
         llm_provider_protocol: str = "",
@@ -290,6 +298,45 @@ class TurnPipeline:
                 ),
             )
 
+        # Route product capabilities before Context/Memory/LLM/schema/member/DAX.
+        # Business semantics remain owned by the normal grounding callback.
+        routing = QuestionRouter().route(
+            message,
+            public_model_name=llm_display_name,
+        )
+        trace.record(
+            "question_routed",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={
+                "route": routing.route.value,
+                "query_shape": (
+                    routing.query_shape.value if routing.query_shape else None
+                ),
+            },
+        )
+        if routing.route not in {
+            QuestionRoute.BUSINESS_DATA_QUERY,
+            QuestionRoute.REPORT_REQUEST,
+        }:
+            result = self._build_direct_routing_result(
+                routing=routing,
+                request_id=effective_req_id,
+                conversation_id=effective_conv_id,
+                trace=trace,
+                trace_id=trace_id,
+                is_mock=is_mock,
+                source_mode="mock" if is_mock else "real",
+            )
+            result["llm_profile_key"] = llm_profile_key or llm_provider_name
+            result["llm_model"] = llm_model
+            result["llm_provider_protocol"] = llm_provider_protocol
+            result["user_message"] = message
+            with measure_performance("persistence"):
+                await self._save_snapshot(result, runtime_mode, fingerprint_hash)
+                await self.snapshot_store.complete(effective_req_id, runtime_mode)
+            return result
+
         # ── OWNER: 执行前准备（统一控制面） ──
         try:
             # 加载 committed memory
@@ -338,6 +385,7 @@ class TurnPipeline:
                 context=context,
                 committed=committed,
                 pending_clarification=pending_clarification,
+                question_routing=routing,
                 **execute_kwargs,
             )
             result["llm_profile_key"] = llm_profile_key or llm_provider_name
@@ -376,6 +424,7 @@ class TurnPipeline:
         usage: Optional[Any] = None,
         execution_audit: Optional[dict[str, Any]] = None,
         presentation: Optional[PresentationEnvelope] = None,
+        memory_commit: Optional[bool] = None,
     ) -> dict[str, Any]:
         """构建统一结果字典"""
 
@@ -391,7 +440,11 @@ class TurnPipeline:
             "response_type": response_type,
             "error_type": error_type,
             "tool_sequence": tool_sequence,
-            "memory_commit": terminal_state == "completed",
+            "memory_commit": (
+                terminal_state == "completed"
+                if memory_commit is None
+                else memory_commit
+            ),
             "trace_id": trace_id,
             "is_mock": is_mock,
             "source_mode": source_mode,
@@ -411,6 +464,59 @@ class TurnPipeline:
             result["unsupported_reason"] = unsupported_reason
 
         return result
+
+    def _build_direct_routing_result(
+        self,
+        *,
+        routing: QuestionRoutingDecision,
+        request_id: str,
+        conversation_id: str,
+        trace: TraceRecorder,
+        trace_id: str,
+        is_mock: bool,
+        source_mode: str,
+    ) -> dict[str, Any]:
+        """Build a terminal non-business response with no semantic mutation."""
+        audit = {
+            "capability_decision": routing.route.value,
+            "question_route": routing.route.value,
+            "query_shape": None,
+            "schema_read": False,
+            "member_lookup": False,
+            "dax_executed": False,
+            "memory_committed": False,
+        }
+        if routing.route == QuestionRoute.UNSUPPORTED_GENERAL:
+            return self.build_result(
+                request_id=request_id,
+                conversation_id=conversation_id,
+                terminal_state="unsupported",
+                intent=routing.route.value,
+                response_type="unsupported",
+                unsupported_reason=(
+                    routing.direct_answer or "该问题不属于当前产品能力范围。"
+                ),
+                trace=trace,
+                trace_id=trace_id,
+                is_mock=is_mock,
+                source_mode=source_mode,
+                execution_audit=audit,
+                memory_commit=False,
+            )
+        return self.build_result(
+            request_id=request_id,
+            conversation_id=conversation_id,
+            terminal_state="completed",
+            intent=routing.route.value,
+            response_type="answer",
+            answer_text=routing.direct_answer or "",
+            trace=trace,
+            trace_id=trace_id,
+            is_mock=is_mock,
+            source_mode=source_mode,
+            execution_audit=audit,
+            memory_commit=False,
+        )
 
     async def build_replay(
         self,

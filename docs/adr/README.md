@@ -91,10 +91,14 @@ Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code�
 
 正式正文见 [ADR-013 独立文件](ADR-013_llm_model_profiles_and_request_scoped_provider_selection.md)。核心决策：DeepSeek/Kimi 共享 OpenAI-compatible Provider；profile 是不可变协议/模型配置；每轮显式解析并固定 snapshot，禁止全局 mutable default、隐式混用与自动 fallback；provider 永不取得 semantic/DAX/factual authority。
 
+### ADR-014 — Question Routing and Query Shape Authority
+
+正式正文见 [ADR-014 独立文件](ADR-014_question_routing_and_query_shape_authority.md)。核心决策：Question Router 只分类能力且不拥有业务对象/事实权威；Query Shape 只决定 required slots；非业务请求 ZERO Power BI 与 semantic Memory mutation；dimension-only、runtime-validated member set、Top1 与 bounded trend 继续由 Canonical QueryPlan、Deterministic DAX 和独立 verifier 证明。
+
 ### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面
 
 Execution、Tooling、Context、Lifecycle、Observability、Verification、Governance 七层职责。无 Docker/LangGraph/OpenTelemetry。
 
 ---
 
-*最后更新：2026-08-27 | M5.8 新增 ADR-013 request-scoped multi-LLM selection*
+*最后更新：2026-08-28 | M5.8.2 新增 ADR-014 Question Routing 与 Query Shape authority*

@@ -47,6 +47,7 @@ from backend.app.harness.tool_registry import (
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.deepseek_service import DeepSeekIntentService
 from backend.app.intent.models import IntentSpec, IntentType
+from backend.app.intent.question_router import QuestionRoute, QuestionRoutingDecision
 from backend.app.intent.service import IntentRecognitionError
 from backend.app.intent.unsupported_policy import (
     CapabilityClass,
@@ -259,6 +260,7 @@ class LLMTurnService:
             runtime_mode=RuntimeDataMode.REAL,
             is_mock=False,
             llm_provider_name=provider_snapshot.profile.profile_key,
+            llm_display_name=provider_snapshot.profile.display_name,
             llm_profile_key=provider_snapshot.profile.profile_key,
             llm_model=provider_snapshot.profile.model,
             llm_provider_protocol=provider_snapshot.profile.provider_protocol.value,
@@ -293,6 +295,7 @@ class LLMTurnService:
         context: Optional[dict[str, Any]] = None,
         committed: Optional[StructuredWorkMemory] = None,
         pending_clarification: Optional[PendingClarificationContext] = None,
+        question_routing: QuestionRoutingDecision | None = None,
     ) -> dict[str, Any]:
         """Owner 执行 DeepSeek LLM 管线（控制面由共享 TurnPipeline 骨架提供）"""
 
@@ -334,6 +337,14 @@ class LLMTurnService:
             "request_id": effective_req_id,
             "conversation_id": effective_conv_id,
             "capability_decision": capability.value,
+            "question_route": (
+                question_routing.route.value if question_routing else None
+            ),
+            "query_shape": (
+                question_routing.query_shape.value
+                if question_routing and question_routing.query_shape
+                else None
+            ),
             "dax_executed": False,
             "memory_committed": False,
         }
@@ -445,6 +456,27 @@ class LLMTurnService:
             )
         trace.record("intent_classified", trace_id=trace_id, request_id=effective_req_id,
                      data_summary={"intent": intent.intent.value})
+
+        # The code-owned router is authoritative only for product capability.
+        # Object identities and facts remain untouched and flow to Grounding.
+        if question_routing is not None:
+            if (
+                question_routing.route == QuestionRoute.REPORT_REQUEST
+                and intent.intent != IntentType.REPORT_GENERATION
+            ):
+                routed_intent = IntentType.REPORT_GENERATION
+                intent = intent.model_copy(update={
+                    "intent": routed_intent,
+                    "needs_clarification": False,
+                    "clarification_question": None,
+                    "unsupported_reason": None,
+                })
+                trace.record(
+                    "intent_aligned_to_question_route",
+                    trace_id=trace_id,
+                    request_id=effective_req_id,
+                    data_summary={"intent": routed_intent.value},
+                )
 
         # ── 4. unsupported 可按产品契约早停；Real clarification 只作为
         # linguistic diagnostic。数据/报表范围内的 canonical semantic
@@ -665,6 +697,11 @@ class LLMTurnService:
                 collector=collector,
             )
 
+        if question_routing is not None:
+            query_plan = query_plan.model_copy(update={
+                "query_shape": question_routing.query_shape,
+            })
+
         template_grounding = DEFAULT_TEMPLATE_CATALOG.ground(
             message,
             weak_requested_template=query_plan.requested_template,
@@ -766,6 +803,11 @@ class LLMTurnService:
                         semantic_committed,
                         _member_lookup,
                         pending=pending_clarification,
+                        query_shape=(
+                            question_routing.query_shape
+                            if question_routing is not None
+                            else None
+                        ),
                     )
                 grounded_delta = grounding.delta
                 explicit_slots: list[str] = []
@@ -1303,6 +1345,7 @@ class LLMTurnService:
                             field
                             for fact in verified_facts.facts
                             if fact.fact_type in {
+                                FactType.ENTITY_VALUE,
                                 FactType.SCALAR_METRIC,
                                 FactType.GROUPED_METRIC,
                                 FactType.RANKING,

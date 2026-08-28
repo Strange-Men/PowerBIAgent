@@ -5,7 +5,7 @@
 
 ## 当前阶段
 
-**M5.8.1 — 前置性能加速与本地 MCP 会话复用（COMPLETE）。** 启动基线为 `m5/rebuild` / `117cafa0d0669d8f1d63c66cd9f87328ab54defa`，且启动时与 `origin/m5/rebuild` 一致、工作区干净；M5.8 保持冻结，M5.8.2 / M5.9 / M5.10 未开始，M5 FINAL 尚未成立。
+**M5.8.2 — 通用自然语言路由与查询形态收口（COMPLETE）。** 启动基线为 `m5/rebuild` / `c1df1fabde56b2d271dbedf0315399301614b6f7`，且启动时与 `origin/m5/rebuild` 一致、工作区干净；M5.8/M5.8.1 保持冻结，M5.8.3 / M5.9 / M5.10 未开始，M5 FINAL 尚未成立。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -32,7 +32,8 @@
 | **M5.7.2** | **Report Template Gate 前移、Template/Renderer Registry、前端模板选择 UX、简易模板视觉与信息架构最终修复** | **✅ COMPLETE** |
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
 | **M5.8.1** | **前置性能加速与本地 MCP 会话复用** | **✅ COMPLETE** |
-| **M5.8.2** | **自然语言路由与业务语义层增强** | **⏳ NOT STARTED** |
+| **M5.8.2** | **通用自然语言路由与查询形态收口** | **✅ COMPLETE** |
+| **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **⏳ NOT STARTED** |
 | **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
@@ -368,9 +369,18 @@
 - session/cache/stale/failure/cancellation/PBIX isolation 单测 `91 passed`；20 路相同 schema 与 member lookup 各只执行一次 underlying read，failure 不污染 cache，普通 DAX 连续两次均真实执行。Semantic Compatibility `306 passed`（108 production files）；backend `1950 passed, 1 skipped`；frontend `86 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Repository Safety `318`、Architecture `125`、Error Ledger `37`、Documentation/Artifact Governance、compileall 与 `git diff --check` PASS。
 - Rich PBIX Real 双 Provider acceptance 覆盖总销售额、2025 年 5 月、华南区、Top3、multi-turn、report、并发隔离与 mid-conversation switch；canonical plan、DAX、QueryResult、Memory、Report 行为不变，cross-provider plan/result digests 相同，residual=0。Answer/Report HTML/Canonical QueryPlan/DAX result/QueryResult/VerifiedFactSet 均未缓存；M5.8 Provider 与 Semantic/Time/Member/TopN/DAX/Report authority 未修改。
 
+### M5.8.2 实现与 fresh evidence（COMPLETE）
+
+- `QuestionRouter` 在共享 TurnPipeline 的 Context/LLM/schema/member/DAX 前判定能力类别；PRODUCT_HELP、SYSTEM_INFO、DETERMINISTIC_CALC 与 UNSUPPORTED_GENERAL 直接返回，保留已有 PendingClarification 且不提交 semantic Memory。REPORT_REQUEST 只对齐既有 report intent，继续由 M5.7.2 Template Gate 负责。
+- Query Shape 固定为 SCALAR、ENTITY_LIST、GROUPED、RANKING、MEMBER_SET、FILTERED_AGGREGATION、TREND、BOUNDED_TREND。required slots 按 shape 计算；dimension-only distinct、Top1、同字段 runtime-validated `IN_SET`、跨月闭区间与仅缺指标的 minimal clarification 已进入 Canonical QueryPlan、Deterministic DAX 与独立 verifier。
+- 多轮仅在当前表达明确新 shape 时替换；`销售额是多少 → 那各地区呢 → 最高的是哪个 → 换成销量 → 只看华南` 保持唯一已提交维度、ranking Top1 与明确 measure/filter 替换。non-business turn 不改变 committed 或 pending semantic state。
+- Sales/Education/Inventory/unknown holdout 的 SCALAR/ENTITY_LIST/GROUPED/RANKING/MEMBER_SET/TREND、schema mutation、unknown member/ZERO DAX 与 leakage scanner 均通过。Semantic Compatibility `421 passed`（109 production backend files）；backend `2046 passed, 1 skipped`；frontend `86 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Repository Safety `323`、Architecture `126`、Error Ledger `37`、Documentation/Artifact Governance、compileall 与 diff check PASS。
+- Rich PBIX Real 15 项题集全部通过：6 个可执行业务问题完成并提交，ambiguous ranking 只澄清 measure，2 个不存在成员的问题 runtime no-match 且 ZERO DAX，6 个 non-business 问题 ZERO schema/DAX/Memory；residual=0。M5.8.1 性能复验保持 metadata cache/session reuse，稳定 10 轮 `16156ms`、4 路并发 `4469ms`；外部 LLM 长尾未归因于 MCP。
+- 未开发 M5.8.3 ModelSemanticContext、M5.9/M5.10；未修改 Provider、M5.8.1 MCP session/cache/singleflight/concurrency 或 Report renderer/template；未引入 Redis/RAG/Ontology。M5 FINAL=false。
+
 ## 下一步
 
-M5.8.1 已完成。下一阶段为 M5.8.2 自然语言路由与业务语义层增强；完整 MCP queue/backpressure、20/50/100、fault/restart/soak 仍属于其后的 M5.9，固定专业销售模板属于 M5.10。三者均未开始，M5 FINAL=false。
+M5.8.2 已完成。下一阶段为 M5.8.3 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配；完整 MCP queue/backpressure、20/50/100、fault/restart/soak 仍属于 M5.9，固定专业销售模板属于 M5.10。三者均未开始，M5 FINAL=false。
 
 ## 关键命令
 
@@ -419,4 +429,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-28 | M5.8 / M5.8.1 COMPLETE；M5.8.2 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-28 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

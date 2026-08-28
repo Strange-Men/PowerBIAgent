@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend.app.schemas.data_contracts import StructuredFilter, TimeRangeSpec
+from backend.app.schemas.data_contracts import QueryShape, StructuredFilter, TimeRangeSpec
 
 
 class MemoryStatus(str, Enum):
@@ -66,6 +66,7 @@ class PendingClarificationContext(BaseModel):
     semantic_model_key: str
     schema_fingerprint: str = Field(min_length=64, max_length=64)
     intent: Literal["data_question", "report_generation"] = "data_question"
+    query_shape: Optional[QueryShape] = None
     measures: list[str] = Field(default_factory=list, max_length=1)
     dimensions: list[str] = Field(default_factory=list, max_length=1)
     filters: list[StructuredFilter] = Field(default_factory=list)

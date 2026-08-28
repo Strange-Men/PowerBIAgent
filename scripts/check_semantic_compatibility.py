@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import unicodedata
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -258,20 +259,29 @@ def main() -> int:
         "PYTHONUTF8": "1",
         "PYTHONIOENCODING": "utf-8",
     })
-    command = [
-        sys.executable,
-        "-m",
-        "pytest",
+    test_paths = [
+        "backend/tests/unit/test_question_routing.py",
         "backend/tests/unit/test_semantic_compatibility.py",
         "backend/tests/unit/test_semantic_grounding.py",
         "backend/tests/unit/test_intent.py",
         "backend/tests/unit/test_deterministic_dax.py",
+        "backend/tests/unit/test_verified_facts.py",
         "backend/tests/unit/test_known_answer_oracle.py",
         "backend/tests/api/test_chat.py",
         "backend/tests/integration/test_multi_turn_benchmark.py",
+    ]
+    command = [
+        sys.executable,
+        "-m",
+        "pytest",
+        *(str(ROOT / path) for path in test_paths),
         "-q",
     ]
-    result = subprocess.run(command, cwd=ROOT, env=env, check=False)
+    env["PYTHONPATH"] = str(ROOT)
+    # Run outside the repository so developer-local .env values cannot affect
+    # this deterministic CI-equivalent gate.
+    with tempfile.TemporaryDirectory(prefix="powerbiagent-semantic-") as run_dir:
+        result = subprocess.run(command, cwd=run_dir, env=env, check=False)
     if result.returncode:
         print("Semantic Compatibility Gate: FAIL")
         return result.returncode
