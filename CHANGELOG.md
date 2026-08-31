@@ -2,6 +2,15 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.8.3] — 2026-08-31（验收收口；对应提交 CI success 后 COMPLETE）
+
+- 新增不可变 ModelSemanticContext 与覆盖语言/结构证据的 metadata fingerprint。正式构建链改为 MCP runtime schema → context → validated optional override → SemanticCatalog → Grounding；QueryPlan/DAX/facts authority 保持冻结。
+- production glossary 迁移为 inert language/temporal profiles 与默认空的 exact-model registry。原订单别名、日期角色及月度 binding 仅经精确 identity/fingerprint 激活；不复制 schema，不按 PBIX 名字或结构自动批准。
+- 三个 M5.8.2 回退的原断言保持通过；扩展四种异构 runtime-only schema、Chat 五类查询形态、歧义/缺失/断开关系 ZERO DAX。长限定字段、无效 weak intent 的通用 read shape、跨对象类型名称重叠已按 runtime evidence 修复；当前 Semantic Compatibility 526 PASS，真实 MCP hierarchy level 的 `columnName` 适配已修正。
+- Rich 15、真实 Chat/Memory/facts、零配置 Simple、双 PBIX member A→B→A 与 exact-baseline 17 项事实比较均通过；warm/context/catalog/4-way 已记录，M5.8.1 架构不变。backend 2168 PASS/1 SKIP，frontend 86 PASS、Golden 11 PASS/1 manual skip。旧残留目录已确认不存在。受控 mkdtemp/finally、ownership marker/exact path/目录身份校验统一 Real/validation temp 生命周期；15 项 cleanup 回归覆盖异常、mutation、A→B→A、取消、拒绝与误删防护。常规流程不依赖人工清理，失败只做 warning + truthful residual，不冒充产品 P0 或成功。正式 COMPLETE 仍要求 fresh 全量与对应提交 CI success。详细证据见 09 Handoff。
+
+**Settings.version:** M5.8.3
+
 ## [M5.8.2] — 2026-08-28（COMPLETE）
 
 - 在共享 `TurnPipeline` 的 Semantic Grounding 前新增 code-owned Question Router，固定区分 BUSINESS_DATA_QUERY、REPORT_REQUEST、PRODUCT_HELP、SYSTEM_INFO、DETERMINISTIC_CALC 与 UNSUPPORTED_GENERAL。非业务 turn 在 Context/LLM/schema/member/DAX 前直接终止，`memory_commit=false`，不清除既有 PendingClarification；报表请求仍进入 M5.7.2 Template Gate。

@@ -173,7 +173,10 @@ class QuestionRouter:
     )
     _GROUPED = re.compile(
         r"(?:^|那|那么)(?:各|每个|每位|每种|每款|每家|各个)|"
-        r"(?:按|分).{1,10}(?:看|统计|汇总|比较)|"
+        # Runtime canonical/qualified identifiers can be longer than ten
+        # characters. This bounded span only classifies shape; Grounding must
+        # still prove every requested object against the current model.
+        r"(?:按|分)[^\n。！？!?]{1,200}(?:看|统计|汇总|比较)|"
         r"分别.{0,8}(?:的)?(?:情况|数据)?$"
     )
     _MEMBER_SET = re.compile(r"分别(?:是|为|有|多少)|各自(?:是|为|有|多少)")

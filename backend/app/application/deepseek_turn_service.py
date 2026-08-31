@@ -150,6 +150,7 @@ from backend.app.schemas.data_contracts import (
     DAXRequest,
     QueryPlan,
     QueryResult,
+    QueryShape,
     ReportSpec,
     SemanticModelSchema,
     UserContext,
@@ -436,8 +437,17 @@ class LLMTurnService:
                     report_template_key=report_template_key,
                 )
         except IntentRecognitionError:
+            routed_read_shape = (
+                question_routing is not None
+                and question_routing.route == QuestionRoute.BUSINESS_DATA_QUERY
+                and question_routing.query_shape in {
+                    QueryShape.ENTITY_LIST, QueryShape.GROUPED, QueryShape.RANKING,
+                    QueryShape.MEMBER_SET, QueryShape.FILTERED_AGGREGATION,
+                    QueryShape.TREND, QueryShape.BOUNDED_TREND,
+                }
+            )
             if (
-                capability != CapabilityClass.READ_ANALYSIS
+                (capability != CapabilityClass.READ_ANALYSIS and not routed_read_shape)
                 or report_template_key is not None
                 or any(term in message for term in ("报告", "周报", "概览", "总览"))
             ):
@@ -759,10 +769,9 @@ class LLMTurnService:
         if not self.powerbi.is_mock:
             try:
                 with measure_performance("semantic_catalog_build"):
-                    catalog = SemanticCatalogBuilder().build(
-                        schema,
-                        glossary_scope_key=self.settings.powerbi_local_semantic_model_key,
-                    )
+                    override_path = self.settings.powerbi_semantic_override_path
+                    builder = SemanticCatalogBuilder(override_path) if override_path else SemanticCatalogBuilder()
+                    catalog = builder.build(schema)
                 if pending_clarification is not None and (
                     pending_clarification.semantic_model_key != semantic_model_key
                     or pending_clarification.schema_fingerprint

@@ -3,11 +3,274 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-27 | M5.7.1 / M5.7.2 COMPLETE；M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立
+# 最后更新：2026-08-31 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 验收收口；M5.9/M5.10 NOT STARTED；M5 FINAL 尚未成立
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-583-008
+  title: 验收临时目录缺少统一 ownership 与 cleanup warning 契约
+  category: ERR
+  first_detected_version: M5.8.3
+  symptom: 单个 TemporaryDirectory 删除失败会覆盖验收结果，原入口没有统一 marker 校验和真实残留报告
+  local_evidence: 新 cleanup 模块缺失的 collection reproducer；实现后正常、异常、mutation、A→B→A、cancel、拒绝清理、ownership mismatch 与不可检查目录 15 项 PASS
+  authoritative_sources:
+  - title: Python 3.11 tempfile and contextmanager
+    url: https://docs.python.org/3.11/library/tempfile.html
+    reason: mkdtemp 需显式清理；finally 可以统一处理正常、异常和取消，Windows 句柄必须先关闭
+  - title: Python contextlib contextmanager
+    url: https://docs.python.org/3.11/library/contextlib.html#contextlib.contextmanager
+    reason: yield 后 finally 清理资源，同时保留 body 原异常；不由 GC finalizer 绕过 ownership 校验
+  root_cause: 验收脚本各自使用临时目录，缺少 exact path/inode/marker 校验与 cleanup warning/真实 residual 的统一输出
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: scripts 层统一受控 mkdtemp/finally、随机 ownership marker、路径及目录身份校验；先退出子进程再清理，拒绝清理不重试绕过、不误报零残留
+  regression_tests:
+  - backend/tests/unit/test_acceptance_tempdir.py
+  prohibited_patterns:
+  - shell wildcard 递归清理或跨工具绕过执行策略
+  - 将 cleanup warning 当产品语义 P0 或隐藏真实 residual
+  - 用 GC finalizer 绕过 ownership mismatch
+  prevention_rules:
+  - 常规验收不得要求用户手工删除临时目录
+  - 模拟拒绝后的测试资源须由外层 owned fixture 自动回收
+  related_adr: ADR-012
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.3
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.3
+- id: ERR-583-007
+  title: 完整 runtime Measure 名称中的 Column 子串造成假筛选歧义
+  category: ERR
+  first_detected_version: M5.8.3
+  symptom: Real 明确限定字段加真实成员的请求被额外识别出 Measure 名称内部的 Column，返回筛选澄清
+  local_evidence: Real member A→B→A 的首轮 ZERO DAX；两条 Chat reproducer 与两条 span 用例失败，两个显式第二字段 negative control 保持通过；修复后 6 PASS
+  authoritative_sources:
+  - title: Microsoft DAX syntax and complete object references
+    url: https://learn.microsoft.com/en-us/dax/dax-syntax-reference
+    reason: runtime 对象以完整名称及 table ownership 区分，不能把已证明的对象引用内部子串另建为独立需求
+  - title: ADR-008 runtime candidate authority
+    reason: 当前明确对象范围优先，独立文本位置的多个明确字段仍须保留歧义
+  root_cause: find_mentions 的 span 优先级只比较同一 object_type，筛选字段匹配看不到完整 Measure 的更长 runtime 名称
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 先收集所有 runtime 对象的 metadata span，再按请求类型投影候选；仅抑制被更强或同级更长名称包含的 span，不修改 DAX、schema、alias 或独立第二字段需求
+  regression_tests:
+  - backend/tests/api/test_model_semantic_context.py
+  - backend/tests/unit/test_model_semantic_context.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 为某个业务 Measure 硬编码子串排除名单
+  - 根据首个候选或 relationship 猜筛选字段
+  prevention_rules:
+  - runtime object 名称跨类型重叠必须覆盖有无 weak filter 及独立第二字段的正反例
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.3
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.3
+- id: ERR-583-006
+  title: Runtime 名称趋势在无效 Intent weak draft 后未进入 Grounding
+  category: ERR
+  first_detected_version: M5.8.3
+  symptom: 无月度 metadata 的真实模型收到 canonical measure 趋势请求时返回 HTTP 500，未返回最小澄清
+  local_evidence: Real 请求两次 IntentRecognitionError；API failure reproducer 修复前 HTTP 500，修复后 clarification 且 ZERO DAX
+  authoritative_sources:
+  - title: ADR-014 Question Router 与 M5.8.3 runtime object authority
+    reason: 已确定的通用只读 shape 应继续使用当前 runtime Grounding 取证，不能依赖 Sales 词汇或 LLM 自造时间类型
+  root_cause: Intent 格式修复失败后旧 fallback 仅接受 legacy READ_ANALYSIS 词汇判断，未接收 Router 已确定的 TREND 等非 scalar 只读 shape
+  failed_attempts:
+  - reproducer 的 teardown 初次只接受 DELETE 200，早期失败未创建 conversation 时返回 404；补充接受已不存在且 residual probe 仍为零的情况
+  repair_attempt_count: 1
+  final_fix: Service fallback 复用 Router 已确定的通用只读 shape，保留全部 unsupported/report preflight；对象与 temporal metadata 继续由 Grounding 验证，不修改 Provider 或时间解析器
+  regression_tests:
+  - backend/tests/api/test_model_semantic_context.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 让 LLM 发明日期字段以绕过 metadata 不足
+  - 以业务域关键字作为通用查询唯一放行条件
+  prevention_rules:
+  - shape 与语言草稿失败处理必须复用既有确定性 authority
+  - metadata 不足须 clarification 和 ZERO DAX，不能 generic 500
+  related_adr: ADR-014
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.3
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.3
+- id: ERR-583-004
+  title: Real cleanup 探针退出事务后未关闭 SQLite 只读连接
+  category: ERR
+  first_detected_version: M5.8.3
+  symptom: Rich 15 项成功且业务 residual=0，但 Windows 无法删除仍被探针连接占用的自有临时数据库
+  local_evidence: Real HTTP smoke 的 WinError 32；成功与异常两条连接释放 regression 修复前均失败，修复后 Artifact Governance 12 PASS
+  authoritative_sources:
+  - title: Python 3.11 sqlite3 connection context manager
+    url: https://docs.python.org/3.11/library/sqlite3.html#how-to-use-the-connection-context-manager
+    reason: Connection context manager 处理事务但不关闭连接，须显式 close 或 contextlib.closing
+  root_cause: residual probe 使用 with sqlite3.connect 并误认为退出会释放文件句柄
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 只读 ownership probe 使用 contextlib.closing；不改变查询范围、Memory persistence 或 factual authority
+  regression_tests:
+  - backend/tests/unit/persistence/test_artifact_governance.py
+  prohibited_patterns:
+  - 依赖垃圾回收关闭 SQLite 探针连接
+  - 以业务 residual=0 代替文件资源清理
+  prevention_rules:
+  - 正常和异常返回都必须关闭 automation-owned 只读连接
+  related_adr: ADR-012
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.3
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.3
+- id: ERR-583-005
+  title: 长限定 runtime 字段名丢失 grouped shape 与分组 cue
+  category: ERR
+  first_detected_version: M5.8.3
+  symptom: 零配置 Real 请求明确按限定字段统计却返回 scalar；手工 harness 仅检查 completed 导致误报该 shape 通过
+  local_evidence: Simple Real qualified grouped 返回 scalar；四域 quoted/unquoted Chat 回归与 Catalog cue 共 9 项修复前失败，修复后 9 PASS，Semantic Compatibility 519 PASS
+  authoritative_sources:
+  - title: ADR-014 与 M5.8.3 runtime canonical ownership contract
+    reason: Shape 不得因模型字段名长度改变，限定字段身份仍须由 runtime Catalog 验证
+  root_cause: Router grouped cue 的 10 字符窗口排除了限定标识符，Catalog language_terms 又未保留该写法；harness 漏检 shape/dimensions
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 最小 integration exception 将 grouped 语言窗口扩为有界且不跨句的 200 字符；Catalog 携带 runtime qualified name，手工 Gate 验证 shape、dimensions 和 ownership
+  regression_tests:
+  - backend/tests/api/test_model_semantic_context.py
+  - backend/tests/unit/test_model_semantic_context.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 缩短测试问题或恢复全局 Sales alias 掩盖失败
+  - 仅凭 completed 声称某查询形态通过
+  prevention_rules:
+  - 任意模型 canonical/qualified 名称必须保留 ownership 与 shape
+  - Real Gate 必须同时检查终态、CanonicalQueryPlan 和 factual execution
+  related_adr: ADR-014
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.3
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.3
+- id: ERR-583-001
+  title: Runtime authority 迁移时遗漏合法 optional alias 与 temporal metadata
+  category: ERR
+  first_detected_version: M5.8.3
+  symptom: 绝对月份日期角色、订单别名及正式 Chat 月趋势三个 M5.8.2 regression 失败
+  local_evidence: Semantic Compatibility 初稿 459 passed / 3 failed；迁移后 462 passed，增加不同结构的零配置模型与 Chat Gate 后 508 passed
+  authoritative_sources:
+  - title: M5.8.3 用户兼容迁移要求与 ADR-008
+    reason: MCP 是结构 authority；合法业务 alias 和 temporal metadata 仍可通过 exact-model validated override 补充
+  root_cause: 清空 production glossary 的同时删除了原本合法的语言和时间 binding；runtime schema 中对象仍存在，但 Catalog 无补充证据
+  failed_attempts:
+  - Chat fixture 初次把 exact binding activation 放在 lifespan 启动之前，尚无 app.state.turn_service；调整到应用启动后按真实 fixture schema 激活
+  repair_attempt_count: 2
+  final_fix: 旧业务语言迁移为 inert profiles；只由显式 identity/fingerprint binding 激活，逐对象验证 runtime ownership。旧三个测试仅迁移配置，结果和日期断言不变。
+  regression_tests:
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/api/test_chat.py
+  - backend/tests/unit/test_model_semantic_context.py
+  - backend/tests/api/test_model_semantic_context.py
+  prohibited_patterns:
+  - 恢复跨 PBIX 默认 Sales binding 或把 schema 定义复制回 glossary
+  - 为特定题目增加 regex 或按唯一 Date 字段猜日期角色
+  prevention_rules:
+  - authority 迁移必须保留合法 metadata，先过旧回归再执行后续 Gate
+  - override 必须 exact identity 与完整 context fingerprint 验证
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-30'
+    action: discovered
+    version: M5.8.3
+  - date: '2026-08-30'
+    action: mitigation
+    version: M5.8.3
+- id: ERR-583-002
+  title: MCP hierarchy 引用与 relationship metadata 适配不完整
+  category: ERR
+  first_detected_version: M5.8.3
+  symptom: level 名称存在但 column 引用为空；关系过滤方向改变后 context fingerprint 未变化
+  local_evidence: 真实 MCP 属性名审计返回 columnName 与 crossFilteringBehavior；hierarchy mapping 与 relationship mutation 均有失败复现和修复后回归
+  authoritative_sources:
+  - title: 当前 Local MCP List/Get runtime schema
+    reason: 必须按实际协议读取 columnName，不能凭 TOM 对象属性名称假定 wire contract
+  root_cause: 初稿未完整依据当前 wire metadata 适配，level 引用键写为 column，relationship 仅保留端点及 cardinality
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 适配有证据的 columnName 及 relationship name/filtering/join metadata，并纳入 fingerprint；缺失字段为空，不推造引用
+  regression_tests:
+  - backend/tests/unit/test_powerbi.py
+  - backend/tests/unit/test_model_semantic_context.py
+  prohibited_patterns:
+  - 用静态 TOM 文档替代实际 MCP wire metadata 证据
+  prevention_rules:
+  - 新 metadata 字段必须同时有 runtime 属性证据及缺失时安全行为
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-30'
+    action: discovered
+    version: M5.8.3
+  - date: '2026-08-30'
+    action: mitigation
+    version: M5.8.3
+- id: ERR-583-003
+  title: Month projection 取证删除 runtime identifier 内空格
+  category: ERR
+  first_detected_version: M5.8.3
+  symptom: 同时存在 A B 与 AB 日期字段时，一个明确引用产生两个 temporal source proof
+  local_evidence: test_month_projection_preserves_spaces_inside_runtime_identifiers 修复前得到两个 binding，修复后唯一绑定原字段
+  authoritative_sources:
+  - title: ADR-008 与 M5.8.3 runtime object authority
+    reason: 表达式取证必须保留 runtime object identity，不得用规范化合并不同对象或按列表顺序决定 binding
+  root_cause: 对完整表达式及字段引用删除所有 whitespace，破坏 bracket identifier 内部字符
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 只允许函数结构位置的 whitespace，identifier 按 runtime 原文匹配；多 source proof 不写入唯一 temporal binding
+  regression_tests:
+  - backend/tests/unit/test_model_semantic_context.py
+  prohibited_patterns:
+  - 对完整 DAX metadata 表达式删除全部空格后比较对象引用
+  - 用循环末项覆盖多个合法 temporal source
+  prevention_rules:
+  - metadata 解析保持 exact runtime identity，歧义不得通过顺序消解
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.3
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.3
 - id: ERR-571-001
   title: 显式绝对月份在完整 Grounding 中因日期角色解析失败而错误澄清
   category: ERR

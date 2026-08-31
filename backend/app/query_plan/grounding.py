@@ -217,6 +217,13 @@ class ObjectGrounder:
             )
         objects = self.catalog.by_type(object_type)
 
+        qualified = [obj for obj in objects if normalized in {
+            normalize_semantic_text(f"{obj.table_name}[{obj.canonical_name}]"),
+            normalize_semantic_text(f"'{obj.table_name}'[{obj.canonical_name}]"),
+        }]
+        if len(qualified) == 1:
+            return self._resolved(role, phrase, qualified[0], "qualified_canonical_exact")
+
         canonical = [
             obj for obj in objects
             if normalize_semantic_text(obj.canonical_name) == normalized
@@ -225,6 +232,13 @@ class ObjectGrounder:
             return self._resolved(role, phrase, canonical[0], "canonical_exact")
         if len(canonical) > 1:
             return self._ambiguous(role, phrase, canonical, "canonical_conflict")
+
+        for attribute, method in (("display_name", "display"), ("description", "description")):
+            matched = [obj for obj in objects if getattr(obj, attribute) and normalize_semantic_text(getattr(obj, attribute)) == normalized]
+            if len(matched) == 1:
+                return self._resolved(role, phrase, matched[0], f"{method}_exact")
+            if len(matched) > 1:
+                return self._ambiguous(role, phrase, matched, f"{method}_conflict")
 
         conflict_ids = self.catalog.alias_conflicts.get(normalized)
         if conflict_ids:
@@ -270,16 +284,43 @@ class ObjectGrounder:
         matched: dict[str, CatalogObject] = {}
         conflict_ids: set[str] = set()
         matched_terms: list[str] = []
-        for obj in self.catalog.by_type(object_type):
-            terms = (obj.canonical_name, *obj.aliases)
-            for term in terms:
-                normalized_term = normalize_semantic_text(term)
-                if normalized_term and normalized_term in normalized_text:
-                    conflict_ids.update(
-                        self.catalog.alias_conflicts.get(normalized_term, ())
-                    )
-                    matched[obj.object_id] = obj
-                    matched_terms.append(term)
+        evidence: list[tuple[int, int, int, CatalogObject, str]] = []
+        # Full runtime names own their text spans across object types too:
+        # a column name embedded in a measure name is not a second mention.
+        for obj in self.catalog.objects:
+            tiers = (
+                (f"{obj.table_name}[{obj.canonical_name}]", f"'{obj.table_name}'[{obj.canonical_name}]"),
+                (obj.canonical_name,), (obj.display_name,), (obj.description,), obj.aliases,
+            )
+            for priority, terms in enumerate(tiers):
+                for term in terms:
+                    if not term:
+                        continue
+                    normalized_term = normalize_semantic_text(term)
+                    pattern = re.escape(normalized_term)
+                    if normalized_term and normalized_term[0].isascii() and normalized_term[0].isalnum():
+                        pattern = r"(?<![a-z0-9_])" + pattern
+                    if normalized_term and normalized_term[-1].isascii() and normalized_term[-1].isalnum():
+                        pattern += r"(?![a-z0-9_])"
+                    for occurrence in re.finditer(pattern, normalized_text):
+                        evidence.append((occurrence.start(), occurrence.end(), priority, obj, term))
+        for start, end, priority, obj, term in evidence:
+            if obj.object_type != object_type:
+                continue
+            # Higher-authority evidence wins only for the same textual span;
+            # distinct explicit requirements must still remain ambiguous.
+            if any(
+                other_start <= start and other_end >= end
+                and (other_priority < priority or (
+                    other_priority == priority and other_end - other_start > end - start
+                ))
+                for other_start, other_end, other_priority, _, _ in evidence
+            ):
+                continue
+            if priority == 4:
+                conflict_ids.update(self.catalog.alias_conflicts.get(normalize_semantic_text(term), ()))
+            matched[obj.object_id] = obj
+            matched_terms.append(term)
         if conflict_ids:
             return ObjectGroundingResult(
                 status=GroundingStatus.CONFIG_CONFLICT,
@@ -368,7 +409,7 @@ class ObjectGrounder:
         scored: list[tuple[tuple[int, float], CatalogObject]] = []
         for obj in self.catalog.by_type(object_type):
             best = (0, 0.0)
-            for term in (obj.canonical_name, *obj.aliases, obj.description or ""):
+            for term in obj.language_terms:
                 normalized_term = normalize_semantic_text(term)
                 if not normalized_term:
                     continue
@@ -1398,11 +1439,7 @@ class SemanticGroundingService:
         normalized_input = normalize_semantic_text(user_input)
         scored_mentions: list[tuple[int, str, CatalogObject]] = []
         for obj in date_fields:
-            terms = (
-                obj.canonical_name,
-                obj.display_name or "",
-                *obj.aliases,
-            )
+            terms = obj.language_terms
             for term in terms:
                 normalized_term = normalize_semantic_text(term)
                 if normalized_term and normalized_term in normalized_input:
@@ -1462,6 +1499,17 @@ class SemanticGroundingService:
                 "multiple_default_temporal_roles",
             )
 
+        if self.catalog.context is not None:
+            relationship_ids = {
+                evidence.object_id for evidence in self.catalog.context.temporal_candidates
+                if evidence.kind == "active_relationship_key"
+            }
+            relationship_dates = tuple(obj for obj in date_fields if obj.object_id in relationship_ids)
+            if len(relationship_dates) == 1:
+                return ObjectGrounder._resolved("date_field", user_input, relationship_dates[0], "runtime_relationship_date_role")
+            if len(relationship_dates) > 1:
+                return ObjectGrounder._ambiguous("date_field", user_input, relationship_dates, "runtime_relationship_date_ambiguity")
+
         grouping_targets: dict[str, CatalogObject] = {}
         for obj in self.catalog.by_type(SemanticObjectType.FIELD):
             binding = obj.temporal_grouping
@@ -1492,6 +1540,9 @@ class SemanticGroundingService:
                 tuple(grouping_targets.values()),
                 "multiple_temporal_grouping_date_bindings",
             )
+
+        if self.catalog.context is not None:
+            return ObjectGrounder._ambiguous("date_field", user_input, date_fields, "unproven_default_date_role")
 
         glossary_dates = tuple(
             obj
@@ -1884,7 +1935,7 @@ class SemanticGroundingService:
         for candidate_id in candidate_ids:
             obj = self.catalog.get(candidate_id)
             if obj is not None:
-                terms.extend((obj.canonical_name, *obj.aliases))
+                terms.extend(obj.language_terms)
         for term in terms:
             escaped = re.escape(term)
             patterns = (

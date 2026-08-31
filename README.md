@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.8.2 — 通用自然语言路由与查询形态收口（COMPLETE）**。M5.8/M5.8.1 保持冻结；M5.8.3、M5.9、M5.10 尚未开始，M5 FINAL=false。
+当前版本：**M5.8.3 — MCP驱动通用模型语义适配**。本地/Real 验收收口；正式 COMPLETE 以对应提交的 PowerBIAgent Validation completed/success 为条件。M5.8/M5.8.1/M5.8.2 authority 保持冻结，M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 ## 项目概览
 
@@ -17,7 +17,7 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 
 - 自然语言 Power BI 数据问答，Mock 与 Real 共用同一 TurnPipeline 执行骨架。
 - Semantic Grounding 前的 Question Router 区分数据查询、报表、产品帮助、公开模型信息、安全基础算术与不支持的一般问题；非业务 turn 不读取 schema、不执行 DAX、不污染 semantic Memory。
-- Business Semantic Grounding 将用户表达绑定到 runtime schema、模型专属 glossary 与 runtime members。
+- Power BI MCP runtime schema 是模型结构 authority；immutable `ModelSemanticContext` 把当前 PBIX metadata 适配为候选证据，exact identity + fingerprint 验证的 optional model override 只补充业务语言/temporal metadata，runtime members 继续验证成员值。
 - Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界。
 - `sales_report` 是当前唯一“简易模板”，根据用户需求与 runtime capability 生成 KPI、趋势、贡献、对比和排行；报表请求必须显式选择模板，不再存在后端默认模板。
@@ -341,7 +341,7 @@ python -m alembic upgrade head
 | M5.8 | COMPLETE — OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection |
 | M5.8.1 | COMPLETE — 前置性能加速、Local MCP session reuse 与安全进程内 metadata/member cache |
 | M5.8.2 | COMPLETE — Question Router、通用 Query Shape、minimal clarification、dimension-only/Top1/member-set/bounded trend 与安全 calculator/help/system-info |
-| M5.8.3 | NOT STARTED — MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配 |
+| M5.8.3 | runtime metadata → immutable ModelSemanticContext → SemanticCatalog；验收收口，正式 COMPLETE 以对应提交 CI success 为条件 |
 | M5.9 | NOT STARTED — 完整 MCP performance、resilience、并发与压力验证 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
 
@@ -372,4 +372,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-28 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-08-31 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 验收收口（发布见对应提交 CI）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

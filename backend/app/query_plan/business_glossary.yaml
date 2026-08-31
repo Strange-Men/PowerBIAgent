@@ -1,91 +1,38 @@
-version: 1
-semantic_model_key: local_desktop_model
-schema_fingerprint: d72c9dd04fcda216ffa421d84e85c01d9643e2c2db133d1661639970eb6b11ac
-
-measures:
-  Total Sales:
-    table_name: Sales
-    object_type: measure
-    aliases:
-      - 销售额
-      - 总销售额
-      - 销售金额
-  Total Quantity:
-    table_name: Sales
-    object_type: measure
-    aliases:
-      - 销量
-      - 总数量
-      - 销售数量
-      - 件数
-      - 多少件
-  Total Orders:
-    table_name: Sales
-    object_type: measure
-    required: false
-    aliases:
-      - 订单数
-      - 总订单数
-  Average Order Value:
-    table_name: Sales
-    object_type: measure
-    required: false
-    aliases:
-      - 平均订单金额
-      - 平均订单额
-
-fields:
-  Category:
-    table_name: Sales
-    object_type: field
-    aliases:
-      - 类别
-      - 品类
-  Product:
-    table_name: Sales
-    object_type: field
-    aliases:
-      - 产品
-      - 商品
-    member_aliases:
-      手机: 手机
-      笔记本: 笔记本
-      电脑: 电脑
-  OrderDate:
-    table_name: Sales
-    object_type: field
-    aliases:
-      - 订单日期
-      - 销售日期
-  Date:
-    table_name: Date
-    object_type: field
-    required: false
-    temporal_role: default
-  YearMonth:
-    table_name: Date
-    object_type: field
-    required: false
-    aliases:
-      - 月份
-      - 月度
-    temporal_grouping:
-      grain: month
-      date_field: Date
-      date_table_name: Date
-  Region:
-    table_name: Sales
-    object_type: field
-    required: false
-    aliases:
-      - 区域
-      - 地区
-    member_aliases:
-      华南: South
-      华南区: South
-      南区: South
-      华东: East
-      华北: North
-      华西: West
-    member_suffixes:
-      - 区
+# Optional business-language supplements migrated from the former Desktop glossary.
+# Profiles are inert: no model inherits them by name, schema shape or domain.
+# Activation requires a separately approved exact model identity + fingerprint.
+# Object IDs reference runtime objects; no table/type/schema declarations here.
+version: 2
+profiles:
+  desktop_sales_language:
+    measure:Sales:Total Sales:
+      aliases: [销售额, 总销售额, 销售金额]
+    measure:Sales:Total Quantity:
+      aliases: [销量, 总数量, 销售数量, 件数, 多少件]
+    field:Sales:Category:
+      aliases: [类别, 品类]
+    field:Sales:Product:
+      aliases: [产品, 商品]
+      member_aliases: {手机: 手机, 笔记本: 笔记本, 电脑: 电脑}
+    field:Sales:OrderDate:
+      aliases: [订单日期, 销售日期]
+  desktop_order_language:
+    measure:Sales:Total Orders:
+      aliases: [订单数, 总订单数]
+    measure:Sales:Average Order Value:
+      aliases: [平均订单金额, 平均订单额]
+  desktop_calendar_roles:
+    field:Date:Date:
+      temporal_role: default
+    field:Date:YearMonth:
+      aliases: [月份, 月度]
+      temporal_grouping:
+        grain: month
+        date_field: Date
+        date_table_name: Date
+  desktop_region_language:
+    field:Sales:Region:
+      aliases: [区域, 地区]
+      member_aliases: {华南: South, 华南区: South, 南区: South, 华东: East, 华北: North, 华西: West}
+      member_suffixes: [区]
+overrides: []

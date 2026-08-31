@@ -61,11 +61,7 @@ class SemanticModelDiscoveryService:
         self._runtime_mode = (
             RuntimeDataMode.MOCK if adapter.is_mock else RuntimeDataMode.REAL
         )
-        self._glossary_scope_key = (
-            settings.powerbi_local_semantic_model_key
-            if settings.powerbi_mode == PowerBIMode.LOCAL_MCP
-            else None
-        )
+        self._override_path = settings.powerbi_semantic_override_path
         self._gateway = ToolGateway()
         config = HarnessConfig.from_settings(settings)
 
@@ -228,10 +224,8 @@ class SemanticModelDiscoveryService:
                 )
                 continue
             try:
-                semantic_catalog = SemanticCatalogBuilder().build(
-                    schema,
-                    glossary_scope_key=self._glossary_scope_key,
-                )
+                builder = SemanticCatalogBuilder(self._override_path) if self._override_path else SemanticCatalogBuilder()
+                semantic_catalog = builder.build(schema)
             except GlossaryCatalogError:
                 checked_items.append(
                     item.model_copy(

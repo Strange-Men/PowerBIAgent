@@ -603,8 +603,12 @@ class TestMemberAndTimeGrounding:
         assert outcome.delta.time_range.date_field == "OrderDate"
 
     @pytest.mark.asyncio
-    async def test_absolute_month_uses_metadata_bound_default_date_role(self):
-        catalog = SemanticCatalogBuilder().build(_rich_temporal_schema())
+    async def test_absolute_month_uses_metadata_bound_default_date_role(self, monkeypatch):
+        from backend.tests.fixtures.model_overrides import activate_registry, bound_registry
+
+        schema = _rich_temporal_schema()
+        activate_registry(monkeypatch, bound_registry(schema, ["desktop_sales_language", "desktop_calendar_roles"]))
+        catalog = SemanticCatalogBuilder().build(schema)
 
         async def no_lookup(*_):
             raise AssertionError("member lookup should not run")
@@ -2281,12 +2285,15 @@ class TestM582QueryShapes:
                     value=list(alias_map.values()),
                 )]
 
-    def test_optional_rich_sales_measure_aliases_are_runtime_validated(self):
+    def test_optional_rich_sales_measure_aliases_are_runtime_validated(self, monkeypatch):
+        from backend.tests.fixtures.model_overrides import activate_registry, bound_registry
+
         schema = _schema()
         schema.tables[0].measures.extend([
             MeasureSchema(name="Total Orders", data_type="Int64"),
             MeasureSchema(name="Average Order Value", data_type="Double"),
         ])
+        activate_registry(monkeypatch, bound_registry(schema, ["desktop_order_language"]))
         catalog = SemanticCatalogBuilder().build(schema)
         grounder = ObjectGrounder(catalog)
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -333,7 +333,7 @@ def probe_owned_sqlite_residuals(
     if not database.exists():
         return []
     residuals: list[str] = []
-    with sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True) as conn:
+    with closing(sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)) as conn:
         tables = {
             row[0]
             for row in conn.execute(

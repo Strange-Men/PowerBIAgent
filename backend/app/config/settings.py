@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M5.8.2", frozen=True)
+    version: str = Field(default="M5.8.3", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -103,6 +103,7 @@ class Settings(BaseSettings):
         default="@microsoft/powerbi-modeling-mcp@0.5.0-beta.12"
     )
     powerbi_local_semantic_model_key: str = Field(default="local_desktop_model")
+    powerbi_semantic_override_path: Optional[str] = Field(default=None)
     powerbi_local_mcp_readonly: bool = Field(default=True)
 
     # ── 资源限制 ──────────────────────────────

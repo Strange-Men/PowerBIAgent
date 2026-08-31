@@ -2816,10 +2816,16 @@ class TestM24DeepSeekLocalChat:
         self, monkeypatch
     ):
         app = _patch_m56_monthly_trend_composition(monkeypatch)
+        from backend.tests.fixtures.model_overrides import activate_registry, bound_registry
+
         transport = ASGITransport(app=app)
 
         async with app.router.lifespan_context(app):
             adapter = app.state.turn_service.powerbi
+            # Startup owns the adapter. Pin configuration before the request,
+            # while retaining production CatalogBuilder/runtime validation.
+            schema = await adapter.get_semantic_model_schema("local_desktop_model")
+            activate_registry(monkeypatch, bound_registry(schema, ["desktop_sales_language", "desktop_calendar_roles"]))
             async with AsyncClient(transport=transport, base_url="http://test") as c:
                 response = await c.post("/api/v1/chat", json={
                     "message": "每个月销售额趋势",

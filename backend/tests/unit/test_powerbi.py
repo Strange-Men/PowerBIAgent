@@ -537,6 +537,7 @@ def _schema_snapshot(
         ),
         relationships=(
             {
+                "name": "SalesProducts",
                 "fromTable": "Sales",
                 "fromColumn": "ProductKey",
                 "toTable": "Products",
@@ -544,6 +545,9 @@ def _schema_snapshot(
                 "isActive": True,
                 "fromCardinality": "Many",
                 "toCardinality": "One",
+                "crossFilteringBehavior": "OneDirection",
+                "securityFilteringBehavior": "OneDirection",
+                "joinOnDateBehavior": "DateAndTime",
             },
         ),
         hierarchies=(
@@ -1008,12 +1012,20 @@ class TestLocalMCPPowerBIAdapter:
         assert "Total Sales" not in [column.name for column in sales.columns]
         products = schema.tables[1]
         assert products.hierarchies[0].levels == ["Category", "Product"]
+        assert products.hierarchies[0].level_columns == ["Category", "Product"]
+        assert schema.runtime_identity == schema.key
+        assert schema.metadata_source == "local_mcp"
+        assert schema.session_generation == client.session_generation
         relationship = schema.relationships[0]
         assert relationship.from_table == "Sales"
         assert relationship.to_table == "Products"
         assert relationship.is_active is True
         assert relationship.from_cardinality == "Many"
         assert relationship.to_cardinality == "One"
+        assert relationship.name == "SalesProducts"
+        assert relationship.cross_filtering_behavior == "OneDirection"
+        assert relationship.security_filtering_behavior == "OneDirection"
+        assert relationship.join_on_date_behavior == "DateAndTime"
         assert schema.get_all_measures() == ["Total Sales", "Total Quantity"]
         assert client.schema_calls == 1
 

@@ -258,6 +258,47 @@ def test_sqlite_residual_probe_matches_only_registered_ids(tmp_path: Path):
     assert all("user-" not in item for item in residuals)
 
 
+@pytest.mark.parametrize("malformed_schema", [False, True])
+def test_sqlite_probe_releases_connection_before_file_cleanup(tmp_path, monkeypatch, malformed_schema):
+    database = tmp_path / "probe-lifecycle.db"
+    connection = sqlite3.connect(database)
+    try:
+        columns = "conversation_id TEXT" if malformed_schema else "runtime_mode TEXT, conversation_id TEXT"
+        connection.execute(f"CREATE TABLE conversations ({columns})")
+        connection.commit()
+    finally:
+        connection.close()
+    registry = ArtifactOwnershipRegistry(tmp_path / "probe-ownership.json")
+    owner = registry.register_run(test_run_id="probe-close", test_namespace="probe-close",
+        runtime_mode="real", source_mode="real")
+    owner.add_conversation("owned-conversation")
+    opened = []
+    real_connect = sqlite3.connect
+
+    def capture_connection(*args, **kwargs):
+        result = real_connect(*args, **kwargs)
+        opened.append(result)
+        return result
+
+    monkeypatch.setattr(sqlite3, "connect", capture_connection)
+    try:
+        if malformed_schema:
+            with pytest.raises(sqlite3.OperationalError):
+                probe_owned_sqlite_residuals(database, registry.get_active("probe-close"))
+        else:
+            assert probe_owned_sqlite_residuals(database, registry.get_active("probe-close")) == []
+        assert len(opened) == 1
+        # Keep a live reference so garbage collection cannot hide the leak.
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            opened[0].execute("SELECT 1")
+        database.unlink()
+    finally:
+        for item in opened:
+            item.close()
+        registry.complete_run("probe-close")
+        database.unlink(missing_ok=True)
+
+
 async def _record(target: list[str], resource_id: str) -> None:
     target.append(resource_id)
 

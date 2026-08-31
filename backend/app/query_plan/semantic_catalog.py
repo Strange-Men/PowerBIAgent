@@ -17,6 +17,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.schemas.data_contracts import SemanticModelSchema
+from backend.app.query_plan.model_semantic_context import ModelSemanticContext, ModelSemanticContextBuilder
 
 
 DEFAULT_GLOSSARY_PATH = Path(__file__).with_name("business_glossary.yaml")
@@ -67,6 +68,14 @@ class CatalogObject(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    @property
+    def language_terms(self) -> tuple[str, ...]:
+        return tuple(term for term in (
+            self.canonical_name, f"{self.table_name}[{self.canonical_name}]",
+            f"'{self.table_name}'[{self.canonical_name}]",
+            self.display_name, self.description, *self.aliases,
+        ) if term)
+
 
 class SemanticCatalog(BaseModel):
     semantic_model_key: str
@@ -74,6 +83,7 @@ class SemanticCatalog(BaseModel):
     schema_drift: bool = False
     objects: tuple[CatalogObject, ...]
     alias_conflicts: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    context: ModelSemanticContext | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -102,10 +112,10 @@ class GlossaryCatalogError(ValueError):
 
 
 class SemanticCatalogBuilder:
-    """Validate glossary data against one runtime schema and merge it."""
+    """Adapt runtime-owned candidates and an optional exact-model override."""
 
-    def __init__(self, glossary_path: Path = DEFAULT_GLOSSARY_PATH):
-        self._glossary_path = Path(glossary_path)
+    def __init__(self, glossary_path: Path | str | None = None):
+        self._glossary_path = Path(glossary_path) if glossary_path is not None else DEFAULT_GLOSSARY_PATH
 
     def build(
         self,
@@ -113,11 +123,55 @@ class SemanticCatalogBuilder:
         *,
         glossary_scope_key: str | None = None,
     ) -> SemanticCatalog:
-        glossary = self._load_glossary()
-        return self.build_from_data(
-            schema,
-            glossary,
-            glossary_scope_key=glossary_scope_key,
+        # Friendly scope cannot authorize another Desktop's business bindings.
+        try:
+            context = ModelSemanticContextBuilder().build(schema)
+        except ValueError as exc:
+            raise GlossaryCatalogError("runtime_semantic_context_invalid") from exc
+        from backend.app.query_plan.model_override import resolve_model_override
+
+        override = resolve_model_override(context, self._load_glossary())
+        return self.build_from_context(context, override)
+
+    def build_from_context(
+        self, context: ModelSemanticContext, override: dict[str, Any] | None = None,
+    ) -> SemanticCatalog:
+        """Runtime-owned candidates plus an explicitly bound language layer."""
+        from backend.app.query_plan.model_override import apply_model_override
+
+        objects = {
+            item.object_id: CatalogObject(**item.model_dump(include={
+                "object_id", "canonical_name", "object_type", "table_name", "data_type",
+                "description", "display_name", "format_string",
+            }))
+            for item in (*context.measures, *context.columns)
+        }
+        month_sources: dict[str, set[str]] = {}
+        for evidence in context.temporal_candidates:
+            if evidence.kind == "month_projection" and evidence.date_object_id:
+                month_sources.setdefault(evidence.object_id, set()).add(evidence.date_object_id)
+        for evidence in context.temporal_candidates:
+            if evidence.kind != "month_projection":
+                continue
+            if len(month_sources.get(evidence.object_id, ())) != 1:
+                # Multiple metadata proofs are ambiguity, never list-order authority.
+                continue
+            item = objects[evidence.object_id]
+            target = objects.get(evidence.date_object_id or "")
+            if target is not None:
+                objects[item.object_id] = item.model_copy(update={"temporal_grouping": TemporalGroupingBinding(
+                    grain="month", date_field=target.canonical_name, date_table_name=target.table_name,
+                )})
+        if override is not None:
+            objects = apply_model_override(context, objects, override)
+        alias_targets: dict[str, set[str]] = {}
+        for item in objects.values():
+            for alias in item.aliases:
+                alias_targets.setdefault(normalize_semantic_text(alias), set()).add(item.object_id)
+        return SemanticCatalog(
+            semantic_model_key=context.semantic_model_key, schema_fingerprint=context.schema_fingerprint,
+            objects=tuple(sorted(objects.values(), key=lambda item: item.object_id)), context=context,
+            alias_conflicts={alias: tuple(sorted(ids)) for alias, ids in alias_targets.items() if len(ids) > 1},
         )
 
     def build_from_data(
@@ -345,7 +399,7 @@ class SemanticCatalogBuilder:
             raw = yaml.safe_load(self._glossary_path.read_text(encoding="utf-8"))
         except (OSError, yaml.YAMLError) as exc:
             raise GlossaryCatalogError("glossary_load_failed") from exc
-        if not isinstance(raw, dict) or raw.get("version") != 1:
+        if not isinstance(raw, dict) or raw.get("version") != 2:
             raise GlossaryCatalogError("glossary_version_invalid")
         return raw
 

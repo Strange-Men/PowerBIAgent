@@ -2043,7 +2043,9 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                     semantic_model_key
                 )
                 self._last_diagnostics = snapshot.diagnostics
-                return self._map_schema(snapshot, semantic_model_key)
+                return self._map_schema(snapshot, semantic_model_key).model_copy(update={
+                    "session_generation": self._client_generation(client),
+                })
             except LocalMCPConnectionError as exc:
                 self._last_diagnostics = LocalMCPDiagnostics.failure(
                     exc.category,
@@ -2192,6 +2194,10 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 description=cls._optional_text(raw_column, "description"),
                 display_name=cls._optional_text(raw_column, "displayName"),
                 format_string=cls._optional_text(raw_column, "formatString"),
+                is_system_managed=cls._optional_bool(raw_column, "systemManaged"),
+                is_key=cls._optional_bool(raw_column, "isKey"),
+                expression=cls._optional_text(raw_column, "expression"),
+                sort_by_column=cls._optional_text(raw_column, "sortByColumn"),
             ))
 
         seen_measures: set[tuple[str, str]] = set()
@@ -2213,6 +2219,7 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 description=cls._optional_text(raw_measure, "description"),
                 display_name=cls._optional_text(raw_measure, "displayName"),
                 format_string=cls._optional_text(raw_measure, "formatString"),
+                is_system_managed=cls._optional_bool(raw_measure, "systemManaged"),
             ))
 
         seen_hierarchies: set[tuple[str, str]] = set()
@@ -2231,6 +2238,12 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
             seen_hierarchies.add(key)
             tables_by_name[table_name].hierarchies.append(HierarchySchema(
                 name=name,
+                is_hidden=cls._optional_bool(raw_hierarchy, "isHidden"),
+                is_system_managed=cls._optional_bool(raw_hierarchy, "systemManaged"),
+                description=cls._optional_text(raw_hierarchy, "description"),
+                display_name=cls._optional_text(raw_hierarchy, "displayName"),
+                level_columns=[cls._required_schema_text(level, "columnName") for level in levels]
+                if all(isinstance(level.get("columnName"), str) and level["columnName"].strip() for level in levels) else [],
                 levels=[
                     cls._required_schema_text(level, "name")
                     for level in levels
@@ -2255,6 +2268,7 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 raise ValueError("invalid relationship")
             seen_relationships.add(key)
             relationships.append(RelationshipSchema(
+                name=cls._optional_text(raw_relationship, "name"),
                 from_table=from_table,
                 from_column=from_column,
                 to_table=to_table,
@@ -2272,11 +2286,16 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                     raw_relationship,
                     "toCardinality",
                 ),
+                cross_filtering_behavior=cls._optional_text(raw_relationship, "crossFilteringBehavior"),
+                security_filtering_behavior=cls._optional_text(raw_relationship, "securityFilteringBehavior"),
+                join_on_date_behavior=cls._optional_text(raw_relationship, "joinOnDateBehavior"),
             ))
 
         return SemanticModelSchema(
             name=semantic_model_key,
             key=semantic_model_key,
+            runtime_identity=semantic_model_key,
+            metadata_source="local_mcp",
             tables=list(tables_by_name.values()),
             relationships=relationships,
         )

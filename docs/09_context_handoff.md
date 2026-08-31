@@ -1,11 +1,31 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-08-28
+> **最后更新：** 2026-08-31
+
+## M5.8.3 验收收口（2026-08-31）
+
+启动基线为 `m5/rebuild` / `3b811dec214679bb556d4c96506e5e8f536fc5fc`；原修改完整保留，无 reset/revert/丢弃。M5.8.3 实现与 Real 验收收口，正式 COMPLETE 以 fresh local/residual 和对应提交的 PowerBIAgent Validation completed/success 为条件；当前提交自身 SHA/CI 只记录于最终报告。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+
+- 正式链：Power BI MCP Runtime Semantic Model（结构 authority）→ immutable ModelSemanticContext（metadata 适配）→ validated optional model override（语言/temporal 补充）→ SemanticCatalog → Grounding → frozen StateTransition/CanonicalQueryPlan → deterministic DAX → QueryResult/VerifiedFactSet。LLM 仅 bounded runtime candidate selector；Memory factual authority 不变。
+- 原三个 P0 的断点是删除默认 glossary 时丢失合法语言/日期 binding。订单 alias、默认日期角色、月份 grouping 已迁为 inert profiles，必须经 exact opaque identity + 完整 metadata fingerprint + runtime object validation 显式激活。没有恢复 glossary schema authority、自动 profile 选择或自动写 registry。阶段 D 为 462 PASS，当前 Semantic Compatibility 为 **526 PASS**，扫描 111 个 production 文件，无 benchmark leakage。
+- 四种真正不同结构：Retail star、Education snowflake、Operations flat/multi-date、未注册 holdout；同一 builder 和正式 Chat API 的 entity/scalar/grouped/ranking/trend 均通过。它们使用受控 LanguageDraft/RuntimeAdapter，不冒充四份真实 Desktop。六类 schema mutation、stale override、duplicate/relationship ambiguity、unknown ZERO DAX 均为永久 fixture Gate；未写入或修改用户 PBIX。
+- 真实 Local MCP 已读取两份 Desktop：可见结构分别为 5 tables/20 columns/4 measures/4 relationships 和 1 table/7 columns/2 measures/0 relationships。hierarchy level 实际属性是 columnName；column expression/key/sort、relationship filtering 等证据进入 context/fingerprint。当前对象 description/display 均为空，未观测到 displayName property；不伪造 AI Instructions/synonyms/linguistic schema/AI Data Schema/annotations 支持。
+- 用户已明确允许应用 Pydantic Settings 从项目根目录正常加载 .env；Agent 未查看、打印、修改其内容。实际 Settings 布尔检查确认 Real ready；自有 uvicorn 后端在 localhost:8000 启动并通过正式 HTTP Chat/Memory/API 验收，结束后关闭。此前仅依赖 Process/User/Machine 环境变量得出的“Provider 未配置”结论已撤销，不能再次作为 blocker。
+- Rich 原 15 项 Real regression PASS：原 scalar/entity/Top1/bounded trend、minimal clarification 与六类非业务隔离断言保留；member-set/filtered aggregation 在当前成员不足时按原合同澄清、ZERO DAX。完整 Chat 的时间/筛选 KEEP、分组 follow-up、measure REPLACE、unknown member 不改 committed Memory、A→B→A 清空跨模型槽全部 PASS。
+- Simple Desktop 没有任何 registry binding：真实 ENTITY_LIST/SCALAR/GROUPED/RANKING 四形态 PASS；缺少 authoritative month metadata 时 TREND 最小澄清、ZERO DAX/Memory。fixture holdout 有明确 month projection，TREND PASS。没有为提高成功率猜日期。
+- 双 PBIX 组件审计已验证 13 个文本字段/122 个 runtime members、2 个同名不同成员集合及 6 个 transient single-object overrides。完整成员 Chat A→B→A 进一步证明：A/B 各用自己的真实成员，B 拒绝 A 独有成员且 ZERO DAX/Memory mutation，返回 A 重新验证；3 个成功 turn 的生产 fact_set_id 与从实际 QueryResult 重建的 VerifiedFactSet 完全一致。
+- 与 exact baseline 的真实比较为 **17/17 Plan、DAX、QueryResult、VerifiedFactSet 相同**。生产 opaque key 按进程随机 HMAC 不变；手工 harness 只观察原 identity 输入并返回原 key，通过同一 nonce 的身份摘要证明两个进程连接同一 Desktop 后才对齐比较投影。真实行和事实只在内存比较，不输出/提交业务数值。
+- 性能观察：有效对比 warm 平均 5742.25→2433.50ms，4-way wall 5848.79→7193.27ms；当前并发尾部主要为 Intent 5750ms/QueryPlan LLM 4750ms。较早一组 warm 为 1812.50→1996.25ms，4-way 当前曾出现 33.64s LLM 长尾，不能隐去或把最好一轮当 SLO。context 独立 build 1.171/0.521ms、catalog 0.261/0.148ms；warm profiler context 低于计时分辨率、catalog 0–16ms，session reuse=1。未发现 context 重建导致明显退化；没有更改 M5.8.1 worker/TTL/cache/singleflight/concurrency，也没有新增 cache 或开展 M5.9 压测。
+- Real 集成发现并修复：长限定字段名丢失 GROUPED cue；Router 已知只读 shape 的无效 Intent weak draft 没有进入 Grounding；完整 Measure 名中的 Column 子串造成假筛选歧义。分别有 failure reproducer、正反例及 fresh Semantic Compatibility。Router 仅修正有界 grouped 名称长度，六 routes/八 shapes/slot authority 不变；不是声称 Router 文件零修改。另修复只读 ownership probe 未 close SQLite 导致 Windows 文件占用，不改业务持久化语义。
+- cleanup 收口后的最终 fresh 本地：cleanup **15 PASS**；backend **2168 PASS / 1 SKIP**（200.91s，完整无 .env 副本内运行）；Golden **11 PASS / 1 manual-real SKIP**；frontend **86 PASS**（10 files），typecheck/lint/build PASS；Repository Safety **337 files**、Architecture **128 production files**、Error Ledger **45 entries**、Artifact Governance PASS。Documentation Governance、compileall、git diff --check 同步后均 PASS。
+- residual：此前两份明确目录均已由用户清理并 Test-Path=False；本轮最终只读扫描四种受控 prefix 均没有残留；完整验证副本在 finally 中清理并实际确认 temporary_residual=0。标准受控 mkdtemp/finally + ownership marker/exact path/目录身份校验已统一验收临时目录，15 项永久回归通过；正常/异常/取消均尝试清理。拒绝清理只报告路径、原因和真实 residual，不能伪报零、误删他人目录或反复要求常规手工删除。模拟残留由外层 fixture 自动回收。
+- 发布流程：本次仅完善 scripts/test temp lifecycle，不改冻结业务 authority；运行 fresh 全量 Gate 后白名单 staging，使用用户指定标题 M5.8.3_MCP驱动通用模型语义适配最终收口，push m5/rebuild，并只接受新 exact SHA 的 PowerBIAgent Validation completed/success。旧基线 CI 33163481580 success 不能替代。
+- 规范：`docs/specs/model_semantic_context.md`；验收计划：`docs/milestones/m5/m5_8_3_model_semantic_context_plan.md`。Provider、Report renderer/template、DAX/QueryResult/VerifiedFactSet/Memory authority 保持不变；未引入 Redis/RAG/Ontology/Vector DB，M5 FINAL=false。
 
 ## 当前阶段
 
-**M5.8.2 — 通用自然语言路由与查询形态收口（COMPLETE）。** 启动基线为 `m5/rebuild` / `c1df1fabde56b2d271dbedf0315399301614b6f7`，且启动时与 `origin/m5/rebuild` 一致、工作区干净；M5.8/M5.8.1 保持冻结，M5.8.3 / M5.9 / M5.10 未开始，M5 FINAL 尚未成立。
+**M5.8.3 — MCP驱动通用模型语义适配。** 实现、Real 验收和 temp lifecycle 收口；只有 fresh local/residual 与对应提交 CI success 均成立才为 COMPLETE。M5.8/M5.8.1/M5.8.2 authority 冻结，M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
@@ -33,7 +53,7 @@
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
 | **M5.8.1** | **前置性能加速与本地 MCP 会话复用** | **✅ COMPLETE** |
 | **M5.8.2** | **通用自然语言路由与查询形态收口** | **✅ COMPLETE** |
-| **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **⏳ NOT STARTED** |
+| **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **验收收口；对应提交 CI success 后 COMPLETE** |
 | **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
@@ -380,7 +400,7 @@
 
 ## 下一步
 
-M5.8.2 已完成。下一阶段为 M5.8.3 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配；完整 MCP queue/backpressure、20/50/100、fault/restart/soak 仍属于 M5.9，固定专业销售模板属于 M5.10。三者均未开始，M5 FINAL=false。
+M5.8.2 已完成。下一阶段为 M5.8.3 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配；完整 MCP queue/backpressure、20/50/100、fault/restart/soak 仍属于 M5.9，固定专业销售模板属于 M5.10。M5.8.3 当前验收收口，M5.9/M5.10 未开始，M5 FINAL=false。
 
 ## 关键命令
 
@@ -429,4 +449,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-28 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-08-31 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 验收收口（发布见对应提交 CI）；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

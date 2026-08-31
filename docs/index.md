@@ -44,6 +44,8 @@
 | `docs/specs/12_conversation_memory_and_resource_lifecycle_contract.md` | 多轮继承、archive/restore/delete、report ownership 与 artifact lifecycle | M5.3.3 多轮、会话或资源生命周期任务 |
 | `docs/specs/13_m5_generalization_and_acceptance_contract.md` | M5 重建历史、M5.5—M5.10 scope isolation、Generalization 与人工验收 Gate | M5.4.2 及所有后续 M5 任务 |
 | `docs/milestones/m5/m5_8_1_local_mcp_performance_plan.md` | M5.8.1 profiling、session reuse、cache、singleflight、并发与验收边界 | M5.8.1 |
+| `docs/specs/model_semantic_context.md` | MCP metadata authority、immutable context、exact-model optional override 与 capability boundary | M5.8.3 |
+| `docs/milestones/m5/m5_8_3_model_semantic_context_plan.md` | M5.8.3 实施步骤、fresh evidence 与 release residual/CI 状态 | M5.8.3 |
 | `docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md` | M2 Local Demo / Remote Production 专项计划 | M2 Provider、Smoke、Remote 证据任务 |
 | `docs/adr/ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md` | TurnPipeline / ToolGateway 总体决策 | 控制面与工具边界 |
 | `docs/adr/ADR-006_remote_powerbi_mcp_production_integration.md` | Remote MCP 生产化决策 | 仅重新获批 Remote 时 |

@@ -56,6 +56,8 @@ FORBIDDEN_ORACLE_REFERENCE_PATTERNS = (
     re.compile(r"\bbackend[./\\]tests(?:[./\\]|\b)", re.IGNORECASE),
 )
 SEMANTIC_AUTHORITY_FILES = (
+    ROOT / "backend" / "app" / "query_plan" / "model_semantic_context.py",
+    ROOT / "backend" / "app" / "query_plan" / "model_override.py",
     ROOT / "backend" / "app" / "query_plan" / "grounding.py",
     ROOT / "backend" / "app" / "query_plan" / "semantic_catalog.py",
     ROOT / "backend" / "app" / "query_plan" / "state_transition.py",
@@ -260,6 +262,8 @@ def main() -> int:
         "PYTHONIOENCODING": "utf-8",
     })
     test_paths = [
+        "backend/tests/unit/test_model_semantic_context.py",
+        "backend/tests/api/test_model_semantic_context.py",
         "backend/tests/unit/test_question_routing.py",
         "backend/tests/unit/test_semantic_compatibility.py",
         "backend/tests/unit/test_semantic_grounding.py",

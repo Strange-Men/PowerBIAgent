@@ -91,6 +91,10 @@ class ColumnSchema(BaseModel):
     description: Optional[str] = None
     display_name: Optional[str] = None
     format_string: Optional[str] = None
+    is_system_managed: bool = False
+    is_key: bool = False
+    expression: Optional[str] = None
+    sort_by_column: Optional[str] = None
 
 
 class MeasureSchema(BaseModel):
@@ -101,11 +105,17 @@ class MeasureSchema(BaseModel):
     description: Optional[str] = None
     display_name: Optional[str] = None
     format_string: Optional[str] = None
+    is_system_managed: bool = False
 
 
 class HierarchySchema(BaseModel):
     name: str
     levels: list[str] = Field(default_factory=list)
+    level_columns: list[str] = Field(default_factory=list)
+    is_hidden: bool = False
+    is_system_managed: bool = False
+    description: Optional[str] = None
+    display_name: Optional[str] = None
 
 
 class TableSchema(BaseModel):
@@ -120,6 +130,7 @@ class TableSchema(BaseModel):
 
 
 class RelationshipSchema(BaseModel):
+    name: Optional[str] = None
     from_table: str
     from_column: str
     to_table: str
@@ -127,6 +138,9 @@ class RelationshipSchema(BaseModel):
     is_active: bool = True
     from_cardinality: Optional[str] = None
     to_cardinality: Optional[str] = None
+    cross_filtering_behavior: Optional[str] = None
+    security_filtering_behavior: Optional[str] = None
+    join_on_date_behavior: Optional[str] = None
 
 
 class SemanticModelSchema(BaseModel):
@@ -135,6 +149,9 @@ class SemanticModelSchema(BaseModel):
     key: str
     tables: list[TableSchema] = Field(default_factory=list)
     relationships: list[RelationshipSchema] = Field(default_factory=list)
+    runtime_identity: Optional[str] = None
+    session_generation: Optional[int] = Field(default=None, ge=0)
+    metadata_source: Literal["adapter", "local_mcp", "mock"] = "adapter"
 
     def get_all_columns(self) -> list[str]:
         """获取所有列名"""

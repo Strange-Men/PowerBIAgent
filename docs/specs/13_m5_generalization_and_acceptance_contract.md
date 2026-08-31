@@ -1,6 +1,6 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立
+> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 验收收口（发布见对应提交 CI）；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立
 > **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.10（含 M5.7.1 / M5.7.2 / M5.8.1 / M5.8.2）
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
@@ -27,6 +27,8 @@ M5.4.1 及以前的以下能力不可回退：
 - Settings 全量 cursor pagination 与 conversation/report resource lifecycle；
 - archive ≠ delete、report tombstone；
 - automation ownership、residual=0、unknown ownership 用户资源不得自动删除。
+
+M5.8.3 的结构 authority 固定为 Power BI MCP Runtime Semantic Model；immutable ModelSemanticContext 仅适配当前模型 metadata；optional model override 仅补充业务语言/temporal metadata，必须通过 exact identity + schema fingerprint 和 runtime object validation。LLM 只能在 runtime-owned candidate IDs 中有界选择，QueryResult/VerifiedFactSet 仍为 factual authority，不建立第二套模型或数字来源。当前异构 fixture 五形态、真实 Rich15/零配置/完整 Chat/Memory/member A→B→A/facts 与本地 full gates 已通过；临时目录已统一受控 finally/ownership 校验，常规流程不再要求人工删除；cleanup failure 仅 warning + truthful residual。正式 COMPLETE 以 fresh local/residual 与新 exact-SHA CI success 为条件。证据见 [M5.8.3 计划](../milestones/m5/m5_8_3_model_semantic_context_plan.md)。
 
 ## 二、真实用户测试问题账本
 
@@ -228,7 +230,7 @@ M5.7.2 状态为 COMPLETE，只负责 Report Template Gate 前移、Template/Ren
 
 ### M5.8.3 — MCP-driven ModelSemanticContext
 
-状态为 NOT STARTED。任意 PBIX 自动形成 model semantic context/business binding、通用 runtime semantic adaptation 只属于本阶段；不得以 global glossary、ontology、RAG、embedding、vector DB 或 knowledge graph 绕过 runtime authority。
+状态为 IN PROGRESS，未发布。任意 PBIX 自动形成 model semantic context/business binding、通用 runtime semantic adaptation 只属于本阶段；不得以 global glossary、ontology、RAG、embedding、vector DB 或 knowledge graph 绕过 runtime authority。
 
 ### M5.9 — MCP performance and resilience
 
@@ -379,4 +381,4 @@ M5.8.2 已完成 Question Router、八类通用 Query Shape、shape-specific cla
 
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-08-28 M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*创建日期：2026-08-26 | 最后更新：2026-08-31 M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 验收收口（发布见对应提交 CI）；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
