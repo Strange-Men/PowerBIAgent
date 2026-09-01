@@ -4,6 +4,8 @@
 
 ## [M5.8.4] — 2026-09-01（本地/Real FINAL PASS；对应提交 CI success 后 COMPLETE）
 
+- 修复 exact-SHA CI 暴露的相对月份测试日历漂移：多轮 API production-path 测试显式固定 `TimeGrounder` reference date，避免跨月当天把正确生产结果误判为失败；生产语义、DAX 与事实 authority 未改变。
+
 - 在生产修改前完成 A–E 全后端 authority/call graph 复核；新增 ADR-015，扩展现有 ModelSemanticContext spec，不建立第二套模型/Catalog/Planner/Grounding。
 - 删除跨语言候选的 LCS/字面最高分前置门槛。现有 Catalog 投影 role/type/table/description/display/format/definition/relationship/hierarchy/temporal evidence；现有 bounded selector 只返回当前 candidate ID 或 abstain。QueryPlan 仅提供 untrusted、runtime 名单内的语言假设，不能直接绑定。
 - runtime 成员的有界语言解释仍逐值验证真实值；集合保留全部当前 literal，已知＋未知 ZERO business DAX。导入月字段需完整 runtime month-start proof；canonical 多轮继承保留 table owner。模板选择不再劫持普通 Data turn。

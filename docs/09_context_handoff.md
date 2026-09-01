@@ -15,6 +15,8 @@
 
 后续复核又修复了空 QueryPlan 草稿降级丢筛选、成员 discovery 接受已知子集、旧 Memory owner 覆盖当前显式双字段三条失败路径。pytest 默认 SQLite 已与 HTML 一并隔离；最新隔离 backend 2312 PASS / 1 SKIP、Golden 11 PASS / 1 manual skip、Semantic Compatibility 658 PASS。最新完整双 Provider Real 40/40、canonical/result consistency 20/20、30 个真实业务 witness；补强完整槽位/产物断言后的 extended 8/8、双 PBIX isolation 13/13，均 business/temp residual=0。旧失败批次保留，不回填。独立 performance 12/12，warm mean 8040.29ms、4-way wall 30920.78ms，LLM 长尾明显，不宣称性能提升。用户已人工选择“简易模板”并完成浏览器报表生成验收；原自有残留目录只读 `Test-Path=False`，四类 M5.8.4 受控 temp prefix 均为 0。用户明确要求保留两条 ownership 不明会话，它们不属于 M5.8.4 residual；未删除或修改。当前 M5.8.4 明确自建 validation/temp/browser 资源 residual=0，待白名单 commit/push 与 exact-SHA CI。
 
+2026-09-01 首次 M5.8.4 exact-SHA CI 在 Semantic Compatibility 第 5 步发现测试日历漂移：相对月份 API case 使用真实当天日期却固定期待 2026-08。已通过现有 `today` 注入点固定测试 reference date；生产代码与 Real 证据未变化，须以修复后新 SHA 的完整 CI 为最终发布条件。
+
 ## M5.8.3 验收收口（2026-08-31）
 
 启动基线为 `m5/rebuild` / `3b811dec214679bb556d4c96506e5e8f536fc5fc`；原修改完整保留，无 reset/revert/丢弃。M5.8.3 实现与 Real 验收收口，正式 COMPLETE 以 fresh local/residual 和对应提交的 PowerBIAgent Validation completed/success 为条件；当前提交自身 SHA/CI 只记录于最终报告。M5.9/M5.10 NOT STARTED，M5 FINAL=false。

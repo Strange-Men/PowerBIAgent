@@ -3,11 +3,40 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-31 | M5.8.3 COMPLETE；M5.8.4 验收中；M5.9/M5.10 NOT STARTED；M5 FINAL 尚未成立
+# 最后更新：2026-09-01 | M5.8.3 COMPLETE；M5.8.4 本地/Real FINAL PASS（待 exact-SHA CI）；M5.9/M5.10 NOT STARTED；M5 FINAL 尚未成立
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-584-009
+  title: 相对月份 API 验收随系统日期跨月漂移
+  category: ERR
+  first_detected_version: M5.8.4
+  symptom: 2026-09-01 exact-SHA CI 的 Semantic Compatibility Gate 中，相对时间多轮测试仍期待 2026-08 本月，生产解析正确得到 2026-09，导致门禁退出码 1
+  local_evidence: PowerBIAgent Validation run 33455159267 第 5 步失败；本地 CI 等价复现为 1 failed / 657 passed，失败断言为 2026-09-01 对 2026-08-01
+  authoritative_sources:
+  - title: TimeGrounder injectable clock contract
+    reason: 相对日期测试必须固定 reference date，不能把执行机器当天日期隐式写进 expected
+  root_cause: API production-path 测试硬编码相对月份 expected，却未使用 SemanticGroundingService 已提供的 today 注入点固定测试时钟
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 该多轮 API 测试在创建应用前将 grounding factory 固定到 2026-08-31；生产时间解析、DAX 与事实 authority 不变
+  regression_tests:
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 相对日期测试同时使用真实 date.today 与固定年月 expected
+  prevention_rules:
+  - 本月、上月、去年和最近 N 月的确定性测试必须显式注入 reference date
+  related_adr: ADR-015
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-01'
+    action: discovered
+    version: M5.8.4
+  - date: '2026-09-01'
+    action: mitigation
+    version: M5.8.4
 - id: ERR-584-008
   title: 已提交字段 owner 覆盖当前两个明确限定的筛选字段
   category: ERR

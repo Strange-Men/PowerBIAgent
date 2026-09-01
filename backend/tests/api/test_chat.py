@@ -2192,6 +2192,20 @@ class TestPendingClarificationProductionPath:
     async def test_time_replace_fresh_follow_up_and_failed_turn_boundaries(
         self, monkeypatch
     ):
+        from datetime import date
+
+        import backend.app.application.deepseek_turn_service as turn_service_module
+
+        grounding_type = turn_service_module.SemanticGroundingService
+        monkeypatch.setattr(
+            turn_service_module,
+            "SemanticGroundingService",
+            lambda catalog, *, selector=None: grounding_type(
+                catalog,
+                selector=selector,
+                today=lambda: date(2026, 8, 31),
+            ),
+        )
         app, provider = _patch_m533_multi_turn_composition(monkeypatch)
         transport = ASGITransport(app=app)
         conversation_id = "m533-multi-turn"
