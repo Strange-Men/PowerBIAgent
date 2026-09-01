@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.8.3 — MCP驱动通用模型语义适配**。本地/Real 验收收口；正式 COMPLETE 以对应提交的 PowerBIAgent Validation completed/success 为条件。M5.8/M5.8.1/M5.8.2 authority 保持冻结，M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.8.4 — 现有语义链跨语言与通用模型理解优化**。本地门禁、Real 与人工浏览器验收均已收口；正式 COMPLETE 以对应提交的 PowerBIAgent Validation completed/success 为条件。M5.8.3 已在 `b86662e` 对应 CI success 后 COMPLETE；Provider/MCP/DAX/facts/Report 边界保持冻结，M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -48,6 +48,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.8.2** 已完成 code-owned Question Router、通用 Query Shape、shape-specific required slots、minimal clarification、安全 calculator/help/system-info、dimension-only distinct、Top1、runtime-validated member set/`IN_SET` 与 bounded month trend；非业务 turn 在 schema/member/DAX 前终止且不污染 semantic Memory。M5.8.1 保持冻结。**M5.8.2 COMPLETE。**
 - **M5.8.3** 已实现 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配。MCP runtime schema 是结构 authority；immutable context 只适配 metadata；exact identity + fingerprint 验证的 override 只补充业务语言；LLM 只在 runtime-owned candidates 中选择。Rich/zero-config/双 PBIX/facts/performance/local full gates 已通过；受控 temp 生命周期已自动化；**正式 COMPLETE 以对应提交的 CI success 为条件**。
 - **M5.9** 只负责 MCP profiling、session reuse、cache、bounded concurrency、bounded queue/backpressure、20/50/100 concurrency 与 restart/fault/soak；不得修改 Semantic/DAX/VerifiedFactSet authority。**M5.9 NOT STARTED。**
+- **M5.8.4** 已在现有 ModelSemanticContext/SemanticCatalog/Grounding 内完成跨语言对象/成员绑定与 canonical KEEP/REPLACE 优化；report template choice 不等于本轮 report intent。LLM 仅在 runtime 已证明存在的候选 ID 中解释语言，不能产生新对象或事实。本地/Real FINAL PASS，正式 COMPLETE 仍要求 exact-SHA CI success。M5.9/M5.10 不启动。
 - **M5.10** 只负责“简易模板/销售模板”显式选择与固定专业销售模板；两者都遵守 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed renderer`。**M5.10 NOT STARTED。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。**
 
 当前真实主链：
@@ -162,4 +163,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-08-31 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 验收收口（发布见对应提交 CI）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-01 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 COMPLETE；M5.8.4 本地/Real FINAL PASS（待对应提交 CI）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

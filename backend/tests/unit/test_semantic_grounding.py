@@ -332,11 +332,11 @@ class TestSemanticCatalogAndObjectGrounding:
         assert result.canonical_object is None
 
     @pytest.mark.asyncio
-    async def test_two_similar_measures_remain_ambiguous_despite_selector(self):
+    async def test_two_similar_measures_preserve_selector_abstention(self):
         glossary = _glossary()
         glossary["measures"]["Total Sales"]["aliases"] = ["净销售额"]
         glossary["measures"]["Total Quantity"]["aliases"] = ["净销售量"]
-        provider = _SelectionProvider("measure:Sales:Total Sales")
+        provider = _SelectionProvider(None, "AMBIGUOUS")
 
         result = await ObjectGrounder(
             _catalog(glossary), BoundedLLMObjectSelector(provider)
@@ -348,15 +348,15 @@ class TestSemanticCatalogAndObjectGrounding:
         )
 
         assert result.status == GroundingStatus.AMBIGUOUS
-        assert result.method == "bounded_llm_evidence_tie"
-        assert provider.calls == 0
+        assert result.canonical_object is None
+        assert provider.calls == 1
 
     @pytest.mark.asyncio
     async def test_two_similar_dimensions_remain_ambiguous(self):
         glossary = _glossary()
         glossary["fields"]["Category"]["aliases"] = ["产品分类名称"]
         glossary["fields"]["Product"]["aliases"] = ["产品分类编码"]
-        provider = _SelectionProvider("field:Sales:Category")
+        provider = _SelectionProvider(None, "AMBIGUOUS")
 
         result = await ObjectGrounder(
             _catalog(glossary), BoundedLLMObjectSelector(provider)
@@ -368,11 +368,12 @@ class TestSemanticCatalogAndObjectGrounding:
         )
 
         assert result.status == GroundingStatus.AMBIGUOUS
-        assert provider.calls == 0
+        assert result.canonical_object is None
+        assert provider.calls == 1
 
     @pytest.mark.asyncio
     async def test_unknown_phrase_never_receives_forced_catalog_choice(self):
-        provider = _SelectionProvider("measure:Sales:Total Sales")
+        provider = _SelectionProvider(None, "UNRESOLVED")
         result = await ObjectGrounder(
             _catalog(), BoundedLLMObjectSelector(provider)
         ).select_bounded(
@@ -383,8 +384,8 @@ class TestSemanticCatalogAndObjectGrounding:
         )
 
         assert result.status == GroundingStatus.UNRESOLVED
-        assert result.method == "bounded_llm_no_metadata_evidence"
-        assert provider.calls == 0
+        assert result.canonical_object is None
+        assert provider.calls == 1
 
     @pytest.mark.asyncio
     async def test_partial_alias_evidence_can_bound_selection(self):
@@ -453,13 +454,15 @@ class TestSemanticCatalogAndObjectGrounding:
             "measure",
         )
 
-        assert result.status == GroundingStatus.AMBIGUOUS
-        assert result.method == "bounded_llm_conflicts_with_metadata_evidence"
+        assert result.status == GroundingStatus.RESOLVED
+        assert result.canonical_object.canonical_name == "Total Sales"
+        assert provider.calls == 0
 
 
 class _SelectionProvider(LLMProvider):
-    def __init__(self, candidate_id: str):
+    def __init__(self, candidate_id: str | None, outcome="RESOLVED"):
         self.candidate_id = candidate_id
+        self.outcome = outcome
         self.calls = 0
 
     @property
@@ -476,7 +479,7 @@ class _SelectionProvider(LLMProvider):
         return LLMResponse(
             content="{}",
             structured=CandidateSelection(
-                outcome="RESOLVED", candidate_id=self.candidate_id
+                outcome=self.outcome, candidate_id=self.candidate_id
             ),
             model="selector-adversarial",
         )

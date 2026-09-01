@@ -3,11 +3,278 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-08-31 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 验收收口；M5.9/M5.10 NOT STARTED；M5 FINAL 尚未成立
+# 最后更新：2026-08-31 | M5.8.3 COMPLETE；M5.8.4 验收中；M5.9/M5.10 NOT STARTED；M5 FINAL 尚未成立
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-584-008
+  title: 已提交字段 owner 覆盖当前两个明确限定的筛选字段
+  category: ERR
+  first_detected_version: M5.8.4
+  symptom: 用户同时明确两个 Table[Column]，旧逻辑仍可用 committed dimension_tables 选中其中一个
+  local_evidence: Grounding reproducer 从预期 AMBIGUOUS 实际 RESOLVED；修复后显式双 owner 拒绝且 ZERO member lookup，未指定 owner 的合法 KEEP 保持通过
+  authoritative_sources:
+  - title: ADR-008 and ADR-015 current explicit before Memory
+    reason: canonical Memory 只能补省略槽，不能覆盖本轮明确冲突
+  root_cause: ambiguous filter 的 Memory owner 消歧未区分省略 table qualification 与当前多个明确对象
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅同 canonical field name 且没有多个当前明确 qualified owner 时允许继承；其他歧义保持 fail closed
+  regression_tests:
+  - backend/tests/unit/test_cross_language_grounding.py
+  prohibited_patterns:
+  - 使用旧 Memory 任意选择当前明确歧义中的一个字段
+  prevention_rules:
+  - canonical KEEP 的正向对照必须伴随当前显式双 owner 的负向验证
+  related_adr: ADR-015
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.4
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.4
+- id: ERR-584-006
+  title: QueryPlan 语言草稿失败后空草稿降级丢失用户筛选
+  category: ERR
+  first_detected_version: M5.8.4
+  symptom: Real 地点筛选在 QueryPlan 超时后变成无筛选总额并提交 Memory
+  local_evidence: Real unproved_place completed 且 filters 为空；正式 HTTP timeout/response_validation 两个 reproducer 均由 completed 修复为 validation_failed
+  authoritative_sources:
+  - title: ADR-015 Cross-language Runtime Grounding
+    reason: 弱草稿缺失不证明用户省略条件，不得扩大查询范围
+  root_cause: service 捕获 QueryPlanError 后构造空 QueryPlan，部分 Intent 只剩指标仍可执行
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: QueryPlanError 在 Grounding/DAX 前返回正式 validation_failed；移除空草稿降级，Provider 实现与重试不变
+  regression_tests:
+  - backend/tests/api/test_cross_language_grounding.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 把语言提取失败解释成用户没有筛选或时间条件
+  prevention_rules:
+  - 原来支持降级的正向测试必须与丢条件负向测试共同审计
+  related_adr: ADR-015
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.4
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.4
+- id: ERR-584-007
+  title: pytest 默认 SQLite 路径未隔离开发数据库
+  category: ERR
+  first_detected_version: M5.8.4
+  symptom: 从开发目录运行默认 Chat fixture 会继承开发 Settings 的持久化路径
+  local_evidence: 默认 SQLite 路径 containment reproducer FAIL；停止直接运行，开发库该时间窗两条新会话无 ownership 证据，保留不删除
+  authoritative_sources:
+  - title: AGENTS.md automation ownership contract
+    reason: pytest 不得污染用户存储，未证明归属的资源不得清理
+  root_cause: 全局 autouse fixture 只隔离 report root，没有隔离默认 SQLite 路径
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: autouse fixture 登记独立 SQLite 文件，环境变量覆盖默认路径，finally 删除仅自有 persistence root 并核验；全量仍在无 dotenv 隔离 checkout 运行
+  regression_tests:
+  - backend/tests/unit/test_acceptance_tempdir.py
+  prohibited_patterns:
+  - 依据时间戳、标题或问题文本认定用户资源属于测试
+  prevention_rules:
+  - 默认测试存储必须同时隔离 HTML 与 SQLite
+  - 不以直接开发目录执行结果替代隔离全量门禁
+  related_adr: ADR-012
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.4
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.4
+- id: ERR-584-004
+  title: 合法成员 ID 不等于输入筛选与成员语义等价
+  category: ERR
+  first_detected_version: M5.8.4
+  symptom: Real 负向用例中一个不存在的具体地点被解释成覆盖范围更大的区域
+  local_evidence: cross_language_real_acceptance 的 unproved_place 原始运行出现 completed；专项计划保留失败与复测状态
+  authoritative_sources:
+  - title: ADR-015 Cross-language Runtime Grounding
+    reason: LLM 只能解释等价语言，不能扩大筛选范围或从外部知识生成事实关系
+  root_cause: 成员翻译指令仍被理解为类别归属分类；仅验证返回 ID 的存在性不能证明语言等价
+  failed_attempts:
+  - 强制同一集合和粒度后，城市负向通过，但并列正常区域翻译过度澄清
+  - 隔离 requested_value 与整句问题后，消除了其他槽干扰，但 DeepSeek 正常区域仍过度澄清
+  - 加入模型内方向类别说明后，正常区域仍偶发 abstain；末尾 worldwide containment 检查与 model-local category 说明冲突
+  repair_attempt_count: 4
+  continuation_authorization:
+    authority: explicit_user_request
+    entry_id: ERR-584-004
+    version: M5.8.4
+    source: docs/milestones/m5/m5_8_4_cross_language_grounding_plan.md
+    quote: 不要因为发现 P0/P1 或测试失败而中断，持续定位、修复、回归，直到满足 COMPLETE 条件；只有真正不可控的外部环境阻塞才允许最终报告 BLOCKED。
+  final_fix: 同一 bounded member selector 明确要求相同集合与粒度，禁止 parent category、containment 和关联推断；并列正常翻译与未知地点负向 Real 验证
+  regression_tests:
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  - backend/tests/unit/test_cross_language_grounding.py
+  prohibited_patterns:
+  - 只凭 member ID 属于白名单就宣称自然语言含义正确
+  - 以区域包含具体地点替代原始地点筛选
+  prevention_rules:
+  - 每次语言调整必须同时验证 positive translation 与 unknown/compound category ZERO DAX
+  - 不把 fixture selector 当真实语言质量证据
+  related_adr: ADR-015
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.4
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.4
+- id: ERR-584-005
+  title: HTTP 验收观察超时后后台请求未退出就清理资源
+  category: ERR
+  first_detected_version: M5.8.4
+  symptom: Real HTTP 超时后 SQLite 文件仍被后台请求占用，owned temp cleanup 出现 PermissionError
+  local_evidence: 验收运行输出 temporary_residual=1；数据库各业务表只读核验为零，目录删除被执行策略拒绝
+  authoritative_sources:
+  - title: AGENTS.md automation ownership and cleanup contract
+    reason: 失败请求也必须先结束业务执行，再清理 ownership 资源并核验 residual
+  root_cause: HTTP client deadline 短于多个生产 LLM stage 的总时长，managed_test_run 退出时未追踪仍执行的 server task
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 验收脚本统一追踪所有请求及晚返回报表，先 drain/cancel 再运行正式 API cleanup，localhost 不经过外部 proxy；生产 timeout/retry 不变
+  regression_tests:
+  - backend/tests/unit/test_acceptance_tempdir.py
+  prohibited_patterns:
+  - 清理后仍允许后台请求创建资源
+  - 把 cleanup_warning 当 residual=0
+  - 绕过执行策略删除残留
+  prevention_rules:
+  - 失败与取消路径均验证后台任务在资源 teardown 前结束
+  - 证据按 request identity 隔离，不能按重复问题文本混合不同模型或并发请求
+  related_adr: ADR-015
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.4
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.4
+- id: ERR-584-001
+  title: 字面候选预筛选使跨语言 runtime 对象无法进入 bounded selector
+  category: ERR
+  first_detected_version: M5.8.4
+  symptom: 字面候选预筛选使跨语言 runtime 对象无法进入 bounded selector
+  local_evidence: 专项计划记录了修改前 failure reproducer；新增跨语言 unit/API 回归与 Real harness 保留
+    canonical/ZERO DAX 断言
+  authoritative_sources:
+  - title: ADR-015 Cross-language Runtime Grounding
+    reason: 对象候选来自当前 runtime，语言弱草稿不能取得 canonical identity 或成员事实 authority
+  root_cause: 最长公共子串预排名加上 current-input substring 过滤，误把翻译后的弱维度当省略
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 删除 LCS 权威前置筛选；复用 role-scoped Catalog evidence，当前语言先绑定再继承 canonical table
+    owner
+  regression_tests:
+  - backend/tests/unit/test_cross_language_grounding.py
+  - backend/tests/api/test_cross_language_grounding.py
+  prohibited_patterns:
+  - 按字符串 overlap 排除跨语言候选
+  - 未知或歧义退化为无筛选查询
+  - 用 Provider outage 的澄清冒充语义准确性 PASS
+  prevention_rules:
+  - Fixture 与 Real PBIX 分开举证；失败轮 ZERO business DAX/Memory commit
+  - 每次语言解释只返回 runtime candidate ID 或 abstain
+  related_adr: ADR-015
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.4
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.4
+- id: ERR-584-002
+  title: 模板选择和上一轮报表状态劫持当前普通查询
+  category: ERR
+  first_detected_version: M5.8.4
+  symptom: 模板选择和上一轮报表状态劫持当前普通查询
+  local_evidence: 专项计划记录了修改前 failure reproducer；新增跨语言 unit/API 回归与 Real harness 保留
+    canonical/ZERO DAX 断言
+  authoritative_sources:
+  - title: ADR-015 Cross-language Runtime Grounding
+    reason: 对象候选来自当前 runtime，语言弱草稿不能取得 canonical identity 或成员事实 authority
+  root_cause: Intent prompt/service 多处把 report_template_key 当当前生成报表意图
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 以当前 QuestionRouter/report request 运行模板 Gate；Data canonical requested_template
+    清空，模板选择不覆盖本轮 intent
+  regression_tests:
+  - backend/tests/api/test_cross_language_grounding.py
+  prohibited_patterns:
+  - 按字符串 overlap 排除跨语言候选
+  - 未知或歧义退化为无筛选查询
+  - 用 Provider outage 的澄清冒充语义准确性 PASS
+  prevention_rules:
+  - Fixture 与 Real PBIX 分开举证；失败轮 ZERO business DAX/Memory commit
+  - 每次语言解释只返回 runtime candidate ID 或 abstain
+  related_adr: ADR-015
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.4
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.4
+- id: ERR-584-003
+  title: 成员集合 discovery 丢弃当前明确的未知成员
+  category: ERR
+  first_detected_version: M5.8.4
+  symptom: 成员集合 discovery 丢弃当前明确的未知成员
+  local_evidence: 专项计划记录了修改前 failure reproducer；新增跨语言 unit/API 回归与 Real harness 保留
+    canonical/ZERO DAX 断言
+  authoritative_sources:
+  - title: ADR-015 Cross-language Runtime Grounding
+    reason: 对象候选来自当前 runtime，语言弱草稿不能取得 canonical identity 或成员事实 authority
+  root_cause: 清空 weak filters 后只扫描已知 runtime members，已知加未知被缩成已知子集
+  failed_attempts:
+  - 仅保留 draft/intent 已提取的 literal 仍不足；weak filters 完全缺失或只提取已知子集时，旧 discovery 仍会丢条件
+  repair_attempt_count: 2
+  final_fix: 保留所有当前原文 literal，经相同 field selection 与 runtime member validation 逐值验证，全部通过才合成
+    IN_SET；并列成员跨度未完整覆盖时 fail closed，包含连词的完整成员名保留原义
+  regression_tests:
+  - backend/tests/unit/test_cross_language_grounding.py
+  - backend/tests/api/test_cross_language_grounding.py
+  prohibited_patterns:
+  - 按字符串 overlap 排除跨语言候选
+  - 未知或歧义退化为无筛选查询
+  - 用 Provider outage 的澄清冒充语义准确性 PASS
+  prevention_rules:
+  - Fixture 与 Real PBIX 分开举证；失败轮 ZERO business DAX/Memory commit
+  - 每次语言解释只返回 runtime candidate ID 或 abstain
+  related_adr: ADR-015
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-08-31'
+    action: discovered
+    version: M5.8.4
+  - date: '2026-08-31'
+    action: mitigation
+    version: M5.8.4
 - id: ERR-583-008
   title: 验收临时目录缺少统一 ownership 与 cleanup warning 契约
   category: ERR

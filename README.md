@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.8.3 — MCP驱动通用模型语义适配**。本地/Real 验收收口；正式 COMPLETE 以对应提交的 PowerBIAgent Validation completed/success 为条件。M5.8/M5.8.1/M5.8.2 authority 保持冻结，M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.8.4 — 现有语义链跨语言与通用模型理解优化**。本地门禁、Real 与人工浏览器验收均已收口；正式 COMPLETE 以对应提交的 PowerBIAgent Validation completed/success 为条件。M5.8.3 已在 `b86662e` 对应 CI success 后 COMPLETE；Provider/MCP/DAX/facts/Report 边界保持冻结，M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 ## 项目概览
 
@@ -341,7 +341,8 @@ python -m alembic upgrade head
 | M5.8 | COMPLETE — OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection |
 | M5.8.1 | COMPLETE — 前置性能加速、Local MCP session reuse 与安全进程内 metadata/member cache |
 | M5.8.2 | COMPLETE — Question Router、通用 Query Shape、minimal clarification、dimension-only/Top1/member-set/bounded trend 与安全 calculator/help/system-info |
-| M5.8.3 | runtime metadata → immutable ModelSemanticContext → SemanticCatalog；验收收口，正式 COMPLETE 以对应提交 CI success 为条件 |
+| M5.8.3 | runtime metadata → immutable ModelSemanticContext → SemanticCatalog；COMPLETE（b86662e / CI success） |
+| M5.8.4 | 同一 runtime Catalog 内的跨语言对象/成员绑定与多轮保持；本地/Real FINAL PASS，待对应提交 CI |
 | M5.9 | NOT STARTED — 完整 MCP performance、resilience、并发与压力验证 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
 
@@ -372,4 +373,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-08-31 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 验收收口（发布见对应提交 CI）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-01 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 COMPLETE；M5.8.4 本地/Real FINAL PASS（待对应提交 CI）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

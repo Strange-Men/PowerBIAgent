@@ -1197,6 +1197,11 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
 
     async def generate(self, request, output_type):
         self.calls.append(request)
+        if request.task == LLMTask.SEMANTIC_SELECTION:
+            from backend.app.query_plan.grounding import CandidateSelection
+
+            assert self.active == "m55_unknown_member"
+            return LLMResponse(content="{}", structured=CandidateSelection(outcome="UNRESOLVED"))
         if request.task == LLMTask.INTENT_RECOGNITION and self.fail_intent_once:
             self.fail_intent_once = False
             raise RuntimeError("injected intent outage")
@@ -2558,7 +2563,7 @@ class TestM24DeepSeekLocalChat:
         }
 
     @pytest.mark.asyncio
-    async def test_m55_deterministic_semantics_survive_non_authoritative_llm_failure(
+    async def test_intent_recovery_requires_a_complete_query_language_draft(
         self, monkeypatch
     ):
         app, provider = _patch_m533_multi_turn_composition(monkeypatch)
@@ -2601,8 +2606,10 @@ class TestM24DeepSeekLocalChat:
                     "semantic_model_key": "local_desktop_model",
                 })
                 scalar_body = scalar.json()
-                assert scalar_body["terminal_state"] == "completed", scalar_body
-                assert scalar_body["execution_audit"]["query_plan_fallback"] is True
+                # Missing language extraction cannot certify absent filters.
+                assert scalar_body["terminal_state"] == "validation_failed", scalar_body
+                assert not scalar_body.get("memory_commit")
+                assert not scalar_body.get("execution_audit", {}).get("dax_executed")
 
     @pytest.mark.asyncio
     async def test_unsupported_intent_routing_and_memory_boundaries(self, monkeypatch):

@@ -1,8 +1,8 @@
 """Repository-wide test artifact lifecycle isolation.
 
-Every application instance created by pytest receives a per-test managed report
-root outside the source tree.  The fixture owns that root, tears it down after
-the test, and verifies cleanup so tests cannot leak HTML into real local_state.
+Every application instance created by pytest receives per-test default report
+and SQLite paths outside the source tree. The fixture owns those paths and
+verifies cleanup so developer dotenv configuration cannot target user storage.
 """
 
 from __future__ import annotations
@@ -26,8 +26,10 @@ def isolate_managed_report_artifacts(
     """Register, isolate, tear down, and verify each test's report root."""
 
     test_root = (tmp_path / "owned_test_artifacts" / "reports").resolve()
+    persistence_root = (tmp_path / "owned_test_artifacts" / "persistence").resolve()
+    database_path = persistence_root / "test.db"
     owner_root = tmp_path.resolve()
-    if not test_root.is_relative_to(owner_root):
+    if not all(path.is_relative_to(owner_root) for path in (test_root, persistence_root)):
         raise AssertionError("test artifact root escaped pytest ownership")
 
     registry = ArtifactOwnershipRegistry(
@@ -41,19 +43,22 @@ def isolate_managed_report_artifacts(
         source_mode="isolated",
     )
     ownership.add_report_root(test_root)
+    ownership.add_sqlite_path(database_path)
 
     monkeypatch.setenv("REPORT_ARTIFACTS_PATH", str(test_root))
+    monkeypatch.setenv("PERSISTENCE_DATABASE_PATH", str(database_path))
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
 
     try:
-        if test_root.exists():
-            shutil.rmtree(test_root)
-        if test_root.exists():
-            raise AssertionError("test report artifact cleanup failed")
+        for owned_root in (test_root, persistence_root):
+            if owned_root.exists():
+                shutil.rmtree(owned_root)
+            if owned_root.exists():
+                raise AssertionError("test artifact cleanup failed")
     except Exception as error:
-        registry.record_failure(test_run_id, [f"report_root:{error}"])
+        registry.record_failure(test_run_id, [f"owned_root:{error}"])
         raise
     else:
         registry.complete_run(test_run_id)

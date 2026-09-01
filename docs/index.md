@@ -46,6 +46,8 @@
 | `docs/milestones/m5/m5_8_1_local_mcp_performance_plan.md` | M5.8.1 profiling、session reuse、cache、singleflight、并发与验收边界 | M5.8.1 |
 | `docs/specs/model_semantic_context.md` | MCP metadata authority、immutable context、exact-model optional override 与 capability boundary | M5.8.3 |
 | `docs/milestones/m5/m5_8_3_model_semantic_context_plan.md` | M5.8.3 实施步骤、fresh evidence 与 release residual/CI 状态 | M5.8.3 |
+| `docs/milestones/m5/m5_8_4_cross_language_grounding_plan.md` | A–E 全后端复核、跨语言矩阵、Real 双模型与性能证据 | M5.8.4 |
+| `docs/adr/ADR-015_cross_language_runtime_grounding.md` | runtime 候选、受限语言解释、成员与多轮绑定边界 | M5.8.4 |
 | `docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md` | M2 Local Demo / Remote Production 专项计划 | M2 Provider、Smoke、Remote 证据任务 |
 | `docs/adr/ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md` | TurnPipeline / ToolGateway 总体决策 | 控制面与工具边界 |
 | `docs/adr/ADR-006_remote_powerbi_mcp_production_integration.md` | Remote MCP 生产化决策 | 仅重新获批 Remote 时 |

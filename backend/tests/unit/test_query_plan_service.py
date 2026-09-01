@@ -466,7 +466,7 @@ class TestPromptRules:
         )
         system = messages[0]["content"]
 
-        assert 'Filter 只允许 operator="eq"' in system
+        assert "eq 与同字段 in 集合均须由后端 runtime members 逐值验证" in system
         assert 'sort 只能是 "asc"、"desc" 或 null' in system
         assert "top_n 非 null 时必须同时提供 sort" in system
 

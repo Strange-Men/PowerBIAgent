@@ -32,9 +32,9 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 15. measures 只能选择 Schema 中明确列为“度量值”的对象，不能填普通数值列
 16. 用户业务指标有明确 Measure 时必须使用该 Measure，不得以裸列聚合重定义口径
 17. semantic_model_key 必须逐字等于当前 Schema 标示的 model_key，不得使用示例或历史 Key
-18. 不得在 Prompt 内定义业务词；对象业务含义只来自 model-scoped Business Glossary，草稿中的对象名不会成为 canonical authority
+18. 不得在 Prompt 内定义业务词；当前 Power BI runtime metadata 提供对象语义证据，optional model-scoped override 只补企业专有语言；草稿中的对象名不会成为 canonical authority
 19. Schema 对象名必须原样复制，不得翻译、删除空格、改变大小写或改用用户原话
-20. Real MVP 的 Filter 只允许 operator="eq"；其他 operator 尚未完成确定性 Layer 3 验证，不得输出
+20. 筛选草稿只提取当前原始 member 值；eq 与同字段 in 集合均须由后端 runtime members 逐值验证，禁止扩大/省略用户筛选
 21. sort 只能是 "asc"、"desc" 或 null；top_n 非 null 时必须同时提供 sort
 22. 当前可验证排序模式只支持单个 Measure；需要排序时 measures 必须恰好一个，排序指标即该 Measure
 23. intent_type=report_generation 时，本 JSON 仍只是语言理解草稿；不得决定报表查询集合、KPI/图表数据、HTML、CSS、布局、保存目录或资源引用
@@ -183,9 +183,9 @@ REPAIR_VALIDATION_INSTRUCTION = """上一次生成的 QueryPlan 未通过 Schema
 9. Schema 对象名必须原样复制，不得翻译、删除空格或改变大小写
 10. 不得虚构任何字段
 11. 不带 Markdown 代码块标记
-12. Real MVP 的 Filter 仅允许 eq；sort 仅允许 asc/desc，top_n 必须同时提供 sort
-12. 不带解释性文本
-13. 只输出 JSON"""
+12. Filter 只允许 eq 或同字段 in；每个值保持用户原文并由 runtime 独立验证；sort 仅允许 asc/desc，top_n 必须同时提供 sort
+13. 不带解释性文本
+14. 只输出 JSON"""
 
 
 # ---------------------------------------------------------------------------

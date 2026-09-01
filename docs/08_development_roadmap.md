@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.8.3 — MCP驱动通用模型语义适配（验收收口；对应提交 CI success 后 COMPLETE）
+> **状态：** M5.8.4 — 跨语言与通用模型理解优化（本地/Real FINAL PASS；对应提交 CI success 后 COMPLETE）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -46,7 +46,8 @@
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
 | **M5.8.1** | **前置性能加速与本地 MCP 会话复用** | **✅ COMPLETE** |
 | **M5.8.2** | **通用自然语言路由与查询形态收口** | **✅ COMPLETE** |
-| **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **验收收口；对应提交 CI success 后 COMPLETE** |
+| **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **COMPLETE（b86662e / CI success）** |
+| **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **本地/Real FINAL PASS；待对应提交 CI** |
 | **M5.9** | **完整 MCP performance、concurrency、resilience 与 soak** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
@@ -144,6 +145,8 @@ Fresh evidence：Semantic Compatibility `421 passed`（109 production backend fi
 typed `ModelSemanticContext`、runtime-driven Catalog 和 exact identity/fingerprint 的 optional business override 已实现；不提供“自动 business binding”。Rich 15、零配置、双 PBIX Chat/Memory/member/facts 与本地 full gates 已通过，受控 temp 生命周期已自动化，正式 COMPLETE 以 fresh local/residual 与对应提交 CI success 为条件。禁止用跨行业 global glossary、ontology/RAG/vector DB 替代 runtime authority。
 
 ### 新 M5.9 — MCP performance and resilience
+
+**M5.8.4** 已在现有 Context/Catalog/Grounding 中完成跨语言候选、runtime 成员解释与 canonical KEEP/REPLACE，并隔离模板选择和本轮意图。规范见 [ADR-015](adr/ADR-015_cross_language_runtime_grounding.md)，完整后端 A–E 复核与 fresh 验收见 [M5.8.4 计划](milestones/m5/m5_8_4_cross_language_grounding_plan.md)。不新建模型/Planner/Grounding，不修改 Provider、MCP 会话缓存、DAX/facts/Memory factual authority 或 Report renderer。
 
 M5.8.1 只前移低风险 session/cache/singleflight/semaphore 子集。M5.9 继续负责完整 bounded queue/backpressure、20/50/100 concurrency、PBIX/backend restart、fault matrix、remote MCP performance 与 long soak。不得通过降低 factual validation 换性能；不得修改 Semantic/DAX/VerifiedFactSet authority；warm latency 不得冒充 cold latency。
 
@@ -387,7 +390,7 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
-- M5.5—M5.8.2 已完成并冻结；当前仅批准 M5.8.3，完整 M5.9 与 M5.10 仍不得进入。
+- M5.5—M5.8.2 已完成并冻结；当前仅批准 M5.8.4，完整 M5.9 与 M5.10 仍不得进入。
 - 一个 milestone 不得同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle；只有 M5.10 全部门禁完成后才允许宣告 M5 FINAL。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
@@ -402,4 +405,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-08-31 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 验收收口（发布见对应提交 CI）；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-09-01 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 COMPLETE；M5.8.4 本地/Real FINAL PASS（待对应提交 CI）；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

@@ -28,12 +28,14 @@ def build_schema_view(schema: SemanticModelSchema) -> dict[str, Any]:
         if t.is_hidden or t.is_system_managed:
             continue
         columns = [
-            {"name": c.name, "data_type": c.data_type}
+            {"name": c.name, "data_type": c.data_type,
+             "description": c.description, "display_name": c.display_name}
             for c in t.columns
             if not c.is_hidden
         ]
         measures = [
-            {"name": m.name}
+            {"name": m.name, "description": m.description,
+             "display_name": m.display_name, "format_string": m.format_string}
             for m in t.measures
             if not m.is_hidden
         ]
@@ -43,6 +45,7 @@ def build_schema_view(schema: SemanticModelSchema) -> dict[str, Any]:
         ]
         tables.append({
             "name": t.name,
+            "description": t.description,
             "columns": columns,
             "measures": measures,
             "hierarchies": hierarchies,
@@ -68,12 +71,18 @@ def render_schema_text(schema_view: dict[str, Any]) -> str:
 
     for table in schema_view["tables"]:
         lines.append(f"表：{table['name']}")
+        if table.get("description"):
+            lines.append(f"  描述：{table['description']}")
         if table["columns"]:
             col_names = [c["name"] for c in table["columns"]]
             lines.append(f"  列：{', '.join(col_names)}")
         if table["measures"]:
             meas_names = [m["name"] for m in table["measures"]]
             lines.append(f"  度量值：{', '.join(meas_names)}")
+        for obj in (*table["columns"], *table["measures"]):
+            metadata = [str(obj[key]) for key in ("display_name", "description", "format_string") if obj.get(key)]
+            if metadata:
+                lines.append(f"  {obj['name']} metadata：{' | '.join(metadata)}")
         if table["hierarchies"]:
             for h in table["hierarchies"]:
                 lines.append(f"  层次结构：{h['name']} ({' > '.join(h['levels'])})")

@@ -10,6 +10,118 @@ import pytest
 from scripts.acceptance_tempdir import MARKER, owned_acceptance_tempdir
 
 
+@pytest.mark.asyncio
+async def test_default_sqlite_settings_cannot_point_pytest_at_developer_database(tmp_path):
+    from backend.app.config.settings import Settings, PersistenceBackend
+    from backend.app.persistence.database import create_engine
+    from backend.app.persistence.models import Base
+
+    settings = Settings(_env_file=None, persistence_backend=PersistenceBackend.SQLITE)
+    database = Path(settings.persistence_database_path).resolve()
+    assert database.is_relative_to(tmp_path.resolve())
+    engine = create_engine(settings)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        assert database.is_file()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_real_negative_gate_rejects_swallowed_provider_failure_and_restores_observer():
+    from scripts.manual_smoke.cross_language_real_acceptance import (
+        ACCEPTANCE_REQUEST, observe_provider_failures, negative_outcome_verified,
+    )
+    from backend.app.llm.base import LLMProviderError, LLMRequest, LLMTask, LLMErrorCategory
+
+    class Provider:
+        async def generate(self, request, output_type):
+            raise LLMProviderError("secret raw payload", error_category=LLMErrorCategory.CONNECTION)
+
+    original = Provider.generate
+    failures = {}
+    token = ACCEPTANCE_REQUEST.set("owned-request")
+    try:
+        with observe_provider_failures(failures, provider_type=Provider):
+            with pytest.raises(LLMProviderError):
+                await Provider().generate(LLMRequest(task=LLMTask.INTENT_RECOGNITION), dict)
+        assert Provider.generate is original
+        assert failures == {"owned-request": [{"task": "intent_recognition", "category": "connection"}]}
+        audit = {"member_grounding_status": [{"status": "UNRESOLVED", "method": "bounded_member_llm_abstained"}]}
+        assert negative_outcome_verified(audit, [], "unknown")
+        assert not negative_outcome_verified(audit, failures["owned-request"], "unknown")
+        assert not negative_outcome_verified({}, [], "unknown")
+    finally:
+        ACCEPTANCE_REQUEST.reset(token)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("task_name,repaired", [("intent_recognition", True), ("semantic_selection", False)])
+async def test_format_repair_success_is_distinguished_from_unrecovered_selector_failure(task_name, repaired):
+    from scripts.manual_smoke.cross_language_real_acceptance import ACCEPTANCE_REQUEST, observe_provider_failures, negative_outcome_verified
+    from backend.app.llm.base import LLMProviderError, LLMErrorCategory, LLMRequest, LLMTask, LLMResponse
+
+    class Provider:
+        calls = 0
+        async def generate(self, request, output_type):
+            self.calls += 1
+            if self.calls == 1:
+                raise LLMProviderError("private payload", error_category=LLMErrorCategory.RESPONSE_VALIDATION)
+            return LLMResponse(content="{}")
+
+    failures = {}
+    token = ACCEPTANCE_REQUEST.set("owned-request")
+    try:
+        with observe_provider_failures(failures, provider_type=Provider):
+            provider = Provider()
+            request = LLMRequest(task=LLMTask(task_name))
+            with pytest.raises(LLMProviderError):
+                await provider.generate(request, dict)
+            await provider.generate(request, dict)
+        assert failures["owned-request"][0].get("repaired", False) is repaired
+        audit = {"member_grounding_status": [{"status": "UNRESOLVED", "method": "bounded_member_llm_abstained"}]}
+        assert negative_outcome_verified(audit, failures["owned-request"], "unknown") is repaired
+    finally:
+        ACCEPTANCE_REQUEST.reset(token)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_pending", [False, True])
+async def test_real_http_failure_drains_owned_turn_before_resource_cleanup(tmp_path, cancel_pending):
+    from types import SimpleNamespace
+    from scripts.manual_smoke.cross_language_real_acceptance import tracked_acceptance_turns
+
+    started, release = asyncio.Event(), asyncio.Event()
+    conversations, reports, finished = [], [], []
+
+    async def execute(**kwargs):
+        started.set()
+        try:
+            await release.wait()
+            return {"report": {"report_id": "owned-report"}}
+        finally:
+            finished.append(True)
+
+    service = SimpleNamespace(execute=execute)
+    owner = SimpleNamespace(add_conversation=conversations.append,
+        add_report=lambda identity, **kwargs: reports.append(identity))
+    with pytest.raises(RuntimeError, match="observer_disconnected"):
+        async with tracked_acceptance_turns(service, owner, tmp_path,
+                drain_seconds=0 if cancel_pending else 1):
+            task = asyncio.create_task(service.execute(conversation_id="owned-conversation"))
+            await started.wait()
+            if not cancel_pending:
+                release.set()
+            raise RuntimeError("observer_disconnected")
+    # Resource teardown may now run: no turn can resurrect a deleted resource.
+    assert task.done() and finished == [True]
+    assert conversations == ["owned-conversation"]
+    assert reports == ([] if cancel_pending else ["owned-report"])
+    assert task.cancelled() == cancel_pending
+    assert service.execute is execute
+
+
 @pytest.fixture
 def acceptance_parent(tmp_path):
     # The outer fixture owns simulated-denial leftovers and removes them after

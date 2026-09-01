@@ -448,7 +448,6 @@ class LLMTurnService:
             )
             if (
                 (capability != CapabilityClass.READ_ANALYSIS and not routed_read_shape)
-                or report_template_key is not None
                 or any(term in message for term in ("报告", "周报", "概览", "总览"))
             ):
                 raise
@@ -487,6 +486,11 @@ class LLMTurnService:
                     request_id=effective_req_id,
                     data_summary={"intent": routed_intent.value},
                 )
+            elif (question_routing.route == QuestionRoute.BUSINESS_DATA_QUERY
+                    and intent.intent == IntentType.REPORT_GENERATION):
+                intent = intent.model_copy(update={"intent": IntentType.DATA_QUESTION,
+                    "needs_clarification": False, "clarification_question": None,
+                    "unsupported_reason": None, "requested_template": None})
 
         # ── 4. unsupported 可按产品契约早停；Real clarification 只作为
         # linguistic diagnostic。数据/报表范围内的 canonical semantic
@@ -501,8 +505,7 @@ class LLMTurnService:
             ):
                 provisional_intent = (
                     IntentType.REPORT_GENERATION
-                    if report_template_key is not None
-                    or any(term in message for term in ("报告", "周报", "概览", "总览"))
+                    if question_routing and question_routing.route == QuestionRoute.REPORT_REQUEST
                     else IntentType.DATA_QUESTION
                 )
                 intent = intent.model_copy(update={
@@ -537,8 +540,7 @@ class LLMTurnService:
         if intent.intent == IntentType.CLARIFICATION and not self.powerbi.is_mock:
             provisional_intent = (
                 IntentType.REPORT_GENERATION
-                if report_template_key is not None
-                or any(term in message for term in ("报告", "周报", "概览", "总览"))
+                if question_routing and question_routing.route == QuestionRoute.REPORT_REQUEST
                 else IntentType.DATA_QUESTION
             )
             intent = intent.model_copy(update={
@@ -674,30 +676,22 @@ class LLMTurnService:
                     enforce_semantic_grounding=not self.powerbi.is_mock,
                 )
         except QueryPlanError as e:
-            if intent.intent != IntentType.DATA_QUESTION:
-                return await self._fail_result(
-                    memory,
-                    effective_req_id,
-                    effective_conv_id,
-                    controller,
-                    trace,
-                    terminal_state=TurnState.VALIDATION_FAILED,
-                    error_type=type(e).__name__,
-                    reason=str(e),
-                    stage="query_plan_generation",
-                    trace_id=trace_id,
-                    collector=collector,
-                )
-            query_plan = QueryPlan(
-                normalized_question=message.strip(),
-                semantic_model_key=semantic_model_key,
-            )
-            semantic_audit["query_plan_fallback"] = True
-            trace.record(
-                "query_plan_language_draft_unavailable",
+            # A missing weak draft cannot prove that a filter/time requirement
+            # was omitted by the user. Continuing with an empty draft can turn
+            # a filtered question into an unfiltered query. Fail before DAX;
+            # this does not grant the draft canonical object authority.
+            return await self._fail_result(
+                memory,
+                effective_req_id,
+                effective_conv_id,
+                controller,
+                trace,
+                terminal_state=TurnState.VALIDATION_FAILED,
+                error_type=type(e).__name__,
+                reason=str(e),
+                stage="query_plan_generation",
                 trace_id=trace_id,
-                request_id=effective_req_id,
-                data_summary={"fallback": "deterministic_grounding_only"},
+                collector=collector,
             )
         except Exception as e:
             return await self._fail_result(
@@ -713,10 +707,10 @@ class LLMTurnService:
             })
 
         template_grounding = DEFAULT_TEMPLATE_CATALOG.ground(
-            message,
-            weak_requested_template=query_plan.requested_template,
-            explicit_template_key=report_template_key,
-            required=False,
+            message if intent.intent == IntentType.REPORT_GENERATION else "",
+            weak_requested_template=query_plan.requested_template if intent.intent == IntentType.REPORT_GENERATION else None,
+            explicit_template_key=report_template_key if intent.intent == IntentType.REPORT_GENERATION else None,
+            required=intent.intent == IntentType.REPORT_GENERATION,
         )
         if template_grounding.status in {
             TemplateGroundingStatus.AMBIGUOUS,

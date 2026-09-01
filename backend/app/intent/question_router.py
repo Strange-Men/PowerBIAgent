@@ -147,7 +147,8 @@ class QuestionRouter:
 
     _REPORT = re.compile(
         r"(?:生成|创建|制作|导出).{0,8}(?:报表|报告|周报|月报|季报|年报)|"
-        r"(?:报表|报告|周报|月报|季报|年报).{0,8}(?:生成|创建|制作)"
+        r"(?:报表|报告|周报|月报|季报|年报).{0,8}(?:生成|创建|制作)|"
+        r"\b(?:generate|create|make|export)\b.{0,60}\breport\b", re.IGNORECASE,
     )
     _HELP = re.compile(
         r"(?:支持|能够|能做|可以做|可做).{0,10}(?:哪些|什么|范围|分析|问题)|"
@@ -161,15 +162,15 @@ class QuestionRouter:
     )
     _RANKING = re.compile(
         r"(?:最高|最低|最大|最小|最多|最少|最好|最差|卖得最好|卖的最好)|"
-        r"(?:前|后|top)\s*\d+",
+        r"(?:前|后|top)\s*\d+|\b(?:highest|lowest|most|least|best|worst)\b",
         re.IGNORECASE,
     )
-    _TREND = re.compile(r"趋势|走势|变化|按月看|按年看|逐月|逐年")
+    _TREND = re.compile(r"趋势|走势|变化|按月看|按年看|逐月|逐年|\b(?:trend|monthly|yearly)\b", re.IGNORECASE)
     _ABSOLUTE_MONTH = re.compile(r"(?:\d{4}年\d{1,2}月|\d{4}[-/]\d{1,2})")
     _ENTITY_LIST = re.compile(
         r"(?:有|包含|包括|销售了|提供)(?:哪些|什么)|"
         r"(?:哪些|什么).{0,8}(?:有|可选)|"
-        r"(?:列出|展示|显示).{0,3}(?:所有|全部)?"
+        r"(?:列出|展示|显示).{0,3}(?:所有|全部)?|\blist\s+(?:all|the)\b", re.IGNORECASE,
     )
     _GROUPED = re.compile(
         r"(?:^|那|那么)(?:各|每个|每位|每种|每款|每家|各个)|"
@@ -177,10 +178,10 @@ class QuestionRouter:
         # characters. This bounded span only classifies shape; Grounding must
         # still prove every requested object against the current model.
         r"(?:按|分)[^\n。！？!?]{1,200}(?:看|统计|汇总|比较)|"
-        r"分别.{0,8}(?:的)?(?:情况|数据)?$"
+        r"分别.{0,8}(?:的)?(?:情况|数据)?$|\b(?:by|per)\s+[^\n。！？!?]{1,200}", re.IGNORECASE,
     )
-    _MEMBER_SET = re.compile(r"分别(?:是|为|有|多少)|各自(?:是|为|有|多少)")
-    _FILTERED_AGGREGATION = re.compile(r"加起来|合起来|合计|总共")
+    _MEMBER_SET = re.compile(r"分别(?:是|为|有|多少)|各自(?:是|为|有|多少)|\brespectively\b", re.IGNORECASE)
+    _FILTERED_AGGREGATION = re.compile(r"加起来|合起来|合计|总共|\bcombined\b", re.IGNORECASE)
     _INHERIT_SHAPE = re.compile(
         r"^\s*(?:那|那么|只看|再看|继续|然后|改成|改为|换成|换为|"
         r"调整为|改看|换看|改|换)"
@@ -244,7 +245,9 @@ class QuestionRouter:
             return QueryShape.TREND
         if self._RANKING.search(text):
             return QueryShape.RANKING
-        if self._FILTERED_AGGREGATION.search(text):
+        if self._FILTERED_AGGREGATION.search(text) and re.search(
+            r"加起来|合起来|和|与|及|、|\b(?:combined|and)\b", text, re.IGNORECASE,
+        ):
             return QueryShape.FILTERED_AGGREGATION
         if self._MEMBER_SET.search(text):
             return QueryShape.MEMBER_SET

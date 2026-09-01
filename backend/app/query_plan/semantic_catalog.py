@@ -93,6 +93,66 @@ class SemanticCatalog(BaseModel):
     def get(self, object_id: str) -> CatalogObject | None:
         return next((obj for obj in self.objects if obj.object_id == object_id), None)
 
+    def selection_candidates(
+        self, object_type: SemanticObjectType, role: str,
+    ) -> tuple[CatalogObject, ...]:
+        """Role eligibility is structural; language overlap is not eligibility."""
+        candidates = self.by_type(object_type)
+        if role == "date_field":
+            candidates = tuple(obj for obj in candidates if (
+                "date" in obj.data_type.casefold() or "time" in obj.data_type.casefold()
+            ) and obj.temporal_grouping is None)
+        return tuple(sorted(candidates, key=lambda obj: obj.object_id))
+
+    def selection_evidence(self, candidates: tuple[CatalogObject, ...]) -> dict[str, Any]:
+        """A bounded selector view of this catalog, never another semantic model.
+
+        No members, display registry or previous model data enter the view.
+        Existing measure definitions are evidence, never executable LLM output.
+        """
+        context = self.context
+        tables = {table.name: table for table in context.tables} if context else {}
+        measures = {item.object_id: item for item in context.measures} if context else {}
+        records = []
+        for obj in candidates:
+            table = tables.get(obj.table_name)
+            record = obj.model_dump(mode="json", include={
+                "object_id", "canonical_name", "object_type", "table_name", "data_type",
+                "description", "display_name", "format_string", "aliases", "temporal_role",
+            })
+            if table:
+                record["table_context"] = table.model_dump(mode="json", include={"name", "description", "display_name"})
+            if obj.object_id in measures:
+                record["runtime_definition"] = measures[obj.object_id].expression
+            if context:
+                record["relationship_roles"] = [{
+                    "is_active": rel.is_active, "cardinality": cardinality,
+                    "related_object_id": related_id, "related_cardinality": related_cardinality,
+                } for rel in context.relationships
+                    for endpoint, cardinality, related_id, related_cardinality in (
+                        (rel.from_object_id, rel.from_cardinality, rel.to_object_id, rel.to_cardinality),
+                        (rel.to_object_id, rel.to_cardinality, rel.from_object_id, rel.from_cardinality),
+                    ) if endpoint == obj.object_id]
+                record["relationships"] = [rel.model_dump(mode="json") for rel in context.relationships
+                    if any(endpoint.startswith(f"field:{obj.table_name}:") for endpoint in (rel.from_object_id, rel.to_object_id))]
+                record["hierarchies"] = [hierarchy.model_dump(mode="json") for hierarchy in context.hierarchies
+                    if obj.object_id in hierarchy.level_object_ids]
+                record["temporal_evidence"] = [entry.model_dump(mode="json") for entry in context.temporal_candidates
+                    if obj.object_id == entry.object_id]
+            records.append(record)
+        return {
+            "semantic_model_key": self.semantic_model_key,
+            "schema_fingerprint": self.schema_fingerprint,
+            "session_generation": context.session_generation if context else None,
+            "candidates": records,
+            # Existing expression operands give measurement units/type context,
+            # but these fields are not selectable measure candidates.
+            "definition_fields": [field.model_dump(mode="json", include={
+                "object_id", "canonical_name", "table_name", "data_type", "description", "format_string",
+            }) for field in context.columns if any(obj.object_type == SemanticObjectType.MEASURE
+                and obj.table_name == field.table_name for obj in candidates)] if context else [],
+        }
+
     def field_owners(self, canonical_name: str) -> tuple[str, ...]:
         return tuple(
             obj.table_name

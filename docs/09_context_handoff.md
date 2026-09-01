@@ -1,7 +1,19 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-08-31
+> **最后更新：** 2026-09-01
+
+## M5.8.4 当前阶段（2026-09-01）
+
+**M5.8.4 — 现有语义链跨语言与通用模型理解优化。** 基线 `m5/rebuild` / `b86662ee00e52e318e09a4c02702cce8feeaab6f`；其 [PowerBIAgent Validation](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33351533445) 已核验 completed/success，M5.8.3 COMPLETE。
+
+当前已完成修改前全后端 A–E 复核、ADR-015/spec、跨语言 failure reproducer、实现、全部本地门禁、Real 与用户人工浏览器验收。本地/Real FINAL PASS；正式 COMPLETE 仍要求本次提交的 exact-SHA CI success，不把早期通过数字当最终证据。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+
+唯一链为 QuestionRouter → Power BI/MCP SemanticModelSchema → immutable ModelSemanticContext → existing SemanticCatalog → Grounding/bounded linguistic selection → runtime members → StateTransition → CanonicalQueryPlan → deterministic DAX → QueryResult → VerifiedFactSet。Power BI 负责结构/对象，Catalog/Grounding 负责 canonical binding，LLM 只在已有 candidate ID 中解释语言，Presentation localization 只显示。无新模型、Planner、Grounding authority、缓存或 Provider/Report/factual 边界变更。
+
+详细失败记录、测试矩阵、Real/性能与 residual 条件见 [M5.8.4 专项计划](milestones/m5/m5_8_4_cross_language_grounding_plan.md)。多次诊断中的语义误绑、过度澄清与 Provider 长尾均保留，不对失败样本宣称 PASS。
+
+后续复核又修复了空 QueryPlan 草稿降级丢筛选、成员 discovery 接受已知子集、旧 Memory owner 覆盖当前显式双字段三条失败路径。pytest 默认 SQLite 已与 HTML 一并隔离；最新隔离 backend 2312 PASS / 1 SKIP、Golden 11 PASS / 1 manual skip、Semantic Compatibility 658 PASS。最新完整双 Provider Real 40/40、canonical/result consistency 20/20、30 个真实业务 witness；补强完整槽位/产物断言后的 extended 8/8、双 PBIX isolation 13/13，均 business/temp residual=0。旧失败批次保留，不回填。独立 performance 12/12，warm mean 8040.29ms、4-way wall 30920.78ms，LLM 长尾明显，不宣称性能提升。用户已人工选择“简易模板”并完成浏览器报表生成验收；原自有残留目录只读 `Test-Path=False`，四类 M5.8.4 受控 temp prefix 均为 0。用户明确要求保留两条 ownership 不明会话，它们不属于 M5.8.4 residual；未删除或修改。当前 M5.8.4 明确自建 validation/temp/browser 资源 residual=0，待白名单 commit/push 与 exact-SHA CI。
 
 ## M5.8.3 验收收口（2026-08-31）
 

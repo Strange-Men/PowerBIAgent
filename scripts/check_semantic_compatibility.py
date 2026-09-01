@@ -262,6 +262,8 @@ def main() -> int:
         "PYTHONIOENCODING": "utf-8",
     })
     test_paths = [
+        "backend/tests/unit/test_cross_language_grounding.py",
+        "backend/tests/api/test_cross_language_grounding.py",
         "backend/tests/unit/test_model_semantic_context.py",
         "backend/tests/api/test_model_semantic_context.py",
         "backend/tests/unit/test_question_routing.py",

@@ -2,6 +2,19 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.8.4] — 2026-09-01（本地/Real FINAL PASS；对应提交 CI success 后 COMPLETE）
+
+- 在生产修改前完成 A–E 全后端 authority/call graph 复核；新增 ADR-015，扩展现有 ModelSemanticContext spec，不建立第二套模型/Catalog/Planner/Grounding。
+- 删除跨语言候选的 LCS/字面最高分前置门槛。现有 Catalog 投影 role/type/table/description/display/format/definition/relationship/hierarchy/temporal evidence；现有 bounded selector 只返回当前 candidate ID 或 abstain。QueryPlan 仅提供 untrusted、runtime 名单内的语言假设，不能直接绑定。
+- runtime 成员的有界语言解释仍逐值验证真实值；集合保留全部当前 literal，已知＋未知 ZERO business DAX。导入月字段需完整 runtime month-start proof；canonical 多轮继承保留 table owner。模板选择不再劫持普通 Data turn。
+- 修复两条复核发现的 fail-open：QueryPlan 失败不再构造空草稿执行部分 Intent；weak filters 缺失/部分提取时，并列成员不能只执行已知子集。字段关系增加端点角色证据，不自动重写 canonical identity。
+- 验收脚本按 request 记录 Provider 安全错误分类，负向 PASS 必须来自真实语义拒绝；pytest 默认 SQLite 与 report root 一并隔离并登记 ownership。错误账本如实记录超过两次的实际修复，并校验已有明确用户继续授权的条目/版本范围，未授权的超过两次仍 FAIL。
+- 中英双向四领域八 shapes、未知/歧义、非法 ID、KEEP/REPLACE、预算与成员顺序回归加入永久 Semantic Compatibility。Real Rich/Simple、双 Provider、浏览器、cold/warm/4-way 与完整门禁的最终结果见专项计划和 09 Handoff；诊断失败与 Provider 长尾不隐去。
+- Settings.version 更新为 M5.8.4。M5.8 Provider、M5.8.1 MCP session/cache/singleflight、DAX/QueryResult/VerifiedFactSet、Memory factual authority 与 Report renderer 不变。无 migration、Tag、main/m5/frontend 更新；M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+- 最终证据：Real 双 Provider 40/40、canonical/result consistency 20/20、extended 8/8、双 PBIX 13/13；Semantic Compatibility 658，backend 2312 PASS / 1 SKIP，Golden 11 PASS / 1 manual skip，frontend 86 与 typecheck/lint/build PASS，全部治理门禁通过。用户人工浏览器报表生成 PASS，M5.8.4 明确自建 validation/temp/browser residual=0；性能长尾保留给 M5.9，不宣称本轮性能提升。
+
+**Settings.version:** M5.8.4
+
 ## [M5.8.3] — 2026-08-31（验收收口；对应提交 CI success 后 COMPLETE）
 
 - 新增不可变 ModelSemanticContext 与覆盖语言/结构证据的 metadata fingerprint。正式构建链改为 MCP runtime schema → context → validated optional override → SemanticCatalog → Grounding；QueryPlan/DAX/facts authority 保持冻结。

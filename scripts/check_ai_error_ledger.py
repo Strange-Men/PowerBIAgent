@@ -9,7 +9,7 @@
 3. ID 唯一
 4. 必填字段存在
 5. 状态合法（不得缺失或为空）
-6. repair_attempt_count 必须为 0、1 或 2（负数必须失败）
+6. repair_attempt_count 默认最多 2；继续修复必须有当前条目/版本的明确用户授权记录
 7. resolved 条目回归测试路径真实存在
 8. resolved 条目的 related_commits 不得为空
 9. resolved 条目必须存在 resolved 事件
@@ -149,6 +149,32 @@ def check_entries(data: dict) -> list[dict]:
     return entries
 
 
+def _has_documented_continuation(entry: dict) -> bool:
+    """Validate an audit record, never grant permission to an agent.
+
+    The actual user request remains the authority. This only checks that an
+    already authorized exception is reviewable and bound to this error/version.
+    """
+    record = entry.get("continuation_authorization")
+    if not isinstance(record, dict) or record.get("authority") != "explicit_user_request":
+        return False
+    if (record.get("entry_id") != entry.get("id")
+            or record.get("version") != entry.get("first_detected_version")):
+        return False
+    quote, source = record.get("quote"), record.get("source")
+    if not isinstance(quote, str) or not quote.strip() or not isinstance(source, str):
+        return False
+    try:
+        path = (PROJECT_ROOT / source).resolve()
+        path.relative_to((PROJECT_ROOT / "docs" / "milestones").resolve())
+        if path.suffix != ".md":
+            return False
+        text = path.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return False
+    return all(value in text for value in (quote, record["entry_id"], record["version"]))
+
+
 def check_entry(entry: dict, idx: int) -> list[str]:
     """检查单条错误记录，返回错误列表"""
     errors: list[str] = []
@@ -166,15 +192,15 @@ def check_entry(entry: dict, idx: int) -> list[str]:
     elif status not in VALID_STATUSES:
         errors.append(f"[{entry_id}] 非法状态: {status}，允许: {VALID_STATUSES}")
 
-    # repair_attempt_count — 必须为 0、1 或 2，负数必须失败
+    # Keep the default cap; explicit user continuation is scoped and auditable.
     count = entry.get("repair_attempt_count")
     if count is not None:
         if not isinstance(count, int):
             errors.append(f"[{entry_id}] repair_attempt_count 必须是整数: {count}")
         elif count < 0:
             errors.append(f"[{entry_id}] repair_attempt_count={count} 为负数，不允许")
-        elif count > 2:
-            errors.append(f"[{entry_id}] repair_attempt_count={count} 超过上限 2")
+        elif count > 2 and not _has_documented_continuation(entry):
+            errors.append(f"[{entry_id}] repair_attempt_count={count} 超过上限 2，缺少有效的明确用户继续授权记录")
 
     # resolved 条目: 回归测试、related_commits、resolved 事件、事件 Commit
     if status == "resolved":

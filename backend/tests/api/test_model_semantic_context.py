@@ -13,6 +13,7 @@ from backend.app.llm.registry import LLMProviderRegistry
 from backend.app.persistence.artifact_ownership import ArtifactOwnershipRegistry, managed_test_run, probe_owned_sqlite_residuals
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.presentation.localization import DisplayTranslationResponse
+from backend.app.query_plan.grounding import CandidateSelection
 from backend.app.schemas.data_contracts import ColumnMembersResult, QueryPlan, QueryResult, QueryShape, TableSchema, ColumnSchema
 from backend.tests.fixtures.semantic_context_domains import domains
 
@@ -33,6 +34,10 @@ class LanguageDraft(LLMProvider):
             # Presentation may request translation after canonical grounding;
             # an empty bounded response preserves canonical labels unchanged.
             output = DisplayTranslationResponse()
+        elif request.task == LLMTask.SEMANTIC_SELECTION:
+            # This metadata-only fixture has no extra linguistic evidence.
+            # Missing runtime grouping remains clarification with ZERO DAX.
+            output = CandidateSelection(outcome="UNRESOLVED")
         else:
             raise AssertionError(f"metadata binding must need no {request.task}")
         return LLMResponse(content="{}", structured=output, model="offline-language")
@@ -95,7 +100,7 @@ def create_runtime_app(monkeypatch, tmp_path, domain, message, shape, reject_dax
     return app, adapter, database
 
 
-async def owned_request(app, database, tmp_path, domain, message):
+async def owned_request(app, database, tmp_path, domain, message, request_options=None):
     from backend.app.persistence.database import create_engine
     from backend.app.persistence.models import Base
 
@@ -123,7 +128,7 @@ async def owned_request(app, database, tmp_path, domain, message):
                 conversation = str(uuid.uuid4())
                 owner.add_conversation(conversation)
                 owner.add_sqlite_path(database)
-                response = await client.post("/api/v1/chat", json={"message": message, "semantic_model_key": domain.schema.key, "conversation_id": conversation, "request_id": str(uuid.uuid4())})
+                response = await client.post("/api/v1/chat", json={"message": message, "semantic_model_key": domain.schema.key, "conversation_id": conversation, "request_id": str(uuid.uuid4()), **(request_options or {})})
                 assert response.status_code == 200
                 return response.json()
 

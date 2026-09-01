@@ -305,23 +305,24 @@ class TestLifespanIntegration:
         transport1 = ASGITransport(app=app1)
         transport2 = ASGITransport(app=app2)
 
-        svc1_id = None
-        svc2_id = None
+        svc1 = None
+        svc2 = None
 
         async with app1.router.lifespan_context(app1):
             async with AsyncClient(transport=transport1, base_url="http://test1") as c1:
                 r1 = await c1.get("/health")
                 assert r1.status_code == 200
-                svc1_id = id(app1.state.mock_turn_service)
+                svc1 = app1.state.mock_turn_service
 
         async with app2.router.lifespan_context(app2):
             async with AsyncClient(transport=transport2, base_url="http://test2") as c2:
                 r2 = await c2.get("/health")
                 assert r2.status_code == 200
-                svc2_id = id(app2.state.mock_turn_service)
+                svc2 = app2.state.mock_turn_service
 
         # 两个是不同的 Service 实例
-        assert svc1_id != svc2_id
+        # Keep both objects alive: CPython may reuse an id after teardown.
+        assert svc1 is not None and svc2 is not None and svc1 is not svc2
 
         # lifespan 退出后 state 被清理
         assert app1.state.mock_turn_service is None

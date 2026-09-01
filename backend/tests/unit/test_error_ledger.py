@@ -136,6 +136,25 @@ class TestRepairAttemptCount:
         errors = check_entry(entry, 0)
         assert any("repair_attempt_count" in e and "3" in e for e in errors)
 
+    @pytest.mark.parametrize("fault", [None, "authority", "entry_id", "version", "quote", "source"])
+    def test_continuation_requires_scoped_documented_user_request(self, tmp_path, monkeypatch, fault):
+        import scripts.check_ai_error_ledger as checker
+
+        source = tmp_path / "docs" / "milestones" / "scope.md"
+        source.parent.mkdir(parents=True)
+        source.write_text("TEST-RC M1.0 用户要求持续修复直至完成。", encoding="utf-8")
+        monkeypatch.setattr(checker, "PROJECT_ROOT", tmp_path)
+        entry = self._make_entry()
+        entry["repair_attempt_count"] = 3
+        entry["failed_attempts"] = ["first failed", "second failed"]
+        authorization = {"authority": "explicit_user_request", "entry_id": "TEST-RC", "version": "M1.0",
+            "quote": "用户要求持续修复直至完成。", "source": "docs/milestones/scope.md"}
+        if fault:
+            authorization[fault] = "not-authorized"
+        entry["continuation_authorization"] = authorization
+        errors = check_entry(entry, 0)
+        assert bool([error for error in errors if "repair_attempt_count" in error]) == bool(fault)
+
     def _make_entry(self):
         return {
             "id": "TEST-RC", "title": "T", "category": "TX",

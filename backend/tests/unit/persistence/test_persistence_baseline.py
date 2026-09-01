@@ -350,8 +350,11 @@ class TestDatabasePath:
         asyncio.run(connect_and_dispose())
         assert os.path.isfile(tmp_db_path)
 
-    def test_default_path_under_local_state(self):
-        settings = Settings()
+    def test_default_path_under_local_state(self, monkeypatch):
+        # Inspect the declaration default, not pytest's owned path override.
+        # This test does not open a database.
+        monkeypatch.delenv("PERSISTENCE_DATABASE_PATH", raising=False)
+        settings = Settings(_env_file=None)
         assert settings.persistence_database_path.startswith("local_state/")
 
 

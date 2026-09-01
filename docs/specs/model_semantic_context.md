@@ -1,6 +1,20 @@
-# M5.8.3 — MCP 驱动模型语义上下文
+# MCP 驱动模型语义上下文与跨语言 Grounding
 
-状态：验收收口；对应提交 CI success 后 COMPLETE。2026-08-30 用户批准。基线：`m5/rebuild` / `3b811dec214679bb556d4c96506e5e8f536fc5fc`。
+M5.8.3 已在 `b86662e` 对应 CI success 后 COMPLETE。M5.8.4 于 2026-08-31 获批，发布状态与 fresh evidence 见 [当前计划](../milestones/m5/m5_8_4_cross_language_grounding_plan.md)。以下保留 M5.8.3 设计记录；跨语言扩展见本节及 ADR-015。
+
+## M5.8.4 输入语言与 canonical 绑定合同
+
+Power BI Semantic Model 是结构和对象 authority；ModelSemanticContext 是 per-model immutable normalized semantic evidence。SemanticCatalog/Grounding 拥有 canonical binding authority；LLM 仅作 bounded linguistic interpretation；Presentation localization 仅作 display，不反向参与输入 Grounding。
+
+- exact qualified/canonical/validated alias 及明确冲突优先。未解析语言从同一 Catalog 按 object type/role 生成候选，不要求中英文字符重叠；一次最多 128 个对象、64K 字符，超限澄清，不截断后强选。
+- 选择 evidence 包含 runtime name/type/description/display/format、现有 measure definition 与其表字段、表上下文、关系、层级、时间证据和当前 model/fingerprint/generation。QueryPlan 中已在 runtime 名单内的语言假设只能作为标记为 untrusted 的提示，不减少候选、不直接绑定、不覆盖用户要求。
+- 对象与成员均复用 `LLMTask.SEMANTIC_SELECTION` 的 candidate/AMBIGUOUS/UNRESOLVED 合同；返回对象只由代码映射回本次 catalog。成员候选来自同模型同字段的完整 bounded snapshot，ID 绑定 snapshot，枚举顺序不作语言依据；最多 100 个值、16K 字符。LLM 不发明 value，选中后仍由 MemberGrounder 对实际值复验。
+- 集合中的每个当前原文 literal 独立验证；最多 20 项。已知＋未知不能退化为已知子集。只有全部合法才组装同字段 IN_SET；失败不提交 Memory、不执行 business DAX。
+- 导入型月字段仅在已有日期列的语言角色明确且完整 runtime distinct values 全为月起点时可用。日级值、截断、空集、跨模型/字段、预算超限均 fail closed；不把 format 当月粒度，不生成新日期列，不改变 DAX。
+- 多轮 KEEP 复用 canonical table ownership；REPLACE 先解释本轮明确语言；Report Template Gate 只处理当前 report request，选中的模板不能劫持下一轮 Data。
+- 未观测到 AI Instructions、AI Data Schema、synonyms、linguistic metadata wire evidence，相关能力仍为空。普通语言不依赖 model-specific override；企业专有词仍可经 exact identity/fingerprint override 补充。候选不足、描述不足、真正歧义仍澄清，不承诺所有 PBIX/所有语言无限制成功。
+
+M5.8.1 session/cache/singleflight、M5.8 Provider、DAX/QueryResult/VerifiedFactSet、Memory factual authority 与 Report renderer 不变。验收必须区分 fixture control-plane、Real LLM、真实 PBIX 和浏览器操作证据，不互相冒充。
 
 ## 验收临时目录生命周期（2026-08-31 收口补充）
 
@@ -81,3 +95,5 @@ Context 使用 frozen typed records 和 tuple，绑定 semantic_model_key、exac
 Rich PBIX 先做 15 项 regression，再查 context、ownership/date/member/Top1/entity/trend/multi-turn；若有多 PBIX，执行 A→B→A exact validation。记录 schema/context/catalog/grounding/turn timing；与基线比较相同 QueryResult/facts。所有自动化资源登记 ownership、finally cleanup、residual=0。
 
 fresh Semantic Compatibility、backend、Golden、frontend tests/typecheck/lint/build、Repository Safety、Architecture、Error Ledger、Documentation/Artifact Governance、compileall、diff check、用户人工验收及 exact-HEAD remote CI 全通过后才可 COMPLETE。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+
+M5.8.4 失败路径补充：QueryPlanError 不再通过空草稿放行部分 Intent；在 Grounding/DAX 前 validation_failed。并列成员的当前 literal 覆盖不完整时停止，即使 runtime 找到了某个已知子集。runtime 关系端点的 active/cardinality/related object ID 仅为 selector evidence，不能自动替换对象身份。验收必须区分语义 abstain 与 Intent/QueryPlan/selector 的 Provider 失败，后者不能冒充 unknown/ambiguous PASS。
