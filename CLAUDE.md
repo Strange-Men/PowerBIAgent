@@ -389,4 +389,4 @@ PowerBIAgent/
 
 ---
 
-*最后更新：2026-08-27 | M5.7.1 COMPLETE — M5.7.2 / M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-09-02 | M5.7.2 / M5.8 / M5.8.1 / M5.8.2 / M5.8.3 / M5.8.4 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

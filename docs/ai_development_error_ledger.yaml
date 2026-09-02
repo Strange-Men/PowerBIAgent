@@ -3,11 +3,40 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-01 | M5.8.3 COMPLETE；M5.8.4 本地/Real FINAL PASS（待 exact-SHA CI）；M5.9/M5.10 NOT STARTED；M5 FINAL 尚未成立
+# 最后更新：2026-09-02 | M5.8.3/M5.8.4 COMPLETE；M5.9/M5.10 NOT STARTED；M5 FINAL 尚未成立
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-584-010
+  title: Bounded selector 返回路径丢失调用方语义角色
+  category: ERR
+  first_detected_version: M5.8.4
+  symptom: BoundedLLMObjectSelector 已接收真实 role，但 invalid response、unknown candidate、resolved 与 abstain 返回路径仍硬编码 measure；上层 defensive normalization 掩盖 selector 自身 contract 错误
+  local_evidence: 直接 selector 回归在 dimension、ranking_dimension、filter_field、date_field 的多条路径上可观察错误 role；修复后 5 类 role 乘 6 条路径共 30 个 case 通过
+  authoritative_sources:
+  - title: ADR-015 bounded runtime grounding contract
+    reason: selector 只能在调用方声明的 canonical slot role 中解释 runtime candidate，返回结果必须保留该 role
+  root_cause: selector 从仅 measure 场景扩展到通用 object role 后，四个构造 ObjectGroundingResult 的分支保留了旧硬编码值；上层 model_copy 使正常集成测试未直接暴露问题
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 所有 selector 返回路径统一使用 role=role；保留上层 defensive normalization，不修改 candidate 集合、semantic decision、canonical identity、DAX 或事实结果
+  regression_tests:
+  - backend/tests/unit/test_cross_language_grounding.py
+  prohibited_patterns:
+  - BoundedLLMObjectSelector 内部把返回 role 硬编码为某个具体语义角色
+  prevention_rules:
+  - selector contract 测试必须直接调用 selector，并覆盖 resolved、ambiguous、unresolved、illegal candidate、invalid structured response 与 provider error
+  related_adr: ADR-015
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-02'
+    action: discovered
+    version: M5.8.4
+  - date: '2026-09-02'
+    action: mitigation
+    version: M5.8.4
 - id: ERR-584-009
   title: 相对月份 API 验收随系统日期跨月漂移
   category: ERR

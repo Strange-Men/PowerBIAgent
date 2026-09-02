@@ -2,7 +2,12 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
-## [M5.8.4] — 2026-09-01（本地/Real FINAL PASS；对应提交 CI success 后 COMPLETE）
+## [M5.8.4] — 2026-09-02（COMPLETE）
+
+- 最终治理收口保持业务语义冻结：`BoundedLLMObjectSelector` 的所有返回路径改为保留调用方真实 role，并以 5 类 role × 6 条路径的 30 个直接回归锁定 contract；上层 defensive normalization 保留，不改变 candidate、canonical identity、DAX 或事实结果。
+- GitHub Actions 官方 action 从 `checkout@v4` / `setup-python@v5` / `setup-node@v4` 升级到当前稳定、Node 24 compatible 的对应 `@v7`；Windows、Python 3.11、Node.js 24 LTS、mock modes、full-history 与所有正式 gate 不变。
+- 发布历史保留：主开发提交 `41b6e0b084ac5cbad3b76eb37fa15dd3b89c46a4` 的首次 CI [#33455159267](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33455159267) 因测试 reference date 漂移失败；测试时钟修复提交 `a9753103de6f19d0c95bd4a944d31ca363057d76` 的 CI [#33457056546](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33457056546) completed/success，M5.8.4 COMPLETE。最终治理提交仍须以自己的新 exact-SHA CI success 作为最新封板证据。
+- 最终治理 fresh 本地证据：targeted cross-language 162 PASS 加生产 Chat 边界 5 PASS；Semantic Compatibility 688 PASS，backend 2342 PASS / 1 SKIP，Golden 11 PASS / 1 manual-real SKIP，frontend 86 PASS 与 typecheck/lint/build PASS；五项治理、compileall、diff-check 均 PASS。最小 Real 为 focused 4/4 与 KEEP/REPLACE/Report 状态链 8/8，business/temp residual=0；未重跑完整双 Provider 40/40。
 
 - 修复 exact-SHA CI 暴露的相对月份测试日历漂移：多轮 API production-path 测试显式固定 `TimeGrounder` reference date，避免跨月当天把正确生产结果误判为失败；生产语义、DAX 与事实 authority 未改变。
 

@@ -92,6 +92,70 @@ class Selector(LLMProvider):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("role", [
+    "measure", "dimension", "ranking_dimension", "filter_field", "date_field",
+])
+@pytest.mark.parametrize("scenario,expected_status,expected_method", [
+    ("resolved", GroundingStatus.RESOLVED, "bounded_llm"),
+    ("ambiguous", GroundingStatus.AMBIGUOUS, "bounded_llm"),
+    ("unresolved", GroundingStatus.UNRESOLVED, "bounded_llm"),
+    ("illegal_candidate", GroundingStatus.UNRESOLVED, "bounded_llm_unknown_candidate"),
+    ("invalid_structured", GroundingStatus.UNRESOLVED, "bounded_llm_invalid"),
+    ("provider_error", GroundingStatus.UNRESOLVED, "bounded_llm_unavailable_timeout"),
+])
+async def test_bounded_selector_preserves_caller_role_on_every_return_path(
+    role, scenario, expected_status, expected_method,
+):
+    from backend.app.llm.base import LLMErrorCategory, LLMProviderError
+
+    class RoleContractProvider(LLMProvider):
+        provider_name = "role-contract-selector"
+        is_mock = False
+
+        async def generate(self, request, output_type):
+            assert request.task == LLMTask.SEMANTIC_SELECTION
+            assert output_type is CandidateSelection
+            if scenario == "provider_error":
+                raise LLMProviderError(
+                    "injected timeout",
+                    error_category=LLMErrorCategory.TIMEOUT,
+                )
+            if scenario == "invalid_structured":
+                return LLMResponse(content="{}", structured=None)
+            if scenario == "illegal_candidate":
+                selection = CandidateSelection(
+                    outcome="RESOLVED", candidate_id="field:Ghost:Missing"
+                )
+            elif scenario == "resolved":
+                selection = CandidateSelection(
+                    outcome="RESOLVED", candidate_id=candidate.object_id
+                )
+            else:
+                selection = CandidateSelection(outcome=scenario.upper())
+            return LLMResponse(content="{}", structured=selection)
+
+    catalog = SemanticCatalogBuilder().build(schema())
+    candidate_id = {
+        "measure": "measure:Orders:Total Sales",
+        "dimension": "field:Orders:Product",
+        "ranking_dimension": "field:Orders:Product",
+        "filter_field": "field:Orders:Region",
+        "date_field": "field:Orders:Date",
+    }[role]
+    candidate = catalog.get(candidate_id)
+    result = await BoundedLLMObjectSelector(RoleContractProvider()).select(
+        "跨语言短语",
+        "跨语言问题",
+        (candidate,),
+        role=role,
+    )
+
+    assert result.role == role
+    assert result.status == expected_status
+    assert result.method == expected_method
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("category", ["timeout", "response_validation"])
 async def test_selector_failure_category_is_safe_and_not_semantic_abstention(category):
     from backend.app.llm.base import LLMProviderError, LLMErrorCategory

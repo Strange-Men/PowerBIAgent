@@ -273,7 +273,7 @@ class BoundedLLMObjectSelector:
         if not isinstance(selection, CandidateSelection):
             return ObjectGroundingResult(
                 status=GroundingStatus.UNRESOLVED,
-                role="measure",
+                role=role,
                 phrase=phrase,
                 method="bounded_llm_invalid",
             )
@@ -283,13 +283,13 @@ class BoundedLLMObjectSelector:
             if selected is None:
                 return ObjectGroundingResult(
                     status=GroundingStatus.UNRESOLVED,
-                    role="measure",
+                    role=role,
                     phrase=phrase,
                     method="bounded_llm_unknown_candidate",
                 )
             return ObjectGroundingResult(
                 status=GroundingStatus.RESOLVED,
-                role="measure",
+                role=role,
                 phrase=phrase,
                 canonical_object=selected,
                 candidate_ids=tuple(candidate_map),
@@ -297,7 +297,7 @@ class BoundedLLMObjectSelector:
             )
         return ObjectGroundingResult(
             status=GroundingStatus(selection.outcome),
-            role="measure",
+            role=role,
             phrase=phrase,
             candidate_ids=tuple(candidate_map),
             method="bounded_llm",
