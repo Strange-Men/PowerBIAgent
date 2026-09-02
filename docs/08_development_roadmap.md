@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.8.4 — 跨语言与通用模型理解优化（COMPLETE；`a975310` exact-SHA CI completed/success）
+> **状态：** M5.8.4 — 跨语言与通用模型理解优化（COMPLETE；`3e3d8ac` / CI #46 exact-SHA completed/success）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -47,7 +47,7 @@
 | **M5.8.1** | **前置性能加速与本地 MCP 会话复用** | **✅ COMPLETE** |
 | **M5.8.2** | **通用自然语言路由与查询形态收口** | **✅ COMPLETE** |
 | **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **COMPLETE（b86662e / CI success）** |
-| **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **COMPLETE；`a975310` exact-SHA CI completed/success** |
+| **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **COMPLETE；`3e3d8ac` / CI #46 exact-SHA completed/success** |
 | **M5.9** | **完整 MCP performance、concurrency、resilience 与 soak** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 

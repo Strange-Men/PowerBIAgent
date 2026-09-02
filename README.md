@@ -1,11 +1,11 @@
 # PowerBIAgent
 
-[![PowerBIAgent Validation](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml)
+[![PowerBIAgent Validation](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml/badge.svg?branch=m5%2Frebuild)](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml?query=branch%3Am5%2Frebuild)
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.8.4 — 现有语义链跨语言与通用模型理解优化（COMPLETE）**。主开发提交 `41b6e0b`、CI 时间测试修复提交 `a975310`；后者的 PowerBIAgent Validation [#33457056546](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33457056546) 已核验 completed/success。最终治理提交仍须以自己的新 exact-SHA CI success 作为最新封板证据；Provider/MCP/DAX/facts/Report 边界保持冻结，M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.8.4 — 现有语义链跨语言与通用模型理解优化（COMPLETE）**。主开发提交 `41b6e0b`、CI 时间测试修复提交 `a975310`；最终治理提交 `3e3d8ac` 的 PowerBIAgent Validation [#33580808379](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33580808379) 已核验 exact-SHA completed/success，Node20 warning=0。Provider/MCP/DAX/facts/Report 边界保持冻结，M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 ## 项目概览
 
@@ -342,7 +342,7 @@ python -m alembic upgrade head
 | M5.8.1 | COMPLETE — 前置性能加速、Local MCP session reuse 与安全进程内 metadata/member cache |
 | M5.8.2 | COMPLETE — Question Router、通用 Query Shape、minimal clarification、dimension-only/Top1/member-set/bounded trend 与安全 calculator/help/system-info |
 | M5.8.3 | runtime metadata → immutable ModelSemanticContext → SemanticCatalog；COMPLETE（b86662e / CI success） |
-| M5.8.4 | COMPLETE；同一 runtime Catalog 内的跨语言对象/成员绑定与多轮保持；`a975310` exact-SHA CI completed/success |
+| M5.8.4 | COMPLETE；同一 runtime Catalog 内的跨语言对象/成员绑定与多轮保持；`3e3d8ac` / CI #46 exact-SHA completed/success |
 | M5.9 | NOT STARTED — 完整 MCP performance、resilience、并发与压力验证 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
 

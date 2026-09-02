@@ -32,7 +32,7 @@ M5.8.3 的结构 authority 固定为 Power BI MCP Runtime Semantic Model；immut
 
 ## 二、真实用户测试问题账本
 
-M5.8.4 经用户明确批准，扩展现有 runtime Catalog 内的跨语言 linguistic selection。普通中文查询不以模型专属 glossary 为前提；对象/成员只映射当前 runtime candidate ID；exact identity/fingerprint/session isolation 不变。完整合同见 [Model Context spec](model_semantic_context.md) 与 [ADR-015](../adr/ADR-015_cross_language_runtime_grounding.md)。M5.8.3 的 COMPLETE 已由 `b86662e` 的 CI success 核验；M5.8.4 主开发提交 `41b6e0b` 后首次 CI #33455159267 因测试 reference date 漂移失败，`a975310` 修复测试时钟后 CI #33457056546 completed/success，M5.8.4 COMPLETE。最终治理提交仍须以自己的新 exact-SHA CI success 作为最新封板证据。
+M5.8.4 经用户明确批准，扩展现有 runtime Catalog 内的跨语言 linguistic selection。普通中文查询不以模型专属 glossary 为前提；对象/成员只映射当前 runtime candidate ID；exact identity/fingerprint/session isolation 不变。完整合同见 [Model Context spec](model_semantic_context.md) 与 [ADR-015](../adr/ADR-015_cross_language_runtime_grounding.md)。M5.8.3 的 COMPLETE 已由 `b86662e` 的 CI success 核验；M5.8.4 主开发提交 `41b6e0b` 后首次 CI #33455159267 因测试 reference date 漂移失败，`a975310` 修复测试时钟后 CI #33457056546 completed/success，最终治理提交 `3e3d8ac` 的 CI #33580808379 exact-SHA completed/success，M5.8.4 COMPLETE。
 
 ### 2.1 Semantic / capability
 

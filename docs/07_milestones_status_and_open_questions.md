@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.8.4 — 跨语言与通用模型理解优化（COMPLETE；`a975310` exact-SHA CI completed/success）
+> **状态：** M5.8.4 — 跨语言与通用模型理解优化（COMPLETE；`3e3d8ac` / CI #46 exact-SHA completed/success）
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -47,7 +47,7 @@
 | **M5.8.1** | **前置性能加速与本地 MCP 会话复用** | **✅ COMPLETE** |
 | **M5.8.2** | **通用自然语言路由与查询形态收口** | **✅ COMPLETE** |
 | **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **COMPLETE（b86662e / CI success）** |
-| **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **COMPLETE；`a975310` exact-SHA CI completed/success** |
+| **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **COMPLETE；`3e3d8ac` / CI #46 exact-SHA completed/success** |
 | **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
@@ -284,6 +284,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.8.2 已完成；M5.8.3 COMPLETE；M5.8.4 COMPLETE（`41b6e0b` 主开发，`a975310` 测试时钟修复，CI #33457056546 completed/success）；完整 M5.9 与 M5.10 保持 NOT STARTED；M5 FINAL=false。
+- M5.8.2 已完成；M5.8.3 COMPLETE；M5.8.4 COMPLETE（`41b6e0b` 主开发，`a975310` 测试时钟修复，`3e3d8ac` 最终治理，CI #33580808379 exact-SHA completed/success）；完整 M5.9 与 M5.10 保持 NOT STARTED；M5 FINAL=false。
 
 *最后更新：2026-09-02 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 COMPLETE；M5.8.4 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
