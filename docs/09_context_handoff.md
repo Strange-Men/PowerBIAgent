@@ -8,12 +8,12 @@
 **M5.8.6 — 主线发布与治理收口（COMPLETE）。** M0-M5 全部业务功能已在 m5/rebuild 上完成并通过正式门禁。本轮不做业务能力变更，只做：
 
 1. 版本升级 M5.8.5 → M5.8.6（Settings.version + 全量固化文档同步）。
-2. m5/rebuild → main 以普通 merge commit 合并，保留完整 Git 历史。
+2. m5/rebuild → main 以 fast-forward 方式合入，保留完整 Git 历史；无 squash、rebase 或 force push。
 3. m5/frontend 实验分支归档（archive tag `archive/m5-frontend-experimental-final`）与删除。
-4. 全量本地门禁（Semantic Compatibility、backend full、Golden、frontend、typecheck/lint/build、Repository Safety、Architecture Gate、Error Ledger、Documentation/Artifact Governance、compileall、diff-check）全部 PASS。
-5. m5/rebuild 保留用于发布追溯。
+4. 全量本地门禁全部 PASS。
+5. m5/rebuild 冻结为只读发布追溯分支，保留至 M6.x；main 是唯一活动开发线。
 
-M5.8.5 correctness 已冻结。main 是合并后新的正式基线。M5.9 = performance / concurrency / resilience / cloud-ready runtime；M5.10 = 第二固定专业报表模板。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+M5.8.5 correctness 已冻结。M5.9 = performance / concurrency / resilience / cloud-ready runtime；M5.10 = 第二固定专业报表模板。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## M5.8.5 前阶段（2026-09-03 完成）
 
@@ -489,4 +489,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-03 | M5.8.6 COMPLETE（主线发布与治理收口）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-03 | M5.8.6 COMPLETE（主线发布与治理收口）；m5/rebuild 已冻结为发布追溯分支；main 是唯一活动开发线；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

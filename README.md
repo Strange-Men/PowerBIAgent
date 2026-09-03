@@ -1,6 +1,6 @@
 # PowerBIAgent
 
-[![PowerBIAgent Validation](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml/badge.svg?branch=m5%2Frebuild)](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml?query=branch%3Am5%2Frebuild)
+[![PowerBIAgent Validation](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml?query=branch%3Amain)
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
@@ -374,7 +374,7 @@ python -m alembic upgrade head
 - 当前报表只有“简易模板” `sales_report`，内容受 runtime capability 与固定安全设计系统约束；报表请求必须显式选择模板。
 - Real Power BI 验收需要 Windows、Node.js 20+、Power BI Desktop 与本地人工 Smoke；CI 不验证 Desktop 在线链。
 - 当前结构化展示支持单值指标、多行表格，以及根据真实 QueryResult 字段引用生成的简单柱状图或折线图；不提供前端排序/筛选工作台、任意 ChartSpec 或前端推断数据。
-- `m5/frontend` 上的 `a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）作为实验/审计历史保留，不是新开发基线；新线从 M5.4.1 `cab40b0` 重新开始，能力必须分阶段重新实现并重新验收。
+- `m5/rebuild` 已冻结为只读发布追溯分支，不接收 M5.9/M5.10 新开发。`m5/frontend` 上的 `a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）作为实验/审计历史由 `archive/m5-frontend-experimental-final` tag 永久保存；新线从 M5.4.1 `cab40b0` 重新开始，能力必须分阶段重新实现并重新验收。main 是唯一活动开发线。
 
 公司内部专有软件。
 

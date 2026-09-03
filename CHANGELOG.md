@@ -5,9 +5,9 @@
 ## [M5.8.6] — 2026-09-03（COMPLETE）
 
 - **主线合并与项目治理最终收口：** 版本升级 M5.8.5 → M5.8.6。Settings.version、AGENTS.md、README.md、CHANGELOG、docs/07/08/09/index、ADR 索引等固化文件全面同步为 M5.8.6 当前状态。
-- **m5/rebuild → main 合并：** m5/rebuild（64f61b7）以普通 merge commit 合入 main。main 和 m5/rebuild 均处于 M5.8.6 状态。保留完整 Git 历史；无 squash、rebase 或 force push。
-- **m5/frontend 归档与清理：** 记录最终 SHA，创建 archive tag `archive/m5-frontend-experimental-final`，删除本地和远程 m5/frontend 分支。`m5/rebuild` 保留用于发布追溯。
-- **无业务能力变化：** 本轮未修改 backend/app/**、frontend/src/**、schema、migration 或测试逻辑。M5.8.5 correctness 已冻结。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+- **m5/rebuild → main 合并：** m5/rebuild（64f61b7）以 fast-forward 方式合入 main，保留完整 Git 历史；无 squash、rebase 或 force push。
+- **m5/frontend 归档与清理：** 创建 archive tag `archive/m5-frontend-experimental-final`，删除本地和远程 m5/frontend 分支。`m5/rebuild` 已冻结为只读发布追溯分支，不接收后续新开发。
+- **无生产业务逻辑变化：** 未修改 backend/app/**、frontend/src/**、schema 或 migration。为保证 pytest 不受本地 dotenv/Real 配置污染，测试 fixture 强制 mock/memory 隔离。M5.8.5 correctness 已冻结。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 **Settings.version:** M5.8.6
 
@@ -1097,4 +1097,4 @@
 
 ---
 
-*最后更新：2026-08-18 | M4.1 — SQLite 记忆与请求快照持久化*
+*最后更新：2026-09-03 | M5.8.6 COMPLETE；m5/rebuild 已冻结；main 是唯一活动开发线*

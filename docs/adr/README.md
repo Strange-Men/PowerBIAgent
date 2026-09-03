@@ -42,7 +42,7 @@
 
 当前开发最重要的 active 决策为 ADR-005—ADR-016：ADR-005 约束统一控制面，ADR-006/007 分别约束 Deferred Remote 与当前 Local Provider，ADR-008/009 分别约束 canonical business semantics 与 deterministic execution / VerifiedFactSet，ADR-010 约束 M3 固定事实边界（固定四查询限制由 ADR-011 supersede），ADR-011 约束自适应报表规划与可视化权限，ADR-012 约束 SQLite/Repository/HTML authority 及 M4.4 restart/delete recovery，ADR-013 约束共享 OpenAI-compatible Provider 与 request-scoped immutable profile selection，ADR-014/015 分别约束 query shape authority 与跨语言 runtime grounding，ADR-016 固化 Semantic Obligation Coverage、Canonical Shape Completeness、Result Semantic Inspection 与 Deterministic Query Scope 四个 invariant。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
 
-**当前正式基线：** m5/rebuild（M5.8.6）已合并至 main。M5.9/M5.10 NOT STARTED。
+**当前正式基线：** main（M5.8.6 COMPLETE）；m5/rebuild 已冻结为只读发布追溯分支。M5.9/M5.10 NOT STARTED。
 
 ## ADR 详情
 

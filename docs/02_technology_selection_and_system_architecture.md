@@ -1,8 +1,8 @@
 # 02 — 技术选型与系统架构
 
-> **状态：** M2.6.4 — M0—M2 ready for final seal；Final Tag 待用户授权
-> **当前轮次：** M2.6.4
-> **关联 ADR：** ADR-001（已废弃）、ADR-002—ADR-009；当前以 ADR-005—ADR-009 为准
+> **状态：** M5.8.6 — M0-M5 主线发布与治理收口（COMPLETE）。main 是唯一活动开发线。
+> **当前版本：** M5.8.6
+> **关联 ADR：** ADR-001（已废弃）、ADR-002—ADR-016；当前以 ADR-005—ADR-016 为准
 
 ---
 
@@ -10,27 +10,27 @@
 
 | 层级 | 技术 | 版本 | 状态 |
 |------|------|------|------|
-| 前端框架 | React + Vite | — | 已确定，M5 开发 |
-| 后端框架 | FastAPI | — | 已确定，M0.4 最小骨架 |
-| Agent 框架 | 确定性 TurnPipeline（自研） | — | ✅ M1.6.3.1 控制面真正统一，PydanticAI 已删除（ADR-001→superseded） |
-| LLM Provider | DeepSeek + Mock | — | ✅ Real: Intent/语言草稿/受限候选选择；Real DAX authority=0 |
+| 前端框架 | React + Vite | — | ✅ M5.1—M5.7 已实现并多轮迭代 |
+| 后端框架 | FastAPI | — | ✅ 正式使用 |
+| 控制面 | 确定性 TurnPipeline（自研） | — | ✅ M1.6.3.1 控制面真正统一，PydanticAI 已删除（ADR-001→superseded） |
+| LLM Provider | DeepSeek + Kimi K2.6 + Mock | — | ✅ Real: Intent/语言草稿/受限候选选择；Real DAX authority=0 |
 | Power BI | Local MCP + Desktop | beta.12 实机基线 | ✅ 当前 Real Demo；Remote Deferred |
 | 数据校验 | Pydantic v2 | 2.13.4 | ✅ 已锁定 |
-| 记忆存储 | Repository + 内存 | — | ✅ M0.3 InMemory 实现 |
-| 报表渲染 | Mock HTML | — | M0.3 最小实现，M3 正式 |
+| 记忆存储 | SQLite + Repository 抽象 | — | ✅ M4.1—M4.4 series SQLite 持久化已实现；InMemory 保持为兼容性默认值 |
+| 报表渲染 | 确定性固定模板 + UTF-8 HTML | — | ✅ M3.4 Adaptive + M5.7 简易模板闭环 |
 | Harness | ETCLOVG 轻量 | — | ✅ M0.3 完整实现 |
 | 测试框架 | pytest + pytest-asyncio | 9.1.1 / 1.4.0 | ✅ 已锁定 |
-| Golden Cases | YAML + Runner | — | ✅ M0.3 10 条 Cases |
+| Golden Cases | YAML + Runner | — | ✅ M0.3 10 条 Cases，扩展至 11 PASS / 1 SKIP |
 | 依赖锁定 | PyYAML | 6.0.3 | ✅ M0.3 新增 |
 
 ## 二、系统架构
 
-> 下图是 M0/M1 历史分层快照，其中 Agent Runtime、Remote 主路径和 LLM DAX/Answer authority 已被 ADR-005、ADR-007、ADR-008、ADR-009 supersede。当前权威链为 `TurnPipeline → Grounding → Canonical QueryPlan → Deterministic DAX → Independent Layer 3 → QueryResult → VerifiedFactSet`。
+> 下图是 M0/M1 历史分层快照，其中 Agent Runtime、Remote 主路径和 LLM DAX/Answer authority 已被 ADR-005、ADR-007、ADR-008、ADR-009 supersede。当前权威链为 `TurnPipeline → Grounding → Canonical QueryPlan → Deterministic DAX → Independent Layer 3 → QueryResult → VerifiedFactSet`。前端已实现（M5.1+），记忆存储已使用 SQLite（M4.1+），报表渲染已使用确定性固定模板（M3.4+）。
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                      前端 (React + Vite)                   │
-│              前端开发延后至后端核心链路跑通                    │
+│              前端已实现（M5.1+，React + Vite）              │
 └──────────────────────┬───────────────────────────────────┘
                        │ HTTP/SSE
                        ▼
@@ -63,8 +63,8 @@
 │ Memory     │ │ Report    │ │ Schemas      │
 │ Repository │ │ Renderer  │ │ Contracts    │
 │            │ │           │ │              │
-│ InMemory   │ │ Mock (0.3)│ │ QueryPlan    │
-│ (M0.3)     │ │ Jinja2(M3)│ │ DAXRequest   │
+│ SQLite/Mem │ │ 固定模板  │ │ QueryPlan    │
+│ (M4.1+)    │ │ (M3.4+)   │ │ DAXRequest   │
 │            │ │           │ │ QueryResult  │
 │            │ │           │ │ AnswerSpec   │
 │            │ │           │ │ ReportSpec   │
@@ -84,6 +84,13 @@
 | ADR-007 | Local MCP Demo 验证路径 | accepted / active |
 | ADR-008 | Business Semantic Catalog and Grounding Authority | accepted / active |
 | ADR-009 | Deterministic Execution and Verified Fact Authority | accepted / active |
+| ADR-010 | Deterministic Report Template and Data Plan Authority | accepted（固定事实边界有效；固定四查询限制由 ADR-011 supersede） |
+| ADR-011 | Adaptive Report Planning and Visualization Authority | accepted / active |
+| ADR-012 | Local Persistence Architecture | accepted / active |
+| ADR-013 | LLM Model Profiles and Request-Scoped Provider Selection | accepted / active |
+| ADR-014 | Question Routing and Query Shape Authority | accepted / active |
+| ADR-015 | Cross-language Runtime Grounding | accepted / active |
+| ADR-016 | Semantic Completeness、Result Inspection 与 Presentation Truth | accepted / active |
 
 ## 四、M1.6.1 架构定案（2026-08-04）
 
@@ -146,4 +153,4 @@ M1.5 全链路验收后，动态复验证实以下问题：
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 current architecture marker；历史分层由 ADR-005—ADR-009 supersede*
+*最后更新：2026-09-03 | M5.8.6 主线发布与治理收口完成；ADR-010—ADR-016 已正式接受；历史分层由 ADR-005—ADR-016 supersede*

@@ -70,9 +70,9 @@
 
 ## 九、LLM 策略
 
-- 真实 LLM 前期只有 DeepSeek
+- 当前支持 DeepSeek 与 Kimi K2.6，通过统一 OpenAI-compatible Provider 接口封装
 - 必须提供 Mock LLM，用于无 Key、无网络、流程调试和 Harness 回归
-- 通过统一 Provider 接口封装，后期可扩展其他模型
+- 通过统一 Provider 接口封装，后续可扩展其他模型
 
 ## 十、Power BI MCP
 
@@ -148,4 +148,4 @@
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 Truth Boundary 与 PRD 路径同步*
+*最后更新：2026-09-03 | M5.8.6 主线发布与治理收口；支持 DeepSeek + Kimi K2.6 双模型*

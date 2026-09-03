@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v2.1
-> **修订日期：** 2026-08-27
+> **修订版本：** v2.2
+> **修订日期：** 2026-09-03
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **本轮修订范围：** M5.7.1 统一语义可靠性、回归防火墙与高强度问答验收；M5.7.2 与 M5.8—M5.10 均未开始
+> **修订范围：** M5.8.6 主线发布与治理收口；M5.8.5 correctness 已冻结；M5.9 = performance/concurrency/resilience/cloud-ready runtime；M5.10 = 第二固定专业报表模板；M5 FINAL=false
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---

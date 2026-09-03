@@ -37,8 +37,6 @@ def isolate_managed_report_artifacts(
     test_root = (tmp_path / "owned_test_artifacts" / "reports").resolve()
     persistence_root = (tmp_path / "owned_test_artifacts" / "persistence").resolve()
     database_path = persistence_root / "test.db"
-    persistence_root = (tmp_path / "owned_test_artifacts" / "persistence").resolve()
-    database_path = persistence_root / "test.db"
     owner_root = tmp_path.resolve()
     if not all(path.is_relative_to(owner_root) for path in (test_root, persistence_root)):
         raise AssertionError("test artifact root escaped pytest ownership")

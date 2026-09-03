@@ -120,6 +120,26 @@ git rev-parse HEAD
 - 删除或重写历史 Tag
 - 未经说明的大规模重构
 
+### 主线开发流程
+
+从 M5.9 开始，main 是唯一活动开发线：
+- 后续正常开发直接 commit/push main
+- 不再为 M5.x 新建长期开发分支，除非用户另行明确要求
+- m5/rebuild 冻结为只读发布追溯分支，不接收 M5.9/M5.10 新开发
+- m5/rebuild 保留到 M6.x，再由用户明确批准后归档/删除
+
+main 开发流程固定：
+local gates → whitelist staging → commit → push main → exact-SHA CI → success 后才可 COMPLETE
+
+main CI 失败：只能 forward-fix 新 commit；禁止 reset/rebase/force push/rewrite history。
+
+### m5/frontend 历史状态
+
+m5/frontend 已完成归档并删除。实验历史由 archive/m5-frontend-experimental-final → 6d1620a... 永久保存：
+- archive tag 禁止删除、移动、重写
+- 禁止将实验历史整体 cherry-pick/reintroduce 到正式代码
+- 不再要求 branch 本身存在
+
 禁止提交：
 - 真实 Secret、API Key、Token
 - 真实业务数据
@@ -341,7 +361,7 @@ PowerBIAgent/
 
 ### M5.4.2 重建线与后续开发治理硬规则
 
-- 新开发线固定从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 开始。`m5/frontend`、`a197db3`（原 M5.5）和 `6d1620a`（原 M5.5.1）是必须保留的实验/审计历史；不得 force push、revert、删除、重写或整体 cherry-pick。
+- 新开发线固定从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 开始。`a197db3`（原 M5.5）和 `6d1620a`（原 M5.5.1）作为实验/审计历史由 `archive/m5-frontend-experimental-final` tag 永久保存；不得 force push、revert、删除、重写或整体 cherry-pick。`m5/frontend` branch 本身已完成归档并删除，不再要求 branch 存在。
 - M5.4.2 只允许 Git 基线和文档/治理变化。若完成本轮必须修改 `backend/app/**`、`frontend/src/**`、backend/frontend tests、schema 或 migration，立即停止并汇报。
 - 新 M5.5—M5.10 按 Semantic → Presentation/Localization/Resource UX → 简易报表视觉与模板必选 → LLM Provider/双模型 → MCP performance/resilience → 专业销售模板分阶段推进；一个 milestone 禁止同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle 多个域。
 - explicit unresolved semantic requirement 必须 clarification/no-match 且 ZERO DAX；不得静默移除筛选后执行更宽查询。
@@ -389,4 +409,4 @@ PowerBIAgent/
 
 ---
 
-*最后更新：2026-09-02 | M5.7.2 / M5.8 / M5.8.1 / M5.8.2 / M5.8.3 / M5.8.4 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-09-03 | M5.8.6 COMPLETE（主线发布与治理收口）；main 是唯一活动开发线；m5/rebuild 冻结为发布追溯分支；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
