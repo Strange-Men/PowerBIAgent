@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.8.5 — Semantic Completeness + Result Inspection + Presentation Truth（COMPLETE）**。现有唯一语义链新增四个通用 correctness invariant；三 PBIX × DeepSeek/Kimi Real 定点链、2,304-case stress、全量本地门禁与 automation-owned residual=0 已通过。本提交 exact-SHA CI 作为发布证据；M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.8.6 — M0-M5 主线发布与治理收口（COMPLETE）**。M5.8.5 correctness 已冻结；main 是合并后新的正式基线。M5.9 = performance / concurrency / resilience / cloud-ready runtime；M5.10 = 第二固定专业报表模板。M5 FINAL=false。
 
 ## 项目概览
 
@@ -348,7 +348,8 @@ python -m alembic upgrade head
 | M5.8.2 | COMPLETE — Question Router、通用 Query Shape、minimal clarification、dimension-only/Top1/member-set/bounded trend 与安全 calculator/help/system-info |
 | M5.8.3 | runtime metadata → immutable ModelSemanticContext → SemanticCatalog；COMPLETE（b86662e / CI success） |
 | M5.8.4 | COMPLETE；同一 runtime Catalog 内的跨语言对象/成员绑定与多轮保持；`3e3d8ac` / CI #46 exact-SHA completed/success |
-| M5.8.5 | COMPLETE；Semantic Coverage、Shape Completeness、Result Inspection、Query Scope/ordering 四个通用 invariant；本提交 exact-SHA CI 为发布证据 |
+| M5.8.5 | COMPLETE；Semantic Coverage、Shape Completeness、Result Inspection、Query Scope/ordering 四个通用 invariant |
+| M5.8.6 | COMPLETE — M0-M5 主线发布与治理收口；main 已合并为新的正式基线；m5/frontend 已归档 |
 | M5.9 | NOT STARTED — 完整 MCP performance、resilience、并发与压力验证 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
 
@@ -379,4 +380,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-03 | M5.8—M5.8.5 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-03 | M5.8.6 COMPLETE（主线发布与治理收口）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

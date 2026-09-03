@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.8.5 — Semantic Completeness + Result Inspection + Presentation Truth（COMPLETE；本提交 exact-SHA CI 为发布证据）
+> **状态：** M5.8.6 — M0-M5 主线发布与治理收口（COMPLETE）。M5.8.5 correctness 已冻结。main 是合并后新的正式基线。M5.9/M5.10 NOT STARTED；M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -49,6 +49,7 @@
 | **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **COMPLETE（b86662e / CI success）** |
 | **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **COMPLETE；`3e3d8ac` / CI #46 exact-SHA completed/success** |
 | **M5.8.5** | **Semantic Completeness + Result Inspection + Presentation Truth** | **✅ COMPLETE；2,304 stress + 三 PBIX/双 Provider Real + full gates** |
+| **M5.8.6** | **主线发布与治理收口、m5/rebuild→main 合并、m5/frontend 归档** | **✅ COMPLETE** |
 | **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 

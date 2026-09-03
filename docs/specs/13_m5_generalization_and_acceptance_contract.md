@@ -1,6 +1,6 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 / M5.8.1 / M5.8.2 / M5.8.3 / M5.8.4 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立
+> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 / M5.8.1 / M5.8.2 / M5.8.3 / M5.8.4 / M5.8.5 / M5.8.6 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL=false
 > **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.10（含 M5.7.1 / M5.7.2 / M5.8.1 / M5.8.2 / M5.8.3 / M5.8.4）
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
@@ -383,4 +383,4 @@ M5.8.2 已完成 Question Router、八类通用 Query Shape、shape-specific cla
 
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-09-02 M5.8 / M5.8.1 / M5.8.2 / M5.8.3 / M5.8.4 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*创建日期：2026-08-26 | 最后更新：2026-09-03 M5.8.6 COMPLETE（主线发布与治理收口）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

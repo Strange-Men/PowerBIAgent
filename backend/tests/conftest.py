@@ -3,6 +3,10 @@
 Every application instance created by pytest receives per-test default report
 and SQLite paths outside the source tree. The fixture owns those paths and
 verifies cleanup so developer dotenv configuration cannot target user storage.
+
+All backend tests run in LLM_MODE=mock + POWERBI_MODE=mock + memory persistence
+regardless of the local .env file, so create_app() always initializes with
+MockTurnService and mock PowerBI adapter.
 """
 
 from __future__ import annotations
@@ -25,7 +29,14 @@ def isolate_managed_report_artifacts(
 ) -> None:
     """Register, isolate, tear down, and verify each test's report root."""
 
+    # Force mock modes so create_app().lifespan always produces MockTurnService
+    monkeypatch.setenv("LLM_MODE", "mock")
+    monkeypatch.setenv("POWERBI_MODE", "mock")
+    monkeypatch.setenv("PERSISTENCE_BACKEND", "memory")
+
     test_root = (tmp_path / "owned_test_artifacts" / "reports").resolve()
+    persistence_root = (tmp_path / "owned_test_artifacts" / "persistence").resolve()
+    database_path = persistence_root / "test.db"
     persistence_root = (tmp_path / "owned_test_artifacts" / "persistence").resolve()
     database_path = persistence_root / "test.db"
     owner_root = tmp_path.resolve()

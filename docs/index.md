@@ -100,4 +100,4 @@
 
 ---
 
-*最后更新：2026-09-03 | M5.8.5 Semantic Completeness + Result Inspection + Presentation Truth COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-09-03 | M5.8.6 COMPLETE（主线发布与治理收口）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

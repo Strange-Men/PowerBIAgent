@@ -3,7 +3,19 @@
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
 > **最后更新：** 2026-09-03
 
-## M5.8.5 当前阶段（2026-09-03）
+## M5.8.6 当前阶段（2026-09-03）
+
+**M5.8.6 — 主线发布与治理收口（COMPLETE）。** M0-M5 全部业务功能已在 m5/rebuild 上完成并通过正式门禁。本轮不做业务能力变更，只做：
+
+1. 版本升级 M5.8.5 → M5.8.6（Settings.version + 全量固化文档同步）。
+2. m5/rebuild → main 以普通 merge commit 合并，保留完整 Git 历史。
+3. m5/frontend 实验分支归档（archive tag `archive/m5-frontend-experimental-final`）与删除。
+4. 全量本地门禁（Semantic Compatibility、backend full、Golden、frontend、typecheck/lint/build、Repository Safety、Architecture Gate、Error Ledger、Documentation/Artifact Governance、compileall、diff-check）全部 PASS。
+5. m5/rebuild 保留用于发布追溯。
+
+M5.8.5 correctness 已冻结。main 是合并后新的正式基线。M5.9 = performance / concurrency / resilience / cloud-ready runtime；M5.10 = 第二固定专业报表模板。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+
+## M5.8.5 前阶段（2026-09-03 完成）
 
 **M5.8.5 — Semantic Completeness + Result Inspection + Presentation Truth（COMPLETE）。** 在 M5.8.4 唯一链上新增四个通用 correctness invariant：Grounding 后的 Semantic Obligation Coverage、StateTransition 后的 Canonical Shape Completeness、QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection，以及由最终 CanonicalQueryPlan 和 model-scoped localization 生成的 Deterministic Query Scope。未创建第二套 Model/Catalog/Planner/Grounding/Memory，未修改 M5.8.1 MCP session/cache/singleflight 架构，未进入 M5.9/M5.10。
 
@@ -428,7 +440,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-M5.8.2 已完成。下一阶段为 M5.8.3 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配；完整 MCP queue/backpressure、20/50/100、fault/restart/soak 仍属于 M5.9，固定专业销售模板属于 M5.10。M5.8.3 当前验收收口，M5.9/M5.10 未开始，M5 FINAL=false。
+M5.8.6 已完成。main 是新的正式基线。M5.9 = performance / concurrency / resilience / cloud-ready runtime；M5.10 = 第二固定专业报表模板。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -477,4 +489,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-08-31 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 验收收口（发布见对应提交 CI）；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-09-03 | M5.8.6 COMPLETE（主线发布与治理收口）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

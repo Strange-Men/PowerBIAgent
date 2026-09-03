@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.8.5 — Semantic Completeness + Result Inspection + Presentation Truth（COMPLETE）**。现有唯一语义链新增 Semantic Obligation Coverage、Canonical Shape Completeness、Result Semantic Inspection 与 Deterministic Query Scope 四个 correctness invariant；三 PBIX × DeepSeek/Kimi Real 定点链、2,304-case stress、全量本地门禁与 automation-owned residual=0 已通过。本提交 exact-SHA CI 作为发布证据；M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.8.6 — M0-M5 主线发布与治理收口（COMPLETE）**。M5.8.5 correctness 已冻结，main 是合并后新的正式基线。M5.9 = performance / concurrency / resilience / cloud-ready runtime；M5.10 = 第二固定专业报表模板。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -170,4 +170,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-09-03 | M5.8—M5.8.5 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-03 | M5.8.6 COMPLETE（主线发布与治理收口）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

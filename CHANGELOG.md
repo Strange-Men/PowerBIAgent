@@ -2,6 +2,15 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.8.6] — 2026-09-03（COMPLETE）
+
+- **主线合并与项目治理最终收口：** 版本升级 M5.8.5 → M5.8.6。Settings.version、AGENTS.md、README.md、CHANGELOG、docs/07/08/09/index、ADR 索引等固化文件全面同步为 M5.8.6 当前状态。
+- **m5/rebuild → main 合并：** m5/rebuild（64f61b7）以普通 merge commit 合入 main。main 和 m5/rebuild 均处于 M5.8.6 状态。保留完整 Git 历史；无 squash、rebase 或 force push。
+- **m5/frontend 归档与清理：** 记录最终 SHA，创建 archive tag `archive/m5-frontend-experimental-final`，删除本地和远程 m5/frontend 分支。`m5/rebuild` 保留用于发布追溯。
+- **无业务能力变化：** 本轮未修改 backend/app/**、frontend/src/**、schema、migration 或测试逻辑。M5.8.5 correctness 已冻结。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+
+**Settings.version:** M5.8.6
+
 ## [M5.8.5] — 2026-09-03（COMPLETE）
 
 - 在现有唯一 Real authority 链加入四个通用 correctness invariant：Grounding 后的 Semantic Obligation Coverage、StateTransition 后的 Canonical Shape Completeness、QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection，以及由最终 CanonicalQueryPlan/localization 生成的 Deterministic Query Scope。unknown 或 known+unknown member、残缺 shape 与不一致结果均 fail closed；不新增 Model/Catalog/Planner/Grounding/Memory。
