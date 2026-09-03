@@ -34,6 +34,8 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的回答生成器。
 16. QueryPlan 指标名只表示语义意图，不保证等于 QueryResult 列名，不得直接用作 source_field
 17. 不得翻译、改名、去掉方括号、改变大小写或根据业务别名推导 source_field
 18. 输出 metric 前先从 QueryResult 数据行确定数值所在的确切列，再复制该列的完整列名
+19. effective_scope 是确定性 CanonicalQueryPlan 摘要；回答必须逐字保留，不得省略、改写或扩大范围
+20. query_shape、sort、top_n 只描述已执行语义，不得自行改变排序或补造结果
 
 ## AnswerSpec JSON Schema
 
@@ -145,6 +147,14 @@ source_field 必须逐字复制上述数组中的完整元素；不得删除 `[`
 ### 时间范围
 {time_range}
 
+### Canonical 查询形状与排序
+- query_shape: {query_shape}
+- sort: {sort}
+- top_n: {top_n}
+
+### effective_scope（必须逐字保留）
+{effective_scope}
+
 ### 数据行
 {rows_text}
 
@@ -245,6 +255,10 @@ def build_answer_messages(
         dimensions_text=dimensions_text,
         filters_text=filters_text,
         time_range=time_range,
+        query_shape=context.query_shape or "（无）",
+        sort=context.sort or "（无）",
+        top_n=context.top_n if context.top_n is not None else "（无）",
+        effective_scope=context.effective_scope or "（无）",
         rows_text=rows_text,
     )
 

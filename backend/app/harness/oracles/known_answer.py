@@ -54,7 +54,7 @@ class KnownAnswerBaseline(BaseModel):
     tolerance: NumericTolerance = Field(default_factory=NumericTolerance)
     sort: str | None = Field(default=None, pattern="^(asc|desc)$")
     top_n: int | None = Field(default=None, ge=1)
-    allow_top_n_ties: bool = True
+    allow_top_n_ties: bool = False
 
     model_config = ConfigDict(extra="forbid")
 

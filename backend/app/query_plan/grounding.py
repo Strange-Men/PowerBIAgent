@@ -107,6 +107,7 @@ class GroundingOutcome(BaseModel):
 class CandidateSelection(BaseModel):
     outcome: Literal["RESOLVED", "AMBIGUOUS", "UNRESOLVED"]
     candidate_id: str | None = None
+    matched_phrase: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -116,6 +117,8 @@ class CandidateSelection(BaseModel):
             raise ValueError("RESOLVED selection requires candidate_id")
         if self.outcome != "RESOLVED" and self.candidate_id is not None:
             raise ValueError("non-resolved selection cannot include candidate_id")
+        if self.outcome != "RESOLVED" and self.matched_phrase is not None:
+            raise ValueError("non-resolved selection cannot include matched_phrase")
         return self
 
 
@@ -250,8 +253,10 @@ class BoundedLLMObjectSelector:
                 "Untrusted language hypotheses may help interpret a translation, but are NOT runtime evidence "
                 "or a binding decision. Reject a hypothesis that changes the user's meaning, measurement unit "
                 "or granularity; consider every eligible candidate, not only the suggested names. "
-                'Output JSON only: {"outcome":"RESOLVED|AMBIGUOUS|UNRESOLVED","candidate_id":"exact object_id or null"}. '
-                "A RESOLVED ID must be copied exactly from this call's candidates; otherwise use null."
+                'Output JSON only: {"outcome":"RESOLVED|AMBIGUOUS|UNRESOLVED","candidate_id":"exact object_id or null",'
+                '"matched_phrase":"minimal exact substring from 当前输入 that denotes only the selected concept, or null"}. '
+                "For RESOLVED, copy the ID exactly and copy only the metric/dimension/filter-field phrase from the current input; "
+                "exclude time, member values, ranking words and other modifiers. Otherwise both fields are null."
             ),
         }, {
             "role": "user",
@@ -287,10 +292,16 @@ class BoundedLLMObjectSelector:
                     phrase=phrase,
                     method="bounded_llm_unknown_candidate",
                 )
+            matched_phrase = (selection.matched_phrase or "").strip()
+            safe_phrase = (
+                matched_phrase
+                if matched_phrase and matched_phrase in user_input
+                else ""
+            )
             return ObjectGroundingResult(
                 status=GroundingStatus.RESOLVED,
                 role=role,
-                phrase=phrase,
+                phrase=safe_phrase,
                 canonical_object=selected,
                 candidate_ids=tuple(candidate_map),
                 method="bounded_llm",
@@ -1208,6 +1219,33 @@ class SemanticGroundingService:
                 # Unknown phrases are current requirements too; preserve their
                 # UNRESOLVED status instead of treating them as omission.
                 field_result = draft_field
+            elif (
+                effective_shape in {
+                    QueryShape.MEMBER_SET,
+                    QueryShape.FILTERED_AGGREGATION,
+                }
+                and len(grounded_filter_ids) == 1
+            ):
+                # Once the first literal in one unqualified set has a runtime-
+                # validated field, reuse that authority for the remaining
+                # unqualified literals.  An explicitly mentioned different
+                # field is handled above and can never be collapsed here.
+                prior_field = self.catalog.get(next(iter(grounded_filter_ids)))
+                field_result = (
+                    ObjectGrounder._resolved(
+                        "filter_field",
+                        str(raw_filter.value),
+                        prior_field,
+                        "member_set_prior_authoritative_field",
+                    )
+                    if prior_field is not None
+                    else ObjectGroundingResult(
+                        status=GroundingStatus.UNRESOLVED,
+                        role="filter_field",
+                        phrase=str(raw_filter.value),
+                        method="member_set_prior_field_stale",
+                    )
+                )
             elif (
                 committed
                 and committed.filters
@@ -2190,10 +2228,16 @@ class SemanticGroundingService:
         if top_n is not None:
             delta.top_n = top_n
             delta.top_n_specified = True
-        if any(term in user_input.casefold() for term in ("最高", "最大", "最多", "highest", "most")):
+        if any(term in user_input.casefold() for term in (
+            "最高", "最大", "最多", "最好", "最准", "最严重", "最快", "最早",
+            "highest", "most", "best",
+        )):
             delta.sort = "desc"
             delta.sort_specified = True
-        elif any(term in user_input.casefold() for term in ("最低", "最小", "最少", "lowest", "least")):
+        elif any(term in user_input.casefold() for term in (
+            "最低", "最小", "最少", "最差", "最慢", "最晚",
+            "lowest", "least", "worst",
+        )):
             delta.sort = "asc"
             delta.sort_specified = True
         elif top_n is not None:
@@ -2219,8 +2263,11 @@ class SemanticGroundingService:
         match = cls._TOP_N.search(user_input)
         if match is None:
             if re.search(
-                r"(?:最高|最低|最大|最小|最多|最少|最好|最差).{0,8}"
-                r"(?:哪个|哪款|哪一个|谁|什么)|\bwhich\b.{1,120}\b(?:highest|lowest|most|least)\b",
+                r"(?:最高|最低|最大|最小|最多|最少|最好|最差|最准|最严重|最快|最慢|最早|最晚).{0,8}"
+                r"(?:哪个|哪家|哪位|哪款|哪种|哪座|哪一个|谁|什么)|"
+                r"(?:哪个|哪家|哪位|哪款|哪种|哪座|哪一个|谁).{0,40}"
+                r"(?:最高|最低|最大|最小|最多|最少|最好|最差|最准|最严重|最快|最慢|最早|最晚)|"
+                r"\bwhich\b.{1,120}\b(?:highest|lowest|most|least|best|worst)\b",
                 user_input, re.IGNORECASE,
             ):
                 return 1

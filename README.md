@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.8.4 — 现有语义链跨语言与通用模型理解优化（COMPLETE）**。主开发提交 `41b6e0b`、CI 时间测试修复提交 `a975310`；最终治理提交 `3e3d8ac` 的 PowerBIAgent Validation [#33580808379](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33580808379) 已核验 exact-SHA completed/success，Node20 warning=0。Provider/MCP/DAX/facts/Report 边界保持冻结，M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.8.5 — Semantic Completeness + Result Inspection + Presentation Truth（COMPLETE）**。现有唯一语义链新增四个通用 correctness invariant；三 PBIX × DeepSeek/Kimi Real 定点链、2,304-case stress、全量本地门禁与 automation-owned residual=0 已通过。本提交 exact-SHA CI 作为发布证据；M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 ## 项目概览
 
@@ -20,6 +20,7 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 - Power BI MCP runtime schema 是模型结构 authority；immutable `ModelSemanticContext` 把当前 PBIX metadata 适配为候选证据，exact identity + fingerprint 验证的 optional model override 只补充业务语言/temporal metadata，runtime members 继续验证成员值。
 - Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界。
+- Grounding 后的 Semantic Obligation Coverage、StateTransition 后的 Canonical Shape Completeness，以及 QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection 共同禁止显式条件静默丢失、残缺 shape 执行和错误结果顺序；Answer/Table/Chart 使用确定性 effective scope 与共享展示顺序。
 - `sales_report` 是当前唯一“简易模板”，根据用户需求与 runtime capability 生成 KPI、趋势、贡献、对比和排行；报表请求必须显式选择模板，不再存在后端默认模板。
 - 结构化多轮 Memory 只补当前轮真正省略的兼容槽；fresh/follow-up/replace 分离，当前明确表达始终优先；歧义、失败、unsupported 和 clarification 不污染已提交状态。
 - SQLite 提供重启恢复、结构化历史/搜索、可恢复归档、永久删除、独立 report 删除与崩溃后删除重试。
@@ -34,12 +35,16 @@ flowchart LR
     User["User"] --> API["FastAPI"]
     API --> Pipeline["TurnPipeline"]
     Pipeline --> Grounding["Intent / Grounding"]
-    Grounding --> Plan["Canonical QueryPlan"]
-    Plan --> DAX["Deterministic DAX"]
+    Grounding --> Coverage["Obligation Coverage"]
+    Coverage --> Plan["Canonical QueryPlan"]
+    Plan --> Shape["Shape Completeness"]
+    Shape --> DAX["Deterministic DAX"]
     DAX --> PBI["Power BI"]
     PBI --> Result["QueryResult"]
-    Result --> Facts["VerifiedFactSet"]
-    Facts --> Output["Answer / Report"]
+    Result --> Inspection["Result Inspection"]
+    Inspection --> Facts["VerifiedFactSet"]
+    Facts --> Scope["Query Scope / Presentation"]
+    Scope --> Output["Answer / Report"]
     Output --> State["Memory / Snapshot"]
 ```
 
@@ -343,6 +348,7 @@ python -m alembic upgrade head
 | M5.8.2 | COMPLETE — Question Router、通用 Query Shape、minimal clarification、dimension-only/Top1/member-set/bounded trend 与安全 calculator/help/system-info |
 | M5.8.3 | runtime metadata → immutable ModelSemanticContext → SemanticCatalog；COMPLETE（b86662e / CI success） |
 | M5.8.4 | COMPLETE；同一 runtime Catalog 内的跨语言对象/成员绑定与多轮保持；`3e3d8ac` / CI #46 exact-SHA completed/success |
+| M5.8.5 | COMPLETE；Semantic Coverage、Shape Completeness、Result Inspection、Query Scope/ordering 四个通用 invariant；本提交 exact-SHA CI 为发布证据 |
 | M5.9 | NOT STARTED — 完整 MCP performance、resilience、并发与压力验证 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
 
@@ -373,4 +379,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-02 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 COMPLETE；M5.8.4 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-03 | M5.8—M5.8.5 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

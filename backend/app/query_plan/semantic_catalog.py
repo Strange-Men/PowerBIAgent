@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import unicodedata
 from enum import Enum
 from pathlib import Path
@@ -102,7 +103,42 @@ class SemanticCatalog(BaseModel):
             candidates = tuple(obj for obj in candidates if (
                 "date" in obj.data_type.casefold() or "time" in obj.data_type.casefold()
             ) and obj.temporal_grouping is None)
+        elif object_type == SemanticObjectType.FIELD and role in {
+            "dimension", "ranking_dimension", "filter_field",
+        }:
+            candidates = self._without_shadowed_technical_keys(candidates)
         return tuple(sorted(candidates, key=lambda obj: obj.object_id))
+
+    @classmethod
+    def _without_shadowed_technical_keys(
+        cls, candidates: tuple[CatalogObject, ...],
+    ) -> tuple[CatalogObject, ...]:
+        """Keep IDs selectable only when runtime metadata has no unique label peer."""
+        result = []
+        for item in candidates:
+            stem, suffix = cls._entity_field_parts(item.canonical_name)
+            if suffix not in {"id", "key", "code"}:
+                result.append(item)
+                continue
+            label_peers = [
+                candidate for candidate in candidates
+                if candidate.table_name == item.table_name
+                and candidate.object_id != item.object_id
+                and cls._entity_field_parts(candidate.canonical_name)[0] == stem
+                and cls._entity_field_parts(candidate.canonical_name)[1]
+                in {"", "name", "label", "title", "description"}
+            ]
+            if len(label_peers) != 1:
+                result.append(item)
+        return tuple(result)
+
+    @staticmethod
+    def _entity_field_parts(name: str) -> tuple[str, str]:
+        normalized = re.sub(r"[^0-9a-z]+", "", name.casefold())
+        for suffix in ("description", "title", "label", "name", "code", "key", "id"):
+            if normalized.endswith(suffix) and len(normalized) > len(suffix):
+                return normalized[:-len(suffix)], suffix
+        return normalized, ""
 
     def selection_evidence(self, candidates: tuple[CatalogObject, ...]) -> dict[str, Any]:
         """A bounded selector view of this catalog, never another semantic model.

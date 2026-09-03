@@ -100,6 +100,11 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
 
 
+def check(condition, label):
+    if not condition:
+        raise RuntimeError(label)
+
+
 @asynccontextmanager
 async def tracked_acceptance_turns(service, owner, root, *, browser=False, drain_seconds=30):
     """Drain/cancel owned requests before resource teardown, even after HTTP failure."""
@@ -253,6 +258,8 @@ async def run(args, root, provider_failures):
                     return
 
                 async def post(label, text, shape=None, *, conversation=None, model_key=key, profile=args.profile, template=None, blocked=False):
+                    if args.phase == "m585" and args.case and label not in args.case:
+                        return {}, {}
                     conversation = conversation or str(uuid.uuid4())
                     request_id = str(uuid.uuid4())
                     owner.add_conversation(conversation)
@@ -342,10 +349,20 @@ async def run(args, root, provider_failures):
                         success &= memory is not None and memory.semantic_model_key == model_key
                         success &= memory is not None and memory.measures == canonical.measures and memory.dimensions == canonical.dimensions
                         success &= memory is not None and memory.last_query_result_id == witness["result"].result_id
-                    summary = {"case": label, "user_text": text, "profile": profile, "pass": bool(success),
+                    summary = {"case": label, "user_text": text, "profile": profile,
+                        "semantic_model": next((item["display_name"] for item in options if item["key"] == model_key), model_key),
+                        "pass": bool(success),
                         "provider_failures": provider_failures.get(request_id, []),
                         "http": response.status_code, "terminal": body.get("terminal_state"), "error": body.get("error_type"),
                         "plan": plan, "clarification": body.get("clarification_question"),
+                        "obligations": audit.get("semantic_obligations"),
+                        "obligation_coverage": audit.get("semantic_obligation_coverage"),
+                        "grounded_delta": audit.get("grounded_delta"),
+                        "inheritance": audit.get("inheritance_decision"),
+                        "dax_executed": bool(audit.get("dax_executed")),
+                        "result_shape": {"row_count": audit.get("result_row_count"),
+                            "inspection": audit.get("result_semantic_inspection")},
+                        "effective_scope": audit.get("effective_query_scope"),
                         "objects": audit.get("object_grounding_status"), "selections": [{"role": x["role"], "phrase": x["phrase"], "status": x["status"], "selected_id": x["selected_id"]} for x in selections.get(request_id, [])],
                         "members": audit.get("member_grounding_status"),
                         "member_evidence": [entry for entry in member_selections if entry["request_id"] == request_id],
@@ -357,6 +374,49 @@ async def run(args, root, provider_failures):
                     if witness and "facts" in witness:
                         summary.update(dax_hash=digest(witness["dax"]), result_hash=digest(witness["result"].rows),
                             fact_count=len(witness["facts"].facts), verified_facts_match=True)
+                    if args.phase == "m585":
+                        presentation = body.get("presentation") or {}
+                        datasets = presentation.get("datasets") or []
+                        blocks = presentation.get("blocks") or []
+                        data_references = {
+                            block.get("data_reference") for block in blocks
+                            if block.get("type") in {"table", "chart"}
+                        }
+                        dataset_rows = datasets[0].get("rows") if len(datasets) == 1 else None
+                        result_rows = (
+                            witness["result"].model_dump(mode="json").get("rows")
+                            if witness else None
+                        )
+                        display_metric_desc = None
+                        if (
+                            plan.get("query_shape") == "grouped"
+                            and not plan.get("sort")
+                            and len(plan.get("measures") or []) == 1
+                            and len(datasets) == 1
+                        ):
+                            columns = datasets[0].get("columns") or []
+                            measure = plan["measures"][0]
+                            indexes = [
+                                index for index, column in enumerate(columns)
+                                if column == measure or column.endswith(f"[{measure}]")
+                            ]
+                            if len(indexes) == 1:
+                                values = [row[indexes[0]] for row in (dataset_rows or [])]
+                                display_metric_desc = all(
+                                    left >= right for left, right in zip(values, values[1:])
+                                )
+                        summary.update(
+                            final_answer=body.get("answer"),
+                            presentation_order={
+                                "shared_table_chart_dataset": len(data_references) <= 1,
+                                "matches_query_result": (
+                                    dataset_rows == result_rows
+                                    if dataset_rows is not None and result_rows is not None
+                                    else None
+                                ),
+                                "grouped_default_metric_desc": display_metric_desc,
+                            },
+                        )
                     summaries.append(summary)
                     if args.candidate_evidence:
                         summary["candidate_evidence"] = selections.get(request_id, [])
@@ -407,6 +467,214 @@ async def run(args, root, provider_failures):
                             if not identical:
                                 for row in pair:
                                     row["pass"] = False
+                elif args.phase == "m585":
+                    by_name = {item["display_name"]: item["key"] for item in options}
+                    required_models = {
+                        "rich": "PowerBIAgent_M3_Rich_Test",
+                        "simple": "PowerBIAgent_M3_Test",
+                        "logistics": "PowerBIAgent_M5_8_5_Logistics_Test",
+                    }
+                    if any(name not in by_name for name in required_models.values()):
+                        raise RuntimeError("m585_three_explicit_pbix_required")
+                    model_keys = {
+                        alias: by_name[name] for alias, name in required_models.items()
+                    }
+
+                    async def members(model_alias, table, field):
+                        model_key = model_keys[model_alias]
+                        context = ToolExecutionContext(
+                            runtime_mode=RuntimeDataMode.REAL,
+                            user=UserContext(allowed_semantic_models=[model_key]),
+                        )
+                        snapshot = await service.tool_gateway.execute(
+                            "get_column_members",
+                            context,
+                            ColumnMembersRequest(
+                                semantic_model_key=model_key,
+                                table_name=table,
+                                field_name=field,
+                                limit=200,
+                            ),
+                        )
+                        check(
+                            snapshot.semantic_model_key == model_key
+                            and not snapshot.truncated
+                            and snapshot.values,
+                            f"{model_alias}_{field}_member_snapshot_invalid",
+                        )
+                        return [str(value) for value in snapshot.values]
+
+                    rich_regions = await members("rich", "Region", "Region")
+                    rich_products = await members("rich", "Product", "Product")
+                    simple_products = await members("simple", "Sales", "Product")
+                    logistics_hubs = await members("logistics", "DimHub", "HubName")
+                    logistics_carriers = await members("logistics", "DimCarrier", "CarrierName")
+                    check(len(rich_regions) >= 2 and len(rich_products) >= 2, "rich_members_insufficient")
+                    check(len(simple_products) >= 2, "simple_members_insufficient")
+                    check(len(logistics_hubs) >= 2 and len(logistics_carriers) >= 2, "logistics_members_insufficient")
+
+                    async def completed_case(label, text, shape, *, model_alias, profile, conversation=None):
+                        summary_count = len(summaries)
+                        body, plan = await post(
+                            label,
+                            text,
+                            shape,
+                            model_key=model_keys[model_alias],
+                            profile=profile,
+                            conversation=conversation,
+                        )
+                        if len(summaries) == summary_count:
+                            return body, plan
+                        item = summaries[-1]
+                        inspection = item["result_shape"].get("inspection") or {}
+                        scope = item.get("effective_scope")
+                        item["pass"] &= bool(
+                            item.get("obligation_coverage") is True
+                            and item.get("grounded_delta") is not None
+                            and inspection.get("passed") is True
+                            and scope
+                            and scope in (body.get("answer") or "")
+                            and item["presentation_order"]["shared_table_chart_dataset"]
+                        )
+                        if shape in {"ranking", "trend", "bounded_trend"}:
+                            item["pass"] &= item["presentation_order"]["matches_query_result"] is True
+                        if shape == "grouped" and not plan.get("sort"):
+                            item["pass"] &= item["presentation_order"]["grouped_default_metric_desc"] is True
+                        return body, plan
+
+                    async def blocked_case(label, text, *, model_alias, profile, conversation=None):
+                        summary_count = len(summaries)
+                        body, plan = await post(
+                            label,
+                            text,
+                            model_key=model_keys[model_alias],
+                            profile=profile,
+                            conversation=conversation,
+                            blocked=True,
+                        )
+                        if len(summaries) == summary_count:
+                            return body, plan
+                        item = summaries[-1]
+                        item["pass"] &= bool(
+                            not item["dax_executed"]
+                            and item["result_shape"]["row_count"] is None
+                            and not body.get("memory_commit")
+                        )
+                        return body, plan
+
+                    def mark(plan, condition):
+                        if plan:
+                            summaries[-1]["pass"] &= bool(condition)
+
+                    profiles = (
+                        (args.profile,)
+                        if args.m585_single_profile
+                        else tuple(dict.fromkeys((args.profile, "kimi-k2.6")))
+                    )
+                    for profile in profiles:
+                        rich = model_keys["rich"]
+                        rich_chain = str(uuid.uuid4())
+                        await completed_case("rich_time_scalar", "2025年5月销售额是多少？", "scalar", model_alias="rich", profile=profile, conversation=rich_chain)
+                        await completed_case("rich_filter_followup", f"那 {rich_regions[0]} 呢？", "scalar", model_alias="rich", profile=profile, conversation=rich_chain)
+                        await completed_case("rich_measure_replace", "换成销量", "scalar", model_alias="rich", profile=profile, conversation=rich_chain)
+                        await completed_case("rich_grouped", "按产品看", "grouped", model_alias="rich", profile=profile, conversation=rich_chain)
+                        _, rich_top1 = await completed_case("rich_top1", "销量最高的是哪个产品？", "ranking", model_alias="rich", profile=profile)
+                        mark(rich_top1, rich_top1.get("top_n") == 1 and rich_top1.get("sort") == "desc")
+                        _, rich_top3 = await completed_case("rich_top3", "销售额最高的前三个产品", "ranking", model_alias="rich", profile=profile)
+                        mark(rich_top3, rich_top3.get("top_n") == 3 and rich_top3.get("sort") == "desc")
+                        await completed_case("rich_trend", "每个月销售额趋势", "trend", model_alias="rich", profile=profile)
+                        await completed_case("rich_bounded", "2025年8月到2026年1月销售额月趋势", "bounded_trend", model_alias="rich", profile=profile)
+                        await completed_case("rich_entities", "有哪些产品？", "entity_list", model_alias="rich", profile=profile)
+                        rich_set = " 和 ".join(rich_regions[:2])
+                        await completed_case("rich_member_set", f"{rich_set} 的销售额分别是多少？", "member_set", model_alias="rich", profile=profile)
+                        await completed_case("rich_known_member", f"{rich_regions[0]} 的销售额是多少？", "scalar", model_alias="rich", profile=profile)
+                        await blocked_case("rich_unknown", "地球销售额多少？", model_alias="rich", profile=profile)
+                        await blocked_case("rich_mixed_unknown", f"{rich_regions[0]} 和火星区的销售额", model_alias="rich", profile=profile)
+                        rich_fresh = str(uuid.uuid4())
+                        await blocked_case("rich_pending", "哪个产品最好？", model_alias="rich", profile=profile, conversation=rich_fresh)
+                        _, fresh_plan = await completed_case("rich_fresh", "独立问题：总订单数是多少？", "scalar", model_alias="rich", profile=profile, conversation=rich_fresh)
+                        mark(fresh_plan, not fresh_plan.get("dimensions") and not fresh_plan.get("filters") and fresh_plan.get("top_n") is None)
+
+                        report_conversation = str(uuid.uuid4())
+                        await post("report", "生成销售报表", model_key=rich, profile=profile,
+                            conversation=report_conversation, template="sales_report")
+                        await completed_case("report_to_data", "总订单数是多少", "scalar", model_alias="rich", profile=profile, conversation=report_conversation)
+                        await post("data_to_report", "生成销售报表", model_key=rich, profile=profile,
+                            conversation=report_conversation, template="sales_report")
+
+                        await completed_case("simple_scalar", "总销售额是多少？", "scalar", model_alias="simple", profile=profile)
+                        await completed_case("simple_grouped", "按产品看销售额", "grouped", model_alias="simple", profile=profile)
+                        _, simple_top1 = await completed_case("simple_top1", "销量最高的是哪个产品？", "ranking", model_alias="simple", profile=profile)
+                        mark(simple_top1, simple_top1.get("top_n") == 1)
+                        _, simple_top3 = await completed_case("simple_top3", "销售额最高的前三个产品", "ranking", model_alias="simple", profile=profile)
+                        mark(simple_top3, simple_top3.get("top_n") == 3)
+                        await completed_case("simple_entities", "有哪些产品？", "entity_list", model_alias="simple", profile=profile)
+                        simple_set = " 和 ".join(simple_products[:2])
+                        await completed_case("simple_member_set", f"{simple_set} 的销售额分别是多少？", "member_set", model_alias="simple", profile=profile)
+                        await blocked_case("simple_unknown", "地球销售额多少？", model_alias="simple", profile=profile)
+                        await blocked_case("simple_mixed_unknown", f"{simple_products[0]} 和火星产品的销售额", model_alias="simple", profile=profile)
+                        await blocked_case("simple_temporal_unsupported", "2025年5月销售额", model_alias="simple", profile=profile)
+                        simple_fresh = str(uuid.uuid4())
+                        await completed_case("simple_seed", "按产品看销售额", "grouped", model_alias="simple", profile=profile, conversation=simple_fresh)
+                        _, simple_fresh_plan = await completed_case("simple_fresh", "新问题：总销量是多少？", "scalar", model_alias="simple", profile=profile, conversation=simple_fresh)
+                        mark(simple_fresh_plan, not simple_fresh_plan.get("dimensions") and not simple_fresh_plan.get("filters"))
+
+                        logistics_chain = str(uuid.uuid4())
+                        _, logistics_initial = await completed_case("logistics_time_scalar", "2025年5月总运单数是多少？", "scalar", model_alias="logistics", profile=profile, conversation=logistics_chain)
+                        mark(logistics_initial, logistics_initial.get("measures") == ["Total Shipments"])
+                        _, logistics_filtered = await completed_case("logistics_filter_followup", "那 North Hub 呢？", "scalar", model_alias="logistics", profile=profile, conversation=logistics_chain)
+                        mark(logistics_filtered, logistics_filtered.get("filters") == [{"field": "HubName", "operator": "eq", "value": "North Hub"}])
+                        _, logistics_replace = await completed_case("logistics_measure_replace", "换成包裹数", "scalar", model_alias="logistics", profile=profile, conversation=logistics_chain)
+                        mark(logistics_replace, logistics_replace.get("measures") == ["Total Packages"])
+                        _, logistics_grouped = await completed_case("logistics_grouped", "按承运商看", "grouped", model_alias="logistics", profile=profile, conversation=logistics_chain)
+                        mark(logistics_grouped, logistics_grouped.get("dimensions") == ["CarrierName"])
+                        _, logistics_top1 = await completed_case("logistics_top1", "包裹数最高的是哪个承运商？", "ranking", model_alias="logistics", profile=profile)
+                        mark(logistics_top1, logistics_top1.get("measures") == ["Total Packages"] and logistics_top1.get("dimensions") == ["CarrierName"] and logistics_top1.get("top_n") == 1)
+                        _, logistics_top3 = await completed_case("logistics_top3", "包裹数最高的前三个承运商", "ranking", model_alias="logistics", profile=profile)
+                        mark(logistics_top3, logistics_top3.get("top_n") == 3)
+                        await completed_case("logistics_trend", "每个月运单趋势", "trend", model_alias="logistics", profile=profile)
+                        await completed_case("logistics_bounded", "2025年8月到2026年1月运单月趋势", "bounded_trend", model_alias="logistics", profile=profile)
+                        await completed_case("logistics_entities", "有哪些承运商？", "entity_list", model_alias="logistics", profile=profile)
+                        logistics_set = " 和 ".join(logistics_hubs[:2])
+                        await completed_case("logistics_member_set", f"{logistics_set} 的包裹数分别是多少？", "member_set", model_alias="logistics", profile=profile)
+                        await completed_case("logistics_known_member", "North Hub 的运单数多少？", "scalar", model_alias="logistics", profile=profile)
+                        await blocked_case("logistics_unknown", "地球枢纽运单数多少？", model_alias="logistics", profile=profile)
+                        await blocked_case("logistics_mixed_unknown", "North Hub 和火星枢纽的包裹数", model_alias="logistics", profile=profile)
+                        _, logistics_fresh = await completed_case("logistics_fresh", "独立问题：2026年1月平均延误小时数", "scalar", model_alias="logistics", profile=profile, conversation=logistics_chain)
+                        mark(logistics_fresh, logistics_fresh.get("measures") == ["Average Delay Hours"] and not logistics_fresh.get("filters") and not logistics_fresh.get("dimensions"))
+                        _, hub_ontime = await completed_case("logistics_hub_ontime", "哪个枢纽最准时？", "ranking", model_alias="logistics", profile=profile)
+                        mark(hub_ontime, hub_ontime.get("measures") == ["On-Time Rate"] and hub_ontime.get("dimensions") == ["HubName"] and hub_ontime.get("sort") == "desc")
+                        _, carrier_delay = await completed_case("logistics_carrier_delay", "哪个承运商延误最严重？", "ranking", model_alias="logistics", profile=profile)
+                        mark(carrier_delay, carrier_delay.get("measures") == ["Average Delay Hours"] and carrier_delay.get("dimensions") == ["CarrierName"] and carrier_delay.get("sort") == "desc")
+
+                        isolation = str(uuid.uuid4())
+                        _, a1 = await completed_case("isolation_a1", "独立问题：总订单数是多少", "scalar", model_alias="rich", profile=profile, conversation=isolation)
+                        _, b = await completed_case("isolation_b", "独立问题：总销量是多少", "scalar", model_alias="simple", profile=profile, conversation=isolation)
+                        _, c = await completed_case("isolation_c", "独立问题：总运单数是多少", "scalar", model_alias="logistics", profile=profile, conversation=isolation)
+                        _, a2 = await completed_case("isolation_a2", "独立问题：总订单数是多少", "scalar", model_alias="rich", profile=profile, conversation=isolation)
+                        mark(a2, a1.get("measures") == a2.get("measures") == ["Total Orders"] and b.get("measures") == ["Total Quantity"] and c.get("measures") == ["Total Shipments"])
+
+                    comparable = {}
+                    for item in summaries:
+                        if item.get("profile") not in profiles or not item.get("result_hash"):
+                            continue
+                        comparable.setdefault((item["semantic_model"], item["case"]), []).append(item)
+                    consistency = []
+                    for identity, pair in comparable.items():
+                        if len(pair) != len(profiles):
+                            continue
+                        normalized_plans = [
+                            {name: value for name, value in row["plan"].items()
+                                if name not in {"normalized_question", "inherited_context"}}
+                            for row in pair
+                        ]
+                        passed = normalized_plans[0] == normalized_plans[1] and pair[0]["result_hash"] == pair[1]["result_hash"]
+                        consistency.append({"semantic_model": identity[0], "case": identity[1], "pass": passed})
+                        if not passed:
+                            for row in pair:
+                                row["pass"] = False
+                    print(json.dumps({"m585_provider_consistency": consistency,
+                        "passed": all(item["pass"] for item in consistency)}, ensure_ascii=False), flush=True)
                 elif args.phase == "isolation":
                     others = [item for item in options if item["display_name"] == "PowerBIAgent_M3_Test"]
                     if len(others) != 1 or others[0]["key"] == key:
@@ -495,10 +763,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model")
     parser.add_argument("--profile", default="deepseek")
-    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation"), default="focused")
+    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585"), default="focused")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--case", action="append", help="Run selected focused cases while diagnosing a failure")
     parser.add_argument("--compare-profiles", action="store_true")
+    parser.add_argument("--m585-single-profile", action="store_true", help="Run only --profile for focused M5.8.5 diagnosis")
     parser.add_argument("--candidate-evidence", action="store_true", help="Print bounded runtime metadata for diagnosis; never prompts or secrets")
     parser.add_argument("--witness-evidence", action="store_true", help="Print validated DAX/result/fact witnesses to the console only; never commit business output")
     args = parser.parse_args()

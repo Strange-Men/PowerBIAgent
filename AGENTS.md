@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.8.4 — 现有语义链跨语言与通用模型理解优化（COMPLETE）**。主开发提交 `41b6e0b`、CI 时间测试修复提交 `a975310`；最终治理提交 `3e3d8ac` 的 PowerBIAgent Validation [#33580808379](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33580808379) 已核验 exact-SHA completed/success，Node20 warning=0。Provider/MCP/DAX/facts/Report 边界保持冻结，M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.8.5 — Semantic Completeness + Result Inspection + Presentation Truth（COMPLETE）**。现有唯一语义链新增 Semantic Obligation Coverage、Canonical Shape Completeness、Result Semantic Inspection 与 Deterministic Query Scope 四个 correctness invariant；三 PBIX × DeepSeek/Kimi Real 定点链、2,304-case stress、全量本地门禁与 automation-owned residual=0 已通过。本提交 exact-SHA CI 作为发布证据；M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -49,6 +49,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.8.3** 已实现 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配。MCP runtime schema 是结构 authority；immutable context 只适配 metadata；exact identity + fingerprint 验证的 override 只补充业务语言；LLM 只在 runtime-owned candidates 中选择。Rich/zero-config/双 PBIX/facts/performance/local full gates 已通过；受控 temp 生命周期已自动化；**正式 COMPLETE 以对应提交的 CI success 为条件**。
 - **M5.9** 只负责 MCP profiling、session reuse、cache、bounded concurrency、bounded queue/backpressure、20/50/100 concurrency 与 restart/fault/soak；不得修改 Semantic/DAX/VerifiedFactSet authority。**M5.9 NOT STARTED。**
 - **M5.8.4** 已在现有 ModelSemanticContext/SemanticCatalog/Grounding 内完成跨语言对象/成员绑定与 canonical KEEP/REPLACE 优化；report template choice 不等于本轮 report intent。LLM 仅在 runtime 已证明存在的候选 ID 中解释语言，不能产生新对象或事实。`41b6e0b` 主开发后，首次 CI [#33455159267](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33455159267) 因测试 reference date 漂移失败；`a975310` 修复测试时钟后，CI [#33457056546](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33457056546) completed/success；`3e3d8ac` 最终治理 CI [#33580808379](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33580808379) exact-SHA completed/success，M5.8.4 COMPLETE。M5.9/M5.10 不启动。
+- **M5.8.5** 已在现有链加入四个通用 correctness Gate；unknown/known+unknown member、残缺 shape、Result 语义不一致均在事实/执行边界 fail closed，TopN tie-break、trend ASC、table/chart 共序与完整 effective scope 均由确定性合同约束。Rich Sales、M3 Test、Logistics Test 的双 Provider Real 与 A→B→C→A 隔离通过；无第二套 authority、无 migration、无 M5.9/M5.10 工作。**M5.8.5 COMPLETE。**
 - **M5.10** 只负责“简易模板/销售模板”显式选择与固定专业销售模板；两者都遵守 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed renderer`。**M5.10 NOT STARTED。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。**
 
 当前真实主链：
@@ -57,10 +58,12 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 Natural Language
 → FastAPI / TurnService → TurnPipeline → Intent
 → ToolGateway → PowerBIAdapter → SemanticModelSchema
-→ Semantic Grounding + StateTransition → Canonical QueryPlan
+→ Semantic Grounding → Semantic Obligation Coverage → StateTransition
+→ Canonical QueryPlan → Canonical Shape Completeness
 → Deterministic DAX → Independent Layer 3
 → ToolGateway → PowerBIAdapter → Power BI → QueryResult
-→ VerifiedFactSet → deterministic Report Data Contract
+→ Result Semantic Inspection → VerifiedFactSet → deterministic Query Scope / Presentation
+→ deterministic Report Data Contract
 → deterministic ReportSpec → Fixed Renderer → static HTML
 → ReportArtifact → report_id / view / download
 → Memory / Snapshot
@@ -130,6 +133,10 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 46. M5.7.1：日期角色选择优先级固定为用户显式指定 → model-scoped metadata → runtime relationship/default temporal role（仅在可唯一证明时）→ clarification。不得以“模型只有一个 Date/DateTime 字段”为正常执行前提，也不得在多日期角色无唯一证据时猜测。
 47. M5.7.1：benchmark 问题、expected 数值与问题→答案映射不得进入 `backend/app/**` production text/code。Gate 必须覆盖 `.py/.yaml/.yml/.json/.toml`，排除 harness/tests/docs/generated/cache/artifact，并禁止 production import/read/depend on known-answer cases、baseline、oracle 或 test-only truth；合法 model-scoped alias/runtime metadata 不得因裸业务词误报。永久 Semantic Compatibility Gate 同时检查 unresolved/invalid member ZERO DAX、time、multi-turn、unsupported、schema mutation、frontend/provider 无 semantic authority。
 48. M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provider 或 MCP performance；M5.7.2 已在 Report Template Architecture 与简易模板质量边界内完成，M5.8 已在独立 Provider/Profile 边界内完成。
+49. M5.8.5：Grounding 后所有影响结果的 explicit semantic obligation 必须闭合为 RESOLVED / EXPLICITLY_CLEARED / UNSUPPORTED / NEEDS_CLARIFICATION；未知 member 或 known+unknown set 不得静默丢弃或部分执行，未闭合时 ZERO DAX。
+50. M5.8.5：StateTransition 后必须按 QueryShape 验证 CanonicalQueryPlan 必需槽；QueryResult 到 VerifiedFactSet 前必须验证 ranking row count/order/tie-break、trend time/range、entity distinct 与 exact model/scope lineage，失败不得由 Answer LLM 或 presentation 解释过去。
+51. M5.8.5：Ranking 的 DAX selection/final ORDER BY、QueryResult、inspection、table/chart 必须保持同一 canonical order；普通 grouped metric DESC 与 trend time ASC 只能是共享 PresentationDataset projection，不得修改 QueryResult/VerifiedFactSet。effective scope 必须由最终 plan/localization 确定性生成并进入可见 Answer。
+52. M5.8.5：显式 fresh cue 高于旧 PendingClarification、Memory 与 LLM relation draft；follow-up 只继承真正省略且兼容的 canonical slot，replace 只替换明确 slot。禁止用无限 regex、PBIX 名称或领域 hardcode 替代 structured evidence。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前跨入未批准里程碑、开发 Remote MCP；未经用户明确批准不得创建 Tag。
 
@@ -163,4 +170,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-09-02 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 COMPLETE；M5.8.4 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-03 | M5.8—M5.8.5 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*

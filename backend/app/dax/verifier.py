@@ -41,8 +41,12 @@ class _ParsedDAX:
     top_n: int | None = None
     top_measure: str | None = None
     top_direction: str | None = None
+    top_tiebreaks: list[_Ref] = field(default_factory=list)
     order_measure: str | None = None
     order_direction: str | None = None
+    order_tiebreaks: list[_Ref] = field(default_factory=list)
+    order_dimensions: list[_Ref] = field(default_factory=list)
+    order_dimension_directions: list[str] = field(default_factory=list)
 
 
 class RestrictedDAXParseError(ValueError):
@@ -172,10 +176,22 @@ class RestrictedDAXVerifier:
                 errors.append("dax_top_n_sort_measure_mismatch")
             if parsed.top_direction != plan.sort:
                 errors.append("dax_top_n_sort_direction_mismatch")
+            if parsed.top_tiebreaks != expected_dimensions:
+                errors.append("dax_top_n_tiebreak_dimension_mismatch")
 
+        dimension_order = getattr(plan, "dimension_order", None)
         if plan.sort is None:
-            if parsed.order_measure is not None:
+            if dimension_order is None and (
+                parsed.order_measure is not None or parsed.order_dimensions
+            ):
                 errors.append("dax_unplanned_presentation_ordering")
+            elif dimension_order is not None:
+                if parsed.order_measure is not None:
+                    errors.append("dax_dimension_order_structure_mismatch")
+                if parsed.order_dimensions != expected_dimensions:
+                    errors.append("dax_dimension_order_fields_mismatch")
+                if parsed.order_dimension_directions != [dimension_order] * len(expected_dimensions):
+                    errors.append("dax_dimension_order_direction_mismatch")
         else:
             if parsed.order_measure is None:
                 errors.append("dax_presentation_ordering_missing")
@@ -183,6 +199,8 @@ class RestrictedDAXVerifier:
                 errors.append("dax_presentation_sort_measure_mismatch")
             if parsed.order_measure is not None and parsed.order_direction != plan.sort:
                 errors.append("dax_presentation_sort_direction_mismatch")
+            if parsed.order_tiebreaks != expected_dimensions:
+                errors.append("dax_presentation_tiebreak_dimension_mismatch")
         return list(dict.fromkeys(errors))
 
     def _parse(self, dax: str) -> _ParsedDAX:
@@ -197,22 +215,47 @@ class RestrictedDAXVerifier:
         parsed = _ParsedDAX()
         order = match.group(2)
         if order is not None:
+            order_parts = self._split(order)
             order_match = re.fullmatch(
                 r"\s*\[((?:\]\]|[^\]])+)\]\s+(ASC|DESC)\s*",
-                order,
+                order_parts[0] if order_parts else "",
                 re.IGNORECASE,
             )
-            if order_match is None:
-                raise RestrictedDAXParseError("dax_order_structure_not_verifiable")
-            parsed.order_measure = self._unescape_bracket(order_match.group(1))
-            parsed.order_direction = order_match.group(2).lower()
+            if order_match is not None:
+                parsed.order_measure = self._unescape_bracket(order_match.group(1))
+                parsed.order_direction = order_match.group(2).lower()
+                for item in order_parts[1:]:
+                    tie_match = re.fullmatch(r"\s*(.+?)\s+ASC\s*", item, re.IGNORECASE)
+                    tie_ref = self._qualified_ref(tie_match.group(1)) if tie_match else None
+                    if tie_ref is None:
+                        raise RestrictedDAXParseError("dax_order_structure_not_verifiable")
+                    parsed.order_tiebreaks.append(tie_ref)
+            else:
+                for item in order_parts:
+                    dimension_match = re.fullmatch(
+                        r"\s*(.+?)\s+(ASC|DESC)\s*", item, re.IGNORECASE,
+                    )
+                    dimension_ref = (
+                        self._qualified_ref(dimension_match.group(1))
+                        if dimension_match else None
+                    )
+                    if dimension_ref is None:
+                        raise RestrictedDAXParseError("dax_order_structure_not_verifiable")
+                    parsed.order_dimensions.append(dimension_ref)
+                    parsed.order_dimension_directions.append(
+                        dimension_match.group(2).lower()
+                    )
 
         top = self._function(expression, "TOPN")
         if top is not None:
             if top[1].strip():
                 raise RestrictedDAXParseError("dax_top_n_structure_not_verifiable")
             args = self._split(top[0])
-            if len(args) != 4 or not re.fullmatch(r"[1-9]\d*", args[0].strip()):
+            if (
+                len(args) < 6
+                or (len(args) - 4) % 2
+                or not re.fullmatch(r"[1-9]\d*", args[0].strip())
+            ):
                 raise RestrictedDAXParseError("dax_top_n_structure_not_verifiable")
             parsed.top_n = int(args[0].strip())
             expression = args[1].strip()
@@ -221,6 +264,12 @@ class RestrictedDAXVerifier:
             if direction not in {"asc", "desc"}:
                 raise RestrictedDAXParseError("dax_top_n_structure_not_verifiable")
             parsed.top_direction = direction
+            for index in range(4, len(args), 2):
+                tie_ref = self._qualified_ref(args[index])
+                tie_direction = args[index + 1].strip().lower()
+                if tie_ref is None or tie_direction != "asc":
+                    raise RestrictedDAXParseError("dax_top_n_structure_not_verifiable")
+                parsed.top_tiebreaks.append(tie_ref)
 
         summarize = self._function(expression, "SUMMARIZECOLUMNS")
         if summarize is None or summarize[1].strip():

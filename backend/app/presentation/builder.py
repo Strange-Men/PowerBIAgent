@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from datetime import date, datetime
+
 from backend.app.facts.verified import FactType, VerifiedFactSet
 from backend.app.presentation.models import (
     ChartPresentationBlock,
@@ -19,7 +22,7 @@ from backend.app.presentation.formatter import (
     PresentationFormatter,
 )
 from backend.app.presentation.localization import DisplayLocalization
-from backend.app.schemas.data_contracts import CanonicalQueryPlan, QueryResult
+from backend.app.schemas.data_contracts import CanonicalQueryPlan, QueryResult, QueryShape
 
 
 class StructuredPresentationBuilder:
@@ -148,6 +151,7 @@ class StructuredPresentationBuilder:
             [row[index] for index in indexes]
             for row in result.rows
         ]
+        raw_rows = cls._display_order(plan, columns, raw_rows)
         display_fields: list[PresentationField] = []
         formatted_rows: list[list[str]] = []
         if display_bindings is not None:
@@ -200,6 +204,61 @@ class StructuredPresentationBuilder:
             row_count=result.row_count,
             truncated=result.truncated,
         )
+
+    @classmethod
+    def _display_order(
+        cls,
+        plan: CanonicalQueryPlan,
+        columns: list[str],
+        rows: list[list[object]],
+    ) -> list[list[object]]:
+        """Sort only the presentation projection; factual rows remain untouched."""
+        if len(rows) < 2 or not plan.dimensions:
+            return rows
+        if plan.sort is not None or plan.query_shape == QueryShape.RANKING:
+            return rows
+        dimension = plan.dimensions[0]
+        dimension_index = cls._canonical_column_index(columns, dimension)
+        if dimension_index is None:
+            return rows
+        if plan.query_shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}:
+            return sorted(rows, key=lambda row: cls._temporal_display_key(row[dimension_index]))
+        if (
+            plan.query_shape == QueryShape.GROUPED
+            and len(plan.measures) == 1
+        ):
+            measure_index = cls._canonical_column_index(columns, plan.measures[0])
+            if measure_index is not None and all(
+                is_presentation_number(row[measure_index]) for row in rows
+            ):
+                return sorted(rows, key=lambda row: row[measure_index], reverse=True)
+        return rows
+
+    @staticmethod
+    def _canonical_column_index(columns: list[str], canonical: str) -> int | None:
+        matches = [
+            index for index, column in enumerate(columns)
+            if column == canonical or column.endswith(f"[{canonical}]")
+        ]
+        return matches[0] if len(matches) == 1 else None
+
+    @staticmethod
+    def _temporal_display_key(value: object) -> tuple[int, int, int]:
+        if isinstance(value, datetime):
+            return value.year, value.month, value.day
+        if isinstance(value, date):
+            return value.year, value.month, value.day
+        text = str(value).strip()
+        try:
+            parsed = date.fromisoformat(text[:10])
+            return parsed.year, parsed.month, parsed.day
+        except ValueError:
+            match = re.fullmatch(r"(\d{4})[年/-](\d{1,2})(?:月|$)", text)
+            if match:
+                return int(match.group(1)), int(match.group(2)), 1
+        # Real results have already passed ResultSemanticInspection. This
+        # fallback only keeps direct presentation callers deterministic.
+        return 9999, 12, 31
 
     @staticmethod
     def _is_time_series(

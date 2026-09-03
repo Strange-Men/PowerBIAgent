@@ -1892,7 +1892,8 @@ class TestM24DAXQueryPlanConsistency:
         dax = (
             "EVALUATE TOPN(3, SUMMARIZECOLUMNS("
             "'Product'[Category], \"Total Sales\", [Total Sales]), "
-            "[Total Sales], DESC) ORDER BY [Total Sales] DESC"
+            "[Total Sales], DESC, 'Product'[Category], ASC) "
+            "ORDER BY [Total Sales] DESC, 'Product'[Category] ASC"
         )
         assert self._validate(dax, plan=plan).is_valid
 
@@ -1901,7 +1902,8 @@ class TestM24DAXQueryPlanConsistency:
         dax = (
             "EVALUATE TOPN(5, SUMMARIZECOLUMNS("
             "'Product'[Category], \"Total Sales\", [Total Sales]), "
-            "[Total Sales], DESC) ORDER BY [Total Sales] DESC"
+            "[Total Sales], DESC, 'Product'[Category], ASC) "
+            "ORDER BY [Total Sales] DESC, 'Product'[Category] ASC"
         )
         result = self._validate(dax, plan=plan)
         assert "dax_top_n_value_mismatch" in result.errors
@@ -1911,7 +1913,8 @@ class TestM24DAXQueryPlanConsistency:
         dax = (
             "EVALUATE TOPN(3, SUMMARIZECOLUMNS("
             "'Product'[Category], \"Total Sales\", [Total Sales]), "
-            "[Total Sales], ASC) ORDER BY [Total Sales] DESC"
+            "[Total Sales], ASC, 'Product'[Category], ASC) "
+            "ORDER BY [Total Sales] DESC, 'Product'[Category] ASC"
         )
         result = self._validate(dax, plan=plan)
         assert "dax_top_n_sort_direction_mismatch" in result.errors
@@ -1922,7 +1925,8 @@ class TestM24DAXQueryPlanConsistency:
             "EVALUATE TOPN(3, SUMMARIZECOLUMNS("
             "'Product'[Category], \"Total Sales\", [Total Sales], "
             "\"Total Quantity\", [Total Quantity]), "
-            "[Total Quantity], DESC) ORDER BY [Total Sales] DESC"
+            "[Total Quantity], DESC, 'Product'[Category], ASC) "
+            "ORDER BY [Total Sales] DESC, 'Product'[Category] ASC"
         )
         result = self._validate(dax, plan=plan)
         assert "dax_top_n_sort_measure_mismatch" in result.errors
@@ -1932,7 +1936,7 @@ class TestM24DAXQueryPlanConsistency:
         dax = (
             "EVALUATE TOPN(3, SUMMARIZECOLUMNS("
             "'Product'[Category], \"Total Sales\", [Total Sales]), "
-            "[Total Sales], DESC)"
+            "[Total Sales], DESC, 'Product'[Category], ASC)"
         )
         result = self._validate(dax, plan=plan)
         assert "dax_presentation_ordering_missing" in result.errors

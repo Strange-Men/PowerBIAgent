@@ -69,7 +69,7 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 - filters：筛选条件数组，每个元素包含 field/operator/value
 - time_range：仅提取原始时间短语；不得选择日期列，最终结构化日期范围由 Grounding 决定
 - sort：结果展示排序方向，只能为 "desc"、"asc" 或 null；有 top_n 时不得为 null
-- top_n：Top N 选择限制（正整数），无限制则为 null；第 N 名 ties 可能使结果超过 N 行
+- top_n：Top N 选择限制（正整数），无限制则为 null；确定性维度 tie-break 保证结果不超过 N 行
 - comparison_mode：当前必须为 null；对比语义尚未进入 Real MVP contract
 - requested_template：非权威 weak signal；仅当用户明确请求销售报表时可为 "sales_report"，否则为 null；模板仍由 application-scoped Template Catalog 确定性解析
 - inherited_context：从已提交上下文继承的摘要（可选）

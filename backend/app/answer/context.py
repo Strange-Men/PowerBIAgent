@@ -40,6 +40,10 @@ class AnswerContext(BaseModel):
     dimensions: list[str] = Field(default_factory=list, description="查询维度")
     filters_summary: str = Field(default="", description="筛选条件摘要")
     time_range: str = Field(default="", description="时间范围")
+    query_shape: str = Field(default="", description="确定性查询形状")
+    sort: str = Field(default="", description="Canonical 排序方向")
+    top_n: int | None = Field(default=None, ge=1, description="Canonical TopN")
+    effective_scope: str = Field(default="", description="确定性有效查询范围")
 
     model_config = {"extra": "forbid", "frozen": True}
 
@@ -59,6 +63,10 @@ class AnswerContext(BaseModel):
         dimensions: list[str] | None = None,
         filters_summary: str = "",
         time_range: str = "",
+        query_shape: str = "",
+        sort: str = "",
+        top_n: int | None = None,
+        effective_scope: str = "",
     ) -> "AnswerContext":
         """构建安全上下文快照
 
@@ -99,4 +107,8 @@ class AnswerContext(BaseModel):
             dimensions=list(dimensions or []),
             filters_summary=filters_summary,
             time_range=time_range or "",
+            query_shape=query_shape,
+            sort=sort,
+            top_n=top_n,
+            effective_scope=effective_scope,
         )

@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.8.4 — 跨语言与通用模型理解优化（COMPLETE；`3e3d8ac` / CI #46 exact-SHA completed/success）
+> **状态：** M5.8.5 — Semantic Completeness + Result Inspection + Presentation Truth（COMPLETE；本提交 exact-SHA CI 为发布证据）
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -48,6 +48,7 @@
 | **M5.8.2** | **通用自然语言路由与查询形态收口** | **✅ COMPLETE** |
 | **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **COMPLETE（b86662e / CI success）** |
 | **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **COMPLETE；`3e3d8ac` / CI #46 exact-SHA completed/success** |
+| **M5.8.5** | **Semantic Completeness + Result Inspection + Presentation Truth** | **✅ COMPLETE** |
 | **M5.9** | **完整 MCP performance、concurrency、resilience 与 soak** | **⏳ NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
@@ -143,6 +144,12 @@ Fresh evidence：Semantic Compatibility `421 passed`（109 production backend fi
 ### M5.8.3 — MCP-driven 通用模型语义适配
 
 typed `ModelSemanticContext`、runtime-driven Catalog 和 exact identity/fingerprint 的 optional business override 已实现；不提供“自动 business binding”。Rich 15、零配置、双 PBIX Chat/Memory/member/facts 与本地 full gates 已通过，受控 temp 生命周期已自动化，正式 COMPLETE 以 fresh local/residual 与对应提交 CI success 为条件。禁止用跨行业 global glossary、ontology/RAG/vector DB 替代 runtime authority。
+
+### M5.8.5 — Semantic Completeness + Result Inspection + Presentation Truth（已完成）
+
+现有唯一 authority 链新增 Semantic Obligation Coverage、Canonical Shape Completeness、Result Semantic Inspection 与 Deterministic Query Scope 四个 invariant。unknown/known+unknown member 和残缺 shape 在 DAX 前 fail closed；ranking 的 metric order 与确定性 dimension tie-break 同时由 DAX/verifier/result inspection 证明；trend 按时间 ASC；普通 categorical grouped 仅在 PresentationDataset 做 metric DESC display projection；Answer/Table/Chart 共享完整 scope/order，QueryResult 与 VerifiedFactSet 不变。
+
+永久矩阵覆盖 2,304 个跨领域组合；Rich Sales、M3 Test、Logistics Test 均用 DeepSeek/Kimi 运行定点高风险链，provider consistency、unknown ZERO DAX、fresh 和 A→B→C→A 隔离通过。backend 2397 PASS / 1 SKIP，Semantic Compatibility 743 PASS，Golden 11 PASS / 1 manual-real SKIP，frontend 87 PASS 与 typecheck/lint/build PASS，全部治理门禁通过，automation-owned residual=0。外部 Provider 冷启动长尾约 56s，仅记录，不属于性能改进。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 ### 新 M5.9 — MCP performance and resilience
 
@@ -390,7 +397,7 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
-- M5.5—M5.8.2 已完成并冻结；当前仅批准 M5.8.4，完整 M5.9 与 M5.10 仍不得进入。
+- M5.5—M5.8.5 已完成并冻结；完整 M5.9 与 M5.10 仍不得进入。
 - 一个 milestone 不得同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle；只有 M5.10 全部门禁完成后才允许宣告 M5 FINAL。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
@@ -405,4 +412,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-09-02 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 COMPLETE；M5.8.4 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-09-03 | M5.8—M5.8.5 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

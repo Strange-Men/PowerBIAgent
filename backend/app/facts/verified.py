@@ -18,6 +18,7 @@ from backend.app.schemas.data_contracts import (
     ChartSpec,
     KPISpec,
     QueryResult,
+    QueryShape,
     ReportSpec,
     StructuredFilter,
     TableSpec,
@@ -366,6 +367,7 @@ class FactBoundedAnswerBuilder:
         *,
         display_bindings: dict[str, Any] | None = None,
         locale: str = "zh-CN",
+        effective_scope: str | None = None,
     ) -> AnswerSpec:
         # Local import avoids making the factual authority module depend on the
         # presentation package during module initialization.
@@ -472,23 +474,27 @@ class FactBoundedAnswerBuilder:
 
         for item in facts.by_type(FactType.APPLIED_FILTER):
             used.append(item)
-            value = item.value
-            parts.append(
-                f"筛选条件：{value['field']}={formatter.format(value['value'])}。"
-            )
+            if not effective_scope:
+                value = item.value
+                parts.append(
+                    f"筛选条件：{value['field']}={formatter.format(value['value'])}。"
+                )
         for item in facts.by_type(FactType.APPLIED_TIME_RANGE):
             used.append(item)
-            value = item.value
-            parts.append(
-                f"时间范围：{formatter.format(value['start_date'], PresentationFormatKind.DATE)}"
-                f"至{formatter.format(value['end_date'], PresentationFormatKind.DATE)}。"
-            )
+            if not effective_scope:
+                value = item.value
+                parts.append(
+                    f"时间范围：{formatter.format(value['start_date'], PresentationFormatKind.DATE)}"
+                    f"至{formatter.format(value['end_date'], PresentationFormatKind.DATE)}。"
+                )
         metadata = facts.by_type(FactType.RESULT_METADATA)[0]
         used.append(metadata)
         if facts.truncated:
             parts.append("结果已截断，可能不完整。")
         unique_used = list({item.fact_id: item for item in used}.values())
         text = "".join(parts)
+        if effective_scope:
+            text = f"{effective_scope}：{text}"
         return AnswerSpec(
             answer=text,
             summary=text,
@@ -501,6 +507,7 @@ class FactBoundedAnswerBuilder:
                 "verified_fact_set_id": facts.fact_set_id,
                 "fact_ids": [item.fact_id for item in unique_used],
                 "metric_provenance": metric_provenance,
+                "effective_scope": effective_scope or "",
             },
             filters=list(plan.filters),
             semantic_model_key=result.semantic_model_key,
@@ -771,7 +778,11 @@ class FactOutputValidator:
         errors: list[str] = []
         if any(term in text for term in self._CAUSAL):
             errors.append("unverified_causal_claim")
-        if any(term in text for term in self._TREND):
+        if any(term in text for term in self._TREND) and not any(
+            item.provenance.plan_semantics.get("query_shape")
+            in {QueryShape.TREND.value, QueryShape.BOUNDED_TREND.value}
+            for item in used
+        ):
             errors.append("unverified_trend_claim")
         ranking_claim = bool(
             "排名" in text
@@ -783,11 +794,23 @@ class FactOutputValidator:
         ):
             errors.append("unverified_ranking_claim")
         if any(term in text for term in ("最高", "最大")) and not any(
-            item.fact_type == FactType.MAXIMUM for item in used
+            item.fact_type == FactType.MAXIMUM
+            or (
+                item.fact_type == FactType.RANKING
+                and isinstance(item.value, dict)
+                and item.value.get("direction") == "desc"
+            )
+            for item in used
         ):
             errors.append("unverified_maximum_claim")
         if any(term in text for term in ("最低", "最小")) and not any(
-            item.fact_type == FactType.MINIMUM for item in used
+            item.fact_type == FactType.MINIMUM
+            or (
+                item.fact_type == FactType.RANKING
+                and isinstance(item.value, dict)
+                and item.value.get("direction") == "asc"
+            )
+            for item in used
         ):
             errors.append("unverified_minimum_claim")
         allowed_numbers = self._allowed_numbers(used)

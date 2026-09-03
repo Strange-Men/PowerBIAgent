@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -10,6 +9,7 @@ from pydantic import BaseModel, Field
 from backend.app.intent.models import IntentSpec, TurnRelation
 from backend.app.memory.models import StructuredWorkMemory
 from backend.app.query_plan.grounding import GroundedSemanticDelta
+from backend.app.query_plan.turn_relation import TurnRelationEvidence, TurnRelationKind
 from backend.app.schemas.data_contracts import (
     CanonicalQueryPlan,
     QueryPlan,
@@ -45,16 +45,12 @@ class InheritanceDecision(BaseModel):
     mode: InheritanceMode | None = None
     requires_clarification: bool = False
     reason: str
+    evidence_source: str = "policy"
+    matched_cue: str | None = None
 
 
 class TurnInheritancePolicy:
     """Bounded relation policy; it never chooses canonical slot identities."""
-
-    _REPLACE_CUE = re.compile(
-        r"^\s*(?:改成|改为|换成|换为|调整为|改看|换看|改|换)"
-    )
-    _FOLLOW_PREFIX = re.compile(r"^\s*(?:那|那么|只看|再看|继续|然后)")
-    _FOLLOW_SUFFIX = re.compile(r"呢\s*[？?。.]?\s*$")
 
     @classmethod
     def decide(
@@ -64,6 +60,14 @@ class TurnInheritancePolicy:
         delta: GroundedSemanticDelta,
         committed: StructuredWorkMemory | None,
     ) -> InheritanceDecision:
+        relation = TurnRelationEvidence.classify(user_input)
+        if relation.kind == TurnRelationKind.FRESH and relation.explicit:
+            return InheritanceDecision(
+                mode=InheritanceMode.FRESH_QUESTION,
+                reason="deterministic_explicit_fresh_cue",
+                evidence_source=relation.source,
+                matched_cue=relation.matched_cue,
+            )
         if committed is None:
             return InheritanceDecision(
                 mode=InheritanceMode.FRESH_QUESTION,
@@ -82,16 +86,20 @@ class TurnInheritancePolicy:
             or delta.clear_sort
             or delta.clear_top_n
         )
-        if cls._REPLACE_CUE.search(user_input):
+        if relation.kind == TurnRelationKind.REPLACE:
             return InheritanceDecision(
                 mode=InheritanceMode.REPLACE,
                 reason="deterministic_replace_cue",
+                evidence_source=relation.source,
+                matched_cue=relation.matched_cue,
             )
-        if cls._FOLLOW_PREFIX.search(user_input) or cls._FOLLOW_SUFFIX.search(user_input):
+        if relation.kind == TurnRelationKind.FOLLOW_UP:
             if has_current_slot:
                 return InheritanceDecision(
                     mode=InheritanceMode.FOLLOW_UP,
                     reason="deterministic_follow_up_cue",
+                    evidence_source=relation.source,
+                    matched_cue=relation.matched_cue,
                 )
             return InheritanceDecision(
                 requires_clarification=True,

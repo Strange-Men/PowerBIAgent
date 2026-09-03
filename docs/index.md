@@ -48,6 +48,9 @@
 | `docs/milestones/m5/m5_8_3_model_semantic_context_plan.md` | M5.8.3 实施步骤、fresh evidence 与 release residual/CI 状态 | M5.8.3 |
 | `docs/milestones/m5/m5_8_4_cross_language_grounding_plan.md` | A–E 全后端复核、跨语言矩阵、Real 双模型与性能证据 | M5.8.4 |
 | `docs/adr/ADR-015_cross_language_runtime_grounding.md` | runtime 候选、受限语言解释、成员与多轮绑定边界 | M5.8.4 |
+| `docs/milestones/m5/m5_8_5_semantic_completeness_plan.md` | 四个 correctness invariant、三 PBIX Real 与 exact-SHA 收口计划 | M5.8.5 |
+| `docs/specs/semantic_completeness_and_result_inspection.md` | obligation、shape、result inspection、scope 与排序合同 | M5.8.5 |
+| `docs/adr/ADR-016_semantic_completeness_result_inspection_and_presentation_truth.md` | M5.8.5 唯一链上的 completeness/result/presentation 决策 | M5.8.5 |
 | `docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md` | M2 Local Demo / Remote Production 专项计划 | M2 Provider、Smoke、Remote 证据任务 |
 | `docs/adr/ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md` | TurnPipeline / ToolGateway 总体决策 | 控制面与工具边界 |
 | `docs/adr/ADR-006_remote_powerbi_mcp_production_integration.md` | Remote MCP 生产化决策 | 仅重新获批 Remote 时 |
@@ -97,4 +100,4 @@
 
 ---
 
-*最后更新：2026-09-02 | M5.8.4 跨语言与通用模型理解优化 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-09-03 | M5.8.5 Semantic Completeness + Result Inspection + Presentation Truth COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*

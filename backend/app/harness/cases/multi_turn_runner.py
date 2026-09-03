@@ -537,9 +537,17 @@ def _dax_for_plan(plan: QueryPlan) -> DAXRequest:
         f'"{plan.measures[0]}", [{plan.measures[0]}])'
     )
     if plan.top_n is not None:
+        tie_break = "".join(
+            f", 'Product'[{dimension}], asc"
+            for dimension in plan.dimensions
+        )
+        output_tie_break = "".join(
+            f", 'Product'[{dimension}] asc"
+            for dimension in plan.dimensions
+        )
         dax = (
-            f"EVALUATE TOPN({plan.top_n}, {core}, [{plan.measures[0]}], {plan.sort}) "
-            f"ORDER BY [{plan.measures[0]}] {plan.sort}"
+            f"EVALUATE TOPN({plan.top_n}, {core}, [{plan.measures[0]}], {plan.sort}"
+            f"{tie_break}) ORDER BY [{plan.measures[0]}] {plan.sort}{output_tie_break}"
         )
     else:
         dax = f"EVALUATE {core}"
@@ -605,7 +613,7 @@ def _offline_query_results() -> dict[str, QueryResult]:
         ),
         "top3_products_sales": result(
             ["Product", "[Total Sales]"],
-            [["Alpha", 300.00], ["Beta", 250.00], ["Gamma", 200.00], ["Delta", 200.00]],
+            [["Alpha", 300.00], ["Beta", 250.00], ["Gamma", 200.00]],
         ),
         "electronics_sales": result(["[Total Sales]"], [[410.10]]),
         "furniture_sales": result(["[Total Sales]"], [[330.05]]),

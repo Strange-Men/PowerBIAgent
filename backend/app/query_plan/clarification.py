@@ -24,6 +24,7 @@ from backend.app.query_plan.grounding import (
     GroundingOutcome,
     GroundingStatus,
 )
+from backend.app.query_plan.turn_relation import TurnRelationEvidence, TurnRelationKind
 from backend.app.schemas.data_contracts import QueryShape, StructuredFilter
 
 
@@ -37,12 +38,6 @@ class ClarificationMergeResult(BaseModel):
 class PendingClarificationService:
     """Merge current authoritative partial semantics into a pending chain."""
 
-    _ABANDON_TERMS = (
-        "重新开始",
-        "新问题",
-        "忽略之前",
-        "取消澄清",
-    )
     _INDEPENDENT_QUERY_TERMS = (
         "是多少",
         "多少",
@@ -53,7 +48,11 @@ class PendingClarificationService:
 
     @classmethod
     def should_abandon(cls, user_input: str) -> bool:
-        return any(term in user_input for term in cls._ABANDON_TERMS)
+        evidence = TurnRelationEvidence.classify(user_input)
+        return (
+            evidence.kind == TurnRelationKind.FRESH
+            and evidence.explicit
+        ) or "取消澄清" in user_input
 
     def merge(
         self,

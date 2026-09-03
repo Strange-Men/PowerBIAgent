@@ -241,6 +241,45 @@ def test_relationship_is_evidence_and_ambiguity_is_not_resolved_by_order():
     assert SemanticGroundingService(catalog(schema))._resolve_date_field("今年").status == GroundingStatus.AMBIGUOUS
 
 
+def test_surrogate_relationship_proves_unique_key_typed_date_in_date_table():
+    schema = SemanticModelSchema(
+        name="Neutral",
+        key="surrogate-calendar",
+        tables=[
+            TableSchema(
+                name="Facts",
+                columns=[ColumnSchema(name="OccurredKey", data_type="Int64")],
+                measures=[MeasureSchema(name="Volume")],
+            ),
+            TableSchema(
+                name="Calendar",
+                columns=[
+                    ColumnSchema(name="DateKey", data_type="Int64", is_key=True),
+                    ColumnSchema(name="Day", data_type="DateTime", is_key=True),
+                    ColumnSchema(name="MonthStart", data_type="DateTime"),
+                ],
+            ),
+        ],
+        relationships=[RelationshipSchema(
+            from_table="Facts", from_column="OccurredKey",
+            to_table="Calendar", to_column="DateKey",
+            from_cardinality="Many", to_cardinality="One", is_active=True,
+        )],
+    )
+    grounded = SemanticGroundingService(catalog(schema))._resolve_date_field("今年")
+    assert grounded.status == GroundingStatus.RESOLVED
+    assert grounded.canonical_object.object_id == "field:Calendar:Day"
+    assert grounded.method == "runtime_relationship_date_role"
+
+    disconnected = schema.model_copy(deep=True)
+    disconnected.relationships[0].is_active = False
+    assert SemanticGroundingService(catalog(disconnected))._resolve_date_field("今年").status == GroundingStatus.AMBIGUOUS
+
+    ambiguous = schema.model_copy(deep=True)
+    ambiguous.tables[1].columns[2].is_key = True
+    assert SemanticGroundingService(catalog(ambiguous))._resolve_date_field("今年").status == GroundingStatus.AMBIGUOUS
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("domain", ["Sales", "Education", "Inventory", "unregistered-holdout"])
 @pytest.mark.parametrize("shape,question", [

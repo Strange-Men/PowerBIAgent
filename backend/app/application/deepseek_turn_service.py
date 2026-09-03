@@ -87,6 +87,11 @@ from backend.app.query_plan.deepseek_service import (
     QueryPlanError,
 )
 from backend.app.query_plan.clarification import PendingClarificationService
+from backend.app.query_plan.completeness import (
+    CanonicalShapeCompletenessError,
+    CanonicalShapeCompletenessGate,
+    SemanticObligationCoverageGate,
+)
 from backend.app.query_plan.grounding import (
     BoundedLLMObjectSelector,
     GroundingStatus,
@@ -100,6 +105,7 @@ from backend.app.query_plan.state_transition import (
     StateTransitionService,
     TurnInheritancePolicy,
 )
+from backend.app.query_plan.turn_relation import TurnRelationEvidence, TurnRelationKind
 from backend.app.query_plan.template_catalog import (
     DEFAULT_TEMPLATE_CATALOG,
     TemplateGroundingStatus,
@@ -117,6 +123,10 @@ from backend.app.facts import (
     FactType,
     VerifiedFactSet,
     VerifiedFactSetBuilder,
+)
+from backend.app.facts.inspection import (
+    ResultSemanticInspectionError,
+    ResultSemanticInspectionGate,
 )
 from backend.app.report.deepseek_spec_service import DeepSeekReportSpecService
 from backend.app.report.assembly import (
@@ -143,6 +153,7 @@ from backend.app.presentation.localization import (
     JsonDisplayLocalizationRegistry,
 )
 from backend.app.presentation.models import PresentationEnvelope
+from backend.app.presentation.query_scope import DeterministicQueryScopeDescriptor
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
     ColumnMembersRequest,
@@ -349,6 +360,10 @@ class LLMTurnService:
             "dax_executed": False,
             "memory_committed": False,
         }
+        relation_evidence = TurnRelationEvidence.classify(message)
+        semantic_audit["turn_relation_evidence"] = relation_evidence.model_dump(
+            mode="json"
+        )
         trace.record(
             "capability_decision",
             trace_id=trace_id,
@@ -414,6 +429,16 @@ class LLMTurnService:
             allowed_semantic_models=[semantic_model_key],
             allowed_templates=DEFAULT_TEMPLATE_CATALOG.allowed_keys,
         )
+
+        if (
+            relation_evidence.kind == TurnRelationKind.FRESH
+            and relation_evidence.explicit
+        ):
+            semantic_committed = None
+            await self.pipeline.clear_pending_clarification(
+                effective_conv_id, runtime_mode
+            )
+            pending_clarification = None
 
         if (
             pending_clarification is not None
@@ -812,6 +837,69 @@ class LLMTurnService:
                             else None
                         ),
                     )
+                semantic_audit["grounded_delta"] = (
+                    grounding.delta.model_dump(mode="json")
+                    if grounding.delta is not None
+                    else None
+                )
+                coverage = SemanticObligationCoverageGate().inspect(
+                    user_input=message,
+                    outcome=grounding,
+                    catalog=catalog,
+                    relation=relation_evidence,
+                    language_evidence=tuple(
+                        value
+                        for value in (
+                            *intent.detected_measures,
+                            *intent.detected_dimensions,
+                            *query_plan.measures,
+                            *query_plan.dimensions,
+                        )
+                        if isinstance(value, str) and value.strip()
+                    ),
+                )
+                semantic_audit["semantic_obligations"] = [
+                    item.model_dump(mode="json") for item in coverage.obligations
+                ]
+                semantic_audit["semantic_obligation_coverage"] = coverage.executable
+                if (
+                    not coverage.executable
+                    and grounding.status == GroundingStatus.RESOLVED
+                ):
+                    await self.pipeline.clear_pending_clarification(
+                        effective_conv_id, runtime_mode
+                    )
+                    await self.pipeline.mark_memory_failed(
+                        effective_req_id,
+                        runtime_mode,
+                        reason="semantic_obligation_incomplete",
+                        stage="semantic_obligation_coverage",
+                    )
+                    controller.set_failure_reason("semantic_obligation_incomplete")
+                    controller.transition(TurnState.CLARIFICATION_REQUIRED)
+                    unresolved = "、".join(coverage.unresolved_phrases) or "当前业务修饰条件"
+                    return self._build_result(
+                        effective_req_id,
+                        effective_conv_id,
+                        "clarification_required",
+                        intent=intent.intent.value,
+                        response_type="clarification",
+                        clarification_question=(
+                            f"无法将“{unresolved}”完整绑定到当前模型的业务条件，"
+                            "请改用模型中存在的明确成员。"
+                        ),
+                        trace=trace,
+                        trace_id=trace_id,
+                        is_mock=False,
+                        source_mode=self._source_mode,
+                        collector=collector,
+                        execution_audit={
+                            **semantic_audit,
+                            "pending_clarification": False,
+                            "committed_memory_mutated": False,
+                            "schema_fingerprint": catalog.schema_fingerprint,
+                        },
+                    )
                 grounded_delta = grounding.delta
                 explicit_slots: list[str] = []
                 if grounded_delta is not None:
@@ -1050,6 +1138,7 @@ class LLMTurnService:
                 semantic_audit.update({
                     "inherited_slots": sorted(set(inherited_slots)),
                     "canonical_plan_hash": canonical_plan_hash,
+                    "inheritance_decision": inheritance.model_dump(mode="json"),
                 })
                 trace.record(
                     "semantic_grounding_resolved",
@@ -1113,6 +1202,30 @@ class LLMTurnService:
                     error_type="semantic_grounding_failed",
                     reason=type(e).__name__,
                     stage="semantic_grounding",
+                    trace_id=trace_id,
+                    collector=collector,
+                )
+
+        # Shape-specific canonical slots are proven before any DAX generation.
+        if not self.powerbi.is_mock:
+            try:
+                shape_report = CanonicalShapeCompletenessGate().validate(
+                    query_plan, catalog=catalog
+                )
+                semantic_audit["canonical_shape_completeness"] = (
+                    shape_report.model_dump(mode="json")
+                )
+            except CanonicalShapeCompletenessError as e:
+                return await self._fail_result(
+                    memory,
+                    effective_req_id,
+                    effective_conv_id,
+                    controller,
+                    trace,
+                    terminal_state=TurnState.VALIDATION_FAILED,
+                    error_type=e.code,
+                    reason=e.code,
+                    stage="canonical_shape_completeness",
                     trace_id=trace_id,
                     collector=collector,
                 )
@@ -1301,6 +1414,31 @@ class LLMTurnService:
             data_summary={"source_mode": query_result.source_mode},
         )
 
+        if not self.powerbi.is_mock:
+            try:
+                inspection = ResultSemanticInspectionGate().inspect(
+                    query_plan,
+                    query_result,
+                    dax_semantic_verified=True,
+                )
+                semantic_audit["result_semantic_inspection"] = (
+                    inspection.model_dump(mode="json")
+                )
+            except ResultSemanticInspectionError as e:
+                return await self._fail_result(
+                    memory,
+                    effective_req_id,
+                    effective_conv_id,
+                    controller,
+                    trace,
+                    terminal_state=TurnState.VALIDATION_FAILED,
+                    error_type=e.code,
+                    reason=e.code,
+                    stage="result_semantic_inspection",
+                    trace_id=trace_id,
+                    collector=collector,
+                )
+
         verified_facts: VerifiedFactSet | None = None
         if not self.powerbi.is_mock:
             try:
@@ -1408,12 +1546,19 @@ class LLMTurnService:
                                 ),
                             },
                         )
+                    effective_scope = DeterministicQueryScopeDescriptor().build(
+                        query_plan,
+                        display_bindings=display_bindings,
+                        locale="zh-CN",
+                    )
+                    semantic_audit["effective_query_scope"] = effective_scope
                     with measure_performance("answer_presentation"):
                         response_obj = FactBoundedAnswerBuilder().build(
                             query_plan,
                             query_result,
                             verified_facts,
                             display_bindings=display_bindings,
+                            effective_scope=effective_scope,
                         )
                 else:
                     answer_service = DeepSeekAnswerService(
@@ -1882,6 +2027,11 @@ class LLMTurnService:
                     raise SalesReportAssemblyError(
                         "sales_report_query_result_validation_failed"
                     )
+                ResultSemanticInspectionGate().inspect(
+                    query.query_plan,
+                    result,
+                    dax_semantic_verified=True,
+                )
                 fact_sets[query.requirement_key] = VerifiedFactSetBuilder().build(
                     query.query_plan,
                     result,
@@ -1924,7 +2074,12 @@ class LLMTurnService:
                 filtered_results,
                 filtered_facts,
             )
-        except (FactVerificationError, SalesReportAssemblyError, ReportContractError) as exc:
+        except (
+            FactVerificationError,
+            ResultSemanticInspectionError,
+            SalesReportAssemblyError,
+            ReportContractError,
+        ) as exc:
             return await self._fail_result(
                 memory,
                 effective_req_id,

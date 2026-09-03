@@ -101,6 +101,8 @@ class DeterministicDAXBuilder:
             raise DAXBuildError("dax_builder_duplicate_dimension")
         if plan.top_n is not None and plan.sort is None:
             raise DAXBuildError("dax_builder_top_n_sort_required")
+        if plan.top_n is not None and not plan.dimensions:
+            raise DAXBuildError("dax_builder_top_n_dimension_required")
         if plan.sort is not None and len(plan.measures) != 1:
             raise DAXBuildError("dax_builder_sort_single_measure_required")
 
@@ -161,16 +163,29 @@ class DeterministicDAXBuilder:
         table_expression = "SUMMARIZECOLUMNS(\n    " + ",\n    ".join(arguments) + "\n)"
         if plan.top_n is not None:
             direction = plan.sort.upper()
+            tie_breakers = "".join(
+                f",\n    {self._qualified(table, name)},\n    ASC"
+                for name, table, _ in dimensions
+            )
             table_expression = (
                 f"TOPN(\n    {plan.top_n},\n    {table_expression},\n"
-                f"    {self._measure(plan.measures[0])},\n    {direction}\n)"
+                f"    {self._measure(plan.measures[0])},\n    {direction}"
+                f"{tie_breakers}\n)"
             )
 
         dax = f"EVALUATE\n{table_expression}"
         if plan.sort is not None:
-            dax += (
-                f"\nORDER BY {self._measure(plan.measures[0])} "
-                f"{plan.sort.upper()}"
+            order_items = [
+                f"{self._measure(plan.measures[0])} {plan.sort.upper()}",
+                *(f"{self._qualified(table, name)} ASC" for name, table, _ in dimensions),
+            ]
+            dax += "\nORDER BY " + ", ".join(order_items)
+        elif plan.dimension_order is not None:
+            if not dimensions:
+                raise DAXBuildError("dax_builder_dimension_order_dimension_required")
+            dax += "\nORDER BY " + ", ".join(
+                f"{self._qualified(table, name)} {plan.dimension_order.upper()}"
+                for name, table, _ in dimensions
             )
         return DAXRequest(
             semantic_model_key=plan.semantic_model_key,

@@ -2,6 +2,18 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.8.5] — 2026-09-03（COMPLETE）
+
+- 在现有唯一 Real authority 链加入四个通用 correctness invariant：Grounding 后的 Semantic Obligation Coverage、StateTransition 后的 Canonical Shape Completeness、QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection，以及由最终 CanonicalQueryPlan/localization 生成的 Deterministic Query Scope。unknown 或 known+unknown member、残缺 shape 与不一致结果均 fail closed；不新增 Model/Catalog/Planner/Grounding/Memory。
+- Ranking/TopN 的 deterministic DAX 同时固定 metric 主序和 dimension ASC tie-break，restricted verifier 与 Result Inspection 验证 Top1/TopN row count、方向、极值和返回顺序。Trend 以 DAX time ASC + inspection/range 验证；普通 grouped 的 metric DESC 与 trend ASC 只发生在共享 PresentationDataset，QueryResult/VerifiedFactSet 不变。
+- explicit fresh cue 高于旧 PendingClarification/Memory；follow-up 只补兼容省略槽，replace 只替换明确槽。AnswerContext/evidence 携带 shape/sort/top_n/effective_scope，最终 Answer 强制呈现真实 time/filter/measure/grouping/ranking scope。
+- 通用兼容修复包含：active to-one surrogate date relationship 的唯一日期角色证明；bounded generic dimension 候选在存在唯一同词干 label peer 时排除技术 ID/Key/Code，但显式 canonical technical field 仍可解析；member set 后续 literal 复用首个 runtime-proven authoritative field；有限 generic superlative 路由与 Coverage grammar 对齐。
+- Fresh 证据：targeted 475 PASS；2,304 logical stress cases；Semantic Compatibility 743 PASS；backend 2397 PASS / 1 SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 87 PASS 与 typecheck/lint/build PASS；Repository Safety 353、Architecture 132、Error Ledger、Documentation/Artifact Governance、compileall 与 diff-check 全绿。
+- Rich Sales、M3 Test、Logistics Test 均由 DeepSeek/Kimi 运行定点高风险链；Rich multi-turn、Logistics scalar/filter/measure replace/grouped/Top1/Top3/trend/bounded/fresh、unknown/known+unknown ZERO DAX、Report→Data→Report、provider consistency 与 A→B→C→A isolation 通过；最终修复最小复跑 6/6，business/temp residual=0。
+- Settings.version 更新为 M5.8.5。外部 Provider 冷启动约 56s 仅记录，不宣称性能提升；未修改 `.env`，未进入 M5.9/M5.10，无 migration/Tag/main/m5/frontend 变更，M5 FINAL=false。本提交 exact-SHA CI 为发布证据。
+
+**Settings.version:** M5.8.5
+
 ## [M5.8.4] — 2026-09-02（COMPLETE）
 
 - 最终治理收口保持业务语义冻结：`BoundedLLMObjectSelector` 的所有返回路径改为保留调用方真实 role，并以 5 类 role × 6 条路径的 30 个直接回归锁定 contract；上层 defensive normalization 保留，不改变 candidate、canonical identity、DAX 或事实结果。

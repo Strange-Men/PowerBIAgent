@@ -61,8 +61,14 @@ SEMANTIC_AUTHORITY_FILES = (
     ROOT / "backend" / "app" / "query_plan" / "grounding.py",
     ROOT / "backend" / "app" / "query_plan" / "semantic_catalog.py",
     ROOT / "backend" / "app" / "query_plan" / "state_transition.py",
+    ROOT / "backend" / "app" / "query_plan" / "completeness.py",
+    ROOT / "backend" / "app" / "query_plan" / "turn_relation.py",
     ROOT / "backend" / "app" / "dax" / "builder.py",
+    ROOT / "backend" / "app" / "dax" / "verifier.py",
+    ROOT / "backend" / "app" / "facts" / "inspection.py",
     ROOT / "backend" / "app" / "facts" / "verified.py",
+    ROOT / "backend" / "app" / "presentation" / "query_scope.py",
+    ROOT / "backend" / "app" / "presentation" / "builder.py",
 )
 
 
@@ -268,6 +274,10 @@ def main() -> int:
         "backend/tests/api/test_model_semantic_context.py",
         "backend/tests/unit/test_question_routing.py",
         "backend/tests/unit/test_semantic_compatibility.py",
+        "backend/tests/unit/test_semantic_completeness.py",
+        "backend/tests/unit/test_semantic_completeness_stress.py",
+        "backend/tests/unit/test_result_semantic_inspection.py",
+        "backend/tests/unit/test_query_scope_and_order.py",
         "backend/tests/unit/test_semantic_grounding.py",
         "backend/tests/unit/test_intent.py",
         "backend/tests/unit/test_deterministic_dax.py",

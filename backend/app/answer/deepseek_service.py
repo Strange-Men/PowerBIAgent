@@ -14,6 +14,7 @@ from typing import Optional
 
 from backend.app.answer.context import AnswerContext
 from backend.app.answer.prompt import build_answer_messages
+from backend.app.presentation.query_scope import DeterministicQueryScopeDescriptor
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.llm.base import (
@@ -145,6 +146,10 @@ class DeepSeekAnswerService:
                 if hasattr(query_plan.time_range, "to_context_text")
                 else query_plan.time_range or ""
             ),
+            query_shape=(query_plan.query_shape.value if query_plan.query_shape else ""),
+            sort=query_plan.sort or "",
+            top_n=query_plan.top_n,
+            effective_scope=DeterministicQueryScopeDescriptor().build(query_plan),
         )
 
         # ── 构建验证服务 ──

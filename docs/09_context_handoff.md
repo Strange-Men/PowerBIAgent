@@ -1,7 +1,17 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-09-02
+> **最后更新：** 2026-09-03
+
+## M5.8.5 当前阶段（2026-09-03）
+
+**M5.8.5 — Semantic Completeness + Result Inspection + Presentation Truth（COMPLETE）。** 在 M5.8.4 唯一链上新增四个通用 correctness invariant：Grounding 后的 Semantic Obligation Coverage、StateTransition 后的 Canonical Shape Completeness、QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection，以及由最终 CanonicalQueryPlan 和 model-scoped localization 生成的 Deterministic Query Scope。未创建第二套 Model/Catalog/Planner/Grounding/Memory，未修改 M5.8.1 MCP session/cache/singleflight 架构，未进入 M5.9/M5.10。
+
+关键收口：explicit fresh 先于旧 Pending/Memory；unknown 与 known+unknown member 均 clarification 且 ZERO DAX；所有 shape 必须满足完整槽位；TopN 在 `TOPN` 和最终 `ORDER BY` 中使用 metric 主序与 dimension ASC tie-break，verifier/result inspection 同步验证；trend DAX 与展示按时间 ASC；普通 categorical grouped 只对 PresentationDataset 做 metric DESC 投影；table/chart 共享 dataset；Answer 必须以前置 deterministic scope 表达时间、筛选、指标、分组与 ranking。技术键只在存在唯一同词干 label peer 时退出 bounded generic candidate，显式 canonical ID 仍可查询；Logistics surrogate date relationship 只在唯一 active to-one 日期键证据成立时绑定。
+
+fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logical cases；Semantic Compatibility 743 PASS；backend 2397 PASS / 1 SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 87 PASS 且 typecheck/lint/build PASS；Repository Safety 353 files、Architecture 132 production files、Error Ledger、Documentation/Artifact Governance、compileall 与 diff-check PASS。Rich Sales、M3 Test、Logistics Test 均由 DeepSeek/Kimi 运行领域对应问法；Rich 多轮、Logistics time/filter/replace/grouped/Top1/Top3/trend/bounded/fresh、unknown/known+unknown ZERO DAX、Report→Data→Report、Provider consistency 与 A→B→C→A isolation 均通过。最终最小修复复跑 6/6，business/temp residual=0。
+
+性能只记录：单轮外部 Provider 冷启动曾约 56s，Kimi 个别 grounding 长尾超过 100s；未宣称 M5.8.5 性能提升。应用可从 repo root 正常加载本地配置；没有读取、打印或修改 `.env`。Settings.version=M5.8.5。发布以本提交 exact-SHA PowerBIAgent Validation completed/success、local SHA==origin SHA 与 clean working tree 为最终证据。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 ## M5.8.4 当前阶段（2026-09-02）
 

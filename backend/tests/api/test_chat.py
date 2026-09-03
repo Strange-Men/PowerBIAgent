@@ -9,6 +9,7 @@ M0.4.1 修复：
 """
 
 import asyncio
+import re
 import uuid
 
 import pytest
@@ -2368,17 +2369,21 @@ class TestPendingClarificationProductionPath:
                 ) is None
 
     @pytest.mark.asyncio
-    async def test_explicit_abandonment_clears_old_pending(self, monkeypatch):
+    @pytest.mark.parametrize(
+        "fresh_cue",
+        ["独立问题", "新问题", "重新开始", "忽略之前", "单独问", "重新分析"],
+    )
+    async def test_explicit_abandonment_clears_old_pending(self, monkeypatch, fresh_cue):
         app, provider = _patch_pending_clarification_composition(monkeypatch)
         transport = ASGITransport(app=app)
-        conversation_id = "pending-abandon"
+        conversation_id = f"pending-abandon-{fresh_cue}"
         async with app.router.lifespan_context(app):
             service = app.state.turn_service
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 await self._post(client, conversation_id, "abandon-e1", "哪个表现最好？")
                 provider.active = "abandon"
                 result = await self._post(
-                    client, conversation_id, "abandon-e2", "重新开始，总销售额"
+                    client, conversation_id, "abandon-e2", f"{fresh_cue}，总销售额"
                 )
                 assert result.json()["terminal_state"] == "completed"
                 assert await service.pipeline.get_pending_clarification(
@@ -2449,6 +2454,10 @@ class TestM24DeepSeekLocalChat:
             assert plan["time_range"]["start_date"] == "2025-05-01"
             assert plan["time_range"]["end_date"] == "2025-05-31"
             assert plan["dimension_tables"]["Date"] == "Date"
+            scope = audit["effective_query_scope"]
+            assert scope.startswith("2025年5月 · ")
+            assert body["answer"].startswith(scope + "：")
+            assert audit["result_semantic_inspection"]["passed"] is True
             assert service.powerbi.dax_calls == dax_calls + 1
             committed = await service.pipeline.get_latest_committed_memory(
                 conversation_id, RuntimeDataMode.REAL
@@ -2818,7 +2827,7 @@ class TestM24DeepSeekLocalChat:
             )
             assert "Total Sales" in str(query_plan_prompt.messages)
             assert "local_desktop_model" in str(query_plan_prompt.messages)
-            assert first_data["answer"] == "销售额为100.00。"
+            assert first_data["answer"] == "销售额：销售额为100.00。"
             assert [
                 block["type"] for block in first_data["presentation"]["blocks"]
             ] == ["text"]
@@ -3072,6 +3081,9 @@ class _M582ShapeAdapter(_M24FakeLocalPowerBIAdapter):
         ):
             columns = ["Sales[Product]", "[Total Quantity]"]
             rows = [["手机", 20], ["笔记本", 10]]
+            top_match = re.search(r"TOPN\(\s*(\d+)", request.dax)
+            if top_match:
+                rows = rows[: int(top_match.group(1))]
         elif "'Sales'[Product]" in request.dax and "[Total Quantity]" not in request.dax:
             columns = ["Sales[Product]"]
             rows = [["手机"], ["笔记本"], ["电脑"]]

@@ -63,6 +63,8 @@ def test_router_classifies_capability_before_semantic_grounding(
         ("平均分最高的是哪个学生", QueryShape.RANKING),
         ("各仓库当前库存", QueryShape.GROUPED),
         ("库存最低的是哪个仓库", QueryShape.RANKING),
+        ("哪个枢纽最准时", QueryShape.RANKING),
+        ("哪个承运商延误最严重", QueryShape.RANKING),
         ("有哪些节点", QueryShape.ENTITY_LIST),
         ("东校区和西校区的学生数量分别是多少", QueryShape.MEMBER_SET),
         ("过去12个月出勤率趋势", QueryShape.TREND),

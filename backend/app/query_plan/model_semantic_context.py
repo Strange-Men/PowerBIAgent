@@ -151,8 +151,24 @@ class ModelSemanticContextBuilder:
                     for item in columns if self._is_date(item)]
         for rel in relationships:
             target = column_map[rel.to_object_id]
-            if rel.is_active and self._is_date(target) and target.is_key and (rel.to_cardinality or "").casefold() == "one":
+            if not rel.is_active or (rel.to_cardinality or "").casefold() != "one":
+                continue
+            if self._is_date(target) and target.is_key:
                 temporal.append(TemporalEvidence(object_id=target.object_id, kind="active_relationship_key"))
+                continue
+            # Some date dimensions relate facts through an integer surrogate key.
+            # The active many-to-one relationship still proves the date table, but
+            # only a unique key-typed date column in that table can prove the
+            # canonical date role.  Multiple or absent candidates remain unresolved.
+            relationship_date_keys = tuple(
+                item for item in columns
+                if item.table_name == target.table_name and item.is_key and self._is_date(item)
+            )
+            if len(relationship_date_keys) == 1:
+                temporal.append(TemporalEvidence(
+                    object_id=relationship_date_keys[0].object_id,
+                    kind="active_relationship_key",
+                ))
         for item in columns:
             if not self._is_date(item) or not item.expression:
                 continue

@@ -45,12 +45,11 @@ baselines:
     metric_columns: ["[Total Sales]"]
     sort: desc
     top_n: 3
-    allow_top_n_ties: true
+    allow_top_n_ties: false
     expected_rows:
       - {Product: Alpha, "[Total Sales]": 300.00}
       - {Product: Beta, "[Total Sales]": 250.00}
       - {Product: Gamma, "[Total Sales]": 200.00}
-      - {Product: Delta, "[Total Sales]": 200.00}
 
   - oracle_key: top3_categories_quantity
     mode: ordered
@@ -59,7 +58,7 @@ baselines:
     metric_columns: ["[Total Quantity]"]
     sort: desc
     top_n: 3
-    allow_top_n_ties: true
+    allow_top_n_ties: false
     expected_rows:
       - {Category: Electronics, "[Total Quantity]": 18}
       - {Category: Furniture, "[Total Quantity]": 14}
@@ -72,7 +71,7 @@ baselines:
     metric_columns: ["[Total Quantity]"]
     sort: desc
     top_n: 3
-    allow_top_n_ties: true
+    allow_top_n_ties: false
     expected_rows:
       - {Product: Alpha, "[Total Quantity]": 8}
       - {Product: Beta, "[Total Quantity]": 6}

@@ -157,7 +157,7 @@ TopN selection 与 presentation ordering 是两个契约：TOPN 必须匹配 Que
 
 - scalar：精确列/单行指标值比较；
 - grouped：按明确业务 Key canonicalize 后比较，不依赖 raw row 顺序；
-- ordered/TopN：比较成员和值并独立验证排序方向；同一指标值的 ties 可交换顺序，第 N 名并列可使行数超过 N。
+- ordered/TopN：比较成员和值并独立验证排序方向；M5.8.5 起 ranking 使用 metric canonical direction + dimension ASC deterministic tie-break，Top1 必须恰好 1 行、TopN 不得超过 N，ties 不再允许任意交换或扩行。
 
 数值默认 `abs_tolerance=1e-9`、`rel_tolerance=1e-9`；绝对/相对容差配置上限分别为 `0.01` 与 `1e-6`。分类维度 exact match，`None` 显式比较。committed `harness/baselines/example_known_answers.yaml` 仅含虚构测试值；真实 baseline 固定为 Git 忽略的 `local_state/runtime/m2_known_answers.yaml`，缺失时返回 `real_baseline_not_configured`，覆盖不完整时返回 `real_baseline_incomplete`，均禁止回退 example baseline。
 
@@ -235,6 +235,14 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 
 ## 七、未来 M3—M5 验收
 
+### M5.8.5 Semantic Completeness / Result Inspection Gate
+
+- Grounding 后每个会改变结果的 explicit obligation 必须 `RESOLVED` / `EXPLICITLY_CLEARED` / `UNSUPPORTED` / `NEEDS_CLARIFICATION`；unknown 与 known+unknown member set 不得部分执行。
+- StateTransition 后按八种 QueryShape 验证 required slots；残缺 ranking/filter/member/time plan 在 DAX 前 fail closed。
+- QueryResult 到 VerifiedFactSet 前验证 TopN row count、metric order、tie-break、trend ASC/range 与 entity distinct；失败不得由 Answer 或 presentation 修复。
+- effective scope 必须覆盖最终 time/filter/grouping/ranking/measure；Ranking 保持 canonical order，普通 grouped 的 metric DESC 与 trend time ASC 仅是共享 PresentationDataset 投影，QueryResult/VerifiedFactSet 不变。
+- 永久 stress matrix 为 2,304 logical cases；本轮 fresh backend 2397 PASS / 1 SKIP、Semantic Compatibility 743 PASS、Golden 11 PASS / 1 manual-real SKIP、frontend 87 PASS。三 PBIX × DeepSeek/Kimi 定点 Real 与 A→B→C→A 隔离通过，automation-owned residual=0。
+
 ### M5 前端验收
 
 - 前端不得把 Mock 数据描述为真实 Power BI 数据
@@ -246,4 +254,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 fresh gate / Real evidence 与 Truth Boundary 校准*
+*最后更新：2026-09-03 | M5.8.5 Semantic Completeness / Result Inspection / Presentation Truth 验收补充*

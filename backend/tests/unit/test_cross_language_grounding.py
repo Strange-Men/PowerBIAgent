@@ -56,6 +56,38 @@ def test_relationship_endpoint_evidence_is_object_scoped_and_does_not_prune_cand
         "filter_field").canonical_object.object_id == "field:Orders:Region"
 
 
+def test_bounded_dimension_candidates_prefer_unique_label_peer_over_technical_key():
+    model = S(name="Carrier", key="runtime-carrier", tables=[T(name="DimCarrier", columns=[
+        C(name="CarrierID", data_type="String"),
+        C(name="CarrierName", data_type="String"),
+        C(name="ServiceLevel", data_type="String"),
+    ])])
+    catalog = SemanticCatalogBuilder().build(model)
+
+    for role in ("dimension", "ranking_dimension", "filter_field"):
+        candidates = {obj.canonical_name for obj in catalog.selection_candidates(
+            SemanticObjectType.FIELD, role)}
+        assert candidates == {"CarrierName", "ServiceLevel"}
+
+    # Explicit runtime identity remains resolvable; only bounded generic selection is narrowed.
+    exact = ObjectGrounder(catalog).resolve_phrase(
+        "DimCarrier[CarrierID]", SemanticObjectType.FIELD, "dimension")
+    assert exact.status == GroundingStatus.RESOLVED
+    assert exact.canonical_object.canonical_name == "CarrierID"
+
+
+def test_bounded_dimension_candidates_keep_unshadowed_technical_field():
+    model = S(name="Status", key="runtime-status", tables=[T(name="Events", columns=[
+        C(name="StatusCode", data_type="String"),
+        C(name="Category", data_type="String"),
+    ])])
+    catalog = SemanticCatalogBuilder().build(model)
+
+    candidates = {obj.canonical_name for obj in catalog.selection_candidates(
+        SemanticObjectType.FIELD, "dimension")}
+    assert candidates == {"StatusCode", "Category"}
+
+
 @pytest.mark.parametrize("active,from_cardinality,to_cardinality", [
     (False, "Many", "One"), (True, "Many", "Many"), (True, None, None),
 ])
@@ -425,7 +457,7 @@ async def test_same_current_member_literal_from_two_weak_drafts_is_validated_onc
         None, members, query_shape=QueryShape.MEMBER_SET)
     assert result.status == GroundingStatus.RESOLVED
     assert len(lookups) == 2
-    assert len(provider.requests) == 2
+    assert len(provider.requests) == 1
     assert result.delta.filters[0].value == ["甲站", "乙站"]
 
 

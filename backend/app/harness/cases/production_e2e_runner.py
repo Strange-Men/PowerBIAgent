@@ -476,6 +476,7 @@ class ProductionE2ERunner:
             and pollution_count == 0
             and top_n_known_executed > 0
             and top_n_known_passed == top_n_known_executed
+            and top_n_boundary_ties_observed == 0
             and top_n_tie_answers_truth_safe == top_n_boundary_ties_observed
             and llm_task_counts[LLMTask.DAX] == 0
             and llm_task_counts[LLMTask.ANSWER] == 0

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { AssistantMessage } from './AssistantMessage'
 
@@ -57,6 +57,32 @@ describe('AssistantMessage dynamic rendering', () => {
     )
     expect(screen.getByLabelText('销售趋势折线图')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: '销售额随月份变化' })).toBeInTheDocument()
+  })
+
+  it('preserves one backend canonical order for ranking table and chart', () => {
+    render(
+      <AssistantMessage
+        message={{
+          id: 'ranking-order', role: 'assistant', kind: 'answer', content: '前三项如下。',
+          presentation: {
+            version: 1,
+            datasets: [{
+              result_id: 'ranking', verified_fact_set_id: 'facts-ranking', semantic_model_key: 'desktop-model', source_mode: 'real',
+              columns: ['承运商', '包裹数'], rows: [['B', 9], ['C', 6], ['A', 4]], row_count: 3, truncated: false,
+            }],
+            blocks: [
+              { type: 'table', data_reference: 'ranking', title: '排名明细' },
+              { type: 'chart', data_reference: 'ranking', visual_type: 'bar', title: '承运商排名', x_field: '承运商', y_field: '包裹数' },
+            ],
+          },
+        }}
+      />,
+    )
+
+    const tableRows = within(screen.getByRole('table')).getAllByRole('row').slice(1)
+    expect(tableRows.map((row) => row.textContent)).toEqual(['B9', 'C6', 'A4'])
+    const chart = screen.getByLabelText('承运商排名柱状图')
+    expect(Array.from(chart.querySelectorAll('.bar-row')).map((row) => row.textContent)).toEqual(['B9', 'C6', 'A4'])
   })
 
   it('renders backend display bindings and formatted values without changing canonical fields', () => {

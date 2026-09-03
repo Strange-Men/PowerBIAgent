@@ -1804,6 +1804,29 @@ class TestSemanticCorrectnessFailureReproducers:
         assert outcome.delta.top_n == 3
         assert outcome.delta.sort == expected_sort
 
+    @pytest.mark.parametrize(
+        ("question", "expected_sort"),
+        [
+            ("哪个枢纽最准时", "desc"),
+            ("哪个承运商延误最严重", "desc"),
+            ("哪个节点最慢", "asc"),
+            ("哪家机构最差", "asc"),
+        ],
+    )
+    def test_generic_superlative_top1_analysis_contract(
+        self, question, expected_sort
+    ):
+        delta = GroundedSemanticDelta()
+        SemanticGroundingService._ground_analysis(question, QueryPlan(
+            normalized_question=question,
+            semantic_model_key="neutral",
+            query_shape=QueryShape.RANKING,
+        ), delta)
+        assert delta.top_n == 1
+        assert delta.top_n_specified is True
+        assert delta.sort == expected_sort
+        assert delta.sort_specified is True
+
     @pytest.mark.asyncio
     async def test_temporal_grouping_is_runtime_metadata_driven(self):
         catalog, _ = _m55_domain_catalog(
@@ -2544,6 +2567,51 @@ class TestM582QueryShapes:
 
         assert outcome.status == GroundingStatus.UNRESOLVED
         assert outcome.delta is None
+
+    @pytest.mark.asyncio
+    async def test_unqualified_member_set_reuses_first_runtime_validated_field(self):
+        provider = _SelectionProvider("field:Sales:Product")
+
+        async def lookup(field, limit):
+            assert field.canonical_name == "Product"
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name="Product",
+                values=["Printer", "Chair"],
+                source_mode="real",
+            )
+
+        filters = [
+            StructuredFilter(field="Product", value="Printer"),
+            StructuredFilter(field="Product", value="Chair"),
+        ]
+        outcome = await SemanticGroundingService(
+            _catalog(),
+            selector=BoundedLLMObjectSelector(provider),
+        ).ground(
+            "Printer 和 Chair 的销售额分别是多少？",
+            _intent(detected_measures=["销售额"], detected_filters=[
+                {"field": "Product", "value": "Printer"},
+                {"field": "Product", "value": "Chair"},
+            ]),
+            _draft(measures=["Total Sales"], filters=filters),
+            None,
+            lookup,
+            query_shape=QueryShape.MEMBER_SET,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.filters == [StructuredFilter(
+            field="Product",
+            operator="in",
+            value=["Printer", "Chair"],
+        )]
+        assert provider.calls == 1
+        assert any(
+            item.method == "member_set_prior_authoritative_field"
+            for item in outcome.object_results
+        )
 
     @pytest.mark.parametrize(
         "phrase",

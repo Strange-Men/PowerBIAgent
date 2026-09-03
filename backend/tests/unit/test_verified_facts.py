@@ -2,6 +2,8 @@
 
 from datetime import date
 
+import pytest
+
 from backend.app.facts import (
     FactBoundedAnswerBuilder,
     FactBoundedReportBuilder,
@@ -117,33 +119,40 @@ def test_topn_without_ties_exposes_result_order_not_business_rank():
     assert [item["value"] for item in ranking.values] == [20, 10]
 
 
-def test_topn_boundary_ties_may_exceed_n_without_strict_rank_claim():
-    plan = _plan(dimensions=["Category"], sort="desc", top_n=2)
+def test_topn_boundary_ties_are_rejected_by_result_inspection():
+    plan = _plan(
+        query_shape=QueryShape.RANKING,
+        dimensions=["Category"],
+        sort="desc",
+        top_n=2,
+    )
     result = _result(
         ["[Category]", "[Total Sales]"],
         [["A", 100], ["B", 90], ["C", 90]],
     )
-    ranking = VerifiedFactSetBuilder().build(plan, result).by_type(
-        FactType.RANKING
-    )[0]
+    from backend.app.facts.inspection import (
+        ResultSemanticInspectionError,
+        ResultSemanticInspectionGate,
+    )
 
-    assert len(ranking.values) == 3
-    assert [item["result_position"] for item in ranking.values] == [1, 2, 3]
-    assert [item["value"] for item in ranking.values] == [100, 90, 90]
-    assert all("semantic_rank" not in item for item in ranking.values)
+    with pytest.raises(
+        ResultSemanticInspectionError,
+        match="result_ranking_row_count_exceeds_top_n",
+    ):
+        ResultSemanticInspectionGate().inspect(plan, result)
 
 
-def test_topn_multiple_equal_values_are_only_result_positions():
+def test_topn_multiple_equal_values_within_bound_are_result_positions():
     plan = _plan(dimensions=["Category"], sort="desc", top_n=2)
     result = _result(
         ["[Category]", "[Total Sales]"],
-        [["A", 100], ["B", 100], ["C", 100]],
+        [["A", 100], ["B", 100]],
     )
     ranking = VerifiedFactSetBuilder().build(plan, result).by_type(
         FactType.RANKING
     )[0]
 
-    assert [item["result_position"] for item in ranking.values] == [1, 2, 3]
+    assert [item["result_position"] for item in ranking.values] == [1, 2]
     assert all("semantic_rank" not in item for item in ranking.values)
 
 
@@ -166,7 +175,7 @@ def test_fact_bounded_topn_answer_uses_result_items_for_ties():
     plan = _plan(dimensions=["Category"], sort="desc", top_n=2)
     result = _result(
         ["[Category]", "[Total Sales]"],
-        [["A", 100], ["B", 100], ["C", 90]],
+        [["A", 100], ["B", 100]],
     )
     facts = VerifiedFactSetBuilder().build(plan, result)
     answer = FactBoundedAnswerBuilder().build(plan, result, facts)

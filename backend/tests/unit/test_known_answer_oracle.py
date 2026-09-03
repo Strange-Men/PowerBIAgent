@@ -86,7 +86,7 @@ def test_grouped_wrong_metric_fails(tmp_path: Path):
     ).passed
 
 
-def test_ordered_result_passes_and_top_n_ties_may_exceed_n(tmp_path: Path):
+def test_ordered_result_rejects_rows_beyond_top_n_even_when_metric_ties(tmp_path: Path):
     actual = _result(
         ["Product", "[Total Sales]"],
         [
@@ -99,8 +99,8 @@ def test_ordered_result_passes_and_top_n_ties_may_exceed_n(tmp_path: Path):
     evaluation = _oracle(tmp_path / "missing.yaml").evaluate(
         "top3_products_sales", actual
     )
-    assert evaluation.passed
-    assert len(actual.rows) == 4  # tie at rank 3; deliberately greater than top_n
+    assert not evaluation.passed
+    assert len(actual.rows) == 4
 
 
 def test_ordered_result_wrong_order_fails(tmp_path: Path):

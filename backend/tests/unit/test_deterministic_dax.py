@@ -216,6 +216,70 @@ def test_layer3_rejects_wrong_topn_and_raw_reaggregation():
     assert "dax_measure_expression_not_allowed" in _layer3(raw, scalar_plan).errors
 
 
+def test_topn_uses_deterministic_dimension_tiebreak_in_selection_and_order():
+    plan = _plan(
+        query_shape=QueryShape.RANKING,
+        dimensions=["Product"],
+        sort="desc",
+        top_n=3,
+    )
+    request = _build(plan)
+    assert "[Total Sales],\n    DESC,\n    'Sales'[Product],\n    ASC" in request.dax
+    assert "ORDER BY [Total Sales] DESC, 'Sales'[Product] ASC" in request.dax
+    assert _layer3(request, plan).is_valid
+
+
+def test_layer3_rejects_missing_or_changed_topn_tiebreak():
+    plan = _plan(
+        query_shape=QueryShape.RANKING,
+        dimensions=["Product"],
+        sort="desc",
+        top_n=3,
+    )
+    built = _build(plan)
+    changed = built.model_copy(update={
+        "dax": built.dax.replace("'Sales'[Product],\n    ASC", "'Sales'[Category],\n    ASC", 1)
+    })
+    missing_order = built.model_copy(update={
+        "dax": built.dax.replace(", 'Sales'[Product] ASC", "")
+    })
+    assert "dax_top_n_tiebreak_dimension_mismatch" in _layer3(changed, plan).errors
+    assert "dax_presentation_tiebreak_dimension_mismatch" in _layer3(missing_order, plan).errors
+
+
+def test_trend_dimension_order_is_executed_and_independently_verified():
+    plan = _plan(
+        query_shape=QueryShape.TREND,
+        dimensions=["OrderDate"],
+        dimension_order="asc",
+    )
+    built = _build(plan)
+    assert built.dax.endswith("ORDER BY 'Sales'[OrderDate] ASC")
+    assert _layer3(built, plan).is_valid
+
+    missing = built.model_copy(update={
+        "dax": built.dax.removesuffix("\nORDER BY 'Sales'[OrderDate] ASC")
+    })
+    changed = built.model_copy(update={
+        "dax": built.dax.replace("'Sales'[OrderDate] ASC", "'Sales'[OrderDate] DESC")
+    })
+    wrong_field = built.model_copy(update={
+        "dax": built.dax.replace("'Sales'[OrderDate] ASC", "'Sales'[Product] ASC")
+    })
+    assert "dax_dimension_order_fields_mismatch" in _layer3(missing, plan).errors
+    assert "dax_dimension_order_direction_mismatch" in _layer3(changed, plan).errors
+    assert "dax_dimension_order_fields_mismatch" in _layer3(wrong_field, plan).errors
+
+
+def test_unplanned_dimension_order_is_rejected():
+    plan = _plan(dimensions=["OrderDate"])
+    built = _build(plan)
+    changed = built.model_copy(update={
+        "dax": built.dax + "\nORDER BY 'Sales'[OrderDate] ASC"
+    })
+    assert "dax_unplanned_presentation_ordering" in _layer3(changed, plan).errors
+
+
 
 def _schema_dim_duplicate() -> SemanticModelSchema:
     """Star-schema style: dimension column duplicated, measure unique."""

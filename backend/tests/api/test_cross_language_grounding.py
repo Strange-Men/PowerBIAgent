@@ -36,6 +36,27 @@ async def test_missing_language_draft_never_executes_partial_intent_as_unfiltere
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("domain", domains(), ids=lambda item: item.schema.key)
+async def test_unknown_modifier_without_domain_suffix_is_zero_dax(monkeypatch, tmp_path, domain):
+    message = f"地球{domain.measure_text}是多少"
+    app, adapter, database = runtime_tests.create_runtime_app(
+        monkeypatch, tmp_path, domain, message, QueryShape.SCALAR, reject_dax=True
+    )
+    body = await runtime_tests.owned_request(
+        app, database, tmp_path, domain, message
+    )
+    assert body["terminal_state"] == "clarification_required"
+    assert body["memory_commit"] is False
+    assert adapter.dax_calls == 0
+    audit = body["execution_audit"]
+    assert audit["semantic_obligation_coverage"] is False
+    assert any(
+        item["phrase"] == "地球" and item["status"] == "NEEDS_CLARIFICATION"
+        for item in audit["semantic_obligations"]
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("template", [None, "sales_report", "stale-template"])
 @pytest.mark.parametrize("draft_intent", [IntentType.REPORT_GENERATION, IntentType.CLARIFICATION])
 async def test_template_selection_and_weak_report_intent_do_not_hijack_data(monkeypatch, tmp_path, template, draft_intent):

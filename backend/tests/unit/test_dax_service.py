@@ -563,7 +563,8 @@ class TestDAXPromptRules:
 
         assert "TOPN 只负责选择" in system
         assert "ORDER BY [Measure] ASC|DESC" in system
-        assert "ties 允许返回超过 N 行" in system
+        assert "返回不得超过 N 行" in system
+        assert "canonical dimensions ASC" in system
         assert "不得加入 QueryPlan 未声明的业务 Filter" in system
 
 

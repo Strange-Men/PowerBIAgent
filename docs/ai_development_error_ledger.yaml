@@ -3,11 +3,78 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-02 | M5.8.3/M5.8.4 COMPLETE；M5.9/M5.10 NOT STARTED；M5 FINAL 尚未成立
+# 最后更新：2026-09-03 | M5.8.3/M5.8.4/M5.8.5 COMPLETE；M5.9/M5.10 NOT STARTED；M5 FINAL 尚未成立
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-585-002
+  title: 通用维度候选与日期关系证据未优先于技术键表象
+  category: ERR
+  first_detected_version: M5.8.5
+  symptom: Logistics runtime-only 模型中 bounded selector 可把 CarrierID/HubID 选作业务展示维度，surrogate DateKey 关系也未能证明同表唯一 typed Date，导致 Provider 间 canonical dimension 不一致或合法时间问题过度澄清
+  local_evidence: 三 PBIX 双 Provider Real 诊断中 Kimi 选择 CarrierID，Logistics 时间标量返回 unproven_default_date_role；修复后 CarrierName、relationship-backed Date、Top1/Top3/trend 与 provider consistency 通过
+  authoritative_sources:
+  - title: ADR-016 Semantic Completeness and Presentation Truth
+    reason: runtime metadata 和关系是结构 authority，bounded language selector 只能在结构上适合当前业务角色的候选中选择
+  root_cause: Catalog 的通用 field candidate 未区分同词干唯一 label peer 与技术 ID/Key/Code；日期角色推断没有覆盖 active many-to-one surrogate key 到唯一 typed date 的常见 star-schema 证据
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅对 bounded generic dimension/filter roles 隐藏有唯一同表 label peer 的技术键，精确 canonical 查询仍保留；active to-one surrogate relation 只有在目标表恰有一个 typed date key 时才证明日期角色，否则继续 fail closed
+  regression_tests:
+  - backend/tests/unit/test_cross_language_grounding.py
+  - backend/tests/unit/test_model_semantic_context.py
+  prohibited_patterns:
+  - 以 PBIX 名称或领域词硬编码业务 label/date
+  - 在缺少唯一 relationship/date 证据时猜测日期角色
+  prevention_rules:
+  - bounded candidate eligibility 必须使用 runtime-owned structural evidence
+  - exact identity 与 generic language selection 必须保持不同合同
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-03'
+    action: discovered
+    version: M5.8.5
+  - date: '2026-09-03'
+    action: mitigation
+    version: M5.8.5
+- id: ERR-585-001
+  title: Canonical plan 与 QueryResult 之间缺少跨形态语义完整性证明
+  category: ERR
+  first_detected_version: M5.8.5
+  symptom: 显式未知 modifier 可能在 weak draft 后静默丢失，残缺 ranking 可能退化执行，TOPN ties、trend 顺序和 Answer scope 也没有在 VerifiedFactSet 前形成一个确定性端到端证明
+  local_evidence: unknown/known+unknown、residual ranking、TopN tie/order、trend order、fresh pending 与 scope failure reproducers；修复后 targeted 475、stress 2304、Semantic Compatibility 743 与三 PBIX Real 通过
+  authoritative_sources:
+  - title: ADR-016 Semantic Completeness Result Inspection and Presentation Truth
+    reason: CanonicalQueryPlan 是查询语义 authority，QueryResult 必须在进入 VerifiedFactSet 前证明其形态、顺序和 scope 一致
+  root_cause: 原链只有 Grounding status、局部 plan validation 和 QueryResult 结构验证，没有 obligation coverage、统一 shape completeness、post-execution semantic inspection 与强制 effective scope
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在现有链依次加入 Coverage Gate、Shape Gate、Result Inspection Gate 和 deterministic scope；TOPN/DAX/verifier 增加一致 tie-break，fresh relation 统一 Pending/Memory 优先级，Presentation 只做不改事实的共享 projection
+  regression_tests:
+  - backend/tests/unit/test_semantic_completeness.py
+  - backend/tests/unit/test_result_semantic_inspection.py
+  - backend/tests/unit/test_query_scope_and_order.py
+  - backend/tests/unit/test_semantic_completeness_stress.py
+  prohibited_patterns:
+  - 未闭合显式业务要求仍执行 DAX
+  - 通过返回后重排掩盖 canonical DAX/order 错误
+  - 由 Answer LLM 决定或省略有效查询 scope
+  prevention_rules:
+  - 所有新增 QueryShape/semantic modifier 必须加入四个 invariant 的邻近测试
+  - QueryResult 进入 VerifiedFactSet 前必须通过 deterministic semantic inspection
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-02'
+    action: discovered
+    version: M5.8.5
+  - date: '2026-09-03'
+    action: mitigation
+    version: M5.8.5
 - id: ERR-584-010
   title: Bounded selector 返回路径丢失调用方语义角色
   category: ERR
