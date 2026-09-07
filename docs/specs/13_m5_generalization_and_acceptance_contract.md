@@ -1,7 +1,7 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 / M5.8.1 / M5.8.2 / M5.8.3 / M5.8.4 / M5.8.5 / M5.8.6 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL=false
-> **适用范围：** `m5/rebuild` 开发线及 M5.5—M5.10（含 M5.7.1 / M5.7.2 / M5.8.1 / M5.8.2 / M5.8.3 / M5.8.4）
+> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 / M5.8.1 / M5.8.2 / M5.8.3 / M5.8.4 / M5.8.5 / M5.8.6 COMPLETE；M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.10 NOT STARTED；M5 FINAL=false
+> **适用范围：** M5.5—M5.10 长期合同；`m5/rebuild` 是历史重建/发布追溯分支，M5.8.6 后正式开发线为 `main`
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
 
@@ -232,7 +232,7 @@ M5.7.2 状态为 COMPLETE，只负责 Report Template Gate 前移、Template/Ren
 
 ### M5.8.3 — MCP-driven ModelSemanticContext
 
-状态为 IN PROGRESS，未发布。任意 PBIX 自动形成 model semantic context/business binding、通用 runtime semantic adaptation 只属于本阶段；不得以 global glossary、ontology、RAG、embedding、vector DB 或 knowledge graph 绕过 runtime authority。
+状态为 COMPLETE（`b86662e` 对应 exact-SHA CI success）。任意 PBIX 的 model semantic context/runtime adaptation 只消费 MCP 已证明的结构 metadata；不得以 global glossary、ontology、RAG、embedding、vector DB 或 knowledge graph 绕过 runtime authority，也不宣称自动 business binding。
 
 ### M5.9 — MCP performance and resilience
 
@@ -383,4 +383,4 @@ M5.8.2 已完成 Question Router、八类通用 Query Shape、shape-specific cla
 
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-09-03 M5.8.6 COMPLETE（主线发布与治理收口）；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*创建日期：2026-08-26 | 最后更新：2026-09-07 M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.8.6 COMPLETE；M5.10 NOT STARTED；M5 FINAL=false*

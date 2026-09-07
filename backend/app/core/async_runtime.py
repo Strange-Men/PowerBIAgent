@@ -9,13 +9,15 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable, Hashable
+from collections.abc import Awaitable, Callable, Hashable, Sequence
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, cast
 
 
 _K = TypeVar("_K", bound=Hashable)
 _V = TypeVar("_V")
+_I = TypeVar("_I")
+_R = TypeVar("_R")
 
 
 @dataclass(frozen=True)
@@ -104,3 +106,41 @@ class AsyncSingleFlight(Generic[_K, _V]):
     async def clear(self) -> None:
         async with self._lock:
             self._tasks.clear()
+
+
+async def bounded_gather_ordered(
+    items: Sequence[_I],
+    operation: Callable[[_I], Awaitable[_R]],
+    *,
+    max_concurrency: int,
+) -> list[_R]:
+    """Run independent work with a hard bound and preserve input order.
+
+    On the first exception or caller cancellation every sibling is cancelled
+    and awaited before the original failure is re-raised.  This prevents
+    orphan background work while avoiding ``ExceptionGroup`` at callers that
+    already own a typed error taxonomy.
+    """
+    if max_concurrency <= 0:
+        raise ValueError("max_concurrency must be positive")
+    if not items:
+        return []
+    semaphore = asyncio.Semaphore(min(max_concurrency, len(items)))
+    results: list[_R | None] = [None] * len(items)
+
+    async def run_one(index: int, item: _I) -> None:
+        async with semaphore:
+            results[index] = await operation(item)
+
+    tasks = [
+        asyncio.create_task(run_one(index, item))
+        for index, item in enumerate(items)
+    ]
+    try:
+        await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    return [cast(_R, item) for item in results]

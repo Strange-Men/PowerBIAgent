@@ -1,7 +1,7 @@
 # 06 — 安全、Git 与开发规范
 
-> **状态：** M1.0.2 已完成 Secret 安全规则固化
-> **后续轮次细化：** 代码风格指南（M0.4）、Harness 安全规则（M0.3）、Secret 扫描（M0.4 → M1.0.2 落地）
+> **状态：** M5.8.6 COMPLETE；Secret、仓库、artifact、main-only 开发与 exact-SHA CI 治理均已固化。
+> **当前轮次：** M5.9 performance / concurrency / resilience / cloud-ready runtime 本地验收已完成，等待 exact-SHA CI；离线实现、2h soak、Real PBIX 1/2/4 worker、Artifact Governance 与 residual=0 已通过。M5.8.5 correctness 冻结，M5.10 NOT STARTED，M5 FINAL=false。
 
 ---
 
@@ -18,14 +18,14 @@
 | `credentials.json`、`token.json`、`secrets.yaml` | ❌ 禁止提交 | 凭据文件 |
 | `*.har` | ❌ 禁止提交 | 网络抓包文件 |
 
-### 1.2 Claude 禁止读取 .env
+### 1.2 代码 Agent 禁止读取 .env
 
-Claude 只能：
+Claude / Codex / 其他代码 Agent 只能：
 - 检查 `.env` 是否存在
 - 检查 `.env` 是否被 Git 忽略
 - 检查 `.env` 是否被 Git 跟踪
 
-Claude 不得：
+代码 Agent 不得：
 - 打开、读取、搜索或总结 `.env` 文件内容
 - 输出任何环境变量真实值
 - 要求用户把 Key 发进对话
@@ -33,9 +33,9 @@ Claude 不得：
 
 ### 1.3 后端专用 Key 规则
 
-DeepSeek API Key 只能：
+DeepSeek / Kimi 等 Provider API Key 只能：
 - 由后端 `Settings` 以 `SecretStr` 类型读取
-- 在后端运行时通过 HTTPS Authorization Header 发送给 DeepSeek 官方 API
+- 在后端运行时通过 HTTPS Authorization Header 发送给已配置的 OpenAI-compatible Provider endpoint
 
 除运行时鉴权外，Key 不得进入：GitHub 仓库、Git 历史、CI 日志、前端配置、浏览器、日志、Trace、测试 Fixture。
 
@@ -64,6 +64,7 @@ NUXT_PUBLIC_DEEPSEEK_API_KEY
 ```
 provider=deepseek, model=deepseek-chat, status_code=200
 prompt_tokens=10, completion_tokens=5, error_type=authentication_error
+operation=mcp_rpc, duration_ms=123.4, queue_depth=2, worker_id=1
 ```
 
 ### 1.6 API Key 填写规则
@@ -114,6 +115,13 @@ prompt_tokens=10, completion_tokens=5, error_type=authentication_error
 
 ## 五、Git 安全规则
 
+### 当前 main-only 开发规则
+
+- 从 M5.9 起 `main` 是唯一活动开发线；正常 M5.x 开发直接在 main 完成 local gates → 白名单 staging → commit → push → exact-SHA CI。
+- `m5/rebuild` 冻结为只读发布追溯分支，不接收 M5.9/M5.10 开发；保留至 M6.x 后仅由用户明确批准归档/删除。
+- `archive/m5-frontend-experimental-final` 固定指向 `6d1620a7...`，禁止删除、移动或重写。
+- main CI 失败只允许 forward-fix 新 commit；禁止 reset/rebase/force push/rewrite history。
+
 ### 禁止执行的命令
 
 - `git push --force` / `git push -f`
@@ -151,10 +159,10 @@ prompt_tokens=10, completion_tokens=5, error_type=authentication_error
 ### 格式
 
 ```
-M0.x_中文描述
+Mx.y_中文描述
 ```
 
-- `M0.x` 为轮次编号
+- `Mx.y` 为用户批准的轮次编号；代码 Agent 不自行增加修复版本号
 - 使用一个下划线连接版本号和中文描述
 - 下划线后的描述必须全部为中文
 - 不使用纯英文描述或中英文混合描述
@@ -224,4 +232,4 @@ Tag 名称的描述部分必须全部使用中文，禁止使用英文描述。
 
 ---
 
-*创建日期：2026-07-31 | M1.0.2 密钥与仓库安全规则固化*
+*创建日期：2026-07-31 | 最后更新：2026-09-07 M5.8.6 治理 current-state 收口；进入 M5.9*

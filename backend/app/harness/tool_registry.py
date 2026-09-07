@@ -20,6 +20,7 @@ from backend.app.report.resources import (
     ReportArtifact,
     ReportRepository,
 )
+from backend.app.core.performance import measure_performance
 from backend.app.schemas.data_contracts import (
     ColumnMembersRequest,
     ColumnMembersResult,
@@ -114,13 +115,14 @@ def register_default_tools(
     repository = report_repository or InMemoryReportRepository()
 
     async def _render_report(input_data: ReportSpec) -> ReportArtifact:
-        html = await render_fn(input_data)
-        return await repository.store(
-            input_data,
-            html,
-            conversation_id=input_data.conversation_id,
-            request_id=input_data.request_id,
-        )
+        with measure_performance("report"):
+            html = await render_fn(input_data)
+            return await repository.store(
+                input_data,
+                html,
+                conversation_id=input_data.conversation_id,
+                request_id=input_data.request_id,
+            )
 
     gateway.register(ToolSpec(
         name=TOOL_NAME_RENDER,

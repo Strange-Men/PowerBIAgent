@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.8.6 — M0-M5 主线发布与治理收口（COMPLETE）。M5.8.5 correctness 已冻结。main 是合并后新的正式基线。M5.9/M5.10 NOT STARTED；M5 FINAL=false。
+> **状态：** M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING）。离线、2h soak、Real PBIX 1/2/4 worker、full gates 与 residual=0 已通过。M5.8.6 COMPLETE，M5.8.5 correctness 已冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -50,12 +50,12 @@
 | **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **COMPLETE；`3e3d8ac` / CI #46 exact-SHA completed/success** |
 | **M5.8.5** | **Semantic Completeness + Result Inspection + Presentation Truth** | **✅ COMPLETE；2,304 stress + 三 PBIX/双 Provider Real + full gates** |
 | **M5.8.6** | **主线发布与治理收口、m5/rebuild→main 合并、m5/frontend 归档** | **✅ COMPLETE** |
-| **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
+| **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **🚧 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ## M5 重建决策与历史状态
 
-- 新开发分支为 `m5/rebuild`，唯一基线是 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`。
+- M5.4.2 时的新开发分支 `m5/rebuild` 从 M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db` 建立；M5.8.6 后该分支已冻结为只读发布追溯，`main` 是唯一活动开发线。
 - 旧实验线 `m5/frontend`、`a197db3ecfe8959f3f8bb79e18d7ee02834fedd3`（原 M5.5）、`6d1620a7a7aa04e65692371436d90756fdf5bcc8`（原 M5.5.1）永久保留为研究、失败经验与审计记录。
 - 不删除、不重写、不 revert、不整体 cherry-pick 旧实验线。可以参考单项思想，但必须在新阶段重新实现并重新完成 Focused Real、Cross-domain、Full gates 与用户人工验收。
 - M5.4.2 不修改生产业务逻辑；M5.4.1 及以前能力全部保留。完整长期合同见 `docs/specs/13_m5_generalization_and_acceptance_contract.md`。
@@ -287,6 +287,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.8.2—M5.8.5 已完成；M5.8.5 四个 correctness invariant、2,304 stress、三 PBIX/双 Provider Real 与全量门禁通过；完整 M5.9 与 M5.10 保持 NOT STARTED；M5 FINAL=false。
+- M5.8.2—M5.8.6 已完成；M5.8.5 四个 correctness invariant、2,304 stress、三 PBIX/双 Provider Real 与全量门禁通过，correctness 已冻结；M5.9 本地与 Real acceptance 已通过并等待 exact-SHA CI，M5.10 保持 NOT STARTED；M5 FINAL=false。
 
-*最后更新：2026-09-03 | M5.8—M5.8.5 COMPLETE；M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-09-07 | M5.8—M5.8.6 COMPLETE；M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.10 NOT STARTED；M5 FINAL=false*

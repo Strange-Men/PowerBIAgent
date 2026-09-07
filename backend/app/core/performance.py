@@ -19,22 +19,31 @@ class PerformanceObservation:
     duration_ms: float
     cache: CacheStatus = "none"
     session: SessionStatus = "none"
+    queue_depth: int | None = None
+    worker_id: int | None = None
 
-    def safe_dict(self) -> dict[str, str | float]:
-        return {
+    def safe_dict(self) -> dict[str, str | float | int]:
+        result: dict[str, str | float | int] = {
             "operation": self.operation,
             "duration_ms": round(self.duration_ms, 3),
             "cache": self.cache,
             "session": self.session,
         }
+        if self.queue_depth is not None:
+            result["queue_depth"] = self.queue_depth
+        if self.worker_id is not None:
+            result["worker_id"] = self.worker_id
+        return result
 
 
 class PerformanceRecorder:
     """Collect only duration/category/cache/session metadata for one request."""
 
     def __init__(self) -> None:
-        self._started_at = time.monotonic()
+        self._started_at_ns = time.perf_counter_ns()
         self._observations: list[PerformanceObservation] = []
+        self._retry_count = 0
+        self._timeout_count = 0
 
     @contextmanager
     def measure(
@@ -44,13 +53,13 @@ class PerformanceRecorder:
         cache: CacheStatus = "none",
         session: SessionStatus = "none",
     ) -> Iterator[None]:
-        started_at = time.monotonic()
+        started_at_ns = time.perf_counter_ns()
         try:
             yield
         finally:
             self.record(
                 operation,
-                (time.monotonic() - started_at) * 1000.0,
+                (time.perf_counter_ns() - started_at_ns) / 1_000_000.0,
                 cache=cache,
                 session=session,
             )
@@ -62,13 +71,23 @@ class PerformanceRecorder:
         *,
         cache: CacheStatus = "none",
         session: SessionStatus = "none",
+        queue_depth: int | None = None,
+        worker_id: int | None = None,
     ) -> None:
         self._observations.append(PerformanceObservation(
             operation=operation,
             duration_ms=max(duration_ms, 0.0),
             cache=cache,
             session=session,
+            queue_depth=(max(queue_depth, 0) if queue_depth is not None else None),
+            worker_id=(max(worker_id, 0) if worker_id is not None else None),
         ))
+
+    def record_retry(self) -> None:
+        self._retry_count += 1
+
+    def record_timeout(self) -> None:
+        self._timeout_count += 1
 
     def summary(self) -> dict[str, object]:
         observations = [item.safe_dict() for item in self._observations]
@@ -76,11 +95,58 @@ class PerformanceRecorder:
         session_observations = [
             item for item in self._observations if item.session != "none"
         ]
+        operation_aliases = {
+            "router_ms": {"router"},
+            "intent_llm_ms": {"intent_llm"},
+            "schema_ms": {"schema_read"},
+            "grounding_ms": {"grounding", "semantic_catalog_build"},
+            "member_lookup_ms": {"member_lookup"},
+            "query_plan_ms": {"query_plan"},
+            "dax_build_ms": {"dax_build"},
+            "queue_wait_ms": {"queue_wait"},
+            "mcp_rpc_ms": {"mcp_rpc"},
+            "powerbi_execute_ms": {"dax_execution"},
+            "result_inspection_ms": {"result_inspection"},
+            "answer_ms": {"answer_presentation"},
+            "report_ms": {"report"},
+            "db_ms": {"persistence"},
+            "llm_task_ms": {"llm_task"},
+        }
+        totals = {
+            field: round(sum(
+                item.duration_ms
+                for item in self._observations
+                if item.operation in operations
+            ), 3)
+            for field, operations in operation_aliases.items()
+        }
+        total_ms = round(
+            (time.perf_counter_ns() - self._started_at_ns) / 1_000_000.0,
+            3,
+        )
+        queue_depth = max(
+            (item.queue_depth or 0 for item in self._observations),
+            default=0,
+        )
+        worker_ids = sorted({
+            item.worker_id
+            for item in self._observations
+            if item.worker_id is not None
+        })
         return {
-            "total_turn_ms": round(
-                (time.monotonic() - self._started_at) * 1000.0,
-                3,
+            "total_ms": total_ms,
+            "total_turn_ms": total_ms,
+            **totals,
+            "retry_count": self._retry_count,
+            "timeout_count": self._timeout_count,
+            "cache_hit": sum(item.cache == "hit" for item in cache_observations),
+            "cache_miss": sum(item.cache == "miss" for item in cache_observations),
+            "session_new": sum(item.session == "new" for item in session_observations),
+            "session_reused": sum(
+                item.session == "reused" for item in session_observations
             ),
+            "queue_depth": queue_depth,
+            "worker_ids": worker_ids,
             "operations": observations,
             "cache_hit_rate": round(
                 sum(item.cache == "hit" for item in cache_observations)
@@ -111,6 +177,18 @@ def bind_performance_recorder(recorder: PerformanceRecorder) -> Token:
 
 def reset_performance_recorder(token: Token) -> None:
     _CURRENT_RECORDER.reset(token)
+
+
+def record_performance_retry() -> None:
+    recorder = current_performance_recorder()
+    if recorder is not None:
+        recorder.record_retry()
+
+
+def record_performance_timeout() -> None:
+    recorder = current_performance_recorder()
+    if recorder is not None:
+        recorder.record_timeout()
 
 
 @contextmanager

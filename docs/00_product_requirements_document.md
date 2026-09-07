@@ -2,9 +2,9 @@
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
 > **修订版本：** v2.2
-> **修订日期：** 2026-09-03
+> **修订日期：** 2026-09-07
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **修订范围：** M5.8.6 主线发布与治理收口；M5.8.5 correctness 已冻结；M5.9 = performance/concurrency/resilience/cloud-ready runtime；M5.10 = 第二固定专业报表模板；M5 FINAL=false
+> **修订范围：** M5.9 performance/concurrency/resilience/cloud-ready runtime 已完成本地验收，等待本轮 exact-SHA CI；离线实现、2h soak、Real PBIX 1/2/4 worker、full gates 与 residual=0 已通过；M5.8.6 COMPLETE，M5.8.5 correctness 已冻结；M5.10 NOT STARTED；M5 FINAL=false
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -23,7 +23,7 @@ Power BI 数据分析 Agent MVP（PowerBIAgent）
 
 完成一套可运行、可验证的 MVP，证明以下链路可行：
 
-当前 M0—M5.4.1 已验证的主链为：
+当前 M0—M5.8.6 已验证的主链为：
 
 ```text
 Natural Language
@@ -187,7 +187,7 @@ FastAPI
 
 1. **API 层** — 接收前端请求和返回结果
 2. **Agent 编排层** — TurnPipeline 控制状态读取、Intent、authoritative Grounding、确定性执行、事实构建、输出与成功提交
-3. **LLM Provider 层** — 通过统一接口封装模型调用。**当前正式用户模型只有 DeepSeek**。Intent/语言草稿是 weak signal；bounded selector 只能在 Catalog-owned、metadata-backed candidate ID 中受限选择。LLM 不拥有 canonical business semantics、Real DAX 或外部事实。Mock LLM 仅用于开发和测试，不作为正式用户模型展示
+3. **LLM Provider 层** — 通过统一 OpenAI-compatible 接口封装 DeepSeek 与 Kimi K2.6。Intent/语言草稿是 weak signal；bounded selector 只能在 Catalog-owned、metadata-backed candidate ID 中受限选择。LLM 不拥有 canonical business semantics、Real DAX 或外部事实。Mock LLM 仅用于开发和测试，不作为正式用户模型展示
 4. **Power BI MCP Adapter** — 连接 Power BI MCP，获取语义模型结构，执行 DAX 查询，处理异常
 5. **Memory 模块** — 只在 Grounding、DAX、Layer 3、Power BI、FactSet 与 factual output 全链成功后提交当前分析状态；PendingClarificationContext 与 committed Memory 分离
 6. **报表生成模块** — M3 已实现受 VerifiedFactSet / QueryResult 约束的固定模板静态 HTML 渲染与资源契约；M4 persistence 只保存状态/metadata，filesystem 继续拥有 HTML authority
@@ -258,9 +258,11 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 | 接口 | 说明 |
 |------|------|
 | `GET /health` | 检查当前运行模式的配置就绪状态；不把它描述为 Desktop 实时在线探测 |
+| `GET /api/v1/llm-profiles` | ✅ M5.8；返回 DeepSeek/Kimi 的安全公开 profile 目录，不返回 Key 或 base URL |
 | `GET /api/v1/semantic-models` | ✅ M5.3.2 多模型只读 discovery；逐实例返回 safe catalog 与 compatibility，不返回 connection string、PID、端口、raw fingerprint 或 MCP payload |
-| `GET /api/report-templates` | **未实现** — M5.1 只集中登记 production `sales_report` |
-| `POST /api/v1/chat` | ✅ 已实现；Mock+Mock、DeepSeek+Mock、DeepSeek+Local MCP 共用正式 TurnPipeline |
+| `GET /api/v1/report-templates` | ✅ M5.7.2；返回 backend-owned Template Registry，当前仅 `sales_report / 简易模板` |
+| `POST /api/v1/chat` | ✅ 已实现；Mock、DeepSeek/Kimi 与 Mock/Local MCP 组合共用正式 TurnPipeline |
+| `GET /api/reports` | ✅ M5.4.1；按 source namespace 分页管理 active/archived reports |
 | `GET /api/reports/{report_id}` | ✅ 已实现；查看 repository-owned 静态 HTML |
 | `GET /api/reports/{report_id}/download` | ✅ 已实现；下载 UTF-8 HTML 报表 |
 | `DELETE /api/reports/{report_id}` | ✅ M5.3.3；显式人工删除 report metadata + managed HTML，conversation 保留；不属于 ToolGateway，LLM 无权限 |
@@ -300,8 +302,8 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 21. **M5.8 多 LLM Provider抽象 + DeepSeek/Kimi 最小双模型** ✅ COMPLETE — `OpenAICompatibleLLMProvider`、`LLMModelProfile`、request/conversation-scoped model selection 与同一 authority/regression contract
 22. **M5.8.1 前置性能加速与 Local MCP 会话复用** ✅ COMPLETE — application-owned session、短 TTL metadata/member cache、singleflight 与最小 bounded concurrency
 23. **M5.8.2 通用自然语言路由与查询形态收口** ✅ COMPLETE — Question Router、八类 Query Shape、minimal clarification、安全 calculator/help/system-info、dimension-only/Top1/member-set/bounded trend
-24. **M5.8.3 MCP-driven ModelSemanticContext** ⏳ NOT STARTED — 任意 PBIX 通用语义适配；不得以 global ontology/RAG 替代 runtime authority
-25. **M5.9 MCP performance/resilience** ⏳ NOT STARTED — profiling/cache/session reuse、bounded concurrency/queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault/soak；不改 Semantic/DAX/VerifiedFactSet authority
+24. **M5.8.3 MCP-driven ModelSemanticContext** ✅ COMPLETE — 任意 PBIX 通用语义适配；runtime schema 与 exact identity/fingerprint 保持 authority，不以 global ontology/RAG 替代
+25. **M5.9 MCP performance/resilience** 🚧 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING — bounded concurrency/queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault、2h soak、Real 1/2/4 worker 与 residual=0 已通过；不改 Semantic/DAX/VerifiedFactSet authority
 26. **M5.10 固定专业销售报表模板与两模板选择** ⏳ NOT STARTED — 简易模板保留 M5.7 优化后的 `sales_report.html`；销售模板使用确定性专业版式并显式选择；只有全部门禁完成后才允许 M5 FINAL
 
 ## 十二、MVP 暂不包含
@@ -377,4 +379,4 @@ MVP 达到以下条件即可视为成功：
 
 M5.10 已纳入正式路线：用户可明确选择“简易模板”或“销售模板”。销售模板可以包含 sales-specific section，但只消费 runtime schema 与 VerifiedFactSet 已证明的事实；缺少 Forecast/Goal/Pipeline 时必须用当前模型真实支持的销售 section 替代，禁止伪造。任何模板均不允许 LLM 临场生成 HTML/CSS/SVG。
 
-*修订日期：2026-08-28 | M5.8 / M5.8.1 / M5.8.2 COMPLETE；M5.8.3 / M5.9 / M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*修订日期：2026-09-07 | M5.8—M5.8.6 COMPLETE，M5.8.5 correctness frozen；M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.10 NOT STARTED；M5 FINAL=false*

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import inspect
 import re
@@ -755,6 +756,7 @@ class _RealReportAdapter(PowerBIAdapter):
     def __init__(self) -> None:
         self.schema_count = 0
         self.execute_count = 0
+        self.result_semantics: list[tuple[str, tuple[str, ...], tuple[tuple, ...]]] = []
 
     @property
     def provider_name(self) -> str:
@@ -788,7 +790,7 @@ class _RealReportAdapter(PowerBIAdapter):
             )
         else:
             columns, rows = ["[Total Sales]"], [[1200.5]]
-        return QueryResult(
+        result = QueryResult(
             result_id=f"qr_service_{self.execute_count}",
             semantic_model_key="local_desktop_model",
             columns=columns,
@@ -797,6 +799,14 @@ class _RealReportAdapter(PowerBIAdapter):
             source_mode="real",
             request_id=request.request_id,
         )
+        self.result_semantics.append(
+            (
+                request.dax,
+                tuple(result.columns),
+                tuple(tuple(row) for row in result.rows),
+            )
+        )
+        return result
 
     async def normalize_result(self, raw: object) -> QueryResult:
         if not isinstance(raw, QueryResult):
@@ -805,6 +815,22 @@ class _RealReportAdapter(PowerBIAdapter):
 
     async def normalize_error(self, raw: object) -> PowerBIError:
         return PowerBIError(type="test", message=str(raw), retryable=False)
+
+
+class _ConcurrentRealReportAdapter(_RealReportAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.active = 0
+        self.max_active = 0
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        try:
+            await asyncio.sleep(0.02)
+            return await super().execute_dax(request)
+        finally:
+            self.active -= 1
 
 
 @pytest.mark.asyncio
@@ -929,6 +955,76 @@ async def test_production_turn_uses_capability_resolved_queries_and_replays():
     assert replay["tool_sequence"] == []
     assert adapter.execute_count == 4
     assert repository.store_count == 1
+
+
+@pytest.mark.asyncio
+async def test_production_report_executes_only_validated_queries_with_bounded_parallelism():
+    adapter = _ConcurrentRealReportAdapter()
+    provider = _ReportLanguageProvider()
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        powerbi_local_semantic_model_key="local_desktop_model",
+        max_tool_calls=16,
+        report_query_concurrency=2,
+    )
+    service = DeepSeekTurnService(
+        memory_repo=InMemoryMemoryRepository(),
+        llm_provider=provider,
+        powerbi_adapter=adapter,
+        report_renderer=SalesReportRenderer(),
+        report_repository=_CountingReportRepository(),
+        settings=settings,
+        config=HarnessConfig.from_settings(settings),
+    )
+
+    result = await service.execute(
+        message="生成销售分析报表",
+        conversation_id="conv-bounded-report",
+        request_id="req-bounded-report",
+        semantic_model_key="local_desktop_model",
+        report_template_key="sales_report",
+    )
+
+    assert result["terminal_state"] == "completed"
+    assert result["execution_audit"]["query_count"] == 4
+    assert result["execution_audit"]["llm_dax_call_count"] == 0
+    assert adapter.execute_count == 4
+    assert adapter.max_active == 2
+
+    serial_adapter = _ConcurrentRealReportAdapter()
+    serial_settings = settings.model_copy(update={"report_query_concurrency": 1})
+    serial_service = DeepSeekTurnService(
+        memory_repo=InMemoryMemoryRepository(),
+        llm_provider=_ReportLanguageProvider(),
+        powerbi_adapter=serial_adapter,
+        report_renderer=SalesReportRenderer(),
+        report_repository=_CountingReportRepository(),
+        settings=serial_settings,
+        config=HarnessConfig.from_settings(serial_settings),
+    )
+    serial = await serial_service.execute(
+        message="生成销售分析报表",
+        conversation_id="conv-serial-report",
+        request_id="req-serial-report",
+        semantic_model_key="local_desktop_model",
+        report_template_key="sales_report",
+    )
+
+    assert serial["terminal_state"] == "completed"
+    assert serial_adapter.max_active == 1
+    assert (
+        serial["execution_audit"]["canonical_query_plans"]
+        == result["execution_audit"]["canonical_query_plans"]
+    )
+    assert (
+        serial["execution_audit"]["dax_fingerprints"]
+        == result["execution_audit"]["dax_fingerprints"]
+    )
+    assert sorted(serial_adapter.result_semantics) == sorted(adapter.result_semantics)
+    assert serial["execution_audit"]["factual_validation_pass"] is True
+    assert result["execution_audit"]["factual_validation_pass"] is True
 
 
 @pytest.mark.asyncio

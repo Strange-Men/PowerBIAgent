@@ -1266,6 +1266,38 @@ class TestLocalMCPPowerBIAdapter:
         assert client.calls == 2
 
     @pytest.mark.asyncio
+    async def test_execute_dax_retries_process_exit_once_and_recovers(self):
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax='EVALUATE ROW("TestValue", 1)',
+        )
+
+        class FlakyProcessClient:
+            session_generation = 1
+
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def execute_dax(self, current: DAXRequest) -> LocalMCPDAXSnapshot:
+                self.calls += 1
+                if self.calls == 1:
+                    raise LocalMCPConnectionError(
+                        LocalMCPErrorCategory.MCP_STARTUP,
+                        "local_mcp_server_exited",
+                        retryable=True,
+                    )
+                return _dax_snapshot(_successful_dax_payload(), request=current)
+
+        client = FlakyProcessClient()
+        result = await _local_adapter(
+            client,  # type: ignore[arg-type]
+            max_retries=1,
+        ).execute_dax(request)
+
+        assert result.error is None
+        assert client.calls == 2
+
+    @pytest.mark.asyncio
     async def test_execute_dax_rejects_malformed_and_preview_missing_rows(self):
         request = DAXRequest(
             semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,

@@ -258,6 +258,51 @@ class TestSnapshotSingleWriter:
         svc._do_execute = original_do
 
     @pytest.mark.asyncio
+    async def test_cancellation_aborts_claim_without_snapshot_or_commit(self):
+        """Caller cancellation releases idempotency ownership exactly once."""
+        repo = InMemoryMemoryRepository()
+        svc = _mock_service(repo)
+        entered = asyncio.Event()
+
+        async def waiting_do_execute(**kwargs: Any) -> dict[str, Any]:
+            entered.set()
+            await asyncio.Event().wait()
+            raise AssertionError("unreachable")
+
+        original_do = svc._do_execute
+        svc._do_execute = waiting_do_execute
+        with patch.object(
+            svc.pipeline.snapshot_store,
+            "save",
+            wraps=svc.pipeline.snapshot_store.save,
+        ) as spy_save, patch.object(
+            svc.pipeline.snapshot_store,
+            "complete",
+            wraps=svc.pipeline.snapshot_store.complete,
+        ) as spy_complete, patch.object(
+            svc.pipeline.snapshot_store,
+            "abort",
+            wraps=svc.pipeline.snapshot_store.abort,
+        ) as spy_abort:
+            task = asyncio.create_task(
+                svc.execute(
+                    message="本月销售额是多少",
+                    conversation_id="conv-cancel-1",
+                    request_id="req-cancel-1",
+                )
+            )
+            await entered.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            assert spy_save.call_count == 0
+            assert spy_complete.call_count == 0
+            assert spy_abort.call_count == 1
+
+        svc._do_execute = original_do
+
+    @pytest.mark.asyncio
     async def test_business_failure_saves_snapshot_once(self):
         """明确业务失败：Snapshot 保存恰好 1 次（明确终态）"""
         repo = InMemoryMemoryRepository()

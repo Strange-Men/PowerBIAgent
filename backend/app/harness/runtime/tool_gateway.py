@@ -28,6 +28,14 @@ from backend.app.harness.errors import (
     ToolPolicyDeniedError,
     ToolTimeoutError,
 )
+from backend.app.core.deadline import (
+    bounded_timeout_seconds,
+    sleep_with_request_deadline,
+)
+from backend.app.core.performance import (
+    record_performance_retry,
+    record_performance_timeout,
+)
 from backend.app.memory.models import RuntimeDataMode
 from backend.app.schemas.data_contracts import UserContext
 from backend.app.intent.models import IntentType
@@ -252,9 +260,11 @@ class ToolGateway:
                     controller.check_tool_call_limit()
 
                 start = time.monotonic()
+                attempt_timeout = bounded_timeout_seconds(tool.timeout_seconds)
+                deadline_limited = attempt_timeout < tool.timeout_seconds
                 result = await asyncio.wait_for(
                     tool.handler(input_data),
-                    timeout=tool.timeout_seconds,
+                    timeout=attempt_timeout,
                 )
                 elapsed_ms = (time.monotonic() - start) * 1000
 
@@ -277,16 +287,27 @@ class ToolGateway:
                 return result
 
             except asyncio.TimeoutError:
-                elapsed_ms = tool.timeout_seconds * 1000
+                record_performance_timeout()
+                elapsed_ms = (time.monotonic() - start) * 1000
                 last_error = ToolTimeoutError(
-                    f"Tool '{tool_name}' timed out after {tool.timeout_seconds}s"
+                    (
+                        f"Tool '{tool_name}' exceeded the request deadline"
+                        if deadline_limited
+                        else (
+                            f"Tool '{tool_name}' timed out after "
+                            f"{tool.timeout_seconds}s"
+                        )
+                    )
                 )
                 self._record_trace(trace, "tool_call_failed", execution_context, tool_name,
                                    attempt=attempt + 1, max_attempts=tool.max_retries + 1,
                                    error_type="timeout",
                                    duration_ms=elapsed_ms)
-                if attempt < tool.max_retries:
-                    await asyncio.sleep(0.5 * (attempt + 1))
+                if attempt < tool.max_retries and not deadline_limited:
+                    record_performance_retry()
+                    await sleep_with_request_deadline(0.5 * (attempt + 1))
+                else:
+                    break
 
             except (ToolNotRegisteredError, ToolPolicyDeniedError,
                     ToolOutputValidationError):
@@ -302,7 +323,8 @@ class ToolGateway:
                     ),
                 )
                 if self._is_retryable(e) and attempt < tool.max_retries:
-                    await asyncio.sleep(0.5 * (attempt + 1))
+                    record_performance_retry()
+                    await sleep_with_request_deadline(0.5 * (attempt + 1))
                     continue
                 self._record_trace(trace, "tool_call_failed", execution_context, tool_name,
                                    attempt=attempt + 1, max_attempts=tool.max_retries + 1,

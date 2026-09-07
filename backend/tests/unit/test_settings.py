@@ -132,6 +132,33 @@ class TestSettingsValidation:
         with pytest.raises(ValueError):
             Settings()
 
+    def test_runtime_concurrency_bounds_are_coherent(self):
+        with pytest.raises(ValueError, match="workers cannot exceed"):
+            Settings(
+                _env_file=None,
+                powerbi_local_mcp_workers=4,
+                powerbi_local_mcp_queue_capacity=2,
+            )
+        with pytest.raises(ValueError, match="per_request_limit cannot exceed"):
+            Settings(
+                _env_file=None,
+                powerbi_local_mcp_per_request_limit=4,
+                powerbi_local_mcp_queue_capacity=2,
+            )
+        with pytest.raises(ValueError, match="retry base cannot exceed"):
+            Settings(
+                _env_file=None,
+                llm_retry_base_seconds=2.0,
+                llm_retry_max_seconds=1.0,
+            )
+
+    def test_runtime_concurrency_defaults_are_bounded(self):
+        settings = Settings(_env_file=None)
+        assert settings.powerbi_local_mcp_workers == 2
+        assert settings.powerbi_local_mcp_queue_capacity == 32
+        assert settings.powerbi_local_mcp_per_request_limit == 2
+        assert settings.report_query_concurrency == 2
+
 
 class TestSettingsNoSecretLeak:
     """不泄露 Secret"""
@@ -185,6 +212,14 @@ class TestSettingsNoSecretLeak:
         assert fake_tenant not in safe_text
         assert fake_client not in safe_text
         assert fake_secret not in safe_text
+
+    def test_safe_repr_exposes_only_safe_runtime_bounds(self):
+        safe = Settings(_env_file=None).safe_repr()
+        assert safe["powerbi_local_mcp_workers"] == 2
+        assert safe["powerbi_local_mcp_queue_capacity"] == 32
+        assert safe["powerbi_local_mcp_per_request_limit"] == 2
+        assert safe["report_query_concurrency"] == 2
+        assert safe["llm_max_attempts"] == 3
 
 
 class TestSettingsRealMode:

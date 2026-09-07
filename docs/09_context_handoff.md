@@ -1,9 +1,13 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-09-03
+> **最后更新：** 2026-09-07
 
-## M5.8.6 当前阶段（2026-09-03）
+## 当前阶段 — M5.9（2026-09-07）
+
+**M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING）。** 基线为 main `e8a79c3edcd7f648600bd4aa271d084d65cb62a1`，其 PowerBIAgent Validation #51 / Full Validation (Windows) 已核验 exact-SHA completed/success。M5.8.6 遗留 current-state 文档已收口；Settings.version=M5.9。离线 1/2/4/8 worker、100-way stress、fault matrix、2h soak 与 Rich PBIX 1/2/4 worker Real acceptance 已通过；backend 2425 PASS / 1 manual-real SKIP，Semantic Compatibility 743 PASS，frontend 87 PASS + typecheck/lint/build，Golden 11 PASS / 1 manual-real SKIP，全部治理 Gate、compileall、diff-check 与 residual=0 通过。Real smoke 原阻塞根因是 raw adapter catalog 在正式 discovery service probe 前按合同没有 `selectable=true`，harness 现按唯一 exact available/connected model 选择后执行 compatibility probe；production discovery/authority 未变。14 个本轮早期 automation 目录经用户批准的 exact-path ACL 恢复后删除，Artifact Governance PASS。正式 COMPLETE 仍等待本轮提交的 exact-SHA CI success；M5.8.5 correctness 冻结，M5.10 NOT STARTED，M5 FINAL=false。
+
+## M5.8.6 完成记录（2026-09-03）
 
 **M5.8.6 — 主线发布与治理收口（COMPLETE）。** M0-M5 全部业务功能已在 m5/rebuild 上完成并通过正式门禁。本轮不做业务能力变更，只做：
 
@@ -63,10 +67,6 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 - 发布流程：本次仅完善 scripts/test temp lifecycle，不改冻结业务 authority；运行 fresh 全量 Gate 后白名单 staging，使用用户指定标题 M5.8.3_MCP驱动通用模型语义适配最终收口，push m5/rebuild，并只接受新 exact SHA 的 PowerBIAgent Validation completed/success。旧基线 CI 33163481580 success 不能替代。
 - 规范：`docs/specs/model_semantic_context.md`；验收计划：`docs/milestones/m5/m5_8_3_model_semantic_context_plan.md`。Provider、Report renderer/template、DAX/QueryResult/VerifiedFactSet/Memory authority 保持不变；未引入 Redis/RAG/Ontology/Vector DB，M5 FINAL=false。
 
-## 当前阶段
-
-**M5.8.3 — MCP驱动通用模型语义适配。** 实现、Real 验收和 temp lifecycle 收口；只有 fresh local/residual 与对应提交 CI success 均成立才为 COMPLETE。M5.8/M5.8.1/M5.8.2 authority 冻结，M5.9/M5.10 NOT STARTED，M5 FINAL=false。
-
 | 子版本 | 内容 | 状态 |
 |--------|------|------|
 | M4.2 series | 会话/报表恢复与 metadata authority 最终收口 | ✅ FINAL PASS |
@@ -93,8 +93,11 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 | **M5.8** | **多 LLM Provider 抽象 + DeepSeek/Kimi 最小双模型** | **✅ COMPLETE** |
 | **M5.8.1** | **前置性能加速与本地 MCP 会话复用** | **✅ COMPLETE** |
 | **M5.8.2** | **通用自然语言路由与查询形态收口** | **✅ COMPLETE** |
-| **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **验收收口；对应提交 CI success 后 COMPLETE** |
-| **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **⏳ NOT STARTED** |
+| **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **✅ COMPLETE（b86662e / CI success）** |
+| **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **✅ COMPLETE（3e3d8ac / CI success）** |
+| **M5.8.5** | **Semantic Completeness + Result Inspection + Presentation Truth** | **✅ COMPLETE；correctness frozen** |
+| **M5.8.6** | **主线发布与治理收口** | **✅ COMPLETE（e8a79c3 / CI #51 success）** |
+| **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **🚧 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ### M5.7 completed contract
@@ -489,4 +492,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-03 | M5.8.6 COMPLETE（主线发布与治理收口）；m5/rebuild 已冻结为发布追溯分支；main 是唯一活动开发线；M5.9 / M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-07 | M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.8.6 COMPLETE；m5/rebuild 冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false*

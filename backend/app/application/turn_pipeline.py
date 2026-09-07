@@ -21,6 +21,7 @@ Mock 和 DeepSeek 路径共享同一执行骨架，两者只在以下部分不�
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime
 from typing import Any, Callable, Optional
@@ -32,7 +33,9 @@ from backend.app.core.performance import (
     bind_performance_recorder,
     measure_performance,
     reset_performance_recorder,
+    record_performance_timeout,
 )
+from backend.app.core.deadline import bind_request_deadline, reset_request_deadline
 from backend.app.harness.runtime.context_builder import ContextBuilder
 from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
@@ -139,25 +142,37 @@ class TurnPipeline:
     ) -> dict[str, Any]:
         recorder = PerformanceRecorder()
         token = bind_performance_recorder(recorder)
+        deadline_token = bind_request_deadline(
+            float(self.config.request_timeout_seconds)
+        )
         try:
-            result = await self._execute_with_performance_context(
-                message=message,
-                conversation_id=conversation_id,
-                request_id=request_id,
-                semantic_model_key=semantic_model_key,
-                report_template_key=report_template_key,
-                runtime_mode=runtime_mode,
-                is_mock=is_mock,
-                llm_provider_name=llm_provider_name,
-                llm_display_name=llm_display_name,
-                llm_profile_key=llm_profile_key,
-                llm_model=llm_model,
-                llm_provider_protocol=llm_provider_protocol,
-                powerbi_provider_name=powerbi_provider_name,
-                scenario_fingerprint_hash_inputs=scenario_fingerprint_hash_inputs,
-                do_execute=do_execute,
-                **execute_kwargs,
-            )
+            try:
+                async with asyncio.timeout(
+                    float(self.config.request_timeout_seconds)
+                ):
+                    result = await self._execute_with_performance_context(
+                        message=message,
+                        conversation_id=conversation_id,
+                        request_id=request_id,
+                        semantic_model_key=semantic_model_key,
+                        report_template_key=report_template_key,
+                        runtime_mode=runtime_mode,
+                        is_mock=is_mock,
+                        llm_provider_name=llm_provider_name,
+                        llm_display_name=llm_display_name,
+                        llm_profile_key=llm_profile_key,
+                        llm_model=llm_model,
+                        llm_provider_protocol=llm_provider_protocol,
+                        powerbi_provider_name=powerbi_provider_name,
+                        scenario_fingerprint_hash_inputs=(
+                            scenario_fingerprint_hash_inputs
+                        ),
+                        do_execute=do_execute,
+                        **execute_kwargs,
+                    )
+            except TimeoutError:
+                record_performance_timeout()
+                raise
             audit = result.get("execution_audit")
             if not isinstance(audit, dict):
                 audit = {}
@@ -165,6 +180,7 @@ class TurnPipeline:
             audit["performance"] = recorder.summary()
             return result
         finally:
+            reset_request_deadline(deadline_token)
             reset_performance_recorder(token)
 
     async def _execute_with_performance_context(
@@ -285,7 +301,7 @@ class TurnPipeline:
                 existing_request_memory = await self.memory_repo.get_by_request_id(
                     effective_req_id, runtime_mode
                 )
-        except Exception:
+        except BaseException:
             await self.snapshot_store.abort(effective_req_id, runtime_mode)
             raise
         if existing_request_memory is not None:
@@ -300,10 +316,11 @@ class TurnPipeline:
 
         # Route product capabilities before Context/Memory/LLM/schema/member/DAX.
         # Business semantics remain owned by the normal grounding callback.
-        routing = QuestionRouter().route(
-            message,
-            public_model_name=llm_display_name,
-        )
+        with measure_performance("router"):
+            routing = QuestionRouter().route(
+                message,
+                public_model_name=llm_display_name,
+            )
         trace.record(
             "question_routed",
             trace_id=trace_id,
@@ -362,7 +379,7 @@ class TurnPipeline:
             # 创建 TurnController
             controller = TurnController(self.config, request_id=effective_req_id)
             controller.transition(TurnState.CONTEXT_READY)
-        except Exception:
+        except BaseException:
             await self.snapshot_store.abort(effective_req_id, runtime_mode)
             raise
 
@@ -398,7 +415,7 @@ class TurnPipeline:
                 await self._save_snapshot(result, runtime_mode, fingerprint_hash)
                 await self.snapshot_store.complete(effective_req_id, runtime_mode)
             return result
-        except Exception:
+        except BaseException:
             await self.snapshot_store.abort(effective_req_id, runtime_mode)
             raise
 

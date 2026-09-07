@@ -1,7 +1,7 @@
 # 01 — 产品范围与前端骨架
 
-> **状态：** M5.4 — 多会话并发、用户设置与资源管理最终收口已完成。
-> **当前边界：** 只收口 conversation-scoped state、provisional UUID、异会话并发、用户卡片/资源管理、report tombstone/rename；M5.5 全部 Deferred。
+> **状态：** M5.8.6 COMPLETE；React 前端、SQLite 资源生命周期、DeepSeek/Kimi 双模型目录与 Report Template Required 已实现。
+> **当前边界：** M5.9 离线实现、2h soak、Real PBIX 1/2/4 worker、全部本地 Gate 与 residual=0 已通过，等待本轮 exact-SHA CI；只处理 performance / concurrency / resilience / cloud-ready runtime。M5.8.5 correctness 冻结，M5.10 NOT STARTED，M5 FINAL=false。
 > **视觉参考：** `docs/assets/frontend/整体01.png`（已有对话与组合回答态）、`docs/assets/frontend/整体02.png`（新聊天欢迎态与菜单展开态）
 
 ---
@@ -36,10 +36,10 @@
 
 ### 2.1 技术栈
 
-- React 18+
-- Vite 构建
-- 轻量状态管理（React Context 或 zustand）
-- 简单 CSS 或轻量组件库
+- React 19 + TypeScript
+- Vite 8 构建
+- React hooks 管理 conversation-scoped state，不引入全局重型状态框架
+- 普通 CSS + 轻量图标组件
 
 ### 2.2 桌面端整体布局
 
@@ -171,7 +171,7 @@
 
 #### 报表模板
 - 映射为 chat request 的 `report_template_key`
-- 当前无独立 `/api/report-templates` 端点；继续在 `src/config.ts` 集中登记 production template catalog，当前只有 `sales_report`
+- 前端通过只读 `GET /api/v1/report-templates` 消费 backend-owned Template Registry；当前唯一公开模板为 `sales_report / 简易模板`
 - `report_template_key` 是报表请求的显式必选字段；未选择模板时不发送隐式 default，report intent 由后端返回 template-required
 - 菜单不提供“不使用模板”；未选择不等于“普通问答模式”，问答/多轮/报表仍由后端 intent 自动识别，但 report intent 缺少显式模板时必须返回 template-required，禁止自动选择默认模板
 - 当前选中项应有清晰状态
@@ -187,12 +187,12 @@
 
 - 视觉上是一个圆角 pill，显示当前选中模型名称
 - 点击 pill 打开下拉卡片
-- 卡片中只显示 **DeepSeek**
-- 单选，默认选中，有选中状态
+- 卡片通过 `GET /api/v1/llm-profiles` 显示当前可用的 **DeepSeek** 与 **Kimi K2.6**
+- 单选；选择以 public profile key 随请求发送，同一 in-flight turn 使用冻结 snapshot
 - **不展示 Mock**
 - **不展示 GPT-5.6** 或任何未真实接入模型
-- 不承诺当前多模型能力
-- 保留未来增加模型的 UI 扩展空间（如卡片底部留有"+"入口或可滚动列表结构）
+- 不自动路由、不在 Provider 失败时切换模型；unknown/stale/unavailable profile fail closed
+- 保留后端目录增加其他 OpenAI-compatible profile 的 UI 扩展空间
 
 ### 2.9 前端状态
 
@@ -225,12 +225,13 @@ ConversationSession {
 - A/B/C 可同时处理，各自完成只更新自己；active=B 时不显示 A loading/error，A 完成不切回 A。
 - 同一 conversation 有 pending request 时禁止第二次发送。切换/新建只可取消 history/navigation fetch，不取消已执行 chat。
 
-### 2.10B 设置与资源管理（M5.4）
+### 2.10B 设置与资源管理（M5.4—M5.6）
 
 - 用户卡片菜单只包含“设置”“已归档”“资源管理”，不添加套餐、支付、账户安全等假能力。
-- 资源面板分最近对话、已归档、最近报表三区；支持多选与全选当前加载范围。
-- 批量操作最多 20 项，逐个协调正式单资源 API。部分失败不得声称全部成功；成功项移除，失败项保留原因。
+- Settings 使用独立 cursor pagination 浏览 active/archived conversation 与 report，并显示 total/loaded/selected/has-more；Sidebar Recent 只做轻量 bounded projection。
+- 浏览和选择不受 20 项限制；每个 destructive execution wave 最多 20 项，逐个协调正式单资源 API。部分失败不得声称全部成功；成功项移除，失败项保留原因。
 - report 删除后展示 tombstone；rename 只修改 `display_title`，与 Sidebar/report card 同步。两者均只能由显式 UI 操作调用。
+- conversation/report 共用 Portal-based floating action menu；Settings shell/content/list/toolbar 的滚动责任彼此独立，操作区保持可达。
 
 ### 2.10 响应式原则（M5 实现）
 
@@ -267,9 +268,11 @@ ConversationSession {
 3. **M5.1：** ✅ 已创建 React + Vite + TypeScript 项目并实现核心对话页面与 API adapters
 4. **M5.2—M5.3.3：** ✅ Real 业务逻辑、presentation、多 PBIX、多轮与资源生命周期已完成
 5. **M5.4：** ✅ conversation-scoped state、异会话并发、pending Sidebar、用户卡片/设置、bounded bulk 管理、report tombstone/rename
-6. **M5.5：** Deferred，不在本轮处理语义、中文字段、单指标策略、HTML 视觉或性能
-7. **开发阶段：** 使用 Vite dev server，代理到 FastAPI 后端
-8. **契约结论：** 不新增跨 authority 统一 envelope；presentation metadata 不成为 factual authority
+6. **M5.5—M5.8.6：** ✅ Semantic correctness、Presentation/Localization/Resource UX、简易模板、DeepSeek/Kimi、前置 MCP session/cache 与 correctness governance 已完成
+7. **M5.9：** 当前阶段只处理性能测量、MCP bounded concurrency/backpressure、韧性与云就绪边界；不改变语义、DAX、事实或前端业务 UX
+8. **M5.10：** NOT STARTED；第二固定专业模板不属于本轮
+9. **开发阶段：** 使用 Vite dev server，代理到 FastAPI 后端
+10. **契约结论：** 不新增跨 authority 统一 envelope；presentation metadata 不成为 factual authority
 
 ---
 
@@ -278,29 +281,33 @@ ConversationSession {
 | 后端能力 | 当前状态 | M5 UI |
 |---------|---------|-------|
 | `POST /api/v1/chat` | ✅ 已实现 | 对话主交互 |
+| `GET /api/v1/llm-profiles` | ✅ M5.8 | 动态加载 DeepSeek/Kimi 安全公开目录 |
+| `GET /api/v1/report-templates` | ✅ M5.7.2 | 动态加载 backend-owned Template Registry；当前仅“简易模板” |
+| `GET /api/reports` | ✅ M5.4.1 | Settings 独立分页全部 active/archived reports |
 | `GET /api/reports/{report_id}` | ✅ 已实现 | 查看报表 |
 | `GET /api/reports/{report_id}/download` | ✅ 已实现 | 下载 HTML |
 | `DELETE /api/reports/{report_id}` | ✅ M5.3.3 | 独立删除并保留历史 tombstone |
 | `PATCH /api/reports/{report_id}` | ✅ M5.4 已实现 | 只修改 presentation `display_title` |
 | `GET /api/v1/conversations` | ✅ 已实现（SQLite 必填 runtime_mode） | 最近对话列表 |
+| `GET /api/v1/conversations/archived` | ✅ 已实现 | 已归档会话分页 |
 | `GET /api/v1/conversations/search` | ✅ 已实现 | 搜索聊天 |
 | `GET /api/v1/conversations/{id}/history` | ✅ 已实现 | 恢复对话历史 |
 | `GET /api/v1/conversations/{id}/reports` | ✅ 已实现（必填 source_mode） | 最近报表列表 |
 | `POST /api/v1/conversations/{id}/archive` | ✅ 已实现 | 归档对话 |
+| `POST /api/v1/conversations/{id}/restore` | ✅ 已实现 | 恢复已归档对话 |
+| `PATCH /api/v1/conversations/{id}` | ✅ 已实现 | 修改展示型标题 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 | 删除对话 |
 | `GET /api/v1/semantic-models` | ✅ M5.2 最小只读 endpoint | 动态加载 Desktop 模型与 backend runtime namespace |
-| `GET /api/report-templates` | ❌ 未实现 | `sales_report` 集中白名单配置 |
 | 统一 frontend envelope | ❌ 不存在 | M5.1 决定不新增；typed adapter 消费现有 schema |
 | Multi-turn Memory（后端） | ✅ 已实现 | 前端展示当前 turn 的 answer |
 
 ## 四、产品边界
 
-### M5.4 实现边界
+### 当前 M5.9 实现边界
 
-- 只重构前端会话状态与用户资源管理入口，以及支撑 presentation-only report title/tombstone 的最小持久化/API。
-- 不改 TurnPipeline conversation consistency；同 conversation 仍串行，不同 conversation 使用现有 namespace/idempotency/request_id 并发。
-- 不修改 factual Memory、VerifiedFactSet、ReportSpec/HTML/content hash authority，不注册资源管理 ToolGateway。
-- M5.5 所有能力不开始。
+- 只进行 request-local measurement、Local MCP worker pool / bounded queue、deadline/cancellation/backpressure、transient fault resilience 与最小 transport/repository/telemetry boundary 整理。
+- 不改前端业务能力、QuestionRouter、Grounding、Canonical QueryPlan、Deterministic DAX、QueryResult、VerifiedFactSet、Report template/renderer 或 Memory/Snapshot authority。
+- Remote MCP、Entra、PostgreSQL、Deployment 与第二模板继续 Deferred。
 
 ### 后续轮次边界
 
@@ -308,4 +315,4 @@ ConversationSession {
 
 ---
 
-*最后更新：2026-08-24 | M5.4 COMPLETE — 多会话并发与用户资源管理最终收口*
+*最后更新：2026-09-07 | M5.8.6 COMPLETE；进入 M5.9，M5.10 NOT STARTED，M5 FINAL=false*

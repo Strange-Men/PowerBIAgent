@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import sys
 import tempfile
 import time
@@ -33,18 +34,61 @@ from backend.app.schemas.data_contracts import ColumnMembersRequest, DAXRequest
 
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-display-name", required=True)
+    parser.add_argument("--model-display-name")
     parser.add_argument("--member-table")
     parser.add_argument("--member-field")
     parser.add_argument("--full-turn", action="store_true")
     parser.add_argument("--profile", default="deepseek")
+    parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--queue-capacity", type=int, default=32)
+    parser.add_argument("--dax-concurrency", default="1,4")
     return parser.parse_args()
 
 
 async def _timed(operation):
-    started_at = time.monotonic()
+    started_at = time.perf_counter_ns()
     value = await operation
-    return value, round((time.monotonic() - started_at) * 1000.0, 3)
+    return value, round((time.perf_counter_ns() - started_at) / 1_000_000.0, 3)
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    ordered = sorted(values)
+    index = max(0, math.ceil(percentile * len(ordered)) - 1)
+    return round(ordered[index], 3)
+
+
+def _select_model(
+    items: list[dict[str, Any]],
+    display_name: str | None,
+    *,
+    require_selectable: bool = True,
+) -> str:
+    selectable = [
+        item
+        for item in items
+        if (
+            item.get("selectable") is True
+            if require_selectable
+            else (
+                item.get("available") is not False
+                and item.get("connected") is not False
+            )
+        )
+    ]
+    if display_name is None:
+        matches = selectable
+    else:
+        matches = [
+            item for item in selectable
+            if item.get("display_name") == display_name
+        ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            "Desktop model selection did not resolve uniquely "
+            f"(catalog_count={len(items)}, selectable_count={len(selectable)}, "
+            f"match_count={len(matches)})"
+        )
+    return str(matches[0]["key"])
 
 
 def _safe_turn_metrics(body: dict[str, Any]) -> dict[str, Any]:
@@ -89,6 +133,8 @@ async def _full_turn_profile(args: argparse.Namespace) -> dict[str, Any]:
             presentation_localization_registry_path=str(
                 temp_root / "runtime" / "display_localizations.json"
             ),
+            powerbi_local_mcp_workers=args.workers,
+            powerbi_local_mcp_queue_capacity=args.queue_capacity,
         )
         app = create_app(settings=settings)
         async with app.router.lifespan_context(app):
@@ -97,15 +143,12 @@ async def _full_turn_profile(args: argparse.Namespace) -> dict[str, Any]:
                 bootstrap_at = time.monotonic()
                 discovery = await client.get("/api/v1/semantic-models")
                 bootstrap_ms = round((time.monotonic() - bootstrap_at) * 1000.0, 3)
-                matches = [
-                    item
-                    for item in discovery.json().get("items", [])
-                    if item.get("selectable") is True
-                    and item.get("display_name") == args.model_display_name
-                ]
-                if discovery.status_code != 200 or len(matches) != 1:
-                    raise RuntimeError("requested Desktop display name did not resolve uniquely")
-                model_key = matches[0]["key"]
+                if discovery.status_code != 200:
+                    raise RuntimeError("Desktop discovery failed")
+                model_key = _select_model(
+                    discovery.json().get("items", []),
+                    args.model_display_name,
+                )
 
                 async def post(label: str, message: str) -> dict[str, Any]:
                     response = await client.post(
@@ -186,7 +229,33 @@ async def _main() -> None:
     if bool(args.member_table) != bool(args.member_field):
         raise SystemExit("--member-table and --member-field must be supplied together")
 
-    adapter = LocalMCPPowerBIAdapter(max_retries=0)
+    if args.workers <= 0 or args.queue_capacity < args.workers:
+        raise SystemExit("workers must be positive and no larger than queue capacity")
+    concurrency_levels = [int(item) for item in args.dax_concurrency.split(",")]
+    if not concurrency_levels or any(item <= 0 for item in concurrency_levels):
+        raise SystemExit("--dax-concurrency must contain positive integers")
+
+    from backend.app.config.settings import Settings
+
+    runtime_settings = Settings()
+    adapter = LocalMCPPowerBIAdapter(
+        executable=runtime_settings.powerbi_local_mcp_executable,
+        package=runtime_settings.powerbi_local_mcp_package,
+        semantic_model_key=(
+            runtime_settings.powerbi_local_semantic_model_key
+        ),
+        readonly=runtime_settings.powerbi_local_mcp_readonly,
+        timeout=float(runtime_settings.request_timeout_seconds),
+        max_retries=0,
+        worker_count=args.workers,
+        max_pending_operations=args.queue_capacity,
+        max_operations_per_request=(
+            runtime_settings.powerbi_local_mcp_per_request_limit
+        ),
+        admission_timeout_seconds=(
+            runtime_settings.powerbi_local_mcp_admission_timeout_seconds
+        ),
+    )
     recorder = PerformanceRecorder()
     token = bind_performance_recorder(recorder)
     output: dict[str, object] = {}
@@ -194,20 +263,33 @@ async def _main() -> None:
         catalog, output["discovery_cold_ms"] = await _timed(
             adapter.discover_semantic_models()
         )
-        matches = [
-            item for item in catalog.items
-            if item.display_name == args.model_display_name
+        catalog_items = [
+            {
+                "key": item.key,
+                "display_name": item.display_name,
+                "available": item.available,
+                "connected": item.connected,
+                "selectable": item.selectable,
+            }
+            for item in catalog.items
         ]
-        if len(matches) != 1:
-            raise SystemExit("requested Desktop display name did not resolve uniquely")
-        model_key = matches[0].key
+        model_key = _select_model(
+            catalog_items,
+            args.model_display_name,
+            require_selectable=False,
+        )
 
         _, output["discovery_warm_ms"] = await _timed(
             adapter.discover_semantic_models()
         )
-        _, output["probe_cold_ms"] = await _timed(
+        probe, output["probe_cold_ms"] = await _timed(
             adapter.probe_compatibility(model_key)
         )
+        if not probe.compatible:
+            raise RuntimeError(
+                "Desktop compatibility probe failed "
+                f"(error_type={probe.error_type or 'unknown'})"
+            )
         _, output["probe_warm_ms"] = await _timed(
             adapter.probe_compatibility(model_key)
         )
@@ -241,25 +323,75 @@ async def _main() -> None:
         _, output["dax_first_ms"] = await _timed(adapter.execute_dax(dax_request))
         _, output["dax_second_ms"] = await _timed(adapter.execute_dax(dax_request))
 
-        started_at = time.monotonic()
+        async def dax_batch(concurrency: int) -> dict[str, Any]:
+            async def one() -> tuple[float, dict[str, object]]:
+                request_recorder = PerformanceRecorder()
+                request_token = bind_performance_recorder(request_recorder)
+                try:
+                    _, latency_ms = await _timed(adapter.execute_dax(dax_request))
+                    return latency_ms, request_recorder.summary()
+                finally:
+                    reset_performance_recorder(request_token)
+
+            batch_started_at = time.perf_counter_ns()
+            results = await asyncio.gather(*(one() for _ in range(concurrency)))
+            wall_ms = (
+                time.perf_counter_ns() - batch_started_at
+            ) / 1_000_000.0
+            latencies = [item[0] for item in results]
+            summaries = [item[1] for item in results]
+            return {
+                "concurrency": concurrency,
+                "wall_ms": round(wall_ms, 3),
+                "throughput_per_second": round(
+                    concurrency / (max(wall_ms, 0.001) / 1000.0),
+                    3,
+                ),
+                "p50_ms": _percentile(latencies, 0.50),
+                "p95_ms": _percentile(latencies, 0.95),
+                "p99_ms": _percentile(latencies, 0.99),
+                "queue_wait_p95_ms": _percentile(
+                    [float(item["queue_wait_ms"]) for item in summaries],
+                    0.95,
+                ),
+                "worker_ids": sorted({
+                    worker_id
+                    for item in summaries
+                    for worker_id in item["worker_ids"]
+                }),
+                "errors": 0,
+            }
+
+        output["dax_concurrency"] = [
+            await dax_batch(level) for level in concurrency_levels
+        ]
+
+        started_at = time.perf_counter_ns()
         await asyncio.gather(*(
             adapter.get_semantic_model_schema(model_key)
             for _ in range(8)
         ))
         output["concurrent_schema_8_ms"] = round(
-            (time.monotonic() - started_at) * 1000.0,
+            (time.perf_counter_ns() - started_at) / 1_000_000.0,
             3,
         )
+        output["worker_count"] = args.workers
         output["performance"] = recorder.summary()
         if args.full_turn:
             # End the metadata-only session before booting the formal app so
             # the run still proves one application-owned MCP worker at a time.
             await adapter.aclose()
             output["full_turn"] = await _full_turn_profile(args)
-        print(json.dumps(output, ensure_ascii=False, indent=2))
     finally:
         reset_performance_recorder(token)
         await adapter.aclose()
+    output["lifecycle"] = adapter.runtime_lifecycle_snapshot()
+    output["session_close_verified"] = (
+        output["lifecycle"] is not None
+        and output["lifecycle"]["session_residual"] == 0
+        and output["lifecycle"]["active_workers"] == 0
+    )
+    print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

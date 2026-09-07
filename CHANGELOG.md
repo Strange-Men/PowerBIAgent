@@ -2,6 +2,18 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.9] — 2026-09-07（LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING）
+
+- **M5.8.6 遗留文档收口：** 长期入口文档的 current-state 已与 main 代码、实际 API/registry 和 exact-SHA CI 证据对齐；历史章节保留当时语境。
+- **当前开发边界：** 本轮只实施 performance measurement、Local MCP bounded worker pool/backpressure、bounded transient resilience、lifecycle 与 cloud-ready transport/storage/telemetry boundary；M5.8.5 Semantic/DAX/VerifiedFactSet authority 保持冻结。
+- **离线验收：** 1/2/4/8 worker 的 100-way fixture 均 100% 成功且 session residual=0；默认 2 worker/queue 32 对 1/4/20/50 全成功，对 100-way 产生 bounded controlled overload；4 worker/queue 8 强制过载只产生 `local_mcp_overloaded`。2h soak 完成 465,800 operations、0 errors、64.694/s、session residual=0。
+- **韧性与 authority：** request-local deadline 覆盖执行和 retry backoff；LLM 429/500/503/connection reset、MCP timeout/process exit、cancellation、worker rebuild、shutdown、stale identity 与 exactly-once Memory/Snapshot/Report 回归通过。报表只并发已验证独立 query，恢复原 plan 顺序，QueryResult/VerifiedFactSet authority 不变。
+- **Real Local MCP：** 修复只影响 smoke harness 的选择逻辑：raw adapter catalog 在正式 discovery service probe 前本来就没有 `selectable=true`，harness 现先按 exact display name 选择唯一 available/connected raw model，再执行 compatibility probe，未修改 production discovery 或 authority。Rich PBIX 的 4-way DAX：1/2/4 workers 分别为 8.135s / 6.346s / 5.700s、0.492 / 0.630 / 0.702 operations/s；queue wait p95 为 6172 / 2547 / 0ms，errors=0；真实 session 创建/关闭为 1/1、2/2、4/4，residual=0。默认 2 workers 基于收益与 Desktop process 成本的平衡，不采用“越多越快”。
+- **Fresh gates：** Semantic Compatibility 743 PASS；backend 2425 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 87 PASS + typecheck/lint/build；Repository Safety 361、Architecture 133、Error Ledger 59、Documentation、Artifact Governance、compileall、diff-check PASS。14 个早期 M5.9 automation 目录经用户批准的最小管理员权限按 exact path 恢复 ACL 并删除，未触及其他 local_state；residual=0。全部本地条件已闭合，正式 COMPLETE 仅等待本轮提交的 exact-SHA CI success。
+- Remote MCP 正式实现、Entra、PostgreSQL 迁移、Deployment 与 M5.10 继续 Deferred；M5 FINAL=false。
+
+**Settings.version:** M5.9
+
 ## [M5.8.6] — 2026-09-03（COMPLETE）
 
 - **主线合并与项目治理最终收口：** 版本升级 M5.8.5 → M5.8.6。Settings.version、AGENTS.md、README.md、CHANGELOG、docs/07/08/09/index、ADR 索引等固化文件全面同步为 M5.8.6 当前状态。

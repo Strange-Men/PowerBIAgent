@@ -22,7 +22,7 @@
 → React 极简对话页面
 → FastAPI 后端
 → 确定性 TurnPipeline（Intent → Grounding → Canonical QueryPlan → Deterministic DAX → VerifiedFactSet）
-→ DeepSeek（受控语言理解与结构化草稿；不拥有 Real DAX/Fact authority）
+→ DeepSeek / Kimi K2.6（共享 OpenAI-compatible Provider；受控语言理解与结构化草稿；不拥有 Real DAX/Fact authority）
 → Power BI MCP
 → Power BI 语义模型
 → 数据问答或固定模板静态 HTML 报表
@@ -41,7 +41,7 @@
 
 - 仅使用 React + Vite
 - 类似 GPT 网页版的极简白色对话页面
-- 正式前端开发等待后端核心链路跑通后启动
+- React + Vite 正式前端已实现；继续保持极简对话、backend-owned catalog 与动态 verified presentation 边界
 
 ## 六、后端固定方向
 
@@ -148,4 +148,4 @@
 
 ---
 
-*最后更新：2026-09-03 | M5.8.6 主线发布与治理收口；支持 DeepSeek + Kimi K2.6 双模型*
+*最后更新：2026-09-07 | M5.9 已进入性能/并发/韧性实施；M5.8.6 COMPLETE；支持 DeepSeek + Kimi K2.6 双模型*

@@ -8,7 +8,7 @@ from enum import Enum
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M5.8.6", frozen=True)
+    version: str = Field(default="M5.9", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
@@ -112,9 +112,37 @@ class Settings(BaseSettings):
     max_tool_calls: int = Field(default=8, ge=1)
     max_dax_repairs: int = Field(default=1, ge=0)
     max_llm_format_retries: int = Field(default=1, ge=0)
+    llm_max_attempts: int = Field(default=3, ge=1, le=4)
+    llm_retry_base_seconds: float = Field(default=0.25, ge=0, le=10)
+    llm_retry_max_seconds: float = Field(default=2.0, ge=0, le=30)
+    llm_retry_jitter_ratio: float = Field(default=0.2, ge=0, le=1)
     max_powerbi_retries: int = Field(default=1, ge=0)
     max_query_rows: int = Field(default=1000, ge=1)
     max_user_input_length: int = Field(default=2000, ge=1)
+    powerbi_local_mcp_workers: int = Field(default=2, ge=1, le=8)
+    powerbi_local_mcp_queue_capacity: int = Field(default=32, ge=1, le=1024)
+    powerbi_local_mcp_per_request_limit: int = Field(default=2, ge=1, le=8)
+    powerbi_local_mcp_admission_timeout_seconds: float = Field(
+        default=0.5, gt=0, le=30
+    )
+    report_query_concurrency: int = Field(default=2, ge=1, le=8)
+
+    @model_validator(mode="after")
+    def validate_runtime_bounds(self) -> "Settings":
+        if self.powerbi_local_mcp_workers > self.powerbi_local_mcp_queue_capacity:
+            raise ValueError(
+                "powerbi_local_mcp_workers cannot exceed queue capacity"
+            )
+        if (
+            self.powerbi_local_mcp_per_request_limit
+            > self.powerbi_local_mcp_queue_capacity
+        ):
+            raise ValueError(
+                "powerbi_local_mcp_per_request_limit cannot exceed queue capacity"
+            )
+        if self.llm_retry_base_seconds > self.llm_retry_max_seconds:
+            raise ValueError("LLM retry base cannot exceed retry maximum")
+        return self
 
     # ── 只读属性 ──────────────────────────────
 
@@ -269,6 +297,18 @@ class Settings(BaseSettings):
             "kimi_configured": self.is_kimi_configured,
             "powerbi_local_mcp_configured": self.is_powerbi_local_mcp_configured,
             "powerbi_local_mcp_readonly": self.powerbi_local_mcp_readonly,
+            "powerbi_local_mcp_workers": self.powerbi_local_mcp_workers,
+            "powerbi_local_mcp_queue_capacity": (
+                self.powerbi_local_mcp_queue_capacity
+            ),
+            "powerbi_local_mcp_per_request_limit": (
+                self.powerbi_local_mcp_per_request_limit
+            ),
+            "powerbi_local_mcp_admission_timeout_seconds": (
+                self.powerbi_local_mcp_admission_timeout_seconds
+            ),
+            "report_query_concurrency": self.report_query_concurrency,
+            "llm_max_attempts": self.llm_max_attempts,
             "persistence_backend": self.persistence_backend.value,
             "max_tool_calls": self.max_tool_calls,
             "local_real_configuration_complete": (

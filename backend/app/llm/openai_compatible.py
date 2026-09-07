@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import random
 import re
 
 import httpx
@@ -24,6 +26,14 @@ from backend.app.llm.base import (
     LLMValidationError,
 )
 from backend.app.llm.profiles import LLMModelProfile, LLMProviderProtocol
+from backend.app.core.deadline import (
+    bounded_timeout_seconds,
+    sleep_with_request_deadline,
+)
+from backend.app.core.performance import (
+    record_performance_retry,
+    record_performance_timeout,
+)
 
 
 _JSON_FENCE = re.compile(
@@ -59,6 +69,10 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         profile: LLMModelProfile,
         api_key: SecretStr | str,
         client: httpx.AsyncClient | None = None,
+        max_attempts: int = 1,
+        base_backoff_seconds: float = 0.25,
+        max_backoff_seconds: float = 2.0,
+        jitter_ratio: float = 0.2,
     ) -> None:
         if profile.provider_protocol != LLMProviderProtocol.OPENAI_CHAT_COMPLETIONS:
             raise LLMConfigurationError(
@@ -79,6 +93,16 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         self._client = client
         self._owns_client = client is None
         self._owned_client: httpx.AsyncClient | None = None
+        if not 1 <= max_attempts <= 4:
+            raise ValueError("LLM max_attempts must be between 1 and 4")
+        if base_backoff_seconds < 0 or max_backoff_seconds < 0:
+            raise ValueError("LLM retry backoff cannot be negative")
+        if not 0 <= jitter_ratio <= 1:
+            raise ValueError("LLM retry jitter_ratio must be between 0 and 1")
+        self._max_attempts = max_attempts
+        self._base_backoff_seconds = base_backoff_seconds
+        self._max_backoff_seconds = max_backoff_seconds
+        self._jitter_ratio = jitter_ratio
 
     @staticmethod
     def _validate_base_url(profile: LLMModelProfile) -> None:
@@ -208,7 +232,59 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             "Content-Type": "application/json",
         }
 
-    async def generate(self, request: LLMRequest, output_type: type[BaseModel]) -> LLMResponse:
+    async def generate(
+        self,
+        request: LLMRequest,
+        output_type: type[BaseModel],
+    ) -> LLMResponse:
+        """Execute one bounded, deadline-aware idempotent generation request."""
+        for attempt in range(self._max_attempts):
+            failure: LLMProviderError
+            try:
+                async with asyncio.timeout(
+                    bounded_timeout_seconds(self._profile.timeout_seconds)
+                ):
+                    return await self._generate_once(request, output_type)
+            except TimeoutError as exc:
+                failure = LLMTimeoutError(
+                    f"{self._profile.display_name} 请求超时",
+                    provider=self.provider_name,
+                    retryable=True,
+                    error_code="request_deadline_timeout",
+                )
+                failure.__cause__ = exc
+            except LLMProviderError as exc:
+                failure = exc
+
+            if isinstance(failure, LLMTimeoutError):
+                record_performance_timeout()
+            if not failure.retryable or attempt + 1 >= self._max_attempts:
+                raise failure
+
+            record_performance_retry()
+            base_delay = min(
+                self._max_backoff_seconds,
+                self._base_backoff_seconds * (2 ** attempt),
+            )
+            jitter = base_delay * self._jitter_ratio * random.random()
+            try:
+                await sleep_with_request_deadline(base_delay + jitter)
+            except TimeoutError as exc:
+                record_performance_timeout()
+                raise LLMTimeoutError(
+                    f"{self._profile.display_name} 请求超时",
+                    provider=self.provider_name,
+                    retryable=True,
+                    error_code="request_deadline_timeout",
+                ) from exc
+
+        raise AssertionError("bounded LLM retry loop exhausted unexpectedly")
+
+    async def _generate_once(
+        self,
+        request: LLMRequest,
+        output_type: type[BaseModel],
+    ) -> LLMResponse:
         self._validate_request(request)
         try:
             response = await self._get_client().post(

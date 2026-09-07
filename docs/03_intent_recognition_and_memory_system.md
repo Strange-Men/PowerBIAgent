@@ -1,7 +1,7 @@
 # 03 — 意图识别与记忆系统
 
-> **状态：** M2.6.4；Intent 仍保留，canonical semantics 由 ADR-008 Grounding/StateTransition 决定
-> **关联 ADR：** ADR-002、ADR-005、ADR-008、ADR-009（ADR-001 已 superseded）
+> **状态：** M5.8.6 COMPLETE；Intent/QuestionRouter 只提供能力分类与语言 weak signal，canonical semantics 由 ADR-008/014—016 的 Grounding、StateTransition 与 completeness gates 决定。
+> **关联 ADR：** ADR-002、ADR-005、ADR-008、ADR-009、ADR-012—ADR-016（ADR-001 已 superseded）
 
 ---
 
@@ -11,7 +11,7 @@
 
 Agent 在接收用户输入后，先完成可独立测试的 IntentSpec。Intent 只负责分类与语言 weak signal，不拥有 Measure、Dimension、Filter Field、runtime Member、TimeRange 或其他 canonical business semantics；这些槽位只能由 ADR-008 的 Grounding/StateTransition 确定。
 
-### 1.2 固定四类基础意图
+### 1.2 基础 Intent 与当前 Question Router
 
 | 意图 | 枚举值 | 说明 | 后续动作 |
 |------|--------|------|---------|
@@ -19,6 +19,8 @@ Agent 在接收用户输入后，先完成可独立测试的 IntentSpec。Intent
 | 报表生成 | `report_generation` | 用户请求报表输出 | 先经过同一 Grounding/Fact boundary；正式模板渲染属于 M3 |
 | 澄清 | `clarification` | 信息不足，需要向用户确认 | authoritative incomplete grounding 可更新非提交 PendingClarificationContext；不执行查询、不提交正式 Memory |
 | 拒绝 | `unsupported` | 明确破坏性、越权或产品范围外请求 | 确定性 early-stop；data-shaped 请求不得仅凭 LLM 判定绕过 Grounding |
+
+M5.8.2 在 Intent 之后、Semantic Grounding 之前加入 code-owned Question Router。它区分业务查询、报表、产品帮助、公开模型信息、安全基础算术与 unsupported general request；非业务 turn 保持 ZERO schema/member/DAX/semantic Memory mutation。业务 turn 只由领域无关 Query Shape（SCALAR、ENTITY_LIST、GROUPED、RANKING、MEMBER_SET、FILTERED_AGGREGATION、TREND、BOUNDED_TREND）声明 required slots，不能选择 canonical 对象或事实。
 
 ### 1.3 IntentSpec 完整 Pydantic 模型
 
@@ -70,10 +72,10 @@ class IntentSpec(BaseModel):
 - `backend/app/query_plan/` — 历史 DeepSeek QueryPlan 草稿兼容 + 当前 Business Semantic Catalog、Grounding、StateTransition 与 Canonical QueryPlan authority
 - `backend/app/dax/` — 历史 DeepSeekDAXService（Mock compatibility）+ 当前 Real Deterministic DAX / Independent Layer 3；Real DAX LLM authority=0
 
-### 1.6 M1.2 真实意图识别
+### 1.6 M1.2 历史意图实现与当前 Provider 状态
 
-**DeepSeekIntentService：**
-- 复用 `DeepSeekLLMProvider`，禁止绕过 Provider 直接请求
+**历史 `DeepSeekIntentService` 职责边界继续有效：**
+- 当前真实路径复用唯一 `OpenAICompatibleLLMProvider` 与 request-scoped immutable `LLMModelProfile`，支持 DeepSeek / Kimi K2.6，禁止绕过 Provider 直接请求
 - `provider.is_mock=True` 时明确失败，禁止 Mock 回退
 - 支持四类意图：data_question、report_generation、clarification、unsupported
 - 最多一次格式修复（仅 `invalid_content_json` 和 `output_schema_invalid` 允许修复）
@@ -102,7 +104,7 @@ class IntentSpec(BaseModel):
 - `DeepSeekIntentService` 不使用 `MockScenarioResolver`
 - 真实模式不调用 Mock Provider
 - Mock 模式继续完整可用（通过 `MockScenarioResolver`）
-- `/api/v1/chat` 已支持 Mock+Mock、DeepSeek+Mock 与 DeepSeek+Local MCP + Power BI Desktop；三种模式共用正式 TurnPipeline，Remote MCP 仍 Deferred
+- `/api/v1/chat` 已支持 Mock+Mock、DeepSeek/Kimi+Mock 与 DeepSeek/Kimi+Local MCP + Power BI Desktop；所有模式共用正式 TurnPipeline，Remote MCP 仍 Deferred
 - Real 路径在 Intent 后进入 runtime schema / Catalog Grounding；Real DAX 与 factual Answer/ReportSpec 不由 Intent LLM 或 QueryPlan LLM 决定
 
 ---
@@ -117,9 +119,9 @@ class IntentSpec(BaseModel):
 
 | 层级 | 名称 | 说明 | 生命周期 |
 |------|------|------|---------|
-| L1 | 原始对话记忆 | 完整消息历史（用户 + 系统） | 不可变，append-only |
+| L1 | 展示型 transcript | terminal Snapshot 保存实际 user message 与 presentation 引用；不伪造未持久化系统消息 | 按 request_id 持久化 |
 | L2 | 结构化工作记忆 | 当前分析上下文（指标、维度、时间等） | pending/committed/failed |
-| L3 | 滚动摘要 | 长对话的压缩摘要 | 定期更新 |
+| L3 | 滚动摘要 | 设计保留，当前未作为业务 authority 或已实现能力宣称 | Deferred |
 | L4 | 查询产物记忆 | QueryPlan、DAX、Result、ReportSpec | 按 request_id 关联 |
 
 ### 2.3 结构化工作记忆字段
@@ -252,8 +254,10 @@ class IntentSpec(BaseModel):
 - ADR-008 的 Grounding/StateTransition 是 canonical semantic slot authority；Intent 和历史 QueryPlan LLM 不能直接写入正式状态。
 - PendingClarificationContext 与 committed Memory 分离；歧义、未解析、unsupported capability 或任一下游失败均不得污染 last successful state。
 - ADR-009 要求 DAX、Layer 3、QueryResult、VerifiedFactSet 与 factual output 全部成功后才允许 commit。
-- 当前 Repository / Snapshot 为单进程实现；SQLite 或其他持久化介质、滚动摘要与长对话管理属于 M4，不在 M2 内扩展。
+- Memory/Snapshot/Conversation/Report metadata 已提供 InMemory 与 SQLite Repository 实现；SQLite 支持重启恢复、history/search/archive/restore/delete、terminal Snapshot replay 与 durable delete intent。Repository 仍只是 persistence provider，不是 semantic/factual authority。
+- M5.8.5 已在 Grounding 后、StateTransition 后和 QueryResult→VerifiedFactSet 前分别加入 Semantic Obligation Coverage、Canonical Shape Completeness 与 Result Semantic Inspection；失败不得由 Answer/Presentation 修复，也不得提交 Memory。
+- M5.9 只允许优化 request-local measurement、MCP bounded concurrency/backpressure、deadline/cancellation 与 transient fault runtime；不得改变上述状态与提交边界。
 
 ---
 
-*最后更新：2026-08-14 | M2.6.4 Intent weak signal、Pending/Committed 与 successful commit 边界校准*
+*最后更新：2026-09-07 | M5.8.6 current-state 收口；进入 M5.9，correctness/Memory authority 冻结*

@@ -1,7 +1,7 @@
 # 02 — 技术选型与系统架构
 
-> **状态：** M5.8.6 — M0-M5 主线发布与治理收口（COMPLETE）。main 是唯一活动开发线。
-> **当前版本：** M5.8.6
+> **状态：** M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING）。离线、2h soak、Real PBIX 1/2/4 worker、full gates 与 residual=0 已通过。M5.8.6 COMPLETE；main 是唯一活动开发线。
+> **当前版本：** M5.9
 > **关联 ADR：** ADR-001（已废弃）、ADR-002—ADR-016；当前以 ADR-005—ADR-016 为准
 
 ---

@@ -40,6 +40,12 @@ from backend.app.harness.observability.llm_observer import (
     LLMCallCollector,
     ObservedLLMProvider,
 )
+from backend.app.core.performance import (
+    PerformanceRecorder,
+    bind_performance_recorder,
+    reset_performance_recorder,
+)
+from backend.app.core.deadline import bind_request_deadline, reset_request_deadline
 
 
 class _StructuredResult(BaseModel):
@@ -225,6 +231,120 @@ async def test_timeout_and_invalid_response_fail_closed() -> None:
     )
     with pytest.raises(LLMResponseError):
         await malformed.generate(_request(), _StructuredResult)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transient_status", [429, 500, 503])
+async def test_bounded_retry_recovers_transient_http_errors(
+    transient_status: int,
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            return httpx.Response(transient_status, json={"error": {}})
+        return _response({"status": "ok", "value": 42}, model="deepseek-chat")
+
+    provider = OpenAICompatibleLLMProvider(
+        profile=_profile("deepseek", "deepseek-chat"),
+        api_key="unit-secret",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        max_attempts=3,
+        base_backoff_seconds=0,
+        jitter_ratio=0,
+    )
+
+    recorder = PerformanceRecorder()
+    token = bind_performance_recorder(recorder)
+    try:
+        result = await provider.generate(_request(), _StructuredResult)
+    finally:
+        reset_performance_recorder(token)
+    assert result.structured == _StructuredResult(status="ok", value=42)
+    assert attempts == 3
+    assert recorder.summary()["retry_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_malformed_provider_response_is_never_retried() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(200, content=b"not-json")
+
+    provider = OpenAICompatibleLLMProvider(
+        profile=_profile("deepseek", "deepseek-chat"),
+        api_key="unit-secret",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        max_attempts=3,
+        base_backoff_seconds=0,
+        jitter_ratio=0,
+    )
+    with pytest.raises(LLMResponseError):
+        await provider.generate(_request(), _StructuredResult)
+    assert attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_connection_reset_retry_keeps_exact_profile_and_model() -> None:
+    attempts = 0
+    models: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        models.append(json.loads(request.content)["model"])
+        if attempts == 1:
+            raise httpx.ReadError("connection reset", request=request)
+        return _response({"status": "ok", "value": 7}, model="azure/Kimi-K2.6")
+
+    provider = OpenAICompatibleLLMProvider(
+        profile=_profile("kimi-k2.6", "azure/Kimi-K2.6"),
+        api_key="unit-secret",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        max_attempts=2,
+        base_backoff_seconds=0,
+        jitter_ratio=0,
+    )
+    result = await provider.generate(_request(), _StructuredResult)
+    assert result.structured == _StructuredResult(status="ok", value=7)
+    assert models == ["azure/Kimi-K2.6", "azure/Kimi-K2.6"]
+
+
+@pytest.mark.asyncio
+async def test_retry_backoff_cannot_outlive_request_deadline() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(503, json={"error": {}})
+
+    provider = OpenAICompatibleLLMProvider(
+        profile=_profile("deepseek", "deepseek-chat"),
+        api_key="unit-secret",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        max_attempts=3,
+        base_backoff_seconds=1.0,
+        jitter_ratio=0,
+    )
+    recorder = PerformanceRecorder()
+    performance_token = bind_performance_recorder(recorder)
+    deadline_token = bind_request_deadline(0.01)
+    try:
+        with pytest.raises(LLMTimeoutError) as exc_info:
+            await provider.generate(_request(), _StructuredResult)
+    finally:
+        reset_request_deadline(deadline_token)
+        reset_performance_recorder(performance_token)
+    assert exc_info.value.error_code == "request_deadline_timeout"
+    assert attempts == 1
+    assert recorder.summary()["retry_count"] == 1
+    assert recorder.summary()["timeout_count"] == 1
 
 
 def test_registry_requires_explicit_key_and_has_no_mutable_default() -> None:

@@ -76,6 +76,10 @@ def build_llm_registry(
             profile=deepseek_profile,
             api_key=settings.deepseek_api_key,  # type: ignore[arg-type]
             client=client,
+            max_attempts=settings.llm_max_attempts,
+            base_backoff_seconds=settings.llm_retry_base_seconds,
+            max_backoff_seconds=settings.llm_retry_max_seconds,
+            jitter_ratio=settings.llm_retry_jitter_ratio,
         ) if settings.is_deepseek_configured else None,
         unavailable_reason=None if settings.is_deepseek_configured else "api_key_missing",
     )
@@ -95,6 +99,10 @@ def build_llm_registry(
             profile=kimi_profile,
             api_key=settings.kimi_api_key,  # type: ignore[arg-type]
             client=client,
+            max_attempts=settings.llm_max_attempts,
+            base_backoff_seconds=settings.llm_retry_base_seconds,
+            max_backoff_seconds=settings.llm_retry_max_seconds,
+            jitter_ratio=settings.llm_retry_jitter_ratio,
         ) if settings.is_kimi_configured else None,
         unavailable_reason=None if settings.is_kimi_configured else "configuration_missing",
     )

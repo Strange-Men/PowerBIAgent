@@ -115,6 +115,7 @@ from backend.app.dax.builder import DAXBuildError, DeterministicDAXBuilder
 from backend.app.dax.safety import DAXSafetyValidator
 from backend.app.answer.deepseek_service import DeepSeekAnswerService
 from backend.app.core.performance import measure_performance
+from backend.app.core.async_runtime import bounded_gather_ordered
 from backend.app.facts import (
     FactBoundedAnswerBuilder,
     FactBoundedReportBuilder,
@@ -765,21 +766,22 @@ class LLMTurnService:
             )
 
         if intent.intent == IntentType.REPORT_GENERATION and not self.powerbi.is_mock:
-            return await self._execute_sales_report_turn(
-                message=message,
-                memory=memory,
-                intent=intent,
-                schema=schema,
-                template_key=template_grounding.canonical_key or "",
-                effective_req_id=effective_req_id,
-                effective_conv_id=effective_conv_id,
-                runtime_mode=runtime_mode,
-                controller=controller,
-                trace=trace,
-                trace_id=trace_id,
-                collector=collector,
-                observed_provider=observed,
-            )
+            with measure_performance("report_pipeline"):
+                return await self._execute_sales_report_turn(
+                    message=message,
+                    memory=memory,
+                    intent=intent,
+                    schema=schema,
+                    template_key=template_grounding.canonical_key or "",
+                    effective_req_id=effective_req_id,
+                    effective_conv_id=effective_conv_id,
+                    runtime_mode=runtime_mode,
+                    controller=controller,
+                    trace=trace,
+                    trace_id=trace_id,
+                    collector=collector,
+                    observed_provider=observed,
+                )
 
         # ── 8.1 Business Semantic Grounding ──
         # QueryPlan LLM 在此仅是语言草稿；canonical semantic slots 只能由
@@ -1416,11 +1418,12 @@ class LLMTurnService:
 
         if not self.powerbi.is_mock:
             try:
-                inspection = ResultSemanticInspectionGate().inspect(
-                    query_plan,
-                    query_result,
-                    dax_semantic_verified=True,
-                )
+                with measure_performance("result_inspection"):
+                    inspection = ResultSemanticInspectionGate().inspect(
+                        query_plan,
+                        query_result,
+                        dax_semantic_verified=True,
+                    )
                 semantic_audit["result_semantic_inspection"] = (
                     inspection.model_dump(mode="json")
                 )
@@ -1974,14 +1977,24 @@ class LLMTurnService:
         )
         query_results: dict[str, QueryResult] = {}
         try:
-            for query in report_plan.data_plan.queries:
-                result: QueryResult = await self.tool_gateway.execute(
+            async def _execute_report_query(query: Any) -> QueryResult:
+                return await self.tool_gateway.execute(
                     TOOL_NAME_DAX,
                     exec_ctx,
                     dax_requests[query.requirement_key],
                     trace=trace,
                     controller=controller,
                 )
+
+            ordered_results = await bounded_gather_ordered(
+                report_plan.data_plan.queries,
+                _execute_report_query,
+                max_concurrency=self.settings.report_query_concurrency,
+            )
+            for query, result in zip(
+                report_plan.data_plan.queries,
+                ordered_results,
+            ):
                 if result.error is not None:
                     return await self._fail_result(
                         memory,
@@ -2027,11 +2040,12 @@ class LLMTurnService:
                     raise SalesReportAssemblyError(
                         "sales_report_query_result_validation_failed"
                     )
-                ResultSemanticInspectionGate().inspect(
-                    query.query_plan,
-                    result,
-                    dax_semantic_verified=True,
-                )
+                with measure_performance("result_inspection"):
+                    ResultSemanticInspectionGate().inspect(
+                        query.query_plan,
+                        result,
+                        dax_semantic_verified=True,
+                    )
                 fact_sets[query.requirement_key] = VerifiedFactSetBuilder().build(
                     query.query_plan,
                     result,

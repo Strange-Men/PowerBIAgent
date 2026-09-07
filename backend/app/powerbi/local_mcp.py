@@ -18,6 +18,7 @@ import secrets
 import shutil
 import tempfile
 import time
+import weakref
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from enum import Enum
@@ -29,11 +30,21 @@ from mcp.shared.exceptions import MCPError
 from pydantic import ValidationError
 
 from backend.app.core.async_runtime import AsyncSingleFlight, BoundedTTLCache
+from backend.app.core.deadline import (
+    bind_request_deadline_value,
+    bounded_timeout_seconds,
+    current_request_deadline,
+    remaining_request_seconds,
+    reset_request_deadline,
+    sleep_with_request_deadline,
+)
 from backend.app.core.performance import (
     PerformanceRecorder,
     bind_performance_recorder,
     current_performance_recorder,
     measure_performance,
+    record_performance_retry,
+    record_performance_timeout,
     reset_performance_recorder,
 )
 from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
@@ -299,6 +310,9 @@ class _LocalMCPSessionWorkItem:
     ]
     future: asyncio.Future[Any]
     recorder: PerformanceRecorder | None
+    enqueued_at: float
+    queue_depth: int
+    request_deadline: float | None
 
 
 _SESSION_STOP = object()
@@ -315,6 +329,9 @@ class PowerBILocalMCPClient:
         readonly: bool = True,
         timeout_seconds: float = 120.0,
         max_pending_operations: int = 8,
+        worker_count: int = 1,
+        admission_timeout_seconds: float = 1.0,
+        max_operations_per_request: int = 2,
     ) -> None:
         if not executable.strip() or not package.strip():
             raise ValueError("Local MCP executable and package are required")
@@ -324,22 +341,50 @@ class PowerBILocalMCPClient:
             raise ValueError("Local MCP timeout must be positive")
         if max_pending_operations <= 0:
             raise ValueError("Local MCP pending operation bound must be positive")
+        if worker_count <= 0:
+            raise ValueError("Local MCP worker count must be positive")
+        if worker_count > max_pending_operations:
+            raise ValueError("Local MCP worker count cannot exceed pending bound")
+        if admission_timeout_seconds <= 0:
+            raise ValueError("Local MCP admission timeout must be positive")
+        if max_operations_per_request <= 0:
+            raise ValueError("Local MCP per-request bound must be positive")
         self._executable = executable
         self._package = package
         self._readonly = readonly
         self._timeout_seconds = timeout_seconds
+        self._worker_count = worker_count
+        self._admission_timeout_seconds = admission_timeout_seconds
+        self._max_operations_per_request = max_operations_per_request
         self._operation_slots = asyncio.Semaphore(max_pending_operations)
+        self._request_slots: weakref.WeakKeyDictionary[
+            PerformanceRecorder, asyncio.Semaphore
+        ] = weakref.WeakKeyDictionary()
         self._work_queue: asyncio.Queue[_LocalMCPSessionWorkItem | object] = (
             asyncio.Queue(maxsize=max_pending_operations)
         )
         self._worker_lock = asyncio.Lock()
-        self._worker_task: asyncio.Task[None] | None = None
+        self._worker_tasks: dict[int, asyncio.Task[None]] = {}
         self._session_generation = 0
+        self._sessions_started = 0
+        self._sessions_closed = 0
         self._closed = False
 
     @property
     def session_generation(self) -> int:
         return self._session_generation
+
+    def lifecycle_snapshot(self) -> dict[str, int]:
+        """Return connection-free worker/session lifecycle evidence."""
+        return {
+            "worker_count": self._worker_count,
+            "sessions_started": self._sessions_started,
+            "sessions_closed": self._sessions_closed,
+            "session_residual": self._sessions_started - self._sessions_closed,
+            "active_workers": sum(
+                1 for worker in self._worker_tasks.values() if not worker.done()
+            ),
+        }
 
     async def discover_semantic_models(self) -> LocalMCPDiscoverySnapshot:
         """Enumerate safe opaque identities without selecting by list order."""
@@ -428,27 +473,36 @@ class PowerBILocalMCPClient:
         await self._run_session(_validate)
 
     async def aclose(self) -> None:
-        """Close the application-owned stdio worker in its owner task."""
+        """Drain and close every application-owned stdio worker session."""
         async with self._worker_lock:
             if self._closed:
-                worker = self._worker_task
+                workers = tuple(self._worker_tasks.values())
             else:
                 self._closed = True
-                worker = self._worker_task
-                if worker is not None and not worker.done():
+                workers = tuple(
+                    worker
+                    for worker in self._worker_tasks.values()
+                    if not worker.done()
+                )
+                for _ in workers:
                     await self._work_queue.put(_SESSION_STOP)
-        if worker is not None:
-            await asyncio.shield(worker)
+        if workers:
+            await asyncio.shield(asyncio.gather(*workers, return_exceptions=True))
 
-    async def _ensure_worker(self) -> None:
+    async def _ensure_workers(self) -> None:
         async with self._worker_lock:
             if self._closed:
                 raise LocalMCPConnectionError(
                     LocalMCPErrorCategory.MCP_STARTUP,
                     "local_mcp_client_closed",
                 )
-            if self._worker_task is None or self._worker_task.done():
-                self._worker_task = asyncio.create_task(self._session_worker())
+            for worker_id in range(self._worker_count):
+                worker = self._worker_tasks.get(worker_id)
+                if worker is None or worker.done():
+                    self._worker_tasks[worker_id] = asyncio.create_task(
+                        self._session_worker(worker_id),
+                        name=f"powerbi-local-mcp-worker-{worker_id}",
+                    )
 
     async def _run_session(
         self,
@@ -457,19 +511,76 @@ class PowerBILocalMCPClient:
             Awaitable[_T],
         ],
     ) -> _T:
-        await self._ensure_worker()
+        await self._ensure_workers()
+        queue_started_at = time.monotonic()
         loop = asyncio.get_running_loop()
         future: asyncio.Future[_T] = loop.create_future()
         work = _LocalMCPSessionWorkItem(
             handler=handler,
             future=future,
             recorder=current_performance_recorder(),
+            enqueued_at=0.0,
+            queue_depth=0,
+            request_deadline=current_request_deadline(),
         )
-        async with self._operation_slots:
+        request_slot: asyncio.Semaphore | None = None
+        request_acquired = False
+        global_acquired = False
+        remaining = remaining_request_seconds()
+        deadline_limited = (
+            remaining is not None
+            and remaining <= self._admission_timeout_seconds
+        )
+        if work.recorder is not None:
+            request_slot = self._request_slots.get(work.recorder)
+            if request_slot is None:
+                request_slot = asyncio.Semaphore(
+                    self._max_operations_per_request
+                )
+                self._request_slots[work.recorder] = request_slot
+        try:
+            async with asyncio.timeout(
+                bounded_timeout_seconds(self._admission_timeout_seconds)
+            ):
+                if request_slot is not None:
+                    await request_slot.acquire()
+                    request_acquired = True
+                await self._operation_slots.acquire()
+                global_acquired = True
+        except BaseException as exc:
+            if global_acquired:
+                self._operation_slots.release()
+            if request_acquired and request_slot is not None:
+                request_slot.release()
+            if isinstance(exc, TimeoutError):
+                record_performance_timeout()
+                raise LocalMCPConnectionError(
+                    LocalMCPErrorCategory.MCP_TIMEOUT,
+                    (
+                        "request_deadline_exceeded"
+                        if deadline_limited
+                        else "local_mcp_overloaded"
+                    ),
+                    retryable=not deadline_limited,
+                ) from exc
+            raise
+        try:
+            work.queue_depth = self._work_queue.qsize()
+            work.enqueued_at = time.monotonic()
             await self._work_queue.put(work)
-            return await asyncio.shield(future)
+            if work.recorder is not None:
+                work.recorder.record(
+                    "admission_wait",
+                    (time.monotonic() - queue_started_at) * 1000.0,
+                    queue_depth=work.queue_depth,
+                )
+            return await future
+        finally:
+            self._operation_slots.release()
+            if request_slot is not None:
+                request_slot.release()
 
-    async def _session_worker(self) -> None:
+    async def _session_worker(self, worker_id: int) -> None:
         pending: _LocalMCPSessionWorkItem | object | None = None
         while True:
             item = pending or await self._work_queue.get()
@@ -477,13 +588,15 @@ class PowerBILocalMCPClient:
             if item is _SESSION_STOP:
                 return
             assert isinstance(item, _LocalMCPSessionWorkItem)
-            pending = await self._serve_session(item)
+            pending = await self._serve_session(item, worker_id=worker_id)
             if pending is _SESSION_STOP:
                 return
 
     async def _serve_session(
         self,
         first: _LocalMCPSessionWorkItem,
+        *,
+        worker_id: int,
     ) -> _LocalMCPSessionWorkItem | object | None:
         executable = shutil.which(self._executable)
         if executable is None:
@@ -497,24 +610,48 @@ class PowerBILocalMCPClient:
         parameters = StdioServerParameters(command=executable, args=args)
         with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errlog:
             token = None
+            deadline_token = bind_request_deadline_value(first.request_deadline)
             stop_requested = False
+            session_opened = False
             try:
                 if first.recorder is not None:
                     token = bind_performance_recorder(first.recorder)
                 startup_at = time.monotonic()
+                remaining = remaining_request_seconds()
+                deadline_limited = (
+                    remaining is not None
+                    and remaining <= self._timeout_seconds
+                )
                 async with AsyncExitStack() as stack:
-                    async with asyncio.timeout(self._timeout_seconds):
-                        transport = stdio_client(parameters, errlog=errlog)
-                        client = await stack.enter_async_context(Client(
-                        transport,
-                        raise_exceptions=True,
-                        read_timeout_seconds=self._timeout_seconds,
-                        ))
+                    try:
+                        async with asyncio.timeout(
+                            bounded_timeout_seconds(self._timeout_seconds)
+                        ):
+                            transport = stdio_client(parameters, errlog=errlog)
+                            client = await stack.enter_async_context(Client(
+                            transport,
+                            raise_exceptions=True,
+                            read_timeout_seconds=self._timeout_seconds,
+                            ))
+                            self._sessions_started += 1
+                            session_opened = True
+                    except TimeoutError as exc:
+                        record_performance_timeout()
+                        raise LocalMCPConnectionError(
+                            LocalMCPErrorCategory.MCP_TIMEOUT,
+                            (
+                                "request_deadline_exceeded"
+                                if deadline_limited
+                                else "local_mcp_timeout"
+                            ),
+                            retryable=not deadline_limited,
+                        ) from exc
                     if first.recorder is not None:
                         first.recorder.record(
                             "mcp_session_startup",
                             (time.monotonic() - startup_at) * 1000.0,
                             session="new",
+                            worker_id=worker_id,
                         )
                     with measure_performance("mcp_tool_discovery", cache="miss"):
                         tools = await self._list_all_tools(client)
@@ -534,6 +671,7 @@ class PowerBILocalMCPClient:
                             protocol,
                             tools,
                             is_first=is_first,
+                            worker_id=worker_id,
                         )
                         if fatal:
                             return None
@@ -553,8 +691,11 @@ class PowerBILocalMCPClient:
                     diagnostic_text=self._read_diagnostic_text(errlog),
                 ))
             finally:
+                if session_opened:
+                    self._sessions_closed += 1
                 if token is not None:
                     reset_performance_recorder(token)
+                reset_request_deadline(deadline_token)
         return None
 
     async def _execute_work_item(
@@ -565,14 +706,25 @@ class PowerBILocalMCPClient:
         tools: tuple[DiscoveredLocalTool, ...],
         *,
         is_first: bool,
+        worker_id: int,
     ) -> bool:
         token = (
             bind_performance_recorder(item.recorder)
             if item.recorder is not None
             else None
         )
+        deadline_token = bind_request_deadline_value(item.request_deadline)
         started_at = time.monotonic()
         try:
+            if item.recorder is not None:
+                item.recorder.record(
+                    "queue_wait",
+                    (started_at - item.enqueued_at) * 1000.0,
+                    queue_depth=item.queue_depth,
+                    worker_id=worker_id,
+                )
+            if item.future.cancelled():
+                return False
             if not is_first and item.recorder is not None:
                 item.recorder.record(
                     "mcp_tool_discovery",
@@ -580,8 +732,26 @@ class PowerBILocalMCPClient:
                     cache="hit",
                     session="reused",
                 )
-            async with asyncio.timeout(self._timeout_seconds):
-                result = await item.handler(client, protocol, tools)
+            remaining = remaining_request_seconds()
+            deadline_limited = (
+                remaining is not None
+                and remaining <= self._timeout_seconds
+            )
+            try:
+                async with asyncio.timeout(
+                    bounded_timeout_seconds(self._timeout_seconds)
+                ):
+                    result = await item.handler(client, protocol, tools)
+            except TimeoutError as exc:
+                raise LocalMCPConnectionError(
+                    LocalMCPErrorCategory.MCP_TIMEOUT,
+                    (
+                        "request_deadline_exceeded"
+                        if deadline_limited
+                        else "local_mcp_timeout"
+                    ),
+                    retryable=not deadline_limited,
+                ) from exc
             if not item.future.done():
                 item.future.set_result(result)
             if item.recorder is not None:
@@ -589,18 +759,35 @@ class PowerBILocalMCPClient:
                     "mcp_session_operation",
                     (time.monotonic() - started_at) * 1000.0,
                     session="new" if is_first else "reused",
+                    worker_id=worker_id,
+                )
+                item.recorder.record(
+                    "mcp_rpc",
+                    (time.monotonic() - started_at) * 1000.0,
+                    worker_id=worker_id,
                 )
             return False
         except LocalMCPConnectionError as exc:
+            if exc.category in {
+                LocalMCPErrorCategory.MCP_TIMEOUT,
+                LocalMCPErrorCategory.DAX_TIMEOUT,
+            }:
+                record_performance_timeout()
             self._set_work_exception(item, exc)
             return self._is_session_fatal(exc)
         except Exception as exc:
             classified = self._classify_exception(exc, diagnostic_text="")
+            if classified.category in {
+                LocalMCPErrorCategory.MCP_TIMEOUT,
+                LocalMCPErrorCategory.DAX_TIMEOUT,
+            }:
+                record_performance_timeout()
             self._set_work_exception(item, classified)
             return self._is_session_fatal(classified)
         finally:
             if token is not None:
                 reset_performance_recorder(token)
+            reset_request_deadline(deadline_token)
 
     @staticmethod
     def _set_work_exception(
@@ -1540,6 +1727,7 @@ class PowerBILocalMCPClient:
             return LocalMCPConnectionError(
                 LocalMCPErrorCategory.MCP_STARTUP,
                 "local_mcp_server_exited",
+                retryable=True,
             )
         return LocalMCPConnectionError(
             LocalMCPErrorCategory.BUG,
@@ -1561,6 +1749,10 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
         readonly: bool = True,
         timeout: float = 120.0,
         max_retries: int = 1,
+        worker_count: int = 1,
+        max_pending_operations: int = 8,
+        max_operations_per_request: int = 2,
+        admission_timeout_seconds: float = 1.0,
         client: LocalMCPConnection | None = None,
         discovery_ttl_seconds: float = 5.0,
         probe_ttl_seconds: float = 15.0,
@@ -1574,6 +1766,10 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
         self._readonly = readonly
         self._timeout = timeout
         self._max_retries = min(max(max_retries, 0), 1)
+        self._worker_count = worker_count
+        self._max_pending_operations = max_pending_operations
+        self._max_operations_per_request = max_operations_per_request
+        self._admission_timeout_seconds = admission_timeout_seconds
         self._client = client
         self._cache_generation = self._client_generation(client)
         self._discovery_cache: BoundedTTLCache[
@@ -1613,6 +1809,13 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
     def last_diagnostics(self) -> LocalMCPDiagnostics:
         return self._last_diagnostics
 
+    def runtime_lifecycle_snapshot(self) -> dict[str, int] | None:
+        """Expose safe local runtime counts without transport identity details."""
+        snapshot = getattr(self._client, "lifecycle_snapshot", None)
+        if snapshot is None:
+            return None
+        return snapshot()
+
     async def aclose(self) -> None:
         client = self._client
         self._invalidate_runtime_caches()
@@ -1651,11 +1854,8 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                     exc.error_type,
                     readonly=self._readonly,
                 )
-                if (
-                    exc.category == LocalMCPErrorCategory.NETWORK
-                    and attempt < self._max_retries
-                ):
-                    await asyncio.sleep(0.25)
+                if self._can_retry_transport(exc, attempt):
+                    await self._transport_retry_backoff()
                     continue
                 return False
         if snapshot is None:
@@ -1737,11 +1937,8 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                     exc.error_type,
                     readonly=self._readonly,
                 )
-                if (
-                    exc.category == LocalMCPErrorCategory.NETWORK
-                    and attempt < self._max_retries
-                ):
-                    await asyncio.sleep(0.25)
+                if self._can_retry_transport(exc, attempt):
+                    await self._transport_retry_backoff()
                     continue
                 raise
         raise LocalMCPConnectionError(
@@ -1866,11 +2063,8 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                     exc.error_type,
                     readonly=self._readonly,
                 )
-                if (
-                    exc.category == LocalMCPErrorCategory.NETWORK
-                    and attempt < self._max_retries
-                ):
-                    await asyncio.sleep(0.25)
+                if self._can_retry_transport(exc, attempt):
+                    await self._transport_retry_backoff()
                     continue
                 return self._failed_probe(semantic_model_key, exc)
             except (ValidationError, ValueError, TypeError):
@@ -2052,11 +2246,8 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                     exc.error_type,
                     readonly=self._readonly,
                 )
-                if (
-                    exc.category == LocalMCPErrorCategory.NETWORK
-                    and attempt < self._max_retries
-                ):
-                    await asyncio.sleep(0.25)
+                if self._can_retry_transport(exc, attempt):
+                    await self._transport_retry_backoff()
                     continue
                 raise self._schema_adapter_error(exc) from None
             except (ValidationError, ValueError, TypeError):
@@ -2080,6 +2271,10 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                 package=self._package,
                 readonly=self._readonly,
                 timeout_seconds=self._timeout,
+                worker_count=self._worker_count,
+                max_pending_operations=self._max_pending_operations,
+                max_operations_per_request=self._max_operations_per_request,
+                admission_timeout_seconds=self._admission_timeout_seconds,
             )
         return self._client
 
@@ -2113,6 +2308,27 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
             LocalMCPErrorCategory.DESKTOP_STALE_INSTANCE,
         }:
             self._invalidate_runtime_caches()
+
+    def _can_retry_transport(
+        self,
+        exc: LocalMCPConnectionError,
+        attempt: int,
+    ) -> bool:
+        return (
+            exc.retryable
+            and attempt < self._max_retries
+            and exc.category in {
+                LocalMCPErrorCategory.NETWORK,
+                LocalMCPErrorCategory.MCP_STARTUP,
+                LocalMCPErrorCategory.MCP_TIMEOUT,
+                LocalMCPErrorCategory.DAX_TIMEOUT,
+            }
+        )
+
+    @staticmethod
+    async def _transport_retry_backoff() -> None:
+        record_performance_retry()
+        await sleep_with_request_deadline(0.25)
 
     async def _validate_cached_identity(
         self,
@@ -2375,11 +2591,8 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
                     exc.error_type,
                     readonly=self._readonly,
                 )
-                if (
-                    exc.category == LocalMCPErrorCategory.NETWORK
-                    and attempt < self._max_retries
-                ):
-                    await asyncio.sleep(0.25)
+                if self._can_retry_transport(exc, attempt):
+                    await self._transport_retry_backoff()
                     continue
                 error = await self.normalize_error(exc)
                 return self._query_error_result(request, error)

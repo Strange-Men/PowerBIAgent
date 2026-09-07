@@ -3,11 +3,70 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-03 | M5.8.6 COMPLETE（主线发布与治理收口）；M5.9/M5.10 NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-07 | M5.8.6 COMPLETE；M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.10 NOT STARTED；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-590-002
+  title: 过载基准把受控拒绝延迟混入成功请求百分位
+  category: ERR
+  first_detected_version: M5.9
+  symptom: backpressure run 的 p50/p95/p99 同时包含成功请求与快速拒绝，数值会随拒绝率升高而虚假下降
+  local_evidence: 4 workers/queue 8 的 50/100-way 初始输出在 84%/92% 拒绝率下 p50 反而低于单次 40ms fixture operation；修复后成功 latency 与 rejection_p95 分列
+  authoritative_sources:
+  - title: ADR-017 Bounded Runtime Concurrency and Resilience
+    reason: throughput、成功延迟、受控拒绝延迟与 error rate 必须分别报告，不能用过载失败美化成功请求长尾
+  root_cause: percentile 输入直接使用全部 task latency，没有按 error_type 分组
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: p50/p95/p99 只统计成功操作，新增 rejection_p95_ms；throughput 只使用 success count，另报 offered rate
+  regression_tests:
+  - scripts/performance/m5_9_offline_runtime_acceptance.py
+  prohibited_patterns:
+  - 将 fail-fast latency 混入成功请求 percentile
+  prevention_rules:
+  - performance evidence 必须同时报告 success、errors、error rate 和独立 rejection latency
+  related_adr: ADR-017
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-07'
+    action: discovered
+    version: M5.9
+  - date: '2026-09-07'
+    action: mitigation
+    version: M5.9
+- id: ERR-590-001
+  title: 长生命周期 MCP worker 继承首请求 deadline ContextVar
+  category: ERR
+  first_detected_version: M5.9
+  symptom: worker task 在首个请求上下文中创建后永久继承其 deadline，后续请求即使有新预算也可能立即 timeout
+  local_evidence: 首请求 20ms deadline 超时后，同一 worker 上第二个 1s deadline 请求在修复前仍读取过期 deadline；request rebinding regression 修复后第二请求成功
+  authoritative_sources:
+  - title: ADR-017 Bounded Runtime Concurrency and Resilience
+    reason: application-owned worker 可以长生命周期复用 transport，但每个 work item 必须使用自己的 request-local deadline 和 recorder
+  root_cause: asyncio task 创建时复制 ContextVar；原 worker pool 只重新绑定 PerformanceRecorder，没有在 session startup 和每个 work item 执行时重新绑定 deadline
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: work item 捕获 immutable absolute deadline；worker 在首 session startup 和每次 operation 前绑定对应 deadline，finally 恢复 worker context；deadline-limited timeout 标记为不可重试 request_deadline_exceeded
+  regression_tests:
+  - backend/tests/unit/test_local_mcp_worker_pool.py
+  prohibited_patterns:
+  - application-owned background task 永久使用创建时继承的 request ContextVar
+  prevention_rules:
+  - 所有长生命周期 worker 必须显式 rebind/reset 每项 request-local context
+  - deadline timeout 不得被分类为可重试 overload 或 transport failure
+  related_adr: ADR-017
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-07'
+    action: discovered
+    version: M5.9
+  - date: '2026-09-07'
+    action: mitigation
+    version: M5.9
 - id: ERR-585-002
   title: 通用维度候选与日期关系证据未优先于技术键表象
   category: ERR

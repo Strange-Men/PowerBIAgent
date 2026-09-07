@@ -27,6 +27,7 @@ from backend.app.llm.base import (
     LLMValidationError,
 )
 from backend.app.llm.profiles import LLMModelProfile
+from backend.app.core.performance import current_performance_recorder
 
 
 # ---------------------------------------------------------------------------
@@ -244,10 +245,13 @@ class ObservedLLMProvider(LLMProvider):
         attempt_index = self._task_attempts.get(task_key, 0)
         self._task_attempts[task_key] = attempt_index + 1
 
-        started_at = time.monotonic()
+        started_at = time.perf_counter()
         try:
             response = await self._inner.generate(request, output_type)
-            duration_ms = (time.monotonic() - started_at) * 1000.0
+            duration_ms = (time.perf_counter() - started_at) * 1000.0
+            recorder = current_performance_recorder()
+            if recorder is not None:
+                recorder.record("llm_task", duration_ms)
 
             usage = response.usage or {}
             self._collector.add_attempt(LLMCallObservation(
@@ -270,7 +274,10 @@ class ObservedLLMProvider(LLMProvider):
             return response
 
         except LLMValidationError as e:
-            duration_ms = (time.monotonic() - started_at) * 1000.0
+            duration_ms = (time.perf_counter() - started_at) * 1000.0
+            recorder = current_performance_recorder()
+            if recorder is not None:
+                recorder.record("llm_task", duration_ms)
             error_usage = e.usage or {}
             self._collector.add_attempt(LLMCallObservation(
                 task=task_key,
@@ -295,7 +302,10 @@ class ObservedLLMProvider(LLMProvider):
             raise
 
         except LLMProviderError as e:
-            duration_ms = (time.monotonic() - started_at) * 1000.0
+            duration_ms = (time.perf_counter() - started_at) * 1000.0
+            recorder = current_performance_recorder()
+            if recorder is not None:
+                recorder.record("llm_task", duration_ms)
             self._collector.add_attempt(LLMCallObservation(
                 task=task_key,
                 attempt_index=attempt_index,

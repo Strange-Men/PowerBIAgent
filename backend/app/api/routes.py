@@ -681,6 +681,15 @@ async def chat(
                 "request_id": e.request_id,
             },
         )
+    except TimeoutError:
+        return JSONResponse(
+            status_code=504,
+            content={
+                "detail": "Request deadline exceeded.",
+                "error_type": "request_deadline_exceeded",
+                "request_id": body.request_id or "",
+            },
+        )
     except LLMAuthenticationError as e:
         return JSONResponse(
             status_code=502,

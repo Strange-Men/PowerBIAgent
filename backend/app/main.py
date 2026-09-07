@@ -178,6 +178,14 @@ async def lifespan(app: FastAPI):
             readonly=settings.powerbi_local_mcp_readonly,
             timeout=float(settings.request_timeout_seconds),
             max_retries=settings.max_powerbi_retries,
+            worker_count=settings.powerbi_local_mcp_workers,
+            max_pending_operations=settings.powerbi_local_mcp_queue_capacity,
+            max_operations_per_request=(
+                settings.powerbi_local_mcp_per_request_limit
+            ),
+            admission_timeout_seconds=(
+                settings.powerbi_local_mcp_admission_timeout_seconds
+            ),
         )
     elif settings.powerbi_mode == PowerBIMode.MOCK:
         powerbi_adapter = MockPowerBIAdapter()

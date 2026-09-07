@@ -1,11 +1,11 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M2.6.4 — M0—M2 ready for final seal；契约为 8 Case / 2 holdout / 6 Conversation / 16 Turn
-> **关联 ADR：** ADR-004
-> **本轮 fresh 离线基线：** backend pytest 1789 passed + 1 Real-only skip；Golden 11/11 runnable passed + 1 Real-only skip；frontend Vitest 49 passed；Architecture 117、Repository Safety 287、Error Ledger 25/0、Documentation Governance 与 Artifact Governance PASS
-> **M2.6.4 Real hardened evidence：** Known-answer 8/8、Holdout 2/2、6 Conversation / 16 Turn、51 个成功 Real 查询、TopN 3/3、fallback/pollution/DAX LLM/Answer LLM 均为 0
+> **状态：** M5.8.6 COMPLETE；M5.8.5 correctness 冻结。M5.9 performance baseline、20/50/100 concurrency、fault/lifecycle/backpressure、2h offline soak、Real Local MCP 1/2/4 worker 与 Artifact residual Gate 已通过；等待 exact-SHA CI。
+> **关联 ADR：** ADR-004、ADR-005、ADR-007—ADR-017
+> **最近 M5.9 fresh evidence：** backend 2425 passed / 1 Real-only skip；Semantic Compatibility 743 passed；Golden 11 passed / 1 Real-only skip；frontend Vitest 87 passed，typecheck/lint/build PASS；Repository Safety 361、Architecture 133、Error Ledger 59、Documentation/Artifact、compileall 与 diff-check PASS。Rich PBIX 1/2/4 worker Real DAX acceptance errors=0，sessions 全部关闭且 residual=0。
+> **最近正式 correctness evidence：** M5.8.5 Rich Sales、M3 Test、Logistics Test × DeepSeek/Kimi 定点链与 A→B→C→A 隔离通过；2,304 deterministic stress；M5.9 Semantic Compatibility 743 PASS 证明该 authority 未回归。
 > **Token 统计：** call_count/repair_count 按 task 独立统计，LLMValidationError 携带 usage
-> **模式切换：** Mock+Mock 200 / DeepSeek+Mock 200 / DeepSeek+Local MCP 200 / Remote MCP 503
+> **模式切换：** Mock+Mock 200 / DeepSeek或Kimi+Mock 200 / DeepSeek或Kimi+Local MCP 200 / Remote MCP 503
 
 ---
 
@@ -243,6 +243,14 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 - effective scope 必须覆盖最终 time/filter/grouping/ranking/measure；Ranking 保持 canonical order，普通 grouped 的 metric DESC 与 trend time ASC 仅是共享 PresentationDataset 投影，QueryResult/VerifiedFactSet 不变。
 - 永久 stress matrix 为 2,304 logical cases；本轮 fresh backend 2397 PASS / 1 SKIP、Semantic Compatibility 743 PASS、Golden 11 PASS / 1 manual-real SKIP、frontend 87 PASS。三 PBIX × DeepSeek/Kimi 定点 Real 与 A→B→C→A 隔离通过，automation-owned residual=0。
 
+### M5.9 Performance / Concurrency / Resilience Gate
+
+- 必须分别记录 cold/warm、scalar/grouped/ranking/trend/report、1-way/4-way 的 total 与阶段分布，并报告 p50/p95/p99；没有 baseline 不宣称提升。
+- Local MCP worker 必须各自拥有独立 stdio client/session；全局 queue 与 per-request admission 有界，并验证 fairness、deadline、cancellation、overload fail-fast、worker crash rebuild 与 shutdown drain。
+- 离线 deterministic stress 固定覆盖 1/4/20/50/100 concurrency、request/profile/model isolation、Memory/Report exactly-once、resource residual=0；不得靠增大 timeout 掩盖死锁。
+- 仅对 transient、idempotent read 做 bounded retry；semantic/validation/stale identity 永不 retry，retry 不得重复 Memory commit 或 ReportArtifact。
+- Real Local MCP 至少比较 1/2/4 workers；环境稳定才扩展 8。Provider latency、queue wait、MCP RPC 与 Power BI execute 必须分开记录；2h soak 无法完成时必须明确标记 PARTIAL。
+
 ### M5 前端验收
 
 - 前端不得把 Mock 数据描述为真实 Power BI 数据
@@ -254,4 +262,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 
 ---
 
-*最后更新：2026-09-03 | M5.8.5 Semantic Completeness / Result Inspection / Presentation Truth 验收补充*
+*最后更新：2026-09-07 | M5.8.6 current-state 与 M5.9 验收入口收口*

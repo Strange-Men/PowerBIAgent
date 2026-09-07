@@ -1,7 +1,7 @@
 # 04 — Power BI MCP 与 API 契约
 
-> **状态：** M2.6.4 路径校准；早期 Remote/LLM DAX 描述以 ADR-006—ADR-009 为准
-> **关联 ADR：** ADR-003（partially superseded）、ADR-005—ADR-009
+> **状态：** M5.8.6 COMPLETE；Local MCP 是当前 Real 路径，Template/LLM/模型安全目录与 SQLite 资源 API 均已实现；M5.9 离线运行时、Real 1/2/4 worker 与 residual Gate 已通过，等待 exact-SHA CI。
+> **关联 ADR：** ADR-003（partially superseded）、ADR-005—ADR-017
 > **API 源码：** `backend/app/api/routes.py`、`backend/app/main.py`
 > **数据契约源码：** `backend/app/schemas/data_contracts.py`
 
@@ -13,21 +13,19 @@
 
 | 方法 | 路径 | 说明 | 状态 |
 |------|------|------|------|
-| `GET` | `/health` | 当前运行模式配置就绪检查；不调用 LLM、不启动 MCP、不探测 Desktop 在线状态 | ✅ Mock / DeepSeek+Mock / DeepSeek+Local 配置 |
-| `POST` | `/api/v1/chat` | 非流式对话接口；Mock+Mock、DeepSeek+Mock、DeepSeek+Local MCP 共用 TurnPipeline | ✅ Real M2 链已验证 |
+| `GET` | `/health` | 当前运行模式配置就绪检查；不调用 LLM、不启动 MCP、不探测 Desktop 在线状态 | ✅ Mock / OpenAI-compatible+Mock / OpenAI-compatible+Local 配置 |
+| `POST` | `/api/v1/chat` | 非流式对话接口；Mock、DeepSeek/Kimi 与 Mock/Local MCP 组合共用 TurnPipeline | ✅ Real 链已验证 |
+| `GET` | `/api/v1/llm-profiles` | 返回不含 Key/base URL 的 backend-owned LLM profile 目录 | ✅ M5.8 |
 | `GET` | `/api/reports/{report_id}` | 查看 repository-owned static HTML | ✅ M3/M4 |
 | `GET` | `/api/reports/{report_id}/download` | 下载 UTF-8 HTML | ✅ M3/M4 |
-| `GET` | `/api/v1/conversations`、`/search`、`/{id}/history`、`/{id}/reports` | namespace-first recent/search/structured history/report history | ✅ M4.3/M4.4；SQLite-only |
-| `POST/DELETE` | `/api/v1/conversations/{id}/archive`、`/api/v1/conversations/{id}` | 同 namespace 归档/删除 | ✅ M4.3/M4.4 |
+| `GET` | `/api/reports` | namespace-scoped active/archived report resource pagination | ✅ M5.4.1；SQLite-only |
+| `PATCH/POST/DELETE` | `/api/reports/{report_id}`、`/{report_id}/archive`、`/{report_id}/restore` | 显式人工 rename/archive/restore/delete；不进入 ToolGateway | ✅ M5.3.3—M5.6 |
+| `GET` | `/api/v1/conversations`、`/archived`、`/search`、`/{id}/history`、`/{id}/reports` | namespace-first recent/archived/search/transcript+structured history/report history | ✅ M4.3—M5.6；SQLite-only |
+| `PATCH/POST/DELETE` | `/api/v1/conversations/{id}`、`/{id}/archive`、`/{id}/restore`、`/{id}/failure` | 同 namespace rename/archive/restore/failure metadata/delete | ✅ M4.3—M5.6 |
 | `GET` | `/api/v1/semantic-models` | 经只读 ToolGateway → PowerBIAdapter → Local MCP 发现当前可连接 Desktop 模型；返回 safe catalog 与 runtime namespace | ✅ M5.2 最小只读 endpoint |
+| `GET` | `/api/v1/report-templates` | 返回 backend-owned 可选固定模板目录 | ✅ M5.7.2；当前仅 `sales_report / 简易模板` |
 
-### 计划中的接口（PRD 定义，尚未实现）
-
-| 方法 | 路径 | 说明 | 目标轮次 |
-|------|------|------|---------|
-| `GET` | `/api/report-templates` | 返回可选固定报表模板列表 | M3+ |
-
-> **注意：** `/api/v1/semantic-models` 只返回 backend-owned stable key、display name、source/type、availability/connected 和 runtime namespace；不返回端口、connection string、process/file path、MCP raw payload 或 schema 业务 metadata。`/api/report-templates` 仍未实现，当前前端只维护 registry-owned `sales_report` catalog。
+> **注意：** `/api/v1/semantic-models` 只返回 backend-owned opaque key、display name、source/type、availability/connected 和 runtime namespace；不返回端口、connection string、process/file path、MCP raw payload 或 schema 业务 metadata。LLM/template 目录同样不返回 Secret 或内部 transport 配置。
 
 ---
 
@@ -39,9 +37,13 @@
 |------|------|
 | `health_check()` | 连接健康检查 |
 | `get_semantic_model_schema(key)` | 获取语义模型结构 |
+| `get_column_members(request)` | 获取已验证列的有界 distinct runtime member values |
+| `discover_semantic_models()` | 返回前端可安全选择的模型目录 |
+| `probe_compatibility(key)` | 只读验证协议、工具、identity、schema 与单行 DAX 能力 |
 | `execute_dax(DAXRequest)` | 执行 DAX 查询 |
 | `normalize_result(raw)` | 标准化原始响应 |
 | `normalize_error(raw)` | 标准化原始错误 |
+| `aclose()` | 释放 application-scoped provider 资源 |
 
 ### 2.2 MockPowerBIAdapter（`backend/app/powerbi/mock.py`）
 
@@ -60,14 +62,15 @@
 - 当前 M2 Real Provider：只读 stdio Local MCP + Power BI Desktop
 - 只负责 Provider / protocol Adapter；上层仍是 TurnPipeline → ToolGateway → PowerBIAdapter 的唯一控制面
 - 已真实验证 schema、DAX、QueryResult、production Chat 与 committed Memory；Real 失败不回退 Mock
-- M5.2 Real conversation/history/report 启动必须显式使用 `LLM_MODE=deepseek`、`POWERBI_MODE=local_mcp`、`PERSISTENCE_BACKEND=sqlite`；完整 `sales_report` 的 schema + 4 DAX + render 需要 `MAX_TOOL_CALLS=8`，更低预算按控制面规则 fail closed
+- 当前 Real conversation/history/report 启动使用 OpenAI-compatible LLM profile、`POWERBI_MODE=local_mcp`、`PERSISTENCE_BACKEND=sqlite`；完整报表按 capability 解析多个独立查询，`MAX_TOOL_CALLS=8` 是当前正式启动合同，更低预算按控制面规则 fail closed
+- M5.8.1 已实现 application-owned persistent stdio session、session generation、短 TTL bounded metadata/member cache、singleflight 与最小 semaphore；M5.9 在不共享 unsafe client/session 的前提下继续建设 worker pool、bounded queue/backpressure 与 fault recovery
 - Remote MCP 只有外部管理员/授权条件具备且用户重新批准后才恢复开发
 
-### 2.5 M5.2 Desktop 模型 discovery
+### 2.5 当前 Desktop 模型 discovery
 
 - 浏览器不能读取 `.pbix`；模型发现只能由后端通过 `connection_operations/ListLocalInstances`、只读连接验证和 Adapter 安全映射完成
 - API 不直接调用 MCP；调用路径固定为 API → SemanticModelDiscoveryService → read-only ToolGateway → PowerBIAdapter → Local MCP
-- 当前 Local 执行合同一次只选择一个可稳定连接的 Desktop 模型，因此 catalog 只暴露“当前已连接模型”；不把同一内部 key 伪装成多个可选 PBIX
+- Local Adapter 可安全枚举多个 Desktop/PBIX，每项使用不泄露连接属性的 opaque key；每次 schema/member/DAX session 重新枚举并精确匹配唯一 identity，stale/ambiguous 均 fail closed
 - M2 封板兼容 key 可以继续作为后端内部执行 identity，但前端不得硬编码或用固定“销售数据”别名冒充 discovery
 - 无 Desktop/无可连接模型时返回空 items 和安全状态；不回退 Mock、不返回连接细节
 
@@ -154,8 +157,8 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 | 类型 | 说明 | 数据来源（ChatResponse 字段） |
 |------|------|------|
 | `text` | 自然语言结论、总结、筛选说明、空数据提示、截断提示 | `answer` / `clarification_question` / `unsupported_reason` |
-| `table` | columns、rows（来自后端 QueryResult） | `execution_audit` 或联调确定的序列化字段 |
-| `chart` | bar/line/donut，仅在后端提供可视化数据时 | 后端 QueryResult 的 ChartSpec |
+| `table` | columns、rows（来自 QueryResult/VerifiedFactSet 覆盖字段） | `presentation.dataset` + block references |
+| `chart` | bar/line，仅在后端提供可视化数据时 | 同一个 `presentation.dataset` + chart block references |
 | `report_attachment` | report_id、title、view_reference、download_reference | `report`（ReportResponse 对象） |
 
 ### 安全限制
@@ -175,9 +178,9 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 | ChatResponse（answer/report/clarification/unsupported） | ✅ 已实现 | — |
 | verified fact-bounded AnswerSpec | ✅ 已实现 | — |
 | ReportSpec + ReportArtifact + view/download | ✅ M3 已实现 | — |
-| 前端动态渲染 | ✅ answer/clarification/unsupported/error/empty/report | M5.1 |
-| 图表前端渲染 | ⏸ 无 Chat/History ChartSpec，不伪造 | 最小契约缺口 |
-| 表格前端渲染 | ⏸ 无 Chat/History QueryResult rows，不伪造 | 最小契约缺口 |
+| 前端动态渲染 | ✅ answer/clarification/unsupported/error/empty/text/metric/table/bar/line/report | M5.1—M5.6 |
+| 图表前端渲染 | ✅ 使用 presentation 单一 dataset 的 bar/line block；不从 answer/audit 反解析 | M5.3+ |
+| 表格前端渲染 | ✅ 使用 presentation 单一 dataset 的 verified-field projection | M5.3+ |
 | LLM 生成 HTML/JS | ❌ 永久禁止 | — |
 
 ## 六、只读 DAX 安全与执行 authority
@@ -204,4 +207,4 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-*最后更新：2026-08-21 | M5.2 Desktop discovery、runtime 与模板 override 边界修正*
+*最后更新：2026-09-07 | M5.8.6 current-state/API/registry 收口；进入 M5.9*
