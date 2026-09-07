@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING）。离线、2h soak、Real PBIX 1/2/4 worker、full gates 与 residual=0 已通过。M5.8.6 COMPLETE，M5.8.5 correctness 已冻结；main 是唯一活动开发线；M5.10 NOT STARTED；M5 FINAL=false。
+> **状态：** M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（COMPLETE，`179dd24` / CI #52 success）。离线、2h soak、Real PBIX 1/2/4 worker、full gates 与 residual=0 已通过。M5.8.6 COMPLETE，M5.8.5 correctness 已冻结；main 是唯一活动开发线；M5.10 NOT STARTED；M5 FINAL=false。
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -50,7 +50,7 @@
 | **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **COMPLETE；`3e3d8ac` / CI #46 exact-SHA completed/success** |
 | **M5.8.5** | **Semantic Completeness + Result Inspection + Presentation Truth** | **✅ COMPLETE** |
 | **M5.8.6** | **M0-M5 主线发布与治理收口：m5/rebuild→main fast-forward 合并、m5/frontend 归档、main 成为唯一活动开发线、m5/rebuild 冻结为发布追溯** | **✅ COMPLETE** |
-| **M5.9** | **完整 MCP performance、concurrency、resilience 与 soak** | **🚧 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING** |
+| **M5.9** | **完整 MCP performance、concurrency、resilience 与 soak** | **✅ COMPLETE（179dd24 / CI #52 success）** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ### M5.4.2 — M5 重建基线与规划固化（已完成）
@@ -158,7 +158,7 @@ typed `ModelSemanticContext`、runtime-driven Catalog 和 exact identity/fingerp
 
 M5.8.1 只前移低风险 session/cache/singleflight/semaphore 子集。M5.9 已完成 request-local measurement、独立 stdio session worker pool、bounded queue/backpressure、request deadline/cancellation、transient retry、20/50/100 concurrency、PBIX/backend restart、fault matrix、long soak 与复杂报表 bounded query execution foundation的本地及 Real acceptance。Remote MCP 本轮只固化 transport replacement boundary，不做 performance production implementation。不得通过降低 factual validation 换性能；不得修改 Semantic/DAX/VerifiedFactSet authority；warm latency 不得冒充 cold latency。正式合同与当前证据见 [ADR-017](adr/ADR-017_bounded_runtime_concurrency_and_resilience.md) 和 [M5.9 专项计划](milestones/m5/m5_9_runtime_performance_and_resilience_plan.md)。
 
-当前离线实现、20/50/100 stress、fault matrix 与 2h soak 已完成；Rich PBIX 1/2/4 worker Real acceptance 均 errors=0、session residual=0。raw adapter catalog 不拥有 discovery-service `selectable` 状态，manual smoke 已改为 exact available/connected raw model → compatibility probe，未修改 production discovery。14 个本轮早期 automation 目录经用户批准的 exact-path ACL 恢复后删除，Artifact Governance 与 residual=0 已闭合。Semantic Compatibility/backend/frontend/Golden 和全部治理 Gate 已通过；正式 COMPLETE 仅等待本轮提交的 exact-SHA CI success。
+当前离线实现、20/50/100 stress、fault matrix 与 2h soak 已完成；Rich PBIX 1/2/4 worker Real acceptance 均 errors=0、session residual=0。raw adapter catalog 不拥有 discovery-service `selectable` 状态，manual smoke 已改为 exact available/connected raw model → compatibility probe，未修改 production discovery。14 个本轮早期 automation 目录经用户批准的 exact-path ACL 恢复后删除，Artifact Governance 与 residual=0 已闭合。Semantic Compatibility/backend/frontend/Golden 和全部治理 Gate已通过；主实现 `179dd24` 的 PowerBIAgent Validation #52 / Full Validation (Windows) exact-SHA completed/success，M5.9 COMPLETE。
 
 ### 新 M5.10 — 固定专业销售报表模板与两模板选择
 
@@ -415,4 +415,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-09-07 | M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.8.6 COMPLETE；M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-09-07 | M5.8.6 / M5.9 COMPLETE；M5.10 NOT STARTED；M5 FINAL 尚未成立*

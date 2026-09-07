@@ -409,4 +409,4 @@ PowerBIAgent/
 
 ---
 
-*最后更新：2026-09-07 | M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.8.6 COMPLETE；main 是唯一活动开发线；m5/rebuild 冻结为发布追溯分支；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-07 | M5.9 COMPLETE（179dd24 / CI #52 success）；M5.8.6 COMPLETE；main 是唯一活动开发线；m5/rebuild 冻结为发布追溯分支；M5.10 NOT STARTED；M5 FINAL=false*

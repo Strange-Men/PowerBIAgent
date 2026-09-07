@@ -1,6 +1,6 @@
 # 02 — 技术选型与系统架构
 
-> **状态：** M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING）。离线、2h soak、Real PBIX 1/2/4 worker、full gates 与 residual=0 已通过。M5.8.6 COMPLETE；main 是唯一活动开发线。
+> **状态：** M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（COMPLETE，`179dd24` / CI #52 success）。离线、2h soak、Real PBIX 1/2/4 worker、full gates 与 residual=0 已通过。M5.8.6 COMPLETE；main 是唯一活动开发线。
 > **当前版本：** M5.9
 > **关联 ADR：** ADR-001（已废弃）、ADR-002—ADR-016；当前以 ADR-005—ADR-016 为准
 

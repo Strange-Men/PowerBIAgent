@@ -5,7 +5,7 @@
 
 ## 当前阶段 — M5.9（2026-09-07）
 
-**M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING）。** 基线为 main `e8a79c3edcd7f648600bd4aa271d084d65cb62a1`，其 PowerBIAgent Validation #51 / Full Validation (Windows) 已核验 exact-SHA completed/success。M5.8.6 遗留 current-state 文档已收口；Settings.version=M5.9。离线 1/2/4/8 worker、100-way stress、fault matrix、2h soak 与 Rich PBIX 1/2/4 worker Real acceptance 已通过；backend 2425 PASS / 1 manual-real SKIP，Semantic Compatibility 743 PASS，frontend 87 PASS + typecheck/lint/build，Golden 11 PASS / 1 manual-real SKIP，全部治理 Gate、compileall、diff-check 与 residual=0 通过。Real smoke 原阻塞根因是 raw adapter catalog 在正式 discovery service probe 前按合同没有 `selectable=true`，harness 现按唯一 exact available/connected model 选择后执行 compatibility probe；production discovery/authority 未变。14 个本轮早期 automation 目录经用户批准的 exact-path ACL 恢复后删除，Artifact Governance PASS。正式 COMPLETE 仍等待本轮提交的 exact-SHA CI success；M5.8.5 correctness 冻结，M5.10 NOT STARTED，M5 FINAL=false。
+**M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（COMPLETE）。** 基线为 main `e8a79c3edcd7f648600bd4aa271d084d65cb62a1`，其 PowerBIAgent Validation #51 / Full Validation (Windows) 已核验 exact-SHA completed/success。M5.8.6 遗留 current-state 文档已收口；Settings.version=M5.9。离线 1/2/4/8 worker、100-way stress、fault matrix、2h soak 与 Rich PBIX 1/2/4 worker Real acceptance 已通过；backend 2425 PASS / 1 manual-real SKIP，Semantic Compatibility 743 PASS，frontend 87 PASS + typecheck/lint/build，Golden 11 PASS / 1 manual-real SKIP，全部治理 Gate、compileall、diff-check 与 residual=0 通过。Real smoke 原阻塞根因是 raw adapter catalog 在正式 discovery service probe 前按合同没有 `selectable=true`，harness 现按唯一 exact available/connected model 选择后执行 compatibility probe；production discovery/authority 未变。14 个本轮早期 automation 目录经用户批准的 exact-path ACL 恢复后删除，Artifact Governance PASS。主实现 `179dd24f704d1f2059b37f5e7a6a0bb1ef87218f` 的 PowerBIAgent Validation #52 / Full Validation (Windows) exact-SHA completed/success。M5.8.5 correctness 冻结，M5.10 NOT STARTED，M5 FINAL=false。
 
 ## M5.8.6 完成记录（2026-09-03）
 
@@ -97,7 +97,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 | **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **✅ COMPLETE（3e3d8ac / CI success）** |
 | **M5.8.5** | **Semantic Completeness + Result Inspection + Presentation Truth** | **✅ COMPLETE；correctness frozen** |
 | **M5.8.6** | **主线发布与治理收口** | **✅ COMPLETE（e8a79c3 / CI #51 success）** |
-| **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **🚧 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING** |
+| **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **✅ COMPLETE（179dd24 / CI #52 success）** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ### M5.7 completed contract
@@ -492,4 +492,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-07 | M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.8.6 COMPLETE；m5/rebuild 冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-07 | M5.9 COMPLETE（179dd24 / CI #52 success）；M5.8.6 COMPLETE；m5/rebuild 冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false*

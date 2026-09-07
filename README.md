@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.9 — 性能、并发、韧性与云就绪运行时（LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING）**。离线并发/故障矩阵、2h soak、Real Local MCP 1/2/4 workers、全部本地 Gate 与 residual=0 已通过；正式 COMPLETE 等待本轮提交的 exact-SHA CI success。M5.8.6 COMPLETE，M5.8.5 correctness 已冻结；main 是唯一活动开发线。M5.10 = 第二固定专业报表模板，尚未开始。M5 FINAL=false。
+当前版本：**M5.9 — 性能、并发、韧性与云就绪运行时（COMPLETE）**。离线并发/故障矩阵、2h soak、Real Local MCP 1/2/4 workers、全部本地 Gate、residual=0 与 `179dd24` 的 PowerBIAgent Validation #52 exact-SHA CI 已通过。M5.8.6 COMPLETE，M5.8.5 correctness 已冻结；main 是唯一活动开发线。M5.10 = 第二固定专业报表模板，尚未开始。M5 FINAL=false。
 
 ## 项目概览
 
@@ -350,7 +350,7 @@ python -m alembic upgrade head
 | M5.8.4 | COMPLETE；同一 runtime Catalog 内的跨语言对象/成员绑定与多轮保持；`3e3d8ac` / CI #46 exact-SHA completed/success |
 | M5.8.5 | COMPLETE；Semantic Coverage、Shape Completeness、Result Inspection、Query Scope/ordering 四个通用 invariant |
 | M5.8.6 | COMPLETE — M0-M5 主线发布与治理收口；main 已合并为新的正式基线；m5/frontend 已归档 |
-| M5.9 | LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING — 离线/2h soak、Real 1/2/4 worker、full gates 与 residual=0 已通过 |
+| M5.9 | COMPLETE（`179dd24` / CI #52 success）— 离线/2h soak、Real 1/2/4 worker、full gates 与 residual=0 已通过 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
@@ -380,4 +380,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-07 | M5.8.6 COMPLETE；M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-07 | M5.8.6 COMPLETE；M5.9 COMPLETE（179dd24 / CI #52 success）；M5.10 NOT STARTED；M5 FINAL=false*

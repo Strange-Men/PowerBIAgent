@@ -260,4 +260,4 @@ class IntentSpec(BaseModel):
 
 ---
 
-*最后更新：2026-09-07 | M5.8.6 current-state 收口；进入 M5.9，correctness/Memory authority 冻结*
+*最后更新：2026-09-07 | M5.8.6 / M5.9 COMPLETE；correctness/Memory authority 冻结*

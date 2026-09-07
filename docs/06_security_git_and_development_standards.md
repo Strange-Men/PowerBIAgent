@@ -1,7 +1,7 @@
 # 06 — 安全、Git 与开发规范
 
 > **状态：** M5.8.6 COMPLETE；Secret、仓库、artifact、main-only 开发与 exact-SHA CI 治理均已固化。
-> **当前轮次：** M5.9 performance / concurrency / resilience / cloud-ready runtime 本地验收已完成，等待 exact-SHA CI；离线实现、2h soak、Real PBIX 1/2/4 worker、Artifact Governance 与 residual=0 已通过。M5.8.5 correctness 冻结，M5.10 NOT STARTED，M5 FINAL=false。
+> **当前轮次：** M5.9 performance / concurrency / resilience / cloud-ready runtime COMPLETE；离线实现、2h soak、Real PBIX 1/2/4 worker、Artifact Governance、residual=0 与 `179dd24` / CI #52 exact-SHA success 已通过。M5.8.5 correctness 冻结，M5.10 NOT STARTED，M5 FINAL=false。
 
 ---
 
@@ -232,4 +232,4 @@ Tag 名称的描述部分必须全部使用中文，禁止使用英文描述。
 
 ---
 
-*创建日期：2026-07-31 | 最后更新：2026-09-07 M5.8.6 治理 current-state 收口；进入 M5.9*
+*创建日期：2026-07-31 | 最后更新：2026-09-07 M5.8.6 治理 current-state 收口；M5.9 COMPLETE*

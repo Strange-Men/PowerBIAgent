@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING）。离线、2h soak、Real PBIX 1/2/4 worker、full gates 与 residual=0 已通过。M5.8.6 COMPLETE，M5.8.5 correctness 已冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false。
+> **状态：** M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（COMPLETE，`179dd24` / CI #52 success）。离线、2h soak、Real PBIX 1/2/4 worker、full gates 与 residual=0 已通过。M5.8.6 COMPLETE，M5.8.5 correctness 已冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -50,7 +50,7 @@
 | **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **COMPLETE；`3e3d8ac` / CI #46 exact-SHA completed/success** |
 | **M5.8.5** | **Semantic Completeness + Result Inspection + Presentation Truth** | **✅ COMPLETE；2,304 stress + 三 PBIX/双 Provider Real + full gates** |
 | **M5.8.6** | **主线发布与治理收口、m5/rebuild→main 合并、m5/frontend 归档** | **✅ COMPLETE** |
-| **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **🚧 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING** |
+| **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **✅ COMPLETE（179dd24 / CI #52 success）** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ## M5 重建决策与历史状态
@@ -287,6 +287,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.8.2—M5.8.6 已完成；M5.8.5 四个 correctness invariant、2,304 stress、三 PBIX/双 Provider Real 与全量门禁通过，correctness 已冻结；M5.9 本地与 Real acceptance 已通过并等待 exact-SHA CI，M5.10 保持 NOT STARTED；M5 FINAL=false。
+- M5.8.2—M5.9 已完成；M5.8.5 四个 correctness invariant、2,304 stress、三 PBIX/双 Provider Real 与全量门禁通过，correctness 已冻结；M5.9 本地、Real acceptance 与 exact-SHA CI 已通过，M5.10 保持 NOT STARTED；M5 FINAL=false。
 
-*最后更新：2026-09-07 | M5.8—M5.8.6 COMPLETE；M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-07 | M5.8—M5.9 COMPLETE；M5.10 NOT STARTED；M5 FINAL=false*

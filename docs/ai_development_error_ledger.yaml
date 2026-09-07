@@ -3,7 +3,7 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-07 | M5.8.6 COMPLETE；M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；M5.10 NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-07 | M5.8.6 / M5.9 COMPLETE；M5.10 NOT STARTED；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'

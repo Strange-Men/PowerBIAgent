@@ -1,6 +1,6 @@
 # 04 — Power BI MCP 与 API 契约
 
-> **状态：** M5.8.6 COMPLETE；Local MCP 是当前 Real 路径，Template/LLM/模型安全目录与 SQLite 资源 API 均已实现；M5.9 离线运行时、Real 1/2/4 worker 与 residual Gate 已通过，等待 exact-SHA CI。
+> **状态：** M5.8.6 / M5.9 COMPLETE；Local MCP 是当前 Real 路径，Template/LLM/模型安全目录与 SQLite 资源 API 均已实现；M5.9 离线运行时、Real 1/2/4 worker、residual Gate 与 `179dd24` / CI #52 exact-SHA success 已通过。
 > **关联 ADR：** ADR-003（partially superseded）、ADR-005—ADR-017
 > **API 源码：** `backend/app/api/routes.py`、`backend/app/main.py`
 > **数据契约源码：** `backend/app/schemas/data_contracts.py`
@@ -207,4 +207,4 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-*最后更新：2026-09-07 | M5.8.6 current-state/API/registry 收口；进入 M5.9*
+*最后更新：2026-09-07 | M5.8.6 current-state/API/registry 收口；M5.9 COMPLETE*

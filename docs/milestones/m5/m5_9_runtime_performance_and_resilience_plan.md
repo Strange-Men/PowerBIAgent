@@ -1,6 +1,6 @@
 # M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime
 
-状态：**LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING**
+状态：**COMPLETE**
 基线：`main@e8a79c3edcd7f648600bd4aa271d084d65cb62a1`（CI #51 exact-SHA success）
 架构：`ADR-017`；M5.8.5 correctness frozen；M5.10 NOT STARTED；M5 FINAL=false
 
@@ -60,5 +60,5 @@ Deterministic Mock HTTP 全链覆盖 scalar/grouped/ranking/trend/report 和 1/4
 
 ## 尚未满足的正式条件
 
-- 本地正式条件已经全部闭合；尚未 commit/push，未触发本轮 exact-SHA CI。只有提交后的 `PowerBIAgent Validation / Full Validation (Windows)` 对 exact SHA completed/success 才能把 M5.9 标记为 COMPLETE。
+- 本地正式条件全部闭合；主实现提交 `179dd24f704d1f2059b37f5e7a6a0bb1ef87218f` 已 push main，PowerBIAgent Validation #52 / Full Validation (Windows) exact-SHA completed/success。M5.9 COMPLETE。
 - 本文件只记录真实结果；不得把离线 fixture 冒充 Real，也不得把历史 M5.8.1 最佳值冒充 M5.9 before。

@@ -43,7 +43,7 @@
 
 当前开发最重要的 active 决策为 ADR-005—ADR-017：ADR-005 约束统一控制面，ADR-006/007 分别约束 Deferred Remote 与当前 Local Provider，ADR-008/009 分别约束 canonical business semantics 与 deterministic execution / VerifiedFactSet，ADR-010 约束 M3 固定事实边界（固定四查询限制由 ADR-011 supersede），ADR-011 约束自适应报表规划与可视化权限，ADR-012 约束 SQLite/Repository/HTML authority 及 M4.4 restart/delete recovery，ADR-013 约束共享 OpenAI-compatible Provider 与 request-scoped immutable profile selection，ADR-014/015 分别约束 query shape authority 与跨语言 runtime grounding，ADR-016 固化四个 correctness invariant，ADR-017 固化 bounded worker pool、deadline、retry、lifecycle 与 cloud-ready replacement boundary。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
 
-**当前正式基线：** main（M5.8.6 COMPLETE）；M5.9 本地与 Real acceptance 已通过并等待 exact-SHA CI；m5/rebuild 已冻结为只读发布追溯分支。M5.10 NOT STARTED，M5 FINAL=false。
+**当前正式基线：** main（M5.8.6 / M5.9 COMPLETE）；M5.9 主实现 `179dd24` / CI #52 exact-SHA success；m5/rebuild 已冻结为只读发布追溯分支。M5.10 NOT STARTED，M5 FINAL=false。
 
 ## ADR 详情
 
@@ -111,4 +111,4 @@ Execution、Tooling、Context、Lifecycle、Observability、Verification、Gover
 
 ---
 
-*最后更新：2026-09-07 | M5.9 LOCAL ACCEPTANCE COMPLETE / exact-SHA CI PENDING；ADR-005—017 active，M5.8.5 correctness authority 冻结*
+*最后更新：2026-09-07 | M5.9 COMPLETE（179dd24 / CI #52 success）；ADR-005—017 active，M5.8.5 correctness authority 冻结*

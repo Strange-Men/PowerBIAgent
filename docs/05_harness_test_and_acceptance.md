@@ -1,6 +1,6 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M5.8.6 COMPLETE；M5.8.5 correctness 冻结。M5.9 performance baseline、20/50/100 concurrency、fault/lifecycle/backpressure、2h offline soak、Real Local MCP 1/2/4 worker 与 Artifact residual Gate 已通过；等待 exact-SHA CI。
+> **状态：** M5.8.6 / M5.9 COMPLETE；M5.8.5 correctness 冻结。M5.9 performance baseline、20/50/100 concurrency、fault/lifecycle/backpressure、2h offline soak、Real Local MCP 1/2/4 worker、Artifact residual Gate 与 `179dd24` / CI #52 exact-SHA success 已通过。
 > **关联 ADR：** ADR-004、ADR-005、ADR-007—ADR-017
 > **最近 M5.9 fresh evidence：** backend 2425 passed / 1 Real-only skip；Semantic Compatibility 743 passed；Golden 11 passed / 1 Real-only skip；frontend Vitest 87 passed，typecheck/lint/build PASS；Repository Safety 361、Architecture 133、Error Ledger 59、Documentation/Artifact、compileall 与 diff-check PASS。Rich PBIX 1/2/4 worker Real DAX acceptance errors=0，sessions 全部关闭且 residual=0。
 > **最近正式 correctness evidence：** M5.8.5 Rich Sales、M3 Test、Logistics Test × DeepSeek/Kimi 定点链与 A→B→C→A 隔离通过；2,304 deterministic stress；M5.9 Semantic Compatibility 743 PASS 证明该 authority 未回归。
