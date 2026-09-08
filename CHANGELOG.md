@@ -2,6 +2,16 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.9.1] — 2026-09-08（Runtime Audit Closure）
+
+- **Shutdown/enqueue race：** Event barrier 将请求冻结在 `_ensure_workers()` 返回后、enqueue 前，并让 `aclose()` 先完成 closed/STOP/worker exit；旧实现确定性留下无人消费的 future。现使用既有 lifecycle lock 原子化 `closed` 复核与 enqueue，shutdown 后未 accepted 请求快速返回 `local_mcp_client_closed`，已 accepted 请求继续 drain，不粗暴 cancel。
+- **Retry ownership：** exact call-count reproducer 证明旧 schema NETWORK、schema MCP timeout 与 member transport failure 均为 4 次 low-level operation；DAX transport 为 2 次，stale identity、schema validation 与 deadline 到期均为 1 次。现由 `LocalMCPPowerBIAdapter` 唯一拥有 bounded transport retry，声明 ownership 后 schema/member/DAX ToolSpec 的 Gateway retry 固定为 0；修复后 transient read transport 最多 2 次，其他失败仍为 1 次。
+- **边界与回归：** focused worker/Power BI/deadline/transaction 137 PASS；1/2/4 worker 短 concurrency/soak 均 session residual=0，soak errors=0。Real Local MCP 已有 1/2/4 worker acceptance 保持 0.492/0.630/0.702 operations/s，默认仍为 2 workers。M5.8.5 correctness、exact PBIX stale fail-closed、Memory/Snapshot/Report exactly-once 与 M5.9 worker-pool 总体架构不变。
+- **Fresh full gates：** Repository Safety 361、AI Error Ledger 61、Architecture 133、Documentation/Artifact Governance PASS；Semantic Compatibility 743 PASS；backend 2434 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 87 PASS + typecheck/lint/build；compileall 与 `git diff --check` PASS。
+- **发布条件：** 以当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success、local main==origin/main、clean working tree 与 residual=0 为证据。M5.10 NOT STARTED，M5 FINAL=false。
+
+**Settings.version:** M5.9.1
+
 ## [M5.9] — 2026-09-07（COMPLETE）
 
 - **M5.8.6 遗留文档收口：** 长期入口文档的 current-state 已与 main 代码、实际 API/registry 和 exact-SHA CI 证据对齐；历史章节保留当时语境。

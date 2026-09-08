@@ -9,7 +9,9 @@ from types import SimpleNamespace
 import pytest
 
 from backend.app.core.async_runtime import AsyncSingleFlight
+from backend.app.core.deadline import bind_request_deadline, reset_request_deadline
 import backend.app.powerbi.local_mcp as local_mcp_module
+from backend.app.harness.errors import ToolExecutionError, ToolTimeoutError
 from backend.app.harness.models import HarnessConfig
 from backend.app.harness.runtime.tool_gateway import ToolExecutionContext
 from backend.app.harness.tool_registry import (
@@ -656,6 +658,30 @@ def _local_adapter(
         max_retries=max_retries,
         semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
     )
+
+
+def _local_gateway(adapter: LocalMCPPowerBIAdapter, *, max_retries: int = 1):
+    async def render(_: object) -> str:
+        return "<html></html>"
+
+    gateway = create_default_tool_gateway(
+        adapter,
+        SimpleNamespace(render=render),
+        HarnessConfig(max_powerbi_retries=max_retries),
+    )
+    context = ToolExecutionContext(
+        intent=IntentType.DATA_QUESTION,
+        user=UserContext(
+            allowed_semantic_models=[LOCAL_DESKTOP_SEMANTIC_MODEL_KEY],
+            allowed_tools=[
+                "get_semantic_model_schema",
+                "get_column_members",
+                "execute_dax",
+            ],
+        ),
+        runtime_mode=RuntimeDataMode.REAL,
+    )
+    return gateway, context
 
 
 class TestMockPowerBIAdapter:
@@ -2407,3 +2433,143 @@ class TestLocalMCPPowerBIAdapter:
 
     def test_official_mcp_v2_dependency_is_installed(self):
         assert version("mcp") == "2.0.0"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "category",
+        [
+            LocalMCPErrorCategory.NETWORK,
+            LocalMCPErrorCategory.MCP_TIMEOUT,
+        ],
+    )
+    async def test_gateway_and_adapter_share_one_schema_transport_retry_budget(
+        self,
+        category: LocalMCPErrorCategory,
+    ) -> None:
+        client = FakeLocalMCPClient(schema_error=LocalMCPConnectionError(
+            category,
+            "transient_schema_transport",
+            retryable=True,
+        ))
+        adapter = _local_adapter(client, max_retries=1)
+        gateway, context = _local_gateway(adapter, max_retries=1)
+
+        with pytest.raises(ToolExecutionError):
+            await gateway.execute(
+                "get_semantic_model_schema",
+                context,
+                SchemaInput(semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY),
+            )
+
+        assert client.schema_calls == 2
+        assert client.schema_keys == [LOCAL_DESKTOP_SEMANTIC_MODEL_KEY] * 2
+
+    @pytest.mark.asyncio
+    async def test_gateway_and_adapter_share_one_member_transport_retry_budget(
+        self,
+    ) -> None:
+        client = FakeLocalMCPClient(
+            schema_snapshot=_schema_snapshot(),
+            dax_error=LocalMCPConnectionError(
+                LocalMCPErrorCategory.NETWORK,
+                "transient_member_transport",
+                retryable=True,
+            ),
+        )
+        adapter = _local_adapter(client, max_retries=1)
+        gateway, context = _local_gateway(adapter, max_retries=1)
+
+        with pytest.raises(ToolExecutionError):
+            await gateway.execute(
+                "get_column_members",
+                context,
+                ColumnMembersRequest(
+                    semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+                    table_name="Products",
+                    field_name="Category",
+                    limit=10,
+                ),
+            )
+
+        assert client.dax_calls == 2
+        assert client.dax_keys == [LOCAL_DESKTOP_SEMANTIC_MODEL_KEY] * 2
+
+    @pytest.mark.asyncio
+    async def test_gateway_dax_uses_only_adapter_transport_retry(self) -> None:
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax='EVALUATE ROW("Value", 1)',
+            request_id="retry-owner-dax",
+        )
+        client = FakeLocalMCPClient(dax_error=LocalMCPConnectionError(
+            LocalMCPErrorCategory.NETWORK,
+            "transient_dax_transport",
+            retryable=True,
+        ))
+        adapter = _local_adapter(client, max_retries=1)
+        gateway, context = _local_gateway(adapter, max_retries=1)
+
+        result = await gateway.execute("execute_dax", context, request)
+
+        assert result.error is not None
+        assert result.error.type == "connection_error"
+        assert client.dax_calls == 2
+        assert client.dax_keys == [LOCAL_DESKTOP_SEMANTIC_MODEL_KEY] * 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "category",
+        [
+            LocalMCPErrorCategory.DESKTOP_STALE_INSTANCE,
+            LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
+        ],
+    )
+    async def test_gateway_does_not_retry_stale_or_schema_validation_failure(
+        self,
+        category: LocalMCPErrorCategory,
+    ) -> None:
+        client = FakeLocalMCPClient(schema_error=LocalMCPConnectionError(
+            category,
+            "non_retryable_schema_failure",
+            retryable=False,
+        ))
+        adapter = _local_adapter(client, max_retries=1)
+        gateway, context = _local_gateway(adapter, max_retries=1)
+
+        with pytest.raises(ToolExecutionError):
+            await gateway.execute(
+                "get_semantic_model_schema",
+                context,
+                SchemaInput(semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY),
+            )
+
+        assert client.schema_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_expired_request_deadline_stops_adapter_retry_immediately(
+        self,
+    ) -> None:
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax='EVALUATE ROW("Value", 1)',
+            request_id="expired-retry-owner",
+        )
+        client = FakeLocalMCPClient(dax_error=LocalMCPConnectionError(
+            LocalMCPErrorCategory.MCP_TIMEOUT,
+            "transient_dax_timeout",
+            retryable=True,
+        ))
+        adapter = _local_adapter(client, max_retries=1)
+        gateway, context = _local_gateway(adapter, max_retries=1)
+        deadline_token = bind_request_deadline(0.01)
+        try:
+            with pytest.raises(ToolTimeoutError, match="request deadline"):
+                await gateway.execute(
+                    "execute_dax",
+                    context,
+                    request,
+                )
+        finally:
+            reset_request_deadline(deadline_token)
+
+        assert client.dax_calls == 1

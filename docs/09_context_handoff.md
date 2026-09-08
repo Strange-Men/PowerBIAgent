@@ -1,7 +1,17 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-09-07
+> **最后更新：** 2026-09-08
+
+## 当前阶段 — M5.9.1 Runtime Audit Closure（2026-09-08）
+
+M5.9.1 已完成两个远程审计 P2 的“先证明、后修复”收口。shutdown/enqueue race 由 Event barrier 精确控制在 `_ensure_workers()` 返回后、queue enqueue 前；旧实现会在并发 `aclose()` 已投递并消费 STOP、worker 全退后留下无人消费的 future。现以既有 lifecycle lock 原子化 `closed` 复核与 enqueue：enqueue 成功才算 accepted，已 accepted work drain，未 accepted work 快速失败，queue/admission/worker/session residual 均归零。
+
+retry exact call-count 证明旧 schema NETWORK、schema MCP timeout、member transport failure 各为 4 次 low-level operation，DAX transport 为 2 次，stale identity、schema validation 与 deadline 到期均为 1 次。现明确 `LocalMCPPowerBIAdapter` 是唯一 transport retry owner；已声明 ownership 的 schema/member/DAX ToolSpec 不再叠加 Gateway retry。修复后 transient read transport 最多 2 次，其余保持 1 次。Settings.version=M5.9.1；Real Local MCP 既有 1/2/4 worker acceptance 为 0.492/0.630/0.702 operations/s，默认仍为 2 workers。
+
+M5.8.5 correctness authority、M5.9 worker-pool 总体架构保持冻结。发布以当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success、clean working tree、local main==origin/main 与 residual=0 为证据。M5.10 NOT STARTED，M5 FINAL=false。
+
+Fresh local evidence：focused worker/Power BI/deadline/transaction 137 PASS；1/2/4 worker 短 concurrency/soak errors=0、session residual=0；Repository Safety 361、AI Error Ledger 61、Architecture 133、Documentation/Artifact Governance PASS；Semantic Compatibility 743 PASS；backend 2434 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 87 PASS + typecheck/lint/build；compileall、diff-check PASS。
 
 ## 当前阶段 — M5.9（2026-09-07）
 
@@ -98,6 +108,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 | **M5.8.5** | **Semantic Completeness + Result Inspection + Presentation Truth** | **✅ COMPLETE；correctness frozen** |
 | **M5.8.6** | **主线发布与治理收口** | **✅ COMPLETE（e8a79c3 / CI #51 success）** |
 | **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **✅ COMPLETE（179dd24 / CI #52 success）** |
+| **M5.9.1** | **Runtime Audit Closure：shutdown/enqueue 竞态与 retry ownership** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ### M5.7 completed contract
@@ -443,7 +454,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-M5.8.6 已完成。main 是新的正式基线。M5.9 = performance / concurrency / resilience / cloud-ready runtime；M5.10 = 第二固定专业报表模板。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+M5.9 已完成，M5.9.1 仅收口 runtime audit 风险；对应当前 main exact-SHA CI success 后才可进入 M5.10。M5.10 = 第二固定专业报表模板。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -492,4 +503,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-07 | M5.9 COMPLETE（179dd24 / CI #52 success）；M5.8.6 COMPLETE；m5/rebuild 冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-08 | M5.9 COMPLETE；M5.9.1 Runtime Audit Closure；m5/rebuild 冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false*

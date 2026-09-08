@@ -95,6 +95,11 @@ class PowerBIAdapter(ABC):
         """Release application-scoped provider resources, when any."""
         return None
 
+    @property
+    def owns_transport_retries(self) -> bool:
+        """Whether the adapter owns its bounded transport retry policy."""
+        return False
+
     @abstractmethod
     async def execute_dax(self, request: DAXRequest) -> QueryResult:
         """执行 DAX 查询

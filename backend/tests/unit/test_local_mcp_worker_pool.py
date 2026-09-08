@@ -228,3 +228,77 @@ async def test_worker_rebinds_each_request_deadline_without_context_bleed(fake_s
 
     assert result == "second"
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_rejects_request_paused_before_enqueue_without_orphan(
+    fake_stdio,
+) -> None:
+    client = PowerBILocalMCPClient(
+        timeout_seconds=2,
+        worker_count=1,
+        max_pending_operations=1,
+    )
+    workers_ready = asyncio.Event()
+    allow_enqueue = asyncio.Event()
+    original_ensure_workers = client._ensure_workers
+
+    async def ensure_workers_then_pause() -> None:
+        await original_ensure_workers()
+        workers_ready.set()
+        await allow_enqueue.wait()
+
+    client._ensure_workers = ensure_workers_then_pause  # type: ignore[method-assign]
+    request = asyncio.create_task(
+        client._run_session(lambda *_: asyncio.sleep(0, result="unexpected"))
+    )
+    await asyncio.wait_for(workers_ready.wait(), timeout=1.0)
+
+    await asyncio.wait_for(client.aclose(), timeout=1.0)
+    allow_enqueue.set()
+
+    with pytest.raises(LocalMCPConnectionError) as exc_info:
+        await asyncio.wait_for(request, timeout=1.0)
+
+    assert exc_info.value.error_type == "local_mcp_client_closed"
+    assert client._work_queue.qsize() == 0
+    assert client._operation_slots._value == 1
+    assert client.lifecycle_snapshot() == {
+        "worker_count": 1,
+        "sessions_started": 0,
+        "sessions_closed": 0,
+        "session_residual": 0,
+        "active_workers": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_shutdown_drains_already_accepted_work(fake_stdio) -> None:
+    client = PowerBILocalMCPClient(
+        timeout_seconds=2,
+        worker_count=1,
+        max_pending_operations=1,
+    )
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def accepted(*_: object) -> str:
+        started.set()
+        await release.wait()
+        return "completed"
+
+    request = asyncio.create_task(client._run_session(accepted))
+    await asyncio.wait_for(started.wait(), timeout=1.0)
+    shutdown = asyncio.create_task(client.aclose())
+    await asyncio.sleep(0)
+
+    assert shutdown.done() is False
+    release.set()
+    assert await asyncio.wait_for(request, timeout=1.0) == "completed"
+    await asyncio.wait_for(shutdown, timeout=1.0)
+
+    assert client._work_queue.qsize() == 0
+    assert client._operation_slots._value == 1
+    lifecycle = client.lifecycle_snapshot()
+    assert lifecycle["active_workers"] == 0
+    assert lifecycle["session_residual"] == 0

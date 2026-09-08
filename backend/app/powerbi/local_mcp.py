@@ -565,9 +565,15 @@ class PowerBILocalMCPClient:
                 ) from exc
             raise
         try:
-            work.queue_depth = self._work_queue.qsize()
-            work.enqueued_at = time.monotonic()
-            await self._work_queue.put(work)
+            async with self._worker_lock:
+                if self._closed:
+                    raise LocalMCPConnectionError(
+                        LocalMCPErrorCategory.MCP_STARTUP,
+                        "local_mcp_client_closed",
+                    )
+                work.queue_depth = self._work_queue.qsize()
+                work.enqueued_at = time.monotonic()
+                self._work_queue.put_nowait(work)
             if work.recorder is not None:
                 work.recorder.record(
                     "admission_wait",
@@ -1804,6 +1810,10 @@ class LocalMCPPowerBIAdapter(PowerBIAdapter):
     @property
     def is_mock(self) -> bool:
         return False
+
+    @property
+    def owns_transport_retries(self) -> bool:
+        return True
 
     @property
     def last_diagnostics(self) -> LocalMCPDiagnostics:

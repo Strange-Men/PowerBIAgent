@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（COMPLETE，`179dd24` / CI #52 success）。离线、2h soak、Real PBIX 1/2/4 worker、full gates 与 residual=0 已通过。M5.8.6 COMPLETE，M5.8.5 correctness 已冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false。
+> **状态：** M5.9 COMPLETE；M5.9.1 Runtime Audit Closure 已完成 shutdown/enqueue 与 retry ownership 的 deterministic 收口，发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.8.5 correctness 已冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -51,6 +51,7 @@
 | **M5.8.5** | **Semantic Completeness + Result Inspection + Presentation Truth** | **✅ COMPLETE；2,304 stress + 三 PBIX/双 Provider Real + full gates** |
 | **M5.8.6** | **主线发布与治理收口、m5/rebuild→main 合并、m5/frontend 归档** | **✅ COMPLETE** |
 | **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **✅ COMPLETE（179dd24 / CI #52 success）** |
+| **M5.9.1** | **Runtime Audit Closure：shutdown/enqueue 竞态与 retry ownership** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ## M5 重建决策与历史状态
@@ -205,7 +206,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - **M5.8.1** 已完成安全 profiling、Local MCP application-owned session reuse、非事实 metadata/member 短 TTL bounded cache、singleflight 与最小 bounded concurrency；未引入 Redis，未缓存事实/答案/DAX/QueryPlan。
 - **M5.8.2** 已完成 Question Router、八类 Query Shape、shape-specific required slots、minimal clarification、安全 calculator/help/system-info、dimension-only/Top1/member-set/bounded trend 与跨域语义防火墙；非业务 turn ZERO schema/member/DAX/semantic Memory mutation。
 - **M5.8.3** 只处理 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配，Real 验收已通过，受控 temp cleanup 已自动化；正式 COMPLETE 以 fresh local/residual 与对应提交 CI success 为条件。
-- **M5.9** 继续处理完整 queue/backpressure、20/50/100 concurrency、restart/fault matrix 与 soak；不得降低 factual validation 或修改 Semantic/DAX/VerifiedFactSet authority。
+- **M5.9** 已完成完整 queue/backpressure、20/50/100 concurrency、restart/fault matrix 与 soak；M5.9.1 仅收口 shutdown/enqueue 与 retry ownership，不降低 factual validation 或修改 Semantic/DAX/VerifiedFactSet authority。
 - **M5.8.4** 已完成现有语义链的跨语言绑定、runtime 成员验证、KEEP/REPLACE 与 Report/Data 状态收口；完整 A–E 复核、失败样本、最终门禁与 CI 条件见 [专项计划](milestones/m5/m5_8_4_cross_language_grounding_plan.md)。没有新建第二套模型/Planner/Catalog。
 - **M5.8.5** 已完成 Semantic Obligation Coverage、Canonical Shape Completeness、Result Semantic Inspection 与 Deterministic Query Scope；TopN tie/order、trend ASC、fresh 优先级和 table/chart shared order 均有永久回归，三 PBIX/双 Provider Real 与 2,304 stress 通过。
 - **M5.10** 必须晚于 M5.9，只增加固定专业销售报表模板和显式两模板选择。“简易模板”是 M5.7 优化后的现有 `sales_report.html`；“销售模板”使用确定性专业版式。两者都只消费 VerifiedFactSet/ReportData/ReportSpec，不允许 LLM 生成 HTML/CSS/SVG、查询或事实。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
@@ -289,4 +290,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
 - M5.8.2—M5.9 已完成；M5.8.5 四个 correctness invariant、2,304 stress、三 PBIX/双 Provider Real 与全量门禁通过，correctness 已冻结；M5.9 本地、Real acceptance 与 exact-SHA CI 已通过，M5.10 保持 NOT STARTED；M5 FINAL=false。
 
-*最后更新：2026-09-07 | M5.8—M5.9 COMPLETE；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-08 | M5.8—M5.9 COMPLETE；M5.9.1 Runtime Audit Closure；M5.10 NOT STARTED；M5 FINAL=false*

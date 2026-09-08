@@ -2,7 +2,7 @@
 
 集中注册四个白名单工具：get_semantic_model_schema、get_column_members、
 execute_dax、render_report。
-工具超时和重试次数从 HarnessConfig 读取，不再写死。
+工具超时从 HarnessConfig 读取；transport retry 由声明 ownership 的 Adapter 负责。
 MockTurnService 和 DeepSeekTurnService 统一使用此入口。
 """
 
@@ -67,6 +67,12 @@ def register_default_tools(
         report_repository: 管理 report_id 与 HTML artifact；默认仅内存兼容
     """
 
+    powerbi_gateway_retries = (
+        0
+        if bool(getattr(powerbi_adapter, "owns_transport_retries", False))
+        else config.max_powerbi_retries
+    )
+
     # ── 1. get_semantic_model_schema ──
     register_schema_tool(gateway, powerbi_adapter, config)
 
@@ -84,7 +90,7 @@ def register_default_tools(
         input_model=ColumnMembersRequest,
         output_model=ColumnMembersResult,
         timeout_seconds=float(config.powerbi_query_timeout_seconds),
-        max_retries=config.max_powerbi_retries,
+        max_retries=powerbi_gateway_retries,
         read_only=True,
         allowed_intents=[IntentType.DATA_QUESTION, IntentType.REPORT_GENERATION],
         supported_modes=[RuntimeDataMode.MOCK, RuntimeDataMode.REAL],
@@ -103,7 +109,7 @@ def register_default_tools(
         input_model=DAXRequest,
         output_model=QueryResult,
         timeout_seconds=float(config.powerbi_query_timeout_seconds),
-        max_retries=config.max_powerbi_retries,
+        max_retries=powerbi_gateway_retries,
         read_only=True,
         allowed_intents=[IntentType.DATA_QUESTION, IntentType.REPORT_GENERATION],
         supported_modes=[RuntimeDataMode.MOCK, RuntimeDataMode.REAL],
@@ -145,6 +151,11 @@ def register_schema_tool(
 ) -> None:
     """Register the canonical read-only schema boundary for focused callers."""
     get_schema = powerbi_adapter.get_semantic_model_schema
+    gateway_retries = (
+        0
+        if bool(getattr(powerbi_adapter, "owns_transport_retries", False))
+        else config.max_powerbi_retries
+    )
 
     async def _get_schema(input_data: SchemaInput) -> SemanticModelSchema:
         return await get_schema(input_data.semantic_model_key)
@@ -155,7 +166,7 @@ def register_schema_tool(
         input_model=SchemaInput,
         output_model=SemanticModelSchema,
         timeout_seconds=float(config.powerbi_query_timeout_seconds),
-        max_retries=config.max_powerbi_retries,
+        max_retries=gateway_retries,
         read_only=True,
         allowed_intents=[IntentType.DATA_QUESTION, IntentType.REPORT_GENERATION],
         supported_modes=[RuntimeDataMode.MOCK, RuntimeDataMode.REAL],

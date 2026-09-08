@@ -8,6 +8,73 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-591-002
+  title: Local MCP Adapter 与 ToolGateway 叠加 transport retry
+  category: ERR
+  first_detected_version: M5.9.1
+  symptom: retryable schema/member transport failure 先由 Adapter 重试一次，冒泡后又由 ToolGateway 重跑整个 Adapter 调用，实际 low-level operation 达到 4 次
+  local_evidence: deterministic exact call-count tests 证明旧 schema NETWORK=4、schema MCP_TIMEOUT=4、member transport=4；DAX transport=2，stale/validation/deadline=1
+  authoritative_sources:
+  - title: ADR-017 Bounded Runtime Concurrency and Resilience
+    reason: Local MCP transient read transport 只允许至多一次额外尝试，stale/validation/unsupported 与 deadline 到期不重试
+  root_cause: LocalMCPPowerBIAdapter 已实现 max_retries=1，但 schema/member/DAX ToolSpec 同时继承 HarnessConfig.max_powerbi_retries
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: PowerBIAdapter 暴露 transport retry ownership；Local Adapter 声明 ownership，三个 Power BI ToolSpec 因而不叠加 Gateway retry
+  regression_tests:
+  - backend/tests/unit/test_powerbi.py
+  prohibited_patterns:
+  - Adapter 与 ToolGateway 同时拥有同一次 Power BI transport retry budget
+  prevention_rules:
+  - transport retry 必须有且只有一个明确 owner
+  - retry call-count 必须覆盖 schema、member、DAX、timeout、stale、validation 与 request deadline
+  related_adr: ADR-017
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-08'
+    action: discovered
+    version: M5.9.1
+  - date: '2026-09-08'
+    action: mitigation
+    version: M5.9.1
+- id: ERR-591-001
+  title: Local MCP shutdown 与 enqueue 缺少共同线性化点
+  category: ERR
+  first_detected_version: M5.9.1
+  symptom: request 通过 worker ensure 后可在 enqueue 前被 shutdown 越过；STOP 被消费且 worker 退出后 request 仍 enqueue，future 永久无人完成
+  local_evidence: Event barrier 精确控制 ensure-complete、enqueue-paused、aclose-complete、enqueue-resume；旧实现 bounded wait 确定性 timeout
+  authoritative_sources:
+  - title: ADR-017 Bounded Runtime Concurrency and Resilience
+    reason: shutdown 开始后不接受新 work，已接纳 work drain，future/queue/admission/session 不得残留
+  - title: Python 3.11 asyncio synchronization primitives
+    url: https://docs.python.org/3.11/library/asyncio-sync.html
+    reason: asyncio.Lock 为共享状态与 enqueue 临界区提供互斥访问
+  - title: Python 3.11 asyncio queues
+    url: https://docs.python.org/3.11/library/asyncio-queue.html
+    reason: Queue 的 put/get 是独立操作，生命周期状态检查需要由调用方建立共同临界区
+  root_cause: _ensure_workers 内检查 _closed 后即释放 worker lock，后续 admission/enqueue 没有在同一 lock 下重新检查 lifecycle state
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 复用 worker lifecycle lock 原子化 enqueue 前 closed 复核与 put_nowait；enqueue 成功定义为 accepted，STOP 只排在全部 accepted work 之后
+  regression_tests:
+  - backend/tests/unit/test_local_mcp_worker_pool.py
+  prohibited_patterns:
+  - 在 lifecycle closed 检查与 enqueue 之间留下可被 shutdown 穿越的 await 窗口
+  - shutdown 粗暴取消所有已 accepted 业务请求
+  prevention_rules:
+  - closed transition 与 work acceptance 必须共享一个明确线性化点
+  - race test 必须使用 Event/barrier 和有限 timeout，并验证 queue/admission/worker/session residual
+  related_adr: ADR-017
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-08'
+    action: discovered
+    version: M5.9.1
+  - date: '2026-09-08'
+    action: mitigation
+    version: M5.9.1
 - id: ERR-590-002
   title: 过载基准把受控拒绝延迟混入成功请求百分位
   category: ERR
