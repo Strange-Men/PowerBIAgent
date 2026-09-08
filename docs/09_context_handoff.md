@@ -3,7 +3,17 @@
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
 > **最后更新：** 2026-09-08
 
-## 当前阶段 — M5.9.1 Runtime Audit Closure（2026-09-08）
+## 当前阶段 — M5.9.2 Runtime Edge Final Closure（2026-09-08）
+
+M5.9.2 对 M5.9/M5.9.1 runtime edge 做最后专项审计。deterministic reproducer 确认：queued 或已 dispatch caller 取消时，旧 caller-side `finally` 会过早释放 global/per-request admission；前者可因 canceled item 尚占物理 queue 而泄漏 raw `asyncio.QueueFull`，后者会让尚在 drain 的 operation 脱离 configured bound。现以 enqueue success 作为 ownership 转移点，由 work item 持有 capacity 并由 worker 在 skip/完成/失败时幂等释放；caller cancellation 仅取消 future，底层只读 operation 可安全 drain 且仍计入 bound。
+
+Broad invariant sweep 另确认 sole metadata singleflight waiter 取消后 leader 会成为无主任务并继续一次 transport retry。现按 key 跟踪 waiter ownership；最后 waiter 取消会 cancel/await leader cleanup，有其他 waiter 时共享 leader 不受影响，fresh same-key request 可立即成为新 leader。full backend 还发现 opaque HMAC digest 测试以短 PID substring absence 判断泄漏，合法 hex 碰撞导致误报；生产 identity 未修改，测试改为结构、确定性、输入变化与完整 endpoint absence 断言。queued/in-flight cancellation、accepted/unaccepted shutdown、worker crash + normal/cancelled queue、restart + deadline、repeated `aclose()` 与 recovery/shutdown 九类矩阵无 hang、raw asyncio error、orphan、double release 或 residual。Local Adapter 仍为唯一 retry owner，transient schema/member/DAX 最多 2 次，non-retry/deadline 1 次，取消后无额外 retry。
+
+Settings.version=M5.9.2。M5.8.5 correctness、M5.9 worker-pool 总体架构、semantic/DAX/VerifiedFactSet 与 Memory/Snapshot/Report factual authority 均未变化。发布以当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success、clean local main==origin/main 与 residual=0 为证据。M5.10 NOT STARTED，M5 FINAL=false。
+
+Fresh local evidence：focused runtime/transaction 216 PASS；1/2/4 worker 短 concurrency/soak errors=0、session residual=0；Repository Safety 361、AI Error Ledger 64、Architecture 133、Documentation/Artifact Governance PASS；Semantic Compatibility 743 PASS；backend 2448 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 87 PASS + typecheck/lint/build；compileall、diff-check PASS。上一 exact-SHA backend 为 2434 PASS，本轮新增 14 cases，差异来自永久 runtime regression 覆盖。
+
+## 前一阶段 — M5.9.1 Runtime Audit Closure（2026-09-08）
 
 M5.9.1 已完成两个远程审计 P2 的“先证明、后修复”收口。shutdown/enqueue race 由 Event barrier 精确控制在 `_ensure_workers()` 返回后、queue enqueue 前；旧实现会在并发 `aclose()` 已投递并消费 STOP、worker 全退后留下无人消费的 future。现以既有 lifecycle lock 原子化 `closed` 复核与 enqueue：enqueue 成功才算 accepted，已 accepted work drain，未 accepted work 快速失败，queue/admission/worker/session residual 均归零。
 

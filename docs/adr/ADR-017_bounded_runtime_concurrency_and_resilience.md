@@ -14,7 +14,7 @@ M5.8.1 已让 Local MCP stdio session 由应用持有并复用，也建立了短
 1. 唯一事实链保持不变。M5.9 只在 `TurnPipeline`、`ToolGateway`、`PowerBIAdapter`、LLM Provider 与既有 Repository 边界增加 timing、admission、deadline、retry 和 lifecycle 能力；不新增 semantic、planner、grounding、DAX 或 fact authority。
 2. Local MCP 使用固定数量的 worker pool。每个 worker 独占一个 stdio client/session；coroutine 不直接共享 session。所有 worker 共用有界 admission/queue，每个请求另有有界 MCP operation 配额，队列按提交顺序 dispatch。
 3. worker/session 生命周期由应用 lifespan 持有。单个 session 的 fatal transport failure 只终止并重建该 worker 的 session；关闭时停止接收新工作、drain 已接纳工作、关闭全部 stdio session，并等待 worker 结束。`closed` 复核与 queue enqueue 必须在同一 lifecycle lock 内完成：成功 enqueue 才算正式接纳，shutdown 开始后尚未 enqueue 的请求快速失败。
-4. 每轮建立 request-local monotonic deadline。LLM、ToolGateway、MCP admission、session startup 和 MCP operation 的局部 timeout 不能超过剩余预算。caller cancellation 必须释放 admission slot；尚未执行的已取消项不得调用 MCP；TurnPipeline owner 必须 abort Snapshot claim，禁止重复 Memory commit 或 ReportArtifact。
+4. 每轮建立 request-local monotonic deadline。LLM、ToolGateway、MCP admission、session startup 和 MCP operation 的局部 timeout 不能超过剩余预算。未 accepted 的 caller cancellation 立即释放已取得的 admission；成功 enqueue 后容量 ownership 转移给 work item，并仅由 worker 在 skip、完成或失败后幂等释放。已 dispatch 的 unsafe stdio operation 可 drain，但完成前继续占用 global/per-request capacity。尚未执行的已取消项不得调用 MCP；TurnPipeline owner 必须 abort Snapshot claim，禁止重复 Memory commit 或 ReportArtifact。
 5. 仅 transient 且可安全重放的只读操作可重试。LLM 的 429、5xx、连接和 timeout 使用 exponential backoff + jitter，最大尝试次数为 3；malformed response、validation、semantic ambiguity、unsupported 和认证失败不重试。Local MCP transport retry 的唯一 owner 是 `LocalMCPPowerBIAdapter`：只对明确标记 retryable 的 network/startup/timeout 做至多一次额外尝试；已声明 Adapter ownership 的 schema/member/DAX `ToolSpec` 不再叠加 Gateway transport retry。stale PBIX identity 永不重试或切换模型。
 6. 性能观测是 request-local、data-safe 的进程内 contract：phase duration、retry/timeout count、cache/session state、queue depth 和 worker ID。不得记录 Secret、Authorization、完整 prompt、原始敏感响应、PBIX path 或 connection string。设计保持 OpenTelemetry-friendly，但 M5.9 不部署 telemetry backend。
 7. 报表只并行最终 `ReportDataPlan` 已证明互不依赖、且已经完成 CanonicalQueryPlan、deterministic DAX 与 Layer 3 validation 的查询。执行有界、结果恢复原 plan 顺序；每个 QueryResult 仍逐一通过 Result Inspection 并建立自己的 VerifiedFactSet 后才进入既有 ReportData/ReportSpec。
@@ -29,3 +29,9 @@ M5.8.1 已让 Local MCP stdio session 由应用持有并复用，也建立了短
 有界队列会在过载时返回受控 `local_mcp_overloaded`，而不是无限等待或耗尽资源。跨 worker completion 可以重排，但 FIFO dispatch 与调用方的输入顺序恢复合同保持确定。性能收益不得通过跳过真实 business DAX、降低 correctness gate、缓存 QueryResult/VerifiedFactSet/CanonicalQueryPlan 或扩大 timeout 获得。
 
 M5.9.1 对 shutdown/enqueue 线性化与 retry ownership 的专项审计以 deterministic reproducer、exact call-count 回归、full gates、residual=0、clean main 与当前 main exact-SHA Full Validation (Windows) success 为发布证据。M5.10 NOT STARTED，M5 FINAL=false。
+
+## M5.9.2 Runtime Edge Final Closure
+
+M5.9.2 将 cancellation 后的 queue/admission ownership 固化为：`request → request semaphore → global admission → enqueue acceptance → work item → worker/session/operation → future completion/skip → idempotent capacity release`。queue 的物理 item 与 admission ownership 不得因 caller future 取消而脱钩；`put_nowait()` 的 `QueueFull` 即使遇到防御性异常也必须映射为受控 `local_mcp_overloaded`，不得泄漏 raw asyncio exception。STOP 只位于全部 accepted work 之后，shutdown 拒绝未 accepted work并 drain 已 accepted work。
+
+metadata singleflight 使用 waiter ownership：单个 waiter 取消不能影响其他 waiter；最后 waiter 取消必须 cancel 并 await leader，禁止 orphan retry；clear 必须 cancel/await 全部 leader。deterministic matrix 固定覆盖 queued/in-flight cancel、accepted/unaccepted shutdown、worker fatal crash 下 normal/cancelled queue、restart + expired deadline、repeated close 与 shutdown/recovery 交叉，并验证 queue empty、admission 恢复、active workers=0、session started=closed。Local Adapter 唯一 retry ownership 与 M5.8.5 correctness authority 不变。M5.10 NOT STARTED，M5 FINAL=false。

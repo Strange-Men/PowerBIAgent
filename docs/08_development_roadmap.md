@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.9 COMPLETE；M5.9.1 — Runtime Audit Closure 已完成 shutdown/enqueue 与 retry ownership 的 deterministic 收口，发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.8.5 correctness 已冻结；main 是唯一活动开发线；M5.10 NOT STARTED；M5 FINAL=false。
+> **状态：** M5.9 COMPLETE；M5.9.2 — Runtime Edge Final Closure 已完成 cancellation queue/admission、singleflight ownership 与 cancel × shutdown × crash deterministic 收口，发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.8.5 correctness 与 M5.9 总体架构已冻结；main 是唯一活动开发线；M5.10 NOT STARTED；M5 FINAL=false。
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -52,6 +52,7 @@
 | **M5.8.6** | **M0-M5 主线发布与治理收口：m5/rebuild→main fast-forward 合并、m5/frontend 归档、main 成为唯一活动开发线、m5/rebuild 冻结为发布追溯** | **✅ COMPLETE** |
 | **M5.9** | **完整 MCP performance、concurrency、resilience 与 soak** | **✅ COMPLETE（179dd24 / CI #52 success）** |
 | **M5.9.1** | **Runtime Audit Closure：shutdown/enqueue 竞态与 retry ownership** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
+| **M5.9.2** | **Runtime Edge Final Closure：cancellation capacity、singleflight ownership 与组合生命周期矩阵** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ### M5.4.2 — M5 重建基线与规划固化（已完成）
@@ -168,6 +169,14 @@ M5.8.1 只前移低风险 session/cache/singleflight/semaphore 子集。M5.9 已
 retry exact call-count 审计确认旧 schema NETWORK、schema MCP timeout 与 member transport failure 各会产生 4 次 low-level MCP operation；DAX transport 为 2 次，stale identity、validation failure 与 deadline 到期均为 1 次。最小修复明确 `LocalMCPPowerBIAdapter` 为 transport retry owner，并让其 schema/member/DAX ToolSpec 的 Gateway retry 为 0；修复后 transient read transport 最多 2 次，其他失败仍为 1 次。Real 1/2/4 worker acceptance 的 0.492/0.630/0.702 operations/s 与默认 2 workers 不变。M5.8.5 correctness authority、M5.9 worker-pool 总体架构均保持冻结；M5.10 NOT STARTED，M5 FINAL=false。
 
 Fresh local evidence：focused runtime/transaction 137 PASS；短 1/2/4 worker concurrency/soak errors=0、session residual=0；Semantic Compatibility 743 PASS；backend 2434 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 87 PASS 与 typecheck/lint/build PASS；全部治理、compileall 与 diff-check PASS。
+
+### M5.9.2 — Runtime Edge Final Closure
+
+Event/barrier audit 确认两个同根 capacity failure：queued caller 取消后旧 caller `finally` 提前释放 admission，但物理 queue item 尚未 dequeue，新请求可穿透 semaphore 并遭遇 raw `asyncio.QueueFull`；已 dispatch caller 取消也会提前释放 global/per-request slot，使仍在 drain 的 application-owned MCP operation 不再计入 configured bound。最小修复将成功 enqueue 定义为 capacity ownership 转移点，由 work item 持有 global/per-request permit，worker 在取消项 skip、正常完成或异常后幂等释放；caller cancellation 只取消 future，unsafe stdio operation 不被强杀但完成前持续占用容量。
+
+Broad sweep 另确认 sole metadata singleflight waiter 取消后 leader 仍可进入 adapter backoff/retry。现按 key 记录 waiter count：只要仍有 waiter 就 shield leader；最后一个 waiter 取消时 cancel 并 await leader cleanup，随后同 key 请求成为 fresh leader；`clear()` 同样 drain 全部活动 leader。full backend 同时发现 opaque digest 测试以任意四位 substring absence 判断泄漏，会被合法 HMAC hex 碰撞误报；仅将测试改为验证完整 opaque 结构与 endpoint absence，生产 identity 未修改。九类 cancel × shutdown × crash/restart 矩阵、exact retry/deadline call-count、TurnPipeline cancellation exactly-once、report bounded sibling cleanup 与 1/2/4 worker 短 soak 均通过，errors=0、session residual=0。未修改 M5.8.5 correctness、M5.9 pool 总体架构、semantic/DAX/factual/report authority。发布以当前 main exact-SHA CI success 为证据；M5.10 NOT STARTED，M5 FINAL=false。
+
+Fresh local evidence：focused runtime/transaction 216 PASS；短 1/2/4 worker soak errors=0、session residual=0；Semantic Compatibility 743 PASS；backend 2448 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 87 PASS 与 typecheck/lint/build PASS；Repository Safety 361、AI Error Ledger 64、Architecture 133、Documentation/Artifact Governance、compileall 与 diff-check PASS。backend 相对上一 exact-SHA 增加 14 个本轮 permanent regression cases，差异已核对。
 
 ### 新 M5.10 — 固定专业销售报表模板与两模板选择
 

@@ -2,6 +2,18 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.9.2] — 2026-09-08（Runtime Edge Final Closure）
+
+- **取消后的容量 ownership：** deterministic Event/barrier reproducer 证明，旧实现会在 queued 或已 dispatch 的 caller 取消时提前释放 global/per-request admission；前者可让新请求遇到原始 `asyncio.QueueFull`，后者可让真实存活 MCP operation 超过 configured bound。现由成功 enqueue 的 work item 持有容量，worker 在 skip、完成或失败后幂等释放；caller 取消只取消其 future，底层只读 operation 安全 drain，并继续占有容量。
+- **Singleflight cancellation ownership：** sole waiter 取消后，旧 metadata singleflight leader 仍可完成 transport failure、backoff 并发起第二次 adapter retry。现记录每个 key 的 waiter ownership：尚有 waiter 时 shield leader；最后一个 waiter 取消时 cancel 并 await leader cleanup，随后同 key 新请求可成为 fresh leader；`clear()` 同样 cancel/await 全部活动 leader。
+- **Broad sweep 测试 oracle：** full backend 发现 opaque HMAC-SHA256 摘要恰好包含输入 PID 的四位字符，旧测试以任意短 substring absence 判断泄漏而误报。生产 identity 未修改；测试改为验证固定 prefix、64 位十六进制 digest、确定性、输入变化敏感性与完整 connection endpoint 不出现。
+- **组合矩阵与 retry：** queue cancel、in-flight cancel、accepted/unaccepted shutdown、worker crash 下正常/已取消 queued work、worker restart + deadline、repeated `aclose()` 与 shutdown/recovery 交叉均 deterministic PASS；无 hang、raw asyncio exception、orphan future/task、double release 或 residual。Local Adapter 仍为唯一 transport retry owner：transient schema/member/DAX 最多 2 次，stale/validation/permission/malformed/deadline 1 次，取消后 0 次额外 retry，request/model/PBIX identity 不切换。
+- **边界：** 仅修改 Local MCP accepted-work capacity bookkeeping 与通用 metadata singleflight cancellation ownership；M5.8.5 correctness、M5.9 worker-pool 总体架构、semantic/DAX/VerifiedFactSet、Memory/Snapshot/Report factual authority 均未改变。M5.10 NOT STARTED，M5 FINAL=false。
+- **Fresh gates：** focused runtime/transaction 216 PASS；1/2/4 worker 短 soak errors=0、session residual=0；Repository Safety 361、AI Error Ledger 64、Architecture 133、Documentation/Artifact Governance PASS；Semantic Compatibility 743 PASS；backend 2448 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 87 PASS + typecheck/lint/build；compileall 与 `git diff --check` PASS。相对上一 exact-SHA 的 backend 2434 PASS，新增 14 cases，差异已核对。
+- **发布条件：** fresh full gates、residual=0、clean local main==origin/main 与当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success。
+
+**Settings.version:** M5.9.2
+
 ## [M5.9.1] — 2026-09-08（Runtime Audit Closure）
 
 - **Shutdown/enqueue race：** Event barrier 将请求冻结在 `_ensure_workers()` 返回后、enqueue 前，并让 `aclose()` 先完成 closed/STOP/worker exit；旧实现确定性留下无人消费的 future。现使用既有 lifecycle lock 原子化 `closed` 复核与 enqueue，shutdown 后未 accepted 请求快速返回 `local_mcp_client_closed`，已 accepted 请求继续 drain，不粗暴 cancel。

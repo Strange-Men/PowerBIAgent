@@ -7,7 +7,7 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.9.1 — Runtime Audit Closure**。M5.9 已完成；本轮以 deterministic reproducer 收口 shutdown/enqueue 竞态与 retry ownership，发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.8.5 correctness 已冻结；main 是唯一活动开发线。m5/rebuild 已冻结为只读发布追溯分支，不接收 M5.9/M5.10 新开发。M5.10 = 第二固定专业报表模板。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+当前版本：**M5.9.2 — Runtime Edge Final Closure**。本轮以 deterministic reproducer 收口取消后的 queue/admission capacity ownership 与 metadata singleflight cancellation ownership，并完成 cancellation × shutdown × worker crash 最终矩阵；发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.8.5 correctness 与 M5.9 worker-pool 总体架构已冻结；main 是唯一活动开发线。m5/rebuild 已冻结为只读发布追溯分支，不接收 M5.9/M5.10 新开发。M5.10 = 第二固定专业报表模板。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -49,6 +49,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.8.3** 已实现 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配。MCP runtime schema 是结构 authority；immutable context 只适配 metadata；exact identity + fingerprint 验证的 override 只补充业务语言；LLM 只在 runtime-owned candidates 中选择。Rich/zero-config/双 PBIX/facts/performance/local full gates 已通过；受控 temp 生命周期已自动化；**正式 COMPLETE 以对应提交的 CI success 为条件**。
 - **M5.9** 已完成 MCP profiling、session reuse、cache、bounded concurrency、bounded queue/backpressure、20/50/100 concurrency 与 restart/fault/soak；Semantic/DAX/VerifiedFactSet authority 未改变。**M5.9 COMPLETE。**
 - **M5.9.1** 已确定性复现并最小修复 shutdown/enqueue race 与 schema/member 双层 transport retry；Local Adapter 是唯一 retry owner，已 accepted work 继续 drain。**发布以当前 main exact-SHA CI success 为证据；M5.10 NOT STARTED。**
+- **M5.9.2** 已确定性复现并最小修复 queued/in-flight cancellation 提前释放 capacity 与 sole-waiter singleflight 无主 retry；accepted work 的容量由 worker lifecycle 持有，cancel/shutdown/crash 九类矩阵均无 residual。**发布以当前 main exact-SHA CI success 为证据；M5.10 NOT STARTED。**
 - **M5.8.4** 已在现有 ModelSemanticContext/SemanticCatalog/Grounding 内完成跨语言对象/成员绑定与 canonical KEEP/REPLACE 优化；report template choice 不等于本轮 report intent。LLM 仅在 runtime 已证明存在的候选 ID 中解释语言，不能产生新对象或事实。`41b6e0b` 主开发后，首次 CI [#33455159267](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33455159267) 因测试 reference date 漂移失败；`a975310` 修复测试时钟后，CI [#33457056546](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33457056546) completed/success；`3e3d8ac` 最终治理 CI [#33580808379](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33580808379) exact-SHA completed/success，M5.8.4 COMPLETE。M5.9/M5.10 不启动。
 - **M5.8.5** 已在现有链加入四个通用 correctness Gate；unknown/known+unknown member、残缺 shape、Result 语义不一致均在事实/执行边界 fail closed，TopN tie-break、trend ASC、table/chart 共序与完整 effective scope 均由确定性合同约束。Rich Sales、M3 Test、Logistics Test 的双 Provider Real 与 A→B→C→A 隔离通过；无第二套 authority、无 migration、无 M5.9/M5.10 工作。**M5.8.5 COMPLETE。**
 - **M5.10** 只负责“简易模板/销售模板”显式选择与固定专业销售模板；两者都遵守 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed renderer`。**M5.10 NOT STARTED。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。**
@@ -171,4 +172,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-09-08 | M5.9 COMPLETE；M5.9.1 Runtime Audit Closure；M5.8.5 correctness frozen；main-only；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-08 | M5.9 COMPLETE；M5.9.2 Runtime Edge Final Closure；M5.8.5 correctness frozen；main-only；M5.10 NOT STARTED；M5 FINAL=false*

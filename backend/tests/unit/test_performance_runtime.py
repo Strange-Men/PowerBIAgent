@@ -21,7 +21,7 @@ from backend.app.core.deadline import (
     reset_request_deadline,
     sleep_with_request_deadline,
 )
-from backend.app.core.async_runtime import bounded_gather_ordered
+from backend.app.core.async_runtime import AsyncSingleFlight, bounded_gather_ordered
 from backend.app.harness.errors import ToolTimeoutError
 from backend.app.harness.runtime.tool_gateway import (
     ToolExecutionContext,
@@ -208,3 +208,28 @@ async def test_bounded_gather_cancels_and_awaits_siblings_on_failure() -> None:
     with pytest.raises(RuntimeError, match="fixture_failure"):
         await bounded_gather_ordered([0, 1, 2], operation, max_concurrency=3)
     assert cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_singleflight_clear_cancels_and_awaits_active_leaders() -> None:
+    singleflight: AsyncSingleFlight[str, int] = AsyncSingleFlight()
+    started = asyncio.Event()
+    drained = asyncio.Event()
+
+    async def operation() -> int:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            drained.set()
+        raise AssertionError("unreachable")
+
+    waiter = asyncio.create_task(singleflight.run("schema", operation))
+    await asyncio.wait_for(started.wait(), timeout=1.0)
+    await asyncio.wait_for(singleflight.clear(), timeout=1.0)
+
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    assert drained.is_set()
+    assert singleflight._tasks == {}
+    assert singleflight._waiters == {}

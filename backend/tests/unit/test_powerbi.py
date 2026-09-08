@@ -100,6 +100,7 @@ class FakeLocalMCPClient:
         self.schema_keys: list[str] = []
         self.dax_calls = 0
         self.dax_keys: list[str] = []
+        self.dax_request_ids: list[str | None] = []
         self.discovery_calls = 0
         self.probe_calls: list[str] = []
         self.session_generation = 1
@@ -151,6 +152,7 @@ class FakeLocalMCPClient:
     async def execute_dax(self, request: DAXRequest) -> LocalMCPDAXSnapshot:
         self.dax_calls += 1
         self.dax_keys.append(request.semantic_model_key)
+        self.dax_request_ids.append(request.request_id)
         if self.dax_error is not None:
             raise self.dax_error
         assert self.dax_snapshot is not None
@@ -1748,6 +1750,46 @@ class TestLocalMCPPowerBIAdapter:
         assert calls == 1
 
     @pytest.mark.asyncio
+    async def test_singleflight_last_waiter_cancellation_stops_adapter_retry(self):
+        started = asyncio.Event()
+        release_failure = asyncio.Event()
+
+        class BlockingTransientSchemaClient(FakeLocalMCPClient):
+            async def read_semantic_model_schema(
+                self,
+                semantic_model_key: str,
+            ) -> LocalMCPSchemaSnapshot:
+                self.schema_calls += 1
+                self.schema_keys.append(semantic_model_key)
+                if self.schema_calls == 1:
+                    started.set()
+                    await release_failure.wait()
+                    raise LocalMCPConnectionError(
+                        LocalMCPErrorCategory.NETWORK,
+                        "transient_schema_transport",
+                        retryable=True,
+                    )
+                assert self.schema_snapshot is not None
+                return self.schema_snapshot
+
+        client = BlockingTransientSchemaClient(schema_snapshot=_schema_snapshot())
+        adapter = _local_adapter(client, max_retries=1)
+        waiter = asyncio.create_task(
+            adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+        )
+        await asyncio.wait_for(started.wait(), timeout=1.0)
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        assert client.schema_calls == 1
+        release_failure.set()
+        schema = await adapter.get_semantic_model_schema(TEST_MODEL_KEY)
+
+        assert schema.tables[0].name == "Sales"
+        assert client.schema_calls == 2
+        assert client.schema_keys == [TEST_MODEL_KEY] * 2
+
+    @pytest.mark.asyncio
     async def test_stdio_session_is_reused_and_closed_by_owner_task(self, monkeypatch):
         sessions: list[SimpleNamespace] = []
 
@@ -2428,8 +2470,11 @@ class TestLocalMCPPowerBIAdapter:
 
         assert repeated == TEST_MODEL_KEY
         assert changed != TEST_MODEL_KEY
-        assert "54321" not in TEST_MODEL_KEY
-        assert "1001" not in TEST_MODEL_KEY
+        prefix, digest = TEST_MODEL_KEY.split(":", maxsplit=1)
+        assert prefix == "local_desktop"
+        assert len(digest) == 64
+        assert all(character in "0123456789abcdef" for character in digest)
+        assert "localhost:54321" not in TEST_MODEL_KEY
 
     def test_official_mcp_v2_dependency_is_installed(self):
         assert version("mcp") == "2.0.0"
@@ -2515,16 +2560,52 @@ class TestLocalMCPPowerBIAdapter:
         assert result.error.type == "connection_error"
         assert client.dax_calls == 2
         assert client.dax_keys == [LOCAL_DESKTOP_SEMANTIC_MODEL_KEY] * 2
+        assert client.dax_request_ids == [request.request_id] * 2
+
+    @pytest.mark.asyncio
+    async def test_cancellation_stops_adapter_transport_retry_immediately(self) -> None:
+        started = asyncio.Event()
+
+        class BlockingClient(FakeLocalMCPClient):
+            async def execute_dax(
+                self,
+                request: DAXRequest,
+            ) -> LocalMCPDAXSnapshot:
+                self.dax_calls += 1
+                self.dax_keys.append(request.semantic_model_key)
+                self.dax_request_ids.append(request.request_id)
+                started.set()
+                await asyncio.Event().wait()
+                raise AssertionError("unreachable")
+
+        request = DAXRequest(
+            semantic_model_key=LOCAL_DESKTOP_SEMANTIC_MODEL_KEY,
+            dax='EVALUATE ROW("Value", 1)',
+            request_id="cancel-retry-owner",
+        )
+        client = BlockingClient()
+        adapter = _local_adapter(client, max_retries=1)
+        task = asyncio.create_task(adapter.execute_dax(request))
+        await asyncio.wait_for(started.wait(), timeout=1.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert client.dax_calls == 1
+        assert client.dax_keys == [LOCAL_DESKTOP_SEMANTIC_MODEL_KEY]
+        assert client.dax_request_ids == [request.request_id]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "category",
         [
             LocalMCPErrorCategory.DESKTOP_STALE_INSTANCE,
+            LocalMCPErrorCategory.SCHEMA_VALIDATION_FAILED,
+            LocalMCPErrorCategory.MCP_PERMISSION_DENIED,
             LocalMCPErrorCategory.SCHEMA_MALFORMED_RESPONSE,
         ],
     )
-    async def test_gateway_does_not_retry_stale_or_schema_validation_failure(
+    async def test_gateway_does_not_retry_non_transport_schema_failure(
         self,
         category: LocalMCPErrorCategory,
     ) -> None:

@@ -73,14 +73,17 @@ class BoundedTTLCache(Generic[_K, _V]):
 class AsyncSingleFlight(Generic[_K, _V]):
     """Coalesce concurrent identical work without caching its result.
 
-    Waiter cancellation is shielded from the shared leader task.  The task is
-    removed after every success, failure, or cancellation, so a later retry can
-    always become a fresh leader.
+    One waiter cannot cancel work still owned by another waiter.  When the last
+    waiter is cancelled, the leader is cancelled too so request-scoped retry or
+    metadata work cannot continue without an owner.  The task is removed after
+    every success, failure, or cancellation, so a later retry can always become
+    a fresh leader.
     """
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._tasks: dict[_K, asyncio.Task[_V]] = {}
+        self._waiters: dict[_K, int] = {}
 
     async def run(self, key: _K, factory: Callable[[], Awaitable[_V]]) -> _V:
         async with self._lock:
@@ -88,7 +91,22 @@ class AsyncSingleFlight(Generic[_K, _V]):
             if task is None:
                 task = asyncio.create_task(self._run_and_release(key, factory))
                 self._tasks[key] = task
-        return await asyncio.shield(task)
+            self._waiters[key] = self._waiters.get(key, 0) + 1
+        try:
+            return await asyncio.shield(task)
+        finally:
+            leader_to_drain: asyncio.Task[_V] | None = None
+            async with self._lock:
+                remaining = self._waiters.get(key, 0) - 1
+                if remaining > 0:
+                    self._waiters[key] = remaining
+                else:
+                    self._waiters.pop(key, None)
+                    if self._tasks.get(key) is task and not task.done():
+                        task.cancel()
+                        leader_to_drain = task
+            if leader_to_drain is not None:
+                await asyncio.gather(leader_to_drain, return_exceptions=True)
 
     async def _run_and_release(
         self,
@@ -105,7 +123,13 @@ class AsyncSingleFlight(Generic[_K, _V]):
 
     async def clear(self) -> None:
         async with self._lock:
+            tasks = tuple(self._tasks.values())
             self._tasks.clear()
+            self._waiters.clear()
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def bounded_gather_ordered(

@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.9 COMPLETE；M5.9.1 Runtime Audit Closure 已完成 shutdown/enqueue 与 retry ownership 的 deterministic 收口，发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.8.5 correctness 已冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false。
+> **状态：** M5.9 COMPLETE；M5.9.2 Runtime Edge Final Closure 已完成 cancellation queue/admission、singleflight ownership 与 cancel × shutdown × crash deterministic 收口，发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.8.5 correctness 与 M5.9 总体架构已冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -52,6 +52,7 @@
 | **M5.8.6** | **主线发布与治理收口、m5/rebuild→main 合并、m5/frontend 归档** | **✅ COMPLETE** |
 | **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **✅ COMPLETE（179dd24 / CI #52 success）** |
 | **M5.9.1** | **Runtime Audit Closure：shutdown/enqueue 竞态与 retry ownership** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
+| **M5.9.2** | **Runtime Edge Final Closure：cancellation capacity 与 singleflight ownership** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ## M5 重建决策与历史状态
@@ -290,4 +291,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
 - M5.8.2—M5.9 已完成；M5.8.5 四个 correctness invariant、2,304 stress、三 PBIX/双 Provider Real 与全量门禁通过，correctness 已冻结；M5.9 本地、Real acceptance 与 exact-SHA CI 已通过，M5.10 保持 NOT STARTED；M5 FINAL=false。
 
-*最后更新：2026-09-08 | M5.8—M5.9 COMPLETE；M5.9.1 Runtime Audit Closure；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-08 | M5.8—M5.9 COMPLETE；M5.9.2 Runtime Edge Final Closure；M5.10 NOT STARTED；M5 FINAL=false*

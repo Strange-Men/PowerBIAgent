@@ -313,6 +313,8 @@ class _LocalMCPSessionWorkItem:
     enqueued_at: float
     queue_depth: int
     request_deadline: float | None
+    request_slot: asyncio.Semaphore | None = None
+    capacity_owned: bool = False
 
 
 _SESSION_STOP = object()
@@ -526,6 +528,7 @@ class PowerBILocalMCPClient:
         request_slot: asyncio.Semaphore | None = None
         request_acquired = False
         global_acquired = False
+        accepted = False
         remaining = remaining_request_seconds()
         deadline_limited = (
             remaining is not None
@@ -573,18 +576,34 @@ class PowerBILocalMCPClient:
                     )
                 work.queue_depth = self._work_queue.qsize()
                 work.enqueued_at = time.monotonic()
-                self._work_queue.put_nowait(work)
+                try:
+                    self._work_queue.put_nowait(work)
+                except asyncio.QueueFull as exc:
+                    raise LocalMCPConnectionError(
+                        LocalMCPErrorCategory.MCP_TIMEOUT,
+                        "local_mcp_overloaded",
+                        retryable=True,
+                    ) from exc
+                work.request_slot = request_slot if request_acquired else None
+                work.capacity_owned = global_acquired
+                accepted = True
             if work.recorder is not None:
                 work.recorder.record(
                     "admission_wait",
                     (time.monotonic() - queue_started_at) * 1000.0,
                     queue_depth=work.queue_depth,
                 )
-            return await future
+            try:
+                return await asyncio.shield(future)
+            except asyncio.CancelledError:
+                future.cancel()
+                raise
         finally:
-            self._operation_slots.release()
-            if request_slot is not None:
-                request_slot.release()
+            if not accepted:
+                if global_acquired:
+                    self._operation_slots.release()
+                if request_acquired and request_slot is not None:
+                    request_slot.release()
 
     async def _session_worker(self, worker_id: int) -> None:
         pending: _LocalMCPSessionWorkItem | object | None = None
@@ -610,6 +629,7 @@ class PowerBILocalMCPClient:
                 LocalMCPErrorCategory.LOCAL_PREREQUISITE,
                 "local_mcp_executable_missing",
             ))
+            self._release_work_capacity(first)
             return None
 
         args = ["-y", self._package, "--start", "--readonly"]
@@ -697,6 +717,7 @@ class PowerBILocalMCPClient:
                     diagnostic_text=self._read_diagnostic_text(errlog),
                 ))
             finally:
+                self._release_work_capacity(first)
                 if session_opened:
                     self._sessions_closed += 1
                 if token is not None:
@@ -791,6 +812,7 @@ class PowerBILocalMCPClient:
             self._set_work_exception(item, classified)
             return self._is_session_fatal(classified)
         finally:
+            self._release_work_capacity(item)
             if token is not None:
                 reset_performance_recorder(token)
             reset_request_deadline(deadline_token)
@@ -802,6 +824,14 @@ class PowerBILocalMCPClient:
     ) -> None:
         if not item.future.done():
             item.future.set_exception(exc)
+
+    def _release_work_capacity(self, item: _LocalMCPSessionWorkItem) -> None:
+        if not item.capacity_owned:
+            return
+        item.capacity_owned = False
+        self._operation_slots.release()
+        if item.request_slot is not None:
+            item.request_slot.release()
 
     @staticmethod
     def _is_session_fatal(exc: LocalMCPConnectionError) -> bool:

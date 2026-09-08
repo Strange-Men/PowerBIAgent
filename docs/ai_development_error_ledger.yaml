@@ -3,11 +3,118 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-07 | M5.8.6 / M5.9 COMPLETE；M5.10 NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-08 | M5.9.2 Runtime Edge Final Closure；M5.10 NOT STARTED；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-592-003
+  title: Opaque digest 测试以短 substring absence 误判泄漏
+  category: ERR
+  first_detected_version: M5.9.2
+  symptom: full backend 中固定 HMAC-SHA256 digest 合法地包含字符序列 1001，旧测试因此失败并错误声称 raw process ID 泄漏
+  local_evidence: baseline 测试直接断言字符串 1001 不得出现在整个 hex digest；当前固定 digest 为 local_desktop:749e87bbe2b5667c1001...，但 production 只输出 HMAC digest且未拼接 PID
+  authoritative_sources:
+  - title: Local MCP opaque instance identity contract
+    reason: identity 应验证固定 opaque prefix/digest 结构、确定性与输入变化敏感性，不应要求密码学摘要排除任意短输入 substring
+  root_cause: 测试 oracle 把短字符序列 absence 当作不可逆性证明，忽略十六进制摘要与四位输入发生随机 substring collision 的正常可能
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 不修改 production identity；测试改验固定 prefix、64位 lowercase hex digest、相同输入确定性、不同 endpoint 产生不同 key且完整 endpoint 不出现在输出
+  regression_tests:
+  - backend/tests/unit/test_powerbi.py
+  prohibited_patterns:
+  - 用任意短输入 substring 不出现在 cryptographic digest 中证明 opaque
+  prevention_rules:
+  - opaque token 测试应验证编码结构、确定性、输入敏感性与完整 raw value absence
+  - 随机摘要内容不得成为测试成功条件
+  related_adr: ADR-017
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-08'
+    action: discovered
+    version: M5.9.2
+  - date: '2026-09-08'
+    action: mitigation
+    version: M5.9.2
+- id: ERR-592-002
+  title: Sole-waiter metadata singleflight 取消后继续无主 retry
+  category: ERR
+  first_detected_version: M5.9.2
+  symptom: 唯一 schema waiter 取消后，shielded leader 仍等待 transport failure、执行 backoff 并发起第二次 adapter operation，形成无 caller ownership 的后台工作
+  local_evidence: Event barrier 在第一次 schema read 内冻结唯一 waiter；取消并释放 transient failure 后旧实现 schema_calls=2，修复后取消直接 drain leader，fresh same-key request 成为新 leader且总调用为2而非取消后额外 retry
+  authoritative_sources:
+  - title: ADR-017 Bounded Runtime Concurrency and Resilience
+    reason: cancellation 后不得存在 orphan work 或无 ownership retry，metadata singleflight 不能改变 transport retry 边界
+  - title: Python 3.11 asyncio tasks and cancellation
+    url: https://docs.python.org/3.11/library/asyncio-task.html
+    reason: shield 可隔离 waiter cancellation 与 inner task，因此调用方必须显式定义最后 waiter 离开后的 inner task ownership
+  root_cause: AsyncSingleFlight 只保存每 key leader task，不记录 waiter 数；所有 waiter 都离开后仍永久 shield leader，adapter retry loop 无法感知请求已取消
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 按 key 计数 waiter；仍有 waiter 时保留 shared leader，最后 waiter 取消时在 lock 内 cancel leader并在返回前 await cleanup；clear 同样 cancel/await 全部 leader
+  regression_tests:
+  - backend/tests/unit/test_powerbi.py
+  - backend/tests/unit/test_performance_runtime.py
+  prohibited_patterns:
+  - 最后一个 singleflight waiter 取消后让 leader/backoff/retry 继续后台运行
+  - 为修最后 waiter 而让一个 waiter 取消传播给仍在等待的其他 caller
+  prevention_rules:
+  - shared task 必须同时定义 leader ownership 与 waiter ownership
+  - cancellation regression 必须覆盖 sole waiter、surviving waiter 与 immediate fresh same-key request
+  - lifecycle clear 必须 cancel 且 await application-owned task
+  related_adr: ADR-017
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-08'
+    action: discovered
+    version: M5.9.2
+  - date: '2026-09-08'
+    action: mitigation
+    version: M5.9.2
+- id: ERR-592-001
+  title: Caller cancellation 提前释放 accepted Local MCP capacity
+  category: ERR
+  first_detected_version: M5.9.2
+  symptom: queued caller 取消时物理 item 仍在 queue 但 global slot 已释放，新请求可泄漏 raw QueueFull；已 dispatch caller 取消时 operation 仍存活但 global/per-request slot 已释放，实际并发超过 configured bound
+  local_evidence: 单 worker满载加两个 canceled queued item 可确定性触发 raw asyncio.QueueFull；双 worker、per-request=1 时取消已 dispatch caller 后第二个同 request operation 在首 operation drain 前启动，max_active_handlers=2
+  authoritative_sources:
+  - title: ADR-017 Bounded Runtime Concurrency and Resilience
+    reason: application-owned MCP work 必须始终拥有 bounded global/per-request capacity，已 accepted work 在 shutdown/cancellation 下继续 drain
+  - title: Python 3.11 asyncio queues
+    url: https://docs.python.org/3.11/library/asyncio-queue.html
+    reason: put_nowait 在物理 queue 满时抛 QueueFull，caller semaphore 不能替代 queue item lifecycle ownership
+  - title: Python 3.11 asyncio synchronization primitives
+    url: https://docs.python.org/3.11/library/asyncio-sync.html
+    reason: Semaphore 的 acquire/release 计数必须与受保护 operation 的完整存活期一致
+  - title: Python 3.11 asyncio futures
+    url: https://docs.python.org/3.11/library/asyncio-future.html
+    reason: cancelled/done future 不可再次 set_result/set_exception，worker 必须把 caller completion 与 operation cleanup 分离
+  root_cause: _run_session caller finally 无条件释放 global/per-request semaphore；capacity ownership 未在 enqueue success 后转移给 work item/worker lifecycle
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: work item 记录 global/per-request capacity ownership；未 accepted 仍由 caller release，accepted item 由 worker在 canceled skip、normal completion、failure 或 session startup failure 后幂等 release；caller cancellation shield operation future并只取消 caller future；QueueFull防御性映射为 controlled overload
+  regression_tests:
+  - backend/tests/unit/test_local_mcp_worker_pool.py
+  prohibited_patterns:
+  - caller future 完成或取消等同于 accepted MCP work 已完成
+  - queue 物理容量与 admission capacity 使用不同生命周期
+  prevention_rules:
+  - enqueue success 是 capacity ownership 从 caller 向 work item 的唯一转移点
+  - accepted capacity 只能由 worker lifecycle 幂等释放
+  - cancellation/shutdown/crash matrix 必须验证 queue empty、semaphore恢复、worker/session residual=0
+  related_adr: ADR-017
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-08'
+    action: discovered
+    version: M5.9.2
+  - date: '2026-09-08'
+    action: mitigation
+    version: M5.9.2
 - id: ERR-591-002
   title: Local MCP Adapter 与 ToolGateway 叠加 transport retry
   category: ERR
