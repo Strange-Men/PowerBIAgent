@@ -996,6 +996,47 @@ class TestGroundingAuthorityAndStateTransition:
         assert outcome.delta.filters is None
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("question", "field", "value"),
+        [
+            ("各产品销售额", "Product", "产品"),
+            ("每个产品销售额", "Product", "产品"),
+            ("按类别统计销售额", "Category", "类别"),
+            ("类别销售额分别是多少", "Category", "类别"),
+        ],
+    )
+    async def test_grouping_language_cannot_be_promoted_to_filter_by_weak_draft(
+        self, question, field, value
+    ):
+        async def no_lookup(*_):
+            raise AssertionError("grouping language must not trigger member lookup")
+
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            question,
+            _intent(
+                detected_measures=["销售额"],
+                detected_dimensions=[value],
+                detected_filters=[{
+                    "field": field, "operator": "eq", "value": value
+                }],
+            ),
+            _draft(
+                query_shape=QueryShape.GROUPED,
+                measures=["Total Sales"],
+                dimensions=[field],
+                filters=[StructuredFilter(field=field, value=value)],
+            ),
+            None,
+            no_lookup,
+            query_shape=QueryShape.GROUPED,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta.query_shape == QueryShape.GROUPED
+        assert outcome.delta.dimensions == [field]
+        assert outcome.delta.filters is None
+
+    @pytest.mark.asyncio
     async def test_runtime_member_discovers_filter_when_weak_draft_omits_it(self):
         calls: list[str] = []
 
@@ -1570,7 +1611,8 @@ class TestGroundingAuthorityAndStateTransition:
         )
         assert outcome.status == GroundingStatus.NOT_MENTIONED
         assert outcome.delta is None
-        assert outcome.clarification_question == "请明确要筛选的字段。"
+        assert outcome.clarification_question == "未能确定筛选字段，请同时说明字段和值。"
+        assert outcome.clarification_reason == "filter_field_unresolved"
 
     @pytest.mark.asyncio
     async def test_unresolved_member_produces_no_delta_to_commit(self):
@@ -1595,6 +1637,7 @@ class TestGroundingAuthorityAndStateTransition:
         )
         assert outcome.status == GroundingStatus.UNRESOLVED
         assert outcome.delta is None
+        assert outcome.clarification_reason == "member_no_match"
 
 
 def _m55_domain_catalog(
@@ -2636,6 +2679,34 @@ class TestM582QueryShapes:
         assert result.start_date == date(2025, 8, 1)
         assert result.end_date == date(2026, 1, 31)
         assert result.grain == "month"
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "2025年1月至6月",
+            "2025年1月到6月",
+            "2025年1月-6月",
+            "2025年1月至2025年6月",
+            "2025年1月到2025年6月",
+            "2025-01~2025-06",
+            "2025-01 至 2025-06",
+        ],
+    )
+    def test_bounded_month_range_preserves_endpoint_when_end_year_is_omitted(
+        self, phrase
+    ):
+        field = next(
+            item for item in _catalog().objects
+            if item.canonical_name == "OrderDate"
+        )
+
+        result = TimeGrounder().ground(phrase, field)
+
+        assert result is not None
+        assert result.start_date == date(2025, 1, 1)
+        assert result.end_date == date(2025, 6, 30)
+        assert result.grain == "month"
+        assert TimeGrounder.is_explicit(phrase)
 
     def test_reversed_bounded_month_range_is_invalid(self):
         field = next(

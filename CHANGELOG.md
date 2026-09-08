@@ -2,6 +2,19 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.9.3] — 2026-09-08（Business Semantic Parsing Correctness Closure）
+
+- **Query Shape 与 grouping/filter firewall：** `各/每个/按/X分别` 固定为 GROUPED evidence；“分别是多少”不再单独构成 MEMBER_SET。MEMBER_SET 继续要求多个显式 member 并对全集做同一 runtime field validation。Grounding 禁止把 grouping 字段标签作为弱 filter value，并阻断纯 grouping 后缀触发 member discovery。
+- **显式时间与 completeness：** 新增 NFKC deterministic 月范围 parser，覆盖 `至/到/-/—/–/~/～`、省略结束年与数字年月；Semantic Obligation Coverage 精确核对当前表达的 start/end/month grain，Canonical Shape Completeness 同时要求 bounded trend 为月粒度。任何端点、filter、grouping 或 ranking slot 未闭合均返回 code-owned clarification reason，并保持 ZERO DAX/QueryResult/factual Memory commit。
+- **Ranking 与 clarification：** Router 支持阿拉伯数字及一至十中文 TopN；clarification reason 统一为结构化枚举并由确定性 Gate 映射到稳定问题，LLM 不拥有 reason、shape、对象、member 或事实 authority。
+- **Sidebar geometry：** ready/failed/processing conversation 均使用固定 16×16、不可收缩、可见的 icon wrapper；长标题继续 ellipsis。实际浏览器验收确认 ready/failed wrapper 与 SVG 均为 16×16 且无裁切，processing 由同一组件 regression 覆盖。
+- **Real 与矩阵：** 跨 Sales/Education/Inventory/Logistics 80-case deterministic matrix 与 production-path API 通过；DeepSeek-only `PowerBIAgent_M3_Rich_Test` 9/9 场景、8 个真实 DAX witness 的 CanonicalPlan/DAX rebuild、QueryResult/VerifiedFactSet、Answer/Table 一致性全部通过，known+unknown member ZERO DAX，automation-owned residual=0。
+- **边界：** M5.9.2 worker pool/retry/cancellation/singleflight 与 M5.8.5 factual authority 保持冻结；无 schema/migration/report template 变化。M5.9.4/M5.10 NOT STARTED，M5 FINAL=false。
+- **Fresh gates：** focused semantic 253 PASS、Router + M5.9.3 matrix 154 PASS、production-path API 8 PASS、frozen runtime regression 128 PASS；Repository Safety 367、AI Error Ledger 67、Architecture 135、Documentation/Artifact Governance PASS；Semantic Compatibility 773 PASS；backend 2566 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 90 PASS + typecheck/lint/build；compileall 与 `git diff --check` PASS。相对 M5.9.2 的 backend 2448 PASS 新增 118 cases，差异来自 M5.9.3 regression/API matrix 与同期既有 test collection 增量，已由全量 suite 验证。
+- **发布条件：** fresh full gates、residual=0、clean local main==origin/main 与当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success。
+
+**Settings.version:** M5.9.3
+
 ## [M5.9.2] — 2026-09-08（Runtime Edge Final Closure）
 
 - **取消后的容量 ownership：** deterministic Event/barrier reproducer 证明，旧实现会在 queued 或已 dispatch 的 caller 取消时提前释放 global/per-request admission；前者可让新请求遇到原始 `asyncio.QueueFull`，后者可让真实存活 MCP operation 超过 configured bound。现由成功 enqueue 的 work item 持有容量，worker 在 skip、完成或失败后幂等释放；caller 取消只取消其 future，底层只读 operation 安全 drain，并继续占有容量。

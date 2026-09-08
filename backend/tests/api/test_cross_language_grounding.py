@@ -50,6 +50,7 @@ async def test_unknown_modifier_without_domain_suffix_is_zero_dax(monkeypatch, t
     assert adapter.dax_calls == 0
     audit = body["execution_audit"]
     assert audit["semantic_obligation_coverage"] is False
+    assert audit["clarification_reason"] == "filter_field_unresolved"
     assert any(
         item["phrase"] == "地球" and item["status"] == "NEEDS_CLARIFICATION"
         for item in audit["semantic_obligations"]

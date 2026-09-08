@@ -222,12 +222,18 @@ export function Sidebar({
               title={title}
               onClick={() => onOpenConversation(conversation)}
             >
-              {resourceStatus === 'processing' ? (
-                <LoaderCircle className="pending-spinner" size={16} aria-hidden="true" />
-              ) : (
-                <MessageSquare size={16} />
-              )}
-              <span>{title}</span>
+              <span
+                className="conversation-item-icon"
+                data-resource-status={resourceStatus}
+                aria-hidden="true"
+              >
+                {resourceStatus === 'processing' ? (
+                  <LoaderCircle className="pending-spinner" size={16} />
+                ) : (
+                  <MessageSquare size={16} />
+                )}
+              </span>
+              <span className="conversation-item-title">{title}</span>
               {resourceStatus === 'processing' ? (
                 <small className="pending-label">正在分析</small>
               ) : null}

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal, DivisionByZero, InvalidOperation
 from enum import Enum
 
+from backend.app.intent.temporal_expression import parse_explicit_month_range
 from backend.app.schemas.data_contracts import QueryShape
 
 
@@ -145,6 +146,8 @@ class SafeCalculator:
 class QuestionRouter:
     """Classify capability and generic query shape before semantic grounding."""
 
+    _RANKING_NUMBER = r"(?:\d+|[零〇一二两三四五六七八九十百]+)"
+
     _REPORT = re.compile(
         r"(?:生成|创建|制作|导出).{0,8}(?:报表|报告|周报|月报|季报|年报)|"
         r"(?:报表|报告|周报|月报|季报|年报).{0,8}(?:生成|创建|制作)|"
@@ -163,7 +166,8 @@ class QuestionRouter:
     _RANKING = re.compile(
         r"(?:最高|最低|最大|最小|最多|最少|最好|最差|最准|最严重|最快|最慢|最早|最晚|卖得最好|卖的最好)|"
         r"(?:哪个|哪家|哪位|哪款|哪种|哪座|谁)[^\n。！？!?]{0,40}最(?:准|严重|快|慢|早|晚)|"
-        r"(?:前|后|top)\s*\d+|\b(?:highest|lowest|most|least|best|worst)\b",
+        rf"(?:前|后|top)\s*{_RANKING_NUMBER}|"
+        r"\b(?:highest|lowest|most|least|best|worst)\b",
         re.IGNORECASE,
     )
     _TREND = re.compile(r"趋势|走势|变化|按月看|按年看|逐月|逐年|\b(?:trend|monthly|yearly)\b", re.IGNORECASE)
@@ -181,7 +185,11 @@ class QuestionRouter:
         r"(?:按|分)[^\n。！？!?]{1,200}(?:看|统计|汇总|比较)|"
         r"分别.{0,8}(?:的)?(?:情况|数据)?$|\b(?:by|per)\s+[^\n。！？!?]{1,200}", re.IGNORECASE,
     )
-    _MEMBER_SET = re.compile(r"分别(?:是|为|有|多少)|各自(?:是|为|有|多少)|\brespectively\b", re.IGNORECASE)
+    _MEMBER_SET_WORDING = re.compile(
+        r"分别(?:是|为|有|多少)|各自(?:是|为|有|多少)|\brespectively\b",
+        re.IGNORECASE,
+    )
+    _MEMBER_COORDINATOR = re.compile(r"和|与|及|、|，|,|\band\b", re.IGNORECASE)
     _FILTERED_AGGREGATION = re.compile(r"加起来|合起来|合计|总共|\bcombined\b", re.IGNORECASE)
     _INHERIT_SHAPE = re.compile(
         r"^\s*(?:那|那么|只看|再看|继续|然后|改成|改为|换成|换为|"
@@ -241,7 +249,7 @@ class QuestionRouter:
 
     def _query_shape(self, text: str) -> QueryShape | None:
         if self._TREND.search(text):
-            if len(self._ABSOLUTE_MONTH.findall(text)) >= 2:
+            if parse_explicit_month_range(text) is not None:
                 return QueryShape.BOUNDED_TREND
             return QueryShape.TREND
         if self._RANKING.search(text):
@@ -250,15 +258,23 @@ class QuestionRouter:
             r"加起来|合起来|和|与|及|、|\b(?:combined|and)\b", text, re.IGNORECASE,
         ):
             return QueryShape.FILTERED_AGGREGATION
-        if self._MEMBER_SET.search(text):
+        if self._has_member_set_evidence(text):
             return QueryShape.MEMBER_SET
         if self._ENTITY_LIST.search(text):
             return QueryShape.ENTITY_LIST
-        if self._GROUPED.search(text):
+        if self._GROUPED.search(text) or self._MEMBER_SET_WORDING.search(text):
             return QueryShape.GROUPED
         if self._INHERIT_SHAPE.search(text):
             return None
         return QueryShape.SCALAR
+
+    @classmethod
+    def _has_member_set_evidence(cls, text: str) -> bool:
+        """Require coordinated literals; 'respectively' alone is not a set."""
+        return bool(
+            cls._MEMBER_SET_WORDING.search(text)
+            and cls._MEMBER_COORDINATOR.search(text)
+        )
 
     @staticmethod
     def _format_decimal(value: Decimal) -> str:

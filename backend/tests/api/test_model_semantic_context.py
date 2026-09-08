@@ -71,7 +71,7 @@ class RuntimeAdapter(PowerBIAdapter):
             columns, rows = [domain.measure], [[12.5]]
         elif self.shape == QueryShape.ENTITY_LIST:
             columns, rows = [domain.dimension], [["A"], ["B"]]
-        elif self.shape == QueryShape.TREND:
+        elif self.shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}:
             columns, rows = [domain.month, domain.measure], [["2025-01-01T00:00:00", 12.5], ["2025-02-01T00:00:00", 14.0]]
         else:
             columns, rows = [domain.dimension, domain.measure], [["A", 12.5]]

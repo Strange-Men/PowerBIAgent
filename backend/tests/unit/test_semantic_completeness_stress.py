@@ -101,6 +101,7 @@ def _plan(
         time_range = TimeRangeSpec(
             date_field="Date", start_date=date(2025, 8, 1),
             end_date=date(2026, 1, 31), mode=TimeRangeMode.EXPLICIT_RANGE,
+            grain=("month" if shape == QueryShape.BOUNDED_TREND else "day"),
         )
     return CanonicalQueryPlan(
         normalized_question="matrix", semantic_model_key=key, query_shape=shape,

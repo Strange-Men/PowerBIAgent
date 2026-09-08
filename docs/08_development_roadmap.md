@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.9 COMPLETE；M5.9.2 — Runtime Edge Final Closure 已完成 cancellation queue/admission、singleflight ownership 与 cancel × shutdown × crash deterministic 收口，发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.8.5 correctness 与 M5.9 总体架构已冻结；main 是唯一活动开发线；M5.10 NOT STARTED；M5 FINAL=false。
+> **状态：** M5.9.3 Business Semantic Parsing Correctness Closure COMPLETE（当前 Settings.version）；发布以当前 main exact-SHA CI success 为证据。M5.9.4 PLANNED / NOT STARTED；M5.9.2 runtime architecture 冻结；main 是唯一活动开发线；M5.10 NOT STARTED；M5 FINAL=false。
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -53,7 +53,19 @@
 | **M5.9** | **完整 MCP performance、concurrency、resilience 与 soak** | **✅ COMPLETE（179dd24 / CI #52 success）** |
 | **M5.9.1** | **Runtime Audit Closure：shutdown/enqueue 竞态与 retry ownership** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.9.2** | **Runtime Edge Final Closure：cancellation capacity、singleflight ownership 与组合生命周期矩阵** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
+| **M5.9.3** | **业务语义解析正确性收口：shape、时间范围、completeness、grouping/filter 与 Sidebar geometry** | **✅ COMPLETE；以当前 main exact-SHA CI success 为发布证据** |
+| **M5.9.4** | **Business Language Stress 与泛化验收** | **⏳ PLANNED / NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
+
+### M5.9.3 — 业务语义解析正确性收口
+
+已完成 GROUPED/MEMBER_SET 冲突、显式月范围 normalization、显式 time/ranking/filter/grouping obligation completeness、grouping→filter firewall、deterministic clarification reason、中文 TopN 与 Sidebar conversation icon geometry 收口。Query Shape 不拥有对象 identity，MEMBER_SET 必须有多个显式 member且全集 runtime validation；任一显式义务未闭合均 clarification + ZERO DAX/QueryResult/factual Memory commit。跨 Sales/Education/Inventory/Logistics deterministic matrix、DeepSeek-only Rich PBIX 9-case Real 与浏览器人工 geometry 验收均通过，automation-owned residual=0。M5.9.2 runtime、M5.10 report scope 冻结。详见 ADR-018 与 M5.9.3 专项计划。
+
+Fresh evidence：focused semantic 253 PASS、Router + M5.9.3 matrix 154 PASS、production-path API 8 PASS、frozen runtime 128 PASS；Semantic Compatibility 773 PASS；backend 2566 PASS / 1 manual-real SKIP；frontend 90 PASS + typecheck/lint/build；Golden 11 PASS / 1 manual-real SKIP；Repository Safety 367、AI Error Ledger 67、Architecture 135、Documentation/Artifact Governance、compileall 与 diff-check 全部 PASS。Real 9/9、浏览器 geometry 与 automation-owned residual=0 通过；发布以当前 main exact-SHA CI success 为证据。
+
+### M5.9.4 — Business Language Stress 与泛化验收
+
+状态为 PLANNED / NOT STARTED。只在 M5.9.3 完成后另行启动，负责 covering-array/property/metamorphic generation、数万至十万级 deterministic semantic harness 与 DeepSeek-only Real stress；Kimi 仅保留 provider abstraction/mock/contract，不重复 Real token 压测。M5.9.3 完成后不得自动开始本阶段。
 
 ### M5.4.2 — M5 重建基线与规划固化（已完成）
 
@@ -418,7 +430,7 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
-- M5.5—M5.8.5 已完成并冻结；M5.9 已完成，M5.9.1 仅做 runtime audit closure；M5.10 仍不得提前进入。
+- M5.5—M5.8.5 已完成并冻结；M5.9—M5.9.3 已完成，M5.9.2 runtime frozen；M5.9.4/M5.10 仍不得提前进入。
 - 一个 milestone 不得同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle；只有 M5.10 全部门禁完成后才允许宣告 M5 FINAL。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
@@ -433,4 +445,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-09-08 | M5.9 COMPLETE；M5.9.1 Runtime Audit Closure；M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-09-08 | M5.9.3 Business Semantic Parsing Correctness Closure COMPLETE；M5.9.4/M5.10 NOT STARTED；M5 FINAL 尚未成立*

@@ -48,7 +48,7 @@ function renderSidebar(currentConversation: ConversationSummary = conversation) 
   const onArchiveReport = vi.fn().mockResolvedValue(undefined)
   const onRenameReport = vi.fn().mockResolvedValue(undefined)
   const batchResult = { succeededIds: [], failed: [] }
-  render(
+  const view = render(
     <Sidebar
       collapsed={false}
       activeConversationId={null}
@@ -82,6 +82,7 @@ function renderSidebar(currentConversation: ConversationSummary = conversation) 
     onRestore,
     onDeleteReport,
     onArchiveReport,
+    container: view.container,
   }
 }
 
@@ -103,6 +104,25 @@ describe('Sidebar conversation management', () => {
     expect(screen.getByRole('menuitem', { name: /重命名/ })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /归档/ })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /删除/ })).toBeEnabled()
+  })
+
+  it.each([
+    ['ready', { local_status: 'ready' as const }, 'ready'],
+    ['processing', { local_status: 'processing' as const }, 'processing'],
+    ['failed', { resource_status: 'failed' as const }, 'failed'],
+  ])('keeps a fixed icon wrapper for %s conversations', (_, status, expected) => {
+    const { container } = renderSidebar({ ...conversation, ...status })
+    const icon = container.querySelector('.conversation-item-icon')
+
+    expect(icon).toHaveAttribute(
+      'data-resource-status',
+      expected,
+    )
+    expect(icon?.querySelector('svg')).toHaveAttribute('width', '16')
+    expect(icon?.querySelector('svg')).toHaveAttribute('height', '16')
+    expect(container.querySelector('.conversation-item-title')).toHaveTextContent(
+      conversation.title ?? '',
+    )
   })
 
   it('renames a conversation through the inline presentation title editor', async () => {

@@ -53,6 +53,8 @@
 | `docs/adr/ADR-016_semantic_completeness_result_inspection_and_presentation_truth.md` | M5.8.5 唯一链上的 completeness/result/presentation 决策 | M5.8.5 |
 | `docs/adr/ADR-017_bounded_runtime_concurrency_and_resilience.md` | MCP worker pool、deadline、retry、lifecycle 与 cloud-ready replacement boundary | M5.9 |
 | `docs/milestones/m5/m5_9_runtime_performance_and_resilience_plan.md` | M5.9 实施合同、before/after、stress/fault/Real/CI evidence | M5.9 |
+| `docs/adr/ADR-018_deterministic_semantic_expression_normalization.md` | grouping/member/time 显式证据、obligation 完整性与 fail-closed 决策 | M5.9.3 |
+| `docs/milestones/m5/m5_9_3_business_semantic_correctness_plan.md` | M5.9.3 correctness 范围、顺序、DeepSeek-only Real 与 M5.9.4 规划 | M5.9.3 |
 | `docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md` | M2 Local Demo / Remote Production 专项计划 | M2 Provider、Smoke、Remote 证据任务 |
 | `docs/adr/ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md` | TurnPipeline / ToolGateway 总体决策 | 控制面与工具边界 |
 | `docs/adr/ADR-006_remote_powerbi_mcp_production_integration.md` | Remote MCP 生产化决策 | 仅重新获批 Remote 时 |

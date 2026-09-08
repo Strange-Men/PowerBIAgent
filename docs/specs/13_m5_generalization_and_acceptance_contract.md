@@ -1,6 +1,6 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5 / M5.6 / M5.7 / M5.7.1 / M5.7.2 / M5.8 / M5.8.1 / M5.8.2 / M5.8.3 / M5.8.4 / M5.8.5 / M5.8.6 / M5.9 COMPLETE；M5.10 NOT STARTED；M5 FINAL=false
+> **状态：** M5.5—M5.9.3 COMPLETE；M5.9.3 发布以当前 main exact-SHA CI success 为证据；M5.9.4 PLANNED / NOT STARTED；M5.10 NOT STARTED；M5 FINAL=false
 > **适用范围：** M5.5—M5.10 长期合同；`m5/rebuild` 是历史重建/发布追溯分支，M5.8.6 后正式开发线为 `main`
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
@@ -246,6 +246,16 @@ M5.8.1 已前移低风险基础设施。M5.9 继续负责完整范围：
 
 任何优化不得降低 schema/member/instance/factual validation，不得绕过 Grounding、Layer 3、VerifiedFactSet 或 stale fail-closed；禁止修改 Semantic/DAX/VerifiedFactSet authority。
 
+### M5.9.3 — 业务语义解析正确性收口
+
+M5.9.3 只允许修复通用 Query Shape 证据、显式月范围 deterministic normalization、time/ranking/filter/grouping obligation completeness、grouping→filter firewall、deterministic clarification reason、Sidebar icon geometry 与直接相关 regression。`各/每个/按/X分别` 是 grouping evidence；“分别是多少”本身不是 MEMBER_SET evidence。MEMBER_SET 必须有多个显式 member 且全集通过同一 runtime field validation。任一显式 obligation 未闭合必须 clarification + ZERO DAX/QueryResult/factual Memory commit。Real 只验收 DeepSeek；M5.9.2 runtime 与 M5.10 report 均冻结。
+
+完成证据：跨 Sales/Education/Inventory/Logistics 的 80-case deterministic matrix、production-path API、unknown/known+unknown ZERO DAX、中文/数字 TopN、月范围多 separator/NFKC 与 endpoint loss reproducer 均通过；DeepSeek-only Rich PBIX 9/9 场景、8 个 DAX witness 的 canonical/DAX/result/fact/presentation rebuild 一致，automation residual=0；Sidebar ready/failed 浏览器 geometry 与 processing component regression 通过。Semantic Compatibility 773 PASS、backend 2566 PASS / 1 manual-real SKIP、frontend 90 PASS + typecheck/lint/build、Golden 11 PASS / 1 manual-real SKIP 与治理门禁全部通过。M5.9.2 runtime 与 M5.10 report authority 未修改。
+
+### M5.9.4 — Business Language Stress 与泛化验收
+
+M5.9.4 状态为 PLANNED / NOT STARTED。它才负责 covering-array/property/metamorphic generation、数万至十万级 deterministic semantic harness、大规模业务自然语言组合压力与 DeepSeek-only Real stress。Kimi 不重复 Real token 压力测试，只保留 provider abstraction/mock/contract。不得在 M5.9.3 中提前实现。
+
 ### M5.10 — 固定专业销售报表模板与两模板选择
 
 M5.10 必须晚于 M5.9，状态为 NOT STARTED：
@@ -383,4 +393,4 @@ M5.8.2 已完成 Question Router、八类通用 Query Shape、shape-specific cla
 
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-09-07 M5.8.6 / M5.9 COMPLETE；M5.10 NOT STARTED；M5 FINAL=false*
+*创建日期：2026-08-26 | 最后更新：2026-09-08 M5.9.3 COMPLETE；M5.9.4/M5.10 NOT STARTED；M5 FINAL=false*

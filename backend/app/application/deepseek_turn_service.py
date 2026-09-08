@@ -87,6 +87,7 @@ from backend.app.query_plan.deepseek_service import (
     QueryPlanError,
 )
 from backend.app.query_plan.clarification import PendingClarificationService
+from backend.app.query_plan.clarification_reasons import clarification_question
 from backend.app.query_plan.completeness import (
     CanonicalShapeCompletenessError,
     CanonicalShapeCompletenessGate,
@@ -864,6 +865,15 @@ class LLMTurnService:
                     item.model_dump(mode="json") for item in coverage.obligations
                 ]
                 semantic_audit["semantic_obligation_coverage"] = coverage.executable
+                semantic_audit["clarification_reason"] = (
+                    coverage.clarification_reason.value
+                    if coverage.clarification_reason is not None
+                    else (
+                        grounding.clarification_reason.value
+                        if grounding.clarification_reason is not None
+                        else None
+                    )
+                )
                 if (
                     not coverage.executable
                     and grounding.status == GroundingStatus.RESOLVED
@@ -880,16 +890,21 @@ class LLMTurnService:
                     controller.set_failure_reason("semantic_obligation_incomplete")
                     controller.transition(TurnState.CLARIFICATION_REQUIRED)
                     unresolved = "、".join(coverage.unresolved_phrases) or "当前业务修饰条件"
+                    question = (
+                        clarification_question(coverage.clarification_reason)
+                        if coverage.clarification_reason is not None
+                        else (
+                            f"无法将“{unresolved}”完整绑定到当前模型的业务条件，"
+                            "请改用模型中存在的明确成员。"
+                        )
+                    )
                     return self._build_result(
                         effective_req_id,
                         effective_conv_id,
                         "clarification_required",
                         intent=intent.intent.value,
                         response_type="clarification",
-                        clarification_question=(
-                            f"无法将“{unresolved}”完整绑定到当前模型的业务条件，"
-                            "请改用模型中存在的明确成员。"
-                        ),
+                        clarification_question=question,
                         trace=trace,
                         trace_id=trace_id,
                         is_mock=False,
@@ -1218,18 +1233,41 @@ class LLMTurnService:
                     shape_report.model_dump(mode="json")
                 )
             except CanonicalShapeCompletenessError as e:
-                return await self._fail_result(
-                    memory,
+                await self.pipeline.clear_pending_clarification(
+                    effective_conv_id, runtime_mode
+                )
+                await self.pipeline.mark_memory_failed(
                     effective_req_id,
-                    effective_conv_id,
-                    controller,
-                    trace,
-                    terminal_state=TurnState.VALIDATION_FAILED,
-                    error_type=e.code,
+                    runtime_mode,
                     reason=e.code,
                     stage="canonical_shape_completeness",
+                )
+                controller.set_failure_reason(e.code)
+                controller.transition(TurnState.CLARIFICATION_REQUIRED)
+                semantic_audit["clarification_reason"] = (
+                    e.clarification_reason.value
+                )
+                semantic_audit["canonical_shape_error"] = e.code
+                return self._build_result(
+                    effective_req_id,
+                    effective_conv_id,
+                    "clarification_required",
+                    intent=intent.intent.value,
+                    response_type="clarification",
+                    clarification_question=clarification_question(
+                        e.clarification_reason
+                    ),
+                    trace=trace,
                     trace_id=trace_id,
+                    is_mock=False,
+                    source_mode=self._source_mode,
                     collector=collector,
+                    execution_audit={
+                        **semantic_audit,
+                        "pending_clarification": False,
+                        "committed_memory_mutated": False,
+                        "schema_fingerprint": catalog.schema_fingerprint,
+                    },
                 )
 
         # QueryPlan 验证

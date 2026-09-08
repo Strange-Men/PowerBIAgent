@@ -3,11 +3,117 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-08 | M5.9.2 Runtime Edge Final Closure；M5.10 NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-08 | M5.9.3 Business Semantic Parsing Correctness Closure；M5.9.4/M5.10 NOT STARTED；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-593-003
+  title: 中文数字 TopN follow-up 未进入 ranking shape
+  category: ERR
+  first_detected_version: M5.9.3
+  symptom: Real 四轮链中的“前三个产品呢”被旧 Router 归为 grouped，导致结果形态不是用户显式要求的 Top3 ranking
+  local_evidence: DeepSeek-only Rich PBIX Real 前三轮通过后，第四轮 CanonicalPlan shape=grouped；同句改为数字 3 可进入 ranking，证明差异位于 deterministic Router 而非 LLM、DAX 或 runtime schema
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: 显式 ranking 数量属于 code-owned Query Shape 证据，必须在 Grounding 前确定且不得依赖 LLM 猜测
+  root_cause: ranking 正则只接受阿拉伯数字，未覆盖中文业务表达中常见的一至十数量词
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅扩展 code-owned ranking number token 为阿拉伯数字或一至十中文数量词，继续由现有 TopN parser 做 bounded 数量解析
+  regression_tests:
+  - backend/tests/unit/test_question_routing.py
+  - backend/tests/unit/test_m5_9_3_semantic_matrix.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 只在 LLM draft 或后续 Grounding 中补偿 Router 已丢失的显式 TopN shape
+  prevention_rules:
+  - 中文与数字 TopN 必须共享同一 deterministic Router contract
+  - 多轮 ranking Real acceptance 必须核对 CanonicalPlan shape、N、DAX order 与事实顺序
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-08'
+    action: discovered
+    version: M5.9.3
+  - date: '2026-09-08'
+    action: mitigation
+    version: M5.9.3
+- id: ERR-593-002
+  title: 显式月范围端点可在 canonicalization 前静默丢失
+  category: ERR
+  first_detected_version: M5.9.3
+  symptom: 用户明确给出开始月和结束月时，旧 completeness 只检查存在 time_range，不证明两个端点与月粒度完整保留，残缺范围仍可能进入 DAX
+  local_evidence: deterministic reproducer 将“2025年1月到6月”的 Grounding delta 缩短为单月，旧 shape completeness 可接受；新增 obligation coverage 后返回 incomplete_time_range 且 ZERO DAX
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: normalization 只提取显式边界，Grounding 后必须逐端点闭合并保持 month grain
+  - title: Python unicodedata.normalize
+    url: https://docs.python.org/3/library/unicodedata.html#unicodedata.normalize
+    reason: NFKC 为全角数字与兼容字符提供确定性标准化，不引入业务事实
+  root_cause: 既有 bounded trend 验证只看 time_range 非空和 start/end 顺序，未把当前输入中的显式开始月、结束月和粒度建模为独立 obligation
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 新增 NFKC 月范围 parser；coverage 将显式 start/end/month grain 与当轮 Grounding delta 精确比较，shape gate 同时要求 bounded trend 为 month grain
+  regression_tests:
+  - backend/tests/unit/test_semantic_completeness.py
+  - backend/tests/unit/test_m5_9_3_semantic_matrix.py
+  - backend/tests/api/test_m5_9_3_business_semantics.py
+  prohibited_patterns:
+  - 把任意非空 time_range 当成显式区间已完整解析
+  - 在端点不一致时缩短范围继续执行
+  prevention_rules:
+  - 显式时间端点必须从当前 raw input 建立 obligation 并与 Grounding delta 精确对照
+  - 不完整时间范围必须 deterministic clarification 且 ZERO DAX/QueryResult/Memory commit
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-08'
+    action: discovered
+    version: M5.9.3
+  - date: '2026-09-08'
+    action: mitigation
+    version: M5.9.3
+- id: ERR-593-001
+  title: 分组措辞被误判为 MEMBER_SET 并泄漏弱 filter
+  category: ERR
+  first_detected_version: M5.9.3
+  symptom: “2025年各地区的销售额分别是多少”可能被“分别”误路由为 MEMBER_SET，且弱 LLM draft 可把维度标签回填成 filter value，导致不应存在的 member validation/filter
+  local_evidence: production-path reproducer 在 Sales、Education、Inventory、Logistics 四域复现 grouping wording；旧路径可出现 MEMBER_SET 或 field-label-as-value，修复后统一 GROUPED、grouping 字段只进入 grouping、filter 为空
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: 各/每个/按/X分别属于 grouping evidence；MEMBER_SET 必须有多个显式 member 并对全集做同字段 runtime validation
+  - title: ADR-008 Semantic Grounding and Memory
+    reason: LLM draft 只能在 runtime-owned candidate 内辅助消歧，不能创造 filter/member 事实
+  root_cause: Router 把“分别是多少”单独视为 MEMBER_SET 信号，Grounding 又未阻止 grouping-only 表达触发成员发现或把字段显示名作为弱 filter value
+  failed_attempts:
+  - 初次只收紧 Router 后，Grounding 的 runtime member discovery 仍可从 grouping 后缀触发；随后在同一 query_shape 下加入 grouping-only firewall
+  repair_attempt_count: 2
+  final_fix: Router 要求 respectively 词与集合连接词共同出现才可成为 MEMBER_SET，明确 grouping 证据优先；Grounding 对 GROUPED 禁止字段标签作为 filter value，并阻断纯 grouping 后缀的 member discovery
+  regression_tests:
+  - backend/tests/unit/test_question_routing.py
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/unit/test_m5_9_3_semantic_matrix.py
+  - backend/tests/api/test_m5_9_3_business_semantics.py
+  prohibited_patterns:
+  - 仅凭“分别是多少”判定 MEMBER_SET
+  - 将 grouping field 的 canonical/display label 当作 filter member 执行
+  prevention_rules:
+  - Query Shape 只消费表达结构证据，不拥有对象或 member identity
+  - grouping 与 filter 必须分别闭合，弱 draft 不得跨越 firewall
+  - MEMBER_SET 必须证明至少两个显式 member 且全集属于同一 runtime field
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-08'
+    action: discovered
+    version: M5.9.3
+  - date: '2026-09-08'
+    action: mitigation
+    version: M5.9.3
 - id: ERR-592-003
   title: Opaque digest 测试以短 substring absence 误判泄漏
   category: ERR

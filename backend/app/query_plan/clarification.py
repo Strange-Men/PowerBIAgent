@@ -377,9 +377,15 @@ class PendingClarificationService:
                 return outcome.clarification_question
             return "请明确要使用的业务指标。"
         if "dimension" in slots:
+            if slots == {"dimension"} and outcome.clarification_question:
+                return outcome.clarification_question
             return "请明确要按哪个分析维度比较。"
         if "filter" in slots:
+            if slots == {"filter"} and outcome.clarification_question:
+                return outcome.clarification_question
             return "请明确唯一的筛选字段和值。"
         if "time" in slots:
+            if slots == {"time"} and outcome.clarification_question:
+                return outcome.clarification_question
             return "请明确要使用的时间范围。"
         return outcome.clarification_question or "请补充完成当前查询所需的信息。"

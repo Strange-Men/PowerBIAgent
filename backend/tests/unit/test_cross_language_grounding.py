@@ -406,6 +406,7 @@ async def test_member_set_never_drops_an_explicit_unknown_literal():
         None, members, query_shape=QueryShape.MEMBER_SET)
     assert outcome.status == GroundingStatus.UNRESOLVED
     assert outcome.delta is None
+    assert outcome.clarification_reason == "member_no_match"
 
 
 @pytest.mark.asyncio
@@ -427,6 +428,10 @@ async def test_member_discovery_cannot_accept_known_subset_when_weak_filters_are
         None, members, query_shape=QueryShape.MEMBER_SET)
     assert outcome.status == GroundingStatus.UNRESOLVED
     assert outcome.delta is None
+    assert outcome.clarification_reason in {
+        "incomplete_member_set",
+        "member_no_match",
+    }
 
 
 @pytest.mark.parametrize("text,terms", [

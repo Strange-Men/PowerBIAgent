@@ -64,3 +64,9 @@ execution audit 至少记录 obligations、grounded delta、inheritance decision
 ## 7. 最终验收
 
 本规范已由 2,304 个 domain-independent stress case、三 PBIX × DeepSeek/Kimi Real 高风险链、A→B→C→A isolation、Semantic Compatibility 743、backend 2397 PASS / 1 SKIP、frontend 87、Golden 与全部 governance gate 验证。unknown/known+unknown 均 ZERO DAX；TopN、trend、scope、fresh 与 table/chart shared-order contract 均有 permanent regression。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
+
+## 8. M5.9.3 显式表达完整性增补
+
+Obligation 必须从当前原始显式表达保留到 canonical closure，不得只检查 weak draft 的剩余内容：TIME_RANGE=`start+end+grain`、RANKING=`measure+dimension+sort+N`、FILTER=`field+member/value`、GROUPING=`dimension`。string residue 只可作为辅助 fail-closed evidence，不能以删除连接词、年月词或数字来证明义务已覆盖。grouping cue 对应字段不得仅因 weak filter draft 成为 filter；MEMBER_SET 每个显式 literal 都必须进入同一 runtime field 的全集验证。任一缺失返回对应 deterministic clarification reason，并保持 ZERO DAX、ZERO QueryResult、ZERO factual Memory commit。
+
+M5.9.3 已以 ADR-018 完成该增补：显式月范围采用 NFKC 后的确定性 parser，Grounding delta 必须精确保留 start/end/month grain；GROUPED 不允许字段标签作为弱 filter value，纯 grouping 后缀不触发 member discovery；ClarificationReason 由 code-owned Gate 给出。跨域 deterministic/API、DeepSeek-only Rich PBIX 与 Sidebar 浏览器验收通过；M5.9.2 runtime 与 factual authority 未改变。

@@ -65,6 +65,8 @@ def test_router_classifies_capability_before_semantic_grounding(
         ("库存最低的是哪个仓库", QueryShape.RANKING),
         ("哪个枢纽最准时", QueryShape.RANKING),
         ("哪个承运商延误最严重", QueryShape.RANKING),
+        ("前三个产品呢？", QueryShape.RANKING),
+        ("前十个课程呢？", QueryShape.RANKING),
         ("有哪些节点", QueryShape.ENTITY_LIST),
         ("东校区和西校区的学生数量分别是多少", QueryShape.MEMBER_SET),
         ("过去12个月出勤率趋势", QueryShape.TREND),
@@ -77,6 +79,45 @@ def test_query_shape_grammar_is_cross_domain(question: str, shape: QueryShape):
 
     assert decision.route == QuestionRoute.BUSINESS_DATA_QUERY
     assert decision.query_shape == shape
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "2025年各区域销售额分别是多少？",
+        "各区域销售额",
+        "每个区域销售额",
+        "按区域看销售额",
+        "区域销售额分别是多少",
+        "各产品销售额",
+        "每个客户订单数",
+        "按类别统计利润",
+    ],
+)
+def test_grouping_evidence_has_priority_over_respectively_wording(question: str):
+    decision = QuestionRouter().route(question)
+
+    assert decision.route == QuestionRoute.BUSINESS_DATA_QUERY
+    assert decision.query_shape == QueryShape.GROUPED
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "2025年1月至6月每个月的销售额趋势是什么？",
+        "2025年1月到6月每个月的销售额趋势是什么？",
+        "2025年1月-6月每个月的销售额趋势是什么？",
+        "2025年1月至2025年6月每个月的销售额趋势是什么？",
+        "2025年1月到2025年6月每个月的销售额趋势是什么？",
+        "2025-01~2025-06每个月的销售额趋势是什么？",
+        "2025-01 至 2025-06每个月的销售额趋势是什么？",
+    ],
+)
+def test_explicit_month_range_routes_to_bounded_trend(question: str):
+    decision = QuestionRouter().route(question)
+
+    assert decision.route == QuestionRoute.BUSINESS_DATA_QUERY
+    assert decision.query_shape == QueryShape.BOUNDED_TREND
 
 
 @pytest.mark.parametrize("question", ["换成销量", "只看华南", "那继续呢"])

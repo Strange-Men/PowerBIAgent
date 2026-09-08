@@ -3,6 +3,16 @@
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
 > **最后更新：** 2026-09-08
 
+## 当前阶段 — M5.9.3 Business Semantic Parsing Correctness Closure（COMPLETE，2026-09-08）
+
+正式基线为 clean `main@b43f5268d288cab2864b2f7dbff04d4075950727`，local main 与 origin/main 一致，M5.9.2 COMPLETE。M5.9.3 已收口 GROUPED/MEMBER_SET shape 冲突、显式月范围 normalization 与端点 obligation、time/ranking/filter/grouping completeness、grouping→filter firewall、deterministic clarification reason、中文 TopN、Sidebar conversation icon geometry 与邻近 regression；M5.9.2 worker pool/retry/cancellation/singleflight、M5.8.5 factual authority 与 M5.10 report scope 均未修改。
+
+执行合同已完成 deterministic reproducer → regression → minimal implementation → cross-domain matrix → DeepSeek-only Real → browser manual acceptance。本轮 Real 在 `PowerBIAgent_M3_Rich_Test` 上完成 9/9 场景和 8 个 DAX witness：grouped、2025-01—06 bounded trend、Top3、May+South、known+unknown ZERO DAX，以及 May→South→last year→中文 Top3 四轮继承；CanonicalPlan、deterministic DAX rebuild、QueryResult、VerifiedFactSet、Answer/Table 全部一致，automation-owned residual=0。Sidebar ready/failed 浏览器实测 wrapper/SVG 均固定 16×16、长标题省略且无裁切，processing 由同一组件 regression 覆盖；owned residual=0。Settings.version=M5.9.3，发布以当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success、clean local main==origin/main 与 residual=0 为证据。
+
+M5.9.4 仅已固化为 PLANNED / NOT STARTED，负责后续 covering-array/property/metamorphic 与大规模 Business Language Stress；本轮完成后停止，不自动启动。M5.10 NOT STARTED，M5 FINAL=false。
+
+Fresh local evidence：focused semantic 253 PASS、Router + M5.9.3 matrix 154 PASS、production-path API 8 PASS、frozen runtime 128 PASS；Repository Safety 367、AI Error Ledger 67、Architecture 135、Documentation/Artifact Governance PASS；Semantic Compatibility 773 PASS；backend 2566 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 90 PASS + typecheck/lint/build；compileall 与 diff-check PASS。相对 M5.9.2 backend 2448 PASS，当前为 2566 PASS，新增/收集差异已由 full suite 验证。
+
 ## 当前阶段 — M5.9.2 Runtime Edge Final Closure（2026-09-08）
 
 M5.9.2 对 M5.9/M5.9.1 runtime edge 做最后专项审计。deterministic reproducer 确认：queued 或已 dispatch caller 取消时，旧 caller-side `finally` 会过早释放 global/per-request admission；前者可因 canceled item 尚占物理 queue 而泄漏 raw `asyncio.QueueFull`，后者会让尚在 drain 的 operation 脱离 configured bound。现以 enqueue success 作为 ownership 转移点，由 work item 持有 capacity 并由 worker 在 skip/完成/失败时幂等释放；caller cancellation 仅取消 future，底层只读 operation 可安全 drain 且仍计入 bound。
@@ -464,7 +474,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-M5.9 已完成，M5.9.1 仅收口 runtime audit 风险；对应当前 main exact-SHA CI success 后才可进入 M5.10。M5.10 = 第二固定专业报表模板。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+M5.9.3 已完成；在用户另行明确启动前，M5.9.4 Business Language Stress 与 M5.10 第二固定专业报表模板均保持 NOT STARTED。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -513,4 +523,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-08 | M5.9 COMPLETE；M5.9.1 Runtime Audit Closure；m5/rebuild 冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-08 | M5.9.3 Business Semantic Parsing Correctness Closure COMPLETE；m5/rebuild 冻结；main-only；M5.9.4/M5.10 NOT STARTED；M5 FINAL=false*

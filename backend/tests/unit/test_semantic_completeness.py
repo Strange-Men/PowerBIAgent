@@ -261,10 +261,72 @@ def test_complete_ranking_and_bounded_trend_pass() -> None:
             start_date=date(2025, 8, 1),
             end_date=date(2026, 1, 31),
             date_field="Month",
+            grain="month",
         ),
     )
     assert CanonicalShapeCompletenessGate().validate(ranking, catalog=_catalog()).complete
     assert CanonicalShapeCompletenessGate().validate(bounded, catalog=_catalog()).complete
+
+
+def test_explicit_bounded_time_obligation_rejects_lost_endpoint() -> None:
+    catalog = _catalog()
+    outcome = GroundingOutcome(
+        status=GroundingStatus.RESOLVED,
+        delta=GroundedSemanticDelta(
+            query_shape=QueryShape.BOUNDED_TREND,
+            measures=["Shipment Count"],
+            dimensions=["Month"],
+            dimension_order="asc",
+            time_specified=True,
+            time_range=TimeRangeSpec(
+                mode=TimeRangeMode.EXPLICIT_RANGE,
+                start_date=date(2025, 1, 1),
+                end_date=date(2025, 1, 31),
+                date_field="Ship Date",
+                grain="month",
+            ),
+        ),
+    )
+
+    report = SemanticObligationCoverageGate().inspect(
+        user_input="2025年1月至6月每个月的运单数趋势",
+        outcome=outcome,
+        catalog=catalog,
+        relation=TurnRelationEvidence.classify(
+            "2025年1月至6月每个月的运单数趋势"
+        ),
+        language_evidence=("运单数",),
+    )
+
+    assert not report.executable
+    assert report.clarification_reason == "incomplete_time_range"
+    assert any(
+        item.kind.value == "time"
+        and item.status == SemanticObligationStatus.NEEDS_CLARIFICATION
+        and item.evidence == "explicit_month_range_endpoint_mismatch"
+        for item in report.obligations
+    )
+
+
+def test_bounded_trend_requires_month_grain() -> None:
+    plan = _plan(
+        QueryShape.BOUNDED_TREND,
+        dimensions=["Month"],
+        dimension_order="asc",
+        time_range=TimeRangeSpec(
+            mode=TimeRangeMode.EXPLICIT_RANGE,
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 6, 30),
+            date_field="Ship Date",
+            grain="day",
+        ),
+    )
+
+    with pytest.raises(
+        CanonicalShapeCompletenessError,
+        match="canonical_shape_bounded_trend_month_grain_required",
+    ):
+        CanonicalShapeCompletenessGate().validate(plan, catalog=_catalog())
 
 
 def test_member_set_requires_one_authoritative_field_and_complete_values() -> None:

@@ -38,6 +38,199 @@ from backend.app.query_plan.semantic_catalog import DEFAULT_GLOSSARY_PATH, Seman
 from backend.app.schemas.data_contracts import UserContext
 from backend.app.schemas.data_contracts import CanonicalQueryPlan, ColumnMembersRequest
 from backend.app.facts.verified import VerifiedFactSetBuilder
+from backend.app.dax.builder import DeterministicDAXBuilder
+from backend.app.presentation.builder import StructuredPresentationBuilder
+from backend.app.presentation.models import PresentationEnvelope
+
+
+async def m5_9_3_acceptance(post, service, schema, rich_key):
+    """DeepSeek-only real PBIX proof for the M5.9.3 correctness boundary."""
+
+    captured = {}
+    dax_tool = service.tool_gateway._tools["execute_dax"]
+    original_handler = dax_tool.handler
+
+    async def observe(request):
+        result = await original_handler(request)
+        captured[result.result_id] = (request, result)
+        return result
+
+    dax_tool.handler = observe
+    verified = 0
+
+    async def completed(label, message, *, conversation=None):
+        nonlocal verified
+        body, audit, raw_plan = await post(
+            label, message, key=rich_key, conversation=conversation
+        )
+        check(
+            body.get("terminal_state") == "completed"
+            and body.get("memory_commit"),
+            label + ":not_completed",
+        )
+        plan = CanonicalQueryPlan.model_validate(raw_plan)
+        request, result = captured[audit["result_id"]]
+        expected_dax = DeterministicDAXBuilder().build(
+            plan, schema, request_id=request.request_id
+        )
+        check(request.dax == expected_dax.dax, label + ":dax_scope_mismatch")
+        facts = VerifiedFactSetBuilder().build(plan, result)
+        check(
+            facts.fact_set_id == audit.get("verified_fact_set_id")
+            and len(facts.facts) == audit.get("verified_fact_count"),
+            label + ":verified_facts_mismatch",
+        )
+        presentation = PresentationEnvelope.model_validate(body.get("presentation"))
+        check(bool(body.get("answer")), label + ":answer_missing")
+        check(len(presentation.datasets) == 1, label + ":dataset_missing")
+        dataset = presentation.datasets[0]
+        expected_dataset = StructuredPresentationBuilder.build_answer(
+            plan, result, facts, "verified"
+        ).datasets[0]
+        check(
+            dataset.result_id == result.result_id,
+            label + ":presentation_result_id_mismatch",
+        )
+        check(
+            dataset.verified_fact_set_id == facts.fact_set_id,
+            label + ":presentation_fact_set_id_mismatch",
+        )
+        check(
+            dataset.columns == expected_dataset.columns
+            and dataset.rows == expected_dataset.rows,
+            label + ":presentation_rows_not_result_projection",
+        )
+        check(
+            audit.get("deterministic_dax")
+            and audit.get("layer3_pass")
+            and audit.get("factual_validation_pass")
+            and audit.get("llm_dax_call_count") == 0,
+            label + ":authority_regression",
+        )
+        verified += 1
+        return body, audit, plan
+
+    try:
+        _, _, grouped = await completed(
+            "m593_grouped_respectively",
+            "2025年各区域销售额分别是多少？",
+        )
+        check(
+            grouped.query_shape.value == "grouped"
+            and len(grouped.dimensions) == 1
+            and not grouped.filters
+            and grouped.time_range is not None
+            and grouped.time_range.start_date.isoformat() == "2025-01-01"
+            and grouped.time_range.end_date.isoformat() == "2025-12-31",
+            "m593_grouped_respectively:canonical_mismatch",
+        )
+
+        _, _, bounded = await completed(
+            "m593_bounded_month_trend",
+            "2025年1月至6月每个月的销售额趋势是什么？",
+        )
+        check(
+            bounded.query_shape.value == "bounded_trend"
+            and bounded.dimension_order == "asc"
+            and bounded.time_range is not None
+            and bounded.time_range.start_date.isoformat() == "2025-01-01"
+            and bounded.time_range.end_date.isoformat() == "2025-06-30"
+            and bounded.time_range.grain == "month",
+            "m593_bounded_month_trend:endpoint_mismatch",
+        )
+
+        _, _, ranking = await completed(
+            "m593_ranking_top_three",
+            "2025年销售额最高的前三个产品是什么？",
+        )
+        check(
+            ranking.query_shape.value == "ranking"
+            and len(ranking.dimensions) == 1
+            and ranking.top_n == 3
+            and ranking.sort == "desc"
+            and ranking.time_range is not None,
+            "m593_ranking_top_three:canonical_mismatch",
+        )
+
+        _, _, filtered = await completed(
+            "m593_month_member_filter",
+            "2025年5月南区销售额是多少？",
+        )
+        check(
+            filtered.query_shape.value == "scalar"
+            and len(filtered.filters) == 1
+            and filtered.time_range is not None
+            and filtered.time_range.start_date.isoformat() == "2025-05-01"
+            and filtered.time_range.end_date.isoformat() == "2025-05-31",
+            "m593_month_member_filter:canonical_mismatch",
+        )
+
+        before_negative = len(captured)
+        body, audit, _ = await post(
+            "m593_known_unknown_member_set",
+            "华南和火星区销售额分别是多少？",
+            key=rich_key,
+        )
+        check(
+            body.get("terminal_state") == "clarification_required"
+            and not body.get("memory_commit")
+            and not audit.get("dax_executed")
+            and len(captured) == before_negative
+            and audit.get("clarification_reason")
+            in {"member_no_match", "incomplete_member_set"},
+            "m593_known_unknown_member_set:not_fail_closed",
+        )
+
+        conversation = str(uuid.uuid4())
+        _, _, first = await completed(
+            "m593_followup_initial",
+            "2025年5月销售额是多少？",
+            conversation=conversation,
+        )
+        _, _, second = await completed(
+            "m593_followup_member",
+            "那南区呢？",
+            conversation=conversation,
+        )
+        _, _, third = await completed(
+            "m593_followup_time_replace",
+            "换成去年。",
+            conversation=conversation,
+        )
+        _, _, fourth = await completed(
+            "m593_followup_ranking",
+            "前三个产品呢？",
+            conversation=conversation,
+        )
+        check(
+            first.time_range is not None
+            and second.time_range == first.time_range
+            and len(second.filters) == 1,
+            "m593_followup_member:keep_mismatch",
+        )
+        check(
+            third.time_range is not None
+            and third.time_range != second.time_range
+            and third.filters == second.filters,
+            "m593_followup_time_replace:replace_mismatch",
+        )
+        check(
+            fourth.query_shape.value == "ranking"
+            and fourth.top_n == 3
+            and fourth.sort == "desc"
+            and len(fourth.dimensions) == 1
+            and fourth.filters == third.filters
+            and fourth.time_range == third.time_range,
+            "m593_followup_ranking:canonical_mismatch",
+        )
+        print(json.dumps({
+            "m5_9_3_real_cases": 9,
+            "real_dax_witnesses": verified,
+            "canonical_dax_result_fact_presentation_consistent": True,
+            "known_unknown_zero_dax": True,
+        }), flush=True)
+    finally:
+        dax_tool.handler = original_handler
 
 
 async def extended_acceptance(post, service, rich_key, other_key, registry_data, *, only_zero=False, only_temporal=False, only_members=False):
@@ -317,7 +510,9 @@ async def run(args, root):
                 ) if args.phase == "rich" else ()):
                     body, audit, _ = await post(label, message)
                     check((audit.get("question_route") or audit.get("capability_decision")) == route and not audit.get("schema_read") and not audit.get("dax_executed") and not body.get("memory_commit") and not body.get("tool_sequence"), label + ":non_business_isolation_failed")
-                if args.phase == "rich":
+                if args.phase == "m5_9_3":
+                    await m5_9_3_acceptance(post, service, schema, rich_key)
+                elif args.phase == "rich":
                     check(len(results) == 15, "rich_case_count")
                     print(json.dumps({"rich_15_passed": True}), flush=True)
                 else:
@@ -336,7 +531,11 @@ async def main():
     parser.add_argument("--rich-model", required=True)
     parser.add_argument("--profile", default="deepseek")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--phase", choices=("rich", "extended", "zero", "temporal", "members"), default="rich")
+    parser.add_argument(
+        "--phase",
+        choices=("rich", "extended", "zero", "temporal", "members", "m5_9_3"),
+        default="rich",
+    )
     parser.add_argument("--other-model")
     args = parser.parse_args()
     failed = False

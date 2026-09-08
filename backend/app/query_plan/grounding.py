@@ -19,8 +19,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.app.intent.models import IntentSpec, TimeIntentDraft, TimeIntentKind
+from backend.app.intent.temporal_expression import parse_explicit_month_range
 from backend.app.llm.base import LLMProvider, LLMProviderError, LLMRequest, LLMTask
 from backend.app.memory.models import PendingClarificationContext, StructuredWorkMemory
+from backend.app.query_plan.clarification_reasons import (
+    ClarificationReason,
+    clarification_question,
+)
 from backend.app.query_plan.semantic_catalog import (
     CatalogObject,
     SemanticCatalog,
@@ -100,6 +105,7 @@ class GroundingOutcome(BaseModel):
     object_results: list[ObjectGroundingResult] = Field(default_factory=list)
     member_results: list[MemberGroundingResult] = Field(default_factory=list)
     clarification_question: str | None = None
+    clarification_reason: ClarificationReason | None = None
     intent_disagreements: list[str] = Field(default_factory=list)
     pending_eligible: bool = True
 
@@ -914,21 +920,11 @@ class TimeGrounder:
         user_input: str,
         date_field: CatalogObject,
     ) -> TimeRangeSpec | None:
-        matches: list[tuple[int, int, int, int]] = []
-        for pattern in (self._ABSOLUTE_MONTH, self._NUMERIC_MONTH):
-            for match in pattern.finditer(user_input):
-                matches.append((
-                    match.start(), match.end(),
-                    int(match.group(1)), int(match.group(2)),
-                ))
-        matches.sort()
-        if len(matches) < 2:
+        parsed = parse_explicit_month_range(user_input)
+        if parsed is None:
             return None
-        first, second = matches[0], matches[1]
-        if not re.search(r"(?:到|至|~|～|\bto\b)", user_input[first[1]:second[0]], re.IGNORECASE):
-            return None
-        start_year, start_month = first[2], first[3]
-        end_year, end_month = second[2], second[3]
+        start_year, start_month = parsed.start_year, parsed.start_month
+        end_year, end_month = parsed.end_year, parsed.end_month
         if not (1 <= start_month <= 12 and 1 <= end_month <= 12):
             return None
         start = date(start_year, start_month, 1)
@@ -948,14 +944,7 @@ class TimeGrounder:
         )
 
     def _has_bounded_month_expression(self, user_input: str) -> bool:
-        spans = sorted([
-            *(match.span() for match in self._ABSOLUTE_MONTH.finditer(user_input)),
-            *(match.span() for match in self._NUMERIC_MONTH.finditer(user_input)),
-        ])
-        return bool(
-            len(spans) >= 2
-            and re.search(r"(?:到|至|~|～|\bto\b)", user_input[spans[0][1]:spans[1][0]], re.IGNORECASE)
-        )
+        return parse_explicit_month_range(user_input) is not None
 
 
 MemberLookup = Callable[[CatalogObject, int], Awaitable[ColumnMembersResult]]
@@ -1070,7 +1059,9 @@ class SemanticGroundingService:
         raw_filters = [
             item for item in draft.filters
             if self._value_is_current(item.value, user_input)
-            if not self._filter_is_explicit_grouping(item, user_input)
+            if not self._filter_is_explicit_grouping(
+                item, user_input, query_shape=effective_shape
+            )
         ]
         if not raw_filters and effective_shape != QueryShape.ENTITY_LIST:
             raw_filters = [
@@ -1082,7 +1073,9 @@ class SemanticGroundingService:
                 for item in intent.detected_filters
                 if item.operator.value == FilterOperator.EQ.value
                 and self._value_is_current(item.value, user_input)
-                and not self._filter_is_explicit_grouping(item, user_input)
+                and not self._filter_is_explicit_grouping(
+                    item, user_input, query_shape=effective_shape
+                )
             ]
         if effective_shape in {
             QueryShape.MEMBER_SET,
@@ -1108,12 +1101,14 @@ class SemanticGroundingService:
                             set_literals.append(literal)
             if len(set_literals) > 20:
                 return self._clarification(GroundingStatus.UNRESOLVED, object_results, member_results,
-                    "请将一次请求的筛选成员限制在 20 个以内。", disagreements)
+                    "请将一次请求的筛选成员限制在 20 个以内。", disagreements,
+                    reason=ClarificationReason.INCOMPLETE_MEMBER_SET)
             if self._has_incomplete_member_conjunction(user_input, [str(item.value) for item in set_literals]):
                 object_results.append(ObjectGroundingResult(status=GroundingStatus.UNRESOLVED,
                     role="filter_field", phrase="", method="current_incomplete_member_conjunction"))
                 return self._clarification(GroundingStatus.UNRESOLVED, object_results, member_results,
-                    "请明确并列条件中的每一个筛选成员。", disagreements)
+                    clarification_question(ClarificationReason.INCOMPLETE_MEMBER_SET), disagreements,
+                    reason=ClarificationReason.INCOMPLETE_MEMBER_SET)
             raw_filters = set_literals
         grounded_filters: list[StructuredFilter] = []
         grounded_filter_ids: set[str] = set()
@@ -1132,6 +1127,7 @@ class SemanticGroundingService:
                     QueryShape.MEMBER_SET,
                     QueryShape.FILTERED_AGGREGATION,
                 },
+                grouping_only=effective_shape == QueryShape.GROUPED,
             )
             object_results.extend(discovered_objects)
             member_results.extend(discovered_members)
@@ -1142,6 +1138,7 @@ class SemanticGroundingService:
                     member_results,
                     "筛选值无法唯一匹配模型中的成员，请明确选择。",
                     disagreements,
+                    reason=ClarificationReason.MEMBER_AMBIGUOUS,
                 )
             if discovery_unresolved:
                 return self._clarification(
@@ -1150,6 +1147,7 @@ class SemanticGroundingService:
                     member_results,
                     "筛选值未匹配模型中的任何成员，请确认后重试。",
                     disagreements,
+                    reason=ClarificationReason.MEMBER_NO_MATCH,
                 )
             grounded_filters.extend(discovered_filters)
             for item in discovered_objects:
@@ -1163,6 +1161,7 @@ class SemanticGroundingService:
                 return self._clarification(
                     GroundingStatus.UNRESOLVED, object_results, member_results,
                     "当前仅支持等值筛选，请改为明确的等值条件。", disagreements,
+                    reason=ClarificationReason.UNSUPPORTED_SEMANTIC_REQUEST,
                     pending_eligible=False,
                 )
             draft_field = self.objects.resolve_phrase(
@@ -1311,7 +1310,17 @@ class SemanticGroundingService:
             if self._requires_clarification(field_result) or not field_result.canonical_object:
                 return self._clarification(
                     field_result.status, object_results, member_results,
-                    "请明确要筛选的字段。", disagreements,
+                    clarification_question(
+                        ClarificationReason.FILTER_FIELD_AMBIGUOUS
+                        if field_result.status == GroundingStatus.AMBIGUOUS
+                        else ClarificationReason.FILTER_FIELD_UNRESOLVED
+                    ),
+                    disagreements,
+                    reason=(
+                        ClarificationReason.FILTER_FIELD_AMBIGUOUS
+                        if field_result.status == GroundingStatus.AMBIGUOUS
+                        else ClarificationReason.FILTER_FIELD_UNRESOLVED
+                    ),
                 )
             field = field_result.canonical_object
             grounded_filter_ids.add(field.object_id)
@@ -1324,9 +1333,15 @@ class SemanticGroundingService:
                 member = await self.objects.selector.select_member(raw_filter.value, field, members, user_input=user_input)
             member_results.append(member)
             if member.status != GroundingStatus.RESOLVED:
+                member_reason = (
+                    ClarificationReason.MEMBER_AMBIGUOUS
+                    if member.status == GroundingStatus.AMBIGUOUS
+                    else ClarificationReason.MEMBER_NO_MATCH
+                )
                 return self._clarification(
                     member.status, object_results, member_results,
-                    "筛选值无法唯一匹配模型中的成员，请明确选择。", disagreements,
+                    clarification_question(member_reason), disagreements,
+                    reason=member_reason,
                 )
             grounded_filters.append(StructuredFilter(
                 field=field.canonical_name,
@@ -1337,7 +1352,8 @@ class SemanticGroundingService:
             if effective_shape in {QueryShape.MEMBER_SET, QueryShape.FILTERED_AGGREGATION}:
                 if len(grounded_filter_ids) != 1:
                     return self._clarification(GroundingStatus.AMBIGUOUS, object_results, member_results,
-                        "请明确同一个筛选字段的成员集合。", disagreements)
+                        "请明确同一个筛选字段的成员集合。", disagreements,
+                        reason=ClarificationReason.FILTER_FIELD_AMBIGUOUS)
                 values = []
                 for item in grounded_filters:
                     for value in item.value if item.operator == FilterOperator.IN_SET else [item.value]:
@@ -1445,9 +1461,15 @@ class SemanticGroundingService:
                 )
             object_results.append(dimension)
             if self._requires_clarification(dimension) or not dimension.canonical_object:
+                dimension_reason = (
+                    ClarificationReason.DIMENSION_AMBIGUOUS
+                    if dimension.status == GroundingStatus.AMBIGUOUS
+                    else ClarificationReason.DIMENSION_UNRESOLVED
+                )
                 return self._clarification(
                     dimension.status, object_results, member_results,
-                    "请明确分析维度。", disagreements,
+                    clarification_question(dimension_reason), disagreements,
+                    reason=dimension_reason,
                 )
             delta.dimensions = [dimension.canonical_object.canonical_name]
             delta.dimension_tables[
@@ -1492,6 +1514,11 @@ class SemanticGroundingService:
                     member_results,
                     "当前模型无法唯一支持请求的时间分组。",
                     disagreements,
+                    reason=(
+                        ClarificationReason.DIMENSION_AMBIGUOUS
+                        if status == GroundingStatus.AMBIGUOUS
+                        else ClarificationReason.DIMENSION_UNRESOLVED
+                    ),
                     pending_eligible=False,
                 )
             grouping_field = grouping_fields[0]
@@ -1517,6 +1544,7 @@ class SemanticGroundingService:
                 return self._clarification(
                     date_result.status, object_results, member_results,
                     "请明确要使用的日期字段。", disagreements,
+                    reason=ClarificationReason.INCOMPLETE_TIME_RANGE,
                 )
             object_results.append(date_result)
             date_field = date_result.canonical_object
@@ -1527,6 +1555,7 @@ class SemanticGroundingService:
                     member_results,
                     "请明确要使用的日期字段。",
                     disagreements,
+                    reason=ClarificationReason.INCOMPLETE_TIME_RANGE,
                 )
             time_range = self.time.ground(
                 user_input, date_field, intent.time_intent
@@ -1534,7 +1563,9 @@ class SemanticGroundingService:
             if time_range is None:
                 return self._clarification(
                     GroundingStatus.UNRESOLVED, object_results, member_results,
-                    "时间范围无法确定，请提供明确日期。", disagreements,
+                    clarification_question(ClarificationReason.INCOMPLETE_TIME_RANGE),
+                    disagreements,
+                    reason=ClarificationReason.INCOMPLETE_TIME_RANGE,
                 )
             delta.time_range = time_range
             delta.time_specified = True
@@ -1554,6 +1585,11 @@ class SemanticGroundingService:
                     else "请明确您要查询的业务指标。"
                 ),
                 disagreements,
+                reason=(
+                    ClarificationReason.RANKING_INFORMATION_INCOMPLETE
+                    if effective_shape == QueryShape.RANKING
+                    else ClarificationReason.MEASURE_UNRESOLVED
+                ),
                 delta=(delta if effective_shape != QueryShape.SCALAR else None),
             )
         if delta.clear_time:
@@ -1570,6 +1606,7 @@ class SemanticGroundingService:
             return self._clarification(
                 GroundingStatus.UNRESOLVED, object_results, member_results,
                 "当前尚未支持该对比口径，请改为单一时间范围查询。", disagreements,
+                reason=ClarificationReason.UNSUPPORTED_SEMANTIC_REQUEST,
                 pending_eligible=False,
             )
         return GroundingOutcome(
@@ -1903,12 +1940,29 @@ class SemanticGroundingService:
         return str(value) in user_input
 
     def _filter_is_explicit_grouping(
-        self, item: StructuredFilter, user_input: str
+        self,
+        item: StructuredFilter,
+        user_input: str,
+        *,
+        query_shape: QueryShape | None = None,
     ) -> bool:
         """A weak draft filter cannot override an explicit grouping cue."""
         resolved = self.objects.resolve_phrase(
             item.field, SemanticObjectType.FIELD, "filter_field"
         )
+        if (
+            query_shape == QueryShape.GROUPED
+            and resolved.status == GroundingStatus.RESOLVED
+            and resolved.canonical_object is not None
+            and isinstance(item.value, str)
+        ):
+            normalized_value = normalize_semantic_text(item.value)
+            field_terms = {
+                normalize_semantic_text(term)
+                for term in resolved.canonical_object.language_terms
+            }
+            if normalized_value in field_terms:
+                return True
         return bool(
             resolved.status == GroundingStatus.RESOLVED
             and resolved.canonical_object is not None
@@ -1947,6 +2001,7 @@ class SemanticGroundingService:
         member_lookup: MemberLookup,
         *,
         allow_member_set: bool = False,
+        grouping_only: bool = False,
     ) -> tuple[
         list[StructuredFilter],
         list[ObjectGroundingResult],
@@ -2028,6 +2083,10 @@ class SemanticGroundingService:
                 obj is not None
                 and obj.object_id not in seen
                 and not self._field_has_dimension_cue(user_input, obj)
+                and not (
+                    grouping_only
+                    and self._field_precedes_respectively(user_input, obj)
+                )
             ):
                 candidates.append(obj)
                 seen.add(obj.object_id)
@@ -2202,6 +2261,27 @@ class SemanticGroundingService:
             ),
         )
 
+    @staticmethod
+    def _field_precedes_respectively(
+        user_input: str, field: CatalogObject
+    ) -> bool:
+        """Recognize suffix-style GROUPED wording without weakening MEMBER_SET.
+
+        The router owns the shape decision.  This helper is used only when that
+        decision is already GROUPED, so a real coordinated member set remains
+        eligible for runtime member validation.
+        """
+
+        return any(
+            re.search(
+                rf"{re.escape(term)}.{{0,12}}分别",
+                user_input,
+                re.IGNORECASE,
+            )
+            for term in field.language_terms
+            if term
+        )
+
     @classmethod
     def _has_dimension_phrase_cue(cls, user_input: str, phrase: str) -> bool:
         escaped = re.escape(phrase)
@@ -2306,8 +2386,7 @@ class SemanticGroundingService:
             return "year"
         if "趋势" in user_input and (
             re.search(r"(?:最近|过去)\s*\d+\s*个?月", user_input)
-            or len(TimeGrounder._ABSOLUTE_MONTH.findall(user_input)) >= 2
-            or len(TimeGrounder._NUMERIC_MONTH.findall(user_input)) >= 2
+            or parse_explicit_month_range(user_input) is not None
         ):
             return "month"
         return None
@@ -2328,6 +2407,7 @@ class SemanticGroundingService:
         question: str,
         disagreements: list[str],
         *,
+        reason: ClarificationReason | None = None,
         pending_eligible: bool = True,
         delta: GroundedSemanticDelta | None = None,
     ) -> GroundingOutcome:
@@ -2337,6 +2417,7 @@ class SemanticGroundingService:
             object_results=object_results,
             member_results=member_results,
             clarification_question=question,
+            clarification_reason=reason,
             intent_disagreements=disagreements,
             pending_eligible=pending_eligible,
         )

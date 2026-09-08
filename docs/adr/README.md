@@ -40,10 +40,11 @@
 | ADR-015 | [Cross-language Runtime Grounding](ADR-015_cross_language_runtime_grounding.md) | accepted | 2026-08-31 |
 | ADR-016 | [Semantic Completeness、Result Inspection 与 Presentation Truth](ADR-016_semantic_completeness_result_inspection_and_presentation_truth.md) | accepted | 2026-09-02 |
 | ADR-017 | [Bounded Runtime Concurrency 与 Resilience](ADR-017_bounded_runtime_concurrency_and_resilience.md) | accepted | 2026-09-07 |
+| ADR-018 | [Deterministic Semantic Expression Normalization](ADR-018_deterministic_semantic_expression_normalization.md) | accepted | 2026-09-08 |
 
-当前开发最重要的 active 决策为 ADR-005—ADR-017：ADR-005 约束统一控制面，ADR-006/007 分别约束 Deferred Remote 与当前 Local Provider，ADR-008/009 分别约束 canonical business semantics 与 deterministic execution / VerifiedFactSet，ADR-010 约束 M3 固定事实边界（固定四查询限制由 ADR-011 supersede），ADR-011 约束自适应报表规划与可视化权限，ADR-012 约束 SQLite/Repository/HTML authority 及 M4.4 restart/delete recovery，ADR-013 约束共享 OpenAI-compatible Provider 与 request-scoped immutable profile selection，ADR-014/015 分别约束 query shape authority 与跨语言 runtime grounding，ADR-016 固化四个 correctness invariant，ADR-017 固化 bounded worker pool、deadline、retry、lifecycle 与 cloud-ready replacement boundary。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
+当前开发最重要的 active 决策为 ADR-005—ADR-018：ADR-005 约束统一控制面，ADR-006/007 分别约束 Deferred Remote 与当前 Local Provider，ADR-008/009 分别约束 canonical business semantics 与 deterministic execution / VerifiedFactSet，ADR-010 约束 M3 固定事实边界（固定四查询限制由 ADR-011 supersede），ADR-011 约束自适应报表规划与可视化权限，ADR-012 约束 SQLite/Repository/HTML authority 及 M4.4 restart/delete recovery，ADR-013 约束共享 OpenAI-compatible Provider 与 request-scoped immutable profile selection，ADR-014/015 分别约束 query shape authority 与跨语言 runtime grounding，ADR-016 固化四个 correctness invariant，ADR-017 固化 bounded runtime，ADR-018 固化显式 grouping/member/time 证据与 obligation 完整性。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
 
-**当前正式基线：** main（M5.8.6 / M5.9 COMPLETE）；M5.9 主实现 `179dd24` / CI #52 exact-SHA success；m5/rebuild 已冻结为只读发布追溯分支。M5.10 NOT STARTED，M5 FINAL=false。
+**当前正式基线：** main `b43f5268`（M5.9.2 COMPLETE）之上的 M5.9.3 Business Semantic Parsing Correctness Closure 已完成本地与 Real/人工验收，发布以当前 main exact-SHA CI success 为证据；M5.9.4 PLANNED / NOT STARTED；m5/rebuild 已冻结为只读发布追溯分支。M5.10 NOT STARTED，M5 FINAL=false。
 
 ## ADR 详情
 
@@ -105,10 +106,14 @@ Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code�
 
 正式正文见 [ADR-017 独立文件](ADR-017_bounded_runtime_concurrency_and_resilience.md)。核心决策：每个 Local MCP worker 独占 stdio session；global/per-request admission、request deadline、cancellation、transient retry 和 shutdown 全部有界；报表只并行已由最终 plan 证明独立且完成 pre-execution validation 的查询；Remote MCP/PostgreSQL 只保留 adapter/repository replacement boundary。
 
+### ADR-018 — Deterministic Semantic Expression Normalization
+
+正式正文见 [ADR-018 独立文件](ADR-018_deterministic_semantic_expression_normalization.md)。核心决策：grouping 与 member-set 必须使用不同的显式证据；明确月范围由代码完整 normalize；time/ranking/filter/grouping 义务缺一项即在 DAX 前 fail closed；弱 LLM draft 不得把 grouping field 转成 filter。
+
 ### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面
 
 Execution、Tooling、Context、Lifecycle、Observability、Verification、Governance 七层职责。无 Docker/LangGraph/OpenTelemetry。
 
 ---
 
-*最后更新：2026-09-07 | M5.9 COMPLETE（179dd24 / CI #52 success）；ADR-005—017 active，M5.8.5 correctness authority 冻结*
+*最后更新：2026-09-08 | M5.9.3 COMPLETE（发布以当前 main exact-SHA CI success 为证据）；ADR-005—018 active；M5.9.2 runtime 与 M5.8.5 correctness authority 冻结*

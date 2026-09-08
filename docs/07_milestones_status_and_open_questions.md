@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.9 COMPLETE；M5.9.2 Runtime Edge Final Closure 已完成 cancellation queue/admission、singleflight ownership 与 cancel × shutdown × crash deterministic 收口，发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.8.5 correctness 与 M5.9 总体架构已冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false。
+> **状态：** M5.9.3 Business Semantic Parsing Correctness Closure COMPLETE；GROUPED/MEMBER_SET、显式月范围、obligation completeness、grouping/filter firewall、clarification reason 与 Sidebar icon geometry 已收口，发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.9.2 runtime 与 M5.8.5 factual authority 已冻结；main-only；M5.9.4/M5.10 NOT STARTED；M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -53,6 +53,8 @@
 | **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **✅ COMPLETE（179dd24 / CI #52 success）** |
 | **M5.9.1** | **Runtime Audit Closure：shutdown/enqueue 竞态与 retry ownership** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.9.2** | **Runtime Edge Final Closure：cancellation capacity 与 singleflight ownership** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
+| **M5.9.3** | **业务语义解析正确性收口：shape、时间范围、completeness、grouping/filter 与 Sidebar geometry** | **✅ COMPLETE；以当前 main exact-SHA CI success 为发布证据** |
+| **M5.9.4** | **Business Language Stress 与泛化验收** | **⏳ PLANNED / NOT STARTED** |
 | **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
 
 ## M5 重建决策与历史状态
@@ -289,6 +291,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.8.2—M5.9 已完成；M5.8.5 四个 correctness invariant、2,304 stress、三 PBIX/双 Provider Real 与全量门禁通过，correctness 已冻结；M5.9 本地、Real acceptance 与 exact-SHA CI 已通过，M5.10 保持 NOT STARTED；M5 FINAL=false。
+- M5.8.2—M5.9.3 已完成；M5.8.5 factual correctness 与 M5.9.2 runtime 均冻结；M5.9.3 跨域、DeepSeek-only Rich PBIX 与 Sidebar 浏览器人工验收通过，发布以当前 main exact-SHA CI success 为证据。M5.9.4/M5.10 保持 NOT STARTED；M5 FINAL=false。
 
-*最后更新：2026-09-08 | M5.8—M5.9 COMPLETE；M5.9.2 Runtime Edge Final Closure；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-08 | M5.9.3 Business Semantic Parsing Correctness Closure COMPLETE；M5.9.4/M5.10 NOT STARTED；M5 FINAL=false*

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import calendar
 import re
+from datetime import date
 from enum import Enum
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.app.intent.temporal_expression import parse_explicit_month_range
+from backend.app.query_plan.clarification_reasons import ClarificationReason
 from backend.app.query_plan.grounding import GroundingOutcome, GroundingStatus
 from backend.app.query_plan.semantic_catalog import SemanticCatalog
 from backend.app.query_plan.turn_relation import TurnRelationEvidence
@@ -47,6 +51,7 @@ class SemanticObligation(BaseModel):
 
 class SemanticObligationReport(BaseModel):
     obligations: list[SemanticObligation] = Field(default_factory=list)
+    clarification_reason: ClarificationReason | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -100,6 +105,7 @@ class SemanticObligationCoverageGate:
         language_evidence: tuple[str, ...] = (),
     ) -> SemanticObligationReport:
         obligations: list[SemanticObligation] = []
+        clarification_reason = outcome.clarification_reason
         role_kind = {
             "measure": SemanticObligationKind.MEASURE,
             "dimension": SemanticObligationKind.DIMENSION,
@@ -158,6 +164,38 @@ class SemanticObligationCoverageGate:
                     canonical_identity=(delta.time_range.date_field if delta.time_range else None),
                     evidence="grounded_time",
                 ))
+            requested_month_range = parse_explicit_month_range(user_input)
+            if requested_month_range is not None:
+                expected_start = date(
+                    requested_month_range.start_year,
+                    requested_month_range.start_month,
+                    1,
+                )
+                expected_end = date(
+                    requested_month_range.end_year,
+                    requested_month_range.end_month,
+                    calendar.monthrange(
+                        requested_month_range.end_year,
+                        requested_month_range.end_month,
+                    )[1],
+                )
+                actual = delta.time_range
+                if (
+                    actual is None
+                    or actual.start_date != expected_start
+                    or actual.end_date != expected_end
+                    or actual.grain != "month"
+                ):
+                    obligations.append(SemanticObligation(
+                        kind=SemanticObligationKind.TIME,
+                        status=SemanticObligationStatus.NEEDS_CLARIFICATION,
+                        phrase=user_input,
+                        canonical_identity=None,
+                        evidence="explicit_month_range_endpoint_mismatch",
+                    ))
+                    clarification_reason = (
+                        ClarificationReason.INCOMPLETE_TIME_RANGE
+                    )
             if delta.sort_specified or delta.top_n_specified:
                 complete = delta.sort is not None and delta.top_n is not None
                 obligations.append(SemanticObligation(
@@ -202,7 +240,13 @@ class SemanticObligationCoverageGate:
                     phrase=residue,
                     evidence="bounded_result_affecting_modifier_residue",
                 ))
-        return SemanticObligationReport(obligations=obligations)
+                clarification_reason = (
+                    ClarificationReason.FILTER_FIELD_UNRESOLVED
+                )
+        return SemanticObligationReport(
+            obligations=obligations,
+            clarification_reason=clarification_reason,
+        )
 
     @staticmethod
     def _resolved(kind: SemanticObligationKind, phrase: str, evidence: str) -> SemanticObligation:
@@ -260,9 +304,31 @@ class SemanticObligationCoverageGate:
 
 
 class CanonicalShapeCompletenessError(ValueError):
+    _REASONS: ClassVar[dict[str, ClarificationReason]] = {
+        "canonical_shape_measure_required": ClarificationReason.MEASURE_UNRESOLVED,
+        "canonical_shape_entity_list_dimension_required": ClarificationReason.DIMENSION_UNRESOLVED,
+        "canonical_shape_grouped_dimension_required": ClarificationReason.DIMENSION_UNRESOLVED,
+        "canonical_shape_ranking_dimension_required": ClarificationReason.RANKING_INFORMATION_INCOMPLETE,
+        "canonical_shape_ranking_sort_required": ClarificationReason.RANKING_INFORMATION_INCOMPLETE,
+        "canonical_shape_ranking_top_n_required": ClarificationReason.RANKING_INFORMATION_INCOMPLETE,
+        "canonical_shape_member_set_single_field_required": ClarificationReason.INCOMPLETE_MEMBER_SET,
+        "canonical_shape_member_set_operator_required": ClarificationReason.INCOMPLETE_MEMBER_SET,
+        "canonical_shape_member_set_values_required": ClarificationReason.INCOMPLETE_MEMBER_SET,
+        "canonical_shape_member_set_duplicate_value": ClarificationReason.INCOMPLETE_MEMBER_SET,
+        "canonical_shape_filtered_filter_required": ClarificationReason.FILTER_FIELD_UNRESOLVED,
+        "canonical_shape_filtered_filter_values_required": ClarificationReason.INCOMPLETE_MEMBER_SET,
+        "canonical_shape_trend_temporal_dimension_required": ClarificationReason.DIMENSION_UNRESOLVED,
+        "canonical_shape_trend_ascending_required": ClarificationReason.INCOMPLETE_TIME_RANGE,
+        "canonical_shape_bounded_trend_time_required": ClarificationReason.INCOMPLETE_TIME_RANGE,
+        "canonical_shape_bounded_trend_month_grain_required": ClarificationReason.INCOMPLETE_TIME_RANGE,
+    }
+
     def __init__(self, code: str):
         super().__init__(code)
         self.code = code
+        self.clarification_reason = self._REASONS.get(
+            code, ClarificationReason.UNSUPPORTED_SEMANTIC_REQUEST
+        )
 
 
 class CanonicalShapeCompletenessReport(BaseModel):
@@ -333,6 +399,12 @@ class CanonicalShapeCompletenessGate:
                 self._fail("canonical_shape_trend_ascending_required")
             if shape == QueryShape.BOUNDED_TREND and plan.time_range is None:
                 self._fail("canonical_shape_bounded_trend_time_required")
+            if (
+                shape == QueryShape.BOUNDED_TREND
+                and plan.time_range is not None
+                and plan.time_range.grain != "month"
+            ):
+                self._fail("canonical_shape_bounded_trend_month_grain_required")
         else:  # pragma: no cover - enum exhaustiveness
             self._fail("canonical_shape_unsupported")
         return CanonicalShapeCompletenessReport(
