@@ -10,7 +10,10 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.app.intent.temporal_expression import parse_explicit_month_range
+from backend.app.intent.temporal_expression import (
+    has_explicit_month_range,
+    parse_explicit_month_range,
+)
 from backend.app.query_plan.clarification_reasons import ClarificationReason
 from backend.app.query_plan.grounding import GroundingOutcome, GroundingStatus
 from backend.app.query_plan.semantic_catalog import SemanticCatalog
@@ -75,14 +78,14 @@ class SemanticObligationCoverageGate:
     """Audit result-affecting modifiers without requiring every token to bind."""
 
     _FUNCTIONAL_TERMS: ClassVar[tuple[str, ...]] = (
-        "请问", "请帮我", "帮我", "查询", "查一下", "看一下", "看看", "分析", "统计", "汇总", "比较", "告诉我",
-        "我们", "销售了", "列出", "展示", "显示", "包含", "包括", "提供",
+        "请问", "请帮我", "帮我", "能不能帮忙", "麻烦", "查询", "查一下", "看一下", "看看", "简单看下", "分析", "统计", "汇总", "比较", "告诉我",
+        "我们", "销售了", "列出", "展示", "显示", "包含", "包括", "提供", "所有", "全部", "清单", "都有什么",
         "独立问题", "新问题", "重新开始", "忽略之前", "单独问", "重新分析",
         "改成", "改为", "换成", "换为", "调整为", "那", "那么", "只看", "再看", "继续", "然后",
         "是多少", "是什么", "有多少", "有哪些", "多少", "哪些", "哪个", "哪款", "如何", "怎么样", "情况", "结果",
-        "总", "平均", "合计", "加起来", "合起来", "分别", "按照", "按", "来看", "看", "的", "呢", "为", "大概", "大约", "约",
+        "总", "平均", "合计", "加起来", "合起来", "分别", "按照", "按", "来看", "看", "的", "呢", "为", "大概", "大约", "约", "直接", "顺便",
         "最高", "最低", "最大", "最小", "最多", "最少", "最好", "最差", "最准", "最严重", "最快", "最慢", "最早", "最晚", "卖得最好", "卖的最好",
-        "前十", "前三", "第一", "排名", "趋势", "月度", "前", "第", "个", "是", "哪", "款", "从", "至", "到", "月", "年",
+        "前十", "前三", "第一", "排名", "趋势", "走势", "变化", "月度", "年度", "逐月", "逐年", "每月", "每个月", "按月", "按年", "前", "第", "个", "是", "哪", "款", "从", "至", "到", "月", "年",
         "and", "or", "what", "which", "how", "many", "show", "list", "me", "please", "by",
         "is", "are", "has", "have", "the", "all", "for", "from", "to", "of",
         "total", "average", "top", "highest", "lowest", "trend", "monthly", "yearly", "per", "question", "new",
@@ -196,6 +199,15 @@ class SemanticObligationCoverageGate:
                     clarification_reason = (
                         ClarificationReason.INCOMPLETE_TIME_RANGE
                     )
+            elif has_explicit_month_range(user_input):
+                obligations.append(SemanticObligation(
+                    kind=SemanticObligationKind.TIME,
+                    status=SemanticObligationStatus.NEEDS_CLARIFICATION,
+                    phrase=user_input,
+                    canonical_identity=None,
+                    evidence="yearless_month_range_requires_year",
+                ))
+                clarification_reason = ClarificationReason.INCOMPLETE_TIME_RANGE
             if delta.sort_specified or delta.top_n_specified:
                 complete = delta.sort is not None and delta.top_n is not None
                 obligations.append(SemanticObligation(
@@ -231,7 +243,10 @@ class SemanticObligationCoverageGate:
                 user_input,
                 outcome,
                 catalog,
-                language_evidence=language_evidence,
+                language_evidence=(
+                    *language_evidence,
+                    *((relation.matched_cue,) if relation.matched_cue else ()),
+                ),
             )
             if residue:
                 obligations.append(SemanticObligation(
@@ -296,6 +311,23 @@ class SemanticObligationCoverageGate:
         text = re.sub(r"[\s\u3000，,。.!！?？:：;；·、/\\()（）\[\]{}<>《》\-—_\"']+", "", text)
         if not text:
             return ""
+        if (
+            outcome.delta is not None
+            and outcome.delta.query_shape in {
+                QueryShape.MEMBER_SET,
+                QueryShape.FILTERED_AGGREGATION,
+            }
+            and outcome.member_results
+            and all(
+                item.status == GroundingStatus.RESOLVED
+                for item in outcome.member_results
+            )
+            and re.fullmatch(r"(?:中|和|与|以及|各自|一起)+", text)
+        ):
+            # These tokens are structure only after every requested member is
+            # runtime-resolved.  Any other residue (including an unknown noun)
+            # still fails closed.
+            return ""
         # One isolated CJK character or one one-letter Latin token is normally
         # connective noise, not a safe basis for blocking a business query.
         if len(text) < 2:
@@ -318,6 +350,7 @@ class CanonicalShapeCompletenessError(ValueError):
         "canonical_shape_filtered_filter_required": ClarificationReason.FILTER_FIELD_UNRESOLVED,
         "canonical_shape_filtered_filter_values_required": ClarificationReason.INCOMPLETE_MEMBER_SET,
         "canonical_shape_trend_temporal_dimension_required": ClarificationReason.DIMENSION_UNRESOLVED,
+        "canonical_shape_trend_single_dimension_required": ClarificationReason.DIMENSION_UNRESOLVED,
         "canonical_shape_trend_ascending_required": ClarificationReason.INCOMPLETE_TIME_RANGE,
         "canonical_shape_bounded_trend_time_required": ClarificationReason.INCOMPLETE_TIME_RANGE,
         "canonical_shape_bounded_trend_month_grain_required": ClarificationReason.INCOMPLETE_TIME_RANGE,
@@ -395,6 +428,8 @@ class CanonicalShapeCompletenessGate:
             )
             if not plan.dimensions or not self._has_temporal_grouping(plan, catalog):
                 self._fail("canonical_shape_trend_temporal_dimension_required")
+            if len(plan.dimensions) != 1:
+                self._fail("canonical_shape_trend_single_dimension_required")
             if plan.dimension_order != "asc":
                 self._fail("canonical_shape_trend_ascending_required")
             if shape == QueryShape.BOUNDED_TREND and plan.time_range is None:

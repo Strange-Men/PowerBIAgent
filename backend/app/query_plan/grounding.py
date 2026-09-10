@@ -19,7 +19,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.app.intent.models import IntentSpec, TimeIntentDraft, TimeIntentKind
-from backend.app.intent.temporal_expression import parse_explicit_month_range
+from backend.app.intent.temporal_expression import (
+    has_explicit_month_range,
+    parse_explicit_month_range,
+)
 from backend.app.llm.base import LLMProvider, LLMProviderError, LLMRequest, LLMTask
 from backend.app.memory.models import PendingClarificationContext, StructuredWorkMemory
 from backend.app.query_plan.clarification_reasons import (
@@ -920,7 +923,9 @@ class TimeGrounder:
         user_input: str,
         date_field: CatalogObject,
     ) -> TimeRangeSpec | None:
-        parsed = parse_explicit_month_range(user_input)
+        parsed = parse_explicit_month_range(
+            user_input, reference_year=self._today().year
+        )
         if parsed is None:
             return None
         start_year, start_month = parsed.start_year, parsed.start_month
@@ -944,7 +949,7 @@ class TimeGrounder:
         )
 
     def _has_bounded_month_expression(self, user_input: str) -> bool:
-        return parse_explicit_month_range(user_input) is not None
+        return has_explicit_month_range(user_input)
 
 
 MemberLookup = Callable[[CatalogObject, int], Awaitable[ColumnMembersResult]]
@@ -957,6 +962,7 @@ class SemanticGroundingService:
     _TOP_N = re.compile(
         rf"(?:前\s*(?P<front>{_RANKING_NUMBER})\s*个?|"
         rf"top\s*(?P<top>{_RANKING_NUMBER})|"
+        r"第\s*(?P<ordinal>一|1)\s*个|"
         rf"(?:最高|最大|最多|最低|最小|最少)(?:的)?\s*"
         rf"(?P<extreme>{_RANKING_NUMBER})\s*个?)",
         re.IGNORECASE,
@@ -1364,6 +1370,7 @@ class SemanticGroundingService:
                     value=values if len(values) > 1 else values[0])]
             delta.filters = grounded_filters
 
+        grouping_grain = self._temporal_grouping_grain(user_input)
         dimension_role: SemanticObjectRole = (
             "ranking_dimension"
             if effective_shape == QueryShape.RANKING
@@ -1372,6 +1379,21 @@ class SemanticGroundingService:
         current_dimension = self.objects.find_mentions(
             user_input, SemanticObjectType.FIELD, dimension_role
         )
+        if (
+            effective_shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}
+            and grouping_grain is not None
+            and self._is_generic_temporal_grouping_mention(
+                current_dimension, grouping_grain, user_input
+            )
+        ):
+            # A generic "按月/每月" alias is shape/grain evidence, not a
+            # second temporal axis beside the runtime-proven month binding.
+            current_dimension = ObjectGroundingResult(
+                status=GroundingStatus.NOT_MENTIONED,
+                role=dimension_role,
+                phrase="",
+                method="generic_temporal_grouping_cue",
+            )
         if (
             effective_shape in {
                 QueryShape.GROUPED,
@@ -1415,6 +1437,20 @@ class SemanticGroundingService:
         weak_dimension_phrases = self._current_weak_phrases(
             [*intent.detected_dimensions, *draft.dimensions], user_input
         )
+        if (
+            effective_shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}
+            and grouping_grain is not None
+        ):
+            # A bounded language draft may echo “月/month” as a field.  It is
+            # still only grain evidence unless the user named a real runtime
+            # field; never let that weak echo invoke the object selector.
+            weak_dimension_phrases = [
+                phrase
+                for phrase in weak_dimension_phrases
+                if not self._is_generic_temporal_grouping_phrase(
+                    phrase, grouping_grain
+                )
+            ]
         dimension_requested = self._has_dimension_cue(
             user_input, current_dimension
         ) or any(
@@ -1482,7 +1518,6 @@ class SemanticGroundingService:
                 method="no_dimension_requirement",
             ))
 
-        grouping_grain = self._temporal_grouping_grain(user_input)
         if grouping_grain is not None:
             grouping_fields = [
                 obj
@@ -2243,6 +2278,7 @@ class SemanticGroundingService:
                 rf"{self._RANKING_NUMBER}\s*个?\s*{escaped}",
                 rf"(?:哪个|哪款|哪一个)\s*{escaped}",
                 rf"(?:哪些|什么)\s*{escaped}",
+                rf"(?:列出|展示|显示|list|show)\s*(?:所有|全部|all)?\s*{escaped}",
                 rf"{escaped}.{{0,3}}(?:有哪些|有什么)",
                 rf"(?:最高|最低|最大|最小|最多|最少|最好|最差).{{0,8}}{escaped}",
                 rf"{escaped}\s*(?:排名|排行|分组|分别)",
@@ -2378,6 +2414,48 @@ class SemanticGroundingService:
             return None
         return int("".join(str(item) for item in digits))
 
+    def _is_generic_temporal_grouping_mention(
+        self,
+        result: ObjectGroundingResult,
+        grain: Literal["month", "year"],
+        user_input: str,
+    ) -> bool:
+        if result.status not in {
+            GroundingStatus.RESOLVED,
+            GroundingStatus.AMBIGUOUS,
+        }:
+            return False
+        generic = (
+            {"月", "月份", "每月", "每个月", "月度", "按月", "month", "monthly"}
+            if grain == "month"
+            else {"年", "年份", "每年", "年度", "按年", "year", "yearly"}
+        )
+        candidate_ids = result.candidate_ids
+        if not candidate_ids and result.canonical_object is not None:
+            candidate_ids = (result.canonical_object.object_id,)
+        normalized_input = normalize_semantic_text(user_input)
+        matched_terms = {
+            normalized
+            for candidate_id in candidate_ids
+            if (candidate := self.catalog.get(candidate_id)) is not None
+            for term in candidate.language_terms
+            if (normalized := normalize_semantic_text(term))
+            and normalized in normalized_input
+        }
+        return bool(matched_terms) and matched_terms.issubset(generic)
+
+    @staticmethod
+    def _is_generic_temporal_grouping_phrase(
+        phrase: str, grain: Literal["month", "year"]
+    ) -> bool:
+        normalized = normalize_semantic_text(phrase)
+        generic = (
+            {"月", "月份", "每月", "每个月", "月度", "按月", "month", "monthly"}
+            if grain == "month"
+            else {"年", "年份", "每年", "年度", "按年", "year", "yearly"}
+        )
+        return normalized in generic
+
     @staticmethod
     def _temporal_grouping_grain(user_input: str) -> Literal["month", "year"] | None:
         if re.search(r"(?:每(?:个)?月|按月|逐月|月度)|\b(?:monthly|by month|per month)\b", user_input, re.IGNORECASE):
@@ -2386,7 +2464,7 @@ class SemanticGroundingService:
             return "year"
         if "趋势" in user_input and (
             re.search(r"(?:最近|过去)\s*\d+\s*个?月", user_input)
-            or parse_explicit_month_range(user_input) is not None
+            or has_explicit_month_range(user_input)
         ):
             return "month"
         return None

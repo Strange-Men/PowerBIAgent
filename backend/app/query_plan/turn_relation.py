@@ -29,7 +29,7 @@ class TurnRelationEvidence(BaseModel):
         "start over", "new question", "ignore previous", "independently",
     )
     _REPLACE: ClassVar[re.Pattern[str]] = re.compile(r"^\s*(?:改成|改为|换成|换为|调整为|改看|换看|改|换)", re.IGNORECASE)
-    _FOLLOW_PREFIX: ClassVar[re.Pattern[str]] = re.compile(r"^\s*(?:那|那么|只看|再看|继续|然后)", re.IGNORECASE)
+    _FOLLOW_PREFIX: ClassVar[re.Pattern[str]] = re.compile(r"^\s*(?:那|那么|其中|只看|再看|继续|然后)", re.IGNORECASE)
     _FOLLOW_SUFFIX: ClassVar[re.Pattern[str]] = re.compile(r"呢\s*[？?。.]?\s*$", re.IGNORECASE)
 
     @classmethod

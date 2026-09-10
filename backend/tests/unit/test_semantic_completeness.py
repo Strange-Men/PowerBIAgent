@@ -4,6 +4,7 @@ from datetime import date
 
 import pytest
 
+from backend.app.query_plan.clarification_reasons import ClarificationReason
 from backend.app.query_plan.completeness import (
     CanonicalShapeCompletenessError,
     CanonicalShapeCompletenessGate,
@@ -248,6 +249,22 @@ def test_explicit_fresh_cues_are_shared_structured_evidence(cue: str) -> None:
 def test_incomplete_canonical_shapes_fail_closed(shape: QueryShape, updates: dict[str, object], code: str) -> None:
     with pytest.raises(CanonicalShapeCompletenessError, match=code):
         CanonicalShapeCompletenessGate().validate(_plan(shape, **updates), catalog=_catalog())
+
+
+def test_multiple_trend_dimensions_fail_closed_before_dax() -> None:
+    plan = _plan(
+        QueryShape.TREND,
+        dimensions=["Month", "Carrier"],
+        dimension_order="asc",
+    )
+
+    with pytest.raises(
+        CanonicalShapeCompletenessError,
+        match="canonical_shape_trend_single_dimension_required",
+    ) as exc:
+        CanonicalShapeCompletenessGate().validate(plan, catalog=_catalog())
+
+    assert exc.value.clarification_reason == ClarificationReason.DIMENSION_UNRESOLVED
 
 
 def test_complete_ranking_and_bounded_trend_pass() -> None:

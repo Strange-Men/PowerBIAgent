@@ -35,9 +35,11 @@ from backend.app.persistence.models import Base
 from backend.app.query_plan.model_semantic_context import ModelSemanticContextBuilder
 from backend.app.query_plan.model_override import resolve_model_override
 from backend.app.query_plan.semantic_catalog import DEFAULT_GLOSSARY_PATH, SemanticCatalogBuilder
+from backend.app.query_plan.grounding import SemanticGroundingService
 from backend.app.schemas.data_contracts import UserContext
 from backend.app.schemas.data_contracts import CanonicalQueryPlan, ColumnMembersRequest
 from backend.app.facts.verified import VerifiedFactSetBuilder
+from backend.app.facts.inspection import ResultSemanticInspectionGate
 from backend.app.dax.builder import DeterministicDAXBuilder
 from backend.app.presentation.builder import StructuredPresentationBuilder
 from backend.app.presentation.models import PresentationEnvelope
@@ -56,6 +58,7 @@ async def m5_9_3_acceptance(post, service, schema, rich_key):
         return result
 
     dax_tool.handler = observe
+
     verified = 0
 
     async def completed(label, message, *, conversation=None):
@@ -231,6 +234,352 @@ async def m5_9_3_acceptance(post, service, schema, rich_key):
         }), flush=True)
     finally:
         dax_tool.handler = original_handler
+
+
+async def m5_9_4_acceptance(
+    post, service, rich_schema, rich_key, other_key, *, only_label=None
+):
+    """DeepSeek-only 108-question representative business-language stress."""
+
+    execution = ToolExecutionContext(
+        runtime_mode=RuntimeDataMode.REAL,
+        user=UserContext(allowed_semantic_models=[other_key]),
+    )
+    other_schema = await service.tool_gateway.execute(
+        "get_semantic_model_schema",
+        execution,
+        SchemaInput(semantic_model_key=other_key),
+    )
+    schemas = {rich_key: rich_schema, other_key: other_schema}
+    captured = {}
+    inspected = {}
+    grounding_outcomes = []
+    dax_tool = service.tool_gateway._tools["execute_dax"]
+    original_handler = dax_tool.handler
+    original_inspect = ResultSemanticInspectionGate.inspect
+    original_ground = SemanticGroundingService.ground
+
+    async def observe(request):
+        result = await original_handler(request)
+        captured[result.result_id] = (request, result)
+        return result
+
+    dax_tool.handler = observe
+
+    def observe_inspection(self, plan, result, **kwargs):
+        inspected[result.result_id] = plan
+        return original_inspect(self, plan, result, **kwargs)
+
+    ResultSemanticInspectionGate.inspect = observe_inspection
+
+    async def observe_grounding(self, *args, **kwargs):
+        outcome = await original_ground(self, *args, **kwargs)
+        grounding_outcomes.append(outcome)
+        return outcome
+
+    SemanticGroundingService.ground = observe_grounding
+    completed_count = 0
+    clarification_count = 0
+    canonical_groups = {}
+
+    def slot_witness(plan):
+        return json.dumps(
+            plan.model_dump(
+                mode="json",
+                exclude={"normalized_question", "inherited_context"},
+            ),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+    async def completed(label, message, shape, *, key=rich_key, conversation=None, group=None):
+        nonlocal completed_count
+        body, audit, raw_plan = await post(
+            label, message, key=key, conversation=conversation
+        )
+        if body.get("terminal_state") != "completed":
+            latest = next(reversed(captured.values()), None)
+            result = latest[1] if latest is not None else None
+            inspected_plan = (
+                inspected.get(result.result_id) if result is not None else None
+            )
+            print(json.dumps({
+                "case_probe": label,
+                "canonical_plan": {
+                    field: (
+                        inspected_plan.model_dump(mode="json").get(field)
+                        if inspected_plan is not None
+                        else raw_plan.get(field)
+                    )
+                    for field in (
+                        "query_shape", "measures", "dimensions", "dimension_tables",
+                        "time_range", "sort", "top_n",
+                    )
+                    if isinstance(raw_plan, dict)
+                },
+                "result_columns": result.columns if result is not None else [],
+                "result_row_count": result.row_count if result is not None else 0,
+                "first_row_types": (
+                    [type(value).__name__ for value in result.rows[0]]
+                    if result is not None and result.rows else []
+                ),
+                "grounding_objects": [
+                    {
+                        "role": item.role,
+                        "status": item.status.value,
+                        "method": item.method,
+                        "phrase": item.phrase,
+                        "canonical": (
+                            item.canonical_object.canonical_name
+                            if item.canonical_object is not None else None
+                        ),
+                    }
+                    for outcome in grounding_outcomes[-1:]
+                    for item in outcome.object_results
+                ],
+            }, ensure_ascii=False), flush=True)
+        check(
+            body.get("terminal_state") == "completed" and body.get("memory_commit"),
+            label + ":not_completed",
+        )
+        plan = CanonicalQueryPlan.model_validate(raw_plan)
+        check(plan.query_shape.value == shape, label + ":shape_mismatch")
+        request, result = captured[audit["result_id"]]
+        rebuilt = DeterministicDAXBuilder().build(
+            plan, schemas[key], request_id=request.request_id
+        )
+        check(request.dax == rebuilt.dax, label + ":dax_rebuild_mismatch")
+        facts = VerifiedFactSetBuilder().build(plan, result)
+        check(
+            facts.semantic_model_key == key
+            and facts.fact_set_id == audit.get("verified_fact_set_id")
+            and len(facts.facts) == audit.get("verified_fact_count"),
+            label + ":fact_scope_mismatch",
+        )
+        presentation = PresentationEnvelope.model_validate(body.get("presentation"))
+        expected = StructuredPresentationBuilder.build_answer(
+            plan, result, facts, "verified"
+        ).datasets[0]
+        check(
+            len(presentation.datasets) == 1
+            and presentation.datasets[0].columns == expected.columns
+            and presentation.datasets[0].rows == expected.rows,
+            label + ":presentation_scope_mismatch",
+        )
+        check(
+            audit.get("deterministic_dax")
+            and audit.get("layer3_pass")
+            and audit.get("factual_validation_pass")
+            and audit.get("llm_dax_call_count") == 0,
+            label + ":authority_regression",
+        )
+        if group is not None:
+            witness = slot_witness(plan)
+            if group in canonical_groups:
+                check(canonical_groups[group] == witness, label + ":metamorphic_mismatch")
+            else:
+                canonical_groups[group] = witness
+        completed_count += 1
+        return plan
+
+    async def clarified(label, message, *, reason):
+        nonlocal clarification_count
+        before = len(captured)
+        body, audit, _ = await post(label, message, key=rich_key)
+        check(
+            body.get("terminal_state") == "clarification_required"
+            and not body.get("memory_commit")
+            and not audit.get("dax_executed")
+            and len(captured) == before
+            and audit.get("clarification_reason") in reason,
+            label + ":not_fail_closed",
+        )
+        clarification_count += 1
+
+    transforms = (
+        lambda text: text,
+        lambda text: "请问" + text + "？",
+        lambda text: "麻烦" + text + "。",
+        lambda text: "独立问题：" + text,
+    )
+    shape_groups = {
+        "scalar": (
+            "销售额是多少",
+            "2025年销售额总计",
+            "2025年5月销售额是多少",
+        ),
+        "grouped": (
+            "各区域销售额",
+            "每个产品销售额",
+            "2025年按区域看销售额",
+        ),
+        "ranking": (
+            "销售额最高的前三个产品是什么",
+            "销售额最低的3个产品是什么",
+            "销量最高的是第一个产品",
+        ),
+        "trend": (
+            "每个月销售额趋势",
+            "订单数按月看变化",
+            "今年销量月度走势",
+        ),
+        "bounded_trend": (
+            "2025年1月至6月每个月的销售额趋势",
+            "2025年1月到6月按月看销售额",
+            "2025-01~2025-06销售额月度变化",
+        ),
+        "entity_list": (
+            "有哪些产品",
+            "列出所有区域",
+            "请展示全部类别清单",
+        ),
+    }
+
+    try:
+        for shape, bases in shape_groups.items():
+            for base_index, base in enumerate(bases):
+                group = f"{shape}:{base_index}"
+                for variant_index, transform in enumerate(transforms):
+                    label = f"m594_{shape}_{base_index}_{variant_index}"
+                    if only_label is not None and label != only_label:
+                        continue
+                    await completed(
+                        label,
+                        transform(base),
+                        shape,
+                        group=group,
+                    )
+
+        if only_label is not None and completed_count == 1:
+            print(json.dumps({"m5_9_4_probe_passed": only_label}), flush=True)
+            return
+
+        member_execution = ToolExecutionContext(
+            runtime_mode=RuntimeDataMode.REAL,
+            user=UserContext(allowed_semantic_models=[rich_key]),
+        )
+        members = await service.tool_gateway.execute(
+            "get_column_members",
+            member_execution,
+            ColumnMembersRequest(
+                semantic_model_key=rich_key,
+                table_name="Sales",
+                field_name="Product",
+                limit=200,
+            ),
+        )
+        values = sorted(
+            {value for value in members.values if isinstance(value, str) and value.strip()}
+        )
+        check(len(values) >= 3 and not members.truncated, "rich_product_members_insufficient")
+        quoted = [json.dumps(value, ensure_ascii=False) for value in values[:3]]
+        member_bases = (
+            f"Sales[Product]中{quoted[0]}和{quoted[1]}的Total Quantity分别是多少",
+            f"Sales[Product]中{quoted[0]}、{quoted[1]}以及{quoted[2]}的Total Quantity分别是多少",
+            f"Sales[Product]中{quoted[0]}与{quoted[1]}各自的Total Quantity是多少",
+        )
+        aggregate_bases = (
+            f"Sales[Product]中{quoted[0]}和{quoted[1]}的Total Quantity加起来多少",
+            f"Sales[Product]中{quoted[0]}与{quoted[1]}的Total Quantity合起来多少",
+            f"Sales[Product]中{quoted[0]}和{quoted[1]}一起的Total Quantity是多少",
+        )
+        for shape, bases in (
+            ("member_set", member_bases),
+            ("filtered_aggregation", aggregate_bases),
+        ):
+            for base_index, base in enumerate(bases):
+                group = f"{shape}:{base_index}"
+                for variant_index, transform in enumerate(transforms):
+                    label = f"m594_{shape}_{base_index}_{variant_index}"
+                    if only_label is not None and label != only_label:
+                        continue
+                    await completed(
+                        label,
+                        transform(base),
+                        shape,
+                        group=group,
+                    )
+
+        if only_label is not None:
+            check(completed_count == 1, "m594_probe_label_not_found")
+            print(json.dumps({"m5_9_4_probe_passed": only_label}), flush=True)
+            return
+
+        await clarified(
+            "m594_vague_ranking",
+            "前几个产品销售额",
+            reason={"ranking_information_incomplete"},
+        )
+        await clarified(
+            "m594_yearless_range",
+            "1月到6月每个月的销售额趋势",
+            reason={"incomplete_time_range"},
+        )
+        unknown = "M594不存在成员"
+        await clarified(
+            "m594_unknown_member",
+            f"Sales[Product]等于{unknown}时Total Quantity是多少",
+            reason={"member_no_match", "filter_field_unresolved"},
+        )
+        await clarified(
+            "m594_known_unknown_member",
+            f"Sales[Product]中{quoted[0]}和{unknown}的Total Quantity分别是多少",
+            reason={"member_no_match", "incomplete_member_set", "filter_field_unresolved"},
+        )
+
+        conversation = str(uuid.uuid4())
+        first = await completed(
+            "m594_turn_initial", "2025年5月销售额是多少", "scalar",
+            conversation=conversation,
+        )
+        second = await completed(
+            "m594_turn_follow", "那南区呢", "scalar", conversation=conversation
+        )
+        third = await completed(
+            "m594_turn_replace", "换成去年", "scalar", conversation=conversation
+        )
+        fourth = await completed(
+            "m594_turn_among_group", "其中按产品看", "grouped",
+            conversation=conversation,
+        )
+        check(
+            second.measures == first.measures
+            and second.time_range == first.time_range
+            and third.filters == second.filters
+            and third.time_range != second.time_range
+            and fourth.measures == third.measures
+            and fourth.filters == third.filters
+            and fourth.time_range == third.time_range,
+            "m594_turn_inheritance_mismatch",
+        )
+
+        for index, (message, shape) in enumerate((
+            ("Total Sales是多少", "scalar"),
+            ("有哪些Sales[Product]", "entity_list"),
+            ("按Sales[Category]统计Total Sales", "grouped"),
+            ("Total Sales最高的是哪个Sales[Product]", "ranking"),
+        )):
+            await completed(
+                f"m594_other_model_{index}", message, shape, key=other_key
+            )
+
+        check(completed_count == 104, "m594_completed_count")
+        check(clarification_count == 4, "m594_clarification_count")
+        check(len(canonical_groups) == 24, "m594_metamorphic_group_count")
+        print(json.dumps({
+            "m5_9_4_deepseek_real_questions": 108,
+            "completed": completed_count,
+            "clarification_zero_dax": clarification_count,
+            "query_shapes": 8,
+            "metamorphic_groups": len(canonical_groups),
+            "multiple_pbix": 2,
+            "canonical_dax_result_fact_presentation_consistent": True,
+            "cross_model_bleed": 0,
+        }), flush=True)
+    finally:
+        dax_tool.handler = original_handler
+        ResultSemanticInspectionGate.inspect = original_inspect
+        SemanticGroundingService.ground = original_ground
 
 
 async def extended_acceptance(post, service, rich_key, other_key, registry_data, *, only_zero=False, only_temporal=False, only_members=False):
@@ -457,15 +806,33 @@ async def run(args, root):
                     body = reply.json()
                     audit = body.get("execution_audit") or {}
                     plan = audit.get("canonical_query_plan") or {}
+                    request_memory = None
+                    if body.get("terminal_state") != "completed" and body.get("request_id"):
+                        request_memory = await service.pipeline.get_memory_by_request_id(
+                            body["request_id"], RuntimeDataMode.REAL
+                        )
                     summary = {"case": label, "http_status": reply.status_code,
                         "terminal_state": body.get("terminal_state"), "error_type": body.get("error_type"),
                         "query_shape": plan.get("query_shape") or audit.get("query_shape"),
                         "dax_executed": bool(audit.get("dax_executed")), "memory_commit": body.get("memory_commit"),
                         "latency_ms": round((time.perf_counter()-started)*1000, 3)}
+                    if request_memory is not None:
+                        summary["failure_stage"] = request_memory.failure_stage
+                        summary["failure_reason"] = (request_memory.failure_reason or "")[:160]
                     results.append(summary)
                     print(json.dumps(summary), flush=True)
                     if body.get("terminal_state") == "clarification_required":
-                        print(json.dumps({"case":label,"missing_slots":audit.get("missing_slots"),
+                        print(json.dumps({"case":label,
+                            "clarification_reason": audit.get("clarification_reason"),
+                            "question_route": audit.get("question_route"),
+                            "failure_stage": audit.get("failure_stage"),
+                            "grounded_delta_present": bool(audit.get("grounded_delta")),
+                            "semantic_obligation_coverage": audit.get("semantic_obligation_coverage"),
+                            "semantic_obligations": [
+                                {k: v for k, v in item.items() if k in {"kind", "status", "evidence"}}
+                                for item in audit.get("semantic_obligations", [])
+                            ],
+                            "missing_slots":audit.get("missing_slots"),
                             "object_status":[{k:v for k,v in item.items() if k in {"role", "status", "method"}} for item in audit.get("object_grounding_status", [])],
                             "member_status":[{k:v for k,v in item.items() if k in {"status", "method"}} for item in audit.get("member_grounding_status", [])]}), flush=True)
                     check(reply.status_code == 200, label + ":http_failure")
@@ -512,6 +879,21 @@ async def run(args, root):
                     check((audit.get("question_route") or audit.get("capability_decision")) == route and not audit.get("schema_read") and not audit.get("dax_executed") and not body.get("memory_commit") and not body.get("tool_sequence"), label + ":non_business_isolation_failed")
                 if args.phase == "m5_9_3":
                     await m5_9_3_acceptance(post, service, schema, rich_key)
+                elif args.phase == "m5_9_4":
+                    check(args.profile == "deepseek", "m5_9_4_requires_deepseek")
+                    other = [
+                        option for option in options
+                        if option.get("selectable")
+                        and option.get("display_name") == args.other_model
+                    ]
+                    check(
+                        len(other) == 1 and other[0]["key"] != rich_key,
+                        "other_model_not_exact_unique",
+                    )
+                    await m5_9_4_acceptance(
+                        post, service, schema, rich_key, other[0]["key"],
+                        only_label=args.case_label,
+                    )
                 elif args.phase == "rich":
                     check(len(results) == 15, "rich_case_count")
                     print(json.dumps({"rich_15_passed": True}), flush=True)
@@ -533,10 +915,14 @@ async def main():
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
         "--phase",
-        choices=("rich", "extended", "zero", "temporal", "members", "m5_9_3"),
+        choices=(
+            "rich", "extended", "zero", "temporal", "members",
+            "m5_9_3", "m5_9_4",
+        ),
         default="rich",
     )
     parser.add_argument("--other-model")
+    parser.add_argument("--case-label")
     args = parser.parse_args()
     failed = False
     with owned_acceptance_tempdir(prefix="powerbiagent-context-real-") as root:

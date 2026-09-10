@@ -3,11 +3,463 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-08 | M5.9.3 Business Semantic Parsing Correctness Closure；M5.9.4/M5.10 NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-10 | M5.9.4 Business Language Stress IN PROGRESS；M5.10 NOT STARTED；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-594-014
+  title: 已证明的 follow-up cue 未传入 Coverage residue 消费
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: 多轮“其中按产品看”已由 TurnRelationEvidence 识别为显式 follow-up，Product 也已解析，但 Coverage 仍把“其中”当作未知 filter modifier 并错误澄清
+  local_evidence: DeepSeek-only 108-case Real 的 m594_turn_among_group；跨四域“其中 + measure”真实 Grounding/Coverage regression 在无 LLM 下复现
+  authoritative_sources:
+  - title: M5.9.3 Structured Turn Relation Evidence
+    reason: 已匹配的 relation cue 是结构化证据，不得再次被解释为业务筛选词
+  - title: M5.9.3 Semantic Obligation Completeness
+    reason: Coverage 只应阻断未解释的 result-affecting modifier，不能阻断已证明的 discourse relation
+  root_cause: inspect 已创建 TURN_RELATION resolved obligation，但调用 residue analyzer 时只传外部 language_evidence，遗漏 relation.matched_cue
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅把当前 TurnRelationEvidence 已匹配的 matched_cue 合并进 residue 的 consumable evidence；不把“其中”加入全局 functional terms，也不改变 follow-up 分类或继承规则
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress_invariants.py
+  - backend/tests/unit/test_semantic_completeness.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 无结构化 relation evidence 时全局吞掉可能影响结果的未知文本
+  - 让旧 Memory 覆盖当前明确业务槽
+  prevention_rules:
+  - 每个 resolved TURN_RELATION obligation 的 matched cue 必须由同一次 Coverage inspection 消费
+  - relation evidence 只影响话语结构，不拥有业务字段/member authority
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-013
+  title: 已完整解析的 qualified MEMBER_SET 被结构连接词残留阻断
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: Sales[Product]中两个 runtime-known 成员的 Total Quantity 分别查询已形成完整 MEMBER_SET delta，但 Coverage 将“中/和”组合当成额外 filter residue，返回 filter_field_unresolved
+  local_evidence: DeepSeek-only 108-case Real 在 m594_member_set_0_0 复现；test-only qualified field + quoted known pair 无 LLM 回归稳定复现
+  authoritative_sources:
+  - title: M5.9.3 Semantic Obligation Completeness
+    reason: 显式成员必须完整解析；全部 runtime-resolved 后纯集合连接词不应创造第二个业务 obligation
+  - title: ADR-008 Business Semantic Catalog and Grounding Authority
+    reason: 只有 runtime member 结果拥有成员 identity，连接词不拥有 member authority
+  root_cause: Coverage 已消费 qualified field、两个成员与“分别”，但没有在完整 runtime resolution 证据下识别字段定位词与集合连接词组成的纯结构 residue
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅当 shape 为 MEMBER_SET/FILTERED_AGGREGATION、存在 member results 且所有成员均 runtime-resolved，并且清理后的全部 residue 只由中/和/与/以及/各自/一起构成时消费；任何其他字符仍 fail closed
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress_invariants.py
+  - backend/tests/unit/test_semantic_completeness.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 全局无条件删除单字连接词并可能掩盖未知成员
+  - 对 known+unknown partial execute
+  prevention_rules:
+  - 结构 residue 豁免必须同时受 query shape、全成员 runtime resolution 与 whole-residue grammar 约束
+  - unknown/ambiguous member obligation 优先阻断，保持 ZERO DAX
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-012
+  title: ENTITY_LIST 字段别名末尾与 member suffix 重合时被误判为未知成员
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: “列出所有区域”已由 Router 判定 ENTITY_LIST，弱草稿也指向 Product/Region 字段，但 Grounding 把字段别名中的“区”当作未知 member suffix，返回 member_no_match 而不是执行实体清单
+  local_evidence: DeepSeek-only 108-case Real 在 m594_entity_list_1_0 稳定暴露；test-only Education catalog 令“学习项目”字段别名与“项目”member suffix 重合，可在无 LLM 情况下确定性复现
+  authoritative_sources:
+  - title: ADR-008 Business Semantic Catalog and Grounding Authority
+    reason: 字段结构 cue 与 member literal 必须分工；字段名内部字符不能单独成为 member evidence
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: ENTITY_LIST 结构词与字段 identity 的组合应由固定语法消费，不得交给 bounded selector 猜测
+  root_cause: _field_has_dimension_cue 只覆盖哪些/有什么等问法，遗漏列出/展示/显示 + 所有/全部 + 字段；_member_evidence_fields 因此把字段别名内部的 member_suffix 当成独立显式成员要求
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在共享 dimension cue grammar 中加入中英文 list/show + all + runtime field 结构，使该字段在 member discovery 前被证明为 grouping/entity requirement；未知成员 suffix 与 runtime validation 规则保持不变
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress_invariants.py
+  - backend/tests/unit/test_semantic_grounding.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 将 runtime 字段别名内部的 suffix 字符直接提升为未知成员证据
+  - 为“区域”等具体业务词添加 production 特判
+  prevention_rules:
+  - Router 的 entity-list 结构语法与 Grounding dimension cue 必须成对回归
+  - member suffix 只能在字段未被结构 cue 明确使用时提供候选证据
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-011
+  title: 通用按月别名偶发生成双时间轴并在 Result Gate 失败
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: “订单数按月看变化”在同一 Date 表同时存在 MonthName 与 YearMonth 候选时，bounded selector 偶发先接受 MonthName，再追加 runtime temporal binding YearMonth；错误 canonical plan 已生成 DAX，最终才以 result_trend_temporal_value_invalid 失败
+  local_evidence: DeepSeek-only M5.9.4 Real probe/full run 间歇复现；canonical dimensions 为 MonthName/YearMonth，首列是非日期字符串；测试以两个对象共享“月/月份”别名稳定复现 selector 前歧义
+  authoritative_sources:
+  - title: ADR-008 Business Semantic Catalog and Grounding Authority
+    reason: “按月”只证明 grouping grain；实际时间轴必须由 runtime 唯一 temporal binding 决定
+  - title: M5.8.5 Canonical Shape Completeness
+    reason: 当前 trend 事实/展示合同只有一个 temporal grouping，额外维度必须在 DAX 前 fail closed
+  root_cause: 通用时间粒度词同时参与普通 dimension mention；首轮抑制逻辑只覆盖 RESOLVED，未覆盖 selector 前 AMBIGUOUS candidate set，导致候选选择具有 Provider 非确定性
+  failed_attempts:
+  - 仅在 current_dimension 已 RESOLVED 且 phrase 为通用时间词时清除；AMBIGUOUS 候选仍进入 bounded selector，Real probe 继续偶发失败
+  - 扩展为检查 RESOLVED/AMBIGUOUS candidate language terms，但 Real Catalog 中“月”可只来自 LLM weak draft、current mention 仍为 NOT_MENTIONED，第三次探针再次触发 selector
+  repair_attempt_count: 3
+  continuation_authorization:
+    authority: explicit_user_request
+    entry_id: ERR-594-011
+    version: M5.9.4
+    source: docs/milestones/m5/m5_9_4_business_language_stress_plan.md
+    quote: 在进入 M5.10 前，对当前已支持的 Power BI 业务问答能力做系统化自然语言组合压力测试，主动发现并收口潜在语义解析缺陷。
+  final_fix: 同时在 selector 前删除只等于通用 grain cue 的 weak dimension echo；真实 runtime 字段名仍保留。current mention 的通用 cue 也只在全部命中 term 属于同一 grain 时降为 grouping evidence，最终只由 runtime temporal binding 生成时间轴；CanonicalShapeCompletenessGate 拒绝多维 trend，确保同类异常 ZERO DAX
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress_invariants.py
+  - backend/tests/unit/test_semantic_completeness.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 将“按月/月度/monthly”本身绑定为普通业务维度后再追加 temporal binding
+  - 允许多维 trend canonical plan 进入 Deterministic DAX
+  prevention_rules:
+  - 通用 grain cue 只能在全部命中候选均为同粒度通用词时被抑制；显式对象名不得被静默忽略
+  - trend canonical plan 必须恰有一个 runtime-proven temporal dimension
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-010
+  title: ENTITY_LIST 结构词被 Completeness 当作筛选残留
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: “列出所有产品”与“展示全部产品清单”已解析实体维度，却因所有/全部/清单残留返回 filter_field_unresolved
+  local_evidence: Real representative corpus 预检的四域 production Grounding + Coverage property 稳定复现；MEMBER_SET/FILTERED_AGGREGATION 对照保持 executable
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: Router 已证明的 entity-list 结构词不拥有字段/member 身份，也不应被 Coverage 二次解释为筛选条件
+  root_cause: Completeness consumable grammar 覆盖列出/展示/list/all，但中文 quantity/list noun 同义词未与 Router entity grammar 对齐
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 只补充所有/全部/清单/都有什么四个通用 ENTITY_LIST 结构词，并增加跨四域 property regression
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress_invariants.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 消耗未被 Router 或 Grounding 证明为结构词的任意未知名词
+  prevention_rules:
+  - ENTITY_LIST Router grammar 与 Coverage consumable grammar 必须成对回归
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-009
+  title: Router 已认可的趋势结构词被 Completeness 当作筛选残留
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: DeepSeek Real 的“今年销量月度走势”已解析 measure、temporal grouping 与 time，却因“走势”残留返回 filter_field_unresolved
+  local_evidence: Real 第 43 问稳定显示 measure/dimension/time obligations 全部 RESOLVED，唯一失败项为 bounded_result_affecting_modifier_residue；无 DAX、Memory commit 或资源残留
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: Query Shape evidence 与业务对象 authority 分离；已被 Router 证明的通用结构词不应再次被当作未知业务对象
+  root_cause: Completeness functional-term grammar 与 Router trend grammar 未完全对齐，缺少走势/变化/逐月/每月/按月等结构词
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Coverage 只补齐 Router 已认可的通用趋势结构词，并以四域 measure/time/grouping property 验证；其他未知名词仍 fail closed
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress_invariants.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 将任意未解析词都视为无意义结构词
+  prevention_rules:
+  - Router 新增通用 shape grammar 时必须同步 Coverage consumable grammar 回归
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-008
+  title: 礼貌与话语标记被 Completeness 当作未绑定业务 modifier
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: DeepSeek Real 中“麻烦销售额是多少”已完成 measure Grounding，却被 residue scanner 返回 filter_field_unresolved，等价问法意外澄清
+  local_evidence: Real 连续三次在同一变体稳定复现；审计显示 grounded_delta_present=true、measure RESOLVED、bounded_result_affecting_modifier_residue，且 ZERO DAX/residual=0
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: 无业务意义的语言修饰不得改变 canonical semantic，residue gate 只能阻断可能影响结果的未绑定义务
+  root_cause: Completeness 的既有 functional-term 集覆盖请问/帮我/大概，但漏掉同类礼貌和话语标记，导致非业务残留被提升为 explicit filter obligation
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在既有非业务 discourse marker 集中补齐麻烦/能不能帮忙/简单看下/直接/顺便，并以四域 property test 证明 canonical Grounding 不变
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress_invariants.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 把业务字段、member 或失败整句加入 functional-term 忽略表
+  - 放松未知业务 residue 的 fail-closed 行为
+  prevention_rules:
+  - discourse marker 与业务 modifier 必须在跨域等价表达 property 中分开验证
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-007
+  title: 句首“其中”未进入 follow-up 与 shape inheritance
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: 最小反例“其中华南净营收是多少”被视为独立 scalar，而不是显式 follow-up，可能绕开允许槽位继承规则
+  local_evidence: 固定 seed 组合矩阵引入 relation_surface=among 后稳定产生 turn_relation/shape mismatch；缩减后仅保留句首“其中”即可复现
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: turn relation 是 code-owned 表达结构证据，不能依赖 LLM 补偿
+  root_cause: TurnRelationEvidence 与 QuestionRouter 的 inherit cue 使用同一有限前缀集合，但均遗漏业务短追问常见的“其中”
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅向既有 follow-up/inherit 前缀加入“其中”，不改变槽位继承、Grounding、Memory 或 DAX 规则
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress.py
+  - backend/tests/unit/test_business_language_stress_invariants.py
+  prohibited_patterns:
+  - 让 LLM 自行决定 follow-up 并越过确定性 inheritance policy
+  prevention_rules:
+  - Router 与 TurnRelationEvidence 的显式短追问 cue 必须保持一致
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-006
+  title: 中英混合 entity-list 的 ASCII word boundary 丢失 shape
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: 最小反例“请问list all 产品”无法命中 ENTITY_LIST，退化为 scalar
+  local_evidence: pairwise object_surface × courtesy × entity_cue=english 固定复现；纯英文可通过而中文前缀版本失败
+  authoritative_sources:
+  - title: Python re word-boundary semantics
+    url: https://docs.python.org/3.11/library/re.html
+    reason: Unicode 模式的 word boundary 由相邻字符是否属于 \w 决定，CJK 与 ASCII 字母之间不保证产生 \b
+  root_cause: entity-list 正则用 \blist 约束左边界；Unicode CJK 字符同属 \w，中文前缀紧邻 list 时边界不存在
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 将左边界收紧为仅排除 ASCII 字母、数字与下划线的 negative lookbehind，保持 list token 本身不被子串误命中
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress.py
+  prohibited_patterns:
+  - 为具体中文礼貌词逐条增加 hardcode
+  prevention_rules:
+  - 中英混合 token 边界必须按目标 token 字符集定义并进入组合压力测试
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-005
+  title: “一起”集合聚合未进入 FILTERED_AGGREGATION
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: 最小反例“华南和华北一起的销售额是多少”未保留集合整体聚合语义
+  local_evidence: aggregation_cue=together × multi-member × conjunction 组合稳定复现 shape mismatch；移除“一起”后语义确实不同
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: Query Shape 只消费显式结构证据，多个 member 的整体聚合与逐 member 返回必须分离
+  root_cause: 现有 FILTERED_AGGREGATION cue 覆盖加起来/合起来/合计/总共，但遗漏同义的“一起”
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在通用集合聚合 cue 与多成员证据的联合条件中加入“一起”，仍要求 conjunction，不创建 member identity
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress.py
+  prohibited_patterns:
+  - 仅凭“一起”在没有多成员证据时创建 filter 或 member
+  prevention_rules:
+  - FILTERED_AGGREGATION 必须同时满足整体聚合 cue 与多成员结构证据
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-004
+  title: 相对年/月范围与无年份范围未形成完整时间 obligation
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: “今年1月至6月”退化为普通 TREND 或全年范围；“1月到6月”可能被首月 parser 吞掉而非澄清年份
+  local_evidence: current_year/yearless × 至/到/-/~ × word-order 矩阵确定复现；最小反例分别为“今年1月至6月销售额趋势”和“1月到6月销售额趋势”
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: 显式月范围必须保留 start/end/month grain，无法唯一确定年份时必须 clarification
+  - title: Python unicodedata.normalize
+    url: https://docs.python.org/3.11/library/unicodedata.html
+    reason: NFKC 可确定性统一全角数字和兼容字符而不引入业务事实
+  root_cause: 公共月范围 parser 只接受显式四位开始年；Router、TimeGrounder 与 Coverage 因而不能区分相对年范围和不可解析的无年份范围义务
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 公共 parser 增加可注入 reference year 的今年/去年范围；独立 detector 保留无年份范围 obligation，Coverage 对后者给出 incomplete_time_range，阻止 DAX
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress.py
+  - backend/tests/unit/test_business_language_stress_invariants.py
+  - backend/tests/unit/test_semantic_completeness.py
+  prohibited_patterns:
+  - 为无年份范围猜测年份后执行
+  - 将相对年范围缩短为单月或全年
+  prevention_rules:
+  - Router、Grounding 与 Coverage 必须复用同一无对象时间表达 detector
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-003
+  title: 模糊 TopN 与序数第一未保留 ranking obligation
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: “前几个产品销售额”退化为 scalar 而不要求 N；“第一个产品销售额”未稳定绑定 Top1
+  local_evidence: ranking_cue=vague/ordinal × number_form × word-order 矩阵确定复现，最小反例不依赖具体模型字段
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: ranking 必须完整覆盖 measure、dimension、sort 与 N，缺 N 应澄清而非降级 shape
+  root_cause: Router ranking evidence 与 Grounding TopN parser 都未覆盖“前几个”和“第一个/第1个”结构
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Router 保留 vague ranking shape；TopN parser 仅把序数第一确定为 1，模糊“前几个”保持 N=None 交给 completeness 澄清
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress.py
+  prohibited_patterns:
+  - 为“前几个”猜一个默认 N
+  prevention_rules:
+  - ranking cue 与 TopN completeness 必须分开验证
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-002
+  title: 普通分句逗号被误当作 MEMBER_SET coordinator
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: 带时间后置分句的单维度 grouping 因普通逗号与“分别”共同出现而误判 MEMBER_SET
+  local_evidence: punctuation=comma × grouping_cue=respectively × time/order 固定复现；最小反例“产品净营收分别是多少，2025年5月”只有一个维度且无多 member
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: MEMBER_SET 必须有多个显式 member literal 的独立证据，普通分句标点不是 member coordinator
+  root_cause: _MEMBER_COORDINATOR 把任意中文或英文逗号视为集合连接符，未区分成员枚举与语句分隔
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: coordinator 只保留和/与/及/顿号/and；逗号不再单独证明多 member
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress.py
+  prohibited_patterns:
+  - 仅凭逗号把 grouping 变成 member set
+  prevention_rules:
+  - 多成员集合必须由明确连接词或 runtime-proven literals 闭合
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
+- id: ERR-594-001
+  title: 前置礼貌/时间使 grouping cue 丢失且宽化后误命中“分析”
+  category: ERR
+  first_detected_version: M5.9.4
+  symptom: “请问上个月各产品净营收”退化为 scalar；首次放宽位置后，“重新分析：净营收”又因“分…看”跨度误判 GROUPED
+  local_evidence: courtesy × time × grouping 与 fresh relation × scalar 的 pairwise/t-way 组合分别稳定复现；最终最小反例只剩前置 cue 与“重新分析”二义子串
+  authoritative_sources:
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: 各/每个/按/分属于通用 grouping evidence，但必须证明结构而非任意子串
+  root_cause: grouping 正则最初只允许句首/那/那么前缀；首次去锚点后 `分...看` 又可从“分析”中的分跨越匹配到后文“看”
+  failed_attempts:
+  - 首次仅移除句首限制解决礼貌/时间前缀，却使“重新分析…看一下”出现新的跨度误命中
+  repair_attempt_count: 2
+  final_fix: grouping cue 允许出现在礼貌/时间之后，同时以通用 negative lookahead 排除“分析”中的假分组起点
+  regression_tests:
+  - backend/tests/unit/test_business_language_stress.py
+  prohibited_patterns:
+  - 针对具体指标、维度或领域词新增 Router 规则
+  - 用无界正则跨度把任意“分”当 grouping
+  prevention_rules:
+  - grouping cue 必须通过多位置与非 grouping 同形子串的 metamorphic 对照
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-10'
+    action: discovered
+    version: M5.9.4
+  - date: '2026-09-10'
+    action: mitigation
+    version: M5.9.4
 - id: ERR-593-003
   title: 中文数字 TopN follow-up 未进入 ranking shape
   category: ERR

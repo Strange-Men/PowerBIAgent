@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal, DivisionByZero, InvalidOperation
 from enum import Enum
 
-from backend.app.intent.temporal_expression import parse_explicit_month_range
+from backend.app.intent.temporal_expression import has_explicit_month_range
 from backend.app.schemas.data_contracts import QueryShape
 
 
@@ -167,6 +167,7 @@ class QuestionRouter:
         r"(?:最高|最低|最大|最小|最多|最少|最好|最差|最准|最严重|最快|最慢|最早|最晚|卖得最好|卖的最好)|"
         r"(?:哪个|哪家|哪位|哪款|哪种|哪座|谁)[^\n。！？!?]{0,40}最(?:准|严重|快|慢|早|晚)|"
         rf"(?:前|后|top)\s*{_RANKING_NUMBER}|"
+        r"前\s*几(?:个)?|第\s*(?:一|1)\s*个|"
         r"\b(?:highest|lowest|most|least|best|worst)\b",
         re.IGNORECASE,
     )
@@ -175,24 +176,24 @@ class QuestionRouter:
     _ENTITY_LIST = re.compile(
         r"(?:有|包含|包括|销售了|提供)(?:哪些|什么)|"
         r"(?:哪些|什么).{0,8}(?:有|可选)|"
-        r"(?:列出|展示|显示).{0,3}(?:所有|全部)?|\blist\s+(?:all|the)\b", re.IGNORECASE,
+        r"(?:列出|展示|显示).{0,3}(?:所有|全部)?|(?<![A-Za-z0-9_])list\s+(?:all|the)\b", re.IGNORECASE,
     )
     _GROUPED = re.compile(
-        r"(?:^|那|那么)(?:各|每个|每位|每种|每款|每家|各个)|"
+        r"(?:各|每个|每位|每种|每款|每家|各个)|"
         # Runtime canonical/qualified identifiers can be longer than ten
         # characters. This bounded span only classifies shape; Grounding must
         # still prove every requested object against the current model.
-        r"(?:按|分)[^\n。！？!?]{1,200}(?:看|统计|汇总|比较)|"
+        r"(?:按|分(?!析))[^\n。！？!?]{1,200}(?:看|统计|汇总|比较)|"
         r"分别.{0,8}(?:的)?(?:情况|数据)?$|\b(?:by|per)\s+[^\n。！？!?]{1,200}", re.IGNORECASE,
     )
     _MEMBER_SET_WORDING = re.compile(
-        r"分别(?:是|为|有|多少)|各自(?:是|为|有|多少)|\brespectively\b",
+        r"分别(?:是|为|有|多少|统计|查询|看)|各自(?:的|是|为|有|多少)?|\brespectively\b",
         re.IGNORECASE,
     )
-    _MEMBER_COORDINATOR = re.compile(r"和|与|及|、|，|,|\band\b", re.IGNORECASE)
-    _FILTERED_AGGREGATION = re.compile(r"加起来|合起来|合计|总共|\bcombined\b", re.IGNORECASE)
+    _MEMBER_COORDINATOR = re.compile(r"和|与|及|、|\band\b", re.IGNORECASE)
+    _FILTERED_AGGREGATION = re.compile(r"加起来|合起来|合计|总共|一起|\bcombined\b", re.IGNORECASE)
     _INHERIT_SHAPE = re.compile(
-        r"^\s*(?:那|那么|只看|再看|继续|然后|改成|改为|换成|换为|"
+        r"^\s*(?:那|那么|其中|只看|再看|继续|然后|改成|改为|换成|换为|"
         r"调整为|改看|换看|改|换)"
     )
 
@@ -249,13 +250,13 @@ class QuestionRouter:
 
     def _query_shape(self, text: str) -> QueryShape | None:
         if self._TREND.search(text):
-            if parse_explicit_month_range(text) is not None:
+            if has_explicit_month_range(text):
                 return QueryShape.BOUNDED_TREND
             return QueryShape.TREND
         if self._RANKING.search(text):
             return QueryShape.RANKING
         if self._FILTERED_AGGREGATION.search(text) and re.search(
-            r"加起来|合起来|和|与|及|、|\b(?:combined|and)\b", text, re.IGNORECASE,
+            r"加起来|合起来|一起|和|与|及|、|\b(?:combined|and)\b", text, re.IGNORECASE,
         ):
             return QueryShape.FILTERED_AGGREGATION
         if self._has_member_set_evidence(text):

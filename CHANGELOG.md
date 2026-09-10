@@ -2,6 +2,19 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.9.4] — 2026-09-10（Business Language Stress 与泛化验收）
+
+- **可复用组合 Harness：** 新增固定 seed `59420260909` 的 factorized generator、安全 case/failure descriptor、deterministic shrinker、greedy pairwise + bounded 3-way + seeded sampling，以及按 shape/semantic factor/language pattern 汇总的 CLI。四个 test-only domain 分别覆盖 star+duplicate、snowflake、flat+multi-date 与 technical-key/label-peer schema。
+- **51,200 deterministic stress：** 四域各 12,800、八 Query Shape 各 6,400，51,200/51,200 PASS；3,438 metamorphic groups / 50,746 variants、1,986 semantic execution cases、20,438 unknown/ambiguous cases。canonical mismatch、silent explicit modifier loss、incorrect DAX execution、unexpected clarification/execution、ZERO-DAX invariant violation 与 cross-model bleed 均为 0。
+- **14 项缺陷收口：** ERR-594-001—014 覆盖前置 grouping、comma/member-set firewall、vague/ordinal TopN、relative/yearless range、集合聚合、CJK+English entity list、`其中` relation、Coverage 结构词、generic month 双时间轴、entity field/member suffix 冲突与 qualified member connector。P0=0、P1=10、P2=4，全部以 reproducer → root cause → minimum fix → focused regression → stress rerun 收口；未处理 P0/P1/P2=0。
+- **执行与事实 invariant：** 代表 case 复用 Canonical Shape Completeness、DeterministicDAXBuilder、RestrictedDAXVerifier、ResultSemanticInspectionGate、VerifiedFactSetBuilder 与 deterministic scope；trend 强制单一 runtime-proven temporal axis，多维计划在 DAX 前 fail closed。unknown、ambiguous、known+unknown 始终 ZERO DAX/QueryResult/Memory commit。
+- **DeepSeek-only Real：** 双 PBIX 完成 108/108：104 completed、4 structured clarification + ZERO DAX/Memory commit、八 shape、24 metamorphic groups、多轮 KEEP/REPLACE/follow-up 与 cross-model isolation。Canonical/DAX rebuild/QueryResult/VerifiedFactSet/Presentation 一致，business/temp residual=0；Kimi 只保留既有 mock/contract/full regression。
+- **Fresh gates：** stress-focused 52 PASS；Semantic Compatibility 774 PASS；backend 2596 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 90 PASS + typecheck/lint/build；Repository Safety 372、AI Error Ledger 81、Architecture 135、Documentation/Artifact Governance、compileall 与 diff-check PASS。
+- **边界：** 系统化覆盖当前产品支持的业务语义组合空间及主要语言变体，不声称覆盖所有自然语言。未修改 M5.9.2 worker/retry/cancellation/singleflight、M5.8.5 factual authority、Report/Frontend/schema/migration，也未新增业务能力或启动 M5.10。M5 FINAL=false。
+- **发布条件：** fresh full gates、residual=0、clean local main==origin/main 与当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success。
+
+**Settings.version:** M5.9.4
+
 ## [M5.9.3] — 2026-09-08（Business Semantic Parsing Correctness Closure）
 
 - **Query Shape 与 grouping/filter firewall：** `各/每个/按/X分别` 固定为 GROUPED evidence；“分别是多少”不再单独构成 MEMBER_SET。MEMBER_SET 继续要求多个显式 member 并对全集做同一 runtime field validation。Grounding 禁止把 grouping 字段标签作为弱 filter value，并阻断纯 grouping 后缀触发 member discovery。

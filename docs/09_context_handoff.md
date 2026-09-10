@@ -1,7 +1,15 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-09-08
+> **最后更新：** 2026-09-10
+
+## 当前阶段 — M5.9.4 Business Language Stress 与泛化验收（COMPLETE，2026-09-10）
+
+起始基线为 clean `main@ef1033ac3c5469adf4d1477aefb66bf1ee55949b`。Settings.version=M5.9.4。固定 seed `59420260909` 的可复用 pairwise/bounded t-way Harness 已完成 51,200/51,200：四域各 12,800、八 shape 各 6,400；3,438 metamorphic groups、50,746 variants、20,438 unknown/ambiguous cases，所有 failure/canonical mismatch/silent modifier loss/incorrect DAX/ZERO-DAX/cross-model bleed 指标为 0。Harness 包含安全 descriptor、deterministic shrinker、Router/time/relation、Canonical Shape、DAX/Layer3、Result Inspection/VerifiedFactSet/scope 验证。
+
+压力测试确认并最小修复 14 个通用语义缺陷，P0=0、未处理 P1/P2=0；没有写入业务答案、nearest-member、partial execute 或第二套 authority。DeepSeek-only 108/108（104 completed + 4 clarification ZERO DAX）、八 shape、24 metamorphic groups、双 PBIX、多轮继承与 cross-model isolation 均通过；Canonical/DAX rebuild/QueryResult/VerifiedFactSet/Presentation 一致，business/temp residual=0。权威链仍为 runtime metadata → ModelSemanticContext → Catalog/Grounding → Obligation/Canonical Shape → deterministic DAX/Layer 3 → QueryResult/VerifiedFactSet → Answer/Report；M5.9.2 runtime、M5.8.5 factual authority 与 M5.10 report/template 冻结。完整证据见 [M5.9.4 专项计划](milestones/m5/m5_9_4_business_language_stress_plan.md)。发布以当前 main exact-SHA CI success 为证据；M5.10 NOT STARTED，M5 FINAL=false。
+
+Fresh local gates：stress-focused 52 PASS；Semantic Compatibility 774 PASS；backend 2596 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 90 PASS + typecheck/lint/build；Repository Safety 372、AI Error Ledger 81、Architecture 135、Documentation/Artifact Governance、compileall 与 diff-check PASS。
 
 ## 当前阶段 — M5.9.3 Business Semantic Parsing Correctness Closure（COMPLETE，2026-09-08）
 
@@ -474,7 +482,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-M5.9.3 已完成；在用户另行明确启动前，M5.9.4 Business Language Stress 与 M5.10 第二固定专业报表模板均保持 NOT STARTED。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+M5.9.4 已完成并停止。下一阶段仅为尚未启动的 M5.10 固定专业销售报表模板与两模板显式选择；没有用户新指令不得自动开始。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -523,4 +531,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-08 | M5.9.3 Business Semantic Parsing Correctness Closure COMPLETE；m5/rebuild 冻结；main-only；M5.9.4/M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-10 | M5.9.4 Business Language Stress COMPLETE；m5/rebuild 冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false*

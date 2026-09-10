@@ -148,4 +148,4 @@
 
 ---
 
-*最后更新：2026-09-07 | M5.9 COMPLETE（179dd24 / CI #52 success）；M5.8.6 COMPLETE；支持 DeepSeek + Kimi K2.6 双模型*
+*最后更新：2026-09-10 | M5.9.4 Business Language Stress COMPLETE（发布以当前 main exact-SHA CI success 为证据）；M5.10 NOT STARTED；M5 FINAL=false*
