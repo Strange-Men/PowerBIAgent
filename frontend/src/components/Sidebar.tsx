@@ -75,6 +75,24 @@ function displayTitle(conversation: ConversationSummary): string {
   return conversation.title?.trim() || conversation.latest_analysis_goal?.replace(/^用户提问:\s*/, '').trim() || '未命名对话'
 }
 
+type ConversationResourceStatus = 'ready' | 'processing' | 'failed'
+
+function SidebarLeadingIcon({ status }: { status: ConversationResourceStatus }) {
+  return (
+    <span
+      className="conversation-item-icon"
+      data-resource-status={status}
+      aria-hidden="true"
+    >
+      {status === 'processing' ? (
+        <LoaderCircle className="pending-spinner" size={16} />
+      ) : (
+        <MessageSquare size={16} />
+      )}
+    </span>
+  )
+}
+
 export function Sidebar({
   collapsed,
   activeConversationId,
@@ -217,22 +235,12 @@ export function Sidebar({
         ) : (
           <>
             <button
-              className={`sidebar-item ${conversation.conversation_id === activeConversationId ? 'is-current' : ''}`}
+              className={`sidebar-item conversation-item-content ${conversation.conversation_id === activeConversationId ? 'is-current' : ''}`}
               type="button"
               title={title}
               onClick={() => onOpenConversation(conversation)}
             >
-              <span
-                className="conversation-item-icon"
-                data-resource-status={resourceStatus}
-                aria-hidden="true"
-              >
-                {resourceStatus === 'processing' ? (
-                  <LoaderCircle className="pending-spinner" size={16} />
-                ) : (
-                  <MessageSquare size={16} />
-                )}
-              </span>
+              <SidebarLeadingIcon status={resourceStatus} />
               <span className="conversation-item-title">{title}</span>
               {resourceStatus === 'processing' ? (
                 <small className="pending-label">正在分析</small>

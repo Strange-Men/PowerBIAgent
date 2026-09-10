@@ -7,9 +7,9 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.9.4 — Business Language Stress 与泛化验收**。固定 seed 的组合式 Harness 已系统化覆盖当前产品支持的业务语义组合空间及主要语言变体：51,200 deterministic cases、四域/八 Query Shape、property/metamorphic/invariant、failure shrinking 与安全摘要均已完成；14 个真实缺陷由 reproducer 驱动最小收口。DeepSeek-only 108-case、双 PBIX Real 全链通过，发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.9.2 runtime 与 M5.8.5 factual authority 已冻结；main 是唯一活动开发线，m5/rebuild 只读。M5.10 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.9.5 — Sidebar UI Geometry Final Closure**。Sidebar conversation clickable content 已固定为 `16px | minmax(0, 1fr) | auto` grid，ready/processing/failed 统一使用 16×16 leading icon slot；长标题、status、current 与 hover action trigger 均不能改变图标几何。M5.9.4 COMPLETE；M5.9.2 runtime 与 M5.8.5 factual authority 继续冻结；main 是唯一活动开发线，m5/rebuild 只读。发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10 NOT STARTED，M5 FINAL=false。
 
-当前开发阶段：**M5.9.4 — Business Language Stress 与泛化验收（COMPLETE；发布以当前 main exact-SHA CI success 为证据）**。只新增可复用压力 Harness，并对 deterministic/Real reproducer 证明的 Router、Grounding、time、Coverage/Canonical fail-closed 缺陷做最小修复；未新增业务能力。M5.10 NOT STARTED；M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结。
+当前开发阶段：**M5.9.5 — Sidebar UI Geometry Final Closure（COMPLETE；发布以当前 main exact-SHA CI success 为证据）**。仅收口 Sidebar conversation leading icon、title、status 与 action trigger 的确定性布局和真实浏览器 geometry acceptance；未修改 backend 业务逻辑、语义、Grounding、DAX、Memory 或 runtime。M5.10 NOT STARTED；M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -54,6 +54,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.9.2** 已确定性复现并最小修复 queued/in-flight cancellation 提前释放 capacity 与 sole-waiter singleflight 无主 retry；accepted work 的容量由 worker lifecycle 持有，cancel/shutdown/crash 九类矩阵均无 residual。**发布以当前 main exact-SHA CI success 为证据；M5.10 NOT STARTED。**
 - **M5.9.3** 已完成业务语义解析正确性收口：GROUPED/MEMBER_SET 证据分离、显式月范围 NFKC normalization 与端点 obligation、grouping/filter firewall、结构化 clarification reason、中文 TopN 和 Sidebar 固定 icon geometry 均已建立永久 regression；跨 Sales/Education/Inventory/Logistics deterministic matrix、DeepSeek-only Rich PBIX 9-case Real、浏览器人工验收与 residual=0 通过。**发布以对应 exact-SHA CI success 为证据。**
 - **M5.9.4** 已建立固定 seed 的 pairwise + bounded t-way 组合 Harness、deterministic shrinking、安全 failure descriptor、property/metamorphic/invariant 与 Canonical/DAX/FactSet verification。51,200/51,200 cases、四域各 12,800、八 shape 各 6,400；14 个真实缺陷全部最小修复，未处理 P0/P1/P2=0。DeepSeek-only 108/108（104 completed + 4 clarification ZERO DAX）、24 metamorphic groups、双 PBIX、cross-model bleed=0、residual=0。**发布以当前 main exact-SHA CI success 为证据；M5.10 NOT STARTED，M5 FINAL=false。**
+- **M5.9.5** 已完成 Sidebar conversation icon geometry 最终收口：统一 `SidebarLeadingIcon` 16×16 slot，inner grid 固定 icon/title/status 轨道，outer row 只负责 content/action trigger；真实浏览器覆盖 1—80 字、ready/processing/failed、current/hover，mutation sanity 可抓住 12px 回归。**发布以当前 main exact-SHA CI success 为证据；M5.10 NOT STARTED，M5 FINAL=false。**
 - **M5.8.4** 已在现有 ModelSemanticContext/SemanticCatalog/Grounding 内完成跨语言对象/成员绑定与 canonical KEEP/REPLACE 优化；report template choice 不等于本轮 report intent。LLM 仅在 runtime 已证明存在的候选 ID 中解释语言，不能产生新对象或事实。`41b6e0b` 主开发后，首次 CI [#33455159267](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33455159267) 因测试 reference date 漂移失败；`a975310` 修复测试时钟后，CI [#33457056546](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33457056546) completed/success；`3e3d8ac` 最终治理 CI [#33580808379](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33580808379) exact-SHA completed/success，M5.8.4 COMPLETE。M5.9/M5.10 不启动。
 - **M5.8.5** 已在现有链加入四个通用 correctness Gate；unknown/known+unknown member、残缺 shape、Result 语义不一致均在事实/执行边界 fail closed，TopN tie-break、trend ASC、table/chart 共序与完整 effective scope 均由确定性合同约束。Rich Sales、M3 Test、Logistics Test 的双 Provider Real 与 A→B→C→A 隔离通过；无第二套 authority、无 migration、无 M5.9/M5.10 工作。**M5.8.5 COMPLETE。**
 - **M5.10** 只负责“简易模板/销售模板”显式选择与固定专业销售模板；两者都遵守 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed renderer`。**M5.10 NOT STARTED。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。**
@@ -176,4 +177,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-09-10 | M5.9.4 Business Language Stress COMPLETE；M5.9.2 runtime frozen；main-only；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-10 | M5.9.5 Sidebar UI Geometry Final Closure COMPLETE；M5.9.2 runtime frozen；main-only；M5.10 NOT STARTED；M5 FINAL=false*

@@ -2,6 +2,17 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.9.5] — 2026-09-10（Sidebar UI Geometry Final Closure）
+
+- **真实 reproducer：** clean `main@a1a3fc8ab25c0b866e1b252a03bbfe65d5d87429` 的独立 Vite server 与浏览器确认 `.conversation-item-icon` 及 M5.9.3 CSS 已命中；ready/failed MessageSquare 在 short/30+/80-char、current/hover 下均为 16×16，原“长标题越长图标越小”属于 stale frontend/runtime mismatch。真实 processing 行另复现 SVG rotation 令 axis-aligned `getBoundingClientRect()` 在约 18.56—21.48px 间变化，证明 attribute-only regression 不足。
+- **最小 geometry closure：** conversation clickable content 改为 `16px minmax(0, 1fr) auto` grid，统一 `SidebarLeadingIcon` slot，outer row 使用 `flex: 1 1 0; min-width: 0; width: auto` 只协调 content 与 30px action trigger。Icon wrapper 与 SVG 均固定 min/max 16×16；spinner animation 移到 SVG 内部 path，SVG border box 保持固定。
+- **真实浏览器 acceptance：** ready short/medium/32-char/80-char、failed short/long、processing short/long 共 8 case 全部 wrapper/svg=16×16（误差阈值 0.1px）；长标题 ellipsis，row/item 无横向 overflow，status、current、hover 与 action trigger opacity=1 均不改变图标几何。
+- **Mutation sanity：** 临时把 icon track/slot/SVG 改为 12px 后，真实 geometry acceptance 对全部 6 个已加载 case 报告 wrapper/svg=12×12 并 FAIL；恢复正确实现后 8/8 PASS，破坏代码未提交。
+- **边界：** 仅修改 Sidebar component/test/CSS 与版本治理元数据；无 backend 业务逻辑、语义、Grounding、DAX、Memory、runtime、API、schema、migration 或 dependency 变化。M5.10 NOT STARTED，M5 FINAL=false。
+- **发布条件：** fresh local gates、residual=0、clean local main==origin/main 与当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success。
+
+**Settings.version:** M5.9.5
+
 ## [M5.9.4] — 2026-09-10（Business Language Stress 与泛化验收）
 
 - **可复用组合 Harness：** 新增固定 seed `59420260909` 的 factorized generator、安全 case/failure descriptor、deterministic shrinker、greedy pairwise + bounded 3-way + seeded sampling，以及按 shape/semantic factor/language pattern 汇总的 CLI。四个 test-only domain 分别覆盖 star+duplicate、snowflake、flat+multi-date 与 technical-key/label-peer schema。

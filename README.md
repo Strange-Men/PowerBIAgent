@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.9.4 — Business Language Stress 与泛化验收**。固定 seed 的组合式 Harness 已完成 51,200 个 deterministic cases，覆盖 Sales/Education/Inventory/Logistics 与八种 Query Shape，并以 property/metamorphic/invariant 约束 Canonical、DAX、结果事实和多轮隔离；DeepSeek-only 108-case、双 PBIX Real 全链通过。发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.9.2 runtime 与 M5.8.5 factual authority 保持冻结；M5.10 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.9.5 — Sidebar UI Geometry Final Closure**。Sidebar 最近对话的 ready/processing/failed leading icon 统一使用固定 16×16 slot；标题只在 `minmax(0, 1fr)` 轨道省略，status、current 与 hover action trigger 不再影响图标几何。M5.9.4 已完成，M5.9.2 runtime 与 M5.8.5 factual authority 保持冻结；发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10 NOT STARTED，M5 FINAL=false。
 
 ## 项目概览
 
@@ -355,6 +355,7 @@ python -m alembic upgrade head
 | M5.9.2 | Runtime Edge Final Closure — cancellation queue/admission 与 singleflight ownership 已最小收口；以当前 main exact-SHA CI success 为发布证据 |
 | M5.9.3 | Business Semantic Parsing Correctness Closure — grouping/member/time obligation、clarification reason 与 Sidebar icon geometry 已收口；以当前 main exact-SHA CI success 为发布证据 |
 | M5.9.4 | COMPLETE — 51,200 deterministic combinatorial stress + 108-case DeepSeek-only 双 PBIX Real；发布以当前 main exact-SHA CI success 为证据 |
+| M5.9.5 | COMPLETE — Sidebar conversation icon 统一 16×16 grid slot；1—80 字、三状态、current/hover 真实浏览器 geometry 与 mutation sanity 通过；发布以当前 main exact-SHA CI success 为证据 |
 | M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
@@ -384,4 +385,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-10 | M5.9.4 Business Language Stress COMPLETE；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-10 | M5.9.5 Sidebar UI Geometry Final Closure COMPLETE；M5.10 NOT STARTED；M5 FINAL=false*

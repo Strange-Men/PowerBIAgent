@@ -112,15 +112,20 @@ describe('Sidebar conversation management', () => {
     ['failed', { resource_status: 'failed' as const }, 'failed'],
   ])('keeps a fixed icon wrapper for %s conversations', (_, status, expected) => {
     const { container } = renderSidebar({ ...conversation, ...status })
-    const icon = container.querySelector('.conversation-item-icon')
+    const icon = container.querySelector<HTMLElement>('.conversation-item-icon')
+    const content = container.querySelector<HTMLElement>('.conversation-item-content')
 
     expect(icon).toHaveAttribute(
       'data-resource-status',
       expected,
     )
+    expect(content).toContainElement(icon)
+    expect(icon).toHaveAttribute('aria-hidden', 'true')
+    expect(icon?.children).toHaveLength(1)
     expect(icon?.querySelector('svg')).toHaveAttribute('width', '16')
     expect(icon?.querySelector('svg')).toHaveAttribute('height', '16')
-    expect(container.querySelector('.conversation-item-title')).toHaveTextContent(
+    expect(content?.querySelector(':scope > svg')).not.toBeInTheDocument()
+    expect(content?.querySelector('.conversation-item-title')).toHaveTextContent(
       conversation.title ?? '',
     )
   })

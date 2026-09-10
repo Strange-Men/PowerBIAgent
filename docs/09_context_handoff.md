@@ -3,6 +3,14 @@
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
 > **最后更新：** 2026-09-10
 
+## 当前阶段 — M5.9.5 Sidebar UI Geometry Final Closure（COMPLETE，2026-09-10）
+
+起始基线为 clean `main@a1a3fc8ab25c0b866e1b252a03bbfe65d5d87429`，Settings.version=M5.9.5。独立启动当前仓库 Vite server 后，浏览器明确加载 `/@vite/client` 与 `/src/main.tsx`，DOM 存在 `.conversation-item-icon` 且当前 CSS 命中。ready/failed MessageSquare 在 1—80 字、current/hover 下均为 16×16，原“长标题越长图标越小”在 exact-main 无法复现，结论为 stale frontend/runtime mismatch；真实 processing 行则复现整体 SVG rotation 使 `getBoundingClientRect()` 在约 18.56—21.48px 间变化。
+
+conversation clickable content 现固定为 `16px minmax(0, 1fr) auto` grid，统一 `SidebarLeadingIcon` slot；title 只在自身轨道 ellipsis，status 固定在 auto 轨道，outer row 仅协调 content 与 action trigger。Wrapper/SVG 均有完整 min/max 16×16，spinner animation 移至内部 path。真实浏览器 8-case 覆盖 ready short/medium/32/80-char、failed short/long、processing short/long，全部 wrapper/svg=16×16、无 icon clipping/横向 overflow；80-char current + hover/action opacity=1 仍为 16×16。临时 12px mutation 令全部已加载 case FAIL，恢复后 8/8 PASS。
+
+本轮只修改三个 Sidebar 前端文件及版本治理元数据；`backend/app/config/settings.py` 仅更新 frozen version 字符串，无 backend 业务逻辑、语义、Grounding、DAX、Memory、runtime、API、测试、schema、migration 或 dependency 变化。M5.9.4 保持 COMPLETE，M5.10 NOT STARTED，M5 FINAL=false。发布以当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success、clean local main==origin/main 与 residual=0 为证据。
+
 ## 当前阶段 — M5.9.4 Business Language Stress 与泛化验收（COMPLETE，2026-09-10）
 
 起始基线为 clean `main@ef1033ac3c5469adf4d1477aefb66bf1ee55949b`。Settings.version=M5.9.4。固定 seed `59420260909` 的可复用 pairwise/bounded t-way Harness 已完成 51,200/51,200：四域各 12,800、八 shape 各 6,400；3,438 metamorphic groups、50,746 variants、20,438 unknown/ambiguous cases，所有 failure/canonical mismatch/silent modifier loss/incorrect DAX/ZERO-DAX/cross-model bleed 指标为 0。Harness 包含安全 descriptor、deterministic shrinker、Router/time/relation、Canonical Shape、DAX/Layer3、Result Inspection/VerifiedFactSet/scope 验证。
@@ -482,7 +490,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-M5.9.4 已完成并停止。下一阶段仅为尚未启动的 M5.10 固定专业销售报表模板与两模板显式选择；没有用户新指令不得自动开始。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+M5.9.5 已完成并停止。下一阶段仅为尚未启动的 M5.10 固定专业销售报表模板与两模板显式选择；没有用户新指令不得自动开始。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -531,4 +539,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-10 | M5.9.4 Business Language Stress COMPLETE；m5/rebuild 冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-10 | M5.9.5 Sidebar UI Geometry Final Closure COMPLETE；m5/rebuild 冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false*
