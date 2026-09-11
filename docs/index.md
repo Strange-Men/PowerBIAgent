@@ -56,6 +56,10 @@
 | `docs/adr/ADR-018_deterministic_semantic_expression_normalization.md` | grouping/member/time 显式证据、obligation 完整性与 fail-closed 决策 | M5.9.3 |
 | `docs/milestones/m5/m5_9_3_business_semantic_correctness_plan.md` | M5.9.3 correctness 范围、顺序、DeepSeek-only Real 与 M5.9.4 规划 | M5.9.3 |
 | `docs/milestones/m5/m5_9_4_business_language_stress_plan.md` | covering-array/property/metamorphic harness、failure shrinking、DeepSeek-only Real 与完成门禁 | M5.9.4 |
+| `docs/adr/ADR-019_complex_report_reading_context_and_template_authority.md` | 复杂模板 Reading Context、metric/filter/exception/freshness 与 source authority | M5.10 |
+| `docs/specs/14_complex_report_reading_context_contract.md` | 所有复杂模板复用的必填字段、fail-closed 与 snapshot 合同 | M5.10+ |
+| `docs/milestones/m5/m5_10_complex_report_and_sales_executive_foundation_plan.md` | M5.10 foundation、M5.10.1 Renderer 与 M5.10.2 hardening 分界 | M5.10 |
+| `docs/assets/reports/README.md` | 三张报表参考图片的 P0/P1/P2 authority 边界 | M5.10+ |
 | `docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md` | M2 Local Demo / Remote Production 专项计划 | M2 Provider、Smoke、Remote 证据任务 |
 | `docs/adr/ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md` | TurnPipeline / ToolGateway 总体决策 | 控制面与工具边界 |
 | `docs/adr/ADR-006_remote_powerbi_mcp_production_integration.md` | Remote MCP 生产化决策 | 仅重新获批 Remote 时 |
@@ -89,7 +93,7 @@
 | DAX、Layer 3、VerifiedFactSet、Answer/Report factual boundary | 04/05 + ADR-009 |
 | Local MCP / Adapter / Smoke | 04/05 + M2 plan + ADR-006/007 |
 | 安全、Git、CI、治理脚本 | 06 + CLAUDE + 相关 gate/test |
-| M3 报表 | specs/11 + ADR-010 + M3 milestone 文档（如后续需要） |
+| M3/M5 报表 | specs/11/14 + ADR-009/010/011/019 + 当前 report milestone 文档 |
 | M5 前端 | 01 + specs/10/11/12/13（获批后） |
 
 ## 新增文档规则
@@ -105,4 +109,4 @@
 
 ---
 
-*最后更新：2026-09-07 | M5.8.6 / M5.9 COMPLETE；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-11 | M5.10 complex report foundation；M5.10.1 NOT STARTED；M5 FINAL=false*

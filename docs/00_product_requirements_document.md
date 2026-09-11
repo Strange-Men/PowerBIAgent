@@ -4,7 +4,7 @@
 > **修订版本：** v2.2
 > **修订日期：** 2026-09-07
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **修订范围：** M5.9 performance/concurrency/resilience/cloud-ready runtime COMPLETE；离线实现、2h soak、Real PBIX 1/2/4 worker、full gates、residual=0 与 `179dd24` / CI #52 exact-SHA success 已通过；M5.8.6 COMPLETE，M5.8.5 correctness 已冻结；M5.10 NOT STARTED；M5 FINAL=false
+> **修订范围：** M5.10 complex report foundation 已建立 Reading Context、source snapshot、共享 Sales requirements 与未开放专业模板身份；M5.10.1 Renderer NOT STARTED；M5.8.5 correctness 与 M5.9.2 runtime 已冻结；M5 FINAL=false
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -304,7 +304,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 23. **M5.8.2 通用自然语言路由与查询形态收口** ✅ COMPLETE — Question Router、八类 Query Shape、minimal clarification、安全 calculator/help/system-info、dimension-only/Top1/member-set/bounded trend
 24. **M5.8.3 MCP-driven ModelSemanticContext** ✅ COMPLETE — 任意 PBIX 通用语义适配；runtime schema 与 exact identity/fingerprint 保持 authority，不以 global ontology/RAG 替代
 25. **M5.9 MCP performance/resilience** ✅ COMPLETE — bounded concurrency/queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault、2h soak、Real 1/2/4 worker、residual=0 与 exact-SHA CI 已通过；未改变 Semantic/DAX/VerifiedFactSet authority
-26. **M5.10 固定专业销售报表模板与两模板选择** ⏳ NOT STARTED — 简易模板保留 M5.7 优化后的 `sales_report.html`；销售模板使用确定性专业版式并显式选择；只有全部门禁完成后才允许 M5 FINAL
+26. **M5.10 复杂报表合同与专业销售模板基础** ✅ COMPLETE — Reading Context / immutable snapshot、共享 Sales requirements 与未开放专业模板身份已建立；专业 Renderer 和真实视觉验收属于 M5.10.1，尚未开始；M5 FINAL=false
 
 ## 十二、MVP 暂不包含
 
@@ -379,4 +379,4 @@ MVP 达到以下条件即可视为成功：
 
 M5.10 已纳入正式路线：用户可明确选择“简易模板”或“销售模板”。销售模板可以包含 sales-specific section，但只消费 runtime schema 与 VerifiedFactSet 已证明的事实；缺少 Forecast/Goal/Pipeline 时必须用当前模型真实支持的销售 section 替代，禁止伪造。任何模板均不允许 LLM 临场生成 HTML/CSS/SVG。
 
-*修订日期：2026-09-07 | M5.8—M5.9 COMPLETE，M5.8.5 correctness frozen；M5.10 NOT STARTED；M5 FINAL=false*
+*修订日期：2026-09-11 | M5.10 complex report foundation；M5.10.1 NOT STARTED；M5 FINAL=false*

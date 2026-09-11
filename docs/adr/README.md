@@ -41,10 +41,11 @@
 | ADR-016 | [Semantic Completeness、Result Inspection 与 Presentation Truth](ADR-016_semantic_completeness_result_inspection_and_presentation_truth.md) | accepted | 2026-09-02 |
 | ADR-017 | [Bounded Runtime Concurrency 与 Resilience](ADR-017_bounded_runtime_concurrency_and_resilience.md) | accepted | 2026-09-07 |
 | ADR-018 | [Deterministic Semantic Expression Normalization](ADR-018_deterministic_semantic_expression_normalization.md) | accepted | 2026-09-08 |
+| ADR-019 | [Complex Report Reading Context and Template Authority](ADR-019_complex_report_reading_context_and_template_authority.md) | accepted | 2026-09-11 |
 
-当前开发最重要的 active 决策为 ADR-005—ADR-018：ADR-005 约束统一控制面，ADR-006/007 分别约束 Deferred Remote 与当前 Local Provider，ADR-008/009 分别约束 canonical business semantics 与 deterministic execution / VerifiedFactSet，ADR-010 约束 M3 固定事实边界（固定四查询限制由 ADR-011 supersede），ADR-011 约束自适应报表规划与可视化权限，ADR-012 约束 SQLite/Repository/HTML authority 及 M4.4 restart/delete recovery，ADR-013 约束共享 OpenAI-compatible Provider 与 request-scoped immutable profile selection，ADR-014/015 分别约束 query shape authority 与跨语言 runtime grounding，ADR-016 固化四个 correctness invariant，ADR-017 固化 bounded runtime，ADR-018 固化显式 grouping/member/time 证据与 obligation 完整性。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
+当前开发最重要的 active 决策为 ADR-005—ADR-019；ADR-019 固化所有复杂模板的 Reading Context、metric/filter/exception/freshness authority、共享 Sales fact path 与 Local/Remote source boundary。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
 
-**当前正式基线：** M5.9.4 Business Language Stress 已完成 51,200-case deterministic 与 DeepSeek-only 108-case 双 PBIX Real 验收，ADR-018 的显式语义证据规则已由组合压力验证；发布以当前 main exact-SHA CI success 为证据。m5/rebuild 已冻结为只读发布追溯分支；M5.10 NOT STARTED，M5 FINAL=false。
+**当前正式基线：** M5.10 已完成复杂报表合同与专业销售模板基础；专业 Renderer / Real Visual Acceptance 属于 M5.10.1，尚未开始。发布以当前 main exact-SHA CI success 为证据；M5 FINAL=false。
 
 ## ADR 详情
 
@@ -110,10 +111,14 @@ Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code�
 
 正式正文见 [ADR-018 独立文件](ADR-018_deterministic_semantic_expression_normalization.md)。核心决策：grouping 与 member-set 必须使用不同的显式证据；明确月范围由代码完整 normalize；time/ranking/filter/grouping 义务缺一项即在 DAX 前 fail closed；弱 LLM draft 不得把 grouping field 转成 filter。
 
+### ADR-019 — Complex Report Reading Context and Template Authority
+
+正式正文见 [ADR-019 独立文件](ADR-019_complex_report_reading_context_and_template_authority.md)。核心决策：COMPLEX 模板在 Renderer 前必须拥有完整 ReadingContext 与 immutable data snapshot；scope 只来自 canonical + verified evidence；指标口径、数据刷新和异常状态不得猜测；专业销售模板保持 unavailable，两个销售模板共享同一 query requirement authority。
+
 ### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面
 
 Execution、Tooling、Context、Lifecycle、Observability、Verification、Governance 七层职责。无 Docker/LangGraph/OpenTelemetry。
 
 ---
 
-*最后更新：2026-09-08 | M5.9.3 COMPLETE（发布以当前 main exact-SHA CI success 为证据）；ADR-005—018 active；M5.9.2 runtime 与 M5.8.5 correctness authority 冻结*
+*最后更新：2026-09-11 | M5.10 复杂报表合同与专业销售模板基础已完成；M5.10.1 NOT STARTED；ADR-005—019 active；M5 FINAL=false*

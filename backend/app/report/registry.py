@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.report.base import ReportRenderer
 from backend.app.schemas.data_contracts import ReportSpec
+from backend.app.schemas.report_context import ReportTemplateTier
 
 
 class ReportTemplateAvailability(str, Enum):
@@ -21,6 +22,7 @@ class ReportTemplateDescriptor(BaseModel):
     description: str = Field(min_length=1)
     renderer_key: str = Field(min_length=1)
     availability: ReportTemplateAvailability
+    tier: ReportTemplateTier = ReportTemplateTier.SIMPLE
     aliases: tuple[str, ...] = ()
 
     model_config = ConfigDict(frozen=True)
@@ -126,8 +128,37 @@ class ReportRendererDispatcher(ReportRenderer):
 
     async def render(self, report: ReportSpec) -> str:
         descriptor = self.template_registry.require_available(report.template_key)
+        if descriptor.tier is ReportTemplateTier.COMPLEX:
+            self._validate_complex_contract(report)
         renderer = self.renderer_registry.require(descriptor.renderer_key)
         return await renderer.render(report)
+
+    @staticmethod
+    def _validate_complex_contract(report: ReportSpec) -> None:
+        context = report.reading_context
+        snapshot = report.data_snapshot
+        if context is None:
+            raise ReportTemplateUnavailableError(
+                "complex_report_reading_context_required"
+            )
+        if snapshot is None:
+            raise ReportTemplateUnavailableError(
+                "complex_report_data_snapshot_required"
+            )
+        coherent = (
+            report.title == context.report_title
+            and report.generated_at == context.generated_at
+            and report.semantic_model_key == context.semantic_model
+            and report.semantic_model_key == snapshot.semantic_model_identity
+            and report.schema_fingerprint == snapshot.schema_fingerprint
+            and report.source_mode == snapshot.source_mode
+            and context.data_source.source_mode == snapshot.source_mode
+            and context.data_source.kind == snapshot.source_kind
+        )
+        if not coherent:
+            raise ReportTemplateUnavailableError(
+                "complex_report_reading_context_incoherent"
+            )
 
 
 DEFAULT_REPORT_TEMPLATE_REGISTRY = ReportTemplateRegistry(
@@ -138,7 +169,17 @@ DEFAULT_REPORT_TEMPLATE_REGISTRY = ReportTemplateRegistry(
             description="适合快速查看关键指标、趋势与分类明细",
             renderer_key="simple_report",
             availability=ReportTemplateAvailability.AVAILABLE,
+            tier=ReportTemplateTier.SIMPLE,
             aliases=("销售报表", "销售报告"),
+        ),
+        ReportTemplateDescriptor(
+            template_key="sales_executive_report",
+            display_name="专业销售经营分析模板",
+            description="复杂报表合同已建立；专业 Renderer 尚未开放",
+            renderer_key="executive_sales_report",
+            availability=ReportTemplateAvailability.UNAVAILABLE,
+            tier=ReportTemplateTier.COMPLEX,
+            aliases=("专业销售报表", "销售经营分析报表"),
         ),
     )
 )

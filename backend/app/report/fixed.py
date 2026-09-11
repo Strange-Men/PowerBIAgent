@@ -107,7 +107,7 @@ class SalesReportRenderer(ReportRenderer):
             raise ValueError("sales_report_generated_at_required")
         footer_items = [
             f"数据来源：{self._text(report.data_source)}",
-            f"最后刷新：{self._text(generated_at.isoformat())}",
+            f"生成时间：{self._text(generated_at.isoformat())}",
         ]
         html = template.substitute(
             title=self._text(report.title),

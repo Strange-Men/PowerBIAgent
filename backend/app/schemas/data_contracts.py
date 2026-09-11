@@ -10,6 +10,11 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from backend.app.schemas.report_context import (
+    ReportDataSnapshot,
+    ReportReadingContext,
+)
+
 
 # =============================================================================
 # 筛选
@@ -397,6 +402,12 @@ class ReportSpec(BaseModel):
     # M4.2.1: Turn-linkage context for metadata persistence
     conversation_id: Optional[str] = None
     request_id: Optional[str] = None
+    # M5.10: SIMPLE templates may omit these.  A COMPLEX template is rejected
+    # by the renderer dispatcher unless both immutable platform contracts are
+    # present and coherent; the unavailable professional template cannot use
+    # the simple renderer as a fallback.
+    reading_context: ReportReadingContext | None = None
+    data_snapshot: ReportDataSnapshot | None = None
 
 
 # =============================================================================

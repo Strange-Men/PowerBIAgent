@@ -26,6 +26,7 @@ from backend.app.schemas.data_contracts import (
     CanonicalQueryPlan,
     SemanticModelSchema,
 )
+from backend.app.schemas.report_context import ReportTemplateTier
 
 
 class ReportSchemaObjectType(str, Enum):
@@ -124,6 +125,7 @@ class ReportMetadataContract(BaseModel):
 class TemplateContract(BaseModel):
     template_key: str = Field(..., min_length=1)
     contract_version: str = Field(..., min_length=1)
+    tier: ReportTemplateTier = ReportTemplateTier.SIMPLE
     binding: TemplateSchemaBinding
     query_requirements: tuple[ReportQueryRequirement, ...]
     metadata: ReportMetadataContract = ReportMetadataContract()
@@ -233,109 +235,123 @@ def _field(table: str, name: str, data_types: tuple[str, ...]) -> ReportSchemaRe
     )
 
 
-SALES_REPORT_CONTRACT = TemplateContract(
-    template_key="sales_report",
-    contract_version="2.0",
-    binding=TemplateSchemaBinding(semantic_model_key="local_desktop_model"),
-    query_requirements=(
-        ReportQueryRequirement(
-            key="total_sales",
-            shape=ReportQueryShape.SCALAR,
-            measures=("Total Sales",),
-            required_objects=(
-                _measure("Sales", "Total Sales", _NUMERIC_SALES),
-            ),
+SALES_QUERY_REQUIREMENTS: tuple[ReportQueryRequirement, ...] = (
+    ReportQueryRequirement(
+        key="total_sales",
+        shape=ReportQueryShape.SCALAR,
+        measures=("Total Sales",),
+        required_objects=(
+            _measure("Sales", "Total Sales", _NUMERIC_SALES),
         ),
-        ReportQueryRequirement(
-            key="total_quantity",
-            shape=ReportQueryShape.SCALAR,
-            measures=("Total Quantity",),
-            required_objects=(
-                _measure("Sales", "Total Quantity", _NUMERIC_SALES),
-            ),
+    ),
+    ReportQueryRequirement(
+        key="total_quantity",
+        shape=ReportQueryShape.SCALAR,
+        measures=("Total Quantity",),
+        required_objects=(
+            _measure("Sales", "Total Quantity", _NUMERIC_SALES),
         ),
-        ReportQueryRequirement(
-            key="total_orders",
-            shape=ReportQueryShape.SCALAR,
-            measures=("Total Orders",),
-            required_objects=(
-                _measure("Sales", "Total Orders", _NUMERIC_SALES),
-            ),
+    ),
+    ReportQueryRequirement(
+        key="total_orders",
+        shape=ReportQueryShape.SCALAR,
+        measures=("Total Orders",),
+        required_objects=(
+            _measure("Sales", "Total Orders", _NUMERIC_SALES),
         ),
-        ReportQueryRequirement(
-            key="average_order_value",
-            shape=ReportQueryShape.SCALAR,
-            measures=("Average Order Value",),
-            required_objects=(
-                _measure("Sales", "Average Order Value", _NUMERIC_SALES),
-            ),
+    ),
+    ReportQueryRequirement(
+        key="average_order_value",
+        shape=ReportQueryShape.SCALAR,
+        measures=("Average Order Value",),
+        required_objects=(
+            _measure("Sales", "Average Order Value", _NUMERIC_SALES),
         ),
-        ReportQueryRequirement(
-            key="monthly_sales",
-            shape=ReportQueryShape.GROUPED,
-            measures=("Total Sales",),
-            dimensions=("YearMonth",),
-            dimension_table="Date",
-            dimension_order="asc",
-            required_objects=(
-                _measure("Sales", "Total Sales", _NUMERIC_SALES),
-                _field("Date", "YearMonth", _DATETIME),
-            ),
+    ),
+    ReportQueryRequirement(
+        key="monthly_sales",
+        shape=ReportQueryShape.GROUPED,
+        measures=("Total Sales",),
+        dimensions=("YearMonth",),
+        dimension_table="Date",
+        dimension_order="asc",
+        required_objects=(
+            _measure("Sales", "Total Sales", _NUMERIC_SALES),
+            _field("Date", "YearMonth", _DATETIME),
         ),
-        ReportQueryRequirement(
-            key="sales_by_category",
-            shape=ReportQueryShape.GROUPED,
-            measures=("Total Sales",),
-            dimensions=("Category",),
-            dimension_table="Sales",
-            required_objects=(
-                _measure("Sales", "Total Sales", _NUMERIC_SALES),
-                _field("Sales", "Category", _STRING),
-            ),
+    ),
+    ReportQueryRequirement(
+        key="sales_by_category",
+        shape=ReportQueryShape.GROUPED,
+        measures=("Total Sales",),
+        dimensions=("Category",),
+        dimension_table="Sales",
+        required_objects=(
+            _measure("Sales", "Total Sales", _NUMERIC_SALES),
+            _field("Sales", "Category", _STRING),
         ),
-        ReportQueryRequirement(
-            key="sales_by_region",
-            shape=ReportQueryShape.GROUPED,
-            measures=("Total Sales",),
-            dimensions=("Region",),
-            dimension_table="Sales",
-            required_objects=(
-                _measure("Sales", "Total Sales", _NUMERIC_SALES),
-                _field("Sales", "Region", _STRING),
-            ),
+    ),
+    ReportQueryRequirement(
+        key="sales_by_region",
+        shape=ReportQueryShape.GROUPED,
+        measures=("Total Sales",),
+        dimensions=("Region",),
+        dimension_table="Sales",
+        required_objects=(
+            _measure("Sales", "Total Sales", _NUMERIC_SALES),
+            _field("Sales", "Region", _STRING),
         ),
-        ReportQueryRequirement(
-            key="top_products",
-            shape=ReportQueryShape.ORDERED_TOP_N,
-            measures=("Total Sales",),
-            dimensions=("Product",),
-            dimension_table="Sales",
-            sort="desc",
-            top_n=5,
-            required_objects=(
-                _measure("Sales", "Total Sales", _NUMERIC_SALES),
-                _field("Sales", "Product", _STRING),
-            ),
+    ),
+    ReportQueryRequirement(
+        key="top_products",
+        shape=ReportQueryShape.ORDERED_TOP_N,
+        measures=("Total Sales",),
+        dimensions=("Product",),
+        dimension_table="Sales",
+        sort="desc",
+        top_n=5,
+        required_objects=(
+            _measure("Sales", "Total Sales", _NUMERIC_SALES),
+            _field("Sales", "Product", _STRING),
         ),
-        ReportQueryRequirement(
-            key="top_customers",
-            shape=ReportQueryShape.ORDERED_TOP_N,
-            measures=("Total Sales",),
-            dimensions=("Customer",),
-            dimension_table="Sales",
-            sort="desc",
-            top_n=5,
-            required_objects=(
-                _measure("Sales", "Total Sales", _NUMERIC_SALES),
-                _field("Sales", "Customer", _STRING),
-            ),
+    ),
+    ReportQueryRequirement(
+        key="top_customers",
+        shape=ReportQueryShape.ORDERED_TOP_N,
+        measures=("Total Sales",),
+        dimensions=("Customer",),
+        dimension_table="Sales",
+        sort="desc",
+        top_n=5,
+        required_objects=(
+            _measure("Sales", "Total Sales", _NUMERIC_SALES),
+            _field("Sales", "Customer", _STRING),
         ),
     ),
 )
 
 
+SALES_REPORT_CONTRACT = TemplateContract(
+    template_key="sales_report",
+    contract_version="2.0",
+    tier=ReportTemplateTier.SIMPLE,
+    binding=TemplateSchemaBinding(semantic_model_key="local_desktop_model"),
+    query_requirements=SALES_QUERY_REQUIREMENTS,
+)
+
+
+SALES_EXECUTIVE_REPORT_CONTRACT = TemplateContract(
+    template_key="sales_executive_report",
+    contract_version="1.0-foundation",
+    tier=ReportTemplateTier.COMPLEX,
+    binding=TemplateSchemaBinding(semantic_model_key="local_desktop_model"),
+    query_requirements=SALES_QUERY_REQUIREMENTS,
+)
+
+
 REPORT_TEMPLATE_CONTRACTS: Mapping[str, TemplateContract] = MappingProxyType({
     SALES_REPORT_CONTRACT.template_key: SALES_REPORT_CONTRACT,
+    SALES_EXECUTIVE_REPORT_CONTRACT.template_key: SALES_EXECUTIVE_REPORT_CONTRACT,
 })
 
 

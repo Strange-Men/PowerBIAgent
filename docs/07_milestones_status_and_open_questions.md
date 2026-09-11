@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.9.5 Sidebar UI Geometry Final Closure COMPLETE；conversation leading icon 已固定为 16×16 grid slot，1—80 字、ready/processing/failed、current/hover 与 mutation sanity 均通过。M5.9.4 COMPLETE；发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.9.2 runtime 与 M5.8.5 factual authority 已冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false。
+> **状态：** M5.10 已完成复杂报表合同与专业销售模板基础；COMPLEX Reading Context / snapshot / authority gate 已建立，专业模板保持 UNAVAILABLE。发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10.1 NOT STARTED；M5.9.2 runtime 与 M5.8.5 factual authority 已冻结；main-only；M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -56,7 +56,19 @@
 | **M5.9.3** | **业务语义解析正确性收口：shape、时间范围、completeness、grouping/filter 与 Sidebar geometry** | **✅ COMPLETE；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.9.4** | **Business Language Stress 与泛化验收** | **✅ COMPLETE；51,200 deterministic + DeepSeek-only 108 Real** |
 | **M5.9.5** | **Sidebar UI Geometry Final Closure** | **✅ COMPLETE；以当前 main exact-SHA CI success 为发布证据** |
-| **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
+| **M5.10** | **复杂报表合同与专业销售模板基础** | **✅ foundation 完成；以当前 main exact-SHA CI success 为发布证据** |
+| **M5.10.1** | **Professional Renderer + Real Visual Acceptance** | **⏳ NOT STARTED** |
+| **M5.10.2** | **Report Hardening / Cloud-ready Final Closure** | **⏳ NOT STARTED** |
+
+## M5.10 — 复杂报表合同与专业销售模板基础
+
+- 所有 COMPLEX 模板必须在 Renderer 前提供完整 Reading Context：title、analysis period、active filters、metric definitions、exception assessment、semantic model/data source、freshness 与 generated time。
+- `data_updated_at` 与 artifact `generated_at`、query `queried_at` 分离；当前无权威 refresh metadata 时明确 UNKNOWN。
+- filter/time 只从 CanonicalQueryPlan + VerifiedFactSet 一致证据投影；无额外 filter 明示“无额外筛选”。
+- `sales_report` 保持唯一可用简易模板；`sales_executive_report` 获得正式 COMPLEX contract/registry identity，但不公开、不渲染、不 fallback。
+- 两个销售合同共用单一 `SALES_QUERY_REQUIREMENTS`；事实链、DAX 与 VerifiedFactSet authority 未变化。
+- 三张参考图分别固定为 P0 hard contract、P1 layout intent、P2 style inspiration；图片不拥有事实或功能 authority。
+- M5.10.1 专业 Renderer 与 Real Visual Acceptance 尚未开始；M5 FINAL=false。
 
 ## M5 重建决策与历史状态
 
@@ -292,6 +304,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.8.2—M5.9.5 已完成；M5.8.5 factual correctness 与 M5.9.2 runtime 均冻结。M5.9.5 仅收口 Sidebar conversation icon/title/status/action geometry；真实浏览器和 mutation sanity 已通过，未修改 backend 业务逻辑或开始 M5.10；发布以当前 main exact-SHA CI success 为证据。M5.10 NOT STARTED；M5 FINAL=false。
+- M5.8.2—M5.9.5 已完成；M5.8.5 factual correctness 与 M5.9.2 runtime 均冻结。M5.10 已完成 complex report foundation，专业模板保持 UNAVAILABLE；发布以当前 main exact-SHA CI success 为证据。M5.10.1 NOT STARTED；M5 FINAL=false。
 
-*最后更新：2026-09-10 | M5.9.5 Sidebar UI Geometry Final Closure COMPLETE；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-11 | M5.10 complex report foundation；M5.10.1 NOT STARTED；M5 FINAL=false*

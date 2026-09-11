@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from backend.app.query_plan.semantic_catalog import normalize_semantic_text
 from backend.app.report.registry import DEFAULT_REPORT_TEMPLATE_REGISTRY
+from backend.app.schemas.report_context import ReportTemplateTier
 
 
 class TemplateGroundingStatus(str, Enum):
@@ -22,6 +23,7 @@ class TemplateDefinition(BaseModel):
     key: str
     aliases: tuple[str, ...] = ()
     allowed: bool = True
+    tier: ReportTemplateTier = ReportTemplateTier.SIMPLE
 
     model_config = ConfigDict(frozen=True)
 
@@ -72,6 +74,7 @@ class TemplateCatalog:
                 key=item.template_key,
                 aliases=item.aliases,
                 allowed=item.availability.value == "available",
+                tier=item.tier,
             )
             for item in DEFAULT_REPORT_TEMPLATE_REGISTRY.descriptors
         ))

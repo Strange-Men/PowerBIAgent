@@ -2,6 +2,21 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.10] — 2026-09-11（Complex Report Contract & Professional Sales Foundation）
+
+- **复杂报表通用合同：** 新增 SIMPLE/COMPLEX template tier、必填 `ReportReadingContext`、immutable `ReportDataSnapshot` 与 Renderer 前一致性 Gate。缺 title/period/filter/metric/exception/model/source/freshness/generated_at 或 provenance 不一致均 fail closed。
+- **Authority 固化：** filter/time 只能由 CanonicalQueryPlan + VerifiedFactSet 一致证据投影；Metric Definition 只接受 registry/runtime metadata/exact override；未知 tax/comparison basis 保持 UNKNOWN；无正式 rule/target/forecast 时 exception 为 CANNOT_DETERMINE。
+- **Freshness：** `data_updated_at`、`queried_at`、`snapshot_at`、`generated_at` 明确分离；当前 Local MCP 无权威 refresh metadata 时显示“数据更新时间：模型未提供”。Remote MCP 仅保留 source-kind contract，未实现 transport/auth/request schema。
+- **简易模板正确性：** 既有 footer 不再把 artifact `generated_at` 标成“最后刷新”，改为准确的“生成时间”；查询、事实、布局与资源行为不变。
+- **第二模板身份：** 注册 `sales_executive_report` / “专业销售经营分析模板” / `executive_sales_report` / COMPLEX，但保持 UNAVAILABLE、不进入公开 catalog、不注册假 Renderer、不 fallback `simple_report`。M5.10.1 Renderer 尚未开始。
+- **共享 Sales authority：** 抽取单一 `SALES_QUERY_REQUIREMENTS`，`SALES_REPORT_CONTRACT` 与 `SALES_EXECUTIVE_REPORT_CONTRACT` 共用同一 requirement objects；未新增指标或第二套 DAX/Power BI/Fact path。
+- **参考资产：** 三张实际图片按 P0 Reading Context、P1 layout intent、P2 style inspiration 固化；Reference images are NOT factual or functional authority。
+- **Mutation sanity：** 临时破坏 generated→updated、complex context gate、executive requirement parity 均使对应永久测试失败；恢复后 focused tests 通过，破坏代码未提交。
+- **Fresh gates：** M5.10/report focused 172 PASS；Semantic Compatibility 774 PASS；backend 2620 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 90 PASS + typecheck/lint/build；Repository Safety、AI Error Ledger、Architecture、Documentation/Artifact Governance、compileall 与 diff-check PASS。
+- **边界：** 简易模板、Semantic/Grounding/DAX/VerifiedFactSet、Local MCP runtime、frontend 与资源生命周期无行为改动；M5 FINAL=false。
+
+**Settings.version:** M5.10
+
 ## [M5.9.5] — 2026-09-10（Sidebar UI Geometry Final Closure）
 
 - **真实 reproducer：** clean `main@a1a3fc8ab25c0b866e1b252a03bbfe65d5d87429` 的独立 Vite server 与浏览器确认 `.conversation-item-icon` 及 M5.9.3 CSS 已命中；ready/failed MessageSquare 在 short/30+/80-char、current/hover 下均为 16×16，原“长标题越长图标越小”属于 stale frontend/runtime mismatch。真实 processing 行另复现 SVG rotation 令 axis-aligned `getBoundingClientRect()` 在约 18.56—21.48px 间变化，证明 attribute-only regression 不足。

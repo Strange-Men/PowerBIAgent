@@ -47,6 +47,9 @@ local_state/
 # Generated Reports & Outputs
 # ============================================================
 reports/
+!docs/assets/reports/
+!docs/assets/reports/README.md
+!docs/assets/reports/*.png
 !harness/reports/.gitkeep
 generated_reports/
 output/

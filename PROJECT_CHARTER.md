@@ -148,4 +148,4 @@
 
 ---
 
-*最后更新：2026-09-10 | M5.9.4 Business Language Stress COMPLETE（发布以当前 main exact-SHA CI success 为证据）；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-11 | M5.10 complex report foundation；专业 Renderer 尚未开始；M5 FINAL=false*

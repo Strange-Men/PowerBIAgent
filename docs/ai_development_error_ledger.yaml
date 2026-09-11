@@ -3,11 +3,51 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-10 | M5.9.4 Business Language Stress IN PROGRESS；M5.10 NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-11 | M5.10 Complex Report Foundation；M5.10.1 NOT STARTED；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: GOV-510-001
+  title: 复杂报表不得用视觉完整度伪造阅读上下文与事实状态
+  category: GOV
+  first_detected_version: M5.10
+  symptom: 专业参考图包含筛选、口径、异常和最后刷新，但现有 ReportSpec 只有生成时间；若直接实现视觉，可能把图片内容、LLM 文本、query time 或 generated_at 错当事实
+  local_evidence: M5.10 架构审计确认 sales_report renderer 将 generated_at 展示为最后刷新，且专业模板尚无 ReadingContext、Metric Definition、Exception 或 refresh authority contract
+  authoritative_sources:
+  - title: ADR-009 Deterministic Query Execution and Verified Fact Authority
+    reason: 报表业务事实只能来自 CanonicalQueryPlan、QueryResult 与 VerifiedFactSet
+  - title: ADR-019 Complex Report Reading Context and Template Authority
+    reason: complex template 必须先证明阅读上下文、scope、freshness 与异常状态，参考图片不拥有事实或功能 authority
+  root_cause: 简易模板历史 metadata 足以支持基础页脚，但不能表达复杂经营报表所需的 UNKNOWN、provenance 和刷新时间语义
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 增加 SIMPLE/COMPLEX tier、ReportReadingContext、ReportDataSnapshot、Metric Definition/Exception/Freshness contracts 与 dispatcher pre-render gate；专业模板注册但保持 UNAVAILABLE；两个销售合同共享 SALES_QUERY_REQUIREMENTS
+  regression_tests:
+  - backend/tests/unit/test_complex_report_contract.py
+  - backend/tests/unit/test_report_registry.py
+  - backend/tests/unit/test_report_contract.py
+  - backend/tests/unit/test_report_generation.py
+  prohibited_patterns:
+  - 用 generated_at 或 queried_at 填充 data_updated_at
+  - 从参考图片、用户原句、LLM draft 或 presentation text 重建实际 filter
+  - 无 rule/target/forecast 时编造异常或 magic threshold
+  - professional template fallback 到 simple renderer 或注册假 renderer
+  prevention_rules:
+  - COMPLEX 缺任一 Reading Context 字段或与 snapshot 不一致必须在 Renderer 前 fail closed
+  - metric tax/comparison basis 未声明时保持 UNKNOWN
+  - Reference images are NOT factual or functional authority
+  - M5.10.1 前 sales_executive_report 必须保持 UNAVAILABLE
+  related_adr: ADR-019
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-11'
+    action: discovered
+    version: M5.10
+  - date: '2026-09-11'
+    action: mitigation
+    version: M5.10
 - id: ERR-594-014
   title: 已证明的 follow-up cue 未传入 Coverage residue 消费
   category: ERR

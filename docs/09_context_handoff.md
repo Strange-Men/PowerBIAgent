@@ -1,7 +1,19 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-09-10
+> **最后更新：** 2026-09-11
+
+## 当前阶段 — M5.10 Complex Report Contract & Professional Sales Foundation
+
+起始基线为 clean `main@e6ac2ae8409d6cb83c605f089bc1a62a1aeaea4e`，本地 HEAD 与 `origin/main` 一致。Settings.version=M5.10。现有报表架构审计确认无需第二套 pipeline：Template/Renderer Registry、ReportPlanner、N×CanonicalQueryPlan、deterministic DAX、QueryResult/VerifiedFactSet、SalesReportData/ReportSpec、dispatcher 与 resource repository 可继续作为唯一链。
+
+M5.10 新增通用 SIMPLE/COMPLEX tier、完整 `ReportReadingContext`、immutable `ReportDataSnapshot`、registry-owned `MetricDefinition`、canonical+verified scope projector、deterministic exception/freshness state 与 COMPLEX Renderer preflight。`data_updated_at` 与 `queried_at`/`snapshot_at`/`generated_at` 分离；当前无权威 refresh metadata 时为 UNKNOWN。无 rule/target/forecast 时 exception 为 CANNOT_DETERMINE，LLM authority 为 0。
+
+`sales_executive_report` / “专业销售经营分析模板” / `executive_sales_report` / COMPLEX 已注册，但保持 UNAVAILABLE，不进入公开 catalog、不注册假 Renderer、不 fallback `simple_report`。`sales_report` 继续生产可用；两个合同共用单一 `SALES_QUERY_REQUIREMENTS`，未增加销售能力或修改 Semantic/Grounding/DAX/VerifiedFactSet/Local MCP runtime。
+
+三张参考图实际文件名已由 `docs/assets/reports/README.md` 固化为 P0 Reading Context、P1 layout intent 与 P2 style inspiration；图片不是 factual/functional authority。M5.10.1 Professional Renderer + Real Visual Acceptance 尚未开始；Remote MCP/Entra/PostgreSQL/Deployment 均未实现。M5 FINAL=false。
+
+Fresh local evidence：complex/report focused 172 PASS；三个 mutation sanity 均产生预期 failure、恢复后专项 24 PASS；Semantic Compatibility 774 PASS / 120 production files；backend 2620 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 90 PASS + typecheck/lint/build；Repository Safety、AI Error Ledger、Architecture、Documentation/Artifact Governance、compileall 与 diff-check PASS。
 
 ## 当前阶段 — M5.9.5 Sidebar UI Geometry Final Closure（COMPLETE，2026-09-10）
 
@@ -145,7 +157,8 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 | **M5.8.6** | **主线发布与治理收口** | **✅ COMPLETE（e8a79c3 / CI #51 success）** |
 | **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **✅ COMPLETE（179dd24 / CI #52 success）** |
 | **M5.9.1** | **Runtime Audit Closure：shutdown/enqueue 竞态与 retry ownership** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
-| **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
+| **M5.10** | **复杂报表合同与专业销售模板基础** | **✅ COMPLETE；以当前 main exact-SHA CI success 为发布证据** |
+| **M5.10.1** | **Professional Renderer + Real Visual Acceptance** | **⏳ NOT STARTED** |
 
 ### M5.7 completed contract
 
@@ -490,7 +503,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-M5.9.5 已完成并停止。下一阶段仅为尚未启动的 M5.10 固定专业销售报表模板与两模板显式选择；没有用户新指令不得自动开始。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+M5.10 complex report foundation 已完成并停止。下一阶段只能在用户明确新指令后启动 M5.10.1 Professional Renderer + Real Visual Acceptance；不得自动开始。M5.10.2 Report Hardening / Cloud-ready Final Closure 更晚；Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -539,4 +552,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-10 | M5.9.5 Sidebar UI Geometry Final Closure COMPLETE；m5/rebuild 冻结；main-only；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-11 | M5.10 complex report foundation；m5/rebuild 冻结；main-only；M5.10.1 NOT STARTED；M5 FINAL=false*

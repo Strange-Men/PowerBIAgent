@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.9.5 — Sidebar UI Geometry Final Closure**。Sidebar 最近对话的 ready/processing/failed leading icon 统一使用固定 16×16 slot；标题只在 `minmax(0, 1fr)` 轨道省略，status、current 与 hover action trigger 不再影响图标几何。M5.9.4 已完成，M5.9.2 runtime 与 M5.8.5 factual authority 保持冻结；发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.10 — Complex Report Contract & Professional Sales Foundation**。所有复杂模板现在共享必填 Reading Context 与 immutable data snapshot 合同；专业销售模板已获得正式 registry/contract identity，但保持未开放且没有最终 Renderer。简易模板继续可用。发布以当前 main exact-SHA Full Validation (Windows) success 为证据；M5.10.1 NOT STARTED，M5 FINAL=false。
 
 ## 项目概览
 
@@ -21,7 +21,8 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 - Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界。
 - Grounding 后的 Semantic Obligation Coverage、StateTransition 后的 Canonical Shape Completeness，以及 QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection 共同禁止显式条件静默丢失、残缺 shape 执行和错误结果顺序；Answer/Table/Chart 使用确定性 effective scope 与共享展示顺序。
-- `sales_report` 是当前唯一“简易模板”，根据用户需求与 runtime capability 生成 KPI、趋势、贡献、对比和排行；报表请求必须显式选择模板，不再存在后端默认模板。
+- `sales_report` 仍是当前唯一可用的“简易模板”；报表请求必须显式选择模板。`sales_executive_report` 已注册为 COMPLEX/UNAVAILABLE，只有 M5.10.1 完成固定 Renderer 与真实视觉验收后才会开放。
+- COMPLEX 模板在 Renderer 前必须具备标题、分析期间、实际筛选、指标口径、异常状态、模型/来源、数据新鲜度和生成时间；`data_updated_at` 不得由 `generated_at` 或 query time 代替。
 - 结构化多轮 Memory 只补当前轮真正省略的兼容槽；fresh/follow-up/replace 分离，当前明确表达始终优先；歧义、失败、unsupported 和 clarification 不污染已提交状态。
 - SQLite 提供重启恢复、结构化历史/搜索、可恢复归档、永久删除、独立 report 删除与崩溃后删除重试。
 - `(runtime_mode, conversation_id)` 和 `(source_mode, conversation_id)` 严格隔离 Mock/Real 状态与报表历史。
@@ -67,7 +68,7 @@ LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI
 |---|---|
 | 数据问答 | SCALAR、dimension-only ENTITY_LIST、GROUPED、RANKING/Top1、runtime-validated MEMBER_SET/`IN_SET`、FILTERED_AGGREGATION、TREND 与 BOUNDED_TREND；只澄清当前 shape 真正缺失的槽位 |
 | 非业务路由 | code-owned 产品能力说明、公开 LLM profile 信息、安全 Decimal 基础算术与明确 unsupported；ZERO schema/member/DAX/semantic Memory mutation |
-| 报表 | 唯一正式“简易模板” `sales_report`；显式 `report_template_key` 必选；schema-aware capability planning；固定安全静态 HTML；查看/下载资源 |
+| 报表 | 当前唯一可用“简易模板” `sales_report`；`sales_executive_report` 已有 COMPLEX contract 但保持 UNAVAILABLE；两者共享 Sales requirements；显式 `report_template_key` 必选；固定安全静态 HTML 与资源查看/下载 |
 | 多轮 Memory | 当前明确表达 > bounded semantic draft > committed Memory；fresh 清除无关旧槽，follow-up/replace 只继承兼容省略项；模型切换清空旧语义上下文 |
 | 持久化与恢复 | SQLite Memory/Snapshot/报表 metadata；重启重放；不完整崩溃证据受控失败；持久化删除意图 |
 | 历史与搜索 | 仅 SQLite 支持最近会话、展示型 transcript、自动标题/重命名、有界搜索、archive/restore 与永久删除；旧会话只恢复真实已保存内容 |
@@ -356,7 +357,7 @@ python -m alembic upgrade head
 | M5.9.3 | Business Semantic Parsing Correctness Closure — grouping/member/time obligation、clarification reason 与 Sidebar icon geometry 已收口；以当前 main exact-SHA CI success 为发布证据 |
 | M5.9.4 | COMPLETE — 51,200 deterministic combinatorial stress + 108-case DeepSeek-only 双 PBIX Real；发布以当前 main exact-SHA CI success 为证据 |
 | M5.9.5 | COMPLETE — Sidebar conversation icon 统一 16×16 grid slot；1—80 字、三状态、current/hover 真实浏览器 geometry 与 mutation sanity 通过；发布以当前 main exact-SHA CI success 为证据 |
-| M5.10 | NOT STARTED — 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL |
+| M5.10 | COMPLETE — 复杂报表 Reading Context / immutable snapshot、共享 Sales requirements 与 UNAVAILABLE 专业模板身份；M5.10.1 NOT STARTED，M5 FINAL=false |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -376,7 +377,7 @@ python -m alembic upgrade head
 - 本地单机 MVP；不支持多租户、复杂权限或 Power BI RLS。
 - Remote MCP 延期；不承诺生产级远程 Power BI 接入。
 - 不支持跨语义模型查询、任意 DAX、任意代码或任意 HTML。
-- 当前报表只有“简易模板” `sales_report`，内容受 runtime capability 与固定安全设计系统约束；报表请求必须显式选择模板。
+- 当前唯一可用报表是“简易模板” `sales_report`；专业模板只有 contract/registry identity 且保持 UNAVAILABLE。报表请求必须显式选择可用模板。
 - Real Power BI 验收需要 Windows、Node.js 20+、Power BI Desktop 与本地人工 Smoke；CI 不验证 Desktop 在线链。
 - 当前结构化展示支持单值指标、多行表格，以及根据真实 QueryResult 字段引用生成的简单柱状图或折线图；不提供前端排序/筛选工作台、任意 ChartSpec 或前端推断数据。
 - `m5/rebuild` 已冻结为只读发布追溯分支，不接收 M5.9/M5.10 新开发。`m5/frontend` 上的 `a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）作为实验/审计历史由 `archive/m5-frontend-experimental-final` tag 永久保存；新线从 M5.4.1 `cab40b0` 重新开始，能力必须分阶段重新实现并重新验收。main 是唯一活动开发线。
@@ -385,4 +386,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-10 | M5.9.5 Sidebar UI Geometry Final Closure COMPLETE；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-11 | M5.10 complex report foundation；M5.10.1 NOT STARTED；M5 FINAL=false*

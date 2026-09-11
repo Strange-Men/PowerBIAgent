@@ -1,7 +1,7 @@
 # 06 — 安全、Git 与开发规范
 
 > **状态：** M5.8.6 COMPLETE；Secret、仓库、artifact、main-only 开发与 exact-SHA CI 治理均已固化。
-> **当前轮次：** M5.9 performance / concurrency / resilience / cloud-ready runtime COMPLETE；离线实现、2h soak、Real PBIX 1/2/4 worker、Artifact Governance、residual=0 与 `179dd24` / CI #52 exact-SHA success 已通过。M5.8.5 correctness 冻结，M5.10 NOT STARTED，M5 FINAL=false。
+> **当前轮次：** M5.10 complex report foundation；专业 Renderer/Remote MCP 未实现，M5.10.1 NOT STARTED。M5.8.5 correctness 与 M5.9.2 runtime 冻结，M5 FINAL=false。
 
 ---
 

@@ -1,7 +1,7 @@
 # 01 — 产品范围与前端骨架
 
 > **状态：** M5.8.6 COMPLETE；React 前端、SQLite 资源生命周期、DeepSeek/Kimi 双模型目录与 Report Template Required 已实现。
-> **当前边界：** M5.9 performance / concurrency / resilience / cloud-ready runtime 已完成；离线实现、2h soak、Real PBIX 1/2/4 worker、全部本地 Gate、residual=0 与 `179dd24` / CI #52 exact-SHA success 已通过。M5.8.5 correctness 冻结，M5.10 NOT STARTED，M5 FINAL=false。
+> **当前边界：** M5.10 complex report foundation 已完成；专业模板保持 UNAVAILABLE，M5.10.1 Renderer NOT STARTED。M5.8.5 correctness 与 M5.9.2 runtime 冻结，M5 FINAL=false。
 > **视觉参考：** `docs/assets/frontend/整体01.png`（已有对话与组合回答态）、`docs/assets/frontend/整体02.png`（新聊天欢迎态与菜单展开态）
 
 ---
@@ -269,8 +269,8 @@ ConversationSession {
 4. **M5.2—M5.3.3：** ✅ Real 业务逻辑、presentation、多 PBIX、多轮与资源生命周期已完成
 5. **M5.4：** ✅ conversation-scoped state、异会话并发、pending Sidebar、用户卡片/设置、bounded bulk 管理、report tombstone/rename
 6. **M5.5—M5.8.6：** ✅ Semantic correctness、Presentation/Localization/Resource UX、简易模板、DeepSeek/Kimi、前置 MCP session/cache 与 correctness governance 已完成
-7. **M5.9：** 当前阶段只处理性能测量、MCP bounded concurrency/backpressure、韧性与云就绪边界；不改变语义、DAX、事实或前端业务 UX
-8. **M5.10：** NOT STARTED；第二固定专业模板不属于本轮
+7. **M5.9：** ✅ MCP performance/resilience、bounded concurrency/backpressure 与韧性最终收口已完成；未改变语义、DAX、事实或前端业务 UX
+8. **M5.10：** ✅ complex report foundation 已完成；专业模板仍为 UNAVAILABLE，最终 Renderer、两模板公开选择和 Real Visual Acceptance 属于 M5.10.1，尚未开始
 9. **开发阶段：** 使用 Vite dev server，代理到 FastAPI 后端
 10. **契约结论：** 不新增跨 authority 统一 envelope；presentation metadata 不成为 factual authority
 
@@ -315,4 +315,4 @@ ConversationSession {
 
 ---
 
-*最后更新：2026-09-07 | M5.8.6 / M5.9 COMPLETE；M5.10 NOT STARTED，M5 FINAL=false*
+*最后更新：2026-09-11 | M5.10 complex report foundation；M5.10.1 NOT STARTED；M5 FINAL=false*

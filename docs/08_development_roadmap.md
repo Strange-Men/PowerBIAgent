@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.9.5 Sidebar UI Geometry Final Closure COMPLETE（当前 Settings.version；发布以当前 main exact-SHA CI success 为证据）。M5.9.4 COMPLETE；M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结；main 是唯一活动开发线；M5.10 NOT STARTED；M5 FINAL=false。
+> **状态：** M5.10 Complex Report Contract & Professional Sales Foundation 已完成（当前 Settings.version；发布以当前 main exact-SHA CI success 为证据）。专业模板保持 UNAVAILABLE；M5.10.1 Renderer NOT STARTED；M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结；main 是唯一活动开发线；M5 FINAL=false。
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -56,7 +56,9 @@
 | **M5.9.3** | **业务语义解析正确性收口：shape、时间范围、completeness、grouping/filter 与 Sidebar geometry** | **✅ COMPLETE；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.9.4** | **Business Language Stress 与泛化验收** | **✅ COMPLETE；51,200 deterministic + 108 Real** |
 | **M5.9.5** | **Sidebar UI Geometry Final Closure** | **✅ COMPLETE；以当前 main exact-SHA CI success 为发布证据** |
-| **M5.10** | **固定专业销售报表模板与两模板选择** | **⏳ NOT STARTED** |
+| **M5.10** | **复杂报表合同与专业销售模板基础** | **✅ foundation 完成；exact-SHA CI 为发布证据** |
+| **M5.10.1** | **Professional Renderer + Real Visual Acceptance** | **⏳ NOT STARTED** |
+| **M5.10.2** | **Report Hardening / Cloud-ready Final Closure** | **⏳ NOT STARTED** |
 
 ### M5.9.3 — 业务语义解析正确性收口
 
@@ -75,6 +77,16 @@ DeepSeek-only Real 完成 108/108：104 completed、4 clarification + ZERO DAX/M
 状态为 COMPLETE，起始基线为 clean `main@a1a3fc8ab25c0b866e1b252a03bbfe65d5d87429`。独立 Vite server 的真实浏览器证明当前 main 的 MessageSquare 在 short/30+/80-char、ready/failed、current/hover 下原已是 16×16，原人工现象属于 stale frontend/runtime mismatch；同时确定性复现 processing SVG 因整体 rotation 产生 18.56—21.48px axis-aligned bounding rect，attribute-only 测试没有覆盖真实 geometry。
 
 最小修复将 conversation content 固定为 `16px | minmax(0, 1fr) | auto` grid，统一 `SidebarLeadingIcon`，并让 outer row 只负责 content + action trigger；spinner 只旋转 SVG 内部 path。真实浏览器 8-case acceptance 覆盖 1—80 字与三状态，wrapper/svg 全部 16×16、ellipsis 正常、无横向 overflow，current/hover/status/action trigger 不改变几何；12px mutation 能稳定使 acceptance FAIL。无 backend 业务、语义、runtime、API 或 M5.10 变化；发布以当前 main exact-SHA CI success 为证据。
+
+### M5.10 — Complex Report Contract & Professional Sales Foundation
+
+复杂模板统一使用 `ReportTemplateTier.COMPLEX`、完整 `ReportReadingContext` 与 immutable `ReportDataSnapshot`。Reading Context 在数字前明确标题、分析期间、实际筛选、指标口径、异常状态、模型/来源、数据新鲜度和 artifact 生成时间；缺项或与 ReportSpec/Snapshot 不一致时在 Renderer 前 fail closed。
+
+`sales_executive_report` 已注册为“专业销售经营分析模板”，renderer key 为 `executive_sales_report`，但 availability 保持 UNAVAILABLE，公开目录仍只有 `sales_report`。没有假 Renderer、simple fallback 或最终 HTML/CSS。两个销售合同共用 `SALES_QUERY_REQUIREMENTS`；未增加 YoY/MoM/Forecast/Target/Budget/Map/AI Insight 或任意新指标。
+
+filter/time 只由 CanonicalQueryPlan 与 VerifiedFactSet 一致证据投影。Metric Definition 的 tax/comparison basis 未声明时保持 UNKNOWN；当前无正式 anomaly rule 时为 CANNOT_DETERMINE；Local MCP 无权威 refresh metadata 时 `data_updated_at=None/UNKNOWN`，不得用 generated/query time 冒充。Remote MCP 只保留 source-kind boundary。
+
+后续严格分为 M5.10.1 Professional Renderer + Real Visual Acceptance 与 M5.10.2 Report Hardening / Cloud-ready Final Closure；当前均未开始。
 
 ### M5.4.2 — M5 重建基线与规划固化（已完成）
 
@@ -199,11 +211,11 @@ Broad sweep 另确认 sole metadata singleflight waiter 取消后 leader 仍可�
 
 Fresh local evidence：focused runtime/transaction 216 PASS；短 1/2/4 worker soak errors=0、session residual=0；Semantic Compatibility 743 PASS；backend 2448 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 87 PASS 与 typecheck/lint/build PASS；Repository Safety 361、AI Error Ledger 64、Architecture 133、Documentation/Artifact Governance、compileall 与 diff-check PASS。backend 相对上一 exact-SHA 增加 14 个本轮 permanent regression cases，差异已核对。
 
-### 新 M5.10 — 固定专业销售报表模板与两模板选择
+### M5.10 — 复杂报表合同与专业销售模板基础
 
-M5.10 必须晚于 M5.9，状态为 NOT STARTED。“简易模板”定义为当前 `sales_report.html` 经 M5.7 可读性优化后的稳定模板；新增“销售模板”，按已确认 Power BI 参考报表版式固定实现专业 sales report HTML，并允许用户显式选择两者。
+M5.10 已在 M5.9 后完成 foundation。“简易模板”仍为当前唯一公开可用模板；`sales_executive_report` 已获得 COMPLEX/UNAVAILABLE identity，但最终专业 Renderer、两模板公开选择与 Real Visual Acceptance 属于 M5.10.1，尚未开始。
 
-固定架构为 `VerifiedFactSet → ReportData / ReportSpec → template_key → deterministic fixed HTML renderer`。LLM 不拥有 HTML layout、factual 或 query authority，不得每次临场生成 HTML/CSS/SVG。专业模板规划包含深色 Header/title/navigation、KPI cards、左侧阶段/漏斗区、中部横向对比、右侧状态/异常/明细、下部区域/业务表格、地域视觉、明细表及 footer 指标口径 + Last Refresh。runtime schema 不支持 Forecast/Goal/Pipeline 时不得伪造，只能将真实可支持的 sales-specific section 放入相同版位；Agent 主链继续保持跨领域通用。只有 M5.10 完成全部 Gate 后才允许 `M5 FINAL`。
+固定架构仍为 `VerifiedFactSet → ReportData / ReportSpec → template_key → deterministic fixed HTML renderer`。COMPLEX 模板额外要求 Renderer 前完整 Reading Context 与 immutable data snapshot。LLM 不拥有 HTML layout、factual 或 query authority，不得每次临场生成 HTML/CSS/SVG。未来专业模板若使用深色 Header、KPI、趋势、区域/品类、TopN 与明细等版位，也必须由 runtime capability、共享 requirements 与 VerifiedFactSet 支持；Forecast/Goal/Pipeline、异常和数据刷新时间没有权威证据时不得伪造。M5.10 foundation 完成不等于 `M5 FINAL`。
 
 ### Generalization Gate 与永久开发顺序
 
@@ -439,7 +451,7 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
-- M5.5—M5.9.5 已完成；M5.8.5 factual authority 与 M5.9.2 runtime frozen；M5.10 仍不得提前进入。
+- M5.5—M5.10 foundation 已完成；M5.8.5 factual authority 与 M5.9.2 runtime frozen；M5.10.1 仍不得提前进入。
 - 一个 milestone 不得同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle；只有 M5.10 全部门禁完成后才允许宣告 M5 FINAL。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
@@ -454,4 +466,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-09-10 | M5.9.5 Sidebar UI Geometry Final Closure COMPLETE；M5.10 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-11 | M5.10 complex report foundation；M5.10.1 NOT STARTED；M5 FINAL=false*
