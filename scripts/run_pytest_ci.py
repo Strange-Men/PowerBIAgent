@@ -34,8 +34,10 @@ def _escape_command_property(value: object) -> str:
 class _GitHubFailureAnnotations:
     """Emit only failing reports; pytest remains the sole exit-code authority."""
 
-    @staticmethod
-    def _emit(phase: str, report: Any) -> None:
+    def __init__(self) -> None:
+        self._commands: list[str] = []
+
+    def _record(self, phase: str, report: Any) -> None:
         nodeid = getattr(report, "nodeid", "pytest")
         detail = getattr(report, "longreprtext", None) or str(
             getattr(report, "longrepr", "pytest failure")
@@ -43,20 +45,30 @@ class _GitHubFailureAnnotations:
         # Keep annotations useful and bounded; the complete traceback remains in logs.
         message = detail[-3500:]
         title = _escape_command_property(f"pytest {phase}: {nodeid}")
-        print(f"::error title={title}::{_escape_command_data(message)}", flush=True)
+        self._commands.append(
+            f"::error title={title}::{_escape_command_data(message)}"
+        )
+
+    def publish(self) -> None:
+        # pytest capture has been restored by the time main() calls this method.
+        for command in self._commands:
+            print(command, flush=True)
 
     def pytest_collectreport(self, report: Any) -> None:
         if report.failed:
-            self._emit("collection", report)
+            self._record("collection", report)
 
     def pytest_runtest_logreport(self, report: Any) -> None:
         if report.failed:
-            self._emit(getattr(report, "when", "test"), report)
+            self._record(getattr(report, "when", "test"), report)
 
 
 def main() -> int:
     args = sys.argv[1:] or ["backend/tests", "-q"]
-    return int(pytest.main(args, plugins=[_GitHubFailureAnnotations()]))
+    annotations = _GitHubFailureAnnotations()
+    exit_code = int(pytest.main(args, plugins=[annotations]))
+    annotations.publish()
+    return exit_code
 
 
 if __name__ == "__main__":
