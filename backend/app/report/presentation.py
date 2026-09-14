@@ -224,6 +224,6 @@ class ProfessionalReportPresenter:
         if value is None:
             return "暂不可获取"
         if value.tzinfo is None or value.utcoffset() is None:
-            return value.strftime("%Y-%m-%d %H:%M（时区未声明）")
+            return f"{value.strftime('%Y-%m-%d %H:%M')}（时区未声明）"
         utc_value = value.astimezone(timezone.utc)
         return utc_value.strftime("%Y-%m-%d %H:%M UTC")

@@ -8,6 +8,40 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-5102-003
+  title: naive datetime 把本地化文案传入 strftime 导致英文 Windows locale 编码失败
+  category: ERR
+  first_detected_version: M5.10.2
+  symptom: 专业报表投影在英文 Windows runner 格式化无时区 datetime 时抛出 UnicodeEncodeError，而中文开发机与 clean clone 均通过
+  local_evidence: exact-SHA Full Validation 失败 annotation 指向 test_professional_projection_never_guesses_timezone_for_naive_datetime；堆栈停在包含中文文字的 datetime.strftime 格式串
+  authoritative_sources:
+  - title: ADR-019 Complex Report Reading Context and Template Authority
+    reason: naive datetime 必须如实标示时区未声明，不能猜测时区，也不能因展示 locale 阻断确定性报表
+  root_cause: Python datetime.strftime 会把格式串交给平台 locale codec；将中文标记直接放入格式串使英文 Windows locale 无法编码
+  failed_attempts:
+  - 仅提高异步测试 Event/barrier 调度阈值；该尝试未触及随后由公开 annotation 精确定位的 locale 编码根因
+  repair_attempt_count: 2
+  final_fix: strftime 只接收纯 ASCII 日期格式，中文时区状态由普通 Unicode 字符串在格式化后拼接；CI wrapper 在 pytest capture 恢复后发布 bounded failure annotation
+  regression_tests:
+  - backend/tests/unit/test_report_product_refinement.py
+  prohibited_patterns:
+  - 把非 ASCII 展示文案放入 strftime 格式串
+  - 因 naive datetime 猜测本地时区或暗自加八小时
+  - 用本机 locale PASS 代替 exact-SHA Windows CI
+  prevention_rules:
+  - strftime 格式串保持 ASCII-only，本地化标签必须在普通字符串层组合
+  - locale-sensitive 展示需要确定性 regression probe
+  - CI failure nodeid 必须可从不含凭据的公开 annotation 审计
+  related_adr: ADR-019
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-14'
+    action: discovered
+    version: M5.10.2
+  - date: '2026-09-14'
+    action: mitigation
+    version: M5.10.2
 - id: ERR-5102-002
   title: 报表时间点复用与取消后 artifact 缺少补偿
   category: ERR

@@ -107,11 +107,11 @@ Execution audit 固定记录 `requested_coverage`、`requested_sections`、`reso
 ## Fresh Evidence
 
 - Failure reproducer：明确中文完整报表短语在旧 8-character gap grammar 下误路由；Rich 9-section capability 在旧六查询预算下被静默裁减；旧 lifecycle time 三字段复用；Memory commit/cancellation 后 artifact orphan 均已稳定复现并进入永久回归。
-- Focused：report domain 209 PASS；M5.10.2 product 22 PASS；双模板 lifecycle/failure/cancellation/restart 补强矩阵 27 PASS；三类并发 3 PASS；browser mutation 4 PASS；presentation/fixture 回归 49 PASS。
-- Full：Semantic Compatibility 775 PASS / 122 production backend files；backend 2706 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 91 PASS + typecheck/lint/build。
-- Governance：Repository Safety 395、AI Error Ledger 84、Architecture 139、Documentation Governance、Artifact Governance 全部 PASS；targeted compileall 与 `git diff --check` PASS。
+- Focused：report domain 209 PASS；M5.10.2 product 23 PASS；双模板 lifecycle/failure/cancellation/restart 补强矩阵 27 PASS；三类并发 3 PASS；browser mutation 4 PASS；presentation/fixture 回归 49 PASS。
+- Full：Semantic Compatibility 775 PASS / 122 production backend files；backend 2707 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 91 PASS + typecheck/lint/build。
+- Governance：Repository Safety 396、AI Error Ledger 85、Architecture 139、Documentation Governance、Artifact Governance 全部 PASS；targeted compileall 与 `git diff --check` PASS。
 - Real：Rich PBIX exact-phrase TurnService 9/9；Simple PBIX 4 available + 5 unavailable-with-reason；两者均 DeepSeek-only、DAX LLM authority=0、Renderer LLM authority=0、artifact/session/worker residual=0。双模板 Real parity=true。
 - Browser/manual：TEST_FIXTURE 18×4 = 72/72；真实 Rich report 1440/1024/768/430 = 4/4；人工检查 1440 desktop 与 430 mobile 的 header、compact context、first-viewport KPI、hero trend、完整可用业务区和低权重 audit footer通过。
 - Mutation：raw technical token、oversized Reading Context、FULL_AVAILABLE section omission 三类永久 mutation gate 以及 M5.10.1 既有 P0/overflow/renderer identity/fact mapping 均能先红后绿；破坏实现未保留。
 - Residual/security：所有 automation-owned HTML/screenshot/temp resource 精确清理；无用户资源删除；`.env` 未读取、未打印、未修改。无已知 P0/P1；Remote MCP/Entra/PostgreSQL/Deployment 仍在授权范围外。
-- CI forward-fix：首个 implementation SHA 的远端 Full pytest 单次失败，而当前 checkout 与不含 `.env`/`local_state` 的 clean clone 都以 CI 同构命令 2706 PASS / 1 SKIP。新增 report Event/barrier 测试的 3 秒同步阈值仅属于 runner scheduling guard，现提高到 bounded 15 秒；不改变任何产品 deadline、runtime worker 或 cancellation 语义。CI pytest 包装器在 pytest capture 恢复后才把 bounded failure nodeid/phase 发布为 GitHub annotation，测试参数与退出码仍由 pytest 决定。发布仍只接受最终 forward-fix SHA 的 completed/success。
+- CI forward-fix：首个 implementation SHA 的远端 Full pytest 单次失败，而当前 checkout 与不含 `.env`/`local_state` 的 clean clone 都以 CI 同构命令 2706 PASS / 1 SKIP。CI wrapper 在 pytest capture 恢复后发布的 annotation 最终将根因定位为英文 Windows locale 无法编码传入 `strftime` 的中文格式串；修复固定为 ASCII-only `strftime` 后再拼接 Unicode 展示标记，并用 formatter probe 防回归。Event/barrier 的 bounded 15 秒 guard 不改变任何产品 deadline、runtime worker 或 cancellation 语义。发布仍只接受修复后 exact-SHA completed/success。

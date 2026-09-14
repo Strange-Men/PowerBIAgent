@@ -162,6 +162,19 @@ def test_professional_projection_never_guesses_timezone_for_naive_datetime():
     assert "10:28" not in projection.generated_at_display
 
 
+def test_naive_datetime_formatter_keeps_strftime_format_locale_ascii_safe():
+    class AsciiFormatDatetime(datetime):
+        def strftime(self, format_string: str) -> str:
+            assert format_string.isascii()
+            return super().strftime(format_string)
+
+    value = AsciiFormatDatetime(2026, 9, 14, 2, 28, 10)
+
+    assert ProfessionalReportPresenter._format_datetime(value) == (
+        "2026-09-14 02:28（时区未声明）"
+    )
+
+
 def test_remote_source_is_projection_only_and_does_not_add_transport_contract():
     report = _report()
     snapshot = report.data_snapshot.model_copy(update={
