@@ -613,6 +613,12 @@ def test_assembler_and_renderer_have_zero_llm_or_powerbi_authority():
         assert forbidden_oracle not in production_source
 
 
+# A bounded test-only synchronization timeout.  Cold GitHub-hosted Windows
+# runners can spend several seconds scheduling an already-created task; this
+# guard detects a real hang without coupling correctness to runner speed.
+REPORT_TEST_SYNC_TIMEOUT_SECONDS = 15.0
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "template_key", ["sales_report", "sales_executive_report"]
@@ -1273,7 +1279,9 @@ async def test_cancel_during_report_query_drains_work_and_leaves_no_artifact(
         report_template_key=template_key,
     ))
 
-    await asyncio.wait_for(adapter.started.wait(), timeout=3)
+    await asyncio.wait_for(
+        adapter.started.wait(), timeout=REPORT_TEST_SYNC_TIMEOUT_SECONDS
+    )
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -1336,7 +1344,9 @@ async def test_cancel_during_report_renderer_leaves_no_artifact(template_key):
         report_template_key=template_key,
     ))
 
-    await asyncio.wait_for(renderer.started.wait(), timeout=3)
+    await asyncio.wait_for(
+        renderer.started.wait(), timeout=REPORT_TEST_SYNC_TIMEOUT_SECONDS
+    )
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -1374,7 +1384,9 @@ async def test_cancel_during_memory_commit_compensates_stored_artifact(
         report_template_key=template_key,
     ))
 
-    await asyncio.wait_for(commit_started.wait(), timeout=3)
+    await asyncio.wait_for(
+        commit_started.wait(), timeout=REPORT_TEST_SYNC_TIMEOUT_SECONDS
+    )
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -1401,7 +1413,9 @@ async def test_shutdown_during_professional_report_drains_and_leaves_no_artifact
         report_template_key="sales_executive_report",
     ))
 
-    await asyncio.wait_for(adapter.started.wait(), timeout=3)
+    await asyncio.wait_for(
+        adapter.started.wait(), timeout=REPORT_TEST_SYNC_TIMEOUT_SECONDS
+    )
     await adapter.aclose()
     with pytest.raises(asyncio.CancelledError):
         await task
