@@ -21,8 +21,11 @@
 8. 三张参考图分别是 P0 Reading Context、P1 layout intent、P2 style inspiration。**Reference images are NOT factual or functional authority.** 图片中的 YoY/MoM/Forecast/Target/Map/AI Insight/Anomaly/Budget/任意字段和图表不得自动成为能力。
 9. `SALES_QUERY_REQUIREMENTS` 是两个销售模板唯一共享 query requirement authority。相同模型、scope 与 requirement 必须经过相同 CanonicalQueryPlan → deterministic DAX → QueryResult → VerifiedFactSet；模板只能改变信息架构、布局、视觉与样式。
 10. `ReportDataSnapshot` 固化 semantic model identity、schema fingerprint、QueryResult/VerifiedFactSet provenance、source mode/source kind、可选 data refresh time、queried/snapshot time。`REMOTE_MCP` 仅是保留的 source-kind 值，不绑定 endpoint、auth 或 request schema。
-11. 新身份 `sales_executive_report` / “专业销售经营分析模板” / `executive_sales_report` / `COMPLEX` 已注册，但 M5.10 保持 `UNAVAILABLE`，不进入公开目录，也不注册假 Renderer。M5.10.1 完成 fixed Renderer 与 Real Visual Acceptance 后才能开放。
+11. 新身份 `sales_executive_report` / “专业销售经营分析模板” / `executive_sales_report` / `COMPLEX` 在 M5.10 foundation 注册；M5.10.1 完成 fixed Renderer 与 Real Visual Acceptance 后已开放，并与 `sales_report` 一同要求用户显式选择。
 12. LLM 对报表事实、指标口径、刷新时间、异常判断、query requirements、DAX、HTML、CSS 与 SVG authority 全部为 0。
+13. M5.10.2 的 coverage 只有 `REQUESTED` 与 `FULL_AVAILABLE` 两种 typed mode。`FULL_AVAILABLE` 必须是 selected template ∩ runtime capability ∩ registered section catalog ∩ non-empty VerifiedFactSet evidence；weak LLM、通用工具预算或 Renderer 不得缩减、扩展或伪造该集合。unavailable 与 facts 后 dropped section 必须带确定性原因进入 audit。
+14. 专业报表的友好名称、状态、单位和时间只属于 presentation projection。canonical model/source/status/timestamp/metric provenance 必须原样保留并可审计；projection 不得修改值、scope、顺序或 provenance。
+15. `queried_at`、`snapshot_at`、`generated_at` 分别表示查询结果取得、VerifiedFactSet 快照完成和 artifact 生成三个不同 application-clock 事件；`data_updated_at` 仍只接受 runtime refresh metadata。失败或取消后若 artifact 已创建但 Memory 未提交，必须通过正式 repository API 补偿删除，不能形成第二持久化管线。
 
 ## 备选方案
 
@@ -34,5 +37,5 @@
 ## 后果
 
 - 正面：未来复杂模板在视觉实现前已有不可伪造的阅读上下文与 provenance；Local → Remote MCP 不要求推翻报表事实架构；简易模板不受影响。
-- 负面：当前专业模板保持不可用；真实刷新时间缺失时必须明确显示 UNKNOWN，不能提供看似完整但无证据的时间。
-- 后续：M5.10.1 只实现 deterministic professional Renderer 与真实视觉验收；M5.10.2 负责 report hardening/cloud-ready 最终收口。
+- 负面：真实刷新时间缺失时必须明确显示未知，完整覆盖可能因 runtime capability 不足而只有可证明子集，但必须审计缺失原因而不能伪造完整度。
+- 后续：M5.10.1 deterministic professional Renderer 与真实视觉验收、M5.10.2 product refinement/hardening 已完成本地收口；M5.10.3 Final Real E2E/stress/mutation/historical closure 尚未启动，M5 FINAL=false。

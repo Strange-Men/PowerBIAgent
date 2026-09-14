@@ -336,9 +336,26 @@ def test_planner_is_repeatable_and_records_provenance():
     assert first.signal.llm_used is False
 
 
-def test_rich_report_is_deterministically_bounded_to_turn_tool_budget():
+def test_full_available_report_fails_closed_instead_of_budget_truncation():
     schema = _rich_schema()
     signal = resolve_report_intent("生成完整销售分析报表")
+
+    with pytest.raises(ReportPlanError) as error:
+        ReportPlanner().plan(
+            "sales_report",
+            schema,
+            signal.requested_ids,
+            signal,
+            max_queries=6,
+        )
+
+    assert error.value.code == "report_full_coverage_budget_insufficient"
+    assert error.value.errors
+
+
+def test_requested_report_remains_deterministically_budgeted():
+    schema = _rich_schema()
+    signal = resolve_report_intent("生成销售趋势报表")
 
     plan = ReportPlanner().plan(
         "sales_report",
@@ -351,7 +368,6 @@ def test_rich_report_is_deterministically_bounded_to_turn_tool_budget():
     assert len(plan.data_plan.queries) <= 6
     assert len(plan.data_plan.queries) == len(plan.requirement_keys)
     assert plan.resolved_sections
-    assert plan.unavailable_sections
 
 
 def test_unavailable_sections_are_recorded_not_rendered():

@@ -12,6 +12,7 @@ M1.6.3 更新：
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -79,7 +80,7 @@ from backend.app.report.capability import (
 from backend.app.report.deepseek_report_intent_service import (
     DeepSeekReportIntentService,
 )
-from backend.app.report.intent import resolve_report_intent
+from backend.app.report.intent import full_requested_ids, resolve_report_intent
 from backend.app.report.plan import ReportPlanError, ReportPlanner
 from backend.app.report.reading_context import (
     ReportDataSnapshotBuilder,
@@ -180,6 +181,11 @@ from backend.app.schemas.report_context import (
     ExceptionAssessment,
     ReportDataSourceKind,
 )
+
+
+def _utcnow() -> datetime:
+    """Return an aware UTC timestamp at the point the evidence is acquired."""
+    return datetime.now(timezone.utc)
 
 
 class LLMTurnService:
@@ -1936,6 +1942,7 @@ class LLMTurnService:
             data_summary={
                 "llm_used": signal.llm_used,
                 "scope_limited": signal.scope_limited,
+                "requested_coverage": signal.coverage_mode.value,
                 "requested_sections": list(signal.requested_ids),
                 "llm_draft_ids": list(signal.llm_draft_ids),
             },
@@ -1948,7 +1955,7 @@ class LLMTurnService:
                 schema,
                 signal.requested_ids,
                 signal,
-                max_queries=self.settings.max_tool_calls - 2,
+                max_queries=len(full_requested_ids()),
                 scope_plan=scope_plan,
             )
         except ReportPlanError as exc:
@@ -2025,6 +2032,7 @@ class LLMTurnService:
             request_id=effective_req_id,
             data_summary={
                 "template_key": report_plan.template_key,
+                "requested_coverage": signal.coverage_mode.value,
                 "query_count": len(report_plan.data_plan.queries),
                 "resolved_sections": [
                     item.value for item in report_plan.resolved_sections
@@ -2032,6 +2040,10 @@ class LLMTurnService:
                 "unavailable_sections": [
                     item.value for item in report_plan.unavailable_sections
                 ],
+                "unavailable_section_reasons": {
+                    item.value: report_plan.section_capabilities[item].reason
+                    for item in report_plan.unavailable_sections
+                },
                 "schema_fingerprint": report_plan.schema_fingerprint,
             },
         )
@@ -2079,6 +2091,7 @@ class LLMTurnService:
                         collector=collector,
                     )
                 query_results[query.requirement_key] = result
+            queried_at = _utcnow()
         except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
                 ToolNotRegisteredError, ToolOutputValidationError) as exc:
             return await self._fail_result(
@@ -2153,7 +2166,8 @@ class LLMTurnService:
                 requirement_key: fact_sets[requirement_key]
                 for requirement_key in filtered_results
             }
-            report_data_contract = SalesReportDataAssembler().build(
+            snapshot_at = _utcnow()
+            report_data_contract = SalesReportDataAssembler(clock=_utcnow).build(
                 execution_plan,
                 filtered_results,
                 filtered_facts,
@@ -2191,6 +2205,37 @@ class LLMTurnService:
                 ),
                 "source_mode": report_data_contract.source_mode,
                 "dropped_sections": [item.value for item in dropped],
+                "generated_at": report_data_contract.generated_at.isoformat(),
+            },
+        )
+        dropped_reasons = {
+            section.value: ",".join(
+                f"report_requirement_empty:{requirement}"
+                for requirement in SECTION_REQUIREMENTS[section]
+                if fact_row_counts.get(requirement, 0) < 1
+            )
+            for section in dropped
+        }
+        trace.record(
+            "report_coverage_audit",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={
+                "requested_coverage": signal.coverage_mode.value,
+                "requested_sections": list(signal.requested_ids),
+                "resolved_sections": [item.value for item in still],
+                "unavailable_sections": [
+                    item.value for item in report_plan.unavailable_sections
+                ],
+                "unavailable_section_reasons": {
+                    item.value: report_plan.section_capabilities[item].reason
+                    for item in report_plan.unavailable_sections
+                },
+                "dropped_after_facts": [item.value for item in dropped],
+                "dropped_after_fact_reasons": dropped_reasons,
+                "queried_at": queried_at.isoformat(),
+                "snapshot_at": snapshot_at.isoformat(),
+                "generated_at": report_data_contract.generated_at.isoformat(),
             },
         )
 
@@ -2205,17 +2250,16 @@ class LLMTurnService:
                     },
                     filtered_facts,
                 )
-                snapshot_time = report_data_contract.generated_at
-                if snapshot_time.tzinfo is None:
-                    snapshot_time = snapshot_time.replace(tzinfo=timezone.utc)
                 data_snapshot = ReportDataSnapshotBuilder().build(
                     semantic_model_identity=report_data_contract.semantic_model_key,
+                    semantic_model_display_name=schema.name,
                     schema_fingerprint=report_data_contract.schema_fingerprint,
                     query_results=filtered_results,
                     verified_fact_sets=filtered_facts,
                     source_kind=ReportDataSourceKind.LOCAL_MCP,
-                    queried_at=snapshot_time,
-                    snapshot_at=snapshot_time,
+                    source_display_name="Power BI Desktop",
+                    queried_at=queried_at,
+                    snapshot_at=snapshot_at,
                 )
                 definition_by_measure = {
                     definition.canonical_measure: key
@@ -2318,16 +2362,33 @@ class LLMTurnService:
         memory.updated_at = datetime.utcnow()
 
         evidence = controller.build_commit_evidence()
-        committed_memory, commit_error = await self.pipeline.commit_memory_safe(
-            memory,
-            evidence,
-            controller,
-            trace,
-            trace_id,
-            effective_req_id,
-            runtime_mode,
-        )
+        try:
+            committed_memory, commit_error = await self.pipeline.commit_memory_safe(
+                memory,
+                evidence,
+                controller,
+                trace,
+                trace_id,
+                effective_req_id,
+                runtime_mode,
+            )
+        except asyncio.CancelledError:
+            await asyncio.shield(self._compensate_report_artifact(
+                rendered.report_id,
+                trace=trace,
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                original_error="request_cancelled_during_memory_commit",
+            ))
+            raise
         if commit_error is not None:
+            compensation_error = await self._compensate_report_artifact(
+                rendered.report_id,
+                trace=trace,
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                original_error=commit_error,
+            )
             terminal_state = (
                 "memory_conflict"
                 if commit_error == "version_conflict"
@@ -2338,7 +2399,11 @@ class LLMTurnService:
                 effective_conv_id,
                 terminal_state,
                 intent=intent.intent.value,
-                error_type=commit_error,
+                error_type=(
+                    "report_artifact_compensation_failed"
+                    if compensation_error is not None
+                    else commit_error
+                ),
                 trace=trace,
                 trace_id=trace_id,
                 is_mock=False,
@@ -2374,12 +2439,20 @@ class LLMTurnService:
                     for item in report_plan.data_plan.queries
                 },
                 "requested_sections": list(signal.requested_ids),
+                "requested_coverage": signal.coverage_mode.value,
                 "resolved_sections": [
                     item.value for item in report_plan.resolved_sections
                 ],
+                "final_resolved_sections": [item.value for item in still],
                 "unavailable_sections": [
                     item.value for item in report_plan.unavailable_sections
                 ],
+                "unavailable_section_reasons": {
+                    item.value: report_plan.section_capabilities[item].reason
+                    for item in report_plan.unavailable_sections
+                },
+                "dropped_after_facts": [item.value for item in dropped],
+                "dropped_after_fact_reasons": dropped_reasons,
                 "query_count": len(report_plan.data_plan.queries),
                 "assembled_query_count": len(execution_plan.queries),
                 "deterministic_dax": True,
@@ -2391,6 +2464,9 @@ class LLMTurnService:
                 "query_result_ids": list(rendered.query_result_ids),
                 "verified_fact_set_ids": list(rendered.verified_fact_set_ids),
                 "source_mode": rendered.source_mode,
+                "queried_at": queried_at.isoformat(),
+                "snapshot_at": snapshot_at.isoformat(),
+                "generated_at": report_data_contract.generated_at.isoformat(),
                 "factual_validation_pass": True,
                 "llm_report_intent_call_count": sum(
                     item.task == LLMTask.REPORT_INTENT.value
@@ -2410,6 +2486,44 @@ class LLMTurnService:
                 "memory_version": committed_memory.memory_version,
             },
         )
+
+    async def _compensate_report_artifact(
+        self,
+        report_id: str,
+        *,
+        trace: TraceRecorder,
+        trace_id: str,
+        request_id: str,
+        original_error: str,
+    ) -> str | None:
+        """Delete a stored report whose turn cannot become committed."""
+        if self._report_repository is None:
+            return "report_repository_unavailable"
+        try:
+            await self._report_repository.delete(report_id)
+            trace.record(
+                "report_artifact_compensated",
+                trace_id=trace_id,
+                request_id=request_id,
+                data_summary={
+                    "report_id": report_id,
+                    "original_error": original_error,
+                },
+            )
+            return None
+        except Exception as exc:  # durable delete intent remains authoritative
+            cleanup_error = type(exc).__name__
+            trace.record(
+                "report_artifact_compensation_failed",
+                trace_id=trace_id,
+                request_id=request_id,
+                data_summary={
+                    "report_id": report_id,
+                    "original_error": original_error,
+                    "cleanup_error": cleanup_error,
+                },
+            )
+            return cleanup_error
 
     @staticmethod
     def _canonical_report_scope(

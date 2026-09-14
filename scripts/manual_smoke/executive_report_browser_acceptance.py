@@ -122,6 +122,29 @@ _GEOMETRY_EXPRESSION = r"""
   const cardRect = svg?.closest('[data-section]')?.getBoundingClientRect();
   const context = document.querySelector('[data-section="reading_context"]');
   const kpis = document.querySelector('[data-section="kpi_summary"]');
+  const header = document.querySelector('.executive-header');
+  const trendSection = document.querySelector('[data-section="hero_sales_trend"]');
+  const audit = document.querySelector('[data-section="audit_footer"]');
+  const mainText = [...document.querySelector('main').children]
+    .filter((el) => el !== audit)
+    .map((el) => el.innerText || '')
+    .join('\n');
+  const rawTokens = [
+    'local_desktop:', 'local_mcp', 'remote_mcp', 'cannot_determine',
+    'UNKNOWN', 'semantic_measure'
+  ].filter((token) => mainText.includes(token));
+  if (/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+/.test(mainText)) {
+    rawTokens.push('iso_microseconds');
+  }
+  const rectOf = (el) => {
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return {top: rect.top + scrollY, bottom: rect.bottom + scrollY,
+      left: rect.left, right: rect.right, width: rect.width, height: rect.height};
+  };
+  const businessRoles = [...document.querySelectorAll('[data-business-role]')]
+    .map((el) => el.dataset.businessRole);
+  if (trendSection) businessRoles.push('time_trend');
   return {
     readyState: document.readyState,
     title: document.title,
@@ -133,15 +156,24 @@ _GEOMETRY_EXPRESSION = r"""
     sections,
     sectionOverlaps,
     contextBeforeNumbers: !!context && (!kpis || context.getBoundingClientRect().top < kpis.getBoundingClientRect().top),
+    product: {
+      header: rectOf(header), context: rectOf(context), kpis: rectOf(kpis),
+      trendSection: rectOf(trendSection), rawTokens, businessRoles,
+      kpisInFirstViewport: !!kpis && kpis.getBoundingClientRect().bottom <= innerHeight,
+      hierarchyOrdered: !!header && !!context && !!kpis && !!trendSection &&
+        header.getBoundingClientRect().top < context.getBoundingClientRect().top &&
+        context.getBoundingClientRect().top < kpis.getBoundingClientRect().top &&
+        kpis.getBoundingClientRect().top < trendSection.getBoundingClientRect().top,
+    },
     trend: svg ? {points: document.querySelectorAll('.trend-point').length,
       width: svgRect.width, cardWidth: cardRect.width,
       withinCard: svgRect.left >= cardRect.left - 1 && svgRect.right <= cardRect.right + 1} : null,
     identity: document.querySelector('main')?.dataset.templateKey || '',
     staticRuntime: !document.querySelector('script, link[rel="stylesheet"], iframe, object, embed'),
     fontFamily: getComputedStyle(body).fontFamily,
-    unknownFreshnessVisible: document.body.innerText.includes('数据更新时间：模型未提供'),
+    unknownFreshnessVisible: document.body.innerText.includes('暂不可获取'),
     noFilterVisible: document.body.innerText.includes('无额外筛选'),
-    exceptionVisible: document.body.innerText.includes('当前模型未提供可验证的目标、预测或异常判断基准'),
+    exceptionVisible: document.body.innerText.includes('暂无可验证异常基准'),
   };
 })()
 """
@@ -175,6 +207,30 @@ def _case_failures(scenario: str, width: int, geometry: dict[str, object]) -> li
         failures.append("non_static_runtime")
     if not geometry["exceptionVisible"]:
         failures.append("exception_state_missing")
+    product = geometry.get("product") or {}
+    if product.get("rawTokens"):
+        failures.append("technical_tokens_in_main_visual")
+    if scenario == "full" and not product.get("hierarchyOrdered"):
+        failures.append("product_hierarchy_invalid")
+    if scenario == "full":
+        required_roles = {
+            "time_trend", "category_contribution", "region_comparison",
+            "top_products", "top_customers",
+        }
+        if not required_roles.issubset(set(product.get("businessRoles") or [])):
+            failures.append("full_available_section_missing")
+        if width == 1440:
+            context = product.get("context") or {}
+            trend_section = product.get("trendSection") or {}
+            if context.get("height", 10_000) > 180:
+                failures.append("desktop_reading_context_not_compact")
+            if not product.get("kpisInFirstViewport"):
+                failures.append("desktop_kpis_not_in_first_viewport")
+            if (
+                trend_section.get("width", 0) < 1000
+                or trend_section.get("height", 0) < 400
+            ):
+                failures.append("desktop_trend_not_hero_visual")
     if scenario == "unknown_freshness" and not geometry["unknownFreshnessVisible"]:
         failures.append("unknown_freshness_missing")
     if scenario == "no_filter" and not geometry["noFilterVisible"]:
@@ -193,6 +249,7 @@ async def _run_cases(
     websocket_url: str,
     base_url: str,
     output_dir: Path,
+    single_url: str | None = None,
 ) -> dict[str, object]:
     records: list[dict[str, object]] = []
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -200,7 +257,8 @@ async def _run_cases(
         cdp = _CDP(websocket)
         await cdp.call("Page.enable")
         await cdp.call("Runtime.enable")
-        for scenario in SCENARIO_NAMES:
+        scenario_names = ("full",) if single_url is not None else SCENARIO_NAMES
+        for scenario in scenario_names:
             for width, height in VIEWPORTS:
                 await cdp.call("Emulation.setDeviceMetricsOverride", {
                     "width": width,
@@ -209,7 +267,7 @@ async def _run_cases(
                     "mobile": width <= 430,
                 })
                 await cdp.call("Page.navigate", {
-                    "url": f"{base_url}/?scenario={scenario}"
+                    "url": single_url or f"{base_url}/?scenario={scenario}"
                 })
                 await _ready(cdp)
                 evaluated = await cdp.call("Runtime.evaluate", {
@@ -242,7 +300,7 @@ async def _run_cases(
     failed = [record for record in records if record["failures"]]
     return {
         "browser_engine": "installed_chromium",
-        "scenario_count": len(SCENARIO_NAMES),
+        "scenario_count": len(scenario_names),
         "viewport_count": len(VIEWPORTS),
         "case_count": len(records),
         "failed_count": len(failed),
@@ -255,6 +313,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:8766")
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--single-url")
     args = parser.parse_args()
     browser = _browser_path()
     port = _free_port()
@@ -284,6 +343,7 @@ def main() -> None:
             str(target["webSocketDebuggerUrl"]),
             args.base_url.rstrip("/"),
             args.output_dir,
+            args.single_url,
         ))
         evidence["browser_path"] = str(browser)
         evidence_path = args.output_dir / "geometry-evidence.json"

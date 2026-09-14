@@ -68,6 +68,7 @@ from backend.app.memory.result_snapshot import (
     TurnResultSnapshot,
 )
 from backend.app.report.resources import ReportRepository, ReportStorageError
+from backend.app.report.intent import full_requested_ids
 from backend.app.query_plan.template_catalog import (
     DEFAULT_TEMPLATE_CATALOG,
     TemplateGroundingResult,
@@ -377,7 +378,18 @@ class TurnPipeline:
             )
 
             # 创建 TurnController
-            controller = TurnController(self.config, request_id=effective_req_id)
+            controller_config = self.config
+            if routing.route is QuestionRoute.REPORT_REQUEST:
+                controller_config = self.config.model_copy(update={
+                    "max_tool_calls": max(
+                        self.config.max_tool_calls,
+                        len(full_requested_ids()) + 2,
+                    )
+                })
+            controller = TurnController(
+                controller_config,
+                request_id=effective_req_id,
+            )
             controller.transition(TurnState.CONTEXT_READY)
         except BaseException:
             await self.snapshot_store.abort(effective_req_id, runtime_mode)

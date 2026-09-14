@@ -702,11 +702,14 @@ class TestReportHistory:
         ).total_count == 0
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "template_key", ["sales_report", "sales_executive_report"]
+    )
     async def test_report_rename_and_delete_preserve_presentation_tombstone(
-        self, history_env: HistoryEnvironment
+        self, history_env: HistoryEnvironment, template_key: str
     ) -> None:
-        conversation_id = "conv-report-delete"
-        request_id = "req-report-delete"
+        conversation_id = f"conv-report-delete-{template_key}"
+        request_id = f"req-report-delete-{template_key}"
         await _insert_conversation(
             history_env.session_factory,
             mode=RuntimeDataMode.REAL,
@@ -722,7 +725,7 @@ class TestReportHistory:
         artifact = await report_repo.store(
             ReportSpec(
                 title="sales report",
-                template_key="sales_report",
+                template_key=template_key,
                 summary="stored",
                 source_mode="real",
                 contract_version="1.0",
@@ -786,6 +789,15 @@ class TestReportHistory:
             RuntimeDataMode.REAL, status="archived", limit=20
         )
         assert archived_reports.items[0].display_title == "区域销售报告"
+        assert archived_reports.items[0].template_key == template_key
+
+        restored = await report_repo.restore(artifact.report_id, "real")
+        assert restored.restored is True
+        restored_reports = await service.list_managed_reports(
+            RuntimeDataMode.REAL, status="active", limit=20
+        )
+        assert restored_reports.items[0].template_key == template_key
+        await report_repo.archive(artifact.report_id, "real")
 
         deleted = await report_repo.delete(artifact.report_id)
         assert deleted.conversation_id == conversation_id
@@ -802,6 +814,7 @@ class TestReportHistory:
         assert tombstone.view_reference == ""
         assert tombstone.download_reference == ""
         assert tombstone.content_hash == ""
+        assert tombstone.template_key == template_key
         assert history.conversation_id == conversation_id
 
     @pytest.mark.asyncio

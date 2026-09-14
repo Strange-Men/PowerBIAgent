@@ -108,13 +108,13 @@ def _tmp_db_path() -> str:
     return str(tmp)
 
 
-def _create_artifact() -> ReportArtifact:
+def _create_artifact(template_key: str = "sales_report") -> ReportArtifact:
     """Create a minimal valid ReportArtifact for testing."""
     report_id = "rpt_" + "a" * 32
     view_ref = f"/api/reports/{report_id}"
     return ReportArtifact(
         report_id=report_id,
-        template_key="sales_report",
+        template_key=template_key,
         html="<!DOCTYPE html><html><body>Test</body></html>",
         source_mode="mock",
         generated_at="2026-08-19T00:00:00",
@@ -398,13 +398,16 @@ class TestReportRestartRecovery:
     """Restart recovery: old report_id survives engine restart."""
 
     @pytest.mark.asyncio
-    async def test_report_metadata_survives_restart(self, engine_a):
+    @pytest.mark.parametrize(
+        "template_key", ["sales_report", "sales_executive_report"]
+    )
+    async def test_report_metadata_survives_restart(self, engine_a, template_key):
         """Process A saves report metadata; Process B reads it from same DB."""
         eng1, db_path = engine_a
         sf1 = create_session_factory(eng1)
         repo1 = SQLiteReportArtifactRepository(session_factory=sf1)
 
-        artifact = _create_artifact()
+        artifact = _create_artifact(template_key)
         await repo1.save(artifact)
 
         assert await repo1._count() == 1
@@ -447,7 +450,10 @@ class TestReportRestartRecovery:
         await dispose_engine(eng2)
 
     @pytest.mark.asyncio
-    async def test_local_report_repo_restart_recovery(self, engine_a):
+    @pytest.mark.parametrize(
+        "template_key", ["sales_report", "sales_executive_report"]
+    )
+    async def test_local_report_repo_restart_recovery(self, engine_a, template_key):
         """Process A stores HTML + metadata; Process B reads via LocalReportRepository."""
         eng1, db_path = engine_a
         sf1 = create_session_factory(eng1)
@@ -460,7 +466,7 @@ class TestReportRestartRecovery:
             metadata_repo=report_artifact_repo,
         )
 
-        spec = _report_spec_for_artifact(_create_artifact())
+        spec = _report_spec_for_artifact(_create_artifact(template_key))
         stored = await local_repo_a.store(spec, "<!DOCTYPE html><html><body>Hello M4.2</body></html>")
         assert stored is not None
         report_id = stored.report_id
@@ -483,6 +489,7 @@ class TestReportRestartRecovery:
 
         artifact_b, html_b = await local_repo_b.read_html(report_id)
         assert artifact_b.report_id == report_id
+        assert artifact_b.template_key == template_key
         assert "Hello M4.2" in html_b
         assert artifact_b.content_hash == hashlib.sha256(
             "<!DOCTYPE html><html><body>Hello M4.2</body></html>".encode("utf-8")
@@ -492,6 +499,53 @@ class TestReportRestartRecovery:
         assert get_b.report_id == report_id
 
         await dispose_engine(eng2)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "template_key", ["sales_report", "sales_executive_report"]
+    )
+    @pytest.mark.parametrize("failure_stage", ["artifact_write", "metadata"])
+    async def test_local_report_store_failure_is_atomic_for_both_templates(
+        self,
+        sqlite_report_repo,
+        tmp_path,
+        monkeypatch,
+        template_key,
+        failure_stage,
+    ):
+        metadata_repo, _engine, _session_factory, _db_path = sqlite_report_repo
+        reports_root = tmp_path / f"reports-{template_key}-{failure_stage}"
+        local_repo = LocalReportRepository(
+            root=reports_root,
+            metadata_repo=metadata_repo,
+        )
+        spec = _report_spec_for_artifact(_create_artifact(template_key))
+
+        if failure_stage == "artifact_write":
+            def _fail_write(*args, **kwargs):
+                raise ReportStorageError("forced_artifact_write_failure")
+
+            monkeypatch.setattr(local_repo, "_atomic_write", _fail_write)
+        else:
+            async def _fail_metadata(*args, **kwargs):
+                raise RuntimeError("forced_metadata_failure")
+
+            monkeypatch.setattr(metadata_repo, "save", _fail_metadata)
+
+        with pytest.raises(
+            (ReportStorageError, RuntimeError),
+            match=f"forced_{failure_stage}.*failure",
+        ):
+            await local_repo.store(
+                spec,
+                "<!DOCTYPE html><html><body>atomic</body></html>",
+                conversation_id=f"conv-{template_key}",
+                request_id=f"req-{template_key}",
+            )
+
+        assert not list(reports_root.glob("*.html"))
+        assert not list(reports_root.glob("*.tmp"))
+        assert await metadata_repo._count() == 0
 
 
 # ===========================================================================

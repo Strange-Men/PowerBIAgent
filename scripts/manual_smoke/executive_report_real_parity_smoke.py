@@ -324,9 +324,29 @@ async def _run(scope: str, expected_model: str) -> dict[str, object]:
                 strict=True,
             )
         )
+        main_visual = executive_html.split(
+            'data-section="audit_footer"', maxsplit=1
+        )[0]
+        raw_main_tokens = tuple(
+            token
+            for token in (
+                "local_desktop:", "local_mcp", "cannot_determine",
+                "UNKNOWN", "semantic_measure",
+            )
+            if token in main_visual
+        )
+        presentation_clean = (
+            not raw_main_tokens
+            and "暂不可获取" in executive_html
+            and "暂无可验证异常基准" in executive_html
+        )
         lifecycle = adapter.runtime_lifecycle_snapshot() or {}
         outcome = {
-            "result": "PASS" if parity and shared_identity else "FAIL",
+            "result": (
+                "PASS"
+                if parity and shared_identity and presentation_clean
+                else "FAIL"
+            ),
             "active_model_kind": model_kind,
             "scope": scope,
             "schema_fingerprint": report_plan.schema_fingerprint,
@@ -346,11 +366,10 @@ async def _run(scope: str, expected_model: str) -> dict[str, object]:
                 < executive_html.index('data-section="kpi_summary"')
                 if executive_spec.kpis else True
             ),
-            "unknown_freshness_visible": "数据更新时间：模型未提供" in executive_html,
-            "exception_unknown_visible": (
-                "当前模型未提供可验证的目标、预测或异常判断基准"
-                in executive_html
-            ),
+            "unknown_freshness_visible": "暂不可获取" in executive_html,
+            "exception_unknown_visible": "暂无可验证异常基准" in executive_html,
+            "raw_main_tokens": raw_main_tokens,
+            "professional_presentation_clean": presentation_clean,
             "simple_renderer_ms": round(simple_ms, 3),
             "executive_renderer_ms": round(executive_ms, 3),
             "simple_html_bytes": len(simple_html.encode("utf-8")),

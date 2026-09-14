@@ -160,6 +160,8 @@ class ReportDataSnapshotBuilder:
         query_results: Mapping[str, QueryResult],
         verified_fact_sets: Mapping[str, VerifiedFactSet],
         source_kind: ReportDataSourceKind,
+        semantic_model_display_name: str | None = None,
+        source_display_name: str | None = None,
         queried_at: datetime,
         snapshot_at: datetime,
         data_updated_at: datetime | None = None,
@@ -180,6 +182,7 @@ class ReportDataSnapshotBuilder:
                 raise ReportReadingContextError("report_snapshot_fact_binding_mismatch")
         return ReportDataSnapshot(
             semantic_model_identity=semantic_model_identity,
+            semantic_model_display_name=semantic_model_display_name,
             schema_fingerprint=schema_fingerprint,
             query_result_ids=tuple(
                 item.result_id for item in query_results.values()
@@ -189,6 +192,7 @@ class ReportDataSnapshotBuilder:
             ),
             source_mode=next(iter(source_modes)),
             source_kind=source_kind,
+            source_display_name=source_display_name,
             data_updated_at=data_updated_at,
             queried_at=queried_at,
             snapshot_at=snapshot_at,
@@ -247,8 +251,27 @@ class ReportReadingContextBuilder:
             data_source=ReportDataSourceContext(
                 kind=snapshot.source_kind,
                 source_mode=snapshot.source_mode,
-                display_name=snapshot.semantic_model_identity,
+                display_name=(
+                    snapshot.source_display_name
+                    or _source_display_name(
+                        snapshot.source_kind,
+                        snapshot.source_mode,
+                    )
+                ),
             ),
             data_freshness=freshness,
             generated_at=generated_at,
         )
+
+
+def _source_display_name(
+    kind: ReportDataSourceKind,
+    source_mode: str,
+) -> str:
+    base = {
+        ReportDataSourceKind.LOCAL_MCP: "Power BI Desktop",
+        ReportDataSourceKind.REMOTE_MCP: "远程 Power BI",
+        ReportDataSourceKind.TEST_FIXTURE: "测试数据",
+    }[kind]
+    suffix = "实时查询" if source_mode == "real" else "验证模式"
+    return f"{base} · {suffix}"

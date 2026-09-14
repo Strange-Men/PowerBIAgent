@@ -398,7 +398,8 @@ PowerBIAgent/
 - M5.8 只实现 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek + Kimi-K2.6、request/conversation-scoped model selection 和同一 authority/regression contract；禁止 MCP 性能优化。
 - M5.9 只实现 MCP profiling、session reuse、cache、bounded concurrency、bounded queue/backpressure、20/50/100 concurrency、restart/fault/soak；禁止修改 Semantic/DAX/VerifiedFactSet authority。
 - M5.10 只实现固定专业销售模板与“简易模板/销售模板”显式选择，固定链为 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed renderer`；禁止 LLM 临场生成 HTML/CSS/SVG。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
-- M5.10.1 已以独立 `ExecutiveSalesReportRenderer` 开放第二模板；它必须继续复用共享 Sales requirements 与同一事实 snapshot，完整 Reading Context 位于数字前，任何缺项、跨模板 fallback 或事实 parity 变化均 fail closed。M5.10.2 未启动，M5 FINAL=false。
+- M5.10.1 已以独立 `ExecutiveSalesReportRenderer` 开放第二模板；它必须继续复用共享 Sales requirements 与同一事实 snapshot，完整 Reading Context 位于数字前，任何缺项、跨模板 fallback 或事实 parity 变化均 fail closed。
+- M5.10.2 已固化 `REQUESTED` / `FULL_AVAILABLE` coverage、presentation-only projection、四类时间 provenance 与 report artifact compensation。weak LLM 不得缩减 FULL_AVAILABLE；friendly display 不得改写 canonical identity/value/scope/provenance；M5.10.3 未启动，M5 FINAL=false。
 
 ### M5.7.1 Semantic Reliability / Regression Firewall 硬规则
 
@@ -410,4 +411,4 @@ PowerBIAgent/
 
 ---
 
-*最后更新：2026-09-14 | M5.10.1 本地收口完成；M5.10.2 NOT STARTED；main-only；m5/rebuild 冻结；M5 FINAL=false*
+*最后更新：2026-09-14 | M5.10.2 本地产品收口完成；M5.10.3 NOT STARTED；main-only；m5/rebuild 冻结；M5 FINAL=false*

@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.10.1 Professional Renderer 与 Real Visual Acceptance 已本地收口；专业模板已独立渲染并与简易模板共同公开供显式选择。发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10.2 NOT STARTED；M5.9.2 runtime 与 M5.8.5 factual authority 已冻结；main-only；M5 FINAL=false。
+> **状态：** M5.10.2 Executive Report Product Refinement & Hardening 已本地产品收口；Report Request/FULL_AVAILABLE、presentation-only projection、专业视觉、真实时间 provenance 与 artifact compensation/cancellation 已固化。发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10.3 NOT STARTED；M5.9.2 runtime 与 M5.8.5 factual authority 冻结；main-only；M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -58,7 +58,8 @@
 | **M5.9.5** | **Sidebar UI Geometry Final Closure** | **✅ COMPLETE；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10** | **复杂报表合同与专业销售模板基础** | **✅ foundation 完成；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10.1** | **Professional Renderer + Real Visual Acceptance** | **✅ 本地收口；exact-SHA CI 为发布证据** |
-| **M5.10.2** | **Report Hardening / Cloud-ready Final Closure** | **⏳ NOT STARTED** |
+| **M5.10.2** | **Executive Report Product Refinement & Hardening** | **✅ 本地产品收口；exact-SHA CI 为发布证据** |
+| **M5.10.3** | **Final Real E2E / stress / mutation / historical closure / exact-SHA final closure** | **⏳ NOT STARTED** |
 
 ## M5.10 — 复杂报表合同与专业销售模板基础
 
@@ -68,7 +69,7 @@
 - `sales_report` 与 `sales_executive_report` 均在公开目录中可显式选择，分别绑定固定 Renderer；跨模板 fallback、默认猜测或 LLM HTML authority 均禁止。
 - 两个销售合同共用单一 `SALES_QUERY_REQUIREMENTS`；事实链、DAX 与 VerifiedFactSet authority 未变化。
 - 三张参考图分别固定为 P0 hard contract、P1 layout intent、P2 style inspiration；图片不拥有事实或功能 authority。
-- M5.10.1 专业 Renderer、共享事实 parity 与 Real Visual Acceptance 已完成本地收口；M5.10.2 未启动，M5 FINAL=false。
+- M5.10.2 已完成正常产品功能收口：明确报表语义、FULL_AVAILABLE 能力交集、friendly/canonical 分离、紧凑信息架构、真实时间点、失败/取消补偿、资源生命周期、并发隔离、security 与 reserved Remote display metadata。M5.10.3 未启动，M5 FINAL=false。
 
 ## M5 重建决策与历史状态
 
@@ -304,6 +305,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.8.2—M5.9.5 已完成；M5.8.5 factual correctness 与 M5.9.2 runtime 均冻结。M5.10.1 已完成 Professional Renderer、双模板显式选择、事实 parity 与 Real visual acceptance 本地收口；发布以当前 main exact-SHA CI success 为证据。M5.10.2 NOT STARTED；M5 FINAL=false。
+- M5.8.2—M5.10.2 已完成本地收口；M5.8.5 factual correctness 与 M5.9.2 runtime 冻结。M5.10.2 发布以当前 main exact-SHA CI success 为证据；M5.10.3 NOT STARTED；M5 FINAL=false。
 
-*最后更新：2026-09-14 | M5.10.1 本地收口完成；M5.10.2 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-14 | M5.10.2 本地产品收口完成；M5.10.3 NOT STARTED；M5 FINAL=false*

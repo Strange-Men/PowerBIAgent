@@ -1,9 +1,10 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M5.10.1 Professional Renderer + Real Visual Acceptance 已本地收口；M5.8.5 correctness 与 M5.9.2 runtime 冻结。18 个 TEST_FIXTURE、72 个真实 Chrome geometry cases、Simple/Rich PBIX factual parity 与四项 mutation sanity 已通过；发布以当前 main exact-SHA CI success 为证据。M5.10.2 NOT STARTED，M5 FINAL=false。
+> **状态：** M5.10.2 Executive Report Product Refinement & Hardening 已本地产品收口；M5.8.5 correctness 与 M5.9.2 runtime 冻结。明确报表路由、FULL_AVAILABLE、presentation/time、两模板 lifecycle/cancellation/concurrency、Rich/Simple PBIX 与真实产品视觉已通过；发布以当前 main exact-SHA CI success 为证据。M5.10.3 NOT STARTED，M5 FINAL=false。
 > **关联 ADR：** ADR-004、ADR-005、ADR-007—ADR-019
 > **M5.10.1 visual/real evidence：** TEST_FIXTURE 18 scenarios × 4 viewports = 72/72；Rich PBIX full/bounded/region/multiple-filter 9/9 requirements，Simple PBIX 4 runtime-available requirements；所有 Simple/Executive normalized fact projections parity=true，LLM/fake result/artifact=0。
 > **M5.10.1 fresh gates：** report/template/API focused 96 PASS；backend 2650 PASS / 1 Real-only skip；Semantic Compatibility 775 PASS / 121 production files；Golden 11 PASS / 1 Real-only skip；frontend 91 PASS + typecheck/lint/build；Repository Safety 390、Architecture 138、Error Ledger 82、Documentation Governance、compileall PASS。18 fixture renderer p50 1.447ms、max 4.483ms、最大 HTML 30,801 bytes；Simple/Rich PBIX teardown 后 session residual=0、active workers=0。
+> **M5.10.2 fresh gates：** report domain 209 PASS；双模板 lifecycle/failure/cancellation/restart 补强矩阵 27 PASS；backend 2706 PASS / 1 Real-only skip；Semantic Compatibility 775 PASS / 122 production files；Golden 11 PASS / 1 Real-only skip；frontend 91 PASS + typecheck/lint/build；Repository Safety 395、Architecture 139、Error Ledger 84、Documentation/Artifact Governance、compileall 与 diff-check PASS。fixture Chrome 72/72、real Chrome 4/4、Rich 9/9、Simple 4 available + 5 unavailable-with-reason，residual=0。
 > **最近 M5.9 fresh evidence：** backend 2425 passed / 1 Real-only skip；Semantic Compatibility 743 passed；Golden 11 passed / 1 Real-only skip；frontend Vitest 87 passed，typecheck/lint/build PASS；Repository Safety 361、Architecture 133、Error Ledger 59、Documentation/Artifact、compileall 与 diff-check PASS。Rich PBIX 1/2/4 worker Real DAX acceptance errors=0，sessions 全部关闭且 residual=0。
 > **最近正式 correctness evidence：** M5.8.5 Rich Sales、M3 Test、Logistics Test × DeepSeek/Kimi 定点链与 A→B→C→A 隔离通过；2,304 deterministic stress；M5.9 Semantic Compatibility 743 PASS 证明该 authority 未回归。
 > **M5.9.4 stress evidence：** seed `59420260909`；四域各 12,800、八 shape 各 6,400；3,438 metamorphic groups / 50,746 variants；generated/canonical/DAX/modifier/unknown/bleed failures=0。DeepSeek Real 108/108（104 completed + 4 ZERO-DAX clarification）、24 metamorphic groups、2 PBIX，business/temp residual=0。
@@ -266,4 +267,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 
 ---
 
-*最后更新：2026-09-07 | M5.8.6 current-state 与 M5.9 验收入口收口*
+*最后更新：2026-09-14 | M5.10.2 产品、Real、Browser 与完整门禁验收收口；M5.10.3 NOT STARTED；M5 FINAL=false*

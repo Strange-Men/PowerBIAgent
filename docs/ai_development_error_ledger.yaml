@@ -3,11 +3,82 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-11 | M5.10 Complex Report Foundation；M5.10.1 NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-14 | M5.10.2 Executive Report Product Refinement & Hardening；M5.10.3 NOT STARTED；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-5102-002
+  title: 报表时间点复用与取消后 artifact 缺少补偿
+  category: ERR
+  first_detected_version: M5.10.2
+  symptom: queried_at、snapshot_at 复制 ReportData generated_at，且 artifact 已创建后若 Memory commit 失败或 caller 取消，资源可能留存为无已提交会话状态对应的 orphan
+  local_evidence: production TurnService spy 证明旧路径三个生命周期时间完全相同；在 memory commit barrier 注入异常或 CancelledError 后 repository 仍保留已创建 artifact
+  authoritative_sources:
+  - title: ADR-019 Complex Report Reading Context and Template Authority
+    reason: query、snapshot、artifact generation 与 data refresh 是四种不同 provenance，且报表资源必须服从既有 repository lifecycle
+  root_cause: snapshot builder 从已完成的 SalesReportData 反向取时，artifact create 与 Memory commit 之间缺少 request-local compensation owner
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在 query acquisition、VerifiedFactSet snapshot 与 ReportData generation 三个阶段分别取 aware UTC clock；Memory commit failure 和 cancellation 均 shield 调用正式 ReportRepository delete 做幂等补偿
+  regression_tests:
+  - backend/tests/unit/test_report_generation.py
+  - backend/tests/unit/persistence/test_conversation_history.py
+  prohibited_patterns:
+  - 复制 generated_at 作为 queried_at 或 snapshot_at
+  - artifact create 后依赖进程退出或临时目录清理消除 orphan
+  - 为 report compensation 建立第二套 persistence pipeline
+  prevention_rules:
+  - 四类时间语义必须分别取证且 data_updated_at 只来自 runtime refresh metadata
+  - artifact create 与 Memory commit 之间任何失败或取消都必须经正式 repository API 补偿
+  - compensation 必须可取消安全、幂等并保持 conversation/source namespace
+  related_adr: ADR-019
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-14'
+    action: discovered
+    version: M5.10.2
+  - date: '2026-09-14'
+    action: mitigation
+    version: M5.10.2
+- id: ERR-5102-001
+  title: 明确完整报表请求被路由跨度与通用工具预算静默降级
+  category: ERR
+  first_detected_version: M5.10.2
+  symptom: “生成一份完整的销售经营分析报表”因 verb/noun 中间超过八字符而进入业务查询；即使识别为完整报表，Rich schema 的九个可用 section 也会被默认六查询预算静默裁减
+  local_evidence: QuestionRouter failure reproducer 返回 BUSINESS_DATA_QUERY；production report planner 在 Rich fixture 只保留六项并把其余 runtime-available requirements 标为 budget unavailable
+  authoritative_sources:
+  - title: ADR-011 Adaptive Report Planning and Template Policy
+    reason: section 集合必须由用户需求、runtime capability 与 registry 决定，弱 LLM 和布局预算不拥有事实覆盖 authority
+  - title: ADR-019 Complex Report Reading Context and Template Authority
+    reason: complex report 必须准确披露 capability 与事实证据，不能用视觉或静默截断伪装完整度
+  root_cause: report 正则把自然语言限定为固定八字符 gap；coverage 没有 typed contract；TurnPipeline 通用 max_tool_calls 预算被直接复用为 full report section 上限
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 使用同一 bounded clause 内 report verb+noun 的结构证据；增加 REQUESTED/FULL_AVAILABLE；FULL_AVAILABLE 固定求 template、runtime、registry、VerifiedFactSet evidence 交集，并为 report controller 提供覆盖全部注册 section 的 bounded 预算
+  regression_tests:
+  - backend/tests/unit/test_report_product_refinement.py
+  - backend/tests/unit/test_report_generation.py
+  - backend/tests/unit/test_report_adaptive.py
+  prohibited_patterns:
+  - 用任意固定短字符 gap 判定自然语言 report request
+  - 让 bounded LLM 或通用工具预算缩减 FULL_AVAILABLE
+  - 对 unavailable section 生成 placeholder、fake zero 或无原因丢弃
+  prevention_rules:
+  - report request 必须同时有 generation verb 与 report noun，noun-only 数据问句保持业务查询
+  - FULL_AVAILABLE 的 requested set 固定为 registry 全集，最终集合只能按 runtime capability 与非空事实证据收缩
+  - 所有 unavailable 和 dropped-after-facts section 必须带确定性 reason 进入 audit
+  related_adr: ADR-011
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-14'
+    action: discovered
+    version: M5.10.2
+  - date: '2026-09-14'
+    action: mitigation
+    version: M5.10.2
 - id: GOV-510-001
   title: 复杂报表不得用视觉完整度伪造阅读上下文与事实状态
   category: GOV

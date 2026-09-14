@@ -1,6 +1,6 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5—M5.10 foundation 已完成；M5.10.1 Professional Renderer NOT STARTED；发布以当前 main exact-SHA CI success 为证据；M5 FINAL=false
+> **状态：** M5.5—M5.10.2 已完成本地产品收口；发布以当前 main exact-SHA CI success 为证据；M5.10.3 NOT STARTED；M5 FINAL=false
 > **适用范围：** M5.5—M5.10 长期合同；`m5/rebuild` 是历史重建/发布追溯分支，M5.8.6 后正式开发线为 `main`
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
@@ -256,15 +256,15 @@ M5.9.3 只允许修复通用 Query Shape 证据、显式月范围 deterministic 
 
 M5.9.4 状态为 PLANNED / NOT STARTED。它才负责 covering-array/property/metamorphic generation、数万至十万级 deterministic semantic harness、大规模业务自然语言组合压力与 DeepSeek-only Real stress。Kimi 不重复 Real token 压力测试，只保留 provider abstraction/mock/contract。不得在 M5.9.3 中提前实现。
 
-### M5.10 — 复杂报表合同与专业销售模板基础
+### M5.10 — 复杂报表合同与专业销售模板
 
-M5.10 已在 M5.9 后完成 foundation：
+M5.10 foundation、M5.10.1 与 M5.10.2 已依次完成本地收口：
 
-- “简易模板”仍是当前唯一公开可用的 `sales_report`；
-- `sales_executive_report` 已获得正式 COMPLEX/UNAVAILABLE identity，不进入公开 catalog；
+- `sales_report` 与 `sales_executive_report` 都已通过后端公开目录供用户显式选择，并各自绑定 fixed Renderer；
 - 所有 COMPLEX 模板在 Renderer 前必须提供完整 Reading Context 与 immutable data snapshot；
-- 简易/专业 Sales contract 共享同一 `SALES_QUERY_REQUIREMENTS` authority；
-- 最终专业 sales report HTML、两模板公开选择与 Real Visual Acceptance 属于 M5.10.1，尚未开始。
+- 简易/专业 Sales contract 共享同一 `SALES_QUERY_REQUIREMENTS` authority 与 factual snapshot；
+- M5.10.2 固化明确报表路由、typed `REQUESTED`/`FULL_AVAILABLE`、presentation-only projection、四类时间 provenance、artifact compensation 与两模板生命周期/并发隔离；
+- M5.10.3 Final Real E2E/stress/mutation/historical closure 尚未启动，M5 FINAL=false。
 
 固定链为：
 
@@ -275,7 +275,7 @@ VerifiedFactSet
 → deterministic fixed HTML renderer
 ```
 
-LLM 不拥有 HTML layout、factual 或 query authority，不得临场生成 HTML/CSS/SVG。专业销售模板规划包含深色 Header/title/navigation、KPI cards、左侧阶段/漏斗业务区、中部横向业务对比、右侧状态/异常/明细区、下部区域/业务表格、地域视觉、明细表，以及分别标识指标口径、数据新鲜度与 artifact 生成时间的 footer。若 runtime schema 没有 Forecast/Goal/Pipeline 等事实，必须以真实可支持的 sales-specific section 替代到相同版位，禁止伪造；Agent 主链仍保持跨领域通用。M5.10 foundation 完成不等于 M5 FINAL；只有后续专业 Renderer、真实视觉验收与最终 hardening 全部门禁完成后才可声明 `M5 FINAL`。
+LLM 不拥有 HTML layout、factual、coverage 或 query authority，不得临场生成 HTML/CSS/SVG。专业销售模板只显示 runtime capability、registry 与 VerifiedFactSet 共同证明的 sales-specific section；没有 Forecast/Goal/Pipeline 等事实时禁止伪造、占位或以零值代替。M5.10.2 产品收口不等于 M5 FINAL；只有后续 M5.10.3 Final Real E2E/stress/mutation/historical closure 与 exact-SHA final closure 全部门禁完成后才可声明 `M5 FINAL`。
 
 ## 四、Generalization Gate
 
@@ -395,4 +395,4 @@ M5.8.2 已完成 Question Router、八类通用 Query Shape、shape-specific cla
 
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-09-11 M5.10 complex report foundation；M5.10.1 NOT STARTED；M5 FINAL=false*
+*创建日期：2026-08-26 | 最后更新：2026-09-14 M5.10.2 本地产品收口；M5.10.3 NOT STARTED；M5 FINAL=false*

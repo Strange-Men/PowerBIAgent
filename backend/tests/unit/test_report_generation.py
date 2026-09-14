@@ -16,6 +16,7 @@ from fastapi import FastAPI
 
 import backend.app.report.assembly as assembly_module
 import backend.app.report.fixed as renderer_module
+import backend.app.application.deepseek_turn_service as turn_service_module
 from backend.app.api.routes import router
 from backend.app.application.deepseek_turn_service import DeepSeekTurnService
 from backend.app.application.mock_turn_service import MockTurnService
@@ -34,7 +35,9 @@ from backend.app.report.assembly import (
 )
 from backend.app.report.contracts import ReportDataPlanBuilder
 from backend.app.report.fixed import SalesReportRenderer
+from backend.app.report.executive import ExecutiveSalesReportRenderer
 from backend.app.report.intent import ReportIntentDraft
+from backend.app.report.registry import build_report_dispatcher
 from backend.app.report.resources import (
     InMemoryReportRepository,
     LocalReportRepository,
@@ -55,6 +58,7 @@ from backend.app.schemas.data_contracts import (
     PowerBIError,
     QueryPlan,
     QueryResult,
+    RelationshipSchema,
     ReportSpec,
     SemanticModelSchema,
     TableSpec,
@@ -610,14 +614,27 @@ def test_assembler_and_renderer_have_zero_llm_or_powerbi_authority():
 
 
 @pytest.mark.asyncio
-async def test_local_repository_hash_atomic_content_and_resource_api(tmp_path):
+@pytest.mark.parametrize(
+    "template_key", ["sales_report", "sales_executive_report"]
+)
+async def test_local_repository_hash_atomic_content_and_resource_api(
+    tmp_path,
+    template_key,
+):
     repository = LocalReportRepository(tmp_path / "local_state" / "reports")
-    report = SalesReportSpecBuilder().build(_assembled())
-    html = await SalesReportRenderer().render(report)
+    if template_key == "sales_report":
+        report = SalesReportSpecBuilder().build(_assembled())
+        html = await SalesReportRenderer().render(report)
+    else:
+        from backend.tests.unit.test_executive_report_renderer import _report
+
+        report = _report()
+        html = await ExecutiveSalesReportRenderer().render(report)
     artifact = await repository.store(report, html)
     stored_artifact, stored_html = await repository.read_html(artifact.report_id)
     content = stored_html.encode("utf-8")
     assert stored_artifact == artifact
+    assert stored_artifact.template_key == template_key
     assert hashlib.sha256(content).hexdigest() == artifact.content_hash
     assert (repository.root / f"{artifact.report_id}.html").read_bytes() == content
     assert not list(repository.root.glob("*.tmp"))
@@ -693,6 +710,7 @@ class _CountingReportRepository(InMemoryReportRepository):
     def __init__(self) -> None:
         super().__init__()
         self.store_count = 0
+        self.last_report_id: str | None = None
 
     async def store(
         self,
@@ -703,11 +721,13 @@ class _CountingReportRepository(InMemoryReportRepository):
         request_id: str | None = None,
     ) -> ReportArtifact:
         self.store_count += 1
-        return await super().store(
+        artifact = await super().store(
             report, html,
             conversation_id=conversation_id,
             request_id=request_id,
         )
+        self.last_report_id = artifact.report_id
+        return artifact
 
 
 class _ReportLanguageProvider(LLMProvider):
@@ -833,6 +853,133 @@ class _ConcurrentRealReportAdapter(_RealReportAdapter):
             self.active -= 1
 
 
+class _BlockingRealReportAdapter(_RealReportAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.active = 0
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.active += 1
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            self.active -= 1
+
+
+class _BlockingSalesReportRenderer(SalesReportRenderer):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+
+    async def render(self, report: ReportSpec) -> str:
+        self.started.set()
+        await asyncio.Event().wait()
+
+
+class _BlockingExecutiveSalesReportRenderer(ExecutiveSalesReportRenderer):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+
+    async def render(self, report: ReportSpec) -> str:
+        self.started.set()
+        await asyncio.Event().wait()
+
+
+class _FailingExecutiveSalesReportRenderer(ExecutiveSalesReportRenderer):
+    async def render(self, report: ReportSpec) -> str:
+        raise ValueError("forced_professional_renderer_failure")
+
+
+class _QueryFailureReportAdapter(_RealReportAdapter):
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.execute_count += 1
+        return QueryResult(
+            result_id=f"qr_failed_{self.execute_count}",
+            semantic_model_key="local_desktop_model",
+            columns=[],
+            rows=[],
+            row_count=0,
+            source_mode="real",
+            request_id=request.request_id,
+            error=PowerBIError(
+                type="forced_report_query_failure",
+                message="forced report query failure",
+                retryable=False,
+            ),
+        )
+
+
+class _ShutdownAwareReportAdapter(_RealReportAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.shutdown = asyncio.Event()
+        self.active = 0
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.active += 1
+        self.started.set()
+        try:
+            await self.shutdown.wait()
+            raise asyncio.CancelledError
+        finally:
+            self.active -= 1
+
+    async def aclose(self) -> None:
+        self.shutdown.set()
+        while self.active:
+            await asyncio.sleep(0)
+
+    def runtime_lifecycle_snapshot(self) -> dict[str, int]:
+        return {
+            "session_residual": 0,
+            "active_workers": self.active,
+        }
+
+
+class _RichRealReportAdapter(_RealReportAdapter):
+    async def get_semantic_model_schema(self, semantic_model_key: str):
+        self.schema_count += 1
+        assert semantic_model_key == "local_desktop_model"
+        return _schema_b()
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.execute_count += 1
+        dax = request.dax
+        if "Average Order Value" in dax:
+            key = "average_order_value"
+        elif "Total Orders" in dax:
+            key = "total_orders"
+        elif "Total Quantity" in dax:
+            key = "total_quantity"
+        elif "[YearMonth]" in dax:
+            key = "monthly_sales"
+        elif "[Category]" in dax:
+            key = "sales_by_category"
+        elif "[Region]" in dax:
+            key = "sales_by_region"
+        elif "[Product]" in dax:
+            key = "top_products"
+        elif "[Customer]" in dax:
+            key = "top_customers"
+        else:
+            key = "total_sales"
+        result = _rich_results()[key].model_copy(update={
+            "request_id": request.request_id,
+        })
+        self.result_semantics.append(
+            (
+                request.dax,
+                tuple(result.columns),
+                tuple(tuple(row) for row in result.rows),
+            )
+        )
+        return result
+
+
 @pytest.mark.asyncio
 async def test_store_failure_never_commits_memory():
     memory = InMemoryMemoryRepository()
@@ -955,6 +1102,490 @@ async def test_production_turn_uses_capability_resolved_queries_and_replays():
     assert replay["tool_sequence"] == []
     assert adapter.execute_count == 4
     assert repository.store_count == 1
+
+
+@pytest.mark.asyncio
+async def test_production_full_available_executes_all_nine_sections_with_true_timestamps(
+    monkeypatch,
+):
+    timestamps = iter((
+        datetime(2026, 9, 14, 1, 0, 1, tzinfo=timezone.utc),
+        datetime(2026, 9, 14, 1, 0, 2, tzinfo=timezone.utc),
+        datetime(2026, 9, 14, 1, 0, 3, tzinfo=timezone.utc),
+    ))
+    monkeypatch.setattr(turn_service_module, "_utcnow", lambda: next(timestamps))
+    adapter = _RichRealReportAdapter()
+    repository = _CountingReportRepository()
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        powerbi_local_semantic_model_key="local_desktop_model",
+        max_tool_calls=8,
+    )
+    service = DeepSeekTurnService(
+        memory_repo=InMemoryMemoryRepository(),
+        llm_provider=_ReportLanguageProvider(),
+        powerbi_adapter=adapter,
+        report_renderer=ExecutiveSalesReportRenderer(),
+        report_repository=repository,
+        settings=settings,
+        config=HarnessConfig.from_settings(settings),
+    )
+
+    result = await service.execute(
+        message="生成一份完整的销售经营分析报表",
+        conversation_id="conv-full-executive",
+        request_id="req-full-executive",
+        semantic_model_key="local_desktop_model",
+        report_template_key="sales_executive_report",
+    )
+
+    audit = result["execution_audit"]
+    assert result["terminal_state"] == "completed", (
+        result.get("error_type"), result.get("trace_events") or result.get("trace")
+    )
+    assert audit["requested_coverage"] == "full_available"
+    assert audit["query_count"] == 9
+    assert audit["assembled_query_count"] == 9
+    assert audit["final_resolved_sections"] == list(audit["requested_sections"])
+    assert audit["unavailable_sections"] == []
+    assert audit["unavailable_section_reasons"] == {}
+    assert audit["dropped_after_facts"] == []
+    assert audit["dropped_after_fact_reasons"] == {}
+    assert adapter.execute_count == 9
+    assert result["tool_sequence"].count("execute_dax") == 9
+    assert audit["queried_at"] == "2026-09-14T01:00:01+00:00"
+    assert audit["snapshot_at"] == "2026-09-14T01:00:02+00:00"
+    assert audit["generated_at"] == "2026-09-14T01:00:03+00:00"
+    assert audit["queried_at"] < audit["snapshot_at"] < audit["generated_at"]
+    html = result["report"]["html"]
+    main_visual, audit_footer = html.split(
+        'data-section="audit_footer"', maxsplit=1
+    )
+    assert "local_desktop_model" not in main_visual
+    assert "local_desktop_model" in audit_footer
+    assert "2026-09-14 01:00 UTC" in main_visual
+    assert "2026-09-14T01:00:01+00:00" in audit_footer
+    assert repository.store_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "template_key", ["sales_report", "sales_executive_report"]
+)
+async def test_report_artifact_is_compensated_when_memory_commit_fails(
+    monkeypatch,
+    template_key,
+):
+    adapter = _RealReportAdapter()
+    repository = _CountingReportRepository()
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        powerbi_local_semantic_model_key="local_desktop_model",
+        max_tool_calls=16,
+    )
+    service = DeepSeekTurnService(
+        memory_repo=InMemoryMemoryRepository(),
+        llm_provider=_ReportLanguageProvider(),
+        powerbi_adapter=adapter,
+        report_renderer=(
+            SalesReportRenderer()
+            if template_key == "sales_report"
+            else ExecutiveSalesReportRenderer()
+        ),
+        report_repository=repository,
+        settings=settings,
+        config=HarnessConfig.from_settings(settings),
+    )
+
+    async def _forced_commit_failure(*args, **kwargs):
+        return None, "forced_memory_commit_failure"
+
+    monkeypatch.setattr(
+        service.pipeline,
+        "commit_memory_safe",
+        _forced_commit_failure,
+    )
+    result = await service.execute(
+        message="生成销售分析报表",
+        conversation_id="conv-report-compensation",
+        request_id="req-report-compensation",
+        semantic_model_key="local_desktop_model",
+        report_template_key=template_key,
+    )
+
+    assert result["terminal_state"] == "response_failed"
+    assert result["error_type"] == "forced_memory_commit_failure"
+    assert result.get("report") is None
+    assert repository.store_count == 1
+    assert repository.last_report_id is not None
+    with pytest.raises(ReportNotFoundError):
+        await repository.get(repository.last_report_id)
+
+
+def _cancellable_report_service(
+    adapter: PowerBIAdapter,
+    renderer,
+    repository: _CountingReportRepository,
+) -> DeepSeekTurnService:
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        powerbi_local_semantic_model_key="local_desktop_model",
+        max_tool_calls=16,
+    )
+    return DeepSeekTurnService(
+        memory_repo=InMemoryMemoryRepository(),
+        llm_provider=_ReportLanguageProvider(),
+        powerbi_adapter=adapter,
+        report_renderer=renderer,
+        report_repository=repository,
+        settings=settings,
+        config=HarnessConfig.from_settings(settings),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "template_key", ["sales_report", "sales_executive_report"]
+)
+async def test_cancel_during_report_query_drains_work_and_leaves_no_artifact(
+    template_key,
+):
+    adapter = _BlockingRealReportAdapter()
+    repository = _CountingReportRepository()
+    service = _cancellable_report_service(
+        adapter,
+        SalesReportRenderer()
+        if template_key == "sales_report"
+        else ExecutiveSalesReportRenderer(),
+        repository,
+    )
+    task = asyncio.create_task(service.execute(
+        message="生成销售分析报表",
+        conversation_id="conv-cancel-report-query",
+        request_id="req-cancel-report-query",
+        semantic_model_key="local_desktop_model",
+        report_template_key=template_key,
+    ))
+
+    await asyncio.wait_for(adapter.started.wait(), timeout=3)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await asyncio.sleep(0)
+    assert adapter.active == 0
+    assert repository.store_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "template_key", ["sales_report", "sales_executive_report"]
+)
+async def test_cancel_during_report_assembly_leaves_no_artifact(
+    monkeypatch,
+    template_key,
+):
+    repository = _CountingReportRepository()
+    service = _cancellable_report_service(
+        _RealReportAdapter(),
+        SalesReportRenderer()
+        if template_key == "sales_report"
+        else ExecutiveSalesReportRenderer(),
+        repository,
+    )
+
+    def _cancel_assembly(*args, **kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(SalesReportDataAssembler, "build", _cancel_assembly)
+    with pytest.raises(asyncio.CancelledError):
+        await service.execute(
+            message="生成销售分析报表",
+            conversation_id="conv-cancel-report-assembly",
+            request_id="req-cancel-report-assembly",
+            semantic_model_key="local_desktop_model",
+            report_template_key=template_key,
+        )
+    assert repository.store_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "template_key", ["sales_report", "sales_executive_report"]
+)
+async def test_cancel_during_report_renderer_leaves_no_artifact(template_key):
+    repository = _CountingReportRepository()
+    renderer = (
+        _BlockingSalesReportRenderer()
+        if template_key == "sales_report"
+        else _BlockingExecutiveSalesReportRenderer()
+    )
+    service = _cancellable_report_service(
+        _RealReportAdapter(), renderer, repository
+    )
+    task = asyncio.create_task(service.execute(
+        message="生成销售分析报表",
+        conversation_id="conv-cancel-report-renderer",
+        request_id="req-cancel-report-renderer",
+        semantic_model_key="local_desktop_model",
+        report_template_key=template_key,
+    ))
+
+    await asyncio.wait_for(renderer.started.wait(), timeout=3)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert repository.store_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "template_key", ["sales_report", "sales_executive_report"]
+)
+async def test_cancel_during_memory_commit_compensates_stored_artifact(
+    monkeypatch,
+    template_key,
+):
+    repository = _CountingReportRepository()
+    service = _cancellable_report_service(
+        _RealReportAdapter(),
+        SalesReportRenderer()
+        if template_key == "sales_report"
+        else ExecutiveSalesReportRenderer(),
+        repository,
+    )
+    commit_started = asyncio.Event()
+
+    async def _blocking_commit(*args, **kwargs):
+        commit_started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(service.pipeline, "commit_memory_safe", _blocking_commit)
+    task = asyncio.create_task(service.execute(
+        message="生成销售分析报表",
+        conversation_id="conv-cancel-report-commit",
+        request_id="req-cancel-report-commit",
+        semantic_model_key="local_desktop_model",
+        report_template_key=template_key,
+    ))
+
+    await asyncio.wait_for(commit_started.wait(), timeout=3)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert repository.store_count == 1
+    assert repository.last_report_id is not None
+    with pytest.raises(ReportNotFoundError):
+        await repository.get(repository.last_report_id)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_during_professional_report_drains_and_leaves_no_artifact():
+    adapter = _ShutdownAwareReportAdapter()
+    repository = _CountingReportRepository()
+    service = _cancellable_report_service(
+        adapter,
+        ExecutiveSalesReportRenderer(),
+        repository,
+    )
+    task = asyncio.create_task(service.execute(
+        message="生成一份完整的销售经营分析报表",
+        conversation_id="conv-shutdown-executive",
+        request_id="req-shutdown-executive",
+        semantic_model_key="local_desktop_model",
+        report_template_key="sales_executive_report",
+    ))
+
+    await asyncio.wait_for(adapter.started.wait(), timeout=3)
+    await adapter.aclose()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert repository.store_count == 0
+    assert adapter.runtime_lifecycle_snapshot() == {
+        "session_residual": 0,
+        "active_workers": 0,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure_stage",
+    ("query", "inspection", "fact", "context", "renderer", "artifact_write"),
+)
+async def test_professional_report_precommit_failure_atomicity(
+    monkeypatch,
+    failure_stage,
+):
+    memory = InMemoryMemoryRepository()
+    repository = (
+        _FailingReportRepository()
+        if failure_stage == "artifact_write"
+        else _CountingReportRepository()
+    )
+    adapter = (
+        _QueryFailureReportAdapter()
+        if failure_stage == "query"
+        else _RealReportAdapter()
+    )
+    renderer = (
+        _FailingExecutiveSalesReportRenderer()
+        if failure_stage == "renderer"
+        else ExecutiveSalesReportRenderer()
+    )
+
+    if failure_stage == "inspection":
+        def _fail_inspection(*args, **kwargs):
+            raise turn_service_module.ResultSemanticInspectionError(
+                "forced_result_inspection_failure"
+            )
+
+        monkeypatch.setattr(
+            turn_service_module.ResultSemanticInspectionGate,
+            "inspect",
+            _fail_inspection,
+        )
+    elif failure_stage == "fact":
+        def _fail_fact(*args, **kwargs):
+            raise turn_service_module.FactVerificationError(
+                "forced_fact_failure"
+            )
+
+        monkeypatch.setattr(
+            turn_service_module.VerifiedFactSetBuilder,
+            "build",
+            _fail_fact,
+        )
+    elif failure_stage == "context":
+        def _fail_context(*args, **kwargs):
+            raise turn_service_module.ReportReadingContextError(
+                "forced_context_failure"
+            )
+
+        monkeypatch.setattr(
+            turn_service_module.ReportReadingContextBuilder,
+            "build",
+            _fail_context,
+        )
+
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        powerbi_local_semantic_model_key="local_desktop_model",
+        max_tool_calls=16,
+    )
+    service = DeepSeekTurnService(
+        memory_repo=memory,
+        llm_provider=_ReportLanguageProvider(),
+        powerbi_adapter=adapter,
+        report_renderer=renderer,
+        report_repository=repository,
+        settings=settings,
+        config=HarnessConfig.from_settings(settings),
+    )
+
+    result = await service.execute(
+        message="生成一份完整的销售经营分析报表",
+        conversation_id=f"conv-failure-{failure_stage}",
+        request_id=f"req-failure-{failure_stage}",
+        semantic_model_key="local_desktop_model",
+        report_template_key="sales_executive_report",
+    )
+
+    assert result["terminal_state"] != "completed"
+    assert result["memory_commit"] is False
+    assert result.get("report") is None
+    if isinstance(repository, _CountingReportRepository):
+        assert repository.store_count == 0
+    assert await memory.get_latest_committed(
+        f"conv-failure-{failure_stage}", RuntimeDataMode.REAL
+    ) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("left_template", "right_template"),
+    [
+        ("sales_report", "sales_report"),
+        ("sales_executive_report", "sales_executive_report"),
+        ("sales_report", "sales_executive_report"),
+    ],
+)
+async def test_concurrent_reports_isolate_template_model_context_and_artifact(
+    left_template: str,
+    right_template: str,
+):
+    repository = _CountingReportRepository()
+    memory = InMemoryMemoryRepository()
+    renderer = build_report_dispatcher(
+        SalesReportRenderer(), ExecutiveSalesReportRenderer()
+    )
+
+    def _service() -> DeepSeekTurnService:
+        settings = Settings(
+            _env_file=None,
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.LOCAL_MCP,
+            powerbi_local_semantic_model_key="local_desktop_model",
+            max_tool_calls=8,
+        )
+        return DeepSeekTurnService(
+            memory_repo=memory,
+            llm_provider=_ReportLanguageProvider(),
+            powerbi_adapter=_RichRealReportAdapter(),
+            report_renderer=renderer,
+            report_repository=repository,
+            settings=settings,
+            config=HarnessConfig.from_settings(settings),
+        )
+
+    model_key = "local_desktop_model"
+    left_service = _service()
+    right_service = _service()
+    left, right = await asyncio.gather(
+        left_service.execute(
+            message="生成一份完整的销售经营分析报表",
+            conversation_id="conv-report-left",
+            request_id=f"req-left-{left_template}",
+            semantic_model_key=model_key,
+            report_template_key=left_template,
+        ),
+        right_service.execute(
+            message="生成一份完整的销售经营分析报表",
+            conversation_id="conv-report-right",
+            request_id=f"req-right-{right_template}",
+            semantic_model_key=model_key,
+            report_template_key=right_template,
+        ),
+    )
+
+    assert left["terminal_state"] == right["terminal_state"] == "completed", (
+        left.get("error_type"), right.get("error_type")
+    )
+    assert left["report"]["report_id"] != right["report"]["report_id"]
+    assert left["report"]["template_key"] == left_template
+    assert right["report"]["template_key"] == right_template
+    left_artifact = await repository.get(left["report"]["report_id"])
+    right_artifact = await repository.get(right["report"]["report_id"])
+    assert (left_artifact.conversation_id, left_artifact.semantic_model_key) == (
+        "conv-report-left", model_key
+    )
+    assert (right_artifact.conversation_id, right_artifact.semantic_model_key) == (
+        "conv-report-right", model_key
+    )
+    assert left_artifact.template_key == left_template
+    assert right_artifact.template_key == right_template
+    if left_template == "sales_executive_report":
+        assert "conv-report-right" not in left["report"]["html"]
+        assert f"req-right-{right_template}" not in left["report"]["html"]
+    if right_template == "sales_executive_report":
+        assert "conv-report-left" not in right["report"]["html"]
+        assert f"req-left-{left_template}" not in right["report"]["html"]
 
 
 @pytest.mark.asyncio
@@ -1143,12 +1774,26 @@ def _schema_b(
     if has_date:
         tables.append(TableSchema(
             name="Date",
-            columns=[ColumnSchema(name="YearMonth", data_type="DateTime")],
+            columns=[
+                ColumnSchema(name="Date", data_type="DateTime"),
+                ColumnSchema(name="YearMonth", data_type="DateTime"),
+            ],
         ))
     return SemanticModelSchema(
         name="local_desktop_model",
         key="local_desktop_model",
         tables=tables,
+        relationships=(
+            [RelationshipSchema(
+                from_table="Sales",
+                from_column="OrderDate",
+                to_table="Date",
+                to_column="Date",
+                is_active=True,
+            )]
+            if has_date
+            else []
+        ),
     )
 
 

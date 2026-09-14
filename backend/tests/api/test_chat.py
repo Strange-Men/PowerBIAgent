@@ -187,7 +187,14 @@ class TestChatReportGeneration:
             assert report["template_key"] == "sales_executive_report"
             assert 'data-template-key="sales_executive_report"' in report["html"]
             assert 'data-section="reading_context"' in report["html"]
-            assert "数据更新时间：模型未提供" in report["html"]
+            assert "暂不可获取" in report["html"]
+            main_visual = report["html"].split(
+                'data-section="audit_footer"', maxsplit=1
+            )[0]
+            for internal in (
+                "local_mcp", "cannot_determine", "UNKNOWN", "semantic_measure"
+            ):
+                assert internal not in main_visual
             assert "<script" not in report["html"].casefold()
         finally:
             if report_id is not None:

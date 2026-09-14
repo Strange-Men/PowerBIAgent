@@ -226,32 +226,45 @@ async def test_executive_renderer_renders_all_p0_reading_context_fields_in_html(
     reading_context = html.split(
         'data-section="reading_context"', maxsplit=1
     )[1].split("</section>", maxsplit=1)[0]
+    main_visual = html.split('data-section="audit_footer"', maxsplit=1)[0]
+    audit_footer = html.split('data-section="audit_footer"', maxsplit=1)[1]
 
     assert 'data-template-key="sales_executive_report"' in html
     assert "销售经营分析报告" in html
     assert "SALES EXECUTIVE REPORT" in html
     assert "2025-01-01 至 2025-06-30" in html
-    assert "Region eq South" in html
-    assert "Category in_set Office、Technology" in html
+    assert "区域等于South" in html
+    assert "品类属于Office、Technology" in html
     assert "总销售额" in html
     assert "Sales[Total Sales]" in html
-    assert "模型未声明 / UNKNOWN" in html
-    assert "当前模型未提供可验证的目标、预测或异常判断基准" in html
-    assert "local_desktop:model-a" in html
-    assert "local_mcp" in html
-    assert "数据更新时间：模型未提供" in html
-    assert NOW.isoformat() in html
+    assert "暂无可验证异常基准" in html
+    assert "当前 Power BI Desktop 模型" in html
+    assert "Power BI Desktop · 实时查询" in html
+    assert "暂不可获取" in html
+    assert "2026-09-11 08:30 UTC" in html
     for required in (
         "2025-01-01 至 2025-06-30",
-        "Region eq South",
-        "Sales[Total Sales]",
-        "模型未声明 / UNKNOWN",
-        "当前模型未提供可验证的目标、预测或异常判断基准",
-        "local_desktop:model-a",
-        "local_mcp",
-        "数据更新时间：模型未提供",
+        "区域等于South",
+        "品类属于Office、Technology",
+        "暂无可验证异常基准",
+            "暂不可获取",
+            "Power BI 度量值",
+            "未声明",
+        "未设置",
     ):
         assert required in reading_context
+    for internal in (
+        "local_desktop:model-a",
+        "local_mcp",
+        "cannot_determine",
+        "UNKNOWN",
+        "semantic_measure",
+        NOW.isoformat(),
+    ):
+        assert internal not in main_visual
+    assert "local_desktop:model-a" in audit_footer
+    assert "local_mcp" in audit_footer
+    assert NOW.isoformat() in audit_footer
 
 
 @pytest.mark.asyncio
@@ -282,7 +295,13 @@ async def test_executive_renderer_escapes_unsafe_text_and_has_no_external_runtim
                 TableSpec(
                     title="Top 客户",
                     columns=["排名", "客户", "销售额（元）"],
-                    rows=[[1, '<img src=x onerror="alert(1)">', 10]],
+                    rows=[
+                        [1, '<img src=x onerror="alert(1)">', 10],
+                        [2, '<script>alert(1)</script>', 9],
+                        [3, 'javascript:alert(1)', 8],
+                        [4, '\"</style><svg onload=alert(1)>', 7],
+                        [5, '超长多语言Σテスト한국어' * 80, 6],
+                    ],
                 )
             ]
         }
@@ -290,8 +309,21 @@ async def test_executive_renderer_escapes_unsafe_text_and_has_no_external_runtim
     html = await ExecutiveSalesReportRenderer().render(report)
 
     assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "javascript:alert(1)" in html
+    assert "&lt;svg onload=alert(1)&gt;" in html
     lowered = html.casefold()
-    for forbidden in ("<script", "javascript:", "http://", "https://", "<link", "<iframe", "@import", "url("):
+    for forbidden in (
+        "<script",
+        'href="javascript:',
+        'src="javascript:',
+        "http://",
+        "https://",
+        "<link",
+        "<iframe",
+        "@import",
+        "url(",
+    ):
         assert forbidden not in lowered
 
 

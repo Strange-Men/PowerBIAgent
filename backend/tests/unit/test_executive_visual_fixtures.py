@@ -28,7 +28,7 @@ async def test_each_executive_visual_fixture_renders_static_html(scenario: str):
     assert html.startswith("<!DOCTYPE html>")
     assert 'data-template-key="sales_executive_report"' in html
     assert "销售经营分析报告" in html
-    assert "当前模型未提供可验证的目标、预测或异常判断基准" in html
+    assert "暂无可验证异常基准" in html
     assert len(html.encode("utf-8")) < 500_000
     assert elapsed_ms < 500
     lowered = html.casefold()
@@ -46,7 +46,7 @@ async def test_fixture_edge_states_are_visible_not_silently_defaulted():
     sixty, _ = await render_fixture("points_60")
 
     assert "无额外筛选" in no_filter
-    assert "数据更新时间：模型未提供" in unknown
+    assert "暂不可获取" in unknown
     assert "超长名称企业级智能协作终端旗舰套装" in long_product
     assert "超长名称跨区域企业集团重点战略客户" in long_customer
     assert sixty.count('class="trend-point"') == 60

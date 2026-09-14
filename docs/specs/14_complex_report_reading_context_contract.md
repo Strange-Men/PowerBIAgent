@@ -36,9 +36,11 @@
 
 ## 6. Freshness
 
-`data_updated_at != generated_at`。`queried_at`/`snapshot_at` 只记录查询/快照生命周期，也不得冒充 refresh time。无 runtime refresh metadata 时：
+`data_updated_at != generated_at`。`queried_at`/`snapshot_at` 只记录查询/快照生命周期，也不得冒充 refresh time。无 runtime refresh metadata 时，canonical contract 保持：
 
 `state=UNKNOWN, data_updated_at=None, display_text="数据更新时间：模型未提供"`。
+
+professional presentation 可把 `UNKNOWN` 映射为“暂不可获取”等友好文案，但不得更改 canonical state 或填造时间。`queried_at`、`snapshot_at`、`generated_at` 分别由查询结果取得、VerifiedFactSet 快照完成和 artifact 生成阶段独立取时；不得复制同一时间冒充三个事件。aware datetime 在缺少用户/application timezone authority 时统一显示 UTC；naive datetime 必须注明“时区未声明”，禁止猜测本地时区。
 
 ## 7. Data Snapshot / Source Boundary
 
@@ -53,8 +55,10 @@
 
 ## 9. Sales 首个采用者
 
-`sales_report` 与 `sales_executive_report` 共用同一 `SALES_QUERY_REQUIREMENTS`。专业模板当前 `UNAVAILABLE`；M5.10.1 之前不产生 HTML。两模板的事实语义相同，差异只允许位于固定信息架构、layout、visualization 和 style。
+`sales_report` 与 `sales_executive_report` 共用同一 `SALES_QUERY_REQUIREMENTS`。专业模板已在 M5.10.1 以独立 fixed Renderer 开放。两模板的事实语义相同，差异只允许位于固定信息架构、layout、visualization、style 与 presentation-only projection。
+
+M5.10.2 新增 `REQUESTED` / `FULL_AVAILABLE` coverage。`FULL_AVAILABLE` 的最终 section 集合固定为 selected template、runtime capability、registered catalog 与 non-empty VerifiedFactSet evidence 的交集；unavailable/dropped section 必须有原因，禁止 weak LLM、预算截断、placeholder 或 fake zero 改写完整度。专业主阅读区使用友好 display，exact canonical identity/source/timestamp/metric provenance 保留在低权重 audit footer。
 
 ## 10. 验收
 
-永久测试覆盖模板 tier、全部必填字段、scope authority、UNKNOWN metric basis、CANNOT_DETERMINE exception、freshness 分离、共享 sales requirement identity、无 fallback 和简易模板回归。Mutation sanity 必须能抓住生成时间冒充刷新时间、complex 绕过 ReadingContext、executive requirement 漂移。
+永久测试覆盖模板 tier、全部必填字段、scope authority、UNKNOWN metric basis、CANNOT_DETERMINE exception、四类时间分离、共享 sales requirement identity、typed coverage、presentation/canonical 边界、无 fallback 和简易模板回归。Mutation sanity 必须能抓住生成时间冒充刷新时间、complex 绕过 ReadingContext、executive requirement 漂移、主区泄漏 raw technical token、Reading Context 过高和 FULL_AVAILABLE section 缺失。

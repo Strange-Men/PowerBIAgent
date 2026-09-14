@@ -16,8 +16,11 @@ from string import Template
 from typing import Any, Callable
 
 from backend.app.report.base import ReportRenderer
+from backend.app.report.presentation import (
+    ProfessionalReportPresenter,
+    ReportPresentationProjection,
+)
 from backend.app.schemas.data_contracts import ChartSpec, KPISpec, ReportSpec, TableSpec
-from backend.app.schemas.report_context import MetricDefinitionStatus
 
 
 class ExecutiveSalesReportRenderer(ReportRenderer):
@@ -51,16 +54,17 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         context = report.reading_context
         if context is None:  # narrowed by validation; keep type-safe.
             raise ValueError("executive_report_reading_context_required")
+        projection = ProfessionalReportPresenter().project(report)
 
         charts = {item.business_role: item for item in report.charts}
-        kpi_block = self._kpi_block(report.kpis)
+        kpi_block = self._kpi_block(report.kpis, projection)
         trend_block = (
             self._panel(
                 "hero_sales_trend",
                 "02",
                 "销售趋势",
                 "SALES TREND",
-                self._line_chart(charts["time_trend"]),
+                self._line_chart(charts["time_trend"], projection),
                 extra_class="hero-panel",
             )
             if "time_trend" in charts
@@ -70,12 +74,14 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         structure_cards: list[str] = []
         if "region_comparison" in charts:
             structure_cards.append(
-                self._visual_card(charts["region_comparison"], self._column_chart)
+                self._visual_card(
+                    charts["region_comparison"], self._column_chart, projection
+                )
             )
         if "category_contribution" in charts:
             category = charts["category_contribution"]
             builder = self._donut_chart if category.visual_type == "donut" else self._hbar_chart
-            structure_cards.append(self._visual_card(category, builder))
+            structure_cards.append(self._visual_card(category, builder, projection))
         structure_block = (
             self._panel(
                 "business_structure",
@@ -93,11 +99,15 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         ranking_cards: list[str] = []
         if "top_products" in charts:
             ranking_cards.append(
-                self._visual_card(charts["top_products"], self._hbar_chart)
+                self._visual_card(
+                    charts["top_products"], self._hbar_chart, projection
+                )
             )
         if "top_customers" in charts:
             ranking_cards.append(
-                self._visual_card(charts["top_customers"], self._hbar_chart)
+                self._visual_card(
+                    charts["top_customers"], self._hbar_chart, projection
+                )
             )
         ranking_cards.extend(self._ranking_table(item) for item in report.tables)
         ranking_block = (
@@ -117,97 +127,91 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         template = Template(self._TEMPLATE_PATH.read_text(encoding="utf-8"))
         html = template.substitute(
             title=self._text(context.report_title),
-            analysis_period=self._text(context.analysis_period.display_text),
-            semantic_model=self._text(context.semantic_model),
-            freshness=self._text(context.data_freshness.display_text),
-            generated_at=self._text(context.generated_at.isoformat()),
-            reading_context=self._reading_context(report),
+            analysis_period=self._text(projection.analysis_period_display),
+            semantic_model=self._text(projection.model_display_name),
+            source_display=self._text(projection.source_display_name),
+            freshness=self._text(projection.freshness_display),
+            generated_at=self._text(projection.generated_at_display),
+            reading_context=self._reading_context(report, projection),
             kpi_block=kpi_block,
             trend_block=trend_block,
             structure_block=structure_block,
             ranking_block=ranking_block,
-            audit_footer=self._audit_footer(report),
+            audit_footer=self._audit_footer(report, projection),
         )
         self._validate_rendered_html(html)
         return html
 
     @classmethod
-    def _reading_context(cls, report: ReportSpec) -> str:
+    def _reading_context(
+        cls,
+        report: ReportSpec,
+        projection: ReportPresentationProjection,
+    ) -> str:
         context = report.reading_context
         if context is None:
             raise ValueError("executive_report_reading_context_required")
-        metric_rows = "".join(
-            cls._metric_definition(item) for item in context.metric_definitions
-        )
-        filter_items = "".join(
-            f"<li>{cls._text(item.display_text)}</li>"
-            for item in context.active_filters.items
-        )
-        if not filter_items:
-            filter_items = f"<li>{cls._text(context.active_filters.display_text)}</li>"
         return (
-            '<section class="reading-context report-panel" '
+            '<section class="reading-context context-strip" '
             'data-section="reading_context" aria-labelledby="reading-context-title">'
-            '<div class="panel-heading"><span class="section-number">01</span>'
-            '<div><h2 id="reading-context-title">阅读上下文</h2>'
-            '<p>READING CONTEXT · 先确认口径，再解读数字</p></div></div>'
             '<div class="context-grid">'
-            '<article class="context-card"><h3>当前筛选状态</h3><ul>'
-            f"{filter_items}</ul><p class=\"context-period\">分析期间："
-            f"{cls._text(context.analysis_period.display_text)}</p></article>"
-            '<article class="context-card context-metrics"><h3>指标口径</h3>'
-            f'<div class="metric-definition-list">{metric_rows}</div></article>'
-            '<article class="context-card context-exception"><h3>异常 / 关注状态</h3>'
-            f'<p>{cls._text(context.exception_assessment.message)}</p>'
-            f'<span class="status-chip">{cls._text(context.exception_assessment.state.value)}</span>'
-            "</article>"
-            '<article class="context-card"><h3>数据来源</h3>'
-            f'<p>{cls._text(context.data_source.display_name)}</p>'
-            f'<span class="source-kind">{cls._text(context.data_source.kind.value)} · '
-            f'{cls._text(context.data_source.source_mode)}</span>'
-            f'<p class="freshness-text">{cls._text(context.data_freshness.display_text)}</p>'
-            "</article></div></section>"
+            '<article class="context-card"><span>分析期间</span>'
+            f'<strong>{cls._text(projection.analysis_period_display)}</strong></article>'
+            '<article class="context-card"><span>筛选状态</span>'
+            f'<strong>{cls._text(projection.filter_display)}</strong></article>'
+            '<article class="context-card"><span>数据更新</span>'
+            f'<strong>{cls._text(projection.freshness_display)}</strong></article>'
+            '<article class="context-card"><span>经营状态</span>'
+            f'<strong>{cls._text(projection.exception_display)}</strong></article>'
+            '</div><div class="context-definition-summary">'
+            '<span id="reading-context-title">指标口径摘要</span>'
+            f'<strong>{cls._text(projection.metric_summary)}</strong>'
+            '</div></section>'
         )
 
     @classmethod
     def _metric_definition(cls, definition: Any) -> str:
-        def facet_text(facet: Any) -> str:
-            if facet.status is MetricDefinitionStatus.UNKNOWN:
-                return "模型未声明 / UNKNOWN"
-            return str(facet.value)
-
         return (
             '<div class="metric-definition">'
             f'<strong>{cls._text(definition.display_name)}</strong>'
-            f'<span>{cls._text(definition.semantic_source)} · '
-            f'{cls._text(definition.aggregation)} · {cls._text(definition.unit)}</span>'
-            f'<small>税务口径：{cls._text(facet_text(definition.tax_basis))}</small>'
-            f'<small>比较口径：{cls._text(facet_text(definition.comparison_basis))}</small>'
+            f'<code>{cls._text(definition.canonical_source)}</code>'
+            f'<span>{cls._text(definition.aggregation_display)} · '
+            f'{cls._text(definition.unit_display)}</span>'
+            f'<small>税务口径：{cls._text(definition.tax_basis_display)}</small>'
+            f'<small>比较基准：{cls._text(definition.comparison_basis_display)}</small>'
             "</div>"
         )
 
     @classmethod
-    def _kpi_block(cls, kpis: list[KPISpec]) -> str:
+    def _kpi_block(
+        cls,
+        kpis: list[KPISpec],
+        projection: ReportPresentationProjection,
+    ) -> str:
         if not kpis:
             return ""
-        cards = "".join(cls._kpi_card(item) for item in kpis)
+        cards = "".join(cls._kpi_card(item, projection) for item in kpis)
         return cls._panel(
             "kpi_summary",
-            "02" if not kpis else "KPI",
+            "01",
             "关键指标概览",
             "EXECUTIVE SUMMARY",
             f'<div class="kpi-grid">{cards}</div>',
         )
 
     @classmethod
-    def _kpi_card(cls, kpi: KPISpec) -> str:
+    def _kpi_card(
+        cls,
+        kpi: KPISpec,
+        projection: ReportPresentationProjection,
+    ) -> str:
         decimals = 2 if kpi.format == "currency" else 0
         return (
             f'<article class="executive-kpi" data-kpi="{cls._text(kpi.field)}">'
             '<span class="kpi-accent" aria-hidden="true"></span>'
             f'<span class="kpi-label">{cls._text(kpi.name)}</span>'
             f'<strong class="kpi-value">{cls._number(kpi.value, decimals)}</strong>'
-            f'<small>{cls._text(kpi.field)}</small></article>'
+            f'<small>{cls._text(projection.metric_unit(kpi.field))}</small></article>'
         )
 
     @classmethod
@@ -232,16 +236,25 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
 
     @classmethod
     def _visual_card(
-        cls, chart: ChartSpec, builder: Callable[[ChartSpec], str]
+        cls,
+        chart: ChartSpec,
+        builder: Callable[[ChartSpec], str],
+        projection: ReportPresentationProjection,
     ) -> str:
         return (
             f'<article class="visual-card" data-business-role="{cls._text(chart.business_role)}">'
             f'<div class="visual-card-heading"><h3>{cls._text(chart.title)}</h3>'
-            f'<span>{cls._text(chart.y_field)}</span></div>{builder(chart)}</article>'
+            f'<span>{cls._text(projection.metric_label(chart.y_field))} · '
+            f'{cls._text(projection.metric_unit(chart.y_field))}</span></div>'
+            f'{builder(chart)}</article>'
         )
 
     @classmethod
-    def _line_chart(cls, chart: ChartSpec) -> str:
+    def _line_chart(
+        cls,
+        chart: ChartSpec,
+        projection: ReportPresentationProjection,
+    ) -> str:
         points = cls._series(chart)
         width, height = 1200, 420
         left, right, top, bottom = 76, 36, 34, 78
@@ -295,7 +308,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         )
         legend = (
             '<div class="chart-legend"><span class="legend-line"></span>'
-            f'<span>{cls._text(chart.y_field)}</span></div>'
+            f'<span>{cls._text(projection.metric_label(chart.y_field))}</span></div>'
         )
         return (
             '<div class="executive-line-chart chart-frame">'
@@ -407,9 +420,9 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         for index, (item, value) in enumerate(zip(points, values), start=1):
             position = item.get("position")
             badge = (
-                f'<span class="rank-badge">{cls._text(position)}</span>'
+                f'<span class="rank-badge">#{cls._text(position)}</span>'
                 if isinstance(position, int)
-                else f'<span class="rank-badge muted">{index}</span>'
+                else f'<span class="rank-badge muted">#{index}</span>'
             )
             rows.append(
                 '<div class="executive-bar-row" tabindex="0">'
@@ -440,17 +453,21 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         )
 
     @classmethod
-    def _audit_footer(cls, report: ReportSpec) -> str:
+    def _audit_footer(
+        cls,
+        report: ReportSpec,
+        projection: ReportPresentationProjection,
+    ) -> str:
         context = report.reading_context
         if context is None:
             raise ValueError("executive_report_reading_context_required")
         items = (
-            ("数据来源", f"{context.data_source.display_name} / {context.data_source.kind.value}"),
-            ("语义模型", context.semantic_model),
-            ("分析期间", context.analysis_period.display_text),
-            ("筛选状态", context.active_filters.display_text),
-            ("数据新鲜度", context.data_freshness.display_text),
-            ("生成时间", context.generated_at.isoformat()),
+            ("模型标识", projection.canonical_model_identity),
+            ("来源类型", projection.canonical_source_kind.value),
+            ("运行模式", projection.canonical_source_mode),
+            ("查询取得时间", projection.canonical_queried_at),
+            ("快照时间", projection.canonical_snapshot_at),
+            ("生成时间", projection.canonical_generated_at),
         )
         body = "".join(
             f'<div><span>{cls._text(label)}</span><strong>{cls._text(value)}</strong></div>'
@@ -458,7 +475,14 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         )
         return (
             '<footer class="audit-footer" data-section="audit_footer" '
-            f'aria-label="报表审计信息">{body}</footer>'
+            f'aria-label="报表审计信息">{body}'
+            '<div class="audit-definitions"><span>指标定义</span>'
+            '<div class="metric-definition-list">'
+            + "".join(
+                cls._metric_definition(item)
+                for item in projection.metric_definitions
+            )
+            + "</div></div></footer>"
         )
 
     @classmethod
@@ -619,7 +643,8 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             not html.startswith("<!DOCTYPE html>")
             or "</html>" not in lowered
             or "<script" in lowered
-            or "javascript:" in lowered
+            or re.search(r"(?:href|src)\s*=\s*[\"']?\s*javascript:", lowered)
+            is not None
             or "http://" in lowered
             or "https://" in lowered
             or "<link" in lowered

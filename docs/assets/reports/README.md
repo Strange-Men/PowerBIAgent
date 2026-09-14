@@ -29,11 +29,11 @@
 
 `Header / Reading Context → KPI Summary → Hero Sales Trend → Region + Category → Top Products + Top Customers → Detail / Ranking → Audit Footer`
 
-该顺序只约束未来 M5.10.1 的信息架构。section 仍须满足用户需求、runtime capability、共享 sales requirements 与 VerifiedFactSet 证据，缺失能力不显示空区块。
+该顺序约束 M5.10.1 fixed Renderer 与 M5.10.2 产品视觉的信息架构。section 仍须满足 typed coverage、runtime capability、共享 sales requirements 与 VerifiedFactSet 证据；缺失能力只进入带原因 audit，不显示空区块或 fake zero。
 
 ## P2 — Style Inspiration
 
-颜色、字体、卡片、圆角、阴影、header 风格、grid 密度和视觉层次可按固定模板设计系统调整。P2 不决定查询、指标、数据、图表类型或业务结论。
+颜色、字体、卡片、圆角、阴影、header 风格、grid 密度和视觉层次可按固定模板设计系统调整。M5.10.2 已按真实 Chrome 1440/1024/768/430 与人工 1440/430 验收 compact Reading Context、首屏 KPI、hero trend 和低权重 audit。P2 不决定查询、指标、数据、图表类型或业务结论。
 
 **Reference images are NOT factual or functional authority.**
 

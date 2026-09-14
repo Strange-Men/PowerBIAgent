@@ -12,6 +12,7 @@ visual types — only the fixed analysis-goal registry.
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -55,6 +56,13 @@ class ReportIntentDraft(BaseModel):
     report_section_ids: list[str] = Field(default_factory=list)
 
 
+class ReportCoverageMode(str, Enum):
+    """Deterministic scope of a report-generation request."""
+
+    REQUESTED = "requested"
+    FULL_AVAILABLE = "full_available"
+
+
 class ReportIntentSignal(BaseModel):
     """Deterministic resolution of the report-intent request.
 
@@ -65,6 +73,7 @@ class ReportIntentSignal(BaseModel):
     """
 
     requested_ids: tuple[str, ...] = ()
+    coverage_mode: ReportCoverageMode = ReportCoverageMode.REQUESTED
     scope_limited: bool = False
     llm_used: bool = False
     llm_draft_ids: tuple[str, ...] = ()
@@ -88,13 +97,18 @@ def resolve_report_intent(
     """
     normalized = user_input or ""
     scope_limited = _contains_any(normalized, _LIMITER_MARKERS)
+    full_available = (
+        not scope_limited and _contains_any(normalized, _FULL_MARKERS)
+    )
 
     triggered: list[SectionKey] = []
     for key in (*KPI_SECTION_ORDER, *ANALYSIS_SECTION_ORDER):
         if _contains_any(normalized, SECTION_TRIGGERS[key]) and key not in triggered:
             triggered.append(key)
 
-    if not triggered:
+    if full_available:
+        triggered = list((*KPI_SECTION_ORDER, *ANALYSIS_SECTION_ORDER))
+    elif not triggered:
         if _contains_any(normalized, _FULL_MARKERS) or not scope_limited:
             # No specific analysis goal → the full capability request is the
             # fixed default for a sales report request (matches the M3
@@ -108,8 +122,6 @@ def resolve_report_intent(
             SectionKey.SALES_KPI not in triggered
         ):
             triggered.insert(0, SectionKey.SALES_KPI)
-        if _contains_any(normalized, _FULL_MARKERS):
-            triggered = list((*KPI_SECTION_ORDER, *ANALYSIS_SECTION_ORDER))
 
     deterministic = tuple(item.value for item in triggered)
 
@@ -119,14 +131,24 @@ def resolve_report_intent(
         else llm_draft
     )
     merged: list[str] = []
-    for item in (*deterministic, *valid_draft):
-        if not scope_limited and item not in merged:
-            merged.append(item)
+    if full_available:
+        # The complete registry request cannot be reduced or expanded by a
+        # bounded LLM weak signal.
+        merged = list(_FULL_REQUESTED_IDS)
+    else:
+        for item in (*deterministic, *valid_draft):
+            if not scope_limited and item not in merged:
+                merged.append(item)
     if scope_limited:
         merged = list(deterministic)
 
     return ReportIntentSignal(
         requested_ids=tuple(merged),
+        coverage_mode=(
+            ReportCoverageMode.FULL_AVAILABLE
+            if full_available
+            else ReportCoverageMode.REQUESTED
+        ),
         scope_limited=scope_limited,
         llm_used=bool(valid_draft),
         llm_draft_ids=valid_draft,

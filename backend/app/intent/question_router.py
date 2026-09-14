@@ -148,10 +148,14 @@ class QuestionRouter:
 
     _RANKING_NUMBER = r"(?:\d+|[零〇一二两三四五六七八九十百]+)"
 
-    _REPORT = re.compile(
-        r"(?:生成|创建|制作|导出).{0,8}(?:报表|报告|周报|月报|季报|年报)|"
-        r"(?:报表|报告|周报|月报|季报|年报).{0,8}(?:生成|创建|制作)|"
-        r"\b(?:generate|create|make|export)\b.{0,60}\breport\b", re.IGNORECASE,
+    _REPORT_VERB = re.compile(
+        r"(?:生成|创建|制作|导出|出一份|给我一份)|"
+        r"\b(?:generate|create|make|export|give\s+me)\b",
+        re.IGNORECASE,
+    )
+    _REPORT_NOUN = re.compile(
+        r"(?:报表|报告|周报|月报|季报|年报)|\breport\b",
+        re.IGNORECASE,
     )
     _HELP = re.compile(
         r"(?:支持|能够|能做|可以做|可做).{0,10}(?:哪些|什么|范围|分析|问题)|"
@@ -204,7 +208,7 @@ class QuestionRouter:
         public_model_name: str | None = None,
     ) -> QuestionRoutingDecision:
         text = question.strip()
-        if self._REPORT.search(text):
+        if self._has_report_generation_evidence(text):
             return QuestionRoutingDecision(QuestionRoute.REPORT_REQUEST)
         if self._HELP.search(text):
             return QuestionRoutingDecision(
@@ -240,6 +244,19 @@ class QuestionRouter:
             QuestionRoute.BUSINESS_DATA_QUERY,
             query_shape=self._query_shape(text),
         )
+
+    @classmethod
+    def _has_report_generation_evidence(cls, text: str) -> bool:
+        """Require a generation action and report noun in one bounded clause."""
+        for clause in re.split(r"[\n。！？!?；;]", text):
+            normalized = clause.strip()
+            if not normalized or len(normalized) > 160:
+                continue
+            if cls._REPORT_VERB.search(normalized) and cls._REPORT_NOUN.search(
+                normalized
+            ):
+                return True
+        return False
 
     @staticmethod
     def _is_calculator(text: str) -> bool:

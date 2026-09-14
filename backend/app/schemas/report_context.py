@@ -209,11 +209,13 @@ class ReportDataSnapshot(BaseModel):
     """Immutable fact/provenance snapshot, independent of artifact creation."""
 
     semantic_model_identity: str = Field(..., min_length=1)
+    semantic_model_display_name: str | None = None
     schema_fingerprint: str = Field(..., min_length=1)
     query_result_ids: tuple[str, ...] = Field(..., min_length=1)
     verified_fact_set_ids: tuple[str, ...] = Field(..., min_length=1)
     source_mode: Literal["mock", "real"]
     source_kind: ReportDataSourceKind
+    source_display_name: str | None = None
     data_updated_at: datetime | None = None
     queried_at: datetime
     snapshot_at: datetime
@@ -222,6 +224,12 @@ class ReportDataSnapshot(BaseModel):
 
     @model_validator(mode="after")
     def validate_snapshot(self) -> "ReportDataSnapshot":
+        for value, code in (
+            (self.semantic_model_display_name, "report_model_display_name_blank"),
+            (self.source_display_name, "report_source_display_name_blank"),
+        ):
+            if value is not None and not value.strip():
+                raise ValueError(code)
         if len(self.query_result_ids) != len(self.verified_fact_set_ids):
             raise ValueError("report_snapshot_provenance_incomplete")
         if len(set(self.query_result_ids)) != len(self.query_result_ids):

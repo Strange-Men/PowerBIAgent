@@ -1,7 +1,7 @@
 # 01 — 产品范围与前端骨架
 
 > **状态：** M5.8.6 COMPLETE；React 前端、SQLite 资源生命周期、DeepSeek/Kimi 双模型目录与 Report Template Required 已实现。
-> **当前边界：** M5.10.1 Professional Renderer 与双模板显式选择已本地收口；专业模板现为 AVAILABLE。M5.8.5 correctness 与 M5.9.2 runtime 冻结；M5.10.2 NOT STARTED，M5 FINAL=false。
+> **当前边界：** M5.10.2 Executive Report Product Refinement & Hardening 已本地产品收口；专业模板保持 AVAILABLE，主区使用 presentation-only projection。M5.8.5 correctness 与 M5.9.2 runtime 冻结；M5.10.3 NOT STARTED，M5 FINAL=false。
 > **视觉参考：** `docs/assets/frontend/整体01.png`（已有对话与组合回答态）、`docs/assets/frontend/整体02.png`（新聊天欢迎态与菜单展开态）
 
 ---
@@ -271,9 +271,10 @@ ConversationSession {
 6. **M5.5—M5.8.6：** ✅ Semantic correctness、Presentation/Localization/Resource UX、简易模板、DeepSeek/Kimi、前置 MCP session/cache 与 correctness governance 已完成
 7. **M5.9：** ✅ MCP performance/resilience、bounded concurrency/backpressure 与韧性最终收口已完成；未改变语义、DAX、事实或前端业务 UX
 8. **M5.10：** ✅ complex report foundation 已完成
-9. **M5.10.1：** ✅ 独立 Professional Renderer、两模板公开显式选择、Simple/Executive factual parity 与 Simple/Rich PBIX/Real Browser Acceptance 本地收口；M5.10.2 NOT STARTED
-9. **开发阶段：** 使用 Vite dev server，代理到 FastAPI 后端
-10. **契约结论：** 不新增跨 authority 统一 envelope；presentation metadata 不成为 factual authority
+9. **M5.10.1：** ✅ 独立 Professional Renderer、两模板公开显式选择、Simple/Executive factual parity 与 Simple/Rich PBIX/Real Browser Acceptance 本地收口
+10. **M5.10.2：** ✅ 明确报表路由、FULL_AVAILABLE、专业 presentation/time provenance、产品视觉与 report lifecycle hardening 本地收口；M5.10.3 NOT STARTED
+11. **开发阶段：** 使用 Vite dev server，代理到 FastAPI 后端
+12. **契约结论：** 不新增跨 authority 统一 envelope；presentation metadata 不成为 factual authority
 
 ---
 
@@ -316,4 +317,4 @@ ConversationSession {
 
 ---
 
-*最后更新：2026-09-14 | M5.10.1 本地收口完成；M5.10.2 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-14 | M5.10.2 本地产品收口完成；M5.10.3 NOT STARTED；M5 FINAL=false*

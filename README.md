@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.10.1 — Professional Sales Renderer & Real Visual Acceptance**。`sales_report` 与 `sales_executive_report` 现均可由用户显式选择；专业模板使用独立 deterministic static Renderer，并在数字前展示完整 Reading Context。两模板复用同一 `SALES_QUERY_REQUIREMENTS` 与 VerifiedFactSet snapshot，事实 parity 已由 Simple/Rich PBIX 验证。发布以当前 main exact-SHA Full Validation (Windows) success 为证据；M5.10.2 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.10.2 — Executive Report Product Refinement & Hardening**。报表生成短语现稳定路由到 Report Generation；`FULL_AVAILABLE` 确定性展开 selected template 在当前 runtime 中的全部可用 section。专业模板的主视觉使用业务友好 projection，exact identity/enum/timestamp 下沉到 audit；queried/snapshot/generated/freshness 语义分离，Memory commit 失败或取消会补偿 artifact。Simple/Rich PBIX、DeepSeek-only 精确短语、双模板 parity 与真实 Chrome 产品视觉已验证；M5.10.3 NOT STARTED，M5 FINAL=false。
 
 ## 项目概览
 
@@ -22,7 +22,7 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界。
 - Grounding 后的 Semantic Obligation Coverage、StateTransition 后的 Canonical Shape Completeness，以及 QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection 共同禁止显式条件静默丢失、残缺 shape 执行和错误结果顺序；Answer/Table/Chart 使用确定性 effective scope 与共享展示顺序。
 - `sales_report`（简易模板）与 `sales_executive_report`（专业销售经营分析模板）均由后端目录公开，报表请求必须显式选择；二者分别绑定独立固定 Renderer，禁止 fallback 或 LLM 临场生成 HTML/CSS/SVG。
-- COMPLEX 模板在 Renderer 前必须具备标题、分析期间、实际筛选、指标口径、异常状态、模型/来源、数据新鲜度和生成时间；`data_updated_at` 不得由 `generated_at` 或 query time 代替。
+- COMPLEX 模板在 Renderer 前必须具备标题、分析期间、实际筛选、指标口径、异常状态、模型/来源、数据新鲜度和生成时间；主视觉只消费 friendly presentation projection，exact provenance 保留在 audit；`data_updated_at`、`queried_at`、`snapshot_at`、`generated_at` 不得互相代替。
 - 结构化多轮 Memory 只补当前轮真正省略的兼容槽；fresh/follow-up/replace 分离，当前明确表达始终优先；歧义、失败、unsupported 和 clarification 不污染已提交状态。
 - SQLite 提供重启恢复、结构化历史/搜索、可恢复归档、永久删除、独立 report 删除与崩溃后删除重试。
 - `(runtime_mode, conversation_id)` 和 `(source_mode, conversation_id)` 严格隔离 Mock/Real 状态与报表历史。
@@ -358,6 +358,7 @@ python -m alembic upgrade head
 | M5.9.4 | COMPLETE — 51,200 deterministic combinatorial stress + 108-case DeepSeek-only 双 PBIX Real；发布以当前 main exact-SHA CI success 为证据 |
 | M5.9.5 | COMPLETE — Sidebar conversation icon 统一 16×16 grid slot；1—80 字、三状态、current/hover 真实浏览器 geometry 与 mutation sanity 通过；发布以当前 main exact-SHA CI success 为证据 |
 | M5.10.1 | 本地收口完成 — 专业 Renderer、双模板公开显式选择、Simple/Executive parity、Simple/Rich PBIX 与真实浏览器视觉验收；发布以当前 main exact-SHA CI success 为证据；M5.10.2 NOT STARTED，M5 FINAL=false |
+| M5.10.2 | 本地产品收口完成 — Report Request/FULL_AVAILABLE、专业 presentation/视觉、时间 provenance、artifact compensation/cancellation、lifecycle/stale/concurrency/security/cloud-ready 硬化；Rich/Simple PBIX 与 DeepSeek-only exact phrase PASS；M5.10.3 NOT STARTED，M5 FINAL=false |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -386,4 +387,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-14 | M5.10.1 Professional Renderer 本地收口完成；M5.10.2 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-14 | M5.10.2 本地产品收口完成；M5.10.3 NOT STARTED；M5 FINAL=false*

@@ -34,7 +34,7 @@ from backend.app.report.contracts import (
     ReportDataPlanBuilder,
     TemplateContract,
 )
-from backend.app.report.intent import ReportIntentSignal
+from backend.app.report.intent import ReportCoverageMode, ReportIntentSignal
 from backend.app.schemas.data_contracts import CanonicalQueryPlan, SemanticModelSchema
 
 
@@ -123,6 +123,14 @@ class ReportPlanner:
                     continue
                 budgeted_sections.append(section)
                 budgeted_requirements.extend(next_requirements)
+            if (
+                signal.coverage_mode is ReportCoverageMode.FULL_AVAILABLE
+                and budget_omitted
+            ):
+                raise ReportPlanError(
+                    "report_full_coverage_budget_insufficient",
+                    tuple(item.value for item in budget_omitted),
+                )
             resolved = tuple(budgeted_sections)
             unavailable = tuple(dict.fromkeys((*unavailable, *budget_omitted)))
             if not resolved:
