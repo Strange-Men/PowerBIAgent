@@ -65,7 +65,7 @@ jobs:
         run: python scripts/check_semantic_compatibility.py
 
       - name: 6. Full pytest (includes dynamic version consistency)
-        run: python -m pytest backend/tests -q
+        run: python scripts/run_pytest_ci.py backend/tests -q
 
       - name: 7. Golden Cases
         run: python -m backend.app.harness.cases
