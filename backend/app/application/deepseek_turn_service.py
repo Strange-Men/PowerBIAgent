@@ -13,7 +13,7 @@ M1.6.3 更新：
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from backend.app.application.turn_pipeline import TurnPipeline
@@ -81,6 +81,13 @@ from backend.app.report.deepseek_report_intent_service import (
 )
 from backend.app.report.intent import resolve_report_intent
 from backend.app.report.plan import ReportPlanError, ReportPlanner
+from backend.app.report.reading_context import (
+    ReportDataSnapshotBuilder,
+    ReportReadingContextError,
+    ReportReadingContextBuilder,
+    ReportScopeContextBuilder,
+    SALES_METRIC_DEFINITIONS,
+)
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.query_plan.deepseek_service import (
     DeepSeekQueryPlanService,
@@ -158,6 +165,7 @@ from backend.app.presentation.models import PresentationEnvelope
 from backend.app.presentation.query_scope import DeterministicQueryScopeDescriptor
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
+    CanonicalQueryPlan,
     ColumnMembersRequest,
     ColumnMembersResult,
     DAXRequest,
@@ -167,6 +175,10 @@ from backend.app.schemas.data_contracts import (
     ReportSpec,
     SemanticModelSchema,
     UserContext,
+)
+from backend.app.schemas.report_context import (
+    ExceptionAssessment,
+    ReportDataSourceKind,
 )
 
 
@@ -782,6 +794,7 @@ class LLMTurnService:
                     trace_id=trace_id,
                     collector=collector,
                     observed_provider=observed,
+                    committed=semantic_committed,
                 )
 
         # ── 8.1 Business Semantic Grounding ──
@@ -1861,6 +1874,7 @@ class LLMTurnService:
         trace_id: str,
         collector: LLMCallCollector,
         observed_provider: ObservedLLMProvider,
+        committed: StructuredWorkMemory | None,
     ) -> dict[str, Any]:
         """Execute the adaptive M3.4 sales report inside the active TurnPipeline.
 
@@ -1887,6 +1901,22 @@ class LLMTurnService:
             validator=report_contract_validator,
             data_plan_builder=report_data_plan_builder,
         )
+        try:
+            scope_plan = self._canonical_report_scope(committed, schema)
+        except ValueError as exc:
+            return await self._fail_result(
+                memory,
+                effective_req_id,
+                effective_conv_id,
+                controller,
+                trace,
+                terminal_state=TurnState.VALIDATION_FAILED,
+                error_type="report_scope_invalid",
+                reason=str(exc),
+                stage="report_scope",
+                trace_id=trace_id,
+                collector=collector,
+            )
 
         # ── 1. Bounded report-intent weak signal (LLM, registry IDs only) ──
         # Any failure fails closed to an empty draft; the deterministic
@@ -1919,6 +1949,7 @@ class LLMTurnService:
                 signal.requested_ids,
                 signal,
                 max_queries=self.settings.max_tool_calls - 2,
+                scope_plan=scope_plan,
             )
         except ReportPlanError as exc:
             return await self._fail_result(
@@ -2112,6 +2143,7 @@ class LLMTurnService:
                 template_key,
                 schema,
                 requirement_keys=tuple(remaining_keys),
+                scope_plan=scope_plan,
             )
             filtered_results = {
                 query.requirement_key: query_results[query.requirement_key]
@@ -2163,7 +2195,53 @@ class LLMTurnService:
         )
 
         try:
-            report_spec = SalesReportSpecBuilder().build(report_data_contract)
+            reading_context = None
+            data_snapshot = None
+            if template_key == "sales_executive_report":
+                analysis_period, active_filters = ReportScopeContextBuilder().build(
+                    {
+                        query.requirement_key: query.query_plan
+                        for query in execution_plan.queries
+                    },
+                    filtered_facts,
+                )
+                snapshot_time = report_data_contract.generated_at
+                if snapshot_time.tzinfo is None:
+                    snapshot_time = snapshot_time.replace(tzinfo=timezone.utc)
+                data_snapshot = ReportDataSnapshotBuilder().build(
+                    semantic_model_identity=report_data_contract.semantic_model_key,
+                    schema_fingerprint=report_data_contract.schema_fingerprint,
+                    query_results=filtered_results,
+                    verified_fact_sets=filtered_facts,
+                    source_kind=ReportDataSourceKind.LOCAL_MCP,
+                    queried_at=snapshot_time,
+                    snapshot_at=snapshot_time,
+                )
+                definition_by_measure = {
+                    definition.canonical_measure: key
+                    for key, definition in SALES_METRIC_DEFINITIONS.items()
+                }
+                metric_definition_keys = tuple(dict.fromkeys(
+                    definition_by_measure[item.measure]
+                    for item in (
+                        *report_data_contract.kpis,
+                        *report_data_contract.sections,
+                    )
+                ))
+                reading_context = ReportReadingContextBuilder().build(
+                    report_title="销售经营分析报告",
+                    analysis_period=analysis_period,
+                    active_filters=active_filters,
+                    metric_definition_keys=metric_definition_keys,
+                    exception_assessment=ExceptionAssessment.cannot_determine(),
+                    snapshot=data_snapshot,
+                    generated_at=report_data_contract.generated_at,
+                )
+            report_spec = SalesReportSpecBuilder().build(
+                report_data_contract,
+                reading_context=reading_context,
+                data_snapshot=data_snapshot,
+            )
             report_spec_with_ctx = report_spec.model_copy(update={
                 "conversation_id": effective_conv_id,
                 "request_id": effective_req_id,
@@ -2175,7 +2253,7 @@ class LLMTurnService:
                 trace=trace,
                 controller=controller,
             )
-        except SalesReportAssemblyError as exc:
+        except (SalesReportAssemblyError, ReportReadingContextError) as exc:
             return await self._fail_result(
                 memory,
                 effective_req_id,
@@ -2183,8 +2261,8 @@ class LLMTurnService:
                 controller,
                 trace,
                 terminal_state=TurnState.RESPONSE_FAILED,
-                error_type=exc.code,
-                reason=exc.code,
+                error_type=getattr(exc, "code", type(exc).__name__),
+                reason=str(exc),
                 stage="sales_report_spec",
                 trace_id=trace_id,
                 collector=collector,
@@ -2332,6 +2410,22 @@ class LLMTurnService:
                 "memory_version": committed_memory.memory_version,
             },
         )
+
+    @staticmethod
+    def _canonical_report_scope(
+        committed: StructuredWorkMemory | None,
+        schema: SemanticModelSchema,
+    ) -> CanonicalQueryPlan | None:
+        """Reuse only committed canonical filters/time for report subqueries."""
+        if committed is None or committed.last_query_plan is None:
+            return None
+        try:
+            scope = CanonicalQueryPlan.model_validate(committed.last_query_plan)
+        except Exception as exc:
+            raise ValueError("report_committed_scope_invalid") from exc
+        if scope.semantic_model_key != schema.key:
+            raise ValueError("report_scope_model_mismatch")
+        return scope
 
     # ── 辅助方法：结果构建委托给共享 TurnPipeline ──
 

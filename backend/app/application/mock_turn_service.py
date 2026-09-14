@@ -9,7 +9,7 @@ M0.3.2—M1.0.1 历史修复保留在模块内部，不再逐一列举。
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -54,15 +54,27 @@ from backend.app.query_plan.template_catalog import (
 )
 from backend.app.report.base import ReportRenderer
 from backend.app.report.mock import MockReportRenderer
+from backend.app.report.reading_context import ReportReadingContextBuilder
 from backend.app.report.resources import ReportArtifact, ReportRepository
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
     DAXRequest,
+    KPISpec,
     QueryPlan,
     QueryResult,
     ReportSpec,
     SemanticModelSchema,
     UserContext,
+)
+from backend.app.schemas.report_context import (
+    ActiveFilterContext,
+    ActiveFilterState,
+    AnalysisPeriodState,
+    ExceptionAssessment,
+    ReportAnalysisPeriod,
+    ReportDataSnapshot,
+    ReportDataSourceKind,
+    ReportFilterItem,
 )
 
 
@@ -587,10 +599,16 @@ class MockTurnService:
             report_updates: dict[str, Any] = {
                 "template_key": effective_template_key,
             }
-            if effective_template_key == "sales_report":
+            if effective_template_key in {
+                "sales_report", "sales_executive_report"
+            }:
                 result_id = query_result.result_id or f"mock-{effective_req_id}"
                 report_updates.update({
-                    "contract_version": "mock-simple-report-v1",
+                    "contract_version": (
+                        "mock-executive-report-v1"
+                        if effective_template_key == "sales_executive_report"
+                        else "mock-simple-report-v1"
+                    ),
                     "semantic_model_key": semantic_model_key,
                     "schema_fingerprint": compute_schema_fingerprint(schema),
                     "query_result_ids": [result_id],
@@ -617,9 +635,15 @@ class MockTurnService:
                     trace=trace,
                     conversation_id=effective_conv_id,
                 )
-
             # 通过 ToolGateway 渲染报表
             try:
+                if effective_template_key == "sales_executive_report":
+                    report_spec = self._build_mock_executive_spec(
+                        report_spec,
+                        query_plan=query_plan,
+                        query_result=query_result,
+                        schema=schema,
+                    )
                 exec_ctx = self.pipeline.create_tool_context(
                     trace_id=trace_id,
                     request_id=effective_req_id,
@@ -639,8 +663,9 @@ class MockTurnService:
                     trace=trace,
                     controller=controller,
                 )
-            except (ToolTimeoutError, ToolExecutionError, ToolPolicyDeniedError,
-                    ToolNotRegisteredError, ToolOutputValidationError) as e:
+            except (ValueError, ToolTimeoutError, ToolExecutionError,
+                    ToolPolicyDeniedError, ToolNotRegisteredError,
+                    ToolOutputValidationError) as e:
                 return await self._fail_turn(
                     memory, effective_req_id, controller, trace,
                     terminal_state=TurnState.RESPONSE_FAILED,
@@ -716,6 +741,111 @@ class MockTurnService:
             report_data=report_data,
             conversation_id=effective_conv_id,
         )
+
+    @staticmethod
+    def _build_mock_executive_spec(
+        report_spec: ReportSpec,
+        *,
+        query_plan: QueryPlan,
+        query_result: QueryResult,
+        schema: SemanticModelSchema,
+    ) -> ReportSpec:
+        """Build a clearly marked test-fixture executive report for Mock mode."""
+        if not report_spec.kpis:
+            raise ValueError("mock_executive_report_requires_fixture_kpi")
+        generated_at = report_spec.generated_at or datetime.now(timezone.utc)
+        if generated_at.tzinfo is None:
+            generated_at = generated_at.replace(tzinfo=timezone.utc)
+
+        time_range = query_plan.time_range
+        if hasattr(time_range, "start_date") and hasattr(time_range, "end_date"):
+            period = ReportAnalysisPeriod(
+                state=AnalysisPeriodState.BOUNDED,
+                start_date=time_range.start_date,
+                end_date=time_range.end_date,
+                display_text=(
+                    f"{time_range.start_date.isoformat()} 至 "
+                    f"{time_range.end_date.isoformat()}"
+                ),
+            )
+        else:
+            period = ReportAnalysisPeriod(
+                state=AnalysisPeriodState.ALL_AVAILABLE_DATA,
+                display_text="全部可用数据",
+            )
+
+        filter_items: list[ReportFilterItem] = []
+        for item in report_spec.filters:
+            values = (
+                tuple(item.value)
+                if isinstance(item.value, (list, tuple))
+                else (item.value,)
+            )
+            rendered_values = "、".join(str(value) for value in values)
+            filter_items.append(ReportFilterItem(
+                field=item.field,
+                operator=item.operator.value,
+                values=values,
+                display_text=(
+                    f"{item.field} {item.operator.value} {rendered_values}"
+                ),
+            ))
+        filters = (
+            ActiveFilterContext(
+                state=ActiveFilterState.APPLIED,
+                items=tuple(filter_items),
+                display_text="；".join(
+                    item.display_text for item in filter_items
+                ),
+            )
+            if filter_items
+            else ActiveFilterContext(
+                state=ActiveFilterState.NO_ADDITIONAL_FILTERS,
+                display_text="无额外筛选",
+            )
+        )
+        result_id = report_spec.query_result_ids[0]
+        fact_set_id = report_spec.verified_fact_set_ids[0]
+        snapshot = ReportDataSnapshot(
+            semantic_model_identity=schema.key,
+            schema_fingerprint=report_spec.schema_fingerprint,
+            query_result_ids=(result_id,),
+            verified_fact_set_ids=(fact_set_id,),
+            source_mode="mock",
+            source_kind=ReportDataSourceKind.TEST_FIXTURE,
+            queried_at=generated_at,
+            snapshot_at=generated_at,
+        )
+        context = ReportReadingContextBuilder().build(
+            report_title="销售经营分析报告",
+            analysis_period=period,
+            active_filters=filters,
+            metric_definition_keys=("total_sales",),
+            exception_assessment=ExceptionAssessment.cannot_determine(),
+            snapshot=snapshot,
+            generated_at=generated_at,
+        )
+        fixture_kpi = report_spec.kpis[0]
+        return report_spec.model_copy(update={
+            "title": context.report_title,
+            "summary": "",
+            "kpis": [
+                KPISpec(
+                    name="总销售额",
+                    value=fixture_kpi.value,
+                    format="currency",
+                    field="Total Sales",
+                )
+            ],
+            "charts": [],
+            "tables": [],
+            "insights": [],
+            "data_source": schema.key,
+            "filters": [],
+            "generated_at": generated_at,
+            "reading_context": context,
+            "data_snapshot": snapshot,
+        })
 
     async def _fail_turn(
         self,

@@ -175,9 +175,9 @@ DEFAULT_REPORT_TEMPLATE_REGISTRY = ReportTemplateRegistry(
         ReportTemplateDescriptor(
             template_key="sales_executive_report",
             display_name="专业销售经营分析模板",
-            description="复杂报表合同已建立；专业 Renderer 尚未开放",
+            description="适合管理层阅读的专业销售经营分析与审计上下文",
             renderer_key="executive_sales_report",
-            availability=ReportTemplateAvailability.UNAVAILABLE,
+            availability=ReportTemplateAvailability.AVAILABLE,
             tier=ReportTemplateTier.COMPLEX,
             aliases=("专业销售报表", "销售经营分析报表"),
         ),
@@ -185,8 +185,14 @@ DEFAULT_REPORT_TEMPLATE_REGISTRY = ReportTemplateRegistry(
 )
 
 
-def build_report_dispatcher(renderer: ReportRenderer) -> ReportRendererDispatcher:
+def build_report_dispatcher(
+    renderer: ReportRenderer,
+    executive_renderer: ReportRenderer | None = None,
+) -> ReportRendererDispatcher:
+    renderers: tuple[tuple[str, ReportRenderer], ...] = (("simple_report", renderer),)
+    if executive_renderer is not None:
+        renderers = (*renderers, ("executive_sales_report", executive_renderer))
     return ReportRendererDispatcher(
         template_registry=DEFAULT_REPORT_TEMPLATE_REGISTRY,
-        renderer_registry=ReportRendererRegistry((("simple_report", renderer),)),
+        renderer_registry=ReportRendererRegistry(renderers),
     )

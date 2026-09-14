@@ -121,7 +121,7 @@ def _reading_context(
     )
 
 
-def test_template_governance_registers_simple_and_unavailable_complex_identity():
+def test_template_governance_registers_both_available_template_identities():
     simple = DEFAULT_REPORT_TEMPLATE_REGISTRY.get("sales_report")
     executive = DEFAULT_REPORT_TEMPLATE_REGISTRY.get("sales_executive_report")
 
@@ -132,22 +132,25 @@ def test_template_governance_registers_simple_and_unavailable_complex_identity()
     assert executive.display_name == "专业销售经营分析模板"
     assert executive.tier is ReportTemplateTier.COMPLEX
     assert executive.renderer_key == "executive_sales_report"
-    assert executive.availability is ReportTemplateAvailability.UNAVAILABLE
-    assert DEFAULT_REPORT_TEMPLATE_REGISTRY.available_keys == ("sales_report",)
+    assert executive.availability is ReportTemplateAvailability.AVAILABLE
+    assert DEFAULT_REPORT_TEMPLATE_REGISTRY.available_keys == (
+        "sales_report",
+        "sales_executive_report",
+    )
     assert [
         item.template_key
         for item in DEFAULT_REPORT_TEMPLATE_REGISTRY.public_catalog().items
-    ] == ["sales_report"]
+    ] == ["sales_report", "sales_executive_report"]
 
 
-def test_professional_contract_is_registered_but_cannot_build_a_production_plan():
+def test_professional_contract_is_available_and_uses_shared_sales_capabilities():
     validation = ReportContractValidator().validate(
         "sales_executive_report",
-        # Availability must fail before runtime schema is used.
-        SemanticModelSchema(name="unused", key="unused", tables=[]),
+        SemanticModelSchema(name="sales", key="local_desktop_model", tables=[]),
     )
-    assert validation.status is ReportAvailabilityStatus.TEMPLATE_NOT_AVAILABLE
-    assert validation.available is False
+    assert validation.status is ReportAvailabilityStatus.AVAILABLE
+    assert validation.available is True
+    assert validation.contract is SALES_EXECUTIVE_REPORT_CONTRACT
 
 
 def test_sales_contracts_share_one_requirement_authority_and_semantics():
@@ -259,7 +262,7 @@ async def test_coherent_complex_contract_reaches_only_its_registered_renderer():
 
 
 @pytest.mark.asyncio
-async def test_unavailable_executive_template_never_falls_back_to_simple_renderer():
+async def test_executive_template_with_missing_renderer_never_falls_back_to_simple():
     renderer = _RecordingRenderer()
     dispatcher = ReportRendererDispatcher(
         template_registry=DEFAULT_REPORT_TEMPLATE_REGISTRY,
@@ -267,9 +270,19 @@ async def test_unavailable_executive_template_never_falls_back_to_simple_rendere
     )
 
     with pytest.raises(ReportTemplateUnavailableError):
-        await dispatcher.render(
-            ReportSpec(title="Executive", template_key="sales_executive_report")
-        )
+        snapshot = _snapshot()
+        context = _reading_context(snapshot=snapshot)
+        await dispatcher.render(ReportSpec(
+            title=context.report_title,
+            template_key="sales_executive_report",
+            generated_at=NOW,
+            source_mode="real",
+            data_source=context.semantic_model,
+            semantic_model_key=context.semantic_model,
+            schema_fingerprint=snapshot.schema_fingerprint,
+            reading_context=context,
+            data_snapshot=snapshot,
+        ))
     assert renderer.calls == 0
 
 

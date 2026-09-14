@@ -35,7 +35,7 @@ from backend.app.report.contracts import (
     TemplateContract,
 )
 from backend.app.report.intent import ReportIntentSignal
-from backend.app.schemas.data_contracts import SemanticModelSchema
+from backend.app.schemas.data_contracts import CanonicalQueryPlan, SemanticModelSchema
 
 
 class ReportPlanError(ValueError):
@@ -83,6 +83,7 @@ class ReportPlanner:
         signal: ReportIntentSignal,
         *,
         max_queries: int | None = None,
+        scope_plan: CanonicalQueryPlan | None = None,
     ) -> ReportPlan:
         validation = self._validator.validate(template_key, schema)
         if not validation.available or validation.contract is None:
@@ -145,6 +146,7 @@ class ReportPlanner:
                 template_key,
                 schema,
                 requirement_keys=requirement_tuple,
+                scope_plan=scope_plan,
             )
         except ReportContractError as exc:
             raise ReportPlanError(exc.code, exc.errors) from exc

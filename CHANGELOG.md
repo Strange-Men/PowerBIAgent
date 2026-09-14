@@ -2,6 +2,21 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.10.1] — 2026-09-14（Professional Sales Renderer & Real Visual Acceptance）
+
+- **参考资产治理：** `03_sales_executive_visual_style.png.png` 纯重命名为 `.png`；前后 Git blob 均为 `cbe51680d2d85239f59a19ee130c6d4143ec9411`，旧引用为零。
+- **独立固定 Renderer：** 新增 `ExecutiveSalesReportRenderer` 与自包含 UTF-8 HTML/CSS/SVG 模板；禁止 JavaScript、CDN、外部资源、网络请求、事实计算与跨模板 fallback。固定信息架构为 Header → Reading Context → 最多 4 KPI → 趋势 → 区域/品类 → Top 产品/客户 → verified table → audit footer。
+- **Authority 与 parity：** 两模板继续共享单一 `SALES_QUERY_REQUIREMENTS`，scope 只从 committed CanonicalQueryPlan 复制，专业 Reading Context/snapshot 只从已执行 plan + QueryResult + VerifiedFactSet 构建。Simple/Executive 对 KPI、趋势、分组、TopN 与 provenance 的规范化事实投影必须完全一致。
+- **公开显式选择：** `sales_executive_report` 从 COMPLEX/UNAVAILABLE 切为 AVAILABLE，绑定 `executive_sales_report`；后端公开目录与 React Composer 同时展示简易/专业模板，仍不提供默认选择或自然语言隐式选择。
+- **Mock/视觉：** 18 个 TEST_FIXTURE scenarios 覆盖 full、KPI/trend only、missing optional、no/multiple filters、unknown freshness、超长产品/客户、10 品类与 1/2/6/12/24/60 点趋势。真实 Chrome 在 1440/1024/768/430 共 72 个 geometry cases 全部无横向 overflow、section overlap 或趋势越界。
+- **Real PBIX：** Simple PBIX 只执行 4 个 runtime-available requirements，Rich PBIX 执行 9/9；Rich full/bounded/region/multiple-filter 均通过。每次只用 Local MCP → deterministic DAX → Layer 3 → QueryResult → VerifiedFactSet 的生产事实链，双模板事实 parity=true，LLM/fake QueryResult/report artifact=0。
+- **Mutation sanity：** 临时删除 Reading Context P0、强制 2000px overflow、错绑 simple Renderer、篡改 Executive customer fact mapping 均稳定使相应 gate 失败；恢复后专项回归通过，破坏代码未提交。
+- **性能与 fresh gates：** 18 fixture renderer p50 `1.447ms`、max `4.483ms`、最大 HTML `30,801 bytes`；report/template/API focused `96 PASS`，Semantic Compatibility `775 PASS` / 121 production files，backend `2650 PASS / 1 manual-real SKIP`，Golden `11 PASS / 1 manual-real SKIP`，frontend `91 PASS` + typecheck/lint/build，Repository Safety 390、Architecture 138、AI Error Ledger 82、Documentation/Artifact Governance、compileall 与 staged diff-check PASS。Simple/Rich PBIX teardown 后 `session_residual=0`、`active_workers=0`。
+- **边界：** M5.10 foundation、M5.8.5 factual correctness、M5.9.2 runtime 与 persistence architecture 保持冻结；未实现 YoY/MoM/Forecast/Target/Budget/Map/AI Insight、Remote MCP、Entra、PostgreSQL、Deployment 或 M5.10.2。M5 FINAL=false。
+- **发布条件：** fresh full gates、automation-owned residual=0、clean local main==origin/main 与当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success。
+
+**Settings.version:** M5.10.1
+
 ## [M5.10] — 2026-09-11（Complex Report Contract & Professional Sales Foundation）
 
 - **复杂报表通用合同：** 新增 SIMPLE/COMPLEX template tier、必填 `ReportReadingContext`、immutable `ReportDataSnapshot` 与 Renderer 前一致性 Gate。缺 title/period/filter/metric/exception/model/source/freshness/generated_at 或 provenance 不一致均 fail closed。

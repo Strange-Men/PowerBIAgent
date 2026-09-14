@@ -39,9 +39,13 @@ describe('report-template catalog selection', () => {
         availability: 'available',
       },
       {
-        template_key: 'stale',
-        display_name: '旧模板',
-        description: '不可用',
+        template_key: 'sales_executive_report',
+        display_name: '专业销售经营分析模板',
+        description: '适合管理层阅读的专业销售经营分析与审计上下文',
+        availability: 'available',
+      },
+      {
+        template_key: 'stale', display_name: '旧模板', description: '不可用',
         availability: 'unavailable',
       },
     ]
@@ -51,6 +55,14 @@ describe('report-template catalog selection', () => {
         key: 'sales_report',
         label: '简易模板',
         description: '适合快速查看关键指标、趋势与分类明细',
+        compatible: true,
+        selectable: true,
+        compatibilityStatus: 'compatible',
+      },
+      {
+        key: 'sales_executive_report',
+        label: '专业销售经营分析模板',
+        description: '适合管理层阅读的专业销售经营分析与审计上下文',
         compatible: true,
         selectable: true,
         compatibilityStatus: 'compatible',

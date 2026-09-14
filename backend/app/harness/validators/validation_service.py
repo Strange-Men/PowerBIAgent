@@ -46,7 +46,10 @@ class ValidationService:
 
     # 系统默认值（仅当参数为 None 时使用）
     _DEFAULT_MODELS: tuple[str, ...] = ("mock_sales_model",)
-    _DEFAULT_TEMPLATES: tuple[str, ...] = ("sales_report",)
+    _DEFAULT_TEMPLATES: tuple[str, ...] = (
+        "sales_report",
+        "sales_executive_report",
+    )
 
     def __init__(
         self,

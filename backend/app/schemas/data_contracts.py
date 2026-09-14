@@ -404,8 +404,8 @@ class ReportSpec(BaseModel):
     request_id: Optional[str] = None
     # M5.10: SIMPLE templates may omit these.  A COMPLEX template is rejected
     # by the renderer dispatcher unless both immutable platform contracts are
-    # present and coherent; the unavailable professional template cannot use
-    # the simple renderer as a fallback.
+    # present and coherent; the professional template cannot use the simple
+    # renderer as a fallback.
     reading_context: ReportReadingContext | None = None
     data_snapshot: ReportDataSnapshot | None = None
 
@@ -433,7 +433,7 @@ class UserContext(BaseModel):
     roles: list[str] = Field(default_factory=lambda: ["viewer"])
     allowed_semantic_models: list[str] = Field(default_factory=lambda: ["mock_sales_model"])
     allowed_templates: list[str] = Field(
-        default_factory=lambda: ["sales_report"]
+        default_factory=lambda: ["sales_report", "sales_executive_report"]
     )
     allowed_tools: list[str] = Field(
         default_factory=lambda: [

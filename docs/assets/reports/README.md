@@ -6,7 +6,7 @@
 |---|---|---|
 | P0 | `01_reading_context_hard_requirements.png` | 复杂报表 Reading Context 硬合同参考 |
 | P1 | `02_sales_executive_primary_layout.png` | 专业销售模板信息架构与主布局意图 |
-| P2 | `03_sales_executive_visual_style.png.png` | 颜色、字体、卡片、圆角、阴影、header、grid 密度与视觉层次灵感 |
+| P2 | `03_sales_executive_visual_style.png` | 颜色、字体、卡片、圆角、阴影、header、grid 密度与视觉层次灵感 |
 
 ## P0 — Hard Contract
 

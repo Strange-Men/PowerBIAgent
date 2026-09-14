@@ -35,9 +35,14 @@ from backend.app.schemas.data_contracts import (
     ReportSpec,
     TableSpec,
 )
+from backend.app.schemas.report_context import ReportDataSnapshot, ReportReadingContext
 
 
 SALES_REPORT_TEMPLATE_KEY = "sales_report"
+SALES_EXECUTIVE_REPORT_TEMPLATE_KEY = "sales_executive_report"
+SALES_REPORT_TEMPLATE_KEYS = frozenset(
+    {SALES_REPORT_TEMPLATE_KEY, SALES_EXECUTIVE_REPORT_TEMPLATE_KEY}
+)
 
 
 class SalesReportAssemblyError(ValueError):
@@ -187,7 +192,7 @@ class SalesReportDataAssembler:
         query_results: Mapping[str, QueryResult],
         verified_fact_sets: Mapping[str, VerifiedFactSet],
     ) -> SalesReportData:
-        if plan.template_key != SALES_REPORT_TEMPLATE_KEY:
+        if plan.template_key not in SALES_REPORT_TEMPLATE_KEYS:
             raise SalesReportAssemblyError("sales_report_template_required")
         plan_keys = tuple(item.requirement_key for item in plan.queries)
         if len(plan_keys) != len(set(plan_keys)):
@@ -457,9 +462,20 @@ class SalesReportSpecBuilder:
     ) -> None:
         self._visualization = visualization_policy or VisualizationPolicy()
 
-    def build(self, data: SalesReportData) -> ReportSpec:
-        if data.template_key != SALES_REPORT_TEMPLATE_KEY:
+    def build(
+        self,
+        data: SalesReportData,
+        *,
+        reading_context: ReportReadingContext | None = None,
+        data_snapshot: ReportDataSnapshot | None = None,
+    ) -> ReportSpec:
+        if data.template_key not in SALES_REPORT_TEMPLATE_KEYS:
             raise SalesReportAssemblyError("sales_report_template_required")
+        is_executive = data.template_key == SALES_EXECUTIVE_REPORT_TEMPLATE_KEY
+        if is_executive:
+            self._validate_executive_context(data, reading_context, data_snapshot)
+        elif reading_context is not None or data_snapshot is not None:
+            raise SalesReportAssemblyError("simple_report_complex_context_rejected")
         if not data.query_result_ids or not data.verified_fact_set_ids:
             raise SalesReportAssemblyError("sales_report_provenance_incomplete")
         if len(data.query_result_ids) != len(data.verified_fact_set_ids):
@@ -482,10 +498,22 @@ class SalesReportSpecBuilder:
             role = self._section_key_for_requirement(section.requirement_key)
             if role.value == "top_customers":
                 tables.append(TableSpec(
-                    title="关键明细",
-                    columns=["客户", "销售额（元）"],
+                    title="Top 客户" if is_executive else "关键明细",
+                    columns=(
+                        ["排名", "客户", "销售额（元）"]
+                        if is_executive
+                        else ["客户", "销售额（元）"]
+                    ),
                     rows=[
-                        [self._series_label(item), self._series_value(item)]
+                        (
+                            [
+                                item.result_position,
+                                self._series_label(item),
+                                self._series_value(item),
+                            ]
+                            if is_executive
+                            else [self._series_label(item), self._series_value(item)]
+                        )
                         for item in rows
                     ],
                 ))
@@ -515,8 +543,8 @@ class SalesReportSpecBuilder:
                 layout_hint=visual.layout_hint,
             ))
         return ReportSpec(
-            title="销售分析报表",
-            template_key=SALES_REPORT_TEMPLATE_KEY,
+            title="销售经营分析报告" if is_executive else "销售分析报表",
+            template_key=data.template_key,
             summary="",
             kpis=kpis,
             charts=charts,
@@ -531,7 +559,37 @@ class SalesReportSpecBuilder:
             schema_fingerprint=data.schema_fingerprint,
             query_result_ids=list(data.query_result_ids),
             verified_fact_set_ids=list(data.verified_fact_set_ids),
+            reading_context=reading_context,
+            data_snapshot=data_snapshot,
         )
+
+    @staticmethod
+    def _validate_executive_context(
+        data: SalesReportData,
+        reading_context: ReportReadingContext | None,
+        data_snapshot: ReportDataSnapshot | None,
+    ) -> None:
+        if reading_context is None:
+            raise SalesReportAssemblyError("complex_report_reading_context_required")
+        if data_snapshot is None:
+            raise SalesReportAssemblyError("complex_report_data_snapshot_required")
+        coherent = (
+            reading_context.report_title == "销售经营分析报告"
+            and reading_context.generated_at == data.generated_at
+            and reading_context.semantic_model == data.semantic_model_key
+            and data_snapshot.semantic_model_identity == data.semantic_model_key
+            and data_snapshot.schema_fingerprint == data.schema_fingerprint
+            and data_snapshot.source_mode == data.source_mode
+            and reading_context.data_source.source_mode == data.source_mode
+            and reading_context.data_source.kind == data_snapshot.source_kind
+            and tuple(data_snapshot.query_result_ids) == data.query_result_ids
+            and tuple(data_snapshot.verified_fact_set_ids)
+            == data.verified_fact_set_ids
+        )
+        if not coherent:
+            raise SalesReportAssemblyError(
+                "complex_report_reading_context_incoherent"
+            )
 
     @staticmethod
     def _section_key_for_requirement(requirement_key: str):

@@ -49,10 +49,16 @@ class TestIntentType:
 
 class TestIntentPromptReportBoundary:
     def test_sales_report_is_language_only_weak_signal(self):
-        assert "production template 只有 `sales_report`" in INTENT_SYSTEM_PROMPT
+        assert (
+            "production template 只有 `sales_report` 与 `sales_executive_report`"
+            in INTENT_SYSTEM_PROMPT
+        )
         assert "不得生成 HTML" in INTENT_SYSTEM_PROMPT
         assert "不得生成 HTML、决定报表查询/布局/保存目录" in INTENT_SYSTEM_PROMPT
-        assert "Fixed ReportDataPlan → Verified Facts → Fixed Renderer" in INTENT_SYSTEM_PROMPT
+        assert (
+            "Fixed ReportDataPlan → Verified Facts → template-bound Fixed Renderer"
+            in INTENT_SYSTEM_PROMPT
+        )
         assert "`local_state/reports/`" in INTENT_SYSTEM_PROMPT
 
 

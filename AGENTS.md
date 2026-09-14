@@ -7,9 +7,9 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.10 — Complex Report Contract & Professional Sales Foundation**。复杂模板统一 Reading Context、metric/filter/exception/freshness 与 immutable data snapshot contract 已建立；`sales_executive_report` 已有正式 identity 但保持 UNAVAILABLE，未注册最终 Renderer。`sales_report` 继续生产可用，两者共享 `SALES_QUERY_REQUIREMENTS`。发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10.1 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.10.1 — Professional Sales Renderer & Real Visual Acceptance**。`sales_executive_report` 已以独立 deterministic static Renderer 正式开放，并与 `sales_report` 共同进入后端公开目录供用户显式选择；两模板共享 `SALES_QUERY_REQUIREMENTS`、Canonical/DAX/QueryResult/VerifiedFactSet authority，Simple/Rich PBIX factual parity 与真实浏览器视觉验收已完成。发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10.2 NOT STARTED，M5 FINAL=false。
 
-当前开发阶段：**M5.10 — 复杂报表合同与专业销售模板基础（foundation 已完成；发布以当前 main exact-SHA CI success 为证据）**。本轮只新增复杂报表通用合同、参考图 authority、共享 Sales query requirements 与未开放模板身份；未实现专业 HTML/CSS Renderer、Remote MCP 或新业务指标。M5.10.1 NOT STARTED；M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结。
+当前开发阶段：**M5.10.1 — 专业销售报表渲染与真实视觉验收（本地收口完成；发布以当前 main exact-SHA CI success 为证据）**。本轮只实现固定专业 Renderer、双模板显式选择、共享事实 parity 与 Mock/Real/Browser 验收；未实现 Remote MCP、新业务指标或 M5.10.2。M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -57,7 +57,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.9.5** 已完成 Sidebar conversation icon geometry 最终收口：统一 `SidebarLeadingIcon` 16×16 slot，inner grid 固定 icon/title/status 轨道，outer row 只负责 content/action trigger；真实浏览器覆盖 1—80 字、ready/processing/failed、current/hover，mutation sanity 可抓住 12px 回归。**发布以当前 main exact-SHA CI success 为证据；M5.10 NOT STARTED，M5 FINAL=false。**
 - **M5.8.4** 已在现有 ModelSemanticContext/SemanticCatalog/Grounding 内完成跨语言对象/成员绑定与 canonical KEEP/REPLACE 优化；report template choice 不等于本轮 report intent。LLM 仅在 runtime 已证明存在的候选 ID 中解释语言，不能产生新对象或事实。`41b6e0b` 主开发后，首次 CI [#33455159267](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33455159267) 因测试 reference date 漂移失败；`a975310` 修复测试时钟后，CI [#33457056546](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33457056546) completed/success；`3e3d8ac` 最终治理 CI [#33580808379](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33580808379) exact-SHA completed/success，M5.8.4 COMPLETE。M5.9/M5.10 不启动。
 - **M5.8.5** 已在现有链加入四个通用 correctness Gate；unknown/known+unknown member、残缺 shape、Result 语义不一致均在事实/执行边界 fail closed，TopN tie-break、trend ASC、table/chart 共序与完整 effective scope 均由确定性合同约束。Rich Sales、M3 Test、Logistics Test 的双 Provider Real 与 A→B→C→A 隔离通过；无第二套 authority、无 migration、无 M5.9/M5.10 工作。**M5.8.5 COMPLETE。**
-- **M5.10** 已完成复杂报表 Reading Context / metric / filter / exception / freshness / source snapshot 合同，以及第二销售模板的正式但 UNAVAILABLE 身份；简易模板继续生产可用，两者共享同一 Sales query requirement authority。专业 Renderer 与 Real Visual Acceptance 属于 M5.10.1，尚未开始。**M5 FINAL=false。**
+- **M5.10.1** 已完成独立 Professional Sales Renderer、双模板公开显式选择、Simple/Executive factual parity、Simple/Rich PBIX 与 18×4 Chrome visual/geometry acceptance；四项 mutation sanity 均可先红后绿。M5.10 foundation authority 未改变，M5.10.2 NOT STARTED。**M5 FINAL=false。**
 
 当前真实主链：
 
@@ -148,7 +148,7 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 54. M5.10：filter/time scope 只可由 CanonicalQueryPlan 与 VerifiedFactSet 一致证据投影；无额外 filter 必须明确为“无额外筛选”。LLM/user sentence/presentation text 均不得重建实际 scope。
 55. M5.10：Metric Definition 只能来自 registry/runtime metadata/exact override；未知 tax/comparison basis 保持 UNKNOWN。无 deterministic rule/target/forecast 时 exception 固定 CANNOT_DETERMINE，禁止 AI 或 magic threshold 编造异常。
 56. M5.10：`data_updated_at` 不等于 `generated_at` 或 query time；Local MCP 无权威 refresh metadata 时必须 UNKNOWN。Remote MCP 仅保留 source contract，不接 endpoint/auth/request schema，不新增 execution path。
-57. M5.10：`sales_executive_report` 保持 UNAVAILABLE 且不进入公开 catalog，不注册假 Renderer、不 fallback simple；`sales_report` 与 executive contract 必须共享同一 `SALES_QUERY_REQUIREMENTS`。M5.10.1 前禁止实现最终专业 Renderer。
+57. M5.10 foundation 阶段不得注册假 Renderer 或 fallback simple；M5.10.1 开放后，`sales_report` 与 `sales_executive_report` 必须继续共享同一 `SALES_QUERY_REQUIREMENTS`，并分别绑定固定 Renderer。任何跨模板 fallback、事实重算或 LLM HTML authority 都必须 fail closed。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前跨入未批准里程碑、开发 Remote MCP；未经用户明确批准不得创建 Tag。
 
@@ -182,4 +182,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-09-11 | M5.10 complex report foundation；M5.10.1 NOT STARTED；M5.9.2 runtime frozen；main-only；M5 FINAL=false*
+*最后更新：2026-09-14 | M5.10.1 本地收口完成；M5.10.2 NOT STARTED；M5.9.2 runtime frozen；main-only；M5 FINAL=false*

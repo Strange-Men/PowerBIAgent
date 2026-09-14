@@ -115,10 +115,10 @@ field 是原文或由原文可以理解的类别短语，不是 runtime table/co
 ### report_generation
 适用于：
 - 本轮明确要求生成固定模板报表；仅选择模板或历史报表状态不构成生成请求
-- production template 只有 `sales_report`；其他报表请求不得虚构可用模板
+- production template 只有 `sales_report` 与 `sales_executive_report`；其他报表请求不得虚构可用模板
 - 普通"分析一下"不应自动判断为报表
 - 这里只输出受控语言理解与 structured weak signal；不得生成 HTML、决定报表查询/布局/保存目录，或编写 KPI/图表数据
-- 正式报表由后端固定链生成：sales_report → Fixed ReportDataPlan → Verified Facts → Fixed Renderer → ReportRepository
+- 正式报表由后端固定链生成：registry-owned template → Fixed ReportDataPlan → Verified Facts → template-bound Fixed Renderer → ReportRepository
 - 后端把正式文件保存到相对目录 `local_state/reports/`；不得输出、改写或选择文件路径和资源引用
 
 ### clarification

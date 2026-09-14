@@ -22,9 +22,12 @@ class MockReportRenderer(ReportRenderer):
     """
 
     # Legacy keys remain for isolated M0-M2 fixtures. API availability is
-    # independently restricted by DEFAULT_TEMPLATE_CATALOG to sales_report.
+    # independently restricted by DEFAULT_TEMPLATE_CATALOG.  The executive
+    # key is admitted here for validation only; the dispatcher routes it to
+    # ExecutiveSalesReportRenderer, never to this compatibility renderer.
     ALLOWED_TEMPLATES = {
         "sales_report",
+        "sales_executive_report",
         "sales_weekly",
         "satisfaction",
         "operating_overview",

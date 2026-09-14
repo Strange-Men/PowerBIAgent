@@ -23,10 +23,15 @@ from backend.app.report.contracts import (
 )
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.schemas.data_contracts import (
+    CanonicalQueryPlan,
     ColumnSchema,
+    FilterOperator,
     MeasureSchema,
     SemanticModelSchema,
+    StructuredFilter,
     TableSchema,
+    TimeRangeMode,
+    TimeRangeSpec,
     UserContext,
 )
 
@@ -216,10 +221,14 @@ def test_unknown_and_legacy_templates_fail_closed(template_key, status):
         ReportDataPlanBuilder().build(template_key, _schema())
 
 
-def test_production_permission_and_validation_defaults_only_expose_sales_report():
-    assert UserContext().allowed_templates == ["sales_report"]
+def test_production_permission_and_validation_defaults_expose_both_templates():
+    assert UserContext().allowed_templates == [
+        "sales_report", "sales_executive_report"
+    ]
     validation = ValidationService()
-    assert validation._allowed_templates == ("sales_report",)
+    assert validation._allowed_templates == (
+        "sales_report", "sales_executive_report"
+    )
 
 
 def test_sales_report_capability_catalog_is_exact_and_repeatable():
@@ -380,7 +389,67 @@ def test_rich_extra_fields_do_not_auto_create_arbitrary_sections():
 
 def test_report_data_plan_api_has_no_llm_draft_or_result_input():
     parameters = tuple(inspect.signature(ReportDataPlanBuilder.build).parameters)
-    assert parameters == ("self", "template_key", "schema", "requirement_keys")
+    assert parameters == (
+        "self", "template_key", "schema", "requirement_keys", "scope_plan"
+    )
+
+
+def test_report_data_plan_copies_only_canonical_verified_scope_to_every_query():
+    schema = _rich_schema()
+    scope = CanonicalQueryPlan(
+        normalized_question="canonical verified scope",
+        semantic_model_key=schema.key,
+        measures=["Total Sales"],
+        filters=[
+            StructuredFilter(
+                field="Region",
+                operator=FilterOperator.EQ,
+                value="South",
+            )
+        ],
+        time_range=TimeRangeSpec(
+            mode=TimeRangeMode.EXPLICIT_RANGE,
+            start_date="2025-01-01",
+            end_date="2025-06-30",
+            date_field="OrderDate",
+        ),
+        dimension_tables={"Region": "Sales", "OrderDate": "Sales"},
+    )
+
+    plan = ReportDataPlanBuilder().build(
+        "sales_report",
+        schema,
+        requirement_keys=("total_sales", "monthly_sales"),
+        scope_plan=scope,
+    )
+
+    assert all(item.query_plan.filters == scope.filters for item in plan.queries)
+    assert all(item.query_plan.time_range == scope.time_range for item in plan.queries)
+    assert all(
+        item.query_plan.dimension_tables["Region"] == "Sales"
+        and item.query_plan.dimension_tables["OrderDate"] == "Sales"
+        for item in plan.queries
+    )
+    assert all(
+        item.query_plan.grounding_authority == "semantic_catalog"
+        for item in plan.queries
+    )
+
+
+def test_report_data_plan_rejects_scope_from_another_model():
+    with pytest.raises(ReportContractError) as error:
+        ReportDataPlanBuilder().build(
+            "sales_report",
+            _rich_schema(),
+            requirement_keys=("total_sales",),
+            scope_plan=CanonicalQueryPlan(
+                normalized_question="wrong model",
+                semantic_model_key="another-model",
+                measures=["Total Sales"],
+            ),
+        )
+
+    assert error.value.code == "report_scope_model_mismatch"
 
 
 def test_contract_module_has_no_result_or_execution_pipeline_authority():

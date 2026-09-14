@@ -61,7 +61,10 @@ def test_unknown_or_disabled_explicit_template_fails_closed():
 
 
 def test_legacy_templates_are_not_registered_as_production_templates():
-    assert DEFAULT_TEMPLATE_CATALOG.allowed_keys == ("sales_report",)
+    assert DEFAULT_TEMPLATE_CATALOG.allowed_keys == (
+        "sales_report",
+        "sales_executive_report",
+    )
     for key in ("sales_weekly", "satisfaction", "operating_overview"):
         definition = DEFAULT_TEMPLATE_CATALOG.get_definition(key)
         assert definition is None

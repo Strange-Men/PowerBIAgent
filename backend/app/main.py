@@ -57,6 +57,7 @@ from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.powerbi.local_mcp import LocalMCPPowerBIAdapter
 from backend.app.powerbi.mock import MockPowerBIAdapter
 from backend.app.report.fixed import SalesReportRenderer
+from backend.app.report.executive import ExecutiveSalesReportRenderer
 from backend.app.report.mock import MockReportRenderer
 from backend.app.report.registry import (
     DEFAULT_REPORT_TEMPLATE_REGISTRY,
@@ -201,7 +202,9 @@ async def lifespan(app: FastAPI):
         turn_service = MockTurnService(
             memory_repo=memory_repo,
             powerbi_adapter=powerbi_adapter,
-            report_renderer=build_report_dispatcher(MockReportRenderer()),
+            report_renderer=build_report_dispatcher(
+                MockReportRenderer(), ExecutiveSalesReportRenderer()
+            ),
             report_repository=report_repository,
             config=harness_config,
             snapshot_store=snapshot_store,
@@ -228,7 +231,9 @@ async def lifespan(app: FastAPI):
                 llm_provider=None,
                 llm_registry=llm_registry,
                 powerbi_adapter=powerbi_adapter,
-                report_renderer=build_report_dispatcher(SalesReportRenderer()),
+                report_renderer=build_report_dispatcher(
+                    SalesReportRenderer(), ExecutiveSalesReportRenderer()
+                ),
                 report_repository=report_repository,
                 settings=settings,
                 config=harness_config,

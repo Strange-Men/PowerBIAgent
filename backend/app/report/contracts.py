@@ -504,11 +504,17 @@ class ReportDataPlanBuilder:
         schema: SemanticModelSchema,
         *,
         requirement_keys: tuple[str, ...] | None = None,
+        scope_plan: CanonicalQueryPlan | None = None,
     ) -> ReportDataPlan:
         validation = self._validator.validate(template_key, schema)
         if not validation.available or validation.contract is None:
             raise ReportContractError(validation.status.value, validation.errors)
         contract = validation.contract
+        if (
+            scope_plan is not None
+            and scope_plan.semantic_model_key != schema.key
+        ):
+            raise ReportContractError("report_scope_model_mismatch")
 
         selected = contract.query_requirements
         if requirement_keys is not None:
@@ -546,14 +552,18 @@ class ReportDataPlanBuilder:
                     semantic_model_key=schema.key,
                     measures=list(requirement.measures),
                     dimensions=list(requirement.dimensions),
+                    filters=(
+                        list(scope_plan.filters) if scope_plan is not None else []
+                    ),
+                    time_range=(
+                        scope_plan.time_range if scope_plan is not None else None
+                    ),
                     sort=requirement.sort,
                     top_n=requirement.top_n,
                     requested_template=contract.template_key,
                     is_mock=False,
-                    dimension_tables=(
-                        {requirement.dimensions[0]: requirement.dimension_table}
-                        if requirement.dimension_table is not None
-                        else None
+                    dimension_tables=self._merge_dimension_table_hints(
+                        requirement, scope_plan
                     ),
                     dimension_order=requirement.dimension_order,
                 ),
@@ -568,6 +578,24 @@ class ReportDataPlanBuilder:
             queries=queries,
             metadata=contract.metadata,
         )
+
+    @staticmethod
+    def _merge_dimension_table_hints(
+        requirement: ReportQueryRequirement,
+        scope_plan: CanonicalQueryPlan | None,
+    ) -> dict[str, str] | None:
+        hints = dict(
+            scope_plan.dimension_tables or {}
+            if scope_plan is not None
+            else {}
+        )
+        if requirement.dimension_table is not None:
+            dimension = requirement.dimensions[0]
+            existing = hints.get(dimension)
+            if existing is not None and existing != requirement.dimension_table:
+                raise ReportContractError("report_scope_table_hint_conflict")
+            hints[dimension] = requirement.dimension_table
+        return hints or None
 
     @staticmethod
     def _resolved_availability(

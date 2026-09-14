@@ -114,7 +114,7 @@ class ReportArtifact(RenderedReport):
             raise ValueError("report_artifact_id_invalid")
         if self.content_type != REPORT_CONTENT_TYPE:
             raise ValueError("report_artifact_content_type_invalid")
-        if self.template_key == "sales_report" and (
+        if self.template_key in {"sales_report", "sales_executive_report"} and (
             not self.contract_version
             or not self.semantic_model_key
             or len(self.schema_fingerprint) != 64

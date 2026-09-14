@@ -167,6 +167,34 @@ class TestChatReportGeneration:
         assert report["html"] != "", "html should not be empty"
 
     @pytest.mark.asyncio
+    async def test_executive_report_is_explicit_static_and_template_bound(self, client):
+        response = await client.post("/api/v1/chat", json={
+            "message": "生成专业销售经营分析报表",
+            "conversation_id": "conv-chat-executive-rpt-001",
+            "request_id": "req-chat-executive-rpt-001",
+            "report_template_key": "sales_executive_report",
+        })
+        report_id = None
+        try:
+            assert response.status_code == 200
+            data = response.json()
+            assert data["terminal_state"] == "completed"
+            assert data["response_type"] == "report"
+            assert data["memory_commit"] is True
+            assert data["tool_sequence"].count("render_report") == 1
+            report = data["report"]
+            report_id = report["report_id"]
+            assert report["template_key"] == "sales_executive_report"
+            assert 'data-template-key="sales_executive_report"' in report["html"]
+            assert 'data-section="reading_context"' in report["html"]
+            assert "数据更新时间：模型未提供" in report["html"]
+            assert "<script" not in report["html"].casefold()
+        finally:
+            if report_id is not None:
+                deleted = await client.delete(f"/api/reports/{report_id}")
+                assert deleted.status_code == 200
+
+    @pytest.mark.asyncio
     async def test_report_without_template_key(self, client):
         """报表请求未显式选模板时，必须在任何工具和 artifact 前早停。"""
         response = await client.post("/api/v1/chat", json={
@@ -251,6 +279,12 @@ class TestReportTemplateCatalog:
                     "template_key": "sales_report",
                     "display_name": "简易模板",
                     "description": "适合快速查看关键指标、趋势与分类明细",
+                    "availability": "available",
+                },
+                {
+                    "template_key": "sales_executive_report",
+                    "display_name": "专业销售经营分析模板",
+                    "description": "适合管理层阅读的专业销售经营分析与审计上下文",
                     "availability": "available",
                 }
             ]

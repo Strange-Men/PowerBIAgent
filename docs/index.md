@@ -59,6 +59,7 @@
 | `docs/adr/ADR-019_complex_report_reading_context_and_template_authority.md` | 复杂模板 Reading Context、metric/filter/exception/freshness 与 source authority | M5.10 |
 | `docs/specs/14_complex_report_reading_context_contract.md` | 所有复杂模板复用的必填字段、fail-closed 与 snapshot 合同 | M5.10+ |
 | `docs/milestones/m5/m5_10_complex_report_and_sales_executive_foundation_plan.md` | M5.10 foundation、M5.10.1 Renderer 与 M5.10.2 hardening 分界 | M5.10 |
+| `docs/milestones/m5/m5_10_1_professional_sales_renderer_and_visual_acceptance_plan.md` | M5.10.1 Professional Renderer、事实 parity、Real PBIX/Browser 与 mutation evidence | M5.10.1 |
 | `docs/assets/reports/README.md` | 三张报表参考图片的 P0/P1/P2 authority 边界 | M5.10+ |
 | `docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md` | M2 Local Demo / Remote Production 专项计划 | M2 Provider、Smoke、Remote 证据任务 |
 | `docs/adr/ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md` | TurnPipeline / ToolGateway 总体决策 | 控制面与工具边界 |
@@ -109,4 +110,4 @@
 
 ---
 
-*最后更新：2026-09-11 | M5.10 complex report foundation；M5.10.1 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-14 | M5.10.1 本地收口完成；M5.10.2 NOT STARTED；M5 FINAL=false*

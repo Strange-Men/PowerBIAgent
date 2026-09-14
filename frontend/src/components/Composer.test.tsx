@@ -20,6 +20,14 @@ const reportTemplate: CatalogOption = {
   selectable: true,
 }
 
+const executiveReportTemplate: CatalogOption = {
+  key: 'sales_executive_report',
+  label: '专业销售经营分析模板',
+  description: '适合管理层阅读的专业销售经营分析与审计上下文',
+  compatible: true,
+  selectable: true,
+}
+
 const deepSeekProfile: LLMProfileOption = {
   profile_key: 'deepseek',
   display_name: 'DeepSeek',
@@ -131,6 +139,32 @@ describe('Composer menus and sending', () => {
     expect(screen.queryByText(/生成报表前请选择模板/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /简易模板/ }))
     expect(onReportTemplateChange).toHaveBeenCalledWith(reportTemplate)
+  })
+
+  it('offers the professional template as a separate explicit choice', () => {
+    const onReportTemplateChange = vi.fn()
+    render(
+      <Composer
+        {...llmProps}
+        sending={false}
+        semanticModel={semanticModel}
+        semanticModelOptions={[semanticModel]}
+        loadingSemanticModels={false}
+        semanticModelError={null}
+        reportTemplate={null}
+        reportTemplateOptions={[reportTemplate, executiveReportTemplate]}
+        loadingReportTemplates={false}
+        reportTemplateError={null}
+        onSemanticModelChange={vi.fn()}
+        onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
+        onReportTemplateChange={onReportTemplateChange}
+        onSend={vi.fn().mockResolvedValue(undefined)}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '打开数据与报表选项' }))
+    fireEvent.click(screen.getByRole('button', { name: /专业销售经营分析模板/ }))
+    expect(onReportTemplateChange).toHaveBeenCalledWith(executiveReportTemplate)
   })
 
   it('allows a selected template to be cleared without creating a no-template mode', () => {
