@@ -16,7 +16,7 @@ def test_executive_visual_fixture_matrix_is_exact_and_bounded():
         "missing_optional", "no_filter", "multiple_filters",
         "unknown_freshness", "long_product", "long_customer",
         "category_gt_8", "points_1", "points_2", "points_6",
-        "points_12", "points_24", "points_60",
+        "points_12", "points_18", "points_24", "points_60",
     )
 
 

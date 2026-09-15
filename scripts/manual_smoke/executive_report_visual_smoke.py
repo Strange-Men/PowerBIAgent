@@ -56,6 +56,7 @@ SCENARIO_NAMES = (
     "points_2",
     "points_6",
     "points_12",
+    "points_18",
     "points_24",
     "points_60",
 )
@@ -64,6 +65,7 @@ POINT_SCENARIOS = {
     "points_2": 2,
     "points_6": 6,
     "points_12": 12,
+    "points_18": 18,
     "points_24": 24,
     "points_60": 60,
 }
@@ -168,7 +170,7 @@ def _charts(scenario: str, point_count: int) -> list[ChartSpec]:
             title="品类销售贡献",
             x_field="Category",
             y_field="Total Sales",
-            visual_type="hbar" if len(categories) > 8 else "donut",
+            visual_type="donut",
             business_role="category_contribution",
             layout_hint="half",
             series=categories,
@@ -242,7 +244,7 @@ def build_fixture(scenario: str = "full") -> ReportSpec:
     tables = [] if scenario in {"kpi_only", "trend_only", "region_category", "missing_optional", *POINT_SCENARIOS} else [
         TableSpec(
             title="Top 客户",
-            columns=["排名", "客户", "销售额（元）"],
+            columns=["排名", "客户", "销售额"],
             rows=[[1, customer, 1_650_000], [2, "XYZ 集团", 1_280_000]],
         )
     ]

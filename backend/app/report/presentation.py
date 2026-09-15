@@ -6,8 +6,9 @@ ReportDataSnapshot.  This module only produces deterministic display text.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 import re
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
@@ -18,6 +19,9 @@ from backend.app.schemas.report_context import (
     ReportDataSourceKind,
     ReportFreshnessState,
 )
+
+
+DEFAULT_REPORT_DISPLAY_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 class PresentedMetricDefinition(BaseModel):
@@ -225,5 +229,5 @@ class ProfessionalReportPresenter:
             return "暂不可获取"
         if value.tzinfo is None or value.utcoffset() is None:
             return f"{value.strftime('%Y-%m-%d %H:%M')}（时区未声明）"
-        utc_value = value.astimezone(timezone.utc)
-        return utc_value.strftime("%Y-%m-%d %H:%M UTC")
+        local_value = value.astimezone(DEFAULT_REPORT_DISPLAY_TIMEZONE)
+        return local_value.strftime("%Y-%m-%d %H:%M") + " 北京时间"

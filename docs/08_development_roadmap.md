@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.10.2 Executive Report Product Refinement & Hardening 已本地产品收口（当前 Settings.version；发布以当前 main exact-SHA CI success 为证据）。M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结；M5.10.3 NOT STARTED；main 是唯一活动开发线；M5 FINAL=false。
+> **状态：** M5.10.2 Manual Visual Fidelity FIX 已本地产品收口（Settings.version 仍为 M5.10.2；发布以当前 main exact-SHA CI success 为证据）。M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结；M5.10.3 NOT STARTED；main 是唯一活动开发线；M5 FINAL=false。
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -58,7 +58,7 @@
 | **M5.9.5** | **Sidebar UI Geometry Final Closure** | **✅ COMPLETE；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10** | **复杂报表合同与专业销售模板基础** | **✅ foundation 完成；exact-SHA CI 为发布证据** |
 | **M5.10.1** | **Professional Renderer + Real Visual Acceptance** | **✅ 本地收口；exact-SHA CI 为发布证据** |
-| **M5.10.2** | **Executive Report Product Refinement & Hardening** | **✅ 本地产品收口；exact-SHA CI 为发布证据** |
+| **M5.10.2** | **Executive Report Product Refinement & Hardening + Manual Visual Fidelity FIX** | **✅ 本地产品收口；exact-SHA CI 为发布证据** |
 | **M5.10.3** | **Final Real E2E / stress / mutation / historical closure / exact-SHA final closure** | **⏳ NOT STARTED** |
 
 ### M5.9.3 — 业务语义解析正确性收口
@@ -88,6 +88,8 @@ DeepSeek-only Real 完成 108/108：104 completed、4 clarification + ZERO DAX/M
 filter/time 只由 CanonicalQueryPlan 与 VerifiedFactSet 一致证据投影。Metric Definition 的 tax/comparison basis 未声明时保持 UNKNOWN；当前无正式 anomaly rule 时为 CANNOT_DETERMINE；Local MCP 无权威 refresh metadata 时 `data_updated_at=None/UNKNOWN`，不得用 generated/query time 冒充。Remote MCP 只保留 source-kind boundary。
 
 M5.10.2 已完成正常产品功能的本地收口。唯一后续债务为 M5.10.3 Final Real E2E、stress、mutation、historical closure verification 与 exact-SHA final closure；当前未开始。
+
+Manual Visual Fidelity FIX 将专业模板从 generic adaptive card presentation 收紧为 repository-owned fixed dashboard contract。`02`/`03` 参考图现分别约束 P1 layout 与 visual language；Executive 固定 branded header、四 KPI template assets、full-width trend、12-column 三栏 structure、独立 customer ranking table 与 low-weight audit。aware time 展示为北京时间但 canonical UTC 不变；generic currency 不猜 CNY；rank 为整数。事实、DAX、Semantic、VerifiedFactSet 与 M5.9.2 runtime 均未改变。
 
 Fresh local evidence：report/template/API focused 96 PASS；backend 2650 PASS / 1 manual-real SKIP；Semantic Compatibility 775 PASS / 121 production files；Golden 11 PASS / 1 manual-real SKIP；frontend 91 PASS + typecheck/lint/build；Repository Safety 390、AI Error Ledger 82、Architecture 138、Documentation/Artifact Governance、compileall 与 staged diff-check PASS。18 fixture renderer p50 1.447ms、max 4.483ms、最大 HTML 30,801 bytes；72/72 Chrome geometry、四项 mutation、Rich/Simple PBIX factual parity 与 teardown residual=0 已通过；发布仍以当前 main exact-SHA CI success 为证据。
 
@@ -469,4 +471,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-09-14 | M5.10.2 本地产品收口完成；M5.10.3 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-15 | M5.10.2 Manual Visual Fidelity FIX 本地产品收口完成；M5.10.3 NOT STARTED；M5 FINAL=false*

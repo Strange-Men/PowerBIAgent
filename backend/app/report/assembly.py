@@ -35,6 +35,7 @@ from backend.app.schemas.data_contracts import (
     ReportSpec,
     TableSpec,
 )
+from backend.app.report.executive_contract import EXECUTIVE_TEMPLATE_CONTRACT
 from backend.app.schemas.report_context import ReportDataSnapshot, ReportReadingContext
 
 
@@ -500,7 +501,7 @@ class SalesReportSpecBuilder:
                 tables.append(TableSpec(
                     title="Top 客户" if is_executive else "关键明细",
                     columns=(
-                        ["排名", "客户", "销售额（元）"]
+                        ["排名", "客户", "销售额"]
                         if is_executive
                         else ["客户", "销售额（元）"]
                     ),
@@ -518,13 +519,24 @@ class SalesReportSpecBuilder:
                     ],
                 ))
                 continue
-            visual = self._visualization.choose(role, row_count=row_count)
+            if is_executive:
+                fixed_slot = EXECUTIVE_TEMPLATE_CONTRACT.visual_for_role(role.value)
+                visual_type = fixed_slot.visual_type
+                visual_title = fixed_slot.title
+                layout_hint = (
+                    "full" if fixed_slot.desktop_columns == 12 else "third"
+                )
+            else:
+                visual = self._visualization.choose(role, row_count=row_count)
+                visual_type = visual.visual_type.value
+                visual_title = visual.title
+                layout_hint = visual.layout_hint
             charts.append(ChartSpec(
                 type="bar",
-                title=visual.title,
+                title=visual_title,
                 x_field=section.dimension,
                 y_field=section.measure,
-                visual_type=visual.visual_type.value,
+                visual_type=visual_type,
                 business_role=role.value,
                 series=[
                     {
@@ -540,7 +552,7 @@ class SalesReportSpecBuilder:
                     }
                     for index, item in enumerate(rows)
                 ],
-                layout_hint=visual.layout_hint,
+                layout_hint=layout_hint,
             ))
         return ReportSpec(
             title="销售经营分析报告" if is_executive else "销售分析报表",

@@ -46,6 +46,9 @@ dependencies = [
     "aiosqlite==0.22.1",
     "alembic==1.19.1",
 
+    # Windows fallback database for stdlib zoneinfo / Asia/Shanghai.
+    "tzdata==2026.4",
+
     # Utilities
     # "python-dotenv>=1.0.0",     # M1 启用
 ]

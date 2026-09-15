@@ -1,23 +1,25 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-09-14
+> **最后更新：** 2026-09-15
 
-## 当前阶段 — M5.10.2 Executive Report Product Refinement & Hardening
+## 当前阶段 — M5.10.2 Manual Visual Fidelity FIX
 
 起始基线为 clean `main@070a35e230ba7d52bd39ed150c144c5dc3aae5b2`，Settings.version=M5.10.2。明确短语“生成一份完整的销售经营分析报表”现稳定进入 `REPORT_REQUEST`；只有报表名词、但实际询问报表内数据的问题仍进入业务查询，避免名词误触发。
+
+Visual Fidelity FIX 从 clean `main@2db9a43ebc1e92ec89370849abe6d3e52de402c3` 开始，不改变 milestone/version。`sales_executive_report` 现由 immutable `ExecutiveTemplatePresentationContract` 固定 theme、section order、12-column grid、KPI icon/tone、visual/table mapping、detail/customer variants 与 responsive behavior；Simple 仍使用既有 adaptive presentation。02/03 参考图分别是 P1 layout 与 P1 visual-language authority，但仍不拥有事实、DAX、语义或指标 authority。
 
 新增 typed `ReportCoverageMode`：`REQUESTED` 只解析显式请求的 registry-owned sections；`FULL_AVAILABLE` 固定求 selected template、runtime capability、section registry 与非空 VerifiedFactSet evidence 的交集。Rich PBIX 可用 9/9，Simple PBIX 只执行 4 个可证明 section；缺失项带原因进入 audit，既不伪造空块也不被 weak LLM 或通用工具预算静默裁减。
 
 专业 Renderer 现只消费 `ProfessionalReportPresenter` 的 presentation projection：主阅读区使用友好模型/来源/筛选/状态/单位/时间文本，exact canonical identity、source enum、原始时间与 metric provenance 保留在低权重 audit footer。canonical identity、值、scope、顺序与 provenance 不变。时间证据严格分离为 query 完成时的 `queried_at`、事实快照完成时的 `snapshot_at`、artifact 生成阶段的 `generated_at` 与仅可来自 runtime refresh metadata 的 `data_updated_at`；缺 refresh authority 继续明确未知。
 
-产品视觉继续使用 fixed HTML/CSS/SVG，无 JavaScript 或外部资源。fixture 18×4 Chrome matrix 为 72/72；真实 Rich full report 在 1440/1024/768/430 为 4/4，并人工检查 1440 desktop 与 430 mobile 的 compact Reading Context、首屏 KPI、hero trend、后续 Region/Category/Top Products/Top Customers 与 audit footer。Simple/Rich 真实 PBIX 的 exact-phrase production TurnService 均通过；DeepSeek 只承担既有受限语言职责，DAX/事实/Renderer authority 为 0。
+产品视觉继续使用 fixed HTML/CSS/SVG，无 JavaScript 或外部资源。FIX 后 desktop 固定 Header → compact context → 4 KPI → full hero trend → Region column / Category donut / Top Products ranked hbar 三栏 → Customer ranked table → audit；无事实支持的 Detail 整段隐藏。fixture 19×4 Chrome matrix 为 76/76；真实 Rich full report 在 1440/1024/768/430 为 4/4，并人工对照 02/03 检查 1440 desktop 与 430 mobile。15/18 月份标签完整，aware time 为北京时间且 canonical UTC 不变，generic currency 无元/¥/人民币，rank 为整数。Simple/Rich exact-phrase TurnService 与 fact parity 均通过；DeepSeek 只承担既有受限语言职责，DAX/事实/Renderer authority 为 0。
 
 report artifact 在 memory commit failure 与 cancellation 时通过正式 repository API shielded compensation，query/assembly/render/persist 取消均无 orphan；Simple+Simple、Executive+Executive、Simple+Executive 异会话并发保持 template/model/artifact identity 隔离。两模板的 create/link/history/rename/archive/restore/delete/tombstone 生命周期均复用既有 namespace/persistence contract。真实和浏览器临时资源均已按 automation ownership 精确清理，Local MCP session/worker residual=0。
 
 M5.10 foundation、M5.10.1 fixed Renderer、M5.8.5 factual authority、M5.9.2 runtime architecture 与既有 persistence architecture 保持冻结；未实现 Remote MCP transport/auth、Entra、PostgreSQL、Deployment、YoY/MoM/Forecast/Target/Budget/Map/AI insight。M5.10.3 NOT STARTED，M5 FINAL=false。发布仍以本次提交的 exact-SHA Full Validation (Windows) completed/success 为最终证据。
 
-Fresh local evidence：report domain 209 PASS，product refinement 23 PASS，双模板 lifecycle/failure/cancellation/restart 补强矩阵 27 PASS，并发 3 PASS，browser mutation 4 PASS；Semantic Compatibility 775 PASS / 122 production files；backend 2707 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 91 PASS + typecheck/lint/build；Repository Safety 396、AI Error Ledger 85、Architecture 139、Documentation/Artifact Governance、compileall 与 diff-check PASS。Real Rich 9/9、Simple 4 available + 5 unavailable-with-reason，fixture Chrome 72/72、real Chrome 4/4，人工 1440/430 与 automation-owned residual=0 均通过。
+Fresh local evidence：FIX focused 35 PASS，完整 report/renderer/product 组合回归 144 PASS；Semantic Compatibility 775 PASS / 123 production files；backend 2732 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 91 PASS + typecheck/lint/build；Repository Safety 398、AI Error Ledger 86、Architecture 140、Documentation/Artifact Governance、compileall 与 diff-check PASS。Real Rich 9/9、Simple 4 available + 5 unavailable-with-reason，Rich/Simple 各自 Simple/Executive fact parity=true；fixture Chrome 76/76、real Chrome 4/4，13 项 mutation、1440/430 七项 reference checklist 与 artifact/session/worker residual=0 均通过。
 
 ## 上一阶段 — M5.10.1 Professional Sales Renderer & Real Visual Acceptance
 
@@ -568,4 +570,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-14 | M5.10.2 本地产品收口完成；m5/rebuild 冻结；main-only；M5.10.3 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-15 | M5.10.2 Manual Visual Fidelity FIX 本地产品收口完成；m5/rebuild 冻结；main-only；M5.10.3 NOT STARTED；M5 FINAL=false*

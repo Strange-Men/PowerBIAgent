@@ -129,7 +129,7 @@ def test_professional_projection_keeps_canonical_identity_but_humanizes_main_tex
     assert projection.source_display_name == "Power BI Desktop · 实时查询"
     assert projection.exception_display == "暂无可验证异常基准"
     assert projection.freshness_display == "暂不可获取"
-    assert projection.generated_at_display.endswith(" UTC")
+    assert projection.generated_at_display.endswith(" 北京时间")
     assert projection.canonical_model_identity == "local_desktop:model-a"
     assert projection.canonical_source_kind is ReportDataSourceKind.LOCAL_MCP
     assert projection.canonical_source_mode == "real"

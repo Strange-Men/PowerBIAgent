@@ -2,17 +2,21 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
-## [M5.10.2] — 2026-09-14（Executive Report Product Refinement & Hardening）
+## [M5.10.2] — 2026-09-15（Executive Report Product Refinement, Hardening & Visual Fidelity FIX）
 
+- **Manual Visual Fidelity FIX：** 将 `sales_executive_report` 收紧为 repository-owned fixed executive dashboard template；新增不可变 presentation contract，固定独立 theme、section order、12-column grid、KPI 图标/色阶、visual/table mapping 与 responsive variants。runtime facts 只填预定义 slot，Simple 继续既有 adaptive presentation。
+- **Reference authority：** `01` 保持 P0 信息完整性 authority；`02` 提升为 P1 professional layout authority；`03` 提升为 P1 professional visual-language authority。三者仍不拥有事实、DAX、语义或指标 authority，未引入参考图中的同比/环比/预测/目标/集中度/AI 洞察。
+- **固定视觉骨架：** Header → compact context → 4 KPI → full-width trend → Region column / Category donut / Top Products ranked hbar 三栏 → 独立 Top Customers professional table → low-weight audit。缺少安全 detail facts 时隐藏 05，不拼装伪明细。
+- **人工缺陷修复：** desktop `<=18` 点显示全部月份；aware UTC 仅在 presentation 转换为 `Asia/Shanghai`/北京时间且 canonical 不变；generic currency 不猜元/¥/人民币；rank 从 `1.00` 收口为整数 `1`。高基数品类仍用 donut，图例最多 8 项而数据点不裁减。
 - **明确报表语义：** report verb 与 report noun 改为同一 bounded clause 的结构证据，修复“生成一份完整的销售经营分析报表”被误路由为数据查询；仅出现报表名词、实际询问报表中数据的句子继续走业务查询。
 - **Typed coverage：** 新增 `REQUESTED` / `FULL_AVAILABLE`。完整模式固定求 selected template、runtime capability、registered section catalog 与 non-empty VerifiedFactSet evidence 的交集；weak LLM 与通用工具预算均不能缩减，unavailable/dropped 项带原因进入 trace/audit。
 - **专业呈现层：** 新增 presentation-only projection，把模型、来源、筛选、状态、单位、指标定义与时间转换为用户友好文本；canonical identity/value/scope/order/provenance 不变，exact 技术值只保留在低权重 audit footer。
 - **时间 provenance：** `queried_at`、`snapshot_at`、`generated_at` 分别在查询取得、事实快照和 artifact generation 阶段取 aware UTC clock；`data_updated_at` 仍只接受 runtime refresh metadata，缺失时明确未知。
-- **产品视觉：** Reading Context 压缩为四个阅读块，4 KPI 与 hero trend 上移并强化层级；full executive report 继续按 Header → Context → KPI → Trend → Region/Category → Top Products/Customers → Audit 固定渲染。fixture Chrome 18×4=72/72，真实 Rich report 4/4 viewport，1440/430 人工视觉均通过。
+- **产品视觉：** Reading Context 分布到 Header metadata、三块 compact summary 与 Audit；4 KPI 与 hero trend 上移并强化层级。full executive report 按 Header → Context → KPI → Trend → Region/Category/Top Products 三栏 → Customer table → Audit 固定渲染。fixture Chrome 19×4=76/76，真实 Rich report 4/4 viewport，1440/430 人工 reference checklist 均通过。
 - **Lifecycle / failure atomicity：** 两模板 create/link/history/rename/archive/restore/delete/tombstone 全链复用正式 repository；Memory commit failure 与 cancellation 对已创建 artifact 执行 shielded compensation。query/assembly/render/persist cancellation 以及 Simple/Executive 三种并发组合均无 orphan 或身份串扰。
 - **Real PBIX：** DeepSeek-only exact-phrase production TurnService 在 Rich 执行 9/9，在 Simple 执行 runtime-available 4 项并审计 5 项 unavailable；两者均保持 deterministic DAX、VerifiedFactSet、fixed Renderer authority，清理后 MCP session/worker/artifact residual=0。
 - **安全与边界：** fixed renderer 拒绝 script/event-handler/javascript scheme/style-breakout，长 Unicode 可安全渲染；Remote MCP 仅保留 source-kind/friendly metadata contract，未实现 transport/auth。M5.8.5 factual authority、M5.9.2 runtime 与 persistence architecture 不变；M5.10.3 NOT STARTED，M5 FINAL=false。
-- **Fresh gates：** report domain 209 PASS；product refinement 23 PASS；双模板 lifecycle/failure/cancellation/restart 补强矩阵 27 PASS；Semantic Compatibility 775 PASS / 122 production files；backend 2707 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 91 PASS + typecheck/lint/build；Repository Safety 396、AI Error Ledger 85、Architecture 139、Documentation/Artifact Governance、compileall 与 diff-check PASS。
+- **Fresh gates：** FIX focused 35 PASS、完整 report/renderer/product 组合回归 144 PASS、13 项 mutation；Semantic Compatibility 775 PASS / 123 production files；backend 2732 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 91 PASS + typecheck/lint/build；Repository Safety 398、AI Error Ledger 86、Architecture 140、Documentation/Artifact Governance、compileall 与 diff-check PASS。Real Rich 9/9、Simple 4 available + 5 unavailable，双 PBIX fact parity=true，artifact/session/worker residual=0。
 - **CI forward-fix：** 首个 implementation SHA 的远端 Full pytest 单次失败；同 SHA 当前 checkout 与无 `.env`/`local_state` clean clone 的 CI 同构命令均 2706 PASS / 1 SKIP。CI annotation 最终定位英文 Windows locale 无法编码传入 `strftime` 的中文格式串；实现改为 ASCII-only `strftime` 后再拼接本地化标记，并增加确定性 locale probe。Event/barrier 测试 guard 仍为 bounded 15 秒，不改变产品 deadline；CI wrapper 也不改变 pytest 参数或退出码。最终发布只采信修复后 exact-SHA CI。
 - **发布条件：** fresh full gates、automation-owned residual=0、clean local main==origin/main 与当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success。
 

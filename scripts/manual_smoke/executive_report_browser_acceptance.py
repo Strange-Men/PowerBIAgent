@@ -31,6 +31,7 @@ from scripts.manual_smoke.executive_report_visual_smoke import SCENARIO_NAMES
 VIEWPORTS = ((1440, 1080), (1024, 900), (768, 900), (430, 900))
 SCREENSHOT_CASES = frozenset({
     ("full", 1440), ("full", 1024), ("full", 768), ("full", 430),
+    ("points_18", 1440),
     ("points_60", 1440), ("points_60", 430),
     ("multiple_filters", 430), ("unknown_freshness", 430),
     ("long_product", 430), ("long_customer", 430),
@@ -145,6 +146,30 @@ _GEOMETRY_EXPRESSION = r"""
   const businessRoles = [...document.querySelectorAll('[data-business-role]')]
     .map((el) => el.dataset.businessRole);
   if (trendSection) businessRoles.push('time_trend');
+  const structure = document.querySelector('[data-section="business_structure"]');
+  const customer = document.querySelector('[data-section="customer_analysis"]');
+  const kpiCards = [...document.querySelectorAll('.executive-kpi')];
+  const customerRanks = [...document.querySelectorAll('.rank-cell')]
+    .map((el) => (el.textContent || '').trim());
+  const chartTypes = {
+    time_trend: !!trendSection?.querySelector('.executive-line-chart'),
+    region_comparison: !!document.querySelector('[data-business-role="region_comparison"] .executive-columns'),
+    category_contribution: !!document.querySelector('[data-business-role="category_contribution"] .executive-donut'),
+    top_products: !!document.querySelector('[data-business-role="top_products"] .executive-hbars'),
+    top_customers: !!customer?.querySelector('table'),
+  };
+  const prohibitedCurrencyTokens = ['销售额（元）', '人民币', '¥', '￥']
+    .filter((token) => mainText.includes(token));
+  const kpiRects = kpiCards.map((el) => el.getBoundingClientRect());
+  const structureCards = [...(structure?.querySelectorAll(':scope > .structure-grid > .visual-card') || [])];
+  const structureRects = structureCards.map((el) => el.getBoundingClientRect());
+  const sameRow = (rects) => rects.length > 0 && rects.every(
+    (rect) => Math.abs(rect.top - rects[0].top) <= 1
+  );
+  const structureGrid = structure?.querySelector('.structure-grid');
+  const gridTracks = structureGrid
+    ? getComputedStyle(structureGrid).gridTemplateColumns.split(/\s+/).filter(Boolean).length
+    : 0;
   return {
     readyState: document.readyState,
     title: document.title,
@@ -159,6 +184,31 @@ _GEOMETRY_EXPRESSION = r"""
     product: {
       header: rectOf(header), context: rectOf(context), kpis: rectOf(kpis),
       trendSection: rectOf(trendSection), rawTokens, businessRoles,
+      layoutContract: document.querySelector('main')?.dataset.layoutContract || '',
+      sectionOrder: sections.map((item) => item.name),
+      structureRoles: [...(structure?.querySelectorAll('[data-business-role]') || [])]
+        .map((el) => el.dataset.businessRole),
+      customerSeparated: !!customer && customer.querySelectorAll('[data-business-role="top_customers"]').length === 1,
+      kpiIconCount: kpiCards.filter((el) => el.querySelector('.kpi-icon svg')).length,
+      kpiTones: kpiCards.map((el) => el.dataset.kpiTone),
+      chartTypes,
+      customerRanks,
+      prohibitedCurrencyTokens,
+      donutLegendCount: document.querySelectorAll('[data-business-role="category_contribution"] .executive-legend li').length,
+      donutOverflowNote: document.body.innerText.includes('项未在图例展开'),
+      templateGeometry: {
+        kpiCount: kpiRects.length,
+        kpisSameRow: sameRow(kpiRects),
+        structureCardCount: structureRects.length,
+        structureSameRow: sameRow(structureRects),
+        structureGridTracks: gridTracks,
+        structureWidthSpread: structureRects.length
+          ? Math.max(...structureRects.map((rect) => rect.width)) - Math.min(...structureRects.map((rect) => rect.width))
+          : 0,
+        heroWidthRatio: trendSection && context
+          ? trendSection.getBoundingClientRect().width / context.getBoundingClientRect().width
+          : 0,
+      },
       kpisInFirstViewport: !!kpis && kpis.getBoundingClientRect().bottom <= innerHeight,
       hierarchyOrdered: !!header && !!context && !!kpis && !!trendSection &&
         header.getBoundingClientRect().top < context.getBoundingClientRect().top &&
@@ -167,7 +217,10 @@ _GEOMETRY_EXPRESSION = r"""
     },
     trend: svg ? {points: document.querySelectorAll('.trend-point').length,
       width: svgRect.width, cardWidth: cardRect.width,
-      withinCard: svgRect.left >= cardRect.left - 1 && svgRect.right <= cardRect.right + 1} : null,
+      withinCard: svgRect.left >= cardRect.left - 1 && svgRect.right <= cardRect.right + 1,
+      desktopTickLabels: document.querySelectorAll('.trend-ticks--desktop text').length,
+      tabletTickLabels: document.querySelectorAll('.trend-ticks--tablet text').length,
+      mobileTickLabels: document.querySelectorAll('.trend-ticks--mobile text').length} : null,
     identity: document.querySelector('main')?.dataset.templateKey || '',
     staticRuntime: !document.querySelector('script, link[rel="stylesheet"], iframe, object, embed'),
     fontFamily: getComputedStyle(body).fontFamily,
@@ -219,6 +272,47 @@ def _case_failures(scenario: str, width: int, geometry: dict[str, object]) -> li
         }
         if not required_roles.issubset(set(product.get("businessRoles") or [])):
             failures.append("full_available_section_missing")
+        if product.get("layoutContract") != "executive-12-column":
+            failures.append("fixed_layout_contract_missing")
+        expected_order = [
+            "executive_header", "reading_context", "kpi_summary",
+            "hero_sales_trend", "business_structure", "customer_analysis",
+            "audit_footer",
+        ]
+        if product.get("sectionOrder") != expected_order:
+            failures.append("fixed_section_order_invalid")
+        if product.get("structureRoles") != [
+            "region_comparison", "category_contribution", "top_products"
+        ]:
+            failures.append("fixed_structure_slots_invalid")
+        if not product.get("customerSeparated"):
+            failures.append("customer_section_not_separated")
+        if product.get("kpiIconCount") != 4 or product.get("kpiTones") != [
+            "blue", "green", "purple", "orange"
+        ]:
+            failures.append("fixed_kpi_slots_invalid")
+        if not all((product.get("chartTypes") or {}).values()):
+            failures.append("fixed_visual_mapping_invalid")
+        if product.get("prohibitedCurrencyTokens"):
+            failures.append("generic_currency_guessed")
+        if any("." in rank or not rank.isdigit() for rank in product.get("customerRanks") or []):
+            failures.append("customer_rank_not_integer")
+        if width == 1440:
+            template_geometry = product.get("templateGeometry") or {}
+            if (
+                template_geometry.get("kpiCount") != 4
+                or not template_geometry.get("kpisSameRow")
+            ):
+                failures.append("desktop_kpi_four_column_geometry_invalid")
+            if (
+                template_geometry.get("structureCardCount") != 3
+                or not template_geometry.get("structureSameRow")
+                or template_geometry.get("structureGridTracks") != 12
+                or template_geometry.get("structureWidthSpread", 999) > 2
+            ):
+                failures.append("desktop_structure_three_column_geometry_invalid")
+            if template_geometry.get("heroWidthRatio", 0) < 0.98:
+                failures.append("desktop_hero_not_full_width")
         if width == 1440:
             context = product.get("context") or {}
             trend_section = product.get("trendSection") or {}
@@ -240,6 +334,13 @@ def _case_failures(scenario: str, width: int, geometry: dict[str, object]) -> li
         expected = int(scenario.removeprefix("points_"))
         if trend is None or trend["points"] != expected or not trend["withinCard"]:
             failures.append("trend_geometry_or_count")
+        if trend is not None and trend.get("desktopTickLabels") != min(expected, 18):
+            failures.append("desktop_trend_tick_policy_invalid")
+    if scenario == "category_gt_8":
+        if not (product.get("chartTypes") or {}).get("category_contribution"):
+            failures.append("high_cardinality_category_not_donut")
+        if product.get("donutLegendCount", 99) > 8 or not product.get("donutOverflowNote"):
+            failures.append("high_cardinality_donut_legend_unbounded")
     if width == 430 and geometry["document"]["clientWidth"] != 430:
         failures.append("mobile_viewport_mismatch")
     return failures

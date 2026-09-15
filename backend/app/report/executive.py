@@ -16,6 +16,7 @@ from string import Template
 from typing import Any, Callable
 
 from backend.app.report.base import ReportRenderer
+from backend.app.report.executive_contract import EXECUTIVE_TEMPLATE_CONTRACT
 from backend.app.report.presentation import (
     ProfessionalReportPresenter,
     ReportPresentationProjection,
@@ -29,21 +30,39 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
     _TEMPLATE_PATH = (
         Path(__file__).with_name("templates") / "sales_executive_report.html"
     )
-    _SUPPORTED_TEMPLATES = ("sales_executive_report",)
+    _SUPPORTED_TEMPLATES = (EXECUTIVE_TEMPLATE_CONTRACT.template_key,)
     _ALLOWED_KPI_FIELDS = frozenset(
-        {"Total Sales", "Total Quantity", "Total Orders", "Average Order Value"}
+        item.field for item in EXECUTIVE_TEMPLATE_CONTRACT.kpi_slots
     )
     _ALLOWED_CHART_ROLES = frozenset(
-        {
-            "time_trend",
-            "category_contribution",
-            "region_comparison",
-            "top_products",
-            "top_customers",
-        }
+        item.business_role
+        for item in EXECUTIVE_TEMPLATE_CONTRACT.visual_slots
+        if item.visual_type != "table"
     )
-    _ALLOWED_VISUAL_TYPES = frozenset({"line", "donut", "column", "hbar"})
+    _ALLOWED_VISUAL_TYPES = frozenset(
+        item.visual_type
+        for item in EXECUTIVE_TEMPLATE_CONTRACT.visual_slots
+        if item.visual_type != "table"
+    )
     _MAX_SERIES = 200
+    _KPI_ICON_PATHS = {
+        "sales": (
+            '<path d="M4 17V11M10 17V7M16 17V3"/>'
+            '<path d="M2 20h20"/>'
+        ),
+        "quantity": (
+            '<path d="m4 7 8-4 8 4-8 4-8-4Z"/>'
+            '<path d="M4 7v10l8 4 8-4V7M12 11v10"/>'
+        ),
+        "orders": (
+            '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/>'
+            '<path d="M9 8h6M9 12h6"/>'
+        ),
+        "average": (
+            '<circle cx="9" cy="12" r="5"/>'
+            '<path d="M14 7h5v10h-5M7 12h4M9 10v4"/>'
+        ),
+    }
 
     @property
     def supported_templates(self) -> list[str]:
@@ -79,9 +98,17 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
                 )
             )
         if "category_contribution" in charts:
-            category = charts["category_contribution"]
-            builder = self._donut_chart if category.visual_type == "donut" else self._hbar_chart
-            structure_cards.append(self._visual_card(category, builder, projection))
+            structure_cards.append(
+                self._visual_card(
+                    charts["category_contribution"], self._donut_chart, projection
+                )
+            )
+        if "top_products" in charts:
+            structure_cards.append(
+                self._visual_card(
+                    charts["top_products"], self._hbar_chart, projection
+                )
+            )
         structure_block = (
             self._panel(
                 "business_structure",
@@ -96,32 +123,33 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             else ""
         )
 
-        ranking_cards: list[str] = []
-        if "top_products" in charts:
-            ranking_cards.append(
-                self._visual_card(
-                    charts["top_products"], self._hbar_chart, projection
-                )
-            )
-        if "top_customers" in charts:
-            ranking_cards.append(
-                self._visual_card(
-                    charts["top_customers"], self._hbar_chart, projection
-                )
-            )
-        ranking_cards.extend(self._ranking_table(item) for item in report.tables)
-        ranking_block = (
+        customer_cards = [self._ranking_table(item) for item in report.tables]
+        customer_block = (
             self._panel(
-                "ranking",
+                "customer_analysis",
                 "04",
-                "经营排名与明细",
-                "RANKING & DETAIL",
-                '<div class="executive-grid ranking-grid">'
-                + "".join(ranking_cards)
+                "客户分析",
+                "CUSTOMER ANALYSIS",
+                '<div class="executive-grid customer-grid">'
+                + "".join(customer_cards)
                 + "</div>",
+                extra_class="customer-analysis--ranking-only",
             )
-            if ranking_cards
+            if customer_cards
             else ""
+        )
+
+        section_blocks = {
+            "kpi_summary": kpi_block,
+            "hero_sales_trend": trend_block,
+            "business_structure": structure_block,
+            "customer_analysis": customer_block,
+            "detail": "",
+        }
+        content_blocks = "".join(
+            section_blocks[section]
+            for section in EXECUTIVE_TEMPLATE_CONTRACT.section_order
+            if section_blocks[section]
         )
 
         template = Template(self._TEMPLATE_PATH.read_text(encoding="utf-8"))
@@ -132,11 +160,11 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             source_display=self._text(projection.source_display_name),
             freshness=self._text(projection.freshness_display),
             generated_at=self._text(projection.generated_at_display),
+            theme_variables=EXECUTIVE_TEMPLATE_CONTRACT.css_variables(),
+            layout_contract=self._text(EXECUTIVE_TEMPLATE_CONTRACT.contract_key),
+            detail_state="detail_unavailable",
             reading_context=self._reading_context(report, projection),
-            kpi_block=kpi_block,
-            trend_block=trend_block,
-            structure_block=structure_block,
-            ranking_block=ranking_block,
+            content_blocks=content_blocks,
             audit_footer=self._audit_footer(report, projection),
         )
         self._validate_rendered_html(html)
@@ -155,17 +183,13 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             '<section class="reading-context context-strip" '
             'data-section="reading_context" aria-labelledby="reading-context-title">'
             '<div class="context-grid">'
-            '<article class="context-card"><span>分析期间</span>'
-            f'<strong>{cls._text(projection.analysis_period_display)}</strong></article>'
-            '<article class="context-card"><span>筛选状态</span>'
+            '<article class="context-card context-card--filter"><span>当前筛选</span>'
             f'<strong>{cls._text(projection.filter_display)}</strong></article>'
-            '<article class="context-card"><span>数据更新</span>'
-            f'<strong>{cls._text(projection.freshness_display)}</strong></article>'
-            '<article class="context-card"><span>经营状态</span>'
+            '<article class="context-card context-card--definition">'
+            '<span id="reading-context-title">指标口径</span>'
+            f'<strong>{cls._text(projection.metric_summary)}</strong></article>'
+            '<article class="context-card context-card--exception"><span>经营状态</span>'
             f'<strong>{cls._text(projection.exception_display)}</strong></article>'
-            '</div><div class="context-definition-summary">'
-            '<span id="reading-context-title">指标口径摘要</span>'
-            f'<strong>{cls._text(projection.metric_summary)}</strong>'
             '</div></section>'
         )
 
@@ -206,12 +230,16 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         projection: ReportPresentationProjection,
     ) -> str:
         decimals = 2 if kpi.format == "currency" else 0
+        slot = EXECUTIVE_TEMPLATE_CONTRACT.kpi_for_field(kpi.field)
+        icon = cls._KPI_ICON_PATHS[slot.icon]
         return (
-            f'<article class="executive-kpi" data-kpi="{cls._text(kpi.field)}">'
-            '<span class="kpi-accent" aria-hidden="true"></span>'
+            f'<article class="executive-kpi" data-kpi="{cls._text(kpi.field)}" '
+            f'data-kpi-tone="{slot.tone}">'
+            '<span class="kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24" '
+            f'focusable="false">{icon}</svg></span><div class="kpi-copy">'
             f'<span class="kpi-label">{cls._text(kpi.name)}</span>'
             f'<strong class="kpi-value">{cls._number(kpi.value, decimals)}</strong>'
-            f'<small>{cls._text(projection.metric_unit(kpi.field))}</small></article>'
+            f'<small>{cls._text(projection.metric_unit(kpi.field))}</small></div></article>'
         )
 
     @classmethod
@@ -328,7 +356,12 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         coords: list[tuple[Decimal, Decimal]],
     ) -> list[str]:
         groups: list[str] = []
-        for tier, maximum in (("desktop", 12), ("tablet", 8), ("mobile", 4)):
+        limits = (
+            ("desktop", EXECUTIVE_TEMPLATE_CONTRACT.desktop_trend_label_limit),
+            ("tablet", EXECUTIVE_TEMPLATE_CONTRACT.tablet_trend_label_limit),
+            ("mobile", EXECUTIVE_TEMPLATE_CONTRACT.mobile_trend_label_limit),
+        )
+        for tier, maximum in limits:
             indexes = cls._tick_indexes(len(points), maximum)
             texts = "".join(
                 f'<text x="{coords[index][0]:.2f}" y="385" text-anchor="middle">'
@@ -382,23 +415,31 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         offset = Decimal("0")
         segments: list[str] = []
         legend: list[str] = []
+        legend_limit = EXECUTIVE_TEMPLATE_CONTRACT.donut_legend_limit
         for index, (item, value) in enumerate(zip(points, values), start=1):
+            color_index = (index - 1) % legend_limit + 1
             percent = (value * Decimal("100") / total).quantize(
                 Decimal("0.01"), rounding=ROUND_HALF_UP
             )
             segments.append(
-                f'<circle class="donut-segment donut-segment-{index}" cx="100" cy="100" r="70" '
+                f'<circle class="donut-segment donut-color-{color_index}" cx="100" cy="100" r="70" '
                 'pathLength="100" '
                 f'stroke-dasharray="{percent:.2f} {Decimal("100")-percent:.2f}" '
                 f'stroke-dashoffset="{-offset:.2f}"><title>{cls._text(item["label"])} '
                 f'{percent:.2f}%</title></circle>'
             )
-            legend.append(
-                '<li><span class="legend-dot" '
-                f'data-color-index="{index}"></span><span>{cls._text(item["label"])}</span>'
-                f'<strong>{percent:.2f}%</strong></li>'
-            )
+            if index <= legend_limit:
+                legend.append(
+                    '<li><span class="legend-dot" '
+                    f'data-color-index="{color_index}"></span><span>{cls._text(item["label"])}</span>'
+                    f'<strong>{percent:.2f}%</strong></li>'
+                )
             offset += percent
+        legend_note = (
+            f'<p class="legend-note">还有 {len(points) - legend_limit} 项未在图例展开</p>'
+            if len(points) > legend_limit
+            else ""
+        )
         return (
             '<div class="executive-donut chart-frame"><svg viewBox="0 0 200 200" '
             f'role="img" aria-label="{cls._text(chart.title)}">'
@@ -408,7 +449,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             '<text class="donut-caption" x="100" y="116" text-anchor="middle">总销售额</text>'
             '</svg><ul class="executive-legend">'
             + "".join(legend)
-            + "</ul></div>"
+            + f"</ul>{legend_note}</div>"
         )
 
     @classmethod
@@ -438,10 +479,9 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         headers = "".join(f'<th scope="col">{cls._text(item)}</th>' for item in table.columns)
         rows = "".join(
             "<tr>"
-            + "".join(
-                f"<td>{cls._number(value, 2) if cls._is_number(value) else cls._text(value)}</td>"
-                for value in row
-            )
+            + f'<td class="rank-cell">{cls._number(row[0], 0)}</td>'
+            + f"<td>{cls._text(row[1])}</td>"
+            + f'<td class="number-cell">{cls._number(row[2], 2)}</td>'
             + "</tr>"
             for row in table.rows
         )
@@ -487,7 +527,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
 
     @classmethod
     def _validate_spec(cls, report: ReportSpec) -> None:
-        if report.template_key != "sales_executive_report":
+        if report.template_key != EXECUTIVE_TEMPLATE_CONTRACT.template_key:
             raise ValueError("executive_report_renderer_template_rejected")
         if report.title != "销售经营分析报告":
             raise ValueError("executive_report_title_invalid")
@@ -550,14 +590,10 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             seen.add(chart.business_role)
             if chart.visual_type not in cls._ALLOWED_VISUAL_TYPES:
                 raise ValueError("executive_report_chart_visual_unregistered")
-            expected = {
-                "time_trend": {"line"},
-                "category_contribution": {"donut", "hbar"},
-                "region_comparison": {"column", "hbar"},
-                "top_products": {"hbar"},
-                "top_customers": {"hbar"},
-            }[chart.business_role]
-            if chart.visual_type not in expected:
+            expected = EXECUTIVE_TEMPLATE_CONTRACT.visual_for_role(
+                chart.business_role
+            ).visual_type
+            if chart.visual_type != expected:
                 raise ValueError("executive_report_chart_visual_role_invalid")
             points = cls._series(chart)
             positions: list[int] = []
@@ -570,7 +606,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
                     if not isinstance(position, int) or position < 1:
                         raise ValueError("executive_report_chart_series_invalid")
                     positions.append(position)
-            if chart.business_role in {"top_products", "top_customers"}:
+            if chart.business_role == "top_products":
                 if positions != list(range(1, len(points) + 1)):
                     raise ValueError("executive_report_ranking_order_invalid")
             elif positions:
@@ -583,7 +619,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         if len(tables) > 1:
             raise ValueError("executive_report_table_count_invalid")
         for table in tables:
-            if table.title != "Top 客户" or table.columns != ["排名", "客户", "销售额（元）"]:
+            if table.title != "Top 客户" or table.columns != ["排名", "客户", "销售额"]:
                 raise ValueError("executive_report_table_binding_invalid")
             if not table.rows or len(table.rows) > 50:
                 raise ValueError("executive_report_table_rows_invalid")

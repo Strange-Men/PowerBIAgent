@@ -43,7 +43,7 @@ def _fact_projection(report: Any) -> dict[str, object]:
                 (index, row[0], row[1])
                 for index, row in enumerate(table.rows, start=1)
             ]
-        elif table.columns == ["排名", "客户", "销售额（元）"]:
+        elif table.columns == ["排名", "客户", "销售额"]:
             customer_rows = [tuple(row) for row in table.rows]
     return {
         "kpis": [(item.field, item.value) for item in report.kpis],

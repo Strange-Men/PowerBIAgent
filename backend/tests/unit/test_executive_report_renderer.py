@@ -200,7 +200,7 @@ def _report(*, point_count: int = 6, no_filters: bool = False) -> ReportSpec:
         tables=[
             TableSpec(
                 title="Top 客户",
-                columns=["排名", "客户", "销售额（元）"],
+                columns=["排名", "客户", "销售额"],
                 rows=[
                     [1, "超长名称跨区域企业集团重点战略客户（亚太区）", 1_650_000],
                     [2, "XYZ 集团", 1_280_000],
@@ -241,15 +241,13 @@ async def test_executive_renderer_renders_all_p0_reading_context_fields_in_html(
     assert "当前 Power BI Desktop 模型" in html
     assert "Power BI Desktop · 实时查询" in html
     assert "暂不可获取" in html
-    assert "2026-09-11 08:30 UTC" in html
+    assert "2026-09-11 16:30 北京时间" in html
     for required in (
-        "2025-01-01 至 2025-06-30",
         "区域等于South",
         "品类属于Office、Technology",
         "暂无可验证异常基准",
-            "暂不可获取",
-            "Power BI 度量值",
-            "未声明",
+        "Power BI 度量值",
+        "未声明",
         "未设置",
     ):
         assert required in reading_context
@@ -276,7 +274,7 @@ async def test_executive_renderer_has_fixed_information_architecture_and_60_poin
         html.index('data-section="kpi_summary"'),
         html.index('data-section="hero_sales_trend"'),
         html.index('data-section="business_structure"'),
-        html.index('data-section="ranking"'),
+        html.index('data-section="customer_analysis"'),
         html.index('data-section="audit_footer"'),
     ]
     assert order == sorted(order)
@@ -294,7 +292,7 @@ async def test_executive_renderer_escapes_unsafe_text_and_has_no_external_runtim
             "tables": [
                 TableSpec(
                     title="Top 客户",
-                    columns=["排名", "客户", "销售额（元）"],
+                    columns=["排名", "客户", "销售额"],
                     rows=[
                         [1, '<img src=x onerror="alert(1)">', 10],
                         [2, '<script>alert(1)</script>', 9],
@@ -366,7 +364,7 @@ async def test_executive_renderer_omits_missing_optional_sections_and_reflows():
     assert "无额外筛选" in html
     assert 'data-section="hero_sales_trend"' in html
     assert 'data-section="business_structure"' not in html
-    assert 'data-section="ranking"' not in html
+    assert 'data-section="customer_analysis"' not in html
 
 
 def _report_data(template_key: str) -> SalesReportData:

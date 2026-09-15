@@ -18,7 +18,7 @@
 5. M5.10 只注册 Total Sales、Total Quantity、Total Orders、Average Order Value 四项定义，不扩展新业务指标。
 6. 异常状态只有 `EVALUATED` 与 `CANNOT_DETERMINE`。`EVALUATED` 必须绑定 deterministic rule ID 和 VerifiedFactSet evidence；当前无 Target/Budget/Forecast/statistical rule，合法默认是“当前模型未提供可验证的目标、预测或异常判断基准”。
 7. `data_updated_at` 表示业务数据真实刷新时间，`generated_at` 表示 artifact 创建时间，二者永不互相填充。MCP query time 也不等于刷新时间。无权威 runtime refresh metadata 时 freshness 必须为 UNKNOWN。
-8. 三张参考图分别是 P0 Reading Context、P1 layout intent、P2 style inspiration。**Reference images are NOT factual or functional authority.** 图片中的 YoY/MoM/Forecast/Target/Map/AI Insight/Anomaly/Budget/任意字段和图表不得自动成为能力。
+8. 三张参考图的 presentation authority 固定为：`01` 是 P0 Reading Context 信息完整性 authority，`02` 是 P1 professional template layout authority，`03` 是 P1 professional visual-language authority。它们约束 UI、layout、card、color、table、chart presentation、hierarchy 与 spacing；**仍不是 factual、DAX、semantic 或 metric authority。** 图片中的 YoY/MoM/Forecast/Target/Map/AI Insight/Anomaly/Budget/任意字段不得自动成为能力。
 9. `SALES_QUERY_REQUIREMENTS` 是两个销售模板唯一共享 query requirement authority。相同模型、scope 与 requirement 必须经过相同 CanonicalQueryPlan → deterministic DAX → QueryResult → VerifiedFactSet；模板只能改变信息架构、布局、视觉与样式。
 10. `ReportDataSnapshot` 固化 semantic model identity、schema fingerprint、QueryResult/VerifiedFactSet provenance、source mode/source kind、可选 data refresh time、queried/snapshot time。`REMOTE_MCP` 仅是保留的 source-kind 值，不绑定 endpoint、auth 或 request schema。
 11. 新身份 `sales_executive_report` / “专业销售经营分析模板” / `executive_sales_report` / `COMPLEX` 在 M5.10 foundation 注册；M5.10.1 完成 fixed Renderer 与 Real Visual Acceptance 后已开放，并与 `sales_report` 一同要求用户显式选择。
@@ -26,6 +26,8 @@
 13. M5.10.2 的 coverage 只有 `REQUESTED` 与 `FULL_AVAILABLE` 两种 typed mode。`FULL_AVAILABLE` 必须是 selected template ∩ runtime capability ∩ registered section catalog ∩ non-empty VerifiedFactSet evidence；weak LLM、通用工具预算或 Renderer 不得缩减、扩展或伪造该集合。unavailable 与 facts 后 dropped section 必须带确定性原因进入 audit。
 14. 专业报表的友好名称、状态、单位和时间只属于 presentation projection。canonical model/source/status/timestamp/metric provenance 必须原样保留并可审计；projection 不得修改值、scope、顺序或 provenance。
 15. `queried_at`、`snapshot_at`、`generated_at` 分别表示查询结果取得、VerifiedFactSet 快照完成和 artifact 生成三个不同 application-clock 事件；`data_updated_at` 仍只接受 runtime refresh metadata。失败或取消后若 artifact 已创建但 Memory 未提交，必须通过正式 repository API 补偿删除，不能形成第二持久化管线。
+16. `sales_executive_report` 是 fixed executive dashboard template。repository-owned presentation contract 决定 theme、typography、spacing、section order、12-column grid、KPI component、visual/table mapping 与 responsive variants；runtime 只能以 VerifiedFactSet-backed `ReportSpec` 填充预定义 slot。不得按 cardinality 为同一 section 改换图表类型，也不得退化为 Simple adaptive card layout。
+17. 专业报表 presentation timezone 固定为 `Asia/Shanghai`；aware timestamp 转换后标示“北京时间”，canonical aware UTC 值保持不变。naive timestamp 继续显示“时区未声明”。generic `currency` 不能证明 CNY，因此不得显示元、¥ 或人民币；ranking position 必须以整数展示。
 
 ## 备选方案
 

@@ -40,7 +40,7 @@
 
 `state=UNKNOWN, data_updated_at=None, display_text="数据更新时间：模型未提供"`。
 
-professional presentation 可把 `UNKNOWN` 映射为“暂不可获取”等友好文案，但不得更改 canonical state 或填造时间。`queried_at`、`snapshot_at`、`generated_at` 分别由查询结果取得、VerifiedFactSet 快照完成和 artifact 生成阶段独立取时；不得复制同一时间冒充三个事件。aware datetime 在缺少用户/application timezone authority 时统一显示 UTC；naive datetime 必须注明“时区未声明”，禁止猜测本地时区。
+professional presentation 可把 `UNKNOWN` 映射为“暂不可获取”等友好文案，但不得更改 canonical state 或填造时间。`queried_at`、`snapshot_at`、`generated_at` 分别由查询结果取得、VerifiedFactSet 快照完成和 artifact 生成阶段独立取时；不得复制同一时间冒充三个事件。当前报表 presentation policy 固定为 `Asia/Shanghai`：aware datetime 转换并标示“北京时间”，canonical aware UTC 不变；naive datetime 必须注明“时区未声明”，禁止猜测本地时区。
 
 ## 7. Data Snapshot / Source Boundary
 
@@ -59,6 +59,8 @@ professional presentation 可把 `UNKNOWN` 映射为“暂不可获取”等友�
 
 M5.10.2 新增 `REQUESTED` / `FULL_AVAILABLE` coverage。`FULL_AVAILABLE` 的最终 section 集合固定为 selected template、runtime capability、registered catalog 与 non-empty VerifiedFactSet evidence 的交集；unavailable/dropped section 必须有原因，禁止 weak LLM、预算截断、placeholder 或 fake zero 改写完整度。专业主阅读区使用友好 display，exact canonical identity/source/timestamp/metric provenance 保留在低权重 audit footer。
 
+`sales_executive_report` 的 presentation 是 repository-owned fixed contract，而非 generic adaptive visual design。固定映射为：monthly sales → full-width line/area、region → vertical column、category → donut、top products → ranked horizontal bar、top customers → ranked table；KPI 使用四个固定 component slot。可用 section 只决定预定义 slot 显示或隐藏，不能改变设计语言。generic currency 不推导 CNY；缺少既有事实时不渲染 detail/concentration/comparison 等 slot。
+
 ## 10. 验收
 
-永久测试覆盖模板 tier、全部必填字段、scope authority、UNKNOWN metric basis、CANNOT_DETERMINE exception、四类时间分离、共享 sales requirement identity、typed coverage、presentation/canonical 边界、无 fallback 和简易模板回归。Mutation sanity 必须能抓住生成时间冒充刷新时间、complex 绕过 ReadingContext、executive requirement 漂移、主区泄漏 raw technical token、Reading Context 过高和 FULL_AVAILABLE section 缺失。
+永久测试覆盖模板 tier、全部必填字段、scope authority、UNKNOWN metric basis、CANNOT_DETERMINE exception、四类时间分离、共享 sales requirement identity、typed coverage、presentation/canonical 边界、无 fallback 和简易模板回归。FIX 还必须覆盖 fixed visual mapping/section/theme、Executive 与 Simple DOM 差异、KPI component、18 点 desktop ticks、北京时间/naive 边界、generic currency 与 integer rank。Mutation sanity 必须能抓住生成时间冒充刷新时间、complex 绕过 ReadingContext、executive requirement 漂移、主区泄漏 raw technical token、Reading Context 过高、FULL_AVAILABLE section 缺失、2-column structure、adaptive visual substitution、CNY 猜测与 decimal rank。

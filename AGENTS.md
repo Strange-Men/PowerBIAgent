@@ -7,9 +7,9 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.10.2 — Executive Report Product Refinement & Hardening**。明确报表生成短语已稳定路由，`FULL_AVAILABLE` 只展开 runtime 可用的注册 section；专业模板增加 presentation-only projection、紧凑 Reading Context、真实 queried/snapshot/generated 时间语义与 report-specific compensation/cancellation 收口。Simple/Rich PBIX、DeepSeek-only 精确短语链、真实 Chrome 视觉与两模板事实 parity 已验证。发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10.3 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.10.2 FIX — Executive Template Visual Fidelity**。`sales_executive_report` 已收紧为 repository-owned fixed executive dashboard template：固定 theme、12-column grid、section order、KPI icon/tone、visual/table mapping 与 responsive variants，runtime facts 只填预定义 slot。02/03 参考图分别成为 P1 layout/visual-language presentation authority；北京时间、generic currency 与 integer rank 已收口。Simple/Rich PBIX、DeepSeek-only 精确短语、真实 Chrome 与两模板事实 parity 已验证。发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10.3 NOT STARTED，M5 FINAL=false。
 
-当前开发阶段：**M5.10.2 — 专业报表语义、呈现与可靠性二次开发（本地产品收口完成；发布以当前 main exact-SHA CI success 为证据）**。本轮不实现 Remote MCP、新业务指标或 M5.10.3；M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结。
+当前开发阶段：**M5.10.2 FIX — 专业销售模板视觉忠实度修复（本地产品收口完成；发布以当前 main exact-SHA CI success 为证据）**。本轮不实现 Remote MCP、新业务指标或 M5.10.3；M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -58,7 +58,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.8.4** 已在现有 ModelSemanticContext/SemanticCatalog/Grounding 内完成跨语言对象/成员绑定与 canonical KEEP/REPLACE 优化；report template choice 不等于本轮 report intent。LLM 仅在 runtime 已证明存在的候选 ID 中解释语言，不能产生新对象或事实。`41b6e0b` 主开发后，首次 CI [#33455159267](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33455159267) 因测试 reference date 漂移失败；`a975310` 修复测试时钟后，CI [#33457056546](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33457056546) completed/success；`3e3d8ac` 最终治理 CI [#33580808379](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33580808379) exact-SHA completed/success，M5.8.4 COMPLETE。M5.9/M5.10 不启动。
 - **M5.8.5** 已在现有链加入四个通用 correctness Gate；unknown/known+unknown member、残缺 shape、Result 语义不一致均在事实/执行边界 fail closed，TopN tie-break、trend ASC、table/chart 共序与完整 effective scope 均由确定性合同约束。Rich Sales、M3 Test、Logistics Test 的双 Provider Real 与 A→B→C→A 隔离通过；无第二套 authority、无 migration、无 M5.9/M5.10 工作。**M5.8.5 COMPLETE。**
 - **M5.10.1** 已完成独立 Professional Sales Renderer、双模板公开显式选择、Simple/Executive factual parity、Simple/Rich PBIX 与 18×4 Chrome visual/geometry acceptance；四项 mutation sanity 均可先红后绿。M5.10 foundation authority 未改变，M5.10.2 NOT STARTED。**M5 FINAL=false。**
-- **M5.10.2** 已完成 Report Request 路由、`FULL_AVAILABLE`、专业 presentation projection/视觉收口、provenance 时间分离、artifact compensation/cancellation、两模板 lifecycle/stale/concurrency/security/cloud-ready 验证；Rich/Simple PBIX 与 DeepSeek-only exact phrase PASS。M5.10.3 NOT STARTED，**M5 FINAL=false。**
+- **M5.10.2** 已完成 Report Request 路由、`FULL_AVAILABLE`、专业 presentation projection、provenance 时间分离与 report-specific hardening；Manual Visual Fidelity FIX 进一步冻结 fixed template contract、02/03 presentation authority、3-column structure、KPI template assets、18 点完整标签、北京时间、generic currency 与 integer rank。Rich/Simple PBIX、DeepSeek-only exact phrase、真实 Chrome 与 fact parity PASS。M5.10.3 NOT STARTED，**M5 FINAL=false。**
 
 当前真实主链：
 
@@ -153,6 +153,7 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 58. M5.10.2：明确 report verb+noun 在同一 bounded clause 时优先 Report Request；`FULL_AVAILABLE` = selected template ∩ runtime capability ∩ registry ∩ verified evidence，weak LLM 不得缩减或扩张，预算不足不得静默截断。
 59. M5.10.2：主视觉只消费 presentation-only friendly projection；exact model/source/enum/timestamp/metric identity 保留在 canonical contract/低权重 audit。`queried_at`、`snapshot_at`、`generated_at`、`data_updated_at` 各自取得真实语义，不得互相冒充。
 60. M5.10.2：report artifact 只能在 Memory commit 成功后成为 active 完成资源；commit error/cancellation 必须复用正式 repository compensation/durable delete，禁止 orphan HTML、ghost metadata 或第二套 persistence pipeline。
+61. M5.10.2 FIX：复杂 fixed template 拥有 presentation；runtime facts 只填预定义 slot。`sales_executive_report` 的 trend/region/category/products/customers 固定映射为 line-area/column/donut/ranked-hbar/ranked-table，禁止 cardinality-based 改型；generic currency 不推导 CNY，aware time 只在 presentation 转 `Asia/Shanghai`，naive time 不猜。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前跨入未批准里程碑、开发 Remote MCP；未经用户明确批准不得创建 Tag。
 
@@ -186,4 +187,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-09-14 | M5.10.2 本地产品收口完成；M5.10.3 NOT STARTED；M5.9.2 runtime frozen；main-only；M5 FINAL=false*
+*最后更新：2026-09-15 | M5.10.2 Manual Visual Fidelity FIX 本地产品收口完成；M5.10.3 NOT STARTED；M5.9.2 runtime frozen；main-only；M5 FINAL=false*

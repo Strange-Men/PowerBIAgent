@@ -3,11 +3,49 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-14 | M5.10.2 Executive Report Product Refinement & Hardening；M5.10.3 NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-15 | M5.10.2 Manual Visual Fidelity FIX；M5.10.3 NOT STARTED；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-5102-004
+  title: 专业模板被通用自适应视觉策略与弱产品门禁退化为 Simple 换皮
+  category: ERR
+  first_detected_version: M5.10.2
+  symptom: 人工验收发现 Executive 使用 2+2 通用卡片结构、品类/区域视觉可随 cardinality 改型、桌面 15—18 月漏标签、aware time 显示 UTC、generic currency 猜元且 rank 显示 1.00
+  local_evidence: baseline 2db9a43 的 72/72 geometry gate 全绿但 1440 截图仍与 02/03 参考骨架明显不同；新增 FIX regressions 对六类缺陷稳定先红
+  authoritative_sources:
+  - title: ADR-019 Complex Report Reading Context and Template Authority
+    reason: 复杂模板必须保持事实 authority 与 presentation authority 分离，参考资产只约束展示而不能生成业务事实
+  - title: Executive Template Visual Fidelity user acceptance
+    reason: 用户明确冻结 fixed dashboard skeleton、visual mapping、北京时间、generic currency 与 integer rank
+  root_cause: Executive spec builder 复用 Simple 的 cardinality-based VisualizationPolicy，renderer 又允许多个 visual type；浏览器门禁只检查 overflow/section existence，没有验证固定 DOM、视觉映射或业务格式
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 新增 immutable ExecutiveTemplatePresentationContract 并由 builder/renderer/template 共同消费；强化 Chrome product gate与永久 formatter/DOM/mapping regressions
+  regression_tests:
+  - backend/tests/unit/test_executive_visual_fidelity_fix.py
+  - backend/tests/unit/test_executive_report_browser_gate.py
+  - backend/tests/unit/test_executive_report_renderer.py
+  prohibited_patterns:
+  - 专业模板复用 generic cardinality-based visual choice
+  - 用无 overflow 证明 reference fidelity
+  - generic currency 推导 CNY 符号或单位
+  - 对 aware canonical UTC 原值做展示层之外的修改
+  prevention_rules:
+  - fixed template 的 visual mapping、grid、theme、section order 与 responsive variant 必须 repository-owned
+  - browser gate 必须验证 12-column DOM、三栏 slot、KPI icon/tone、固定 visual/table mapping、tick 与格式
+  - reference visual authority 不得越过 VerifiedFactSet factual authority
+  related_adr: ADR-019
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-15'
+    action: discovered
+    version: M5.10.2
+  - date: '2026-09-15'
+    action: mitigation
+    version: M5.10.2
 - id: ERR-5102-003
   title: naive datetime 把本地化文案传入 strftime 导致英文 Windows locale 编码失败
   category: ERR

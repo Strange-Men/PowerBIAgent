@@ -1171,7 +1171,7 @@ async def test_production_full_available_executes_all_nine_sections_with_true_ti
     )
     assert "local_desktop_model" not in main_visual
     assert "local_desktop_model" in audit_footer
-    assert "2026-09-14 01:00 UTC" in main_visual
+    assert "2026-09-14 09:00 北京时间" in main_visual
     assert "2026-09-14T01:00:01+00:00" in audit_footer
     assert repository.store_count == 1
 
