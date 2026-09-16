@@ -874,7 +874,16 @@ class FactOutputValidator:
         )
         used = [facts.get(item) for item in answer.fact_ids]
         used = [item for item in used if item is not None]
-        errors.extend(self._validate_text(answer.answer + " " + answer.summary, used))
+        trusted_fragments, context_errors = self._trusted_answer_context(
+            answer, facts
+        )
+        errors.extend(context_errors)
+        errors.extend(self._validate_text(
+            answer.answer + " " + answer.summary,
+            used,
+            trusted_fragments=trusted_fragments,
+            row_count=facts.row_count,
+        ))
         scalar = {
             item.measure: item.value
             for item in used
@@ -894,7 +903,9 @@ class FactOutputValidator:
         used = [facts.get(item) for item in report.fact_ids]
         used = [item for item in used if item is not None]
         errors.extend(self._validate_text(
-            " ".join([report.summary, *report.insights]), used
+            " ".join([report.summary, *report.insights]),
+            used,
+            row_count=facts.row_count,
         ))
         metric_pairs = {
             (item.source_fields[-1], self._json_value(item.value))
@@ -930,7 +941,12 @@ class FactOutputValidator:
         return errors
 
     def _validate_text(
-        self, text: str, used: list[VerifiedFact]
+        self,
+        text: str,
+        used: list[VerifiedFact],
+        *,
+        trusted_fragments: tuple[str, ...] = (),
+        row_count: int | None = None,
     ) -> list[str]:
         errors: list[str] = []
         if any(term in text for term in self._CAUSAL):
@@ -970,21 +986,96 @@ class FactOutputValidator:
             for item in used
         ):
             errors.append("unverified_minimum_claim")
+        numeric_text = text
+        for fragment in trusted_fragments:
+            if fragment:
+                numeric_text = numeric_text.replace(fragment, "")
+        if row_count is not None:
+            count = re.escape(str(row_count))
+            numeric_text = re.sub(
+                rf"(?:TopN结果)?共返回\s*{count}\s*项|"
+                rf"该期间共返回\s*{count}\s*项|"
+                rf"结果包含\s*{count}\s*行",
+                "",
+                numeric_text,
+            )
         allowed_numbers = self._allowed_numbers(used)
-        for token in self._NUMBER.findall(text):
+        for token in self._NUMBER.findall(numeric_text):
             if self._normalize_number(token) not in allowed_numbers:
                 errors.append("unverified_numeric_claim")
                 break
         return errors
 
+    def _trusted_answer_context(
+        self,
+        answer: AnswerSpec,
+        facts: VerifiedFactSet,
+    ) -> tuple[tuple[str, ...], list[str]]:
+        """Validate and isolate deterministic scope/coverage display fragments.
+
+        Their numbers are valid only inside the exact deterministic fragment;
+        they never enter the business-value allowlist.
+        """
+        from backend.app.presentation.query_scope import (
+            DeterministicQueryScopeDescriptor,
+        )
+
+        errors: list[str] = []
+        trusted: list[str] = []
+        evidence = answer.evidence if isinstance(answer.evidence, dict) else {}
+        effective_scope = evidence.get("effective_scope", "")
+        requested_scope = evidence.get("requested_query_scope", "")
+        canonical_scope = evidence.get("canonical_query_scope")
+        if any((effective_scope, requested_scope, canonical_scope is not None)):
+            if not isinstance(effective_scope, str) or requested_scope != effective_scope:
+                errors.append("requested_query_scope_mismatch")
+            plan_semantics = (
+                facts.facts[0].provenance.plan_semantics if facts.facts else None
+            )
+            try:
+                plan = CanonicalQueryPlan.model_validate(plan_semantics)
+                expected_canonical = (
+                    DeterministicQueryScopeDescriptor.canonical_evidence(plan)
+                )
+            except Exception:
+                expected_canonical = None
+            if canonical_scope != expected_canonical:
+                errors.append("canonical_query_scope_mismatch")
+            elif isinstance(effective_scope, str) and effective_scope:
+                trusted.append(effective_scope)
+
+        coverage = facts.observed_data_coverage
+        trusted.extend((
+            FactBoundedAnswerBuilder._coverage_text(coverage, "zh-CN"),
+            FactBoundedAnswerBuilder._coverage_text(coverage, "en-US"),
+        ))
+        return tuple(dict.fromkeys(item for item in trusted if item)), errors
+
     def _allowed_numbers(self, facts: list[VerifiedFact]) -> set[str]:
         allowed: set[str] = set()
         for item in facts:
-            for value in (item.value, item.values):
-                self._collect_numbers(value, allowed)
-            self._collect_numbers(item.dimensions, allowed)
-            self._collect_numbers(item.source_fields, allowed)
-            self._collect_numbers(item.provenance.semantic_model_key, allowed)
+            if item.fact_type in {
+                FactType.SCALAR_METRIC,
+                FactType.GROUPED_METRIC,
+                FactType.MAXIMUM,
+                FactType.MINIMUM,
+            }:
+                self._collect_numbers(item.value, allowed)
+                self._collect_numbers(item.dimensions, allowed)
+            elif item.fact_type is FactType.ENTITY_VALUE:
+                self._collect_numbers(item.value, allowed)
+                self._collect_numbers(item.dimensions, allowed)
+            elif item.fact_type is FactType.RANKING:
+                for ranked in item.values:
+                    if not isinstance(ranked, dict):
+                        continue
+                    self._collect_numbers(ranked.get("value"), allowed)
+                    self._collect_numbers(ranked.get("dimensions"), allowed)
+            elif item.fact_type is FactType.APPLIED_FILTER:
+                # Filter values are verified user-visible dimension/member
+                # facts. Field identities and technical provenance are not.
+                if isinstance(item.value, dict):
+                    self._collect_numbers(item.value.get("value"), allowed)
         return allowed
 
     def _collect_numbers(self, value: Any, output: set[str]) -> None:

@@ -169,9 +169,20 @@ class QuestionRouter:
         r"(?:数据分析).{0,8}(?:范围|支持)|我可以怎么问"
     )
     _SYSTEM = re.compile(r"(?:你|当前|现在).{0,5}(?:是|使用|用的).{0,4}(?:什么|哪个|哪种)?.{0,3}模型")
-    _GENERAL = re.compile(
-        r"^(?:我是谁|你知道我是谁吗|今天天气(?:怎么样|如何)?|"
-        r"(?:给我)?讲个笑话|(?:帮我)?写(?:一首)?诗|陪我聊天)[？?。.]?$"
+    _FOLLOW_ON_DATA_REQUEST = re.compile(
+        r"(?:顺便|再|然后|同时|另外|并且?|还|[，,；;。]\s*).{0,80}"
+        r"(?:看|查|查询|分析|统计|比较|多少|哪些|谁|趋势|排名|报表)",
+        re.IGNORECASE,
+    )
+    _UNSUPPORTED_EXTERNAL = re.compile(
+        r"^(?:(?:今天|现在|当前|实时).{0,8}(?:天气|气温|股票|股价|新闻)"
+        r".{0,8}(?:怎么样|如何|多少|是什么)?|"
+        r"(?:天气|气温|股票|股价|新闻).{0,8}(?:怎么样|如何|多少|是什么))[？?。.!\s]*$",
+        re.IGNORECASE,
+    )
+    _UNSUPPORTED_IDENTITY = re.compile(
+        r"^(?:我是谁|你知道我是谁吗)[？?。.!\s]*$",
+        re.IGNORECASE,
     )
     _RANKING = re.compile(
         r"(?:最高|最低|最大|最小|最多|最少|最好|最差|最准|最严重|最快|最慢|最早|最晚|卖得最好|卖的最好)|"
@@ -183,7 +194,11 @@ class QuestionRouter:
     )
     _SOCIAL = re.compile(
         r"^(?:你好|您好|嗨|哈喽|早上好|上午好|下午好|晚上好|"
-        r"谢谢|多谢|感谢|不客气|你怎么样|再见|拜拜|"
+        r"谢谢|多谢|感谢|不客气|你怎么样|最近怎么样|你是谁|再见|拜拜|"
+        r"随便聊聊|陪我聊(?:天|两句)|"
+        r"(?:给我|帮我)?讲(?:一个|个)?(?:简短的?)?笑话|"
+        r"(?:帮我)?写(?:一首|一句)?(?:四句|简短|轻松|短)?(?:的)?(?:小?诗|问候)|"
+        r"(?:帮我)?解释(?:一下)?(?:一个)?普通概念|"
         r"hello|hi|hey|thanks|thank\s+you|goodbye|bye)[！!？?。.,，\s]*$",
         re.IGNORECASE,
     )
@@ -258,12 +273,18 @@ class QuestionRouter:
         text = question.strip()
         if self._has_report_generation_evidence(text):
             return QuestionRoutingDecision(QuestionRoute.REPORT_REQUEST)
-        if self._HELP.search(text):
+        if (
+            self._HELP.search(text)
+            and not self._FOLLOW_ON_DATA_REQUEST.search(text)
+        ):
             return QuestionRoutingDecision(
                 QuestionRoute.PRODUCT_HELP,
                 direct_answer=PRODUCT_HELP_ANSWER,
             )
-        if self._SYSTEM.search(text):
+        if (
+            self._SYSTEM.search(text)
+            and not self._FOLLOW_ON_DATA_REQUEST.search(text)
+        ):
             display_name = (public_model_name or "当前已选择的公开模型").strip()
             return QuestionRoutingDecision(
                 QuestionRoute.SYSTEM_INFO,
@@ -272,7 +293,6 @@ class QuestionRouter:
         if self._SOCIAL.fullmatch(text):
             return QuestionRoutingDecision(
                 QuestionRoute.SOCIAL_CONVERSATION,
-                direct_answer=self._social_answer(text),
             )
         if self._CURRENT_DATE.fullmatch(text):
             return QuestionRoutingDecision(
@@ -287,7 +307,6 @@ class QuestionRouter:
         if self._CONCEPT.fullmatch(text):
             return QuestionRoutingDecision(
                 QuestionRoute.CONCEPT_EXPLANATION,
-                direct_answer=self._concept_answer(text),
             )
         if self._is_calculator(text):
             try:
@@ -299,14 +318,18 @@ class QuestionRouter:
                 QuestionRoute.DETERMINISTIC_CALC,
                 direct_answer=answer,
             )
-        if self._GENERAL.fullmatch(text):
+        if (
+            self._UNSUPPORTED_EXTERNAL.fullmatch(text)
+            and not self._FOLLOW_ON_DATA_REQUEST.search(text)
+        ):
             return QuestionRoutingDecision(
                 QuestionRoute.UNSUPPORTED_GENERAL,
-                direct_answer=(
-                    "我无法判断你的现实身份。"
-                    if "我是谁" in text
-                    else "该问题不属于当前只读 Power BI 数据分析能力范围。"
-                ),
+                direct_answer="当前没有可验证的实时外部信息来源，无法回答该问题。",
+            )
+        if self._UNSUPPORTED_IDENTITY.fullmatch(text):
+            return QuestionRoutingDecision(
+                QuestionRoute.UNSUPPORTED_GENERAL,
+                direct_answer="我无法判断你的现实身份。",
             )
         return QuestionRoutingDecision(
             QuestionRoute.BUSINESS_DATA_QUERY,
@@ -375,26 +398,6 @@ class QuestionRouter:
             f"现在是{current.year}年{current.month}月{current.day}日 "
             f"{current:%H:%M}（{self._timezone_name}）。"
         )
-
-    @staticmethod
-    def _social_answer(text: str) -> str:
-        normalized = text.casefold()
-        if any(term in normalized for term in ("谢谢", "多谢", "感谢", "thanks", "thank you")):
-            return "不客气！需要继续分析时，直接告诉我你的问题即可。"
-        if any(term in normalized for term in ("再见", "拜拜", "goodbye", "bye")):
-            return "再见！需要分析 Power BI 数据时，随时回来找我。"
-        if "你怎么样" in normalized:
-            return "我状态不错，谢谢！你可以和我聊聊，或直接提出 Power BI 数据问题。"
-        return "你好！我可以帮你进行只读 Power BI 数据分析，也可以回答产品使用问题。"
-
-    @staticmethod
-    def _concept_answer(text: str) -> str:
-        normalized = text.casefold()
-        if "同比" in normalized:
-            return "同比是把当前期间与上年同期进行比较，用于观察同季节周期下的变化。"
-        if "平均值" in normalized or "中位数" in normalized:
-            return "平均值是总和除以数量；中位数是排序后位于中间的值，通常更不易受极端值影响。"
-        return "TopN 指按明确指标和排序方向选取前 N 项；在数据查询中，指标、维度和 N 都需要明确。"
 
     @classmethod
     def _has_member_set_evidence(cls, text: str) -> bool:

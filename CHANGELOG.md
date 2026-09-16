@@ -2,7 +2,20 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
-## [M5.10.5] — 2026-09-16（时间语义与事实呈现一致性收口）
+## [M5.10.5] — 2026-09-16（FIX：语义边界与事实防火墙最终收口）
+
+- **真实 conversational lane：** 现有 QuestionRouter 将 bounded 低风险问候、闲聊、创意短任务和通用概念解释送入新增的最小 `LLMTask.CONVERSATION`；继续复用已选 provider/profile、retry/error、usage 与 trace。请求只含边界 prompt 和当前用户消息，禁止 schema/member/DAX/report/Power BI tool、committed business Memory 与 pending semantic mutation。
+- **路由与 pending residual：** 混合 system/help/weather 前缀不再吞掉后续业务查询；中英文问候/礼貌 discourse 只从 Completeness residue 中移除，未知业务名词仍澄清。pending 已由 runtime 证明的 QueryShape 优先于 slot-only follow-up 的弱 LLM draft，`最近几个月 → 最近6个月` 不再发生 shape 漂移。
+- **Numeric factual firewall：** `semantic_model_key`、source field、source row、fact/result ID、hash 与 coverage provenance 数字不再进入 business number allowlist。Verified business value 继续来自用户可见 fact；canonical scope/coverage 数字仅在和 CanonicalQueryPlan/VerifiedFactSet 完全一致的确定性片段中有效，不能洗成指标值。
+- **Failure-first：** conversational/numeric 初始 7 RED + routing 2 RED；本轮额外发现 discourse residue 4 RED、无连接词复合路由 3 RED、pending shape mutation 1 RED，均先复现再最小修复。model-v2、source rows、canonical year 与 Top3 negative mutation 全部拒绝错误指标数字。
+- **Fresh local automated：** focused `770 passed`；M5.9.4 formal entry `29 passed`（固定 seed 51,200/51,200）；Semantic Compatibility `870 passed / 125 production files`；full backend `2903 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 142、Repository Safety 409、AI Error Ledger 104、Documentation/Artifact Governance、compileall、version consistency 49 与 `git diff --check` PASS。
+- **Local Real：** configured DeepSeek + Real Local MCP 在 `PowerBIAgent_M3_Rich_Test` 完成 19/19、19 个真实 execution witnesses、business residual=0、temporary residual=0；包含真实 joke/greeting LLM call、system datetime ZERO LLM、business escalation、business↔social Memory 隔离、时间/coverage/report 回归。
+- **Evidence governance：** Local automated、Local Real 与 Remote exact-SHA CI 严格分栏。Remote exact-SHA CI 当前 PENDING，本文不预写远端 pytest/warning/Golden/frontend/Architecture/Safety 数字。
+- **边界与状态：** Settings.version 保持 M5.10.5；QueryShape 仍八种；无第二 Planner/Grounding/Memory/Agent，无 migration、MCP runtime、Provider architecture、report factual authority、Renderer 或 frontend redesign 变化；M5.10.6 未启动。当前为 FIX RELEASE CANDIDATE，完成 exact-SHA CI 与最终远端审计前不声明 FIX COMPLETE 或 READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE；Semantic Layer FINAL ACCEPTANCE PENDING，M5 FINAL=false。
+
+**Settings.version:** M5.10.5
+
+### 初始 M5.10.5 实现 — 时间语义与事实呈现一致性收口
 
 - **Capability restriction matrix：** 在既有 `QuestionRouter` 中按事实风险分级；问候、系统日期时间与 bounded 概念解释在 schema/member/DAX/业务 Memory 前直接完成，数据查询与报表仍进入严格 canonical/VerifiedFactSet 链，写回与破坏性请求继续拒绝。application clock 使用可配置 IANA timezone，默认 `Asia/Shanghai`。
 - **时间语义：** 补齐绝对月份/年度、相对年月、季度、最近 N 月与 English variants；“最近几个月/recent months/lately”等无安全 bound 表达固定澄清且 ZERO DAX，pending 保留已证明的 measure/trend/date grouping，后续“最近6个月”或兼容 yearless correction 才形成 canonical range。LLM 即使为模糊表达填入月份数也不能使其可执行。

@@ -15,6 +15,7 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 from backend.app.application.turn_pipeline import TurnPipeline
+from backend.app.answer.conversation import ConversationalAnswerService
 from backend.app.harness.errors import (
     ToolExecutionError,
     ToolNotRegisteredError,
@@ -29,6 +30,10 @@ from backend.app.harness.runtime.tool_gateway import (
 )
 from backend.app.harness.runtime.turn_controller import TurnController, TurnState
 from backend.app.harness.observability.trace_recorder import TraceRecorder
+from backend.app.harness.observability.llm_observer import (
+    LLMCallCollector,
+    ObservedLLMProvider,
+)
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.intent.question_router import QuestionRoute, QuestionRoutingDecision
@@ -248,8 +253,56 @@ class MockTurnService:
                 "powerbi_key": powerbi_key,
             },
             do_execute=self._do_execute,
+            do_conversation=self._do_conversation,
             resolved_scenario=resolved_scenario,
             effective_template_key=effective_template_key,
+        )
+
+    async def _do_conversation(
+        self,
+        *,
+        message: str,
+        effective_conv_id: str,
+        effective_req_id: str,
+        runtime_mode: RuntimeDataMode,
+        is_mock: bool,
+        source_mode: str,
+        routing: QuestionRoutingDecision,
+        trace: TraceRecorder,
+        trace_id: str,
+        **_: Any,
+    ) -> dict[str, Any]:
+        """Exercise the same no-tool lane against the offline Mock provider."""
+        collector = LLMCallCollector()
+        observed = ObservedLLMProvider(self.llm_provider, collector)
+        response = await ConversationalAnswerService(observed).generate(message)
+        return self.pipeline.build_result(
+            request_id=effective_req_id,
+            conversation_id=effective_conv_id,
+            terminal_state="completed",
+            intent=routing.route.value,
+            response_type="answer",
+            trace=trace,
+            trace_id=trace_id,
+            is_mock=is_mock,
+            source_mode=source_mode,
+            allowed_tools=[],
+            answer_text=response.answer,
+            usage=collector.summary(),
+            execution_audit={
+                "capability_decision": routing.route.value,
+                "question_route": routing.route.value,
+                "query_shape": None,
+                "schema_read": False,
+                "member_lookup": False,
+                "dax_executed": False,
+                "memory_committed": False,
+                "pending_semantic_mutation": False,
+                "powerbi_tool_calls": 0,
+                "report_calls": 0,
+                "conversation_context": "current_user_message_only",
+            },
+            memory_commit=False,
         )
 
     async def _do_execute(

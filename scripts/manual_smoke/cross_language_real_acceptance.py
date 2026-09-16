@@ -832,25 +832,104 @@ async def run(args, root, provider_failures):
 
                 elif args.phase == "m5105":
                     direct_cases = (
-                        ("m5105_greeting", "你好", "social_conversation"),
-                        ("m5105_current_date", "今天几号", "system_datetime"),
-                        ("m5105_current_time", "现在几点", "system_datetime"),
+                        ("m5105_greeting", "你好", "social_conversation", 1),
+                        ("m5105_joke", "讲个简短的笑话", "social_conversation", 1),
+                        ("m5105_warm_greeting", "写一句轻松的问候", "social_conversation", 1),
+                        ("m5105_current_date", "今天几号", "system_datetime", 0),
+                        ("m5105_current_time", "现在几点", "system_datetime", 0),
                     )
-                    for label, text, route in direct_cases:
+                    for label, text, route, expected_llm_calls in direct_cases:
                         witness_count = len(witnesses)
                         body, _ = await post(label, text)
                         audit = body.get("execution_audit") or {}
+                        usage = body.get("usage") or {}
                         summaries[-1]["pass"] &= bool(
                             audit.get("question_route") == route
                             and not audit.get("dax_executed")
                             and not body.get("memory_commit")
                             and body.get("tool_sequence") == []
                             and len(witnesses) == witness_count
+                            and usage.get("call_count", 0) == expected_llm_calls
                         )
+                        if route == "social_conversation":
+                            summaries[-1]["pass"] &= bool(
+                                (usage.get("per_task") or {}).get("conversation") == 1
+                                and audit.get("schema_read") is False
+                                and audit.get("member_lookup") is False
+                                and audit.get("pending_semantic_mutation") is False
+                                and audit.get("powerbi_tool_calls") == 0
+                                and audit.get("report_calls") == 0
+                            )
                         if route == "system_datetime":
                             summaries[-1]["pass"] &= "Asia/Shanghai" in (
                                 body.get("answer") or ""
                             )
+
+                    escalation, escalation_plan = await post(
+                        "m5105_business_escalation",
+                        "你好，顺便看一下今年销售额",
+                        "scalar",
+                    )
+                    escalation_audit = escalation.get("execution_audit") or {}
+                    summaries[-1]["pass"] &= bool(
+                        escalation_audit.get("question_route")
+                        == "business_data_query"
+                        and escalation_audit.get("dax_executed")
+                        and escalation_plan.get("measures") == ["Total Sales"]
+                        and escalation_plan.get("time_range")
+                    )
+
+                    business_social = str(uuid.uuid4())
+                    await post(
+                        "m5105_business_before_social",
+                        "总销售额是多少",
+                        "scalar",
+                        conversation=business_social,
+                    )
+                    memory_before = await service.pipeline.get_latest_committed_memory(
+                        business_social, RuntimeDataMode.REAL
+                    )
+                    witness_count = len(witnesses)
+                    social_after, _ = await post(
+                        "m5105_social_after_business",
+                        "讲个简短的笑话",
+                        conversation=business_social,
+                    )
+                    memory_after = await service.pipeline.get_latest_committed_memory(
+                        business_social, RuntimeDataMode.REAL
+                    )
+                    social_audit = social_after.get("execution_audit") or {}
+                    social_usage = social_after.get("usage") or {}
+                    summaries[-1]["pass"] &= bool(
+                        memory_before == memory_after
+                        and not social_after.get("memory_commit")
+                        and not social_audit.get("dax_executed")
+                        and social_usage.get("call_count") == 1
+                        and (social_usage.get("per_task") or {}).get(
+                            "conversation"
+                        ) == 1
+                        and len(witnesses) == witness_count
+                    )
+
+                    social_business = str(uuid.uuid4())
+                    await post(
+                        "m5105_social_before_business",
+                        "写一句轻松的问候",
+                        conversation=social_business,
+                    )
+                    business_after, business_after_plan = await post(
+                        "m5105_business_after_social",
+                        "总销售额是多少",
+                        "scalar",
+                        conversation=social_business,
+                    )
+                    summaries[-1]["pass"] &= bool(
+                        business_after_plan.get("measures") == ["Total Sales"]
+                        and (business_after.get("execution_audit") or {}).get(
+                            "dax_executed"
+                        )
+                        and business_after.get("memory_commit")
+                    )
 
                     async def completed_time_case(
                         label, text, shape, *, conversation=None

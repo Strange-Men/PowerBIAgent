@@ -128,6 +128,7 @@ from backend.app.dax.deepseek_service import DeepSeekDAXService
 from backend.app.dax.builder import DAXBuildError, DeterministicDAXBuilder
 from backend.app.dax.safety import DAXSafetyValidator
 from backend.app.answer.deepseek_service import DeepSeekAnswerService
+from backend.app.answer.conversation import ConversationalAnswerService
 from backend.app.core.performance import measure_performance
 from backend.app.core.async_runtime import bounded_gather_ordered
 from backend.app.facts import (
@@ -309,7 +310,84 @@ class LLMTurnService:
                 "powerbi_key": None,
             },
             do_execute=self._do_execute,
+            do_conversation=self._do_conversation,
             llm_snapshot=provider_snapshot,
+        )
+
+    async def _do_conversation(
+        self,
+        *,
+        message: str,
+        effective_conv_id: str,
+        effective_req_id: str,
+        runtime_mode: RuntimeDataMode,
+        is_mock: bool,
+        source_mode: str,
+        routing: QuestionRoutingDecision,
+        trace: TraceRecorder,
+        trace_id: str,
+        llm_snapshot: LLMProviderSnapshot,
+        **_: Any,
+    ) -> dict[str, Any]:
+        """Execute one isolated no-tool conversational LLM request."""
+        pricing = llm_snapshot.profile.pricing
+        collector = LLMCallCollector(
+            input_cost_per_million=(
+                pricing.input_cost_per_million_tokens if pricing else None
+            ),
+            output_cost_per_million=(
+                pricing.output_cost_per_million_tokens if pricing else None
+            ),
+        )
+        observed = ObservedLLMProvider(
+            llm_snapshot.provider,
+            collector,
+            profile=llm_snapshot.profile,
+        )
+        response = await ConversationalAnswerService(observed).generate(message)
+        usage = collector.summary()
+        trace.record(
+            "conversational_llm_completed",
+            trace_id=trace_id,
+            request_id=effective_req_id,
+            data_summary={
+                "route": routing.route.value,
+                "llm_calls": usage.call_count,
+                "tools_available": 0,
+            },
+            token_usage={
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+            },
+        )
+        return self.pipeline.build_result(
+            request_id=effective_req_id,
+            conversation_id=effective_conv_id,
+            terminal_state="completed",
+            intent=routing.route.value,
+            response_type="answer",
+            trace=trace,
+            trace_id=trace_id,
+            is_mock=is_mock,
+            source_mode=source_mode,
+            allowed_tools=[],
+            answer_text=response.answer,
+            usage=usage,
+            execution_audit={
+                "capability_decision": routing.route.value,
+                "question_route": routing.route.value,
+                "query_shape": None,
+                "schema_read": False,
+                "member_lookup": False,
+                "dax_executed": False,
+                "memory_committed": False,
+                "pending_semantic_mutation": False,
+                "powerbi_tool_calls": 0,
+                "report_calls": 0,
+                "conversation_context": "current_user_message_only",
+            },
+            memory_commit=False,
         )
 
     # ── 核心执行管线 ──
@@ -868,6 +946,38 @@ class LLMTurnService:
                         effective_conv_id, runtime_mode
                     )
                     pending_clarification = None
+                if (
+                    pending_clarification is not None
+                    and pending_clarification.query_shape is not None
+                    and router_query_shape is None
+                ):
+                    # A pending chain already owns a runtime-validated shape.
+                    # A slot-only reply may fill its missing time/member slot,
+                    # but a weak LLM shape draft cannot rewrite that shape.
+                    grounding_query_shape = pending_clarification.query_shape
+                    shape_reconciliation = shape_reconciliation.model_copy(
+                        update={
+                            "effective_shape": grounding_query_shape,
+                            "source": "pending_clarification",
+                            "router_strength": "canonical_pending_context",
+                            "requires_clarification": False,
+                        }
+                    )
+                    query_plan = query_plan.model_copy(
+                        update={
+                            "query_shape": grounding_query_shape,
+                            "query_shape_evidence": None,
+                        }
+                    )
+                    semantic_audit["query_shape_reconciliation"].update({
+                        "effective": grounding_query_shape.value,
+                        "source": shape_reconciliation.source,
+                        "router_strength": (
+                            shape_reconciliation.router_strength
+                        ),
+                        "draft_evidence": None,
+                        "requires_clarification": False,
+                    })
                 grounding_service = SemanticGroundingService(
                     catalog,
                     selector=BoundedLLMObjectSelector(observed),

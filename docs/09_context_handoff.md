@@ -3,19 +3,21 @@
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
 > **最后更新：** 2026-09-16
 
-## 当前阶段 — M5.10.5 — 时间语义与事实呈现一致性收口（产品版本 M5.10.5）
+## 当前阶段 — M5.10.5 FIX — 语义边界与事实防火墙最终收口（产品版本 M5.10.5）
 
-正式开发基线为 clean `main@3cca00b8cc37007411ef60015c419ff6e34530f1`，任务启动时 local HEAD == `origin/main`。M5.10.5 的唯一目标是在既有单一链内收口 capability restriction、确定性时间语义、requested canonical scope 与 VerifiedFactSet-owned observed coverage；不重做 M5.10.4，不进入 M5.10.6。
+FIX 基线为 `main@3d6a00693c0371603f6c3087acea73d09b8e6acd`。发布后审计确认低风险聊天仍由 canned regex 冒充 LLM capability，且 model/source-field/source-row 等 provenance 数字可进入 business numeric allowlist；本轮只在既有单一链 forward-fix，不进入 M5.10.6。
 
-QuestionRouter 现按事实风险分级：问候、当前日期时间与 bounded 概念/产品解释在 schema/member/DAX/业务 Memory 前直接完成；application clock 使用可配置 IANA timezone，默认 `Asia/Shanghai`。一旦涉及当前模型业务事实或报表，仍进入 runtime Catalog/Grounding → CanonicalPlan → deterministic DAX → QueryResult/Result Inspection → VerifiedFactSet；write/destructive/unsupported 继续拒绝。
+QuestionRouter 现按事实风险分级：bounded 问候、闲聊、短创作与通用概念解释只进入现有 selected provider 的 `LLMTask.CONVERSATION`，输入只含 boundary prompt 与当前用户消息；schema/member/DAX/report/Power BI tool、committed business Memory 与 pending semantic mutation 全为零。application clock 继续确定性回答当前日期时间。当前模型业务事实与报表仍进入 runtime Catalog/Grounding → CanonicalPlan → deterministic DAX → QueryResult/Result Inspection → VerifiedFactSet；当前天气/股价/新闻等无 authority 的实时外部事实继续拒绝。
 
 TimeGrounder 在相同 deterministic authority 内补齐绝对年/月、相对年月、季度、最近 N 月、English variants 与 compatible contextual-year follow-up。“最近几个月/recent months/lately”等不完整范围固定 clarification，pending 只保存已证明的 measure/trend/date grouping，后续明确 bound 才可执行；LLM 为模糊表达填入 months 不能创造 canonical range。
 
-执行完成后的 `requested_query_scope` 只来自最终 CanonicalQueryPlan，包含选中模型、指标、分组、筛选、时间与 ranking；`observed_data_coverage` 只由 QueryResult/VerifiedFactSet 证明并区分 FULL/PARTIAL/EMPTY/UNKNOWN/NOT_APPLICABLE。空 rows 明示当前查询范围无返回数据而不是 0。当前轮明确报表时间进入所有固定子查询和 Reading Context；多查询 report 不以单个 trend 证据冒充 FULL，混合 UNKNOWN/EMPTY 保守降级。
+执行完成后的 `requested_query_scope` 只来自最终 CanonicalQueryPlan，包含选中模型、指标、分组、筛选、时间与 ranking；`observed_data_coverage` 只由 QueryResult/VerifiedFactSet 证明并区分 FULL/PARTIAL/EMPTY/UNKNOWN/NOT_APPLICABLE。FactOutputValidator 不再把 model/source-field identity、source row、result/fact ID、hash 或 coverage provenance 数字加入 business allowlist；scope/coverage 数字只在和 canonical/fact evidence 完全一致的 deterministic fragment 内有效。空 rows 明示当前查询范围无返回数据而不是 0。当前轮明确报表时间进入所有固定子查询和 Reading Context；多查询 report 不以单个 trend 证据冒充 FULL，混合 UNKNOWN/EMPTY 保守降级。
 
-Fresh local evidence：focused `594 passed`；M5.9.4 formal entry `29 passed` 与固定 seed 51,200/51,200；Semantic Compatibility `833 passed / 124 production files`；backend `2864 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 141、Repository Safety 408、AI Error Ledger 99、Documentation/Artifact Governance、compileall、version consistency 与 diff-check PASS。configured DeepSeek + Real Local MCP 在 `PowerBIAgent_M3_Rich_Test` 完成 12/12，16 个真实 execution witnesses，provider failures=0、business residual=0、temporary residual=0，report-wide observed coverage 为保守 UNKNOWN。
+Additional sweep 已关闭三项 failure-first residual：system/help/weather 前缀不能吞掉后续业务查询；中英文 greeting/courtesy 只作为 residue noise，未知业务 noun 仍 fail closed；slot-only pending completion 不能让 weak LLM draft 改写 runtime-validated pending QueryShape。
 
-QueryShape enum、M5.9.2 runtime、M5.8 Provider architecture、StateTransition/Memory/persistence、Deterministic DAX 与 report factual authority 未改变；未新增 Planner/Grounding/Memory/Agent/migration，也未修改 Renderer 视觉设计。M5.10.5 IMPLEMENTATION COMPLETE；READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE；M5.10.6 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false。
+Fresh local automated evidence：focused `770 passed`；M5.9.4 formal entry `29 passed` 与固定 seed 51,200/51,200；Semantic Compatibility `870 passed / 125 production files`；backend `2903 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 142、Repository Safety 409、AI Error Ledger 104、Documentation/Artifact Governance、compileall、version consistency 49 与 diff-check PASS。Local Real 独立记录：configured DeepSeek + Real Local MCP 在 `PowerBIAgent_M3_Rich_Test` 完成 19/19、19 个真实 execution witnesses、business residual=0、temporary residual=0。
+
+QueryShape enum、M5.9.2 runtime、M5.8 Provider architecture、StateTransition/Memory/persistence、Deterministic DAX 与 report factual authority 未改变；未新增 Planner/Grounding/Memory/Agent/migration，也未修改 Renderer 视觉设计。当前为 M5.10.5 FIX RELEASE CANDIDATE；Remote exact-SHA CI 与 final remote audit PENDING，persistent docs 不预写远端数字；M5.10.6 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false。
 
 ## 上一阶段 — M5.10.4 — 语言理解与 QueryShape 收口（产品版本 M5.10.4）
 
@@ -218,7 +220,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 | **M5.10.2** | **Executive Report Product Refinement & Manual Visual Fidelity FIX** | **✅ implementation complete；post-manual semantic P0 reopened** |
 | **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **✅ COMPLETE；用户人工验收通过** |
 | **M5.10.4** | **语言理解与 QueryShape 收口** | **✅ COMPLETE；DeepSeek + Real Local MCP 14/14** |
-| **M5.10.5** | **时间语义与事实呈现一致性收口** | **✅ IMPLEMENTATION COMPLETE；等待 Semantic Layer 最终用户人工验收** |
+| **M5.10.5** | **时间语义、语义边界与事实防火墙收口** | **FIX RELEASE CANDIDATE；Remote exact-SHA CI PENDING** |
 | **M5.10.6—M5.10.7** | **模板/错误 UX → MVP 最终收口** | **⏳ NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING** |
 
 ### M5.7 completed contract
@@ -564,7 +566,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-M5.10.5 已完成本地自动化与 configured DeepSeek + Real Local MCP 12/12，进入发布候选；完成白名单 commit、push main 与 exact-SHA CI 后，由用户统一执行 Semantic Layer 最终人工验收。在用户确认前不得宣告 Semantic Layer COMPLETE。M5.10.6 模板兼容与错误 UX、M5.10.7 MVP 最终收口均未启动。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+M5.10.5 FIX 已完成本地自动化与 configured DeepSeek + Real Local MCP 19/19，进入发布候选；完成白名单 commit、push main、exact-SHA CI 与 final remote audit 后，才允许声明 FIX COMPLETE / READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE。在用户确认前不得宣告 Semantic Layer COMPLETE。M5.10.6 模板兼容与错误 UX、M5.10.7 MVP 最终收口均未启动。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -613,4 +615,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-16 | M5.10.5 IMPLEMENTATION COMPLETE；READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE；M5.10.6 NOT STARTED；m5/rebuild 冻结；main-only；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.5 FIX RELEASE CANDIDATE；REMOTE EXACT-SHA CI PENDING；M5.10.6 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；m5/rebuild 冻结；main-only；M5 FINAL=false*

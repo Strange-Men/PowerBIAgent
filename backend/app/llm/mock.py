@@ -155,6 +155,7 @@ class MockLLMProvider(LLMProvider):
 
     # task 值到 fixture group 的映射
     _TASK_TO_GROUP: dict[str, str] = {
+        "conversation": "conversation",
         "intent_recognition": "intent",
         "query_plan": "query_plan",
         "dax": "dax",

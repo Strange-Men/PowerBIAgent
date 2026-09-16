@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.10.5 — 时间语义与事实呈现一致性收口**。问候、系统日期时间和 bounded 概念解释按较低事实风险在业务 schema/DAX/Memory 前终止；数据查询与报表继续使用严格的 runtime/canonical/VerifiedFactSet authority。精确、相对、季度和最近 N 月可确定解析，模糊时间必须澄清；requested query scope 与实际返回数据覆盖分开呈现。M5.10.5 已完成本地自动化和 DeepSeek + Real Local MCP 验收，现等待统一 Semantic Layer 最终用户人工验收；M5 FINAL=false。
+当前版本：**M5.10.5 — 时间语义、语义边界与事实防火墙收口**。bounded 低风险聊天使用现有 selected LLM provider 的 current-message-only no-tool lane；系统日期时间 deterministic，数据查询与报表继续使用严格 runtime/canonical/VerifiedFactSet authority。provenance metadata 数字不能成为业务 numeric claim authority。FIX 已通过本地自动化和 DeepSeek + Real Local MCP 19/19，Remote exact-SHA CI / final audit 待执行；M5.10.6 未启动，Semantic Layer FINAL ACCEPTANCE PENDING，M5 FINAL=false。
 
 ## 项目概览
 
@@ -16,7 +16,7 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 ## 核心能力
 
 - 自然语言 Power BI 数据问答，Mock 与 Real 共用同一 TurnPipeline 执行骨架。
-- Semantic Grounding 前的 Question Router 按事实风险区分问候、系统日期时间、bounded 概念解释、产品帮助、公开模型信息、安全基础算术、数据查询、报表与不支持请求；低风险 turn 不读取 schema、不执行 DAX、不污染 semantic Memory，当前日期时间来自可配置 application timezone。
+- Semantic Grounding 前的 Question Router 按事实风险区分问候/闲聊/短创作、系统日期时间、bounded 概念解释、产品帮助、公开模型信息、安全基础算术、数据查询、报表与不支持请求；低风险 conversational turn 只把当前消息交给现有 LLM provider，不读取 schema、不执行 DAX/报表、不接触或污染 semantic Memory，当前日期时间来自可配置 application timezone。
 - Power BI MCP runtime schema 是模型结构 authority；immutable `ModelSemanticContext` 把当前 PBIX metadata 适配为候选证据，exact identity + fingerprint 验证的 optional model override 只补充业务语言/temporal metadata，runtime members 继续验证成员值。
 - Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界；requested query scope 只由实际执行的 CanonicalQueryPlan 投影，observed data coverage 只由返回 rows 证明，空 rows 明确表示“当前查询范围未返回数据”而不是 0。
@@ -362,7 +362,7 @@ python -m alembic upgrade head
 | M5.10.2 | 本地产品收口完成 — Report Request/FULL_AVAILABLE、专业 presentation/视觉、时间 provenance、artifact compensation/cancellation、lifecycle/stale/concurrency/security/cloud-ready 硬化；Rich/Simple PBIX 与 DeepSeek-only exact phrase PASS；该历史完成证据不覆盖 post-manual reopen，M5 FINAL=false |
 | M5.10.3 | COMPLETE — Zero Wrong-Question Execution；用户人工验收通过 |
 | M5.10.4 | COMPLETE — bounded 开放语言解释与 QueryShape reconciliation；DeepSeek + Real Local MCP 14/14，residual=0 |
-| M5.10.5 | IMPLEMENTATION COMPLETE — capability 分级、确定性时间语义、requested scope / observed coverage 与报表时间一致性；READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE |
+| M5.10.5 | FIX RELEASE CANDIDATE — no-tool conversational LLM、numeric provenance firewall、确定性时间、scope/coverage/report truth；Remote exact-SHA CI pending |
 | M5.10.6—M5.10.7 | NOT STARTED — 模板兼容与错误 UX、MVP 最终收口；Semantic Layer FINAL ACCEPTANCE PENDING |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
@@ -392,4 +392,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-16 | M5.10.5 IMPLEMENTATION COMPLETE；READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE；M5.10.6 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.5 FIX RELEASE CANDIDATE；REMOTE EXACT-SHA CI PENDING；M5.10.6 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false*

@@ -123,6 +123,52 @@ def test_unknown_explicit_modifier_is_not_silently_dropped() -> None:
     assert [(item.kind.value, item.phrase) for item in unresolved] == [("explicit_filter_member", "地球")]
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        "你好，顺便看一下运单数",
+        "谢谢，再帮我看运单数",
+        "hello, please show Shipment Count",
+    ],
+)
+def test_social_discourse_prefix_is_not_treated_as_a_business_modifier(
+    question: str,
+) -> None:
+    report = SemanticObligationCoverageGate().inspect(
+        user_input=question,
+        outcome=_resolved_outcome(),
+        catalog=_catalog(),
+        relation=TurnRelationEvidence.classify(question),
+    )
+
+    assert report.executable
+    assert report.unresolved_phrases == []
+
+
+def test_social_discourse_prefix_does_not_hide_unknown_business_modifier() -> None:
+    question = "你好，顺便看一下地球运单数"
+    report = SemanticObligationCoverageGate().inspect(
+        user_input=question,
+        outcome=_resolved_outcome(),
+        catalog=_catalog(),
+        relation=TurnRelationEvidence.classify(question),
+    )
+
+    assert report.unresolved_phrases == ["地球"]
+
+
+def test_english_social_prefix_does_not_hide_unknown_business_modifier() -> None:
+    question = "hello, please show Mars Shipment Count"
+    report = SemanticObligationCoverageGate().inspect(
+        user_input=question,
+        outcome=_resolved_outcome(),
+        catalog=_catalog(),
+        relation=TurnRelationEvidence.classify(question),
+    )
+
+    assert report.unresolved_phrases == ["Mars"]
+
+
 def test_unknown_modifier_on_entity_list_is_not_silently_dropped() -> None:
     carrier = _catalog().objects[2]
     outcome = GroundingOutcome(

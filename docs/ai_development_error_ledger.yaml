@@ -3,11 +3,181 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-16 | M5.10.5 IMPLEMENTATION COMPLETE；READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE；M5.10.6 NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-16 | M5.10.5 FIX RELEASE CANDIDATE；REMOTE EXACT-SHA CI PENDING；M5.10.6 NOT STARTED；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: GOV-5105-001
+  title: Local automated、Local Real 与 Remote CI 证据混写
+  category: GOV
+  first_detected_version: M5.10.5
+  symptom: 发布文本把本地 2864 passed / 1 skipped 与远端实际 2865 passed / 1 warning 放在同一证据叙述中，无法从文字判断数字来自哪个执行环境
+  local_evidence: post-release remote audit 对比 M5.10.5 本地记录与 exact-SHA workflow 输出；本轮治理文档在 push 前只记录 Local automated 与 Local Real，Remote exact-SHA 保持 PENDING
+  authoritative_sources:
+  - title: M5.10.5 FIX evidence separation requirement
+    reason: Local automated、Local Real 与 Remote exact-SHA CI 必须分别记录，未发生的远端结果不得预写
+  root_cause: 发布状态段以一个汇总列表同时承担本地开发证据与远端发布证据，没有显式 evidence origin
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 活跃治理文件将 Local automated、Local Real 和 Remote exact-SHA CI 分栏；FIX commit 前远端状态明确为 PENDING，最终报告只引用 workflow 实际结果
+  regression_tests:
+  - scripts/check_documentation_governance.py
+  - scripts/check_ai_error_ledger.py
+  prohibited_patterns:
+  - 用本地 pytest 数字描述 GitHub Actions
+  - 在 workflow 完成前写入远端测试数或 success
+  prevention_rules:
+  - 每项 evidence 必须携带执行环境与发生状态
+  - remote exact-SHA 数字只能从目标 SHA 的已完成 workflow 读取
+  related_adr: ADR-005
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.5
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.5
+- id: ERR-5105-008
+  title: slot-only pending completion 的弱 LLM draft 改写已证明 QueryShape
+  category: ERR
+  first_detected_version: M5.10.5
+  symptom: 最近几个月的销售额趋势已形成 TREND pending 后，最近6个月的 Real LLM draft 偶发返回 BOUNDED_TREND，旧 reconciliation 让弱 draft 改写 pending canonical shape
+  local_evidence: configured DeepSeek + Real Local MCP 第二轮验收 18/19，唯一失败为 m5105_vague_followup 的 canonical shape 从 trend 漂移到 bounded_trend；注入相同 draft 的 production-path API regression 稳定先红
+  authoritative_sources:
+  - title: M5.10.3 Pending semantic state contract
+    reason: pending completion 只补缺失槽，已由 runtime 证明的兼容槽不得被弱 draft 改写
+  - title: M5.10.4 bounded QueryShape reconciliation
+    reason: LLM shape 只是语言解释，不高于 canonical pending context
+  root_cause: QueryShape reconciliation 发生在 pending merge 前，Router=None 时 current LLM draft 被选为 effective shape，随后 PendingClarificationService 又用该 delta 覆盖 previous.query_shape
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: schema identity 验证后的 compatible pending shape 在 slot-only Router fallback 下覆盖弱 draft；当前 Router 高置信 shape 仍优先，stale pending 仍先清除
+  regression_tests:
+  - backend/tests/api/test_chat.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 用 slot-only follow-up 的弱 LLM shape 覆盖 pending canonical shape
+  - 为修复验收而放宽 expected shape
+  prevention_rules:
+  - pending completion 必须对 adversarial richer-shape draft 做 mutation regression
+  - pending identity/schema/runtime/intent 校验必须先于 shape 复用
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.5
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.5
+- id: ERR-5105-007
+  title: 前置非业务话语吞掉或阻断后续业务查询
+  category: ERR
+  first_detected_version: M5.10.5
+  symptom: system/help/weather 前缀可直接截获后续业务问题；Router 正确升级后，Completeness 又可能把你好/谢谢/hello 等 discourse 当作 unresolved filter member
+  local_evidence: Router 复现你是什么模型，销售额是多少、你支持哪些问题，订单数是多少、今天天气怎么样，销售额是多少均被前半句截获；Real 你好，顺便看一下今年销售额进入业务链却因你好 residue 澄清
+  authoritative_sources:
+  - title: M5.10.5 capability boundary
+    reason: 任一当前业务事实请求必须进入 strict semantic pipeline，非业务前缀不能掩盖它
+  root_cause: direct routes 使用 search/fullmatch 但没有统一识别后续查询 clause；Completeness 的 functional residue 未包含 social/courtesy discourse
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: direct system/help/external route 在存在后续查询动作时让位于 business route；Completeness 只消费中英文 greeting/courtesy token，未知 noun 负例继续 fail closed
+  regression_tests:
+  - backend/tests/unit/test_question_routing.py
+  - backend/tests/unit/test_semantic_completeness.py
+  - backend/tests/api/test_chat.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 以前半句问候、帮助、模型或天气意图截断后续业务请求
+  - 把整个未知前缀当作无意义 discourse 丢弃
+  prevention_rules:
+  - mixed-route tests 必须覆盖有/无连接词与当前业务 interrogative
+  - residue 消费必须配对 unknown-member negative test
+  related_adr: ADR-014
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.5
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.5
+- id: ERR-5105-006
+  title: provenance metadata 数字进入 business numeric claim allowlist
+  category: ERR
+  first_detected_version: M5.10.5
+  symptom: FactOutputValidator 从 semantic_model_key 与 source_fields 收集数字；新增 coverage 的 source_rows 又可把 0/1/2 等技术索引洗成销售额等业务数字声明
+  local_evidence: model-v2、Sales-7 字段与 coverage source_rows 0/1/2 mutation 在旧实现可通过；canonical 2026 与 Top3 的位置变异同样证明 global allowlist 缺少语义位置
+  authoritative_sources:
+  - title: ADR-009 Deterministic Query Execution and Verified Fact Authority
+    reason: 对外数字只能来自对应的 VerifiedFactSet 业务事实，不得来自技术 provenance
+  - title: ADR-016 Presentation Truth
+    reason: requested scope、observed coverage 与业务 metric 是不同事实角色
+  root_cause: _allowed_numbers 对 fact value、dimensions、source_fields 与 semantic_model_key 递归收集，未区分 user-visible fact 与 provenance metadata
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: business allowlist 仅投影允许的 user-visible fact value；scope/coverage exact text 经 canonical/fact evidence 独立验证并剥离后再验证业务数字；source rows 与所有技术 identity 永不进入 allowlist
+  regression_tests:
+  - backend/tests/unit/test_verified_facts.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 从 semantic model/source field/source row/result ID/fact ID/hash 收集 business allowed numbers
+  - 为允许 scope/TopN 文本把其数字全局加入业务 allowlist
+  prevention_rules:
+  - numeric mutation 必须覆盖 model identity、source field、row index、canonical time 与 ranking bound
+  - deterministic context fragment 必须先证明 exact canonical source，再与 business numeric validation 隔离
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.5
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.5
+- id: ERR-5105-005
+  title: 低事实风险普通聊天以 canned regex 冒充 LLM capability
+  category: ERR
+  first_detected_version: M5.10.5
+  symptom: SOCIAL_CONVERSATION 只有固定 regex 与 canned answer，讲笑话、短诗、随便聊聊等自然请求仍可能 UNSUPPORTED_GENERAL，未真正使用已配置 LLM
+  local_evidence: production-path failure-first 初始 7 failed / 9 passed；修复后真实 DeepSeek greeting/joke/creative greeting 各发生一次 conversation task，schema/member/DAX/report/semantic Memory 均为零
+  authoritative_sources:
+  - title: M5.10.5 capability restriction matrix
+    reason: 低事实风险语言任务可使用 LLM，但不能获得业务事实或工具 authority
+  - title: ADR-005 deterministic TurnPipeline
+    reason: 新能力必须复用现有 provider 与唯一控制面，不能建立第二 agent/provider/orchestration
+  root_cause: Router 虽有 SOCIAL_CONVERSATION 名称，但直接返回 canned text；没有对应的 provider task 与 TurnPipeline no-tool execution lane
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 新增最小 LLMTask.CONVERSATION 与 ConversationalAnswerService，复用 existing provider/profile/retry/error/usage/trace；TurnPipeline 在 business Memory/schema 前执行 current-message-only callback，失败使用既有 provider error contract
+  regression_tests:
+  - backend/tests/unit/test_question_routing.py
+  - backend/tests/api/test_chat.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 用新增 canned phrases 冒充自然 conversational capability
+  - 向 conversational prompt 注入 schema、member、business Memory、pending、QueryResult 或 VerifiedFactSet
+  - provider failure 后 fallback 到 business pipeline
+  prevention_rules:
+  - Real conversational acceptance 必须证明 conversation LLM call 大于零且全部 business/tool counters 为零
+  - business escalation 与 business↔social 跨轮隔离必须进入永久回归
+  related_adr: ADR-005
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.5
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.5
 - id: ERR-5105-001
   title: 低事实风险对话误入 Power BI 业务链且系统时间缺少确定性 timezone
   category: ERR

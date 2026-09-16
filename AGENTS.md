@@ -7,9 +7,9 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.10.5 — 时间语义与事实呈现一致性收口**。低事实风险问候、系统日期时间与受限概念解释在业务 schema/DAX/Memory 前短路；业务时间继续由 configured application timezone、现有 Grounding/CanonicalPlan 与 deterministic rules 闭合。requested query scope 与 VerifiedFactSet-owned observed data coverage 已分离，空结果不再冒充数值 0。M5.10.5 已完成本地自动化及 DeepSeek + Real Local MCP 12/12，现等待统一 Semantic Layer 最终用户人工验收；M5 FINAL=false。
+当前版本：**M5.10.5 — 时间语义、语义边界与事实防火墙收口**。FIX 已把 bounded 低风险聊天接入现有 selected LLM provider 的 current-message-only no-tool lane；系统日期时间仍由 configured application clock 确定。业务数据继续使用严格 semantic/canonical/factual chain；provenance metadata 数字不能作为业务 numeric claim authority。Local automated 与 DeepSeek + Real Local MCP 19/19 已通过，Remote exact-SHA CI / final audit 待执行；M5 FINAL=false。
 
-当前开发阶段：**M5.10.5 IMPLEMENTATION COMPLETE；READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE；M5.10.6 NOT STARTED**。QuestionRouter 继续负责 capability、安全 floor 与高置信结构证据；现有 QueryPlan LLM draft 只提供 bounded language interpretation；runtime Catalog/Grounding、StateTransition、Completeness、Deterministic DAX 与 VerifiedFactSet 分别保留 canonical/执行/事实 authority。M5.9.2 runtime architecture、M5.8.5 factual authority 与 report factual authority 的架构合同保持冻结；这里的 frozen 只表示 authority boundary / architecture contract 不变，不表示 implementation bug-free。Semantic Layer FINAL ACCEPTANCE PENDING，M5 FINAL=false。
+当前开发阶段：**M5.10.5 FIX RELEASE CANDIDATE；REMOTE EXACT-SHA CI PENDING；M5.10.6 NOT STARTED**。QuestionRouter 继续负责 capability、安全 floor 与高置信结构证据；现有 QueryPlan LLM draft 只提供 bounded language interpretation；runtime Catalog/Grounding、StateTransition、Completeness、Deterministic DAX 与 VerifiedFactSet 分别保留 canonical/执行/事实 authority。M5.9.2 runtime architecture、M5.8.5 factual authority 与 report factual authority 的架构合同保持冻结；这里的 frozen 只表示 authority boundary / architecture contract 不变，不表示 implementation bug-free。Semantic Layer FINAL ACCEPTANCE PENDING，M5 FINAL=false。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -61,7 +61,7 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.10.2** 已完成 Report Request 路由、`FULL_AVAILABLE`、专业 presentation projection、provenance 时间分离与 report-specific hardening；Manual Visual Fidelity FIX 进一步冻结 fixed template contract、02/03 presentation authority、3-column structure、KPI template assets、18 点完整标签、北京时间、generic currency 与 integer rank。Rich/Simple PBIX、DeepSeek-only exact phrase、真实 Chrome 与 fact parity PASS；该历史完成证据不覆盖后续 post-manual reopen。**M5 FINAL=false。**
 - **M5.10.3 — 人工验收后语义安全收口** 已完成三类 P0 的最小实现与自动/Real Local MCP 验证，并由用户确认人工验收通过。shape/obligation downgrade 在 DAX 前澄清、same-field historical filter 按当前角色移除、correction 使用 positive replacement 并保持 pending/committed 优先级。**M5.10.3 COMPLETE。**
 - **M5.10.4 — 语言理解与 QueryShape 收口** 已在现有 QueryPlan 调用加入 bounded `query_shape_evidence` 与 Router/LLM reconciliation：高置信 Router 证据优先，`SCALAR`/`None` 为弱 fallback，开放语言 richer shape 必须有当前逐字证据；runtime object/member、canonical state、DAX 与事实 authority 不变。不完整 ranking、模糊月份、未知/歧义对象与共享间接 shape/measure 证据均在 DAX 前澄清。DeepSeek + Real Local MCP 14/14、跨域/stress/full gates 与 residual=0 通过。**M5.10.4 COMPLETE；M5.10.5 NOT STARTED；Semantic Layer FINAL ACCEPTANCE 尚未进行；M5 FINAL=false。**
-- **M5.10.5 — 时间语义与事实呈现一致性收口** 已完成 capability restriction 分级、`Asia/Shanghai` 可配置 application clock、精确/相对/季度/最近 N 月与模糊时间澄清闭环，以及 requested canonical scope / VerifiedFactSet observed coverage 分离。当前轮显式报表时间进入全部固定子查询；多查询报表覆盖采用保守汇总，空 rows 明示无返回数据。DeepSeek + Real Local MCP 12/12、16 execution witnesses、provider failure=0、residual=0。**M5.10.5 IMPLEMENTATION COMPLETE；READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE；M5.10.6 NOT STARTED；M5 FINAL=false。**
+- **M5.10.5 — 时间语义、语义边界与事实防火墙收口** 主体时间/scope/coverage/report contract 保持；FIX 已新增真实 no-tool conversational LLM lane，阻断 metadata numeric laundering，并关闭复合前缀 routing、discourse residue 与 pending shape 弱 draft 漂移。Fresh local focused 770、backend 2903/1 skip、Semantic 870/125；DeepSeek + Real Local MCP 19/19、19 witnesses、residual=0。**FIX RELEASE CANDIDATE；REMOTE EXACT-SHA CI PENDING；M5.10.6 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false。**
 
 当前真实主链：
 
@@ -160,7 +160,7 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 62. M5.10.3：当前原始表达或当前 turn 已产生的 ranking/grouping/filter/correction/time/member-set obligation，不得被 Router、weak draft、Pending 或 Memory 静默降级；最终 CanonicalQueryPlan 丢失义务时必须在 DAX 前 clarification/fail closed。历史字段作为 FILTER、当前同字段切换为 grouping/ranking 且本轮未重新表达旧 member 时，旧 same-field filter 不得继承。current explicit correction > compatible pending delta > committed Memory。
 63. “Frozen”统一表示 authority boundary / architecture contract frozen，不表示实现已无 bug。只要 production-path reproducer 证明实现违反 accepted invariant，就允许在原链内做最小 correctness 修复；不得借修 bug 创建第二套 Planner/Grounding/Memory 或改动 M5.9.2 runtime、M5.8.5 factual/report authority。
 64. M5.10.4：QuestionRouter 只拥有 capability routing、安全 floor 与高置信结构 evidence；现有 QueryPlan LLM draft 可在八种既有 QueryShape 和当前 runtime-owned candidate 内解释 paraphrase、中英混合与语序。`SCALAR`/无 shape 仅为 fallback；LLM evidence 必须逐字来自当前输入，不能独立证明 runtime identity/member/fact。冲突或不完整义务必须 clarification + ZERO DAX/ZERO factual Memory；禁止第二次 shape LLM call、第二 Planner/Grounding/Memory 或 M5.10.5 时间范围实现。
-65. M5.10.5：capability restriction 随事实风险逐级收紧；问候、系统日期时间和 bounded 概念解释在 schema/DAX/业务 Memory 前终止，业务查询与报表仍走唯一严格事实链。时间范围只由当前文本、可配置 application clock 与兼容 pending/committed canonical context 确定；模糊范围不得接受 LLM 发明的月份数。requested scope 只来自最终 CanonicalQueryPlan，observed coverage 只来自 QueryResult/VerifiedFactSet；空 rows 不等于 0，报表多查询 coverage 不得由单个趋势查询冒充 FULL。
+65. M5.10.5：capability restriction 随事实风险逐级收紧；bounded 低风险聊天只可复用现有 selected provider，并且只看当前消息、无 tools/schema/member/DAX/report/业务 Memory/pending mutation；系统日期时间仍 deterministic。业务查询与报表走唯一严格事实链。时间范围只由当前文本、可配置 application clock 与兼容 pending/committed canonical context 确定；pending 已证明的 QueryShape 不得被 slot-only follow-up 的弱 draft 改写。requested scope 只来自最终 CanonicalQueryPlan，observed coverage 只来自 QueryResult/VerifiedFactSet；model/source-field/source-row/result/fact/hash 等 provenance 数字不得成为 business numeric authority；空 rows 不等于 0，报表多查询 coverage 不得由单个趋势查询冒充 FULL。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前跨入未批准里程碑、开发 Remote MCP；未经用户明确批准不得创建 Tag。
 
@@ -196,4 +196,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-09-16 | M5.10.5 IMPLEMENTATION COMPLETE；READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE；M5.10.6 NOT STARTED；main-only；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.5 FIX RELEASE CANDIDATE；REMOTE EXACT-SHA CI PENDING；M5.10.6 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；main-only；M5 FINAL=false*

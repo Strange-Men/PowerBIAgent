@@ -38,7 +38,10 @@ from backend.app.memory.models import PendingClarificationContext, RuntimeDataMo
         ("你支持回答哪些问题？", QuestionRoute.PRODUCT_HELP, None),
         ("你是什么模型", QuestionRoute.SYSTEM_INFO, None),
         ("我是谁", QuestionRoute.UNSUPPORTED_GENERAL, None),
-        ("给我讲个笑话", QuestionRoute.UNSUPPORTED_GENERAL, None),
+        ("给我讲个笑话", QuestionRoute.SOCIAL_CONVERSATION, None),
+        ("写一首四句小诗", QuestionRoute.SOCIAL_CONVERSATION, None),
+        ("随便聊聊", QuestionRoute.SOCIAL_CONVERSATION, None),
+        ("最近怎么样", QuestionRoute.SOCIAL_CONVERSATION, None),
         ("今天天气怎么样", QuestionRoute.UNSUPPORTED_GENERAL, None),
         ("1+1等于几", QuestionRoute.DETERMINISTIC_CALC, None),
         ("50乘50是几", QuestionRoute.DETERMINISTIC_CALC, None),
@@ -81,7 +84,13 @@ def test_low_risk_capabilities_do_not_enter_business_routing(
 
     assert decision.route.value == expected_route
     assert decision.query_shape is None
-    assert decision.direct_answer
+    if decision.route in {
+        QuestionRoute.SOCIAL_CONVERSATION,
+        QuestionRoute.CONCEPT_EXPLANATION,
+    }:
+        assert decision.direct_answer is None
+    else:
+        assert decision.direct_answer
 
 
 @pytest.mark.parametrize(
@@ -97,6 +106,36 @@ def test_concept_route_does_not_swallow_business_fact_requests(
     decision = QuestionRouter().route(question)
 
     assert decision.route is QuestionRoute.BUSINESS_DATA_QUERY
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "你好，顺便看一下今年销售额",
+        "谢谢，再帮我看华南销售额",
+        "销售额是什么意思",
+        "我们公司的销售额是多少",
+        "解释一下我们今年销售额同比",
+        "Top 5 客户是谁",
+        "你是什么模型，顺便看一下销售额",
+        "你是什么模型，销售额是多少",
+        "你支持哪些问题，顺便查一下订单数",
+        "你支持哪些问题，订单数是多少",
+        "今天天气怎么样，顺便看一下销售额",
+        "今天天气怎么样，销售额是多少",
+    ],
+)
+def test_conversational_language_does_not_overcapture_business_requests(
+    question: str,
+) -> None:
+    assert QuestionRouter().route(question).route is QuestionRoute.BUSINESS_DATA_QUERY
+
+
+def test_current_external_fact_without_authority_stays_unsupported() -> None:
+    assert (
+        QuestionRouter().route("今天天气怎么样").route
+        is QuestionRoute.UNSUPPORTED_GENERAL
+    )
 
 
 def test_system_datetime_uses_injected_clock_and_configured_timezone() -> None:
@@ -252,11 +291,11 @@ def test_code_owned_product_help_and_public_system_info_are_bounded():
 @pytest.mark.parametrize(
     ("question", "expected_type", "answer_fragment"),
     [
-        ("你好", "answer", "你好"),
-        ("谢谢", "answer", "不客气"),
+        ("你好", "answer", "陪你轻松聊聊"),
+        ("谢谢", "answer", "陪你轻松聊聊"),
         ("今天几号", "answer", "今天是"),
         ("现在几点", "answer", "现在是"),
-        ("什么是同比", "answer", "上年同期"),
+        ("什么是同比", "answer", "陪你轻松聊聊"),
         ("你支持回答哪些问题？", "answer", "指标查询"),
         ("数据分析支持的范围在哪", "answer", "只读"),
         ("你是什么模型", "answer", "Mock"),
@@ -307,7 +346,7 @@ async def test_social_turn_after_business_turn_does_not_reexecute_or_mutate_memo
     )
 
     assert business["memory_commit"] is True
-    assert social["answer"] == "不客气！需要继续分析时，直接告诉我你的问题即可。"
+    assert "陪你轻松聊聊" in social["answer"]
     assert social["tool_sequence"] == []
     assert social["execution_audit"]["dax_executed"] is False
     assert social["memory_commit"] is False

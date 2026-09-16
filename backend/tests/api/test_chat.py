@@ -25,11 +25,17 @@ from backend.app.intent.models import (
     TimeIntentKind,
     TurnRelation,
 )
-from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
+from backend.app.llm.base import (
+    LLMProvider,
+    LLMRequest,
+    LLMResponse,
+    LLMServiceError,
+    LLMTask,
+)
 from backend.app.llm.profiles import LLMModelProfile, LLMProviderProtocol
 from backend.app.llm.registry import LLMProviderRegistry
 from backend.app.main import create_app
-from backend.app.memory.models import RuntimeDataMode
+from backend.app.memory.models import PendingClarificationContext, RuntimeDataMode
 from backend.app.powerbi.base import PowerBIAdapter, PowerBIAdapterError
 from backend.app.query_plan.semantic_catalog import (
     SemanticCatalogBuilder,
@@ -1062,7 +1068,11 @@ class _M24ScriptedDeepSeekProvider(LLMProvider):
         output_type: type[BaseModel],
     ) -> LLMResponse:
         self.calls.append(request)
-        if request.task == LLMTask.INTENT_RECOGNITION:
+        if request.task == LLMTask.CONVERSATION:
+            structured = output_type(
+                answer=f"LLM conversational reply: {request.messages[-1]['content']}"
+            )
+        elif request.task == LLMTask.INTENT_RECOGNITION:
             structured = IntentSpec(
                 intent=IntentType.DATA_QUESTION,
                 confidence=0.99,
@@ -1121,7 +1131,11 @@ class _UnsupportedRoutingProvider(_M24ScriptedDeepSeekProvider):
         output_type: type[BaseModel],
     ) -> LLMResponse:
         self.calls.append(request)
-        if request.task == LLMTask.INTENT_RECOGNITION:
+        if request.task == LLMTask.CONVERSATION:
+            structured = output_type(
+                answer=f"LLM conversational reply: {request.messages[-1]['content']}"
+            )
+        elif request.task == LLMTask.INTENT_RECOGNITION:
             messages = {
                 "normal": "总销售额是多少？",
                 "unknown": "客户幸福指数是多少？",
@@ -1398,7 +1412,11 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
                     "time_range": messages[self.active],
                 })
             elif self.active == "m5105_bounded_time":
-                values["time_range"] = messages[self.active]
+                values.update({
+                    "query_shape": QueryShape.BOUNDED_TREND,
+                    "query_shape_evidence": "最近6个月",
+                    "time_range": messages[self.active],
+                })
             if self.active in {
                 "m5105_explicit_range", "m5105_last_year", "m5105_may",
                 "m5105_first_half",
@@ -2555,11 +2573,11 @@ class TestM24DeepSeekLocalChat:
         )
         transport = ASGITransport(app=app)
         cases = (
-            ("你好", "social_conversation", "你好"),
-            ("谢谢", "social_conversation", "不客气"),
-            ("今天几号", "system_datetime", "Asia/Shanghai"),
-            ("现在几点", "system_datetime", "Asia/Shanghai"),
-            ("什么是同比", "concept_explanation", "上年同期"),
+            ("你好", "social_conversation", "LLM conversational reply", 1),
+            ("谢谢", "social_conversation", "LLM conversational reply", 1),
+            ("今天几号", "system_datetime", "Asia/Shanghai", 0),
+            ("现在几点", "system_datetime", "Asia/Shanghai", 0),
+            ("什么是同比", "concept_explanation", "LLM conversational reply", 1),
         )
 
         async with app.router.lifespan_context(app):
@@ -2567,7 +2585,7 @@ class TestM24DeepSeekLocalChat:
             async with AsyncClient(
                 transport=transport, base_url="http://test"
             ) as client:
-                for index, (message, route, answer_fragment) in enumerate(cases):
+                for index, (message, route, answer_fragment, llm_delta) in enumerate(cases):
                     llm_calls = len(provider.calls)
                     schema_calls = service.powerbi.schema_calls
                     dax_calls = service.powerbi.dax_calls
@@ -2585,7 +2603,7 @@ class TestM24DeepSeekLocalChat:
                     assert answer_fragment in body["answer"]
                     assert body["memory_commit"] is False
                     assert body["tool_sequence"] == []
-                    assert len(provider.calls) == llm_calls
+                    assert len(provider.calls) == llm_calls + llm_delta
                     assert service.powerbi.schema_calls == schema_calls
                     assert service.powerbi.dax_calls == dax_calls
 
@@ -2660,6 +2678,12 @@ class TestM24DeepSeekLocalChat:
                 assert service.powerbi.dax_calls == 1
                 plan = second["execution_audit"]["canonical_query_plan"]
                 assert plan["query_shape"] == "trend"
+                reconciliation = second["execution_audit"][
+                    "query_shape_reconciliation"
+                ]
+                assert reconciliation["draft"] == "bounded_trend"
+                assert reconciliation["effective"] == "trend"
+                assert reconciliation["source"] == "pending_clarification"
                 assert plan["measures"] == ["Total Sales"]
                 assert plan["dimensions"] == ["YearMonth"]
                 assert plan["time_range"]["start_date"] == "2026-04-01"
@@ -3038,7 +3062,7 @@ class TestM24DeepSeekLocalChat:
             ("unknown", "客户幸福指数是多少？", "clarification_required"),
             ("comparison", "销售额同比去年如何？", "clarification_required"),
             ("filter", "销售额中类别包含 Furniture", "clarification_required"),
-            ("non_data", "帮我写一首诗", "unsupported"),
+            ("non_data", "帮我写一首诗", "completed"),
         )
         async with app.router.lifespan_context(app):
             service = app.state.turn_service
@@ -3348,6 +3372,7 @@ class _M582ShapeProvider(LLMProvider):
     def __init__(self, question: str) -> None:
         self.question = question
         self.calls: list[LLMRequest] = []
+        self.fail_conversation = False
 
     @property
     def provider_name(self) -> str:
@@ -3360,7 +3385,15 @@ class _M582ShapeProvider(LLMProvider):
     async def generate(self, request, output_type):
         self.calls.append(request)
         text = self.question
-        if request.task == LLMTask.INTENT_RECOGNITION:
+        if request.task.value == "conversation":
+            if self.fail_conversation:
+                raise LLMServiceError(
+                    "conversation unavailable",
+                    provider=self.provider_name,
+                    error_code="test_conversation_failure",
+                )
+            structured = output_type(answer=f"LLM conversational reply: {text}")
+        elif request.task == LLMTask.INTENT_RECOGNITION:
             measures = []
             dimensions = []
             if "平均订单" in text:
@@ -3521,6 +3554,246 @@ def _patch_m582_shape_composition(monkeypatch, question: str):
 
 
 class TestM582ProductionRoutingAndShapes:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "question",
+        ["讲个简短的笑话", "写一句轻松的问候"],
+    )
+    async def test_conversational_route_uses_llm_without_business_authority(
+        self, monkeypatch, question
+    ):
+        app, provider = _patch_m582_shape_composition(monkeypatch, question)
+        conversation_id = str(uuid.uuid4())
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": question,
+                    "conversation_id": conversation_id,
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+            committed = await service.pipeline.get_latest_committed_memory(
+                conversation_id, RuntimeDataMode.REAL
+            )
+
+        body = response.json()
+        assert response.status_code == 200, body
+        assert body["response_type"] == "answer"
+        assert body["answer"].startswith("LLM conversational reply:")
+        assert [call.task.value for call in provider.calls] == ["conversation"]
+        assert body["usage"]["call_count"] == 1
+        assert body["usage"]["per_task"] == {"conversation": 1}
+        assert body["tool_sequence"] == []
+        assert body["allowed_tools"] == []
+        assert body["memory_commit"] is False
+        assert body["execution_audit"]["schema_read"] is False
+        assert body["execution_audit"]["member_lookup"] is False
+        assert body["execution_audit"]["dax_executed"] is False
+        assert body["execution_audit"]["pending_semantic_mutation"] is False
+        assert body["execution_audit"]["report_calls"] == 0
+        assert service.powerbi.schema_calls == 0
+        assert service.powerbi.member_calls == 0
+        assert service.powerbi.dax_calls == 0
+        assert committed is None
+
+    @pytest.mark.asyncio
+    async def test_conversational_provider_failure_never_falls_into_business_pipeline(
+        self, monkeypatch
+    ):
+        question = "讲个简短的笑话"
+        app, provider = _patch_m582_shape_composition(monkeypatch, question)
+        provider.fail_conversation = True
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": question,
+                    "conversation_id": str(uuid.uuid4()),
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+        body = response.json()
+        assert response.status_code == 503, body
+        assert body["error_type"] == "llm_service_unavailable"
+        assert [call.task.value for call in provider.calls] == ["conversation"]
+        assert service.powerbi.schema_calls == 0
+        assert service.powerbi.member_calls == 0
+        assert service.powerbi.dax_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_conversational_turn_does_not_consume_pending_business_state(
+        self, monkeypatch
+    ):
+        question = "随便聊聊"
+        app, provider = _patch_m582_shape_composition(monkeypatch, question)
+        conversation_id = str(uuid.uuid4())
+        pending = PendingClarificationContext(
+            conversation_id=conversation_id,
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint="a" * 64,
+            intent="data_question",
+            missing_slots=["measure"],
+            last_request_id="previous-request",
+        )
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            await service.pipeline.save_pending_clarification(
+                pending, RuntimeDataMode.REAL
+            )
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": question,
+                    "conversation_id": conversation_id,
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+            retained = await service.pipeline.get_pending_clarification(
+                conversation_id, RuntimeDataMode.REAL
+            )
+
+        body = response.json()
+        assert response.status_code == 200, body
+        assert [call.task.value for call in provider.calls] == ["conversation"]
+        assert retained is not None
+        assert retained.chain_id == pending.chain_id
+        assert retained.last_request_id == pending.last_request_id
+        assert retained.missing_slots == pending.missing_slots
+        assert body["execution_audit"]["pending_semantic_mutation"] is False
+        assert service.powerbi.schema_calls == 0
+        assert service.powerbi.member_calls == 0
+        assert service.powerbi.dax_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_business_social_business_transitions_keep_semantic_state_isolated(
+        self, monkeypatch
+    ):
+        app, provider = _patch_m582_shape_composition(
+            monkeypatch, "平均订单金额是多少"
+        )
+        conversation_id = str(uuid.uuid4())
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                first = await client.post("/api/v1/chat", json={
+                    "message": "平均订单金额是多少",
+                    "conversation_id": conversation_id,
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+                committed_before = await service.pipeline.get_latest_committed_memory(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+                first_dax_calls = service.powerbi.dax_calls
+
+                provider.question = "讲个简短的笑话"
+                social = await client.post("/api/v1/chat", json={
+                    "message": provider.question,
+                    "conversation_id": conversation_id,
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+                committed_after = await service.pipeline.get_latest_committed_memory(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+
+                provider.question = "平均订单金额是多少"
+                second = await client.post("/api/v1/chat", json={
+                    "message": provider.question,
+                    "conversation_id": conversation_id,
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+        assert first.json()["terminal_state"] == "completed", first.json()
+        assert social.json()["terminal_state"] == "completed", social.json()
+        assert social.json()["execution_audit"]["dax_executed"] is False
+        assert service.powerbi.dax_calls == first_dax_calls + 1
+        assert committed_before is not None
+        assert committed_after is not None
+        assert committed_after.request_id == committed_before.request_id
+        assert committed_after.memory_version == committed_before.memory_version
+        assert second.json()["terminal_state"] == "completed", second.json()
+        conversation_call = next(
+            call for call in provider.calls if call.task == LLMTask.CONVERSATION
+        )
+        assert len(conversation_call.messages) == 2
+        assert conversation_call.messages[-1] == {
+            "role": "user",
+            "content": "讲个简短的笑话",
+        }
+        assert "平均订单金额是多少" not in " ".join(
+            item["content"] for item in conversation_call.messages
+        )
+
+    @pytest.mark.asyncio
+    async def test_social_prefix_cannot_hide_a_business_request(self, monkeypatch):
+        question = "你好，顺便看一下平均订单金额"
+        app, provider = _patch_m582_shape_composition(monkeypatch, question)
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": question,
+                    "conversation_id": str(uuid.uuid4()),
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+        body = response.json()
+        assert response.status_code == 200, body
+        assert body["terminal_state"] == "completed", body
+        assert body["execution_audit"]["question_route"] == "business_data_query"
+        assert service.powerbi.schema_calls == 1
+        assert service.powerbi.dax_calls == 1
+        assert provider.calls
+        assert all(call.task != LLMTask.CONVERSATION for call in provider.calls)
+
+    @pytest.mark.asyncio
+    async def test_production_path_rejects_coverage_row_number_as_metric_claim(
+        self, monkeypatch
+    ):
+        from backend.app.facts import FactBoundedAnswerBuilder
+
+        question = "2025年8月到2026年1月销售额月趋势"
+        original_build = FactBoundedAnswerBuilder.build
+
+        def poisoned_build(builder, *args, **kwargs):
+            answer = original_build(builder, *args, **kwargs)
+            return answer.model_copy(update={"answer": "销售额是0。"})
+
+        monkeypatch.setattr(FactBoundedAnswerBuilder, "build", poisoned_build)
+        app, _ = _patch_m582_shape_composition(monkeypatch, question)
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": question,
+                    "conversation_id": str(uuid.uuid4()),
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+        body = response.json()
+        assert response.status_code == 200, body
+        assert body["terminal_state"] == "response_failed", body
+        assert body["error_type"] == "answer_validation_failed"
+        assert body["memory_commit"] is False
+        assert service.powerbi.dax_calls == 1
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("question", "response_type", "fragment"),

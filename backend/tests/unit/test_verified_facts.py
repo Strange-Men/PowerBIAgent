@@ -304,6 +304,164 @@ def test_model_identity_numbers_in_canonical_scope_are_fact_validated():
     assert FactOutputValidator().validate_answer(answer, facts) == []
 
 
+def test_model_identity_number_cannot_authorize_a_business_metric_claim():
+    plan = _plan(semantic_model_key="model-v2")
+    result = _result(semantic_model_key="model-v2")
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    answer = FactBoundedAnswerBuilder().build(
+        plan,
+        result,
+        facts,
+        effective_scope="模型：model-v2 · 指标：Total Sales",
+    )
+    mutated = answer.model_copy(update={"answer": "销售额是2。"})
+
+    assert "unverified_numeric_claim" in FactOutputValidator().validate_answer(
+        mutated, facts
+    )
+
+
+def test_separated_model_identity_number_cannot_authorize_a_business_claim():
+    plan = _plan(semantic_model_key="model-2")
+    result = _result(semantic_model_key="model-2")
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    answer = FactBoundedAnswerBuilder().build(
+        plan,
+        result,
+        facts,
+        effective_scope="模型：model-2 · 指标：Total Sales",
+    )
+    mutated = answer.model_copy(update={"answer": "销售额是2。"})
+
+    assert "unverified_numeric_claim" in FactOutputValidator().validate_answer(
+        mutated, facts
+    )
+
+
+@pytest.mark.parametrize(
+    ("semantic_model_key", "measure", "source_field", "leaked_number"),
+    [
+        ("retail-model", "Net Sales", "Sales-7[Net Sales]", "7"),
+        ("education-model", "Average Score", "Scores-8[Average Score]", "8"),
+        ("inventory-model", "Stock Balance", "Stock-9[Stock Balance]", "9"),
+        ("logistics-model", "Package Count", "Trips-11[Package Count]", "11"),
+        ("unknown-holdout", "Metric X", "Table-13[Metric X]", "13"),
+    ],
+)
+def test_source_field_identity_digits_are_not_business_numeric_authority(
+    semantic_model_key: str,
+    measure: str,
+    source_field: str,
+    leaked_number: str,
+):
+    plan = _plan(semantic_model_key=semantic_model_key, measures=[measure])
+    result = _result(
+        [source_field],
+        [[100]],
+        semantic_model_key=semantic_model_key,
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    answer = FactBoundedAnswerBuilder().build(plan, result, facts)
+    mutated = answer.model_copy(update={
+        "answer": f"该业务指标是{leaked_number}。",
+    })
+
+    assert "unverified_numeric_claim" in FactOutputValidator().validate_answer(
+        mutated, facts
+    )
+
+
+def test_punctuated_model_identity_number_cannot_authorize_a_business_claim():
+    plan = _plan(semantic_model_key="model-2")
+    result = _result(semantic_model_key="model-2")
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    answer = FactBoundedAnswerBuilder().build(
+        plan,
+        result,
+        facts,
+        effective_scope="模型：model-2 · 指标：Total Sales",
+    )
+    mutated = answer.model_copy(update={"answer": "销售额是2。"})
+
+    assert "unverified_numeric_claim" in FactOutputValidator().validate_answer(
+        mutated, facts
+    )
+
+
+def test_coverage_source_row_numbers_cannot_authorize_a_business_metric_claim():
+    plan = _bounded_monthly_plan()
+    result = _result(
+        ["[YearMonth]", "[Total Sales]"],
+        [
+            ["2026-01-01", 100],
+            ["2026-02-01", 100],
+            ["2026-03-01", 100],
+        ],
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    assert facts.observed_data_coverage.source_rows == (0, 1, 2)
+    answer = FactBoundedAnswerBuilder().build(plan, result, facts)
+    mutated = answer.model_copy(update={"answer": "销售额是1。"})
+
+    assert "unverified_numeric_claim" in FactOutputValidator().validate_answer(
+        mutated, facts
+    )
+
+
+def test_canonical_time_number_is_valid_only_inside_the_verified_scope():
+    plan = _plan(
+        time_range=TimeRangeSpec(
+            date_field="OrderDate",
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 12, 31),
+            mode=TimeRangeMode.EXPLICIT_RANGE,
+        )
+    )
+    result = _result()
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    scope = "模型：model · 指标：Total Sales · 查询时间：2026年1月–2026年12月"
+    answer = FactBoundedAnswerBuilder().build(
+        plan, result, facts, effective_scope=scope
+    )
+    assert FactOutputValidator().validate_answer(answer, facts) == []
+
+    mutated = answer.model_copy(update={
+        "answer": f"{scope}：销售额是2026。",
+    })
+    assert "unverified_numeric_claim" in FactOutputValidator().validate_answer(
+        mutated, facts
+    )
+
+
+def test_topn_number_is_valid_only_inside_the_verified_ranking_scope():
+    plan = _plan(
+        query_shape=QueryShape.RANKING,
+        dimensions=["Category"],
+        sort="desc",
+        top_n=3,
+    )
+    result = _result(
+        ["[Category]", "[Total Sales]"],
+        [["A", 100], ["B", 90], ["C", 80]],
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    scope = (
+        "模型：model · 指标：Total Sales · 分组：Category · "
+        "排名：Total Sales最高Top3"
+    )
+    answer = FactBoundedAnswerBuilder().build(
+        plan, result, facts, effective_scope=scope
+    )
+    assert FactOutputValidator().validate_answer(answer, facts) == []
+
+    mutated = answer.model_copy(update={
+        "answer": f"{scope}：销售额是3。",
+    })
+    assert "unverified_numeric_claim" in FactOutputValidator().validate_answer(
+        mutated, facts
+    )
+
+
 def test_factset_has_no_causal_fact_type():
     facts = VerifiedFactSetBuilder().build(_plan(), _result())
     assert all("caus" not in item.fact_type.value for item in facts.facts)

@@ -80,6 +80,7 @@ from backend.app.schemas.data_contracts import UserContext
 # _do_execute 回调签名
 # 接收执行上下文，返回结果 dict
 DoExecuteCallback = Callable[..., Any]
+ConversationExecuteCallback = Callable[..., Any]
 
 
 class TurnPipeline:
@@ -139,6 +140,7 @@ class TurnPipeline:
         powerbi_provider_name: str,
         scenario_fingerprint_hash_inputs: Optional[dict[str, Any]] = None,
         do_execute: DoExecuteCallback,
+        do_conversation: ConversationExecuteCallback | None = None,
         **execute_kwargs: Any,
     ) -> dict[str, Any]:
         recorder = PerformanceRecorder()
@@ -169,6 +171,7 @@ class TurnPipeline:
                             scenario_fingerprint_hash_inputs
                         ),
                         do_execute=do_execute,
+                        do_conversation=do_conversation,
                         **execute_kwargs,
                     )
             except TimeoutError:
@@ -202,6 +205,7 @@ class TurnPipeline:
         powerbi_provider_name: str,
         scenario_fingerprint_hash_inputs: Optional[dict[str, Any]] = None,
         do_execute: DoExecuteCallback,
+        do_conversation: ConversationExecuteCallback | None = None,
         **execute_kwargs: Any,
     ) -> dict[str, Any]:
         """共享 execute 骨架
@@ -335,6 +339,38 @@ class TurnPipeline:
                 ),
             },
         )
+        if routing.route in {
+            QuestionRoute.SOCIAL_CONVERSATION,
+            QuestionRoute.CONCEPT_EXPLANATION,
+        }:
+            if do_conversation is None:
+                await self.snapshot_store.abort(effective_req_id, runtime_mode)
+                raise RuntimeError("conversational_llm_callback_missing")
+            try:
+                result = await do_conversation(
+                    message=message,
+                    effective_conv_id=effective_conv_id,
+                    effective_req_id=effective_req_id,
+                    runtime_mode=runtime_mode,
+                    is_mock=is_mock,
+                    source_mode="mock" if is_mock else "real",
+                    routing=routing,
+                    trace=trace,
+                    trace_id=trace_id,
+                    **execute_kwargs,
+                )
+                result["llm_profile_key"] = llm_profile_key or llm_provider_name
+                result["llm_model"] = llm_model
+                result["llm_provider_protocol"] = llm_provider_protocol
+                result["user_message"] = message
+                with measure_performance("persistence"):
+                    await self._save_snapshot(result, runtime_mode, fingerprint_hash)
+                    await self.snapshot_store.complete(effective_req_id, runtime_mode)
+                return result
+            except BaseException:
+                await self.snapshot_store.abort(effective_req_id, runtime_mode)
+                raise
+
         if routing.route not in {
             QuestionRoute.BUSINESS_DATA_QUERY,
             QuestionRoute.REPORT_REQUEST,
@@ -516,6 +552,9 @@ class TurnPipeline:
             "member_lookup": False,
             "dax_executed": False,
             "memory_committed": False,
+            "pending_semantic_mutation": False,
+            "powerbi_tool_calls": 0,
+            "report_calls": 0,
         }
         if routing.route == QuestionRoute.UNSUPPORTED_GENERAL:
             return self.build_result(

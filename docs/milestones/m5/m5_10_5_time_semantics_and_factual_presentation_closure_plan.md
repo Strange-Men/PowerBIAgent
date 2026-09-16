@@ -2,8 +2,10 @@
 
 ## Status and baseline
 
-- Status: IMPLEMENTATION COMPLETE — READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE.
-- Baseline: clean `main@3cca00b8cc37007411ef60015c419ff6e34530f1`.
+- Status: FIX RELEASE CANDIDATE — local automated and Real acceptance complete;
+  remote exact-SHA CI and final remote audit pending.
+- Original baseline: clean `main@3cca00b8cc37007411ef60015c419ff6e34530f1`.
+- FIX baseline: `main@3d6a00693c0371603f6c3087acea73d09b8e6acd`.
 - Product version at start: `M5.10.4`.
 - M5.10.3 and M5.10.4: COMPLETE; Semantic Layer FINAL ACCEPTANCE remains pending.
 - `M5.10.6 NOT STARTED`; `M5 FINAL=false`.
@@ -18,16 +20,16 @@ report-rendering authorities.
 
 | Level | Request class | Allowed path |
 |---|---|---|
-| 0 | Greeting / social conversation | Direct natural response; ZERO schema/member/DAX/business Memory |
+| 0 | Greeting / social conversation | Existing selected LLM in an isolated no-tool lane; ZERO schema/member/DAX/report/business Memory |
 | 1 | Current date/time | Application clock in the configured timezone; ZERO DAX |
 | 2 | Product-adjacent concepts/help | Bounded explanatory response; never claims current model facts |
 | 3 | Power BI business facts | Existing Router → bounded draft → runtime Grounding → CanonicalPlan → deterministic DAX → VerifiedFactSet |
 | 4 | Report generation | Existing VerifiedFactSet → ReportData/ReportSpec → registered fixed renderer |
 | 5 | Write/destructive/unsupported | Existing bounded refusal before business execution |
 
-Low factual risk permits a natural direct answer. Business and report facts
-remain progressively stricter and may never inherit authority from a direct
-conversation response.
+Low factual risk permits a natural LLM answer using only the current user
+message. Business and report facts remain progressively stricter and may never
+inherit authority from a conversational response.
 
 ## Failure-first scope
 
@@ -94,6 +96,47 @@ whitelist commit/push → exact-SHA CI and remote audit.
   migration, MCP runtime, Provider architecture, renderer visual redesign or
   M5.10.6 implementation was added.
 
+## Post-release FIX audit
+
+- P1-A confirmed RED: creative/social requests were either canned or routed as
+  unsupported. The existing Router now sends only bounded low-risk
+  conversational classes to one new `LLMTask.CONVERSATION` on the selected
+  existing provider. The request contains only the system boundary and current
+  user message; provider/profile/retry/usage/trace contracts are reused and no
+  business context or tool is available.
+- P1-B confirmed RED: model/source-field digits and coverage row indexes could
+  enter one global numeric allowlist. Numeric validation now admits business
+  values only from user-visible verified fact types. Exact deterministic
+  scope/coverage fragments are validated separately; model identity,
+  source-field identity, source rows, fact/result IDs, hashes and other
+  provenance never authorize a business numeric claim.
+- Additional P1 sweep findings were closed failure-first: system/help/weather
+  prefixes can no longer swallow a later business request; greeting/courtesy
+  discourse is ignored only by the residue detector while unknown business
+  nouns still block; a slot-only pending completion cannot let a weak LLM
+  draft rewrite the runtime-validated pending QueryShape.
+- Original 19 production files: `FIX` = `application/deepseek_turn_service.py`,
+  `application/turn_pipeline.py`, `facts/verified.py`,
+  `intent/question_router.py`, `query_plan/completeness.py`; `KEEP` = the other
+  14; `ROLLBACK` = none; `DEFER` = none. The isolated answer service, task enum
+  and Mock parity wiring are supporting changes outside that original 19-file
+  set.
+- Fresh local automated evidence after the FIX: focused `770 passed`;
+  M5.9.4 formal entry `29 passed` and fixed-seed 51,200/51,200;
+  Semantic Compatibility `870 passed / 125 production files`; full backend
+  `2903 passed, 1 skipped`; Golden `11 passed, 1 manual-real skipped`;
+  frontend `91 passed` plus typecheck/lint/build; Architecture 142, Repository
+  Safety 409, AI Error Ledger 104, Documentation/Artifact Governance,
+  compileall, version consistency 49 and diff-check PASS.
+- Local Real is separate evidence: configured DeepSeek + Real Local MCP on
+  `PowerBIAgent_M3_Rich_Test` completed 19/19 with 19 execution witnesses,
+  business residual=0 and temporary residual=0. It covered actual
+  conversational calls, deterministic date/time, business escalation,
+  business↔social isolation, vague-time pending completion, coverage and the
+  2025 fixed report scope.
+- Remote exact-SHA CI evidence: PENDING until the FIX commit is pushed and the
+  workflow completes. No local count is recorded as remote evidence.
+
 ---
 
-*Created: 2026-09-16 | Updated: 2026-09-16 | M5.10.5 IMPLEMENTATION COMPLETE | READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE | M5.10.6 NOT STARTED | M5 FINAL=false*
+*Created: 2026-09-16 | Updated: 2026-09-16 | M5.10.5 FIX RELEASE CANDIDATE | REMOTE EXACT-SHA CI PENDING | M5.10.6 NOT STARTED | Semantic Layer FINAL ACCEPTANCE PENDING | M5 FINAL=false*
