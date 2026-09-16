@@ -318,7 +318,9 @@ class TurnPipeline:
         # Route product capabilities before Context/Memory/LLM/schema/member/DAX.
         # Business semantics remain owned by the normal grounding callback.
         with measure_performance("router"):
-            routing = QuestionRouter().route(
+            routing = QuestionRouter(
+                application_timezone=self.config.application_timezone,
+            ).route(
                 message,
                 public_model_name=llm_display_name,
             )

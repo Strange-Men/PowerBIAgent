@@ -2,6 +2,18 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.10.5] — 2026-09-16（时间语义与事实呈现一致性收口）
+
+- **Capability restriction matrix：** 在既有 `QuestionRouter` 中按事实风险分级；问候、系统日期时间与 bounded 概念解释在 schema/member/DAX/业务 Memory 前直接完成，数据查询与报表仍进入严格 canonical/VerifiedFactSet 链，写回与破坏性请求继续拒绝。application clock 使用可配置 IANA timezone，默认 `Asia/Shanghai`。
+- **时间语义：** 补齐绝对月份/年度、相对年月、季度、最近 N 月与 English variants；“最近几个月/recent months/lately”等无安全 bound 表达固定澄清且 ZERO DAX，pending 保留已证明的 measure/trend/date grouping，后续“最近6个月”或兼容 yearless correction 才形成 canonical range。LLM 即使为模糊表达填入月份数也不能使其可执行。
+- **事实呈现：** `requested_query_scope` 只投影最终执行的 CanonicalQueryPlan，包括模型、指标、分组、筛选、时间与 ranking；`observed_data_coverage` 只由 QueryResult/VerifiedFactSet 证明并区分 FULL/PARTIAL/EMPTY/UNKNOWN/NOT_APPLICABLE。空 rows 明示“当前查询范围未返回数据”，不得称为 0。
+- **报表一致性：** 当前轮明确时间进入所有固定报表子查询与 Reading Context；模糊报表时间在 DAX 前澄清。多查询报表不能用单个 trend 的 FULL 覆盖代表整份报告，混合 UNKNOWN/EMPTY 时保守降级；Executive HTML 同时展示 requested period 与 observed coverage，四类 provenance 保持分离。
+- **Fresh local automated：** M5.10.5 focused `594 passed`；M5.9.4 formal entry `29 passed` 与固定 seed 51,200/51,200；Semantic Compatibility `833 passed / 124 production files`；full backend `2864 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 141、Repository Safety 408、AI Error Ledger 99、Documentation/Artifact Governance、compileall、version consistency 与 diff-check PASS。
+- **Local Real：** configured DeepSeek + Real Local MCP 在 `PowerBIAgent_M3_Rich_Test` 完成 12/12，16 个真实 execution witnesses，provider failures=0、business residual=0、temporary residual=0；覆盖 greeting/date/time ZERO DAX、absolute/relative/vague+follow-up/partial coverage、scalar/grouped/ranking 与 2025 年专业报表全子查询时间一致性。report-wide observed coverage 保守为 UNKNOWN。
+- **边界与状态：** 无新 QueryShape、Planner、Grounding、Memory、Agent、migration、MCP runtime、Provider architecture 或 Renderer 视觉设计；M5.10.6 未启动。M5.10.5 IMPLEMENTATION COMPLETE，READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE；Semantic Layer FINAL ACCEPTANCE PENDING，M5 FINAL=false。发布证据以本提交的 exact-SHA CI 为准。
+
+**Settings.version:** M5.10.5
+
 ## [M5.10.4] — 2026-09-16（语言理解与 QueryShape 收口）
 
 - **M5.10.3 状态：** 用户已确认人工复测无问题，M5.10.3 COMPLETE / 用户人工验收通过；历史提交中的当时阻塞证据保持不改写。

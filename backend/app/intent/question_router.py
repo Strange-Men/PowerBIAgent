@@ -8,14 +8,20 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal, DivisionByZero, InvalidOperation
 from enum import Enum
+from typing import Callable
+from zoneinfo import ZoneInfo
 
 from backend.app.intent.temporal_expression import has_explicit_month_range
 from backend.app.schemas.data_contracts import QueryShape
 
 
 class QuestionRoute(str, Enum):
+    SOCIAL_CONVERSATION = "social_conversation"
+    SYSTEM_DATETIME = "system_datetime"
+    CONCEPT_EXPLANATION = "concept_explanation"
     BUSINESS_DATA_QUERY = "business_data_query"
     REPORT_REQUEST = "report_request"
     PRODUCT_HELP = "product_help"
@@ -175,6 +181,29 @@ class QuestionRouter:
         r"\b(?:highest|lowest|most|least|best|worst)\b",
         re.IGNORECASE,
     )
+    _SOCIAL = re.compile(
+        r"^(?:你好|您好|嗨|哈喽|早上好|上午好|下午好|晚上好|"
+        r"谢谢|多谢|感谢|不客气|你怎么样|再见|拜拜|"
+        r"hello|hi|hey|thanks|thank\s+you|goodbye|bye)[！!？?。.,，\s]*$",
+        re.IGNORECASE,
+    )
+    _CURRENT_DATE = re.compile(
+        r"^(?:今天(?:是)?(?:几号|几日|什么日期|星期几)|当前日期(?:是什(?:么|麼))?|"
+        r"what(?:'s|\s+is)\s+(?:today(?:'s)?\s+date|the\s+date\s+today))[？?。.!\s]*$",
+        re.IGNORECASE,
+    )
+    _CURRENT_TIME = re.compile(
+        r"^(?:现在(?:是)?几点(?:钟)?|当前时间(?:是什(?:么|麼))?|"
+        r"what\s+time\s+is\s+it)[？?。.!\s]*$",
+        re.IGNORECASE,
+    )
+    _CONCEPT = re.compile(
+        r"^(?:什么是|解释(?:一下)?|介绍(?:一下)?)\s*"
+        r"(?:同比|平均值|中位数|top\s*n)[？?。.!\s]*$|"
+        r"^(?:同比|平均值|中位数|top\s*n)\s*(?:是什么|是什么意思|怎么理解)[？?。.!\s]*$|"
+        r"^(?:解释(?:一下)?)?平均值和中位数(?:的)?区别[？?。.!\s]*$",
+        re.IGNORECASE,
+    )
     _TREND = re.compile(r"趋势|走势|变化|按月看|按年看|逐月|逐年|\b(?:trend|monthly|yearly)\b", re.IGNORECASE)
     _ABSOLUTE_MONTH = re.compile(r"(?:\d{4}年\d{1,2}月|\d{4}[-/]\d{1,2})")
     _ENTITY_LIST = re.compile(
@@ -200,6 +229,25 @@ class QuestionRouter:
         r"^\s*(?:那|那么|其中|只看|再看|继续|然后|改成|改为|换成|换为|"
         r"调整为|改看|换看|改|换)"
     )
+    _BOUNDED_TIME_ONLY = re.compile(
+        r"^\s*(?:(?:最近|过去|近)\s*\d+\s*个?月|"
+        r"(?:last|past)\s+\d+\s+months?|"
+        r"(?:从\s*)?\d{1,2}\s*月(?:份)?\s*(?:至|到|[-—–~～])\s*"
+        r"\d{1,2}\s*月(?:份)?)\s*[？?。.!]*\s*$",
+        re.IGNORECASE,
+    )
+
+    _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+
+    def __init__(
+        self,
+        *,
+        application_timezone: str = "Asia/Shanghai",
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._timezone_name = application_timezone
+        self._timezone = ZoneInfo(application_timezone)
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def route(
         self,
@@ -220,6 +268,26 @@ class QuestionRouter:
             return QuestionRoutingDecision(
                 QuestionRoute.SYSTEM_INFO,
                 direct_answer=f"当前使用的模型是 {display_name}。",
+            )
+        if self._SOCIAL.fullmatch(text):
+            return QuestionRoutingDecision(
+                QuestionRoute.SOCIAL_CONVERSATION,
+                direct_answer=self._social_answer(text),
+            )
+        if self._CURRENT_DATE.fullmatch(text):
+            return QuestionRoutingDecision(
+                QuestionRoute.SYSTEM_DATETIME,
+                direct_answer=self._current_date_answer(),
+            )
+        if self._CURRENT_TIME.fullmatch(text):
+            return QuestionRoutingDecision(
+                QuestionRoute.SYSTEM_DATETIME,
+                direct_answer=self._current_time_answer(),
+            )
+        if self._CONCEPT.fullmatch(text):
+            return QuestionRoutingDecision(
+                QuestionRoute.CONCEPT_EXPLANATION,
+                direct_answer=self._concept_answer(text),
             )
         if self._is_calculator(text):
             try:
@@ -266,6 +334,8 @@ class QuestionRouter:
         return re.fullmatch(r"[\d.()+\-*/\s]+", normalized) is not None
 
     def _query_shape(self, text: str) -> QueryShape | None:
+        if self._BOUNDED_TIME_ONLY.fullmatch(text):
+            return None
         if self._TREND.search(text):
             if has_explicit_month_range(text):
                 return QueryShape.BOUNDED_TREND
@@ -285,6 +355,46 @@ class QuestionRouter:
         if self._INHERIT_SHAPE.search(text):
             return None
         return QueryShape.SCALAR
+
+    def _application_now(self) -> datetime:
+        value = self._clock()
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(self._timezone)
+
+    def _current_date_answer(self) -> str:
+        current = self._application_now()
+        return (
+            f"今天是{current.year}年{current.month}月{current.day}日，"
+            f"{self._WEEKDAYS[current.weekday()]}（{self._timezone_name}）。"
+        )
+
+    def _current_time_answer(self) -> str:
+        current = self._application_now()
+        return (
+            f"现在是{current.year}年{current.month}月{current.day}日 "
+            f"{current:%H:%M}（{self._timezone_name}）。"
+        )
+
+    @staticmethod
+    def _social_answer(text: str) -> str:
+        normalized = text.casefold()
+        if any(term in normalized for term in ("谢谢", "多谢", "感谢", "thanks", "thank you")):
+            return "不客气！需要继续分析时，直接告诉我你的问题即可。"
+        if any(term in normalized for term in ("再见", "拜拜", "goodbye", "bye")):
+            return "再见！需要分析 Power BI 数据时，随时回来找我。"
+        if "你怎么样" in normalized:
+            return "我状态不错，谢谢！你可以和我聊聊，或直接提出 Power BI 数据问题。"
+        return "你好！我可以帮你进行只读 Power BI 数据分析，也可以回答产品使用问题。"
+
+    @staticmethod
+    def _concept_answer(text: str) -> str:
+        normalized = text.casefold()
+        if "同比" in normalized:
+            return "同比是把当前期间与上年同期进行比较，用于观察同季节周期下的变化。"
+        if "平均值" in normalized or "中位数" in normalized:
+            return "平均值是总和除以数量；中位数是排序后位于中间的值，通常更不易受极端值影响。"
+        return "TopN 指按明确指标和排序方向选取前 N 项；在数据查询中，指标、维度和 N 都需要明确。"
 
     @classmethod
     def _has_member_set_evidence(cls, text: str) -> bool:

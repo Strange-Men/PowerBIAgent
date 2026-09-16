@@ -21,6 +21,10 @@ from backend.app.report.fixed import SalesReportRenderer
 from backend.app.report.reading_context import ReportReadingContextBuilder
 from backend.app.report.registry import build_report_dispatcher
 from backend.app.schemas.data_contracts import ChartSpec, KPISpec, ReportSpec, TableSpec
+from backend.app.schemas.factual_context import (
+    ObservedCoverageStatus,
+    ObservedDataCoverage,
+)
 from backend.app.schemas.report_context import (
     ActiveFilterContext,
     ActiveFilterState,
@@ -233,6 +237,7 @@ async def test_executive_renderer_renders_all_p0_reading_context_fields_in_html(
     assert "销售经营分析报告" in html
     assert "SALES EXECUTIVE REPORT" in html
     assert "2025-01-01 至 2025-06-30" in html
+    assert "实际数据覆盖：未知" in reading_context
     assert "区域等于South" in html
     assert "品类属于Office、Technology" in html
     assert "总销售额" in html
@@ -263,6 +268,29 @@ async def test_executive_renderer_renders_all_p0_reading_context_fields_in_html(
     assert "local_desktop:model-a" in audit_footer
     assert "local_mcp" in audit_footer
     assert NOW.isoformat() in audit_footer
+
+
+@pytest.mark.asyncio
+async def test_executive_renderer_labels_requested_period_and_partial_coverage_separately():
+    report = _report()
+    assert report.reading_context is not None
+    context = report.reading_context.model_copy(update={
+        "observed_data_coverage": ObservedDataCoverage(
+            status=ObservedCoverageStatus.PARTIAL,
+            start_date=date(2025, 2, 1),
+            end_date=date(2025, 4, 30),
+            grain="month",
+            source_field="Date[YearMonth]",
+            source_rows=(0, 1, 2),
+        )
+    })
+
+    html = await ExecutiveSalesReportRenderer().render(
+        report.model_copy(update={"reading_context": context})
+    )
+
+    assert "2025-01-01 至 2025-06-30" in html
+    assert "实际数据覆盖：2025年2月–2025年4月（部分）" in html
 
 
 @pytest.mark.asyncio

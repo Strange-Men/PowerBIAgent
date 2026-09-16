@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, computed_field
 
 from backend.app.schemas.data_contracts import ReportSpec
+from backend.app.schemas.factual_context import ObservedCoverageStatus
 from backend.app.schemas.report_context import (
     ExceptionAssessmentState,
     MetricDefinitionStatus,
@@ -42,6 +43,7 @@ class ReportPresentationProjection(BaseModel):
     analysis_period_display: str
     filter_display: str
     freshness_display: str
+    observed_coverage_display: str
     exception_display: str
     generated_at_display: str
     queried_at_display: str
@@ -67,6 +69,7 @@ class ReportPresentationProjection(BaseModel):
             self.analysis_period_display,
             self.filter_display,
             self.freshness_display,
+            self.observed_coverage_display,
             self.exception_display,
             self.generated_at_display,
             self.metric_summary,
@@ -138,6 +141,9 @@ class ProfessionalReportPresenter:
                 if context.data_freshness.state is ReportFreshnessState.UNKNOWN
                 else self._format_datetime(context.data_freshness.data_updated_at)
             ),
+            observed_coverage_display=self._coverage_display(
+                context.observed_data_coverage
+            ),
             exception_display=(
                 "暂无可验证异常基准"
                 if context.exception_assessment.state
@@ -196,6 +202,21 @@ class ProfessionalReportPresenter:
                 f"{field}{operator}{'、'.join(str(value) for value in item.values)}"
             )
         return "；".join(rendered)
+
+    @staticmethod
+    def _coverage_display(coverage) -> str:
+        if coverage.status is ObservedCoverageStatus.EMPTY:
+            return "无返回数据"
+        if coverage.status is ObservedCoverageStatus.UNKNOWN:
+            return "未知"
+        if coverage.status is ObservedCoverageStatus.NOT_APPLICABLE:
+            return "不适用"
+        assert coverage.start_date is not None and coverage.end_date is not None
+        state = "完整" if coverage.status is ObservedCoverageStatus.FULL else "部分"
+        return (
+            f"{coverage.start_date.year}年{coverage.start_date.month}月–"
+            f"{coverage.end_date.year}年{coverage.end_date.month}月（{state}）"
+        )
 
     @staticmethod
     def _metric(definition) -> PresentedMetricDefinition:

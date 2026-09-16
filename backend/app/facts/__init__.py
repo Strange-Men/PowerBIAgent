@@ -10,6 +10,10 @@ from backend.app.facts.verified import (
     VerifiedFactSet,
     VerifiedFactSetBuilder,
 )
+from backend.app.schemas.factual_context import (
+    ObservedCoverageStatus,
+    ObservedDataCoverage,
+)
 
 __all__ = [
     "FactOutputValidator",
@@ -20,4 +24,6 @@ __all__ = [
     "VerifiedFact",
     "VerifiedFactSet",
     "VerifiedFactSetBuilder",
+    "ObservedCoverageStatus",
+    "ObservedDataCoverage",
 ]

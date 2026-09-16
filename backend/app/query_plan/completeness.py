@@ -183,6 +183,8 @@ class SemanticObligationCoverageGate:
         re.compile(r"\d{4}\s*年\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*[日号])?"),
         re.compile(r"\d{4}[-/]\d{1,2}(?:[-/]\d{1,2})?"),
         re.compile(r"(?:本|上|下|这|去|今|明)(?:年|月|季度)"),
+        re.compile(r"(?:最近|过去|近)\s*(?:\d+\s*个?月|半年)"),
+        re.compile(r"\b(?:last|past)\s+\d+\s+months?\b", re.IGNORECASE),
         re.compile(r"\d+\s*(?:个)?月"),
     )
 
@@ -303,6 +305,12 @@ class SemanticObligationCoverageGate:
                     evidence="grounded_time",
                 ))
             requested_month_range = parse_explicit_month_range(user_input)
+            if requested_month_range is None and delta.time_range is not None:
+                requested_month_range = parse_explicit_month_range(
+                    user_input,
+                    reference_year=delta.time_range.start_date.year,
+                    allow_contextual_year=True,
+                )
             if requested_month_range is not None:
                 expected_start = date(
                     requested_month_range.start_year,

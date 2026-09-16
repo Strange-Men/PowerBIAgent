@@ -222,6 +222,88 @@ def test_empty_result_has_only_context_and_metadata_no_metric():
     assert facts.by_type(FactType.RESULT_METADATA)
 
 
+def _bounded_monthly_plan(**updates):
+    return _plan(
+        query_shape=QueryShape.BOUNDED_TREND,
+        dimensions=["YearMonth"],
+        time_range=TimeRangeSpec(
+            date_field="OrderDate",
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 6, 30),
+            mode=TimeRangeMode.EXPLICIT_RANGE,
+            grain="month",
+        ),
+        **updates,
+    )
+
+
+def test_observed_month_coverage_is_derived_only_from_returned_rows():
+    plan = _bounded_monthly_plan()
+    full = VerifiedFactSetBuilder().build(
+        plan,
+        _result(
+            ["[YearMonth]", "[Total Sales]"],
+            [[f"2026-{month:02d}-01T00:00:00", month] for month in range(1, 7)],
+        ),
+    )
+    partial = VerifiedFactSetBuilder().build(
+        plan,
+        _result(
+            ["[YearMonth]", "[Total Sales]"],
+            [[f"2026-{month:02d}-01T00:00:00", month] for month in range(2, 6)],
+        ),
+    )
+
+    assert full.observed_data_coverage.status.value == "full"
+    assert full.observed_data_coverage.start_date == date(2026, 1, 1)
+    assert full.observed_data_coverage.end_date == date(2026, 6, 30)
+    assert partial.observed_data_coverage.status.value == "partial"
+    assert partial.observed_data_coverage.start_date == date(2026, 2, 1)
+    assert partial.observed_data_coverage.end_date == date(2026, 5, 31)
+
+
+def test_empty_and_unobservable_time_results_are_not_reported_as_zero_or_full():
+    trend_plan = _bounded_monthly_plan()
+    empty_result = _result(
+        ["[YearMonth]", "[Total Sales]"],
+        [],
+    )
+    empty_facts = VerifiedFactSetBuilder().build(trend_plan, empty_result)
+    empty_answer = FactBoundedAnswerBuilder().build(
+        trend_plan,
+        empty_result,
+        empty_facts,
+        effective_scope="模型：model · 查询时间：2026年1月–2026年6月",
+    )
+
+    scalar_plan = _plan(
+        query_shape=QueryShape.SCALAR,
+        time_range=trend_plan.time_range,
+    )
+    scalar_result = _result(rows=[[0]])
+    scalar_facts = VerifiedFactSetBuilder().build(scalar_plan, scalar_result)
+
+    assert empty_facts.observed_data_coverage.status.value == "empty"
+    assert "当前查询范围未返回数据" in empty_answer.answer
+    assert "为0" not in empty_answer.answer
+    assert empty_answer.evidence["observed_data_coverage"]["status"] == "empty"
+    assert scalar_facts.observed_data_coverage.status.value == "unknown"
+
+
+def test_model_identity_numbers_in_canonical_scope_are_fact_validated():
+    plan = _plan(semantic_model_key="model-v2")
+    result = _result(semantic_model_key="model-v2")
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    answer = FactBoundedAnswerBuilder().build(
+        plan,
+        result,
+        facts,
+        effective_scope="模型：model-v2 · 指标：Total Sales",
+    )
+
+    assert FactOutputValidator().validate_answer(answer, facts) == []
+
+
 def test_factset_has_no_causal_fact_type():
     facts = VerifiedFactSetBuilder().build(_plan(), _result())
     assert all("caus" not in item.fact_type.value for item in facts.facts)

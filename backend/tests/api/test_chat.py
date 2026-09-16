@@ -45,6 +45,7 @@ from backend.app.schemas.data_contracts import (
     PowerBIError,
     QueryPlan,
     QueryResult,
+    QueryShape,
     RelationshipSchema,
     SemanticModelSchema,
     StructuredFilter,
@@ -1266,6 +1267,12 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
             "m55_last_year": "换成去年",
             "m55_top_product": "前三个产品呢",
             "m55_unknown_member": "火星区销售额",
+            "m5105_vague_time": "最近几个月的销售额趋势",
+            "m5105_bounded_time": "最近6个月",
+            "m5105_explicit_range": "2026年1月至6月销售额趋势",
+            "m5105_last_year": "改成去年",
+            "m5105_may": "只看五月",
+            "m5105_first_half": "从1月到6月",
         }
         if request.task == LLMTask.INTENT_RECOGNITION:
             values = {
@@ -1275,7 +1282,8 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
             }
             if self.active in {
                 "current", "absolute", "top_region", "failed", "model_switch",
-                "m55_unknown_member",
+                "m55_unknown_member", "m5105_vague_time",
+                "m5105_explicit_range",
             }:
                 values["detected_measures"] = ["销售额"]
                 values["turn_relation"] = TurnRelation.FRESH_QUESTION
@@ -1287,7 +1295,11 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
             else:
                 values["turn_relation"] = (
                     TurnRelation.FOLLOW_UP
-                    if self.active == "south" else TurnRelation.REPLACE
+                    if self.active in {
+                        "south", "m5105_bounded_time", "m5105_may",
+                        "m5105_first_half",
+                    }
+                    else TurnRelation.REPLACE
                 )
             if self.active == "absolute":
                 values["detected_time_range"] = "2025年5月"
@@ -1301,6 +1313,24 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
                 "current", "last_may", "previous_month", "recent_half", "last_year"
             }:
                 values["detected_time_range"] = messages[self.active]
+            elif self.active in {
+                "m5105_vague_time", "m5105_explicit_range",
+                "m5105_last_year", "m5105_may", "m5105_first_half",
+            }:
+                values["detected_time_range"] = messages[self.active]
+                if self.active == "m5105_vague_time":
+                    values["time_intent"] = TimeIntentDraft(
+                        kind=TimeIntentKind.RECENT_MONTHS,
+                        expression=messages[self.active],
+                        months=None,
+                    )
+            if self.active == "m5105_bounded_time":
+                values["detected_time_range"] = messages[self.active]
+                values["time_intent"] = TimeIntentDraft(
+                    kind=TimeIntentKind.RECENT_MONTHS,
+                    expression=messages[self.active],
+                    months=6,
+                )
             if self.active == "top_region":
                 values["detected_dimensions"] = ["区域"]
             if self.active in {"south", "m55_south", "m55_unknown_member"}:
@@ -1327,9 +1357,15 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
                 "current", "absolute", "last_may", "previous_month",
                 "recent_half", "top_region", "south", "last_year", "failed",
                 "model_switch", "m55_south", "m55_last_year",
-                "m55_top_product", "m55_unknown_member",
+                "m55_top_product", "m55_unknown_member", "m5105_vague_time",
+                "m5105_explicit_range",
             }:
                 values["measures"] = ["Total Sales"]
+            elif self.active in {
+                "m5105_bounded_time", "m5105_last_year", "m5105_may",
+                "m5105_first_half",
+            }:
+                values["measures"] = []
             else:
                 values["measures"] = ["Total Quantity"]
             if self.active in {"top_region", "south", "last_year"}:
@@ -1353,6 +1389,19 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
                 ]
             if self.active in {
                 "current", "absolute", "last_may", "previous_month", "recent_half", "last_year"
+            }:
+                values["time_range"] = messages[self.active]
+            if self.active == "m5105_vague_time":
+                values.update({
+                    "query_shape": QueryShape.TREND,
+                    "query_shape_evidence": "趋势",
+                    "time_range": messages[self.active],
+                })
+            elif self.active == "m5105_bounded_time":
+                values["time_range"] = messages[self.active]
+            if self.active in {
+                "m5105_explicit_range", "m5105_last_year", "m5105_may",
+                "m5105_first_half",
             }:
                 values["time_range"] = messages[self.active]
             structured = QueryPlan(**values)
@@ -1481,6 +1530,40 @@ class _M571RichTemporalAdapter(_M533MultiTurnAdapter):
                 to_column="Date",
                 is_active=True,
             )],
+        )
+
+
+class _M5105TimeAdapter(_M571RichTemporalAdapter):
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        if "'Date'[YearMonth]" not in request.dax:
+            return await super().execute_dax(request)
+        self.dax_calls += 1
+        months = (
+            []
+            if request.request_id == "m5105-empty-coverage"
+            else [(2026, month) for month in range(2, 5)]
+            if request.request_id == "m5105-partial-coverage"
+            else [(2025, 5)]
+            if request.request_id == "m5105-may"
+            else [(2025, month) for month in range(1, 7)]
+            if request.request_id == "m5105-first-half"
+            else [(2025, month) for month in range(1, 13)]
+            if request.request_id == "m5105-last-year"
+            else [(2026, month) for month in range(1, 7)]
+            if request.request_id == "m5105-explicit-range"
+            else [(2026, month) for month in range(4, 10)]
+        )
+        return QueryResult(
+            result_id=f"qr-{request.request_id}",
+            semantic_model_key=request.semantic_model_key,
+            columns=["Date[YearMonth]", "[Total Sales]"],
+            rows=[
+                [f"{year:04d}-{month:02d}-01T00:00:00", month * 10]
+                for year, month in months
+            ],
+            row_count=len(months),
+            source_mode="real",
+            request_id=request.request_id,
         )
 
 
@@ -2242,7 +2325,7 @@ class TestPendingClarificationProductionPath:
         monkeypatch.setattr(
             turn_service_module,
             "SemanticGroundingService",
-            lambda catalog, *, selector=None: grounding_type(
+            lambda catalog, *, selector=None, today=None: grounding_type(
                 catalog,
                 selector=selector,
                 today=lambda: date(2026, 8, 31),
@@ -2464,6 +2547,272 @@ class TestPendingClarificationProductionPath:
 
 class TestM24DeepSeekLocalChat:
     @pytest.mark.asyncio
+    async def test_low_risk_capabilities_short_circuit_real_semantic_pipeline(
+        self, monkeypatch
+    ):
+        app, provider = _patch_m24_local_composition(
+            monkeypatch, _M24FakeLocalPowerBIAdapter
+        )
+        transport = ASGITransport(app=app)
+        cases = (
+            ("你好", "social_conversation", "你好"),
+            ("谢谢", "social_conversation", "不客气"),
+            ("今天几号", "system_datetime", "Asia/Shanghai"),
+            ("现在几点", "system_datetime", "Asia/Shanghai"),
+            ("什么是同比", "concept_explanation", "上年同期"),
+        )
+
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                for index, (message, route, answer_fragment) in enumerate(cases):
+                    llm_calls = len(provider.calls)
+                    schema_calls = service.powerbi.schema_calls
+                    dax_calls = service.powerbi.dax_calls
+                    response = await client.post("/api/v1/chat", json={
+                        "message": message,
+                        "conversation_id": f"m5105-direct-{index}",
+                        "request_id": f"m5105-direct-request-{index}",
+                        "semantic_model_key": "local_desktop_model",
+                    })
+                    body = response.json()
+
+                    assert response.status_code == 200, body
+                    assert body["terminal_state"] == "completed"
+                    assert body["execution_audit"]["question_route"] == route
+                    assert answer_fragment in body["answer"]
+                    assert body["memory_commit"] is False
+                    assert body["tool_sequence"] == []
+                    assert len(provider.calls) == llm_calls
+                    assert service.powerbi.schema_calls == schema_calls
+                    assert service.powerbi.dax_calls == dax_calls
+
+    @pytest.mark.asyncio
+    async def test_vague_time_pending_is_completed_by_bounded_followup(
+        self, monkeypatch
+    ):
+        from datetime import date
+
+        import backend.app.application.deepseek_turn_service as turn_service_module
+
+        grounding_type = turn_service_module.SemanticGroundingService
+        monkeypatch.setattr(
+            turn_service_module,
+            "SemanticGroundingService",
+            lambda catalog, *, selector=None, today=None: grounding_type(
+                catalog,
+                selector=selector,
+                today=lambda: date(2026, 9, 16),
+            ),
+        )
+        app, provider = _patch_m533_multi_turn_composition(
+            monkeypatch, _M5105TimeAdapter
+        )
+        transport = ASGITransport(app=app)
+        conversation_id = "m5105-vague-time-followup"
+
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                provider.active = "m5105_vague_time"
+                vague = await client.post("/api/v1/chat", json={
+                    "message": "最近几个月的销售额趋势",
+                    "conversation_id": conversation_id,
+                    "request_id": "m5105-vague-time",
+                    "semantic_model_key": "local_desktop_model",
+                })
+                first = vague.json()
+                assert vague.status_code == 200, first
+                assert first.get("error_type") is None, first
+                assert first["terminal_state"] == "clarification_required", first
+                assert first["execution_audit"]["clarification_reason"] == (
+                    "incomplete_time_range"
+                )
+                assert first["execution_audit"]["pending_clarification"] is True
+                assert service.powerbi.dax_calls == 0
+
+                pending = await service.pipeline.get_pending_clarification(
+                    conversation_id, RuntimeDataMode.REAL
+                )
+                assert pending is not None
+                assert pending.query_shape is QueryShape.TREND
+                assert pending.measures == ["Total Sales"]
+                assert pending.dimension_tables == {"YearMonth": "Date"}
+                assert pending.dimension_order == "asc"
+                assert pending.missing_slots == ["time"]
+
+                provider.active = "m5105_bounded_time"
+                bounded = await client.post("/api/v1/chat", json={
+                    "message": "最近6个月",
+                    "conversation_id": conversation_id,
+                    "request_id": "m5105-bounded-time",
+                    "semantic_model_key": "local_desktop_model",
+                })
+                second = bounded.json()
+
+                assert bounded.status_code == 200, second
+                assert second["terminal_state"] == "completed", second
+                assert second["memory_commit"] is True
+                assert service.powerbi.dax_calls == 1
+                plan = second["execution_audit"]["canonical_query_plan"]
+                assert plan["query_shape"] == "trend"
+                assert plan["measures"] == ["Total Sales"]
+                assert plan["dimensions"] == ["YearMonth"]
+                assert plan["time_range"]["start_date"] == "2026-04-01"
+                assert plan["time_range"]["end_date"] == "2026-09-30"
+                assert second["execution_audit"]["observed_data_coverage"][
+                    "status"
+                ] == "full"
+                assert await service.pipeline.get_pending_clarification(
+                    conversation_id, RuntimeDataMode.REAL
+                ) is None
+
+    @pytest.mark.asyncio
+    async def test_time_corrections_keep_canonical_shape_and_contextual_year(
+        self, monkeypatch
+    ):
+        from datetime import date
+
+        import backend.app.application.deepseek_turn_service as turn_service_module
+
+        grounding_type = turn_service_module.SemanticGroundingService
+        monkeypatch.setattr(
+            turn_service_module,
+            "SemanticGroundingService",
+            lambda catalog, *, selector=None, today=None: grounding_type(
+                catalog,
+                selector=selector,
+                today=lambda: date(2026, 9, 16),
+            ),
+        )
+        app, provider = _patch_m533_multi_turn_composition(
+            monkeypatch, _M5105TimeAdapter
+        )
+        conversation_id = "m5105-time-corrections"
+
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                async def post(active: str, message: str, request_id: str):
+                    provider.active = active
+                    response = await client.post("/api/v1/chat", json={
+                        "message": message,
+                        "conversation_id": conversation_id,
+                        "request_id": request_id,
+                        "semantic_model_key": "local_desktop_model",
+                    })
+                    body = response.json()
+                    assert response.status_code == 200, body
+                    assert body["terminal_state"] == "completed", body
+                    return body["execution_audit"]["canonical_query_plan"]
+
+                initial = await post(
+                    "m5105_explicit_range",
+                    "2026年1月至6月销售额趋势",
+                    "m5105-explicit-range",
+                )
+                previous_year = await post(
+                    "m5105_last_year", "改成去年", "m5105-last-year"
+                )
+                may = await post("m5105_may", "只看五月", "m5105-may")
+                first_half = await post(
+                    "m5105_first_half", "从1月到6月", "m5105-first-half"
+                )
+
+                for plan in (initial, previous_year, may, first_half):
+                    assert plan["query_shape"] == "bounded_trend"
+                    assert plan["measures"] == ["Total Sales"]
+                    assert plan["dimensions"] == ["YearMonth"]
+                    assert plan["dimension_tables"]["YearMonth"] == "Date"
+                    assert plan["dimension_order"] == "asc"
+                assert previous_year["time_range"]["start_date"] == "2025-01-01"
+                assert previous_year["time_range"]["end_date"] == "2025-12-31"
+                assert may["time_range"]["start_date"] == "2025-05-01"
+                assert may["time_range"]["end_date"] == "2025-05-31"
+                assert first_half["time_range"]["start_date"] == "2025-01-01"
+                assert first_half["time_range"]["end_date"] == "2025-06-30"
+                assert service.powerbi.dax_calls == 4
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("request_id", "expected_status", "expected_start", "expected_end"),
+        [
+            (
+                "m5105-partial-coverage", "partial", "2026-02-01", "2026-04-30"
+            ),
+            ("m5105-empty-coverage", "empty", None, None),
+        ],
+    )
+    async def test_requested_scope_and_observed_coverage_stay_distinct_in_api(
+        self,
+        monkeypatch,
+        request_id,
+        expected_status,
+        expected_start,
+        expected_end,
+    ):
+        from datetime import date
+
+        import backend.app.application.deepseek_turn_service as turn_service_module
+
+        grounding_type = turn_service_module.SemanticGroundingService
+        monkeypatch.setattr(
+            turn_service_module,
+            "SemanticGroundingService",
+            lambda catalog, *, selector=None, today=None: grounding_type(
+                catalog,
+                selector=selector,
+                today=lambda: date(2026, 9, 16),
+            ),
+        )
+        app, provider = _patch_m533_multi_turn_composition(
+            monkeypatch, _M5105TimeAdapter
+        )
+        provider.active = "m5105_explicit_range"
+
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": "2026年1月至6月销售额趋势",
+                    "conversation_id": f"{request_id}-conversation",
+                    "request_id": request_id,
+                    "semantic_model_key": "local_desktop_model",
+                })
+                body = response.json()
+
+                assert response.status_code == 200, body
+                assert body["terminal_state"] == "completed", body
+                assert service.powerbi.dax_calls == 1
+                audit = body["execution_audit"]
+                assert audit["canonical_query_scope"]["requested_time_range"] == {
+                    "date_field": "Date",
+                    "start_date": "2026-01-01",
+                    "end_date": "2026-06-30",
+                    "mode": "explicit_range",
+                    "grain": "month",
+                }
+                coverage = audit["observed_data_coverage"]
+                assert coverage["status"] == expected_status
+                assert coverage["start_date"] == expected_start
+                assert coverage["end_date"] == expected_end
+                if expected_status == "partial":
+                    assert "2026年2月" in body["answer"]
+                    assert "2026年4月" in body["answer"]
+                    assert "（部分）" in body["answer"]
+                else:
+                    assert "当前查询范围未返回数据" in body["answer"]
+                    assert "销售额为0" not in body["answer"]
+
+    @pytest.mark.asyncio
     async def test_m571_rich_model_absolute_month_uses_bound_date_role(
         self, monkeypatch
     ):
@@ -2496,8 +2845,13 @@ class TestM24DeepSeekLocalChat:
             assert plan["time_range"]["end_date"] == "2025-05-31"
             assert plan["dimension_tables"]["Date"] == "Date"
             scope = audit["effective_query_scope"]
-            assert scope.startswith("2025年5月 · ")
+            assert scope == (
+                "模型：Rich Local Model · 指标：销售额 · "
+                "查询时间：2025年5月"
+            )
             assert body["answer"].startswith(scope + "：")
+            assert audit["observed_data_coverage"]["status"] == "unknown"
+            assert "实际返回数据覆盖：未知" in body["answer"]
             assert audit["result_semantic_inspection"]["passed"] is True
             assert service.powerbi.dax_calls == dax_calls + 1
             committed = await service.pipeline.get_latest_committed_memory(
@@ -2868,7 +3222,9 @@ class TestM24DeepSeekLocalChat:
             )
             assert "Total Sales" in str(query_plan_prompt.messages)
             assert "local_desktop_model" in str(query_plan_prompt.messages)
-            assert first_data["answer"] == "销售额：销售额为100.00。"
+            assert first_data["answer"] == (
+                "模型：Local Desktop Model · 指标：销售额：销售额为100.00。"
+            )
             assert [
                 block["type"] for block in first_data["presentation"]["blocks"]
             ] == ["text"]

@@ -19,6 +19,7 @@ class HarnessConfig(BaseModel):
     llm_mode: LLMMode = LLMMode.MOCK
     powerbi_mode: PowerBIMode = PowerBIMode.MOCK
     harness_mode: HarnessMode = HarnessMode.STRICT
+    application_timezone: str = Field(default="Asia/Shanghai", min_length=1)
 
     # ── 超时与限制 ──
     request_timeout_seconds: int = Field(default=120, ge=10)
@@ -53,6 +54,7 @@ class HarnessConfig(BaseModel):
             llm_mode=settings.llm_mode,
             powerbi_mode=settings.powerbi_mode,
             harness_mode=settings.harness_mode,
+            application_timezone=settings.application_timezone,
             # ── 超时 ──
             request_timeout_seconds=settings.request_timeout_seconds,
             powerbi_query_timeout_seconds=settings.powerbi_query_timeout_seconds,

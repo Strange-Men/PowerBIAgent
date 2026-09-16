@@ -8,6 +8,10 @@ from typing import Mapping
 
 from backend.app.facts import FactType, VerifiedFactSet
 from backend.app.schemas.data_contracts import CanonicalQueryPlan, QueryResult
+from backend.app.schemas.factual_context import (
+    ObservedCoverageStatus,
+    ObservedDataCoverage,
+)
 from backend.app.schemas.report_context import (
     ActiveFilterContext,
     ActiveFilterState,
@@ -148,6 +152,66 @@ class ReportScopeContextBuilder:
             )
         return period, filters
 
+    def build_observed_coverage(
+        self,
+        plans: Mapping[str, CanonicalQueryPlan],
+        fact_sets: Mapping[str, VerifiedFactSet],
+    ) -> ObservedDataCoverage:
+        if not plans or set(plans) != set(fact_sets):
+            raise ReportReadingContextError("report_scope_provenance_incomplete")
+        time_scoped = [
+            fact_sets[key].observed_data_coverage
+            for key, plan in plans.items()
+            if plan.time_range is not None
+        ]
+        if not time_scoped:
+            return ObservedDataCoverage(
+                status=ObservedCoverageStatus.NOT_APPLICABLE
+            )
+        # This is a report-wide statement.  One monthly series cannot prove
+        # that separate scalar/grouped queries observed the same coverage.
+        # Preserve the strongest safe answer instead of promoting a single
+        # query's FULL/PARTIAL evidence over UNKNOWN or EMPTY siblings.
+        if any(
+            item.status is ObservedCoverageStatus.UNKNOWN
+            for item in time_scoped
+        ):
+            return ObservedDataCoverage(status=ObservedCoverageStatus.UNKNOWN)
+        if any(
+            item.status is ObservedCoverageStatus.EMPTY
+            for item in time_scoped
+        ):
+            if all(
+                item.status is ObservedCoverageStatus.EMPTY
+                for item in time_scoped
+            ):
+                return ObservedDataCoverage(status=ObservedCoverageStatus.EMPTY)
+            return ObservedDataCoverage(status=ObservedCoverageStatus.UNKNOWN)
+        bounded = [
+            item for item in time_scoped
+            if item.status in {
+                ObservedCoverageStatus.FULL,
+                ObservedCoverageStatus.PARTIAL,
+            }
+        ]
+        signatures = {
+            (item.start_date, item.end_date, item.grain)
+            for item in bounded
+        }
+        if len(signatures) == 1:
+            representative = bounded[0]
+            if any(
+                item.status is ObservedCoverageStatus.PARTIAL
+                for item in bounded
+            ):
+                return representative.model_copy(update={
+                    "status": ObservedCoverageStatus.PARTIAL,
+                })
+            return representative
+        if len(signatures) > 1:
+            return ObservedDataCoverage(status=ObservedCoverageStatus.UNKNOWN)
+        return ObservedDataCoverage(status=ObservedCoverageStatus.UNKNOWN)
+
 
 class ReportDataSnapshotBuilder:
     """Bind current QueryResult/VerifiedFactSet provenance without freshness guesses."""
@@ -218,6 +282,7 @@ class ReportReadingContextBuilder:
         exception_assessment: ExceptionAssessment,
         snapshot: ReportDataSnapshot,
         generated_at: datetime,
+        observed_data_coverage: ObservedDataCoverage | None = None,
     ) -> ReportReadingContext:
         if not metric_definition_keys:
             raise ReportReadingContextError("report_metric_definitions_required")
@@ -260,6 +325,16 @@ class ReportReadingContextBuilder:
                 ),
             ),
             data_freshness=freshness,
+            observed_data_coverage=(
+                observed_data_coverage
+                or ObservedDataCoverage(
+                    status=(
+                        ObservedCoverageStatus.UNKNOWN
+                        if analysis_period.state is AnalysisPeriodState.BOUNDED
+                        else ObservedCoverageStatus.NOT_APPLICABLE
+                    )
+                )
+            ),
             generated_at=generated_at,
         )
 

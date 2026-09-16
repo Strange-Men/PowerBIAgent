@@ -7,8 +7,9 @@ Mock 模式启动不需要任何 API Key。
 from enum import Enum
 from functools import lru_cache
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,12 +59,13 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M5.10.4", frozen=True)
+    version: str = Field(default="M5.10.5", frozen=True)
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: str = Field(default="info")
+    application_timezone: str = Field(default="Asia/Shanghai", min_length=1)
 
     # ── 运行模式 ──────────────────────────────
     llm_mode: LLMMode = Field(default=LLMMode.MOCK)
@@ -126,6 +128,15 @@ class Settings(BaseSettings):
         default=0.5, gt=0, le=30
     )
     report_query_concurrency: int = Field(default=2, ge=1, le=8)
+
+    @field_validator("application_timezone")
+    @classmethod
+    def validate_application_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("application_timezone must be an IANA timezone") from exc
+        return value
 
     @model_validator(mode="after")
     def validate_runtime_bounds(self) -> "Settings":
@@ -285,6 +296,7 @@ class Settings(BaseSettings):
             "host": self.host,
             "port": self.port,
             "log_level": self.log_level,
+            "application_timezone": self.application_timezone,
             "llm_mode": self.llm_mode.value,
             "llm_default_profile": self.llm_default_profile,
             "powerbi_mode": self.powerbi_mode.value,

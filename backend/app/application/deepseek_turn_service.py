@@ -16,6 +16,7 @@ import asyncio
 import hashlib
 from datetime import datetime, timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from backend.app.application.turn_pipeline import TurnPipeline
 from backend.app.config.settings import Settings
@@ -95,7 +96,10 @@ from backend.app.query_plan.deepseek_service import (
     QueryPlanError,
 )
 from backend.app.query_plan.clarification import PendingClarificationService
-from backend.app.query_plan.clarification_reasons import clarification_question
+from backend.app.query_plan.clarification_reasons import (
+    ClarificationReason,
+    clarification_question,
+)
 from backend.app.query_plan.completeness import (
     CanonicalShapeCompletenessError,
     CanonicalShapeCompletenessGate,
@@ -176,6 +180,7 @@ from backend.app.schemas.data_contracts import (
     QueryShape,
     ReportSpec,
     SemanticModelSchema,
+    TimeRangeSpec,
     UserContext,
 )
 from backend.app.schemas.report_context import (
@@ -866,6 +871,7 @@ class LLMTurnService:
                 grounding_service = SemanticGroundingService(
                     catalog,
                     selector=BoundedLLMObjectSelector(observed),
+                    today=self._application_today,
                 )
 
                 async def _member_lookup(
@@ -936,9 +942,32 @@ class LLMTurnService:
                     not coverage.executable
                     and grounding.status == GroundingStatus.RESOLVED
                 ):
-                    await self.pipeline.clear_pending_clarification(
-                        effective_conv_id, runtime_mode
-                    )
+                    obligation_pending = None
+                    if (
+                        coverage.clarification_reason
+                        == ClarificationReason.INCOMPLETE_TIME_RANGE
+                        and grounding.pending_eligible
+                    ):
+                        obligation_pending = PendingClarificationService().merge(
+                            previous=pending_clarification,
+                            outcome=grounding,
+                            user_input=message,
+                            conversation_id=effective_conv_id,
+                            request_id=effective_req_id,
+                            semantic_model_key=semantic_model_key,
+                            schema_fingerprint=catalog.schema_fingerprint,
+                            runtime_mode=runtime_mode,
+                            intent=intent.intent.value,
+                            committed=semantic_committed,
+                            required_missing_slots=("time",),
+                        )
+                        await self.pipeline.save_pending_clarification(
+                            obligation_pending.context, runtime_mode
+                        )
+                    else:
+                        await self.pipeline.clear_pending_clarification(
+                            effective_conv_id, runtime_mode
+                        )
                     await self.pipeline.mark_memory_failed(
                         effective_req_id,
                         runtime_mode,
@@ -970,7 +999,17 @@ class LLMTurnService:
                         collector=collector,
                         execution_audit={
                             **semantic_audit,
-                            "pending_clarification": False,
+                            "pending_clarification": obligation_pending is not None,
+                            "clarification_chain_id": (
+                                obligation_pending.context.chain_id
+                                if obligation_pending is not None
+                                else None
+                            ),
+                            "missing_slots": (
+                                obligation_pending.context.missing_slots
+                                if obligation_pending is not None
+                                else []
+                            ),
                             "committed_memory_mutated": False,
                             "schema_fingerprint": catalog.schema_fingerprint,
                         },
@@ -1676,9 +1715,21 @@ class LLMTurnService:
                     effective_scope = DeterministicQueryScopeDescriptor().build(
                         query_plan,
                         display_bindings=display_bindings,
+                        model_display_name=schema.name,
                         locale="zh-CN",
                     )
                     semantic_audit["effective_query_scope"] = effective_scope
+                    semantic_audit["requested_query_scope"] = effective_scope
+                    semantic_audit["canonical_query_scope"] = (
+                        DeterministicQueryScopeDescriptor.canonical_evidence(
+                            query_plan
+                        )
+                    )
+                    semantic_audit["observed_data_coverage"] = (
+                        verified_facts.observed_data_coverage.model_dump(
+                            mode="json"
+                        )
+                    )
                     with measure_performance("answer_presentation"):
                         response_obj = FactBoundedAnswerBuilder().build(
                             query_plan,
@@ -1975,7 +2026,71 @@ class LLMTurnService:
             data_plan_builder=report_data_plan_builder,
         )
         try:
-            scope_plan = self._canonical_report_scope(committed, schema)
+            override_path = self.settings.powerbi_semantic_override_path
+            catalog_builder = (
+                SemanticCatalogBuilder(override_path)
+                if override_path
+                else SemanticCatalogBuilder()
+            )
+            catalog = catalog_builder.build(schema)
+            committed_time = (
+                committed.time_range
+                if committed is not None
+                and isinstance(committed.time_range, TimeRangeSpec)
+                else None
+            )
+            time_grounding = SemanticGroundingService(
+                catalog,
+                today=self._application_today,
+            ).ground_time_scope(
+                message,
+                intent.time_intent,
+                reference_time_range=committed_time,
+            )
+            if time_grounding.status is not GroundingStatus.RESOLVED:
+                await self.pipeline.mark_memory_failed(
+                    effective_req_id,
+                    runtime_mode,
+                    reason="report_time_scope_incomplete",
+                    stage="report_scope",
+                )
+                controller.set_failure_reason("report_time_scope_incomplete")
+                controller.transition(TurnState.CLARIFICATION_REQUIRED)
+                return self._build_result(
+                    effective_req_id,
+                    effective_conv_id,
+                    "clarification_required",
+                    intent=intent.intent.value,
+                    response_type="clarification",
+                    clarification_question=(
+                        time_grounding.clarification_question
+                        or clarification_question(
+                            ClarificationReason.INCOMPLETE_TIME_RANGE
+                        )
+                    ),
+                    trace=trace,
+                    trace_id=trace_id,
+                    is_mock=False,
+                    source_mode=self._source_mode,
+                    collector=collector,
+                    execution_audit={
+                        "clarification_reason": (
+                            time_grounding.clarification_reason.value
+                            if time_grounding.clarification_reason is not None
+                            else ClarificationReason.INCOMPLETE_TIME_RANGE.value
+                        ),
+                        "dax_executed": False,
+                    },
+                )
+            delta = time_grounding.delta
+            scope_plan = self._canonical_report_scope(
+                committed,
+                schema,
+                current_time_range=(delta.time_range if delta else None),
+                current_dimension_tables=(
+                    delta.dimension_tables if delta is not None else None
+                ),
+            )
         except ValueError as exc:
             return await self._fail_result(
                 memory,
@@ -2317,6 +2432,15 @@ class LLMTurnService:
                     },
                     filtered_facts,
                 )
+                observed_data_coverage = (
+                    ReportScopeContextBuilder().build_observed_coverage(
+                        {
+                            query.requirement_key: query.query_plan
+                            for query in execution_plan.queries
+                        },
+                        filtered_facts,
+                    )
+                )
                 data_snapshot = ReportDataSnapshotBuilder().build(
                     semantic_model_identity=report_data_contract.semantic_model_key,
                     semantic_model_display_name=schema.name,
@@ -2343,10 +2467,17 @@ class LLMTurnService:
                     report_title="销售经营分析报告",
                     analysis_period=analysis_period,
                     active_filters=active_filters,
+                    observed_data_coverage=observed_data_coverage,
                     metric_definition_keys=metric_definition_keys,
                     exception_assessment=ExceptionAssessment.cannot_determine(),
                     snapshot=data_snapshot,
                     generated_at=report_data_contract.generated_at,
+                )
+                trace.record(
+                    "report_observed_data_coverage",
+                    trace_id=trace_id,
+                    request_id=effective_req_id,
+                    data_summary=observed_data_coverage.model_dump(mode="json"),
                 )
             report_spec = SalesReportSpecBuilder().build(
                 report_data_contract,
@@ -2505,6 +2636,16 @@ class LLMTurnService:
                     item.requirement_key: item.query_plan.model_dump(mode="json")
                     for item in report_plan.data_plan.queries
                 },
+                "report_analysis_period": (
+                    reading_context.analysis_period.model_dump(mode="json")
+                    if reading_context is not None
+                    else None
+                ),
+                "observed_data_coverage": (
+                    reading_context.observed_data_coverage.model_dump(mode="json")
+                    if reading_context is not None
+                    else None
+                ),
                 "requested_sections": list(signal.requested_ids),
                 "requested_coverage": signal.coverage_mode.value,
                 "resolved_sections": [
@@ -2596,17 +2737,39 @@ class LLMTurnService:
     def _canonical_report_scope(
         committed: StructuredWorkMemory | None,
         schema: SemanticModelSchema,
+        *,
+        current_time_range: TimeRangeSpec | None = None,
+        current_dimension_tables: dict[str, str] | None = None,
     ) -> CanonicalQueryPlan | None:
-        """Reuse only committed canonical filters/time for report subqueries."""
-        if committed is None or committed.last_query_plan is None:
-            return None
-        try:
-            scope = CanonicalQueryPlan.model_validate(committed.last_query_plan)
-        except Exception as exc:
-            raise ValueError("report_committed_scope_invalid") from exc
-        if scope.semantic_model_key != schema.key:
-            raise ValueError("report_scope_model_mismatch")
-        return scope
+        """Apply current grounded time over an optional committed scope."""
+        scope: CanonicalQueryPlan | None = None
+        if committed is not None and committed.last_query_plan is not None:
+            try:
+                scope = CanonicalQueryPlan.model_validate(committed.last_query_plan)
+            except Exception as exc:
+                raise ValueError("report_committed_scope_invalid") from exc
+            if scope.semantic_model_key != schema.key:
+                raise ValueError("report_scope_model_mismatch")
+        if current_time_range is None:
+            return scope
+        dimension_tables = dict(scope.dimension_tables or {}) if scope else {}
+        dimension_tables.update(current_dimension_tables or {})
+        if scope is None:
+            return CanonicalQueryPlan(
+                normalized_question="current report scope",
+                semantic_model_key=schema.key,
+                time_range=current_time_range,
+                dimension_tables=dimension_tables,
+            )
+        return scope.model_copy(update={
+            "time_range": current_time_range,
+            "dimension_tables": dimension_tables,
+        })
+
+    def _application_today(self):
+        return datetime.now(timezone.utc).astimezone(
+            ZoneInfo(self.settings.application_timezone)
+        ).date()
 
     # ── 辅助方法：结果构建委托给共享 TurnPipeline ──
 

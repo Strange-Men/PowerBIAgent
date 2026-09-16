@@ -642,7 +642,11 @@ class MemberGrounder:
 
 
 class TimeGrounder:
-    _RECENT_MONTHS = re.compile(r"最近\s*(\d+)\s*个?月")
+    _RECENT_MONTHS = re.compile(
+        r"(?:(?:最近|过去|近)\s*(?P<zh>\d+)\s*个?月|"
+        r"\b(?:last|past)\s+(?P<en>\d+)\s+months?\b)",
+        re.IGNORECASE,
+    )
     _ABSOLUTE_MONTH = re.compile(
         r"(?<!\d)(\d{4})\s*年\s*(\d{1,2})\s*月(?:份)?"
     )
@@ -654,8 +658,12 @@ class TimeGrounder:
         r"(?P<month>十[一二]|十二|十|[一二三四五六七八九]|\d{1,2})"
         r"\s*月(?:份)?"
     )
+    _YEARLESS_NAMED_MONTH = re.compile(
+        r"(?<![\d年])(?P<month>十[一二]|十二|十|[一二三四五六七八九]|"
+        r"0?[1-9]|1[0-2])\s*月(?:份)?"
+    )
     _QUARTER = re.compile(
-        r"(?:(?P<year>\d{4})\s*年|(?P<relative>今年|去年))?\s*"
+        r"(?:(?P<year>\d{4})\s*年?|(?P<relative>今年|去年))?\s*"
         r"(?:第?\s*(?P<quarter>[一二三四1-4])\s*季度|"
         r"q\s*(?P<q_quarter>[1-4]))"
     )
@@ -674,12 +682,19 @@ class TimeGrounder:
         user_input: str,
         date_field: CatalogObject | None,
         time_intent: TimeIntentDraft | None = None,
+        reference_time_range: TimeRangeSpec | None = None,
     ) -> TimeRangeSpec | None:
         if date_field is None:
             return None
         normalized_input = normalize_semantic_text(user_input)
         today = self._today()
-        bounded_month = self._bounded_month_range(normalized_input, date_field)
+        contextual_year = self._reference_year(reference_time_range)
+        bounded_month = self._bounded_month_range(
+            normalized_input,
+            date_field,
+            current_year=today.year,
+            contextual_year=contextual_year,
+        )
         if bounded_month is not None or self._has_bounded_month_expression(
             normalized_input
         ):
@@ -700,6 +715,11 @@ class TimeGrounder:
             if month is not None:
                 offset = -1 if relative_named_month.group("relative") == "去年" else 0
                 return self._month_range(date_field, today.year + offset, month)
+        yearless_named_month = self._YEARLESS_NAMED_MONTH.search(normalized_input)
+        if yearless_named_month and contextual_year is not None:
+            month = self._parse_number(yearless_named_month.group("month"))
+            if month is not None:
+                return self._month_range(date_field, contextual_year, month)
         quarter_match = self._QUARTER.search(normalized_input)
         if quarter_match:
             quarter = self._parse_number(
@@ -740,7 +760,7 @@ class TimeGrounder:
         recent = self._RECENT_MONTHS.search(normalized_input)
         recent_count = 6 if "最近半年" in normalized_input else None
         if recent:
-            recent_count = int(recent.group(1))
+            recent_count = int(recent.group("zh") or recent.group("en"))
         if recent_count is not None:
             count = recent_count
             if count < 1:
@@ -778,7 +798,11 @@ class TimeGrounder:
 
     @classmethod
     def is_explicit(
-        cls, user_input: str, time_intent: TimeIntentDraft | None = None
+        cls,
+        user_input: str,
+        time_intent: TimeIntentDraft | None = None,
+        *,
+        has_contextual_time: bool = False,
     ) -> bool:
         normalized_input = normalize_semantic_text(user_input)
         return bool(
@@ -791,6 +815,10 @@ class TimeGrounder:
             or cls._ABSOLUTE_MONTH.search(normalized_input)
             or cls._NUMERIC_MONTH.search(normalized_input)
             or cls._RELATIVE_NAMED_MONTH.search(normalized_input)
+            or (
+                has_contextual_time
+                and cls._YEARLESS_NAMED_MONTH.search(normalized_input)
+            )
             or cls._QUARTER.search(normalized_input)
             or cls._RECENT_MONTHS.search(normalized_input)
             or cls._ABSOLUTE_YEAR.search(normalized_input)
@@ -803,6 +831,18 @@ class TimeGrounder:
         user_input: str, time_intent: TimeIntentDraft | None
     ) -> bool:
         if time_intent is None:
+            return False
+        if (
+            time_intent.kind == TimeIntentKind.RECENT_MONTHS
+            and (
+                time_intent.months is None
+                or has_vague_recent_month_range(user_input)
+            )
+        ):
+            # A vague recent-month phrase is valid language evidence, but an
+            # LLM-supplied count cannot make it executable. Leave it to
+            # obligation coverage so the grounded trend slots can be saved
+            # pending an explicit user bound.
             return False
         expression = normalize_semantic_text(time_intent.expression)
         return bool(expression and expression in normalize_semantic_text(user_input))
@@ -923,10 +963,20 @@ class TimeGrounder:
         self,
         user_input: str,
         date_field: CatalogObject,
+        *,
+        current_year: int,
+        contextual_year: int | None,
     ) -> TimeRangeSpec | None:
         parsed = parse_explicit_month_range(
-            user_input, reference_year=self._today().year
+            user_input,
+            reference_year=current_year,
         )
+        if parsed is None and contextual_year is not None:
+            parsed = parse_explicit_month_range(
+                user_input,
+                reference_year=contextual_year,
+                allow_contextual_year=True,
+            )
         if parsed is None:
             return None
         start_year, start_month = parsed.start_year, parsed.start_month
@@ -948,6 +998,15 @@ class TimeGrounder:
             mode=TimeRangeMode.EXPLICIT_RANGE,
             grain="month",
         )
+
+    @staticmethod
+    def _reference_year(time_range: TimeRangeSpec | None) -> int | None:
+        if (
+            time_range is not None
+            and time_range.start_date.year == time_range.end_date.year
+        ):
+            return time_range.start_date.year
+        return None
 
     def _has_bounded_month_expression(self, user_input: str) -> bool:
         return has_explicit_month_range(user_input)
@@ -983,6 +1042,81 @@ class SemanticGroundingService:
         self.catalog = catalog
         self.objects = ObjectGrounder(catalog, selector)
         self.time = TimeGrounder(today)
+
+    def ground_time_scope(
+        self,
+        user_input: str,
+        time_intent: TimeIntentDraft | None,
+        *,
+        reference_time_range: TimeRangeSpec | None = None,
+    ) -> GroundingOutcome:
+        """Ground only an explicitly requested report time scope.
+
+        Report planning owns its fixed measure/dimension requirements, so it
+        must not run the ordinary question-slot grounding path merely to bind
+        a date range.  Date-field identity and calendar resolution still use
+        this same runtime catalog and ``TimeGrounder`` authority.
+        """
+        delta = GroundedSemanticDelta()
+        if has_vague_recent_month_range(user_input):
+            return self._clarification(
+                GroundingStatus.UNRESOLVED,
+                [],
+                [],
+                clarification_question(ClarificationReason.INCOMPLETE_TIME_RANGE),
+                [],
+                reason=ClarificationReason.INCOMPLETE_TIME_RANGE,
+            )
+        if not TimeGrounder.is_explicit(
+            user_input,
+            time_intent,
+            has_contextual_time=reference_time_range is not None,
+        ):
+            return GroundingOutcome(status=GroundingStatus.RESOLVED, delta=delta)
+
+        date_result = self._resolve_date_field(user_input)
+        if self._requires_clarification(date_result):
+            return self._clarification(
+                date_result.status,
+                [date_result],
+                [],
+                "请明确要使用的日期字段。",
+                [],
+                reason=ClarificationReason.INCOMPLETE_TIME_RANGE,
+            )
+        date_field = date_result.canonical_object
+        if date_field is None:
+            return self._clarification(
+                GroundingStatus.UNRESOLVED,
+                [date_result],
+                [],
+                "请明确要使用的日期字段。",
+                [],
+                reason=ClarificationReason.INCOMPLETE_TIME_RANGE,
+            )
+        time_range = self.time.ground(
+            user_input,
+            date_field,
+            time_intent,
+            reference_time_range=reference_time_range,
+        )
+        if time_range is None:
+            return self._clarification(
+                GroundingStatus.UNRESOLVED,
+                [date_result],
+                [],
+                clarification_question(ClarificationReason.INCOMPLETE_TIME_RANGE),
+                [],
+                reason=ClarificationReason.INCOMPLETE_TIME_RANGE,
+            )
+        delta.time_range = time_range
+        delta.time_specified = True
+        delta.dimension_tables[date_field.canonical_name] = date_field.table_name
+        return GroundingOutcome(
+            status=GroundingStatus.RESOLVED,
+            delta=delta,
+            object_results=[date_result],
+        )
 
     async def ground(
         self,
@@ -1067,6 +1201,9 @@ class SemanticGroundingService:
         raw_filters = [
             item for item in draft.filters
             if self._value_is_current(item.value, user_input)
+            if not self._filter_is_temporal_expression_fragment(
+                item, user_input, intent.time_intent
+            )
             if not self._filter_is_explicit_grouping(
                 item, user_input, query_shape=effective_shape
             )
@@ -1081,6 +1218,9 @@ class SemanticGroundingService:
                 for item in intent.detected_filters
                 if item.operator.value == FilterOperator.EQ.value
                 and self._value_is_current(item.value, user_input)
+                and not self._filter_is_temporal_expression_fragment(
+                    item, user_input, intent.time_intent
+                )
                 and not self._filter_is_explicit_grouping(
                     item, user_input, query_shape=effective_shape
                 )
@@ -1622,7 +1762,19 @@ class SemanticGroundingService:
                 "runtime_temporal_grouping_binding",
             ))
 
-        if self.time.is_explicit(user_input, intent.time_intent):
+        reference_time_range = (
+            pending.time_range
+            if pending is not None and pending.time_range is not None
+            else committed.time_range
+            if committed is not None
+            and isinstance(committed.time_range, TimeRangeSpec)
+            else None
+        )
+        if self.time.is_explicit(
+            user_input,
+            intent.time_intent,
+            has_contextual_time=reference_time_range is not None,
+        ):
             date_result = self._resolve_date_field(user_input)
             if self._requires_clarification(date_result):
                 object_results.append(date_result)
@@ -1643,7 +1795,10 @@ class SemanticGroundingService:
                     reason=ClarificationReason.INCOMPLETE_TIME_RANGE,
                 )
             time_range = self.time.ground(
-                user_input, date_field, intent.time_intent
+                user_input,
+                date_field,
+                intent.time_intent,
+                reference_time_range=reference_time_range,
             )
             if time_range is None:
                 return self._clarification(
@@ -1652,6 +1807,11 @@ class SemanticGroundingService:
                     disagreements,
                     reason=ClarificationReason.INCOMPLETE_TIME_RANGE,
                 )
+            if (
+                effective_shape == QueryShape.BOUNDED_TREND
+                and time_range.grain != "month"
+            ):
+                time_range = time_range.model_copy(update={"grain": "month"})
             delta.time_range = time_range
             delta.time_specified = True
             delta.dimension_tables[
@@ -2387,6 +2547,40 @@ class SemanticGroundingService:
         )
 
     @staticmethod
+    def _filter_is_temporal_expression_fragment(
+        item: StructuredFilter,
+        user_input: str,
+        time_intent: TimeIntentDraft | None,
+    ) -> bool:
+        """Discard weak filter drafts that only repeat a proven time phrase."""
+        normalized_input = normalize_semantic_text(user_input)
+        if not TimeGrounder.is_explicit(user_input, time_intent):
+            return False
+        expressions = [
+            match.group(0)
+            for pattern in (
+                TimeGrounder._RECENT_MONTHS,
+                TimeGrounder._ABSOLUTE_MONTH,
+                TimeGrounder._NUMERIC_MONTH,
+                TimeGrounder._RELATIVE_NAMED_MONTH,
+                TimeGrounder._QUARTER,
+                TimeGrounder._ABSOLUTE_YEAR,
+                TimeGrounder._ISO_DATE,
+            )
+            for match in pattern.finditer(normalized_input)
+        ]
+        if time_intent is not None:
+            expression = normalize_semantic_text(time_intent.expression)
+            if expression and expression in normalized_input:
+                expressions.append(expression)
+        values = item.value if isinstance(item.value, list) else [item.value]
+        normalized_values = [normalize_semantic_text(str(value)) for value in values]
+        return bool(normalized_values) and all(
+            value and any(value in expression for expression in expressions)
+            for value in normalized_values
+        )
+
+    @staticmethod
     def _field_precedes_respectively(
         user_input: str, field: CatalogObject
     ) -> bool:
@@ -2603,6 +2797,7 @@ class SemanticGroundingService:
         if "趋势" in user_input and (
             re.search(r"(?:最近|过去)\s*\d+\s*个?月", user_input)
             or has_explicit_month_range(user_input)
+            or TimeGrounder._QUARTER.search(normalize_semantic_text(user_input))
         ):
             return "month"
         if has_vague_recent_month_range(user_input):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -52,6 +53,63 @@ def test_router_classifies_capability_before_semantic_grounding(
 
     assert decision.route == route
     assert decision.query_shape == shape
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_route"),
+    [
+        ("你好", "social_conversation"),
+        ("早上好", "social_conversation"),
+        ("谢谢", "social_conversation"),
+        ("你怎么样", "social_conversation"),
+        ("再见", "social_conversation"),
+        ("今天几号", "system_datetime"),
+        ("今天星期几", "system_datetime"),
+        ("现在几点", "system_datetime"),
+        ("What's today's date?", "system_datetime"),
+        ("What time is it?", "system_datetime"),
+        ("什么是同比", "concept_explanation"),
+        ("解释一下平均值和中位数区别", "concept_explanation"),
+        ("TopN 是什么意思", "concept_explanation"),
+    ],
+)
+def test_low_risk_capabilities_do_not_enter_business_routing(
+    question: str,
+    expected_route: str,
+) -> None:
+    decision = QuestionRouter().route(question)
+
+    assert decision.route.value == expected_route
+    assert decision.query_shape is None
+    assert decision.direct_answer
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "解释一下今年销售额同比",
+        "介绍一下华南销售额同比",
+    ],
+)
+def test_concept_route_does_not_swallow_business_fact_requests(
+    question: str,
+) -> None:
+    decision = QuestionRouter().route(question)
+
+    assert decision.route is QuestionRoute.BUSINESS_DATA_QUERY
+
+
+def test_system_datetime_uses_injected_clock_and_configured_timezone() -> None:
+    router = QuestionRouter(
+        application_timezone="Asia/Shanghai",
+        clock=lambda: datetime(2026, 9, 16, 0, 30, tzinfo=timezone.utc),
+    )
+
+    date_answer = router.route("今天几号").direct_answer
+    time_answer = router.route("现在几点").direct_answer
+
+    assert date_answer == "今天是2026年9月16日，星期三（Asia/Shanghai）。"
+    assert time_answer == "现在是2026年9月16日 08:30（Asia/Shanghai）。"
 
 
 @pytest.mark.parametrize(
@@ -120,7 +178,20 @@ def test_explicit_month_range_routes_to_bounded_trend(question: str):
     assert decision.query_shape == QueryShape.BOUNDED_TREND
 
 
-@pytest.mark.parametrize("question", ["换成销量", "只看华南", "那继续呢"])
+@pytest.mark.parametrize(
+    "question",
+    [
+        "换成销量",
+        "只看华南",
+        "那继续呢",
+        "最近6个月",
+        "过去6个月",
+        "last 6 months",
+        "改成去年",
+        "只看五月",
+        "从1月到6月",
+    ],
+)
 def test_slot_only_followups_inherit_committed_query_shape(question: str):
     decision = QuestionRouter().route(question)
 
@@ -181,6 +252,11 @@ def test_code_owned_product_help_and_public_system_info_are_bounded():
 @pytest.mark.parametrize(
     ("question", "expected_type", "answer_fragment"),
     [
+        ("你好", "answer", "你好"),
+        ("谢谢", "answer", "不客气"),
+        ("今天几号", "answer", "今天是"),
+        ("现在几点", "answer", "现在是"),
+        ("什么是同比", "answer", "上年同期"),
         ("你支持回答哪些问题？", "answer", "指标查询"),
         ("数据分析支持的范围在哪", "answer", "只读"),
         ("你是什么模型", "answer", "Mock"),
@@ -209,6 +285,36 @@ async def test_shared_pipeline_short_circuits_non_business_without_semantic_muta
         result["conversation_id"],
         RuntimeDataMode.MOCK,
     ) is None
+
+
+@pytest.mark.asyncio
+async def test_social_turn_after_business_turn_does_not_reexecute_or_mutate_memory():
+    service = MockTurnService(config=HarnessConfig(is_mock=True))
+    business = await service.execute(
+        "平均订单金额是多少",
+        conversation_id="business-then-thanks",
+    )
+    committed_before = await service.pipeline.get_latest_committed_memory(
+        "business-then-thanks", RuntimeDataMode.MOCK
+    )
+
+    social = await service.execute(
+        "谢谢",
+        conversation_id="business-then-thanks",
+    )
+    committed_after = await service.pipeline.get_latest_committed_memory(
+        "business-then-thanks", RuntimeDataMode.MOCK
+    )
+
+    assert business["memory_commit"] is True
+    assert social["answer"] == "不客气！需要继续分析时，直接告诉我你的问题即可。"
+    assert social["tool_sequence"] == []
+    assert social["execution_audit"]["dax_executed"] is False
+    assert social["memory_commit"] is False
+    assert committed_before is not None
+    assert committed_after is not None
+    assert committed_after.request_id == committed_before.request_id
+    assert committed_after.memory_version == committed_before.memory_version
 
 
 @pytest.mark.asyncio

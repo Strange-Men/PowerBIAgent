@@ -7,7 +7,7 @@ import hashlib
 import inspect
 import re
 import subprocess
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -778,6 +778,66 @@ class _ReportLanguageProvider(LLMProvider):
         return LLMResponse(content="{}", structured=structured, model="test")
 
 
+class _TimeScopedReportLanguageProvider(_ReportLanguageProvider):
+    """Report request whose current-turn year must reach every fixed query."""
+
+    async def generate(self, request: LLMRequest, output_type: type) -> LLMResponse:
+        self.calls.append(request)
+        if output_type is IntentSpec:
+            structured = IntentSpec(
+                intent=IntentType.REPORT_GENERATION,
+                confidence=1.0,
+                normalized_question="生成2025年销售经营分析报表",
+                detected_time_range="2025年",
+                time_intent={
+                    "kind": "absolute_year",
+                    "expression": "2025年",
+                    "year": 2025,
+                },
+                requested_template="sales_executive_report",
+            )
+        elif output_type is QueryPlan:
+            structured = QueryPlan(
+                normalized_question="生成2025年销售经营分析报表",
+                semantic_model_key="local_desktop_model",
+                time_range="2025年",
+                requested_template="sales_executive_report",
+            )
+        elif output_type is ReportIntentDraft:
+            structured = ReportIntentDraft(report_section_ids=[])
+        else:
+            raise AssertionError(f"unexpected LLM output type: {output_type}")
+        return LLMResponse(content="{}", structured=structured, model="test")
+
+
+class _VagueTimeReportLanguageProvider(_ReportLanguageProvider):
+    async def generate(self, request: LLMRequest, output_type: type) -> LLMResponse:
+        self.calls.append(request)
+        question = "生成最近几个月的销售经营分析报表"
+        if output_type is IntentSpec:
+            structured = IntentSpec(
+                intent=IntentType.REPORT_GENERATION,
+                confidence=1.0,
+                normalized_question=question,
+                detected_time_range="最近几个月",
+                time_intent={
+                    "kind": "recent_months",
+                    "expression": "最近几个月",
+                },
+                requested_template="sales_executive_report",
+            )
+        elif output_type is QueryPlan:
+            structured = QueryPlan(
+                normalized_question=question,
+                semantic_model_key="local_desktop_model",
+                time_range="最近几个月",
+                requested_template="sales_executive_report",
+            )
+        else:
+            raise AssertionError(f"unexpected LLM output type: {output_type}")
+        return LLMResponse(content="{}", structured=structured, model="test")
+
+
 class _RealReportAdapter(PowerBIAdapter):
     def __init__(self) -> None:
         self.schema_count = 0
@@ -1174,6 +1234,129 @@ async def test_production_full_available_executes_all_nine_sections_with_true_ti
     assert "2026-09-14 09:00 北京时间" in main_visual
     assert "2026-09-14T01:00:01+00:00" in audit_footer
     assert repository.store_count == 1
+
+
+@pytest.mark.asyncio
+async def test_current_report_year_is_canonical_scope_and_reading_context(
+    monkeypatch,
+):
+    catalog = turn_service_module.SemanticCatalogBuilder().build(_schema_b())
+    catalog = catalog.model_copy(update={
+        "objects": tuple(
+            item.model_copy(update={"temporal_role": "default"})
+            if item.table_name == "Date" and item.canonical_name == "Date"
+            else item
+            for item in catalog.objects
+        )
+    })
+
+    class _BoundCatalogBuilder:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, schema):
+            return catalog
+
+    monkeypatch.setattr(
+        turn_service_module, "SemanticCatalogBuilder", _BoundCatalogBuilder
+    )
+    adapter = _RichRealReportAdapter()
+    repository = _CountingReportRepository()
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        powerbi_local_semantic_model_key="local_desktop_model",
+        max_tool_calls=16,
+    )
+    service = DeepSeekTurnService(
+        memory_repo=InMemoryMemoryRepository(),
+        llm_provider=_TimeScopedReportLanguageProvider(),
+        powerbi_adapter=adapter,
+        report_renderer=ExecutiveSalesReportRenderer(),
+        report_repository=repository,
+        settings=settings,
+        config=HarnessConfig.from_settings(settings),
+    )
+
+    result = await service.execute(
+        message="生成2025年销售经营分析报表",
+        conversation_id="conv-time-scoped-report",
+        request_id="req-time-scoped-report",
+        semantic_model_key="local_desktop_model",
+        report_template_key="sales_executive_report",
+    )
+
+    assert result["terminal_state"] == "completed", result
+    assert all(
+        "DATE(2025,1,1)" in dax and "DATE(2025,12,31)" in dax
+        for dax, _, _ in adapter.result_semantics
+    ), adapter.result_semantics
+    audit = result["execution_audit"]
+    assert all(
+        plan["time_range"]["start_date"] == "2025-01-01"
+        and plan["time_range"]["end_date"] == "2025-12-31"
+        for plan in audit["canonical_query_plans"].values()
+    )
+    assert audit["report_analysis_period"]["start_date"] == "2025-01-01"
+    assert audit["report_analysis_period"]["end_date"] == "2025-12-31"
+    assert audit["observed_data_coverage"]["status"] == "unknown"
+    html = result["report"]["html"]
+    assert "2025-01-01 至 2025-12-31" in html
+
+
+@pytest.mark.asyncio
+async def test_vague_report_time_clarifies_before_dax(monkeypatch):
+    catalog = turn_service_module.SemanticCatalogBuilder().build(_schema_b())
+    catalog = catalog.model_copy(update={
+        "objects": tuple(
+            item.model_copy(update={"temporal_role": "default"})
+            if item.table_name == "Date" and item.canonical_name == "Date"
+            else item
+            for item in catalog.objects
+        )
+    })
+
+    class _BoundCatalogBuilder:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, schema):
+            return catalog
+
+    monkeypatch.setattr(
+        turn_service_module, "SemanticCatalogBuilder", _BoundCatalogBuilder
+    )
+    adapter = _RichRealReportAdapter()
+    service = DeepSeekTurnService(
+        memory_repo=InMemoryMemoryRepository(),
+        llm_provider=_VagueTimeReportLanguageProvider(),
+        powerbi_adapter=adapter,
+        report_renderer=ExecutiveSalesReportRenderer(),
+        report_repository=_CountingReportRepository(),
+        settings=(settings := Settings(
+            _env_file=None,
+            llm_mode=LLMMode.DEEPSEEK,
+            powerbi_mode=PowerBIMode.LOCAL_MCP,
+            powerbi_local_semantic_model_key="local_desktop_model",
+            max_tool_calls=16,
+        )),
+        config=HarnessConfig.from_settings(settings),
+    )
+
+    result = await service.execute(
+        message="生成最近几个月的销售经营分析报表",
+        conversation_id="conv-vague-time-report",
+        request_id="req-vague-time-report",
+        semantic_model_key="local_desktop_model",
+        report_template_key="sales_executive_report",
+    )
+
+    assert result["terminal_state"] == "clarification_required"
+    assert result["execution_audit"]["clarification_reason"] == (
+        "incomplete_time_range"
+    )
+    assert adapter.execute_count == 0
 
 
 @pytest.mark.asyncio

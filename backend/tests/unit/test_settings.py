@@ -52,6 +52,16 @@ class TestSettingsDefaults:
         settings = Settings()
         assert settings.port == 8000
 
+    def test_application_timezone_defaults_to_shanghai_and_is_configurable(self):
+        assert Settings(_env_file=None).application_timezone == "Asia/Shanghai"
+        assert Settings(
+            _env_file=None, application_timezone="America/New_York"
+        ).application_timezone == "America/New_York"
+
+    def test_invalid_application_timezone_fails_at_configuration_boundary(self):
+        with pytest.raises(ValueError, match="application_timezone"):
+            Settings(_env_file=None, application_timezone="Mars/Olympus")
+
     def test_local_mcp_uses_pinned_readonly_defaults(self):
         default_settings = Settings(_env_file=None)
         assert default_settings.powerbi_local_mcp_executable == "npx"

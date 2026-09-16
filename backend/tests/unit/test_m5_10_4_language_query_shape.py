@@ -95,6 +95,32 @@ def test_vague_recent_months_is_time_clarification_not_filter_residue() -> None:
     assert report.clarification_reason.value == "incomplete_time_range"
 
 
+def test_bounded_recent_months_are_consumed_as_time_not_filter_residue() -> None:
+    outcome = _resolved_outcome().model_copy(
+        update={
+            "delta": _resolved_outcome().delta.model_copy(
+                update={
+                    "query_shape": QueryShape.TREND,
+                    "dimensions": ["Month"],
+                }
+            )
+        }
+    )
+    report = SemanticObligationCoverageGate().inspect(
+        user_input="最近6个月的运单数趋势",
+        outcome=outcome,
+        catalog=_catalog(),
+        relation=TurnRelationEvidence.classify("最近6个月的运单数趋势"),
+        language_evidence=("运单数",),
+    )
+
+    assert report.executable is True
+    assert not any(
+        item.evidence == "bounded_result_affecting_modifier_residue"
+        for item in report.obligations
+    )
+
+
 def test_required_query_shape_set_is_unchanged() -> None:
     assert {shape.value for shape in QueryShape} == {
         "scalar",

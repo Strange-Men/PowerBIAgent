@@ -69,6 +69,8 @@ class PendingClarificationContext(BaseModel):
     query_shape: Optional[QueryShape] = None
     measures: list[str] = Field(default_factory=list, max_length=1)
     dimensions: list[str] = Field(default_factory=list, max_length=1)
+    dimension_tables: dict[str, str] = Field(default_factory=dict)
+    dimension_order: Optional[Literal["asc", "desc"]] = None
     filters: list[StructuredFilter] = Field(default_factory=list)
     time_range: Optional[TimeRangeSpec] = None
     sort: Optional[Literal["asc", "desc"]] = None

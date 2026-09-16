@@ -3,11 +3,157 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-16 | M5.10.4 COMPLETE；M5.10.5 NOT STARTED；Semantic Layer FINAL ACCEPTANCE 尚未进行；M5 FINAL=false
+# 最后更新：2026-09-16 | M5.10.5 IMPLEMENTATION COMPLETE；READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE；M5.10.6 NOT STARTED；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-5105-001
+  title: 低事实风险对话误入 Power BI 业务链且系统时间缺少确定性 timezone
+  category: ERR
+  first_detected_version: M5.10.5
+  symptom: 问候、感谢、当前日期时间和基础概念解释可能进入 Intent/schema/Grounding/DAX，旧实现也没有可配置 application clock，存在由 LLM 或业务时间戳回答“现在”的风险
+  local_evidence: production-path API 与 shared TurnPipeline failure reproducers 覆盖你好、谢谢、今天几号、现在几点、什么是同比；负向 reproducer 证明“解释一下今年销售额同比”等业务事实措辞不得被概念路由吞掉；修复后低风险请求均在业务链前完成且 schema/member/DAX/业务 Memory 为零
+  authoritative_sources:
+  - title: M5.10.5 Capability Restriction Matrix
+    reason: 限制强度应随事实风险递增，系统日期时间应由 application-owned clock 确定
+  - title: ADR-014 Question Routing and Query Shape Authority
+    reason: QuestionRouter 负责 capability 分类，非业务请求不得触发 Power BI 或 semantic Memory
+  root_cause: 既有 Router 只覆盖产品帮助、模型信息、计算与少量 unsupported，未显式分类社交、系统日期时间和 bounded 概念解释；Settings/Harness 也未携带 application timezone
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在现有 Router 增加三类窄路由与 deterministic response，Settings/Harness 增加经 IANA ZoneInfo 校验的 application_timezone，默认 Asia/Shanghai；TurnPipeline 继续使用原有 direct-response early exit
+  regression_tests:
+  - backend/tests/unit/test_question_routing.py
+  - backend/tests/api/test_chat.py
+  - backend/tests/unit/test_settings.py
+  prohibited_patterns:
+  - 为问候或当前日期时间读取 Power BI schema、执行 DAX 或提交业务 Memory
+  - 用 LLM、queried_at、snapshot_at、generated_at 或 data_updated_at 猜当前时间
+  - 新建第二 Router 或把普通聊天权限扩张为业务事实 authority
+  prevention_rules:
+  - capability short-circuit 必须同时断言 tool_sequence、DAX 与 Memory mutation 为零
+  - bounded concept route 只接受完整概念短语，不得吞掉附带当前模型指标、筛选或时间的业务事实请求
+  - application timezone 必须可配置并在 Settings boundary 验证
+  related_adr: ADR-014
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.5
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.5
+- id: ERR-5105-002
+  title: 模糊时间可被 LLM 补造范围且 time-only follow-up 丢失已证明槽位
+  category: ERR
+  first_detected_version: M5.10.5
+  symptom: “最近几个月”可能因 draft 填入 months=6 而执行；澄清后“最近6个月”“只看五月”“从1月到6月”又可能丢失 trend/measure/runtime temporal grouping 或错误猜测年份
+  local_evidence: TimeGrounder、PendingClarificationService 与 production Chat 回归先证明 vague draft 可误闭合、pending 缺 dimension ownership/order、yearless correction 无 compatible year；修复后 vague ZERO DAX，明确 follow-up 保留原 canonical slots
+  authoritative_sources:
+  - title: M5.10.5 Time semantics and correction contract
+    reason: 模糊范围必须澄清，current explicit 高于 compatible pending 与 committed state，禁止 LLM 发明日期
+  - title: ADR-008 Business Semantic Catalog and Grounding Authority
+    reason: 时间范围来自 deterministic rules 与注入 clock，日期字段 identity 来自 runtime/model-scoped authority
+  root_cause: vague recent-month detection 与 LLM time draft 未形成执行 firewall；pending 未持久化 dimension_tables/order，time-only follow-up 也缺少 compatible canonical year 输入
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 模糊表达优先阻断任何 draft month count；Coverage 保存 time missing pending，Pending 同步保留 runtime dimension ownership/order；TimeGrounder 仅从当前明确文本、configured today 与单年 compatible prior range 解析 bounded follow-up
+  regression_tests:
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/unit/test_m5_10_4_language_query_shape.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 为最近几个月默认 3、6 或 12 个月
+  - 用 LLM draft 单独创造 canonical date range
+  - time-only follow-up 回退 stale model/filter 或丢失 measure/shape
+  prevention_rules:
+  - vague recent-month expression 始终先于 draft count 检查并返回 incomplete_time_range
+  - contextual year 只能来自 compatible 单年 canonical time range
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.5
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.5
+- id: ERR-5105-003
+  title: requested query scope 与 observed data coverage 缺少独立事实 contract
+  category: ERR
+  first_detected_version: M5.10.5
+  symptom: 可见 scope 缺少模型、字段角色与 ranking 明细，且 requested time range 可能被误读为实际有数据覆盖；空 rows 的旧文案也没有明确禁止解释为数值 0
+  local_evidence: VerifiedFactSet/Answer/API failure reproducers 覆盖 full、partial、empty、unknown 与 not-applicable；部分结果只含 2—5 月时 requested 1—6 月必须保持不变且 observed coverage 只能声明 2—5 月
+  authoritative_sources:
+  - title: ADR-016 Semantic Completeness Result Inspection and Presentation Truth
+    reason: Query scope 必须来自最终 CanonicalQueryPlan，结果事实必须在 VerifiedFactSet 前完成 inspection
+  - title: ADR-009 Deterministic Query Execution and Verified Fact Authority
+    reason: 对外数字、时间和范围声明只能来自可验证事实
+  root_cause: 原 scope 是面向阅读的短字符串且未完整标注 canonical slots；VerifiedFactSet 没有由返回时间列计算的 typed coverage，Answer 只能看到 requested range 和 row count
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 增加 immutable ObservedDataCoverage 并由 VerifiedFactSetBuilder 从返回 rows 证明；audit/Answer 同时暴露完整 canonical requested scope 与独立 observed coverage，empty 使用明确无返回数据文案
+  regression_tests:
+  - backend/tests/unit/test_verified_facts.py
+  - backend/tests/unit/test_query_scope_and_order.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 用 user text、LLM prose、display projection 或 old Memory 重建 requested scope
+  - 用 requested range 冒充 observed coverage
+  - 将 empty rows 表述为数值 0
+  prevention_rules:
+  - FULL/PARTIAL 必须绑定返回时间字段与 source row evidence
+  - 无法安全解析返回时间列时必须 UNKNOWN，截断结果不得 FULL
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.5
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.5
+- id: ERR-5105-004
+  title: 当前报表时间未进入固定子查询且单一趋势证据可夸大 report-wide coverage
+  category: ERR
+  first_detected_version: M5.10.5
+  symptom: “生成2025年销售经营分析报表”的当前时间表达未进入 report scope，固定子查询与 Reading Context 可能沿用无时间或旧时间；单个 trend 查询的 FULL 也不足以证明其他 scalar/grouped 查询覆盖完整
+  local_evidence: production report failure reproducer 证明旧 scope 未含 2025；多 fact-set regression 证明 trend FULL 加 scalar UNKNOWN 必须得到 report-wide UNKNOWN；修复后全部固定 DAX 和 Reading Context 均为 2025-01-01 至 2025-12-31
+  authoritative_sources:
+  - title: ADR-019 Complex Report Reading Context and Template Authority
+    reason: 报表期间与筛选只来自 canonical + verified evidence，复杂模板不得夸大 coverage
+  - title: M5.10.5 Report time consistency contract
+    reason: 当前轮明确时间必须进入全部固定查询，模糊报表时间必须在 DAX 前澄清
+  root_cause: report path 只复用 committed CanonicalQueryPlan，没有对当前 report turn 的 time intent 使用现有 runtime TimeGrounder；Reading Context 也缺少跨全部 fact sets 的 coverage aggregation
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 报表路径使用相同 SemanticCatalog/TimeGrounder 只绑定当前时间 delta，再覆盖既有 report scope；Reading Context 从全部 query/fact-set coverage 保守聚合并由 Executive fixed slot 展示，unknown/empty sibling 禁止提升为 FULL
+  regression_tests:
+  - backend/tests/unit/test_report_generation.py
+  - backend/tests/unit/test_complex_report_contract.py
+  - backend/tests/unit/test_executive_report_renderer.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 从原始问题或 LLM prose 直接构造 report factual scope
+  - 只凭一个 trend 查询宣称整份多查询报表 FULL
+  - 模糊 report time 执行任何 DAX
+  prevention_rules:
+  - 当前 report time 必须经 runtime date identity 和 deterministic TimeGrounder 后应用到每个固定 query
+  - report-wide coverage 必须考虑所有 time-scoped fact sets，无法一致证明时 UNKNOWN
+  related_adr: ADR-019
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.5
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.5
 - id: ERR-5104-001
   title: Router 弱 fallback 覆盖现有 LLM draft 的开放语言 QueryShape
   category: ERR

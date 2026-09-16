@@ -80,6 +80,7 @@ class TestFromSettingsMapping:
         assert config.llm_mode == LLMMode.MOCK
         assert config.powerbi_mode == PowerBIMode.MOCK
         assert config.harness_mode == HarnessMode.STRICT
+        assert config.application_timezone == "Asia/Shanghai"
         assert config.is_mock is True
 
     def test_all_fields_mapped(self):
@@ -97,6 +98,7 @@ class TestFromSettingsMapping:
             max_powerbi_retries=2,
             max_query_rows=500,
             max_user_input_length=1000,
+            application_timezone="America/New_York",
         )
         config = HarnessConfig.from_settings(settings)
 
@@ -105,6 +107,7 @@ class TestFromSettingsMapping:
         assert config.llm_mode == LLMMode.DEEPSEEK
         assert config.powerbi_mode == PowerBIMode.MOCK
         assert config.harness_mode == HarnessMode.TEST
+        assert config.application_timezone == "America/New_York"
 
         # 超时
         assert config.request_timeout_seconds == 60

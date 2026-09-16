@@ -14,6 +14,7 @@ from backend.app.intent.models import (
     TurnRelation,
 )
 from backend.app.intent.question_router import QuestionRouter
+from backend.app.intent.temporal_expression import has_vague_recent_month_range
 from backend.app.memory.models import (
     MemoryStatus,
     PendingClarificationContext,
@@ -58,6 +59,7 @@ from backend.app.schemas.data_contracts import (
     SemanticModelSchema,
     StructuredFilter,
     TableSchema,
+    TimeRangeSpec,
     TimeRangeMode,
 )
 
@@ -530,6 +532,44 @@ class TestMemberAndTimeGrounding:
         assert explicit.mode == TimeRangeMode.EXPLICIT_RANGE
         assert '"date_field":"OrderDate"' in explicit.to_context_text()
 
+    def test_yearless_month_followups_use_the_compatible_canonical_year(self):
+        field = next(
+            item for item in _catalog().objects if item.canonical_name == "OrderDate"
+        )
+        prior = TimeRangeSpec(
+            date_field="OrderDate",
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 12, 31),
+            mode=TimeRangeMode.EXPLICIT_RANGE,
+            grain="year",
+        )
+        grounder = TimeGrounder(lambda: date(2026, 8, 13))
+
+        may = grounder.ground(
+            "只看五月", field, reference_time_range=prior
+        )
+        first_half = grounder.ground(
+            "从1月到6月", field, reference_time_range=prior
+        )
+
+        assert may is not None
+        assert (may.start_date, may.end_date) == (
+            date(2025, 5, 1), date(2025, 5, 31)
+        )
+        assert first_half is not None
+        assert (first_half.start_date, first_half.end_date) == (
+            date(2025, 1, 1), date(2025, 6, 30)
+        )
+
+    def test_yearless_month_without_compatible_context_never_invents_a_year(self):
+        field = next(
+            item for item in _catalog().objects if item.canonical_name == "OrderDate"
+        )
+        grounder = TimeGrounder(lambda: date(2026, 8, 13))
+
+        assert grounder.ground("只看五月", field) is None
+        assert grounder.ground("从1月到6月", field) is None
+
     @pytest.mark.parametrize(
         ("phrase", "expected_start", "expected_end"),
         [
@@ -541,8 +581,13 @@ class TestMemberAndTimeGrounding:
             ("上月", date(2026, 7, 1), date(2026, 7, 31)),
             ("上个月", date(2026, 7, 1), date(2026, 7, 31)),
             ("最近半年", date(2026, 3, 1), date(2026, 8, 31)),
+            ("过去6个月", date(2026, 3, 1), date(2026, 8, 31)),
+            ("last 6 months", date(2026, 3, 1), date(2026, 8, 31)),
+            ("past 6 months", date(2026, 3, 1), date(2026, 8, 31)),
             ("今年第一季度", date(2026, 1, 1), date(2026, 3, 31)),
             ("2025年Q1", date(2025, 1, 1), date(2025, 3, 31)),
+            ("2025 Q4", date(2025, 10, 1), date(2025, 12, 31)),
+            ("第一季度", date(2026, 1, 1), date(2026, 3, 31)),
             ("２０２５年５月份", date(2025, 5, 1), date(2025, 5, 31)),
         ],
     )
@@ -563,7 +608,10 @@ class TestMemberAndTimeGrounding:
             "2025-05 销售额",
             "今年5月",
             "上月",
+            "过去6个月",
+            "last 6 months",
             "2025年Q1",
+            "2025 Q4",
             "２０２５年５月份",
         ],
     )
@@ -582,6 +630,138 @@ class TestMemberAndTimeGrounding:
         )
         assert grounder.ground("过去六个月销售额", field, draft) is not None
         assert grounder.ground("销售额", field, draft) is None
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "最近几个月",
+            "过去几个月",
+            "最近一段时间",
+            "前阵子",
+            "recent months",
+            "lately",
+        ],
+    )
+    def test_vague_time_language_never_invents_a_bound(self, phrase: str):
+        field = next(
+            item for item in _catalog().objects
+            if item.canonical_name == "OrderDate"
+        )
+
+        assert has_vague_recent_month_range(phrase)
+        assert TimeGrounder(lambda: date(2026, 8, 13)).ground(phrase, field) is None
+
+    def test_vague_time_rejects_llm_invented_recent_month_count(self):
+        field = next(
+            item for item in _catalog().objects
+            if item.canonical_name == "OrderDate"
+        )
+        draft = TimeIntentDraft(
+            kind=TimeIntentKind.RECENT_MONTHS,
+            expression="最近几个月",
+            months=6,
+        )
+
+        grounder = TimeGrounder(lambda: date(2026, 8, 13))
+        assert grounder.ground("最近几个月的销售趋势", field, draft) is None
+        assert not grounder.is_explicit("最近几个月的销售趋势", draft)
+
+    def test_vague_time_obligation_is_saved_as_non_executable_pending_context(self):
+        outcome = GroundingOutcome(
+            status=GroundingStatus.RESOLVED,
+            delta=GroundedSemanticDelta(
+                query_shape=QueryShape.TREND,
+                measures=["Total Sales"],
+                dimensions=["OrderDate"],
+                dimension_tables={"OrderDate": "Sales"},
+                dimension_order="asc",
+            ),
+        )
+
+        merged = PendingClarificationService().merge(
+            previous=None,
+            outcome=outcome,
+            user_input="最近几个月的销售趋势",
+            conversation_id="pending-vague-time",
+            request_id="vague-turn",
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint=_catalog().schema_fingerprint,
+            runtime_mode=RuntimeDataMode.REAL,
+            intent="data_question",
+            committed=None,
+            required_missing_slots=("time",),
+        )
+
+        assert merged.complete is False
+        assert merged.executable_delta is None
+        assert merged.context.query_shape is QueryShape.TREND
+        assert merged.context.measures == ["Total Sales"]
+        assert merged.context.dimensions == ["OrderDate"]
+        assert merged.context.dimension_tables == {"OrderDate": "Sales"}
+        assert merged.context.dimension_order == "asc"
+        assert merged.context.missing_slots == ["time"]
+
+    @pytest.mark.asyncio
+    async def test_pending_vague_trend_is_completed_by_bounded_time_only_followup(self):
+        catalog = _catalog()
+        pending = PendingClarificationContext(
+            conversation_id="pending-time",
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint=catalog.schema_fingerprint,
+            query_shape=QueryShape.TREND,
+            measures=["Total Sales"],
+            dimensions=["OrderDate"],
+            dimension_tables={"OrderDate": "Sales"},
+            dimension_order="asc",
+            missing_slots=["time"],
+            runtime_mode=RuntimeDataMode.REAL,
+            last_request_id="vague-turn",
+        )
+
+        async def no_lookup(*_):
+            raise AssertionError("member lookup should not run")
+
+        outcome = await SemanticGroundingService(
+            catalog, today=lambda: date(2026, 8, 13)
+        ).ground(
+            "最近6个月",
+            _intent(
+                detected_time_range="最近6个月",
+                time_intent=TimeIntentDraft(
+                    kind=TimeIntentKind.RECENT_MONTHS,
+                    expression="最近6个月",
+                    months=6,
+                ),
+            ),
+            _draft(time_range="最近6个月"),
+            None,
+            no_lookup,
+            pending=pending,
+            query_shape=QuestionRouter().route("最近6个月").query_shape,
+        )
+        merged = PendingClarificationService().merge(
+            previous=pending,
+            outcome=outcome,
+            user_input="最近6个月",
+            conversation_id="pending-time",
+            request_id="bounded-turn",
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint=catalog.schema_fingerprint,
+            runtime_mode=RuntimeDataMode.REAL,
+            intent="data_question",
+            committed=None,
+        )
+
+        assert merged.complete is True
+        assert merged.executable_delta is not None
+        assert merged.executable_delta.query_shape is QueryShape.TREND
+        assert merged.executable_delta.measures == ["Total Sales"]
+        assert merged.executable_delta.dimensions == ["OrderDate"]
+        assert merged.executable_delta.dimension_tables == {"OrderDate": "Sales"}
+        assert merged.executable_delta.dimension_order == "asc"
+        assert merged.executable_delta.time_range is not None
+        assert merged.executable_delta.time_range.start_date == date(2026, 3, 1)
+        assert merged.executable_delta.time_range.end_date == date(2026, 8, 31)
 
     @pytest.mark.asyncio
     async def test_runtime_only_extra_date_does_not_override_glossary_date(self):
@@ -1908,6 +2088,58 @@ class TestSemanticCorrectnessFailureReproducers:
         assert outcome.delta.dimension_order == "asc"
 
     @pytest.mark.asyncio
+    async def test_quarter_trend_uses_runtime_month_grouping(self):
+        catalog, _ = _m55_domain_catalog(
+            model_key="education_fixture",
+            table_name="LearningFacts",
+            measure_name="PresenceRatio",
+            measure_alias="出勤率",
+            member_field="CampusNode",
+            member_field_alias="校区",
+            member_aliases={"东校区": "East Campus"},
+            member_suffixes=["校区"],
+            ranking_field="GradeBand",
+            ranking_alias="年级",
+            runtime_members=["East Campus"],
+            include_month_group=True,
+        )
+
+        async def no_lookup(*_):
+            raise AssertionError("temporal grouping must not query members")
+
+        outcome = await SemanticGroundingService(
+            catalog, today=lambda: date(2026, 9, 16)
+        ).ground(
+            "2025 Q4 出勤率趋势",
+            _intent(
+                detected_measures=["出勤率"],
+                detected_time_range="2025 Q4",
+            ),
+            QueryPlan(
+                normalized_question="2025 Q4 出勤率趋势",
+                semantic_model_key="education_fixture",
+                query_shape=QueryShape.TREND,
+                measures=["PresenceRatio"],
+                filters=[
+                    StructuredFilter(field="Quarter", value="Q4"),
+                    StructuredFilter(field="Year", value="2025"),
+                ],
+                time_range="2025 Q4",
+            ),
+            None,
+            no_lookup,
+            query_shape=QueryShape.TREND,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.dimensions == ["PeriodBucket"]
+        assert outcome.delta.dimension_order == "asc"
+        assert outcome.delta.time_range is not None
+        assert outcome.delta.time_range.start_date == date(2025, 10, 1)
+        assert outcome.delta.time_range.end_date == date(2025, 12, 31)
+
+    @pytest.mark.asyncio
     async def test_temporal_grouping_without_runtime_binding_is_controlled(self):
         async def no_lookup(*_):
             raise AssertionError("unsupported grouping must not query members")
@@ -2610,6 +2842,48 @@ class TestM582QueryShapes:
 
         assert outcome.status == GroundingStatus.UNRESOLVED
         assert outcome.delta is None
+
+    @pytest.mark.asyncio
+    async def test_time_token_does_not_erase_explicit_same_value_member(self):
+        async def lookup(field, limit):
+            assert field.canonical_name == "Product"
+            return ColumnMembersResult(
+                semantic_model_key="local_desktop_model",
+                table_name="Sales",
+                field_name="Product",
+                values=["2024", "2025"],
+                source_mode="real",
+            )
+
+        question = "2025年产品2025的销售额是多少？"
+        outcome = await SemanticGroundingService(_catalog()).ground(
+            question,
+            _intent(
+                detected_measures=["销售额"],
+                detected_filters=[{"field": "Product", "value": "2025"}],
+                time_intent=TimeIntentDraft(
+                    kind=TimeIntentKind.ABSOLUTE_YEAR,
+                    expression="2025年",
+                    year=2025,
+                ),
+            ),
+            _draft(
+                measures=["Total Sales"],
+                filters=[StructuredFilter(field="Product", value="2025")],
+                time_range="2025年",
+            ),
+            None,
+            lookup,
+            query_shape=QueryShape.FILTERED_AGGREGATION,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.filters == [
+            StructuredFilter(field="Product", value="2025")
+        ]
+        assert outcome.delta.time_range is not None
+        assert outcome.delta.time_range.start_date == date(2025, 1, 1)
 
     @pytest.mark.asyncio
     async def test_unqualified_member_set_reuses_first_runtime_validated_field(self):

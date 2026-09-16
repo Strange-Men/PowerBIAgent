@@ -15,38 +15,105 @@ class DeterministicQueryScopeDescriptor:
         plan: CanonicalQueryPlan,
         *,
         display_bindings: dict[str, Any] | None = None,
+        model_display_name: str | None = None,
         locale: str = "zh-CN",
     ) -> str:
         bindings = display_bindings or {}
         formatter = PresentationFormatter(locale=locale)
-        parts: list[str] = []
+        parts: list[str] = [
+            f"模型：{(model_display_name or plan.semantic_model_key).strip()}"
+        ]
+        if plan.measures:
+            parts.append(
+                "指标：" + "、".join(
+                    self._label(name, bindings) for name in plan.measures
+                )
+            )
+        if plan.dimensions:
+            parts.append(
+                "分组：" + "、".join(
+                    self._label(name, bindings) for name in plan.dimensions
+                )
+            )
+        if plan.filters:
+            parts.append(
+                "筛选：" + "；".join(
+                    self._filter(item, formatter, bindings)
+                    for item in plan.filters
+                )
+            )
         if plan.time_range is not None:
             if hasattr(plan.time_range, "start_date"):
-                parts.append(self._time(
-                    plan.time_range.start_date, plan.time_range.end_date, locale
-                ))
+                parts.append(
+                    "查询时间：" + self._time(
+                        plan.time_range.start_date,
+                        plan.time_range.end_date,
+                        locale,
+                    )
+                )
             elif isinstance(plan.time_range, str) and plan.time_range.strip():
                 # Legacy LLM AnswerContext remains non-executable; preserving
                 # its text here adds context without granting canonical authority.
-                parts.append(plan.time_range.strip())
-        for item in plan.filters:
-            values = item.value if item.operator == FilterOperator.IN_SET and isinstance(item.value, (list, tuple)) else [item.value]
-            parts.append("、".join(formatter.format(value) for value in values))
-        if plan.dimensions:
-            dimension_labels = "、".join(self._label(name, bindings) for name in plan.dimensions)
-            if plan.query_shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}:
-                parts.append(f"按{dimension_labels}趋势")
-            elif plan.query_shape != QueryShape.ENTITY_LIST:
-                parts.append(f"按{dimension_labels}")
-            else:
-                parts.append(dimension_labels)
-        if plan.measures:
-            measure = "、".join(self._label(name, bindings) for name in plan.measures)
-            if plan.query_shape == QueryShape.RANKING and plan.top_n is not None:
-                direction = "最高" if plan.sort == "desc" else "最低"
-                measure = f"{measure}{direction}Top{plan.top_n}"
-            parts.append(measure)
+                parts.append("查询时间：" + plan.time_range.strip())
+        if plan.query_shape == QueryShape.RANKING and plan.top_n is not None:
+            direction = "最高" if plan.sort == "desc" else "最低"
+            measure = "、".join(
+                self._label(name, bindings) for name in plan.measures
+            )
+            parts.append(f"排名：{measure}{direction}Top{plan.top_n}")
         return " · ".join(part for part in parts if part)
+
+    @staticmethod
+    def canonical_evidence(plan: CanonicalQueryPlan) -> dict[str, Any]:
+        return {
+            "selected_model": plan.semantic_model_key,
+            "measures": list(plan.measures),
+            "grouping_dimensions": list(plan.dimensions),
+            "filters": [item.model_dump(mode="json") for item in plan.filters],
+            "requested_time_range": (
+                plan.time_range.model_dump(mode="json")
+                if plan.time_range is not None
+                else None
+            ),
+            "ranking": (
+                {
+                    "direction": plan.sort,
+                    "top_n": plan.top_n,
+                    "measure": plan.measures[0] if plan.measures else None,
+                }
+                if plan.query_shape == QueryShape.RANKING
+                else None
+            ),
+        }
+
+    @classmethod
+    def _filter(
+        cls,
+        item: Any,
+        formatter: PresentationFormatter,
+        bindings: dict[str, Any],
+    ) -> str:
+        values = (
+            item.value
+            if item.operator == FilterOperator.IN_SET
+            and isinstance(item.value, (list, tuple))
+            else [item.value]
+        )
+        operator = {
+            FilterOperator.EQ: "=",
+            FilterOperator.NE: "≠",
+            FilterOperator.GT: ">",
+            FilterOperator.GTE: "≥",
+            FilterOperator.LT: "<",
+            FilterOperator.LTE: "≤",
+            FilterOperator.IN_SET: "∈",
+            FilterOperator.NOT_IN: "∉",
+            FilterOperator.CONTAINS: "包含",
+        }[item.operator]
+        return (
+            f"{cls._label(item.field, bindings)}{operator}"
+            + "、".join(formatter.format(value) for value in values)
+        )
 
     @staticmethod
     def _label(canonical: str, bindings: dict[str, Any]) -> str:

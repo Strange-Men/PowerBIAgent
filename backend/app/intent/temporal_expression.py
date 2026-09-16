@@ -43,13 +43,18 @@ _YEARLESS_MONTH_RANGE = re.compile(
 )
 _VAGUE_RECENT_MONTH_RANGE = re.compile(
     r"(?:最近|过去|近)\s*(?:几|数|若干)\s*个?月(?:份)?|"
-    r"\b(?:recent|last|past)\s+(?:(?:a\s+)?few|several|some)?\s*months?\b",
+    r"(?:最近一段时间|前阵子)|"
+    r"\b(?:recent|last|past)\s+(?:(?:a\s+)?few|several|some)?\s*months?\b|"
+    r"\blately\b",
     re.IGNORECASE,
 )
 
 
 def parse_explicit_month_range(
-    text: str, *, reference_year: int | None = None
+    text: str,
+    *,
+    reference_year: int | None = None,
+    allow_contextual_year: bool = False,
 ) -> ExplicitMonthRange | None:
     """Parse a fully explicit month range without choosing a model date field."""
     normalized = unicodedata.normalize("NFKC", text)
@@ -66,15 +71,27 @@ def parse_explicit_month_range(
             end_month=int(match.group("end_month")),
         )
     relative = _RELATIVE_YEAR_MONTH_RANGE.search(normalized)
-    if relative is None:
+    if relative is not None:
+        base_year = reference_year if reference_year is not None else date.today().year
+        resolved_year = base_year - (1 if relative.group("relative") == "去年" else 0)
+        return ExplicitMonthRange(
+            start_year=resolved_year,
+            start_month=int(relative.group("start_month")),
+            end_year=resolved_year,
+            end_month=int(relative.group("end_month")),
+        )
+    yearless = _YEARLESS_MONTH_RANGE.search(normalized)
+    if (
+        yearless is None
+        or reference_year is None
+        or not allow_contextual_year
+    ):
         return None
-    base_year = reference_year if reference_year is not None else date.today().year
-    resolved_year = base_year - (1 if relative.group("relative") == "去年" else 0)
     return ExplicitMonthRange(
-        start_year=resolved_year,
-        start_month=int(relative.group("start_month")),
-        end_year=resolved_year,
-        end_month=int(relative.group("end_month")),
+        start_year=reference_year,
+        start_month=int(yearless.group("start_month")),
+        end_year=reference_year,
+        end_month=int(yearless.group("end_month")),
     )
 
 

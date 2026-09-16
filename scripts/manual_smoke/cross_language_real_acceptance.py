@@ -364,6 +364,9 @@ async def run(args, root, provider_failures):
                         "result_shape": {"row_count": audit.get("result_row_count"),
                             "inspection": audit.get("result_semantic_inspection")},
                         "effective_scope": audit.get("effective_query_scope"),
+                        "requested_query_scope": audit.get("requested_query_scope"),
+                        "canonical_query_scope": audit.get("canonical_query_scope"),
+                        "observed_data_coverage": audit.get("observed_data_coverage"),
                         "objects": audit.get("object_grounding_status"), "selections": [{"role": x["role"], "phrase": x["phrase"], "status": x["status"], "selected_id": x["selected_id"]} for x in selections.get(request_id, [])],
                         "members": audit.get("member_grounding_status"),
                         "member_evidence": [entry for entry in member_selections if entry["request_id"] == request_id],
@@ -827,6 +830,188 @@ async def run(args, root, provider_failures):
                     )
                     summaries[-1]["pass"] &= before_unknown == after_unknown
 
+                elif args.phase == "m5105":
+                    direct_cases = (
+                        ("m5105_greeting", "你好", "social_conversation"),
+                        ("m5105_current_date", "今天几号", "system_datetime"),
+                        ("m5105_current_time", "现在几点", "system_datetime"),
+                    )
+                    for label, text, route in direct_cases:
+                        witness_count = len(witnesses)
+                        body, _ = await post(label, text)
+                        audit = body.get("execution_audit") or {}
+                        summaries[-1]["pass"] &= bool(
+                            audit.get("question_route") == route
+                            and not audit.get("dax_executed")
+                            and not body.get("memory_commit")
+                            and body.get("tool_sequence") == []
+                            and len(witnesses) == witness_count
+                        )
+                        if route == "system_datetime":
+                            summaries[-1]["pass"] &= "Asia/Shanghai" in (
+                                body.get("answer") or ""
+                            )
+
+                    async def completed_time_case(
+                        label, text, shape, *, conversation=None
+                    ):
+                        body, plan = await post(
+                            label,
+                            text,
+                            shape,
+                            conversation=conversation,
+                        )
+                        audit = body.get("execution_audit") or {}
+                        coverage = audit.get("observed_data_coverage") or {}
+                        summaries[-1]["pass"] &= bool(
+                            plan.get("measures") == ["Total Sales"]
+                            and plan.get("dimensions") == ["YearMonth"]
+                            and (plan.get("dimension_tables") or {}).get(
+                                "YearMonth"
+                            ) == "Date"
+                            and plan.get("time_range")
+                            and audit.get("requested_query_scope")
+                            == audit.get("effective_query_scope")
+                            and (audit.get("canonical_query_scope") or {}).get(
+                                "requested_time_range"
+                            ) == plan.get("time_range")
+                            and coverage.get("status")
+                            in {"full", "partial", "empty"}
+                        )
+                        return body, plan
+
+                    await completed_time_case(
+                        "m5105_absolute_q4",
+                        "2025 Q4 销售额趋势",
+                        "trend",
+                    )
+                    await completed_time_case(
+                        "m5105_relative_six_months",
+                        "最近6个月销售额趋势",
+                        "trend",
+                    )
+
+                    pending_conversation = str(uuid.uuid4())
+                    witness_count = len(witnesses)
+                    vague, _ = await post(
+                        "m5105_vague_time",
+                        "最近几个月的销售额趋势",
+                        conversation=pending_conversation,
+                        blocked=True,
+                    )
+                    vague_audit = vague.get("execution_audit") or {}
+                    pending = await service.pipeline.get_pending_clarification(
+                        pending_conversation,
+                        RuntimeDataMode.REAL,
+                    )
+                    summaries[-1]["pass"] &= bool(
+                        vague_audit.get("clarification_reason")
+                        == "incomplete_time_range"
+                        and pending is not None
+                        and pending.missing_slots == ["time"]
+                        and pending.measures == ["Total Sales"]
+                        and pending.query_shape is not None
+                        and pending.query_shape.value == "trend"
+                        and len(witnesses) == witness_count
+                    )
+                    bounded, bounded_plan = await completed_time_case(
+                        "m5105_vague_followup",
+                        "最近6个月",
+                        "trend",
+                        conversation=pending_conversation,
+                    )
+                    summaries[-1]["pass"] &= bool(
+                        (bounded_plan.get("time_range") or {}).get("grain")
+                        == "month"
+                        and await service.pipeline.get_pending_clarification(
+                            pending_conversation,
+                            RuntimeDataMode.REAL,
+                        )
+                        is None
+                    )
+
+                    partial, partial_plan = await completed_time_case(
+                        "m5105_partial_coverage",
+                        "2020年1月到2030年12月销售额趋势",
+                        "bounded_trend",
+                    )
+                    partial_audit = partial.get("execution_audit") or {}
+                    coverage = partial_audit.get("observed_data_coverage") or {}
+                    summaries[-1]["pass"] &= bool(
+                        coverage.get("status") == "partial"
+                        and coverage.get("start_date")
+                        and coverage.get("end_date")
+                        and (partial_audit.get("canonical_query_scope") or {}).get(
+                            "requested_time_range"
+                        ) == partial_plan.get("time_range")
+                        and "实际返回数据覆盖" in (partial.get("answer") or "")
+                    )
+
+                    for label, text, shape in (
+                        ("m5105_scalar_regression", "总销售额是多少", "scalar"),
+                        ("m5105_grouped_regression", "各产品销售额是多少", "grouped"),
+                        (
+                            "m5105_ranking_regression",
+                            "销售额最高的前三个产品",
+                            "ranking",
+                        ),
+                    ):
+                        body, plan = await post(label, text, shape)
+                        summaries[-1]["pass"] &= bool(
+                            plan.get("measures") == ["Total Sales"]
+                            and (
+                                shape == "scalar"
+                                or plan.get("dimensions") == ["Product"]
+                            )
+                            and (
+                                shape != "ranking"
+                                or (
+                                    plan.get("top_n") == 3
+                                    and plan.get("sort") == "desc"
+                                )
+                            )
+                        )
+
+                    report_body, _ = await post(
+                        "m5105_time_report",
+                        "生成2025年销售经营分析报表",
+                        template="sales_executive_report",
+                    )
+                    report = report_body.get("report") or {}
+                    html = report.get("html") or ""
+                    report_audit = report_body.get("execution_audit") or {}
+                    report_plans = (
+                        report_audit.get("canonical_query_plans") or {}
+                    )
+                    summaries[-1]["pass"] &= bool(
+                        report_body.get("intent") == "report_generation"
+                        and report_body.get("response_type") == "report"
+                        and report_body.get("memory_commit")
+                        and report.get("template_key")
+                        == "sales_executive_report"
+                        and report_plans
+                        and all(
+                            (item.get("time_range") or {}).get("start_date")
+                            == "2025-01-01"
+                            and (item.get("time_range") or {}).get("end_date")
+                            == "2025-12-31"
+                            for item in report_plans.values()
+                        )
+                        and (
+                            report_audit.get("report_analysis_period") or {}
+                        ).get("start_date") == "2025-01-01"
+                        and (
+                            report_audit.get("report_analysis_period") or {}
+                        ).get("end_date") == "2025-12-31"
+                        and (
+                            report_audit.get("observed_data_coverage") or {}
+                        ).get("status") in {"full", "partial", "empty", "unknown"}
+                        and "2025-01-01 至 2025-12-31" in html
+                        and "实际数据覆盖：" in html
+                        and report.get("content_hash")
+                        == hashlib.sha256(html.encode("utf-8")).hexdigest()
+                    )
+
                 elif args.phase == "isolation":
                     others = [item for item in options if item["display_name"] == "PowerBIAgent_M3_Test"]
                     if len(others) != 1 or others[0]["key"] == key:
@@ -915,7 +1100,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model")
     parser.add_argument("--profile", default="deepseek")
-    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104"), default="focused")
+    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104", "m5105"), default="focused")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--case", action="append", help="Run selected focused cases while diagnosing a failure")
     parser.add_argument("--compare-profiles", action="store_true")

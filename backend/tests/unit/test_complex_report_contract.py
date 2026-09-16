@@ -359,6 +359,115 @@ def test_filter_and_time_context_are_projected_from_canonical_verified_scope():
     assert filters.items[0].authority == "canonical_verified_scope"
 
 
+def test_report_reading_context_keeps_requested_period_and_observed_coverage_distinct():
+    plan = CanonicalQueryPlan(
+        normalized_question="partial monthly coverage",
+        semantic_model_key="model-a",
+        query_shape="bounded_trend",
+        measures=["Total Sales"],
+        dimensions=["YearMonth"],
+        time_range=TimeRangeSpec(
+            date_field="OrderDate",
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 6, 30),
+            mode=TimeRangeMode.EXPLICIT_RANGE,
+            grain="month",
+        ),
+    )
+    result = QueryResult(
+        result_id="result-partial",
+        semantic_model_key="model-a",
+        columns=["[YearMonth]", "[Total Sales]"],
+        rows=[
+            ["2026-02-01T00:00:00", 20],
+            ["2026-03-01T00:00:00", 30],
+            ["2026-04-01T00:00:00", 40],
+        ],
+        row_count=3,
+        source_mode="real",
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    period, filters = ReportScopeContextBuilder().build(
+        {"monthly": plan}, {"monthly": facts}
+    )
+    coverage = ReportScopeContextBuilder().build_observed_coverage(
+        {"monthly": plan}, {"monthly": facts}
+    )
+    context = ReportReadingContextBuilder().build(
+        report_title="销售经营分析报告",
+        analysis_period=period,
+        active_filters=filters,
+        observed_data_coverage=coverage,
+        metric_definition_keys=("total_sales",),
+        exception_assessment=ExceptionAssessment.cannot_determine(),
+        snapshot=_snapshot().model_copy(update={
+            "query_result_ids": (facts.result_id,),
+            "verified_fact_set_ids": (facts.fact_set_id,),
+        }),
+        generated_at=NOW,
+    )
+
+    assert context.analysis_period.start_date == date(2026, 1, 1)
+    assert context.analysis_period.end_date == date(2026, 6, 30)
+    assert context.observed_data_coverage.status.value == "partial"
+    assert context.observed_data_coverage.start_date == date(2026, 2, 1)
+    assert context.observed_data_coverage.end_date == date(2026, 4, 30)
+
+
+def test_multi_query_report_never_claims_full_coverage_from_one_trend_query():
+    time_range = TimeRangeSpec(
+        date_field="OrderDate",
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 2, 28),
+        mode=TimeRangeMode.EXPLICIT_RANGE,
+        grain="month",
+    )
+    trend = CanonicalQueryPlan(
+        normalized_question="monthly",
+        semantic_model_key="model-a",
+        query_shape="bounded_trend",
+        measures=["Total Sales"],
+        dimensions=["YearMonth"],
+        time_range=time_range,
+    )
+    scalar = CanonicalQueryPlan(
+        normalized_question="total",
+        semantic_model_key="model-a",
+        query_shape="scalar",
+        measures=["Total Sales"],
+        time_range=time_range,
+    )
+    trend_facts = VerifiedFactSetBuilder().build(
+        trend,
+        QueryResult(
+            result_id="result-trend-full",
+            semantic_model_key="model-a",
+            columns=["[YearMonth]", "[Total Sales]"],
+            rows=[["2026-01-01", 10], ["2026-02-01", 20]],
+            row_count=2,
+            source_mode="real",
+        ),
+    )
+    scalar_facts = VerifiedFactSetBuilder().build(
+        scalar,
+        QueryResult(
+            result_id="result-scalar-unknown",
+            semantic_model_key="model-a",
+            columns=["[Total Sales]"],
+            rows=[[30]],
+            row_count=1,
+            source_mode="real",
+        ),
+    )
+
+    coverage = ReportScopeContextBuilder().build_observed_coverage(
+        {"trend": trend, "scalar": scalar},
+        {"trend": trend_facts, "scalar": scalar_facts},
+    )
+
+    assert coverage.status.value == "unknown"
+
+
 def test_generated_at_never_becomes_data_updated_at_and_unknown_stays_unknown():
     context = _reading_context(snapshot=_snapshot(data_updated_at=None))
     assert context.generated_at == NOW

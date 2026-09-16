@@ -13,6 +13,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from backend.app.schemas.factual_context import ObservedDataCoverage
+
 
 class ReportTemplateTier(str, Enum):
     SIMPLE = "simple"
@@ -258,6 +260,7 @@ class ReportReadingContext(BaseModel):
     semantic_model: str = Field(..., min_length=1)
     data_source: ReportDataSourceContext
     data_freshness: ReportDataFreshness
+    observed_data_coverage: ObservedDataCoverage
     generated_at: datetime
 
     model_config = ConfigDict(frozen=True, extra="forbid")

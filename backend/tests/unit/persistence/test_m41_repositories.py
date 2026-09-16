@@ -943,6 +943,9 @@ class TestRestartRecovery:
             semantic_model_key="local_desktop_model",
             schema_fingerprint="a" * 64,
             measures=["Sales"],
+            dimensions=["YearMonth"],
+            dimension_tables={"YearMonth": "Date"},
+            dimension_order="asc",
             runtime_mode=RuntimeDataMode.REAL,
             last_request_id="clarify-restart",
         )
@@ -964,6 +967,8 @@ class TestRestartRecovery:
         )
         assert stored is not None
         assert stored.measures == ["Sales"]
+        assert stored.dimension_tables == {"YearMonth": "Date"}
+        assert stored.dimension_order == "asc"
         assert stored.last_request_id == "clarify-restart"
 
         await dispose_engine(eng2)

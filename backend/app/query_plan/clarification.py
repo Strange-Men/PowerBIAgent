@@ -67,6 +67,7 @@ class PendingClarificationService:
         runtime_mode: RuntimeDataMode,
         intent: str,
         committed: StructuredWorkMemory | None,
+        required_missing_slots: Iterable[PendingSemanticSlot] = (),
     ) -> ClarificationMergeResult:
         if previous is not None and (
             previous.semantic_model_key != semantic_model_key
@@ -83,6 +84,8 @@ class PendingClarificationService:
 
         measures = list(previous.measures) if previous else []
         dimensions = list(previous.dimensions) if previous else []
+        dimension_tables = dict(previous.dimension_tables) if previous else {}
+        dimension_order = previous.dimension_order if previous else None
         filters = list(previous.filters) if previous else []
         time_range = previous.time_range if previous else None
         sort = previous.sort if previous else None
@@ -131,8 +134,21 @@ class PendingClarificationService:
             measures = resolved_measures[:1]
         if delta.dimensions is not None:
             dimensions = list(delta.dimensions)
+            dimension_tables = {
+                field: table
+                for field, table in dimension_tables.items()
+                if field in dimensions
+            }
+            dimension_order = delta.dimension_order
         elif resolved_dimensions:
             dimensions = resolved_dimensions[:1]
+            dimension_tables = {
+                field: table
+                for field, table in dimension_tables.items()
+                if field in dimensions
+            }
+            dimension_order = delta.dimension_order
+        dimension_tables.update(delta.dimension_tables)
 
         grounded_filters = list(delta.filters or [])
         if not grounded_filters:
@@ -203,6 +219,13 @@ class PendingClarificationService:
         missing = self._missing_slots(
             measures, dimensions, sort, top_n, outcome, query_shape
         )
+        for slot in required_missing_slots:
+            if slot not in missing:
+                missing.append(slot)
+        order: tuple[PendingSemanticSlot, ...] = (
+            "measure", "dimension", "filter", "time", "analysis", "template"
+        )
+        missing = [slot for slot in order if slot in missing]
         now = datetime.utcnow()
         context_values = dict(
             conversation_id=conversation_id,
@@ -212,6 +235,16 @@ class PendingClarificationService:
             query_shape=query_shape,
             measures=measures,
             dimensions=dimensions,
+            dimension_tables={
+                field: table
+                for field, table in dimension_tables.items()
+                if field in {
+                    *dimensions,
+                    *(item.field for item in filters),
+                    *([time_range.date_field] if time_range is not None else []),
+                }
+            },
+            dimension_order=dimension_order if dimensions else None,
             filters=filters,
             time_range=time_range,
             sort=sort,
@@ -356,6 +389,8 @@ class PendingClarificationService:
             query_shape=context.query_shape,
             measures=list(context.measures),
             dimensions=list(context.dimensions),
+            dimension_tables=dict(context.dimension_tables),
+            dimension_order=context.dimension_order,
             filters=list(context.filters),
             time_range=context.time_range,
             time_specified=context.time_range is not None,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import calendar
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
@@ -24,6 +25,10 @@ from backend.app.schemas.data_contracts import (
     TableSpec,
     TimeRangeSpec,
 )
+from backend.app.schemas.factual_context import (
+    ObservedCoverageStatus,
+    ObservedDataCoverage,
+)
 
 
 class FactType(str, Enum):
@@ -35,6 +40,7 @@ class FactType(str, Enum):
     MINIMUM = "minimum"
     APPLIED_FILTER = "applied_filter"
     APPLIED_TIME_RANGE = "applied_time_range"
+    OBSERVED_DATA_COVERAGE = "observed_data_coverage"
     RESULT_METADATA = "result_metadata"
 
 
@@ -76,6 +82,7 @@ class VerifiedFactSet(BaseModel):
     truncated: bool
     empty: bool
     result_columns: list[str]
+    observed_data_coverage: ObservedDataCoverage
     facts: list[VerifiedFact]
 
     model_config = ConfigDict(frozen=True)
@@ -115,6 +122,11 @@ class VerifiedFactSetBuilder:
         fact_set_id = self._fact_set_id(plan, result)
         plan_semantics = plan.model_dump(mode="json")
         facts: list[VerifiedFact] = []
+        observed_coverage = self._observed_coverage(
+            plan,
+            result,
+            dimension_fields,
+        )
 
         for row_index, row in enumerate(result.rows):
             dimensions = {
@@ -253,6 +265,23 @@ class VerifiedFactSetBuilder:
                 result=result,
                 plan_semantics=plan_semantics,
             ))
+            coverage_source_fields = (
+                [observed_coverage.source_field]
+                if observed_coverage.source_field is not None
+                else []
+            )
+            facts.append(self._fact(
+                fact_set_id,
+                len(facts),
+                FactType.OBSERVED_DATA_COVERAGE,
+                value=observed_coverage.model_dump(mode="json"),
+                source_fields=coverage_source_fields,
+                source_rows=list(observed_coverage.source_rows),
+                operation="query_result_observed_time_coverage",
+                time_range=plan.time_range,
+                result=result,
+                plan_semantics=plan_semantics,
+            ))
         facts.append(self._fact(
             fact_set_id,
             len(facts),
@@ -277,8 +306,97 @@ class VerifiedFactSetBuilder:
             truncated=result.truncated,
             empty=result.row_count == 0,
             result_columns=list(result.columns),
+            observed_data_coverage=observed_coverage,
             facts=facts,
         )
+
+    @classmethod
+    def _observed_coverage(
+        cls,
+        plan: CanonicalQueryPlan,
+        result: QueryResult,
+        dimension_fields: list[str],
+    ) -> ObservedDataCoverage:
+        if plan.time_range is None:
+            return ObservedDataCoverage(
+                status=ObservedCoverageStatus.NOT_APPLICABLE
+            )
+        if result.row_count == 0:
+            return ObservedDataCoverage(status=ObservedCoverageStatus.EMPTY)
+        if (
+            plan.query_shape not in {QueryShape.TREND, QueryShape.BOUNDED_TREND}
+            or not plan.dimensions
+            or not dimension_fields
+        ):
+            return ObservedDataCoverage(status=ObservedCoverageStatus.UNKNOWN)
+
+        source_field = dimension_fields[0]
+        index = result.columns.index(source_field)
+        observed_months: set[tuple[int, int]] = set()
+        for row in result.rows:
+            parsed = cls._month_value(row[index])
+            if parsed is None:
+                return ObservedDataCoverage(
+                    status=ObservedCoverageStatus.UNKNOWN
+                )
+            observed_months.add(parsed)
+        if not observed_months:
+            return ObservedDataCoverage(status=ObservedCoverageStatus.EMPTY)
+
+        requested_months = cls._month_sequence(
+            plan.time_range.start_date,
+            plan.time_range.end_date,
+        )
+        status = (
+            ObservedCoverageStatus.FULL
+            if not result.truncated and observed_months == requested_months
+            else ObservedCoverageStatus.PARTIAL
+        )
+        first_year, first_month = min(observed_months)
+        last_year, last_month = max(observed_months)
+        return ObservedDataCoverage(
+            status=status,
+            start_date=date(first_year, first_month, 1),
+            end_date=date(
+                last_year,
+                last_month,
+                calendar.monthrange(last_year, last_month)[1],
+            ),
+            grain="month",
+            source_field=source_field,
+            source_rows=tuple(range(result.row_count)),
+        )
+
+    @staticmethod
+    def _month_value(value: Any) -> tuple[int, int] | None:
+        if isinstance(value, datetime):
+            return value.year, value.month
+        if isinstance(value, date):
+            return value.year, value.month
+        if isinstance(value, str):
+            text = value.strip()
+            try:
+                parsed = date.fromisoformat(text[:10])
+                return parsed.year, parsed.month
+            except ValueError:
+                match = re.fullmatch(r"(\d{4})[年/-](\d{1,2})(?:月|$)", text)
+                if match:
+                    month = int(match.group(2))
+                    if 1 <= month <= 12:
+                        return int(match.group(1)), month
+        return None
+
+    @staticmethod
+    def _month_sequence(start: date, end: date) -> set[tuple[int, int]]:
+        months: set[tuple[int, int]] = set()
+        year, month = start.year, start.month
+        while (year, month) <= (end.year, end.month):
+            months.add((year, month))
+            if month == 12:
+                year, month = year + 1, 1
+            else:
+                month += 1
+        return months
 
     @staticmethod
     def _column_map(columns: list[str]) -> dict[str, list[str]]:
@@ -375,6 +493,9 @@ class FactBoundedAnswerBuilder:
             PresentationFormatKind,
             PresentationFormatter,
         )
+        from backend.app.presentation.query_scope import (
+            DeterministicQueryScopeDescriptor,
+        )
 
         formatter = PresentationFormatter(locale=locale)
         bindings = display_bindings or {}
@@ -383,7 +504,7 @@ class FactBoundedAnswerBuilder:
         metrics: dict[str, Any] = {}
         metric_provenance: dict[str, dict[str, str]] = {}
         if facts.empty:
-            parts.append("暂无符合条件的数据。")
+            parts.append("当前查询范围未返回数据。")
         elif plan.top_n is not None:
             ranking = facts.by_type(FactType.RANKING)[0]
             used.append(ranking)
@@ -489,6 +610,12 @@ class FactBoundedAnswerBuilder:
                 )
         metadata = facts.by_type(FactType.RESULT_METADATA)[0]
         used.append(metadata)
+        coverage = facts.observed_data_coverage
+        if coverage.status is not ObservedCoverageStatus.NOT_APPLICABLE:
+            coverage_facts = facts.by_type(FactType.OBSERVED_DATA_COVERAGE)
+            if coverage_facts:
+                used.append(coverage_facts[0])
+            parts.append(self._coverage_text(coverage, locale))
         if facts.truncated:
             parts.append("结果已截断，可能不完整。")
         unique_used = list({item.fact_id: item for item in used}.values())
@@ -508,6 +635,11 @@ class FactBoundedAnswerBuilder:
                 "fact_ids": [item.fact_id for item in unique_used],
                 "metric_provenance": metric_provenance,
                 "effective_scope": effective_scope or "",
+                "requested_query_scope": effective_scope or "",
+                "canonical_query_scope": (
+                    DeterministicQueryScopeDescriptor.canonical_evidence(plan)
+                ),
+                "observed_data_coverage": coverage.model_dump(mode="json"),
             },
             filters=list(plan.filters),
             semantic_model_key=result.semantic_model_key,
@@ -515,6 +647,31 @@ class FactBoundedAnswerBuilder:
             verified_fact_set_id=facts.fact_set_id,
             fact_ids=[item.fact_id for item in unique_used],
         )
+
+    @staticmethod
+    def _coverage_text(
+        coverage: ObservedDataCoverage,
+        locale: str,
+    ) -> str:
+        if coverage.status is ObservedCoverageStatus.EMPTY:
+            return "实际返回数据覆盖：无返回数据。"
+        if coverage.status is ObservedCoverageStatus.UNKNOWN:
+            return "实际返回数据覆盖：未知。"
+        if coverage.status is ObservedCoverageStatus.NOT_APPLICABLE:
+            return ""
+        assert coverage.start_date is not None and coverage.end_date is not None
+        if locale.casefold().startswith("zh"):
+            rendered = (
+                f"{coverage.start_date.year}年{coverage.start_date.month}月–"
+                f"{coverage.end_date.year}年{coverage.end_date.month}月"
+            )
+        else:
+            rendered = (
+                f"{coverage.start_date.year:04d}-{coverage.start_date.month:02d}–"
+                f"{coverage.end_date.year:04d}-{coverage.end_date.month:02d}"
+            )
+        state = "完整" if coverage.status is ObservedCoverageStatus.FULL else "部分"
+        return f"实际返回数据覆盖：{rendered}（{state}）。"
 
     @staticmethod
     def _field_label(
@@ -826,6 +983,8 @@ class FactOutputValidator:
             for value in (item.value, item.values):
                 self._collect_numbers(value, allowed)
             self._collect_numbers(item.dimensions, allowed)
+            self._collect_numbers(item.source_fields, allowed)
+            self._collect_numbers(item.provenance.semantic_model_key, allowed)
         return allowed
 
     def _collect_numbers(self, value: Any, output: set[str]) -> None:

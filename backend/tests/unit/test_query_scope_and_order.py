@@ -7,6 +7,7 @@ from backend.app.presentation.builder import StructuredPresentationBuilder
 from backend.app.presentation.query_scope import DeterministicQueryScopeDescriptor
 from backend.app.schemas.data_contracts import (
     CanonicalQueryPlan,
+    FilterOperator,
     QueryResult,
     QueryShape,
     StructuredFilter,
@@ -49,9 +50,55 @@ def test_scope_descriptor_is_plan_owned_and_answer_cannot_omit_it() -> None:
     facts = VerifiedFactSetBuilder().build(plan, result)
     scope = DeterministicQueryScopeDescriptor().build(plan)
     answer = FactBoundedAnswerBuilder().build(plan, result, facts, effective_scope=scope)
-    assert scope == "2025年5月 · North Hub · Package Count"
+    assert scope == (
+        "模型：model · 指标：Package Count · "
+        "筛选：Hub=North Hub · 查询时间：2025年5月"
+    )
     assert answer.answer.startswith(scope + "：")
     assert answer.evidence["effective_scope"] == scope
+    assert answer.evidence["requested_query_scope"] == scope
+    assert answer.evidence["canonical_query_scope"] == {
+        "selected_model": "model",
+        "measures": ["Package Count"],
+        "grouping_dimensions": [],
+        "filters": [{"field": "Hub", "operator": "eq", "value": "North Hub"}],
+        "requested_time_range": {
+            "date_field": "Ship Date",
+            "start_date": "2025-05-01",
+            "end_date": "2025-05-31",
+            "mode": "explicit_range",
+            "grain": "day",
+        },
+        "ranking": None,
+    }
+
+
+def test_scope_labels_every_executed_canonical_slot() -> None:
+    plan = _plan(
+        QueryShape.RANKING,
+        semantic_model_key="logistics-model-v2",
+        dimensions=["Carrier"],
+        filters=[StructuredFilter(
+            field="Hub", operator=FilterOperator.IN_SET, value=["North", "West"]
+        )],
+        time_range=TimeRangeSpec(
+            mode=TimeRangeMode.EXPLICIT_RANGE,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 6, 30),
+            date_field="Ship Date",
+            grain="month",
+        ),
+        sort="desc",
+        top_n=3,
+    )
+
+    scope = DeterministicQueryScopeDescriptor().build(plan)
+
+    assert scope == (
+        "模型：logistics-model-v2 · 指标：Package Count · 分组：Carrier · "
+        "筛选：Hub∈North、West · 查询时间：2026年1月–2026年6月 · "
+        "排名：Package Count最高Top3"
+    )
 
 
 def test_grouped_display_projection_sorts_metric_desc_without_mutating_facts() -> None:
