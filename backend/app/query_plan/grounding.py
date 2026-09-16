@@ -999,6 +999,7 @@ class SemanticGroundingService:
         effective_shape = (
             query_shape
             or draft.query_shape
+            or (pending.query_shape if pending is not None else None)
             or self._committed_query_shape(committed)
             or QueryShape.SCALAR
         )
@@ -1394,6 +1395,33 @@ class SemanticGroundingService:
                 phrase="",
                 method="generic_temporal_grouping_cue",
             )
+        if (
+            effective_shape in {
+                QueryShape.GROUPED,
+                QueryShape.RANKING,
+                QueryShape.TREND,
+                QueryShape.BOUNDED_TREND,
+            }
+            and current_dimension.status == GroundingStatus.NOT_MENTIONED
+            and pending is not None
+            and len(pending.dimensions) == 1
+            and not self._current_weak_phrases(
+                [*intent.detected_dimensions, *draft.dimensions], user_input)
+            and set(draft.dimensions).issubset(pending.dimensions)
+            and set(intent.detected_dimensions).issubset(pending.dimensions)
+        ):
+            pending_candidates = [
+                item
+                for item in self.catalog.by_type(SemanticObjectType.FIELD)
+                if item.canonical_name == pending.dimensions[0]
+            ]
+            if len(pending_candidates) == 1:
+                current_dimension = ObjectGrounder._resolved(
+                    dimension_role,
+                    user_input,
+                    pending_candidates[0],
+                    "pending_unique_shape_dimension",
+                )
         if (
             effective_shape in {
                 QueryShape.GROUPED,

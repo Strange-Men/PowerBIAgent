@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v2.2
-> **修订日期：** 2026-09-07
+> **修订版本：** v2.3
+> **修订日期：** 2026-09-16
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **修订范围：** M5.10.2 已完成明确报表路由、typed coverage、专业 presentation/time provenance、产品视觉与 report lifecycle hardening；M5.8.5 correctness 与 M5.9.2 runtime 已冻结；M5.10.3 NOT STARTED，M5 FINAL=false
+> **修订范围：** M5.10.2 implementation/report visual work 已完成；随后人工验收重新打开 semantic/state P0。当前为 M5.10.3 — 人工验收后语义安全收口；M5.8.5 correctness 与 M5.9.2 runtime 的 authority/architecture contract 冻结；M5.10.4+ NOT STARTED，M5 FINAL=false
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -306,7 +306,8 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 25. **M5.9 MCP performance/resilience** ✅ COMPLETE — bounded concurrency/queue/backpressure、cold/warm、20/50/100 concurrency、restart/fault、2h soak、Real 1/2/4 worker、residual=0 与 exact-SHA CI 已通过；未改变 Semantic/DAX/VerifiedFactSet authority
 26. **M5.10 复杂报表合同与专业销售模板基础** ✅ COMPLETE — Reading Context / immutable snapshot 与共享 Sales requirements 已建立
 27. **M5.10.1 Professional Sales Renderer & Real Visual Acceptance** ✅ 本地收口完成 — 独立固定 Renderer、双模板公开显式选择、Simple/Executive factual parity、Simple/Rich PBIX 与真实浏览器验收
-28. **M5.10.2 Executive Report Product Refinement & Hardening** ✅ 本地产品收口 — Report Request/FULL_AVAILABLE、friendly/canonical 分离、四类时间 provenance、失败/取消补偿、双模板 lifecycle/concurrency/security 与 Rich/Simple PBIX/真实浏览器验收；发布以当前 main exact-SHA CI success 为证据；M5.10.3 NOT STARTED，M5 FINAL=false
+28. **M5.10.2 Executive Report Product Refinement & Hardening** ✅ 本地产品收口 — Report Request/FULL_AVAILABLE、friendly/canonical 分离、四类时间 provenance、失败/取消补偿、双模板 lifecycle/concurrency/security 与 Rich/Simple PBIX/真实浏览器验收；发布以当时 main exact-SHA CI success 为证据；该历史完成证据不覆盖 post-manual reopen，M5 FINAL=false
+29. **M5.10.3 — 人工验收后语义安全收口** 🟡 IMPLEMENTATION READY — 三类 wrong-question execution P0 已完成最小修复与自动/Real Local MCP scoped acceptance；DeepSeek Real/用户最终人工验收 PENDING。不能安全闭合时 clarification/no-match/fail closed；M5.10.4+ 不启动，M5 FINAL=false
 
 ## 十二、MVP 暂不包含
 
@@ -381,4 +382,4 @@ MVP 达到以下条件即可视为成功：
 
 M5.10 已纳入正式路线：用户可明确选择“简易模板”或“销售模板”。销售模板可以包含 sales-specific section，但只消费 runtime schema 与 VerifiedFactSet 已证明的事实；缺少 Forecast/Goal/Pipeline 时必须用当前模型真实支持的销售 section 替代，禁止伪造。任何模板均不允许 LLM 临场生成 HTML/CSS/SVG。
 
-*修订日期：2026-09-14 | M5.10.2 本地产品收口完成；M5.10.3 NOT STARTED；M5 FINAL=false*
+*修订日期：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；M5 FINAL=false*

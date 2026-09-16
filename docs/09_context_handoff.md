@@ -1,9 +1,21 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-09-15
+> **最后更新：** 2026-09-16
 
-## 当前阶段 — M5.10.2 Manual Visual Fidelity FIX
+## 当前阶段 — M5.10.3 — 人工验收后语义安全收口（产品版本 M5.10.3）
+
+正式开发基线为 clean `main@82ba346fde7cf71ba1d3bfeb4038f660500ff8be`；任务启动时 local HEAD == `origin/main`、工作区干净且无 merge/rebase/cherry-pick/revert 中间状态。发布候选 Settings.version=M5.10.3。M5.10.2 的实现、报表视觉与当时 exact-SHA 证据仍是历史事实，但后续真实人工业务验收重新打开了 semantic/state P0，因此不能据旧 PASS 宣告 M5 FINAL。
+
+M5.10.3 的唯一目标是 **Zero Wrong-Question Execution**。当前明确 ranking/grouping/filter/correction/time/member-set obligation 无法完整进入 CanonicalQueryPlan 时，允许 minimal clarification/no-match/fail closed，禁止降级执行另一个合法问题。已知类别为：P0-A Router/QueryShape/obligation downgrade；P0-B historical same-field filter 污染新的 grouping/ranking；P0-C correction 对 pending delta/committed Memory 的优先级泄漏。
+
+G0 governance、production-path failure reproducers、permanent regression、最小通用修复、cross-domain/metamorphic 与全量自动门禁均已完成。修复保持在既有 Router → Grounding/Completeness → StateTransition/TurnRelation 单链：SCALAR fallback 不再覆盖 richer current-turn shape；Canonical completeness 校验 expected shape；同字段从历史 filter 切换为当前 grouping/ranking 时移除未重述旧 member；correction 只送 positive replacement，shape 优先 current/draft → compatible pending → committed。无新 QueryShape、Planner、Memory、migration、Provider/runtime 或 report 改动。
+
+Fresh evidence：focused M5.10.3 `26 passed`；M5.9.4 51,200-case stress、跨 Retail/Education/Operations/Logistics/unknown holdout 均 PASS；backend `2758 passed, 1 skipped`；Semantic Compatibility `775 passed / 123 production files`；Golden `11 passed / 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 140、Repository Safety 403、AI Error Ledger 90、Documentation/Artifact Governance、compileall 与 diff-check PASS。
+
+Scoped Real 使用显式 `_env_file=None` 的 deterministic acceptance language provider，只替换语言草稿；schema/member/DAX/QueryResult/Result Inspection/VerifiedFactSet 均走 production + Real Local MCP。同一 session 在 `PowerBIAgent_M3_Rich_Test` 与 `PowerBIAgent_M5_8_5_Logistics_Test` 完成 11 场景、9 次真实 DAX：P0-A clarification + ZERO DAX/Memory；P0-B 移除 stale Region filter；P0-C 依次保留 ranking 并替换 Total Quantity/North；unknown ZERO DAX 且 Memory 不变；normal 与跨模型/会话隔离通过。business/temp/session/worker residual=0。当前进程无配置 DeepSeek key，本轮未读取 `.env`，所以 DeepSeek-backed Real E2E 明确 BLOCKED；用户人工复测 PENDING。M5.10.4+ NOT STARTED，M5 FINAL=false。
+
+## 上一阶段 — M5.10.2 Manual Visual Fidelity FIX
 
 起始基线为 clean `main@070a35e230ba7d52bd39ed150c144c5dc3aae5b2`，Settings.version=M5.10.2。明确短语“生成一份完整的销售经营分析报表”现稳定进入 `REPORT_REQUEST`；只有报表名词、但实际询问报表内数据的问题仍进入业务查询，避免名词误触发。
 
@@ -17,7 +29,7 @@ Visual Fidelity FIX 从 clean `main@2db9a43ebc1e92ec89370849abe6d3e52de402c3` �
 
 report artifact 在 memory commit failure 与 cancellation 时通过正式 repository API shielded compensation，query/assembly/render/persist 取消均无 orphan；Simple+Simple、Executive+Executive、Simple+Executive 异会话并发保持 template/model/artifact identity 隔离。两模板的 create/link/history/rename/archive/restore/delete/tombstone 生命周期均复用既有 namespace/persistence contract。真实和浏览器临时资源均已按 automation ownership 精确清理，Local MCP session/worker residual=0。
 
-M5.10 foundation、M5.10.1 fixed Renderer、M5.8.5 factual authority、M5.9.2 runtime architecture 与既有 persistence architecture 保持冻结；未实现 Remote MCP transport/auth、Entra、PostgreSQL、Deployment、YoY/MoM/Forecast/Target/Budget/Map/AI insight。M5.10.3 NOT STARTED，M5 FINAL=false。发布仍以本次提交的 exact-SHA Full Validation (Windows) completed/success 为最终证据。
+M5.10 foundation、M5.10.1 fixed Renderer、M5.8.5 factual authority、M5.9.2 runtime architecture 与既有 persistence architecture 保持冻结；未实现 Remote MCP transport/auth、Entra、PostgreSQL、Deployment、YoY/MoM/Forecast/Target/Budget/Map/AI insight。该段只记录 M5.10.2 当时的 implementation completion；post-manual P0 与当前阶段以上文 M5.10.3 为准。M5 FINAL=false。
 
 Fresh local evidence：FIX focused 35 PASS，完整 report/renderer/product 组合回归 144 PASS；Semantic Compatibility 775 PASS / 123 production files；backend 2732 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 91 PASS + typecheck/lint/build；Repository Safety 398、AI Error Ledger 86、Architecture 140、Documentation/Artifact Governance、compileall 与 diff-check PASS。Real Rich 9/9、Simple 4 available + 5 unavailable-with-reason，Rich/Simple 各自 Simple/Executive fact parity=true；fixture Chrome 76/76、real Chrome 4/4，13 项 mutation、1440/430 七项 reference checklist 与 artifact/session/worker residual=0 均通过。
 
@@ -171,12 +183,15 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 | **M5.8.2** | **通用自然语言路由与查询形态收口** | **✅ COMPLETE** |
 | **M5.8.3** | **MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配** | **✅ COMPLETE（b86662e / CI success）** |
 | **M5.8.4** | **现有语义链跨语言与通用模型理解优化** | **✅ COMPLETE（3e3d8ac / CI success）** |
-| **M5.8.5** | **Semantic Completeness + Result Inspection + Presentation Truth** | **✅ COMPLETE；correctness frozen** |
+| **M5.8.5** | **Semantic Completeness + Result Inspection + Presentation Truth** | **✅ COMPLETE；authority contract frozen，implementation 可做 invariant-preserving bug fix** |
 | **M5.8.6** | **主线发布与治理收口** | **✅ COMPLETE（e8a79c3 / CI #51 success）** |
 | **M5.9** | **完整 MCP performance/resilience、并发压力与故障恢复** | **✅ COMPLETE（179dd24 / CI #52 success）** |
 | **M5.9.1** | **Runtime Audit Closure：shutdown/enqueue 竞态与 retry ownership** | **本地收口完成；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10** | **复杂报表合同与专业销售模板基础** | **✅ COMPLETE；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10.1** | **Professional Renderer + Real Visual Acceptance** | **✅ 本地收口；exact-SHA CI 为发布证据** |
+| **M5.10.2** | **Executive Report Product Refinement & Manual Visual Fidelity FIX** | **✅ implementation complete；post-manual semantic P0 reopened** |
+| **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **🟡 IMPLEMENTATION READY；DeepSeek Real / 用户最终人工验收 PENDING** |
+| **M5.10.4—M5.10.7** | **语言/QueryShape → 时间/事实呈现 → 模板/错误 UX → MVP 最终收口** | **⏳ NOT STARTED** |
 
 ### M5.7 completed contract
 
@@ -521,7 +536,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-M5.10.2 Executive Report Product Refinement & Hardening 已完成本地产品收口。下一阶段只能在用户明确新指令后启动 M5.10.3 Final Real E2E / stress / mutation / historical closure / exact-SHA final closure；Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+M5.10.3 — 人工验收后语义安全收口已完成三类 P0 的最小实现；发布候选需以 fresh release gates、Real Local MCP、白名单 commit、push main 与 exact-SHA CI success 为证据，随后等待用户最终人工验收。M5.10.4 语言与 QueryShape 收口、M5.10.5 时间与事实呈现收口、M5.10.6 模板兼容与错误 UX 收口、M5.10.7 MVP 最终收口均未启动。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -570,4 +585,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-15 | M5.10.2 Manual Visual Fidelity FIX 本地产品收口完成；m5/rebuild 冻结；main-only；M5.10.3 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；m5/rebuild 冻结；main-only；M5.10.4+ NOT STARTED；M5 FINAL=false*

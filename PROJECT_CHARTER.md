@@ -148,4 +148,4 @@
 
 ---
 
-*最后更新：2026-09-14 | M5.10.2 Executive Report Product Refinement & Hardening 本地产品收口；M5.10.3 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-16 | 北极星与 authority 不变；M5.10.3 — 人工验收后语义安全收口已进入发布候选阶段，DeepSeek Real/用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；M5 FINAL=false*

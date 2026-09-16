@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** M5.10.2 Executive Report Product Refinement & Hardening 已本地产品收口；Report Request/FULL_AVAILABLE、presentation-only projection、专业视觉、真实时间 provenance 与 artifact compensation/cancellation 已固化。发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10.3 NOT STARTED；M5.9.2 runtime 与 M5.8.5 factual authority 冻结；main-only；M5 FINAL=false。
+> **状态：** 当前产品版本/Settings.version=M5.10.3。M5.10.3 — 人工验收后语义安全收口的三类 semantic/state P0 已完成最小实现、永久回归、cross-domain、全量自动门禁与 deterministic-language + Real Local MCP scoped acceptance；DeepSeek Real E2E 因当前进程无配置 key 而 BLOCKED，用户最终人工复测 PENDING。M5.9.2 runtime 与 M5.8.5 factual authority 的架构合同冻结；main-only；M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -59,7 +59,11 @@
 | **M5.10** | **复杂报表合同与专业销售模板基础** | **✅ foundation 完成；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10.1** | **Professional Renderer + Real Visual Acceptance** | **✅ 本地收口；exact-SHA CI 为发布证据** |
 | **M5.10.2** | **Executive Report Product Refinement & Hardening** | **✅ 本地产品收口；exact-SHA CI 为发布证据** |
-| **M5.10.3** | **Final Real E2E / stress / mutation / historical closure / exact-SHA final closure** | **⏳ NOT STARTED** |
+| **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **🟡 IMPLEMENTATION READY；DeepSeek Real / 用户最终人工验收 PENDING** |
+| **M5.10.4** | **语言与 QueryShape 收口** | **⏳ NOT STARTED** |
+| **M5.10.5** | **时间与事实呈现收口** | **⏳ NOT STARTED** |
+| **M5.10.6** | **模板兼容与错误 UX 收口** | **⏳ NOT STARTED** |
+| **M5.10.7** | **MVP 最终 Real E2E / 压力 / mutation / 历史 / exact-SHA 收口** | **⏳ NOT STARTED** |
 
 ## M5.10 — 复杂报表合同与专业销售模板基础
 
@@ -69,7 +73,19 @@
 - `sales_report` 与 `sales_executive_report` 均在公开目录中可显式选择，分别绑定固定 Renderer；跨模板 fallback、默认猜测或 LLM HTML authority 均禁止。
 - 两个销售合同共用单一 `SALES_QUERY_REQUIREMENTS`；事实链、DAX 与 VerifiedFactSet authority 未变化。
 - 三张参考图分别固定为 P0 hard contract、P1 layout intent、P2 style inspiration；图片不拥有事实或功能 authority。
-- M5.10.2 已完成正常产品功能收口：明确报表语义、FULL_AVAILABLE 能力交集、friendly/canonical 分离、紧凑信息架构、真实时间点、失败/取消补偿、资源生命周期、并发隔离、security 与 reserved Remote display metadata。M5.10.3 未启动，M5 FINAL=false。
+- M5.10.2 已完成当时定义的产品功能收口：明确报表语义、FULL_AVAILABLE 能力交集、friendly/canonical 分离、紧凑信息架构、真实时间点、失败/取消补偿、资源生命周期、并发隔离、security 与 reserved Remote display metadata。该 implementation completion 不覆盖随后人工验收重新发现的 semantic/state P0；M5 FINAL=false。
+
+## M5.10.3 — 人工验收后语义安全收口
+
+本阶段只关闭“用户问 A，系统静默执行 B”的 P0，不以理解覆盖率为成功标准。当前人工验收重新打开的类别为：
+
+1. **P0-A Silent QueryShape / Semantic Obligation Downgrade：** ranking/grouping 等明确义务可能被 Router 或后续覆盖降级为 SCALAR 并执行真实但答非所问的 DAX。
+2. **P0-B Historical Filter Contamination：** 历史字段 filter 在当前同字段切换为 grouping/ranking 且未重述 member 时仍被继承，形成错误 scope。
+3. **P0-C Correction / Pending Semantic State Leakage：** “不是销售额，是销售数量”“也不是华南，是华北”等纠正可能跳回旧 committed state、保留旧 slot，或未正确作用于 pending delta。
+
+允许正确完成、minimal clarification、no-match 或 fail closed；禁止 silent downgrade、partial execute 与错误 factual Memory commit。M5.10.2 历史 PASS 保留为当时实现证据，但不再用来宣称上述风险已关闭。Frozen 只表示 authority/architecture contract 不变，允许对违反 accepted invariant 的实现缺陷做原链最小修复。
+
+实现已在既有 Router → Grounding/Completeness → StateTransition/TurnRelation 单链内完成，无新 QueryShape、Planner、Memory、migration、Provider/runtime 或 report 变化。Focused 26 PASS；M5.9.4 51,200-case stress、跨 Retail/Education/Operations/Logistics/unknown holdout 与 full backend `2758 passed, 1 skipped` 均通过。最终 scoped Real 使用 deterministic acceptance language provider + 同会话 Local MCP，Rich/Logistics 共 11 场景、9 次真实 DAX，P0-A/unknown 均 ZERO DAX/Memory mutation，business/temp/session/worker residual=0。真实 DeepSeek E2E 与用户人工复测仍待完成，故本阶段不标记 FINAL PASS。
 
 ## M5 重建决策与历史状态
 
@@ -193,6 +209,11 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 | 统一前端 Envelope | ✅ 不增加跨 authority 的通用事件协议；M5.3 只在 ChatResponse/History 中增加 typed `presentation` 展示层 |
 | 前端结构化表格/图表数据 | ✅ M5.3 从 QueryResult + VerifiedFactSet 确定性投影单一 dataset；blocks 只引用字段和 row，不从 answer/audit 反解析 |
 | Remote MCP 管理员与授权条件 | 重新批准 Remote 后 |
+| mixed Chinese-English、全面 paraphrase 与 QueryShape 语言优化 | M5.10.4 |
+| “最近几个月”时间 UX、query scope / observed coverage 展示 | M5.10.5 |
+| template × model compatibility、frontend generic error UX | M5.10.6 |
+| Final MVP Real E2E / stress / mutation / historical / exact-SHA closure | M5.10.7 |
+| Settings UX、full-width UI、same-name PBIX、新业务指标/模板、Remote MCP、Entra、PostgreSQL、Deployment | M5.10.4+ 或后续独立批准 |
 
 ## M5.4 不可退化契约
 
@@ -226,7 +247,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - **M5.9** 已完成完整 queue/backpressure、20/50/100 concurrency、restart/fault matrix 与 soak；M5.9.1 仅收口 shutdown/enqueue 与 retry ownership，不降低 factual validation 或修改 Semantic/DAX/VerifiedFactSet authority。
 - **M5.8.4** 已完成现有语义链的跨语言绑定、runtime 成员验证、KEEP/REPLACE 与 Report/Data 状态收口；完整 A–E 复核、失败样本、最终门禁与 CI 条件见 [专项计划](milestones/m5/m5_8_4_cross_language_grounding_plan.md)。没有新建第二套模型/Planner/Catalog。
 - **M5.8.5** 已完成 Semantic Obligation Coverage、Canonical Shape Completeness、Result Semantic Inspection 与 Deterministic Query Scope；TopN tie/order、trend ASC、fresh 优先级和 table/chart shared order 均有永久回归，三 PBIX/双 Provider Real 与 2,304 stress 通过。
-- **M5.10** 必须晚于 M5.9，只增加固定专业销售报表模板和显式两模板选择。“简易模板”是 M5.7 优化后的现有 `sales_report.html`；“销售模板”使用确定性专业版式。两者都只消费 VerifiedFactSet/ReportData/ReportSpec，不允许 LLM 生成 HTML/CSS/SVG、查询或事实。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
+- **M5.10—M5.10.2** 已完成固定专业销售报表模板和显式两模板选择。“简易模板”与“销售模板”都只消费 VerifiedFactSet/ReportData/ReportSpec，不允许 LLM 生成 HTML/CSS/SVG、查询或事实。M5.10.3 只做 semantic/state P0 safety；M5.10.4—M5.10.7 按路线隔离。只有 M5.10.7 全部门禁与用户人工验收完成后才允许声明 M5 FINAL。
 - 每个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
 
 ### M5.6 执行合同与 Layout Gate（COMPLETE）
@@ -305,6 +326,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.8.2—M5.10.2 已完成本地收口；M5.8.5 factual correctness 与 M5.9.2 runtime 冻结。M5.10.2 发布以当前 main exact-SHA CI success 为证据；M5.10.3 NOT STARTED；M5 FINAL=false。
+- M5.8.2—M5.10.2 已完成当时定义的本地实现收口；M5.8.5 factual correctness 与 M5.9.2 runtime 的 architecture/authority boundary 冻结。post-manual acceptance 已重新打开 M5.10.3 semantic/state P0；M5.10.4+ NOT STARTED；M5 FINAL=false。
 
-*最后更新：2026-09-14 | M5.10.2 本地产品收口完成；M5.10.3 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；M5 FINAL=false*

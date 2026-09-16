@@ -3,11 +3,165 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-15 | M5.10.2 Manual Visual Fidelity FIX；M5.10.3 NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；M5.10.4+ NOT STARTED；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: GOV-5103-001
+  title: 旧 Final Closure 路线与绝对安全声明掩盖 post-manual semantic P0
+  category: GOV
+  first_detected_version: M5.10.3
+  symptom: 活跃治理文件仍把 M5.10.3 定义为 Final Real E2E closure，并把既有 Semantic Obligation/Shape Gate 表述成已绝对禁止显式语义静默丢失；真实人工业务验收随后发现 shape downgrade、same-field filter contamination 与 correction state leakage
+  local_evidence: clean main@82ba346 的 AGENTS/07/08/09/README/Spec 13 搜索结果仍包含旧 M5.10.3 定义；用户 post-M5.10.2 manual acceptance 明确重新打开三类 P0
+  authoritative_sources:
+  - title: M5.10.3 人工验收后语义安全收口用户指令
+    reason: 当前用户明确要求先校准 repository governance，再以 Zero Wrong-Question Execution 关闭 P0
+  - title: M5 Generalization and Acceptance Contract
+    reason: 历史自动化 PASS 不能替代后续 Real Browser 与用户人工验收证据
+  root_cause: M5.10.2 完成文档把当时 gate evidence 当作未来安全结论，并预先占用了 M5.10.3 Final Closure 名称；缺少 post-manual reopen 的 current-state 更新路径
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: G0 仅校准 active truth documents，保留 M5.10.2 历史 evidence；重新定义 M5.10.3 与 M5.10.4—M5.10.7 路线，明确 frozen 只指 authority/architecture contract，并新建 failure-first 专项计划
+  regression_tests:
+  - scripts/check_documentation_governance.py
+  - scripts/check_repository_safety.py
+  - scripts/check_ai_error_ledger.py
+  prohibited_patterns:
+  - 用历史 PASS 覆盖后续人工验收的新缺陷证据
+  - 把 authority frozen 写成 implementation bug-free
+  - 在 active truth documents 继续把 M5.10.3 定义为 Final Real E2E closure
+  prevention_rules:
+  - 人工验收重新打开缺陷时必须区分 implementation completion 与 acceptance reopening
+  - 当前路线、handoff、README capability 与专项计划必须同步反映最新事实
+  - Final MVP closure 只能在 M5.10.7 与用户人工验收后评估
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-15'
+    action: discovered
+    version: M5.10.3
+  - date: '2026-09-15'
+    action: mitigation
+    version: M5.10.3
+- id: ERR-5103-001
+  title: Router SCALAR fallback 覆盖 richer current-turn ranking obligation 并执行错误标量问题
+  category: ERR
+  first_detected_version: M5.10.3
+  symptom: 用户输入“哪三个产品最挣钱”时，语言草稿已形成 RANKING/Product/Top3，但 QuestionRouter 的无 cue SCALAR fallback 覆盖该 shape；系统执行 Total Sales scalar DAX 并提交 Memory v1
+  local_evidence: backend/tests/api/test_m5_10_3_semantic_safety.py 的 baseline production-path reproducer 记录 Router=SCALAR、draft=RANKING、canonical=SCALAR、DAX=1、Memory committed=true；修复后原句及两个 bounded metamorphic variants 均 clarification、DAX=0、Memory absent
+  authoritative_sources:
+  - title: M5.10.3 Zero Wrong-Question Execution contract
+    reason: 当前明确 ranking obligation 未闭合时只能正确回答、澄清或 fail closed，不能执行另一个 scalar 问题
+  - title: ADR-008 Business Semantic Grounding Authority
+    reason: Router 是 code-owned shape signal，但不能抹除当前 turn 已出现且仍需验证的 richer semantic obligation
+  root_cause: application layer 无条件用 QuestionRouter.query_shape 覆盖 QueryPlan draft shape；SCALAR 同时承担无 ranking cue 时的 fallback，因此被错误当作否定 richer obligation 的强证据；Canonical completeness 也没有校验 Grounding expected shape 与最终 plan shape 一致
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: SCALAR fallback 不再覆盖 richer current-turn draft shape；correction 不用 Router fallback 改写 inherited/pending shape；CanonicalShapeCompletenessGate 新增 expected_shape 一致性 firewall，mismatch 在 DAX 前 fail closed
+  regression_tests:
+  - backend/tests/unit/test_m5_10_3_semantic_safety.py
+  - backend/tests/api/test_m5_10_3_semantic_safety.py
+  - backend/tests/fixtures/m5_10_3_manual_semantic_regressions.yaml
+  - scripts/manual_smoke/m5_10_3_semantic_safety_real_acceptance.py
+  prohibited_patterns:
+  - 用 SCALAR fallback 无条件覆盖 richer current-turn QueryShape
+  - 用户 ranking obligation 丢失后继续执行合法 scalar DAX
+  - 用单句业务 phrase hardcode 修复 Router
+  prevention_rules:
+  - Router/draft/grounded/canonical shape reconciliation 必须保留 richer current-turn obligation
+  - 最终 CanonicalQueryPlan 必须与 grounded expected shape 一致，否则 ZERO DAX/QueryResult/factual Memory commit
+  - paraphrase 改善不确定时 clarification 优先于语义降级
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-15'
+    action: discovered
+    version: M5.10.3
+  - date: '2026-09-15'
+    action: mitigation
+    version: M5.10.3
+- id: ERR-5103-002
+  title: 历史 same-field filter 在当前 grouping/ranking 角色切换后继续污染查询范围
+  category: ERR
+  first_detected_version: M5.10.3
+  symptom: 已提交 Region=South 后询问“哪个区域卖得最好？”，StateTransition 继承旧 Region filter，生成只在 South 内按 Region 排名的真实 DAX 与答案
+  local_evidence: backend/tests/api/test_m5_10_3_semantic_safety.py baseline sequence 记录第二轮 canonical RANKING(Region) 同时保留 Region=华南；修复后 filters=[]、removed_inherited_filter_fields=[Region]、两轮各执行一次 DAX、Memory v2 不含旧 filter
+  authoritative_sources:
+  - title: M5.3.3 slot inheritance contract
+    reason: 当前明确表达优先；只继承真正省略且角色兼容的槽
+  - title: M5.10.3 Field-Role Transition Safety
+    reason: 历史 FILTER 字段被当前明确提升为 grouping/ranking 且未重述 member 时必须移除旧同字段 filter
+  root_cause: StateTransition 对 FOLLOW_UP filters 仅做整体 KEEP/REPLACE/CLEAR，没有比较历史 filter field 与当前明确 dimension/ranking field 的角色冲突
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Grounding 将非 pending/committed 恢复产生的 current dimension field 传入既有 StateTransition；GROUPED/RANKING 时只移除未在当前 filters 重述的同字段历史 filter，并在 execution audit 记录 removed_inherited_filter_fields
+  regression_tests:
+  - backend/tests/unit/test_m5_10_3_semantic_safety.py
+  - backend/tests/api/test_m5_10_3_semantic_safety.py
+  - scripts/manual_smoke/m5_10_3_semantic_safety_real_acceptance.py
+  prohibited_patterns:
+  - ranking/grouping 时无条件继承同字段历史 filter
+  - ranking 时清空全部 filters
+  - 清除当前 turn 已重新明确表达的同字段 member
+  prevention_rules:
+  - filter inheritance 必须检查 field-role compatibility
+  - 只移除角色冲突字段，保留无关兼容 filters 和当前重述 member
+  - transition audit 必须可见 inherited 与 removed field
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-15'
+    action: discovered
+    version: M5.10.3
+  - date: '2026-09-15'
+    action: mitigation
+    version: M5.10.3
+- id: ERR-5103-003
+  title: 否定纠正未提取 positive replacement 且 pending shape 优先级不足
+  category: ERR
+  first_detected_version: M5.10.3
+  symptom: “不是销售额，是销售数量”“也不是华南，是华北”被归为 UNSPECIFIED 或把完整否定句交给 Grounding；纠正可能回退旧 committed measure/member、丢失 pending ranking context，或执行错误 query
+  local_evidence: TurnRelation baseline classification 为 UNSPECIFIED；production-path correction sequence 无法稳定保留 ranking/Product/Top3 并依次替换 Total Quantity 与 North。发布前审计又证明一个已提交 SCALAR 后的“不是旧指标，是新指标，按实体排前三”会把当前 draft RANKING 清为空并错误执行 SCALAR；最终完整三轮、pending ranking 与 current correction ranking 均保持正确 canonical priority
+  authoritative_sources:
+  - title: M5.3.3 current expression and pending clarification contract
+    reason: current explicit correction 高于 compatible pending delta，pending 再高于 older committed Memory
+  - title: M5.10.3 Correction Contract
+    reason: clarification/failed turn 不得修改 factual Memory，positive replacement 未闭合时不得执行
+  root_cause: TurnRelation grammar 只识别句首“改/换”，未识别“不是 X，是 Y”；Grounding 收到含旧值的整句，shape precedence 又在 pending 前优先 committed，导致纠正目标和上下文来源都可能错误
+  failed_attempts:
+  - 第一次实现对 correction 无条件清空 Router effective shape，虽保护 pending/committed 不受 SCALAR fallback 覆盖，却同时丢失 current bounded draft 的 richer shape
+  repair_attempt_count: 2
+  final_fix: deterministic correction grammar 仅提取 positive replacement 作为 semantic_input，同时保持 relation=REPLACE；correction 保留非 SCALAR 的 current bounded draft shape，仅把 Router/weak draft 的 SCALAR fallback 置空，随后 effective shape 依次使用 current draft、compatible pending、committed；并仅在 pending dimension 唯一且当前未表达冲突维度时恢复它
+  regression_tests:
+  - backend/tests/unit/test_m5_10_3_semantic_safety.py
+  - backend/tests/api/test_m5_10_3_semantic_safety.py
+  - backend/tests/fixtures/m5_10_3_manual_semantic_regressions.yaml
+  - scripts/manual_smoke/m5_10_3_semantic_safety_real_acceptance.py
+  prohibited_patterns:
+  - 把否定项与 positive replacement 一起送入 semantic Grounding
+  - correction 跳过 compatible pending 直接回退旧 committed plan
+  - clarification/unknown correction 提交 factual Memory
+  prevention_rules:
+  - correction relation 与 correction semantic input 必须分别记录并确定性审计
+  - current explicit expression > compatible pending delta > compatible committed Memory
+  - unresolved correction 保持 ZERO DAX/QueryResult/Memory mutation
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-15'
+    action: discovered
+    version: M5.10.3
+  - date: '2026-09-15'
+    action: mitigation
+    version: M5.10.3
+  - date: '2026-09-16'
+    action: pre_release_closure
+    version: M5.10.3
 - id: ERR-5102-004
   title: 专业模板被通用自适应视觉策略与弱产品门禁退化为 Simple 换皮
   category: ERR

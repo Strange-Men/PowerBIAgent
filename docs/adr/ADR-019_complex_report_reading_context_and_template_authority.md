@@ -40,4 +40,4 @@
 
 - 正面：未来复杂模板在视觉实现前已有不可伪造的阅读上下文与 provenance；Local → Remote MCP 不要求推翻报表事实架构；简易模板不受影响。
 - 负面：真实刷新时间缺失时必须明确显示未知，完整覆盖可能因 runtime capability 不足而只有可证明子集，但必须审计缺失原因而不能伪造完整度。
-- 后续：M5.10.1 deterministic professional Renderer 与真实视觉验收、M5.10.2 product refinement/hardening 已完成本地收口；M5.10.3 Final Real E2E/stress/mutation/historical closure 尚未启动，M5 FINAL=false。
+- 后续：M5.10.1 deterministic professional Renderer 与真实视觉验收、M5.10.2 product refinement/hardening 已完成当时定义的本地收口；随后人工验收重新打开 semantic/state P0，当前为 M5.10.3 — 人工验收后语义安全收口。ADR-019 的 report authority decision 不变；M5.10.4+ 尚未启动，M5 FINAL=false。

@@ -1,6 +1,6 @@
 # 05 — Harness、测试与验收
 
-> **状态：** M5.10.2 Executive Report Product Refinement & Hardening 已本地产品收口；M5.8.5 correctness 与 M5.9.2 runtime 冻结。明确报表路由、FULL_AVAILABLE、presentation/time、两模板 lifecycle/cancellation/concurrency、Rich/Simple PBIX 与真实产品视觉已通过；发布以当前 main exact-SHA CI success 为证据。M5.10.3 NOT STARTED，M5 FINAL=false。
+> **状态：** M5.10.2 Executive Report Product Refinement & Hardening 的实现/报表视觉已完成；随后人工验收重新打开 semantic/state P0，当前为 M5.10.3 — 人工验收后语义安全收口。M5.8.5 correctness 与 M5.9.2 runtime 的 authority/architecture contract 冻结；旧 PASS 不能替代本轮 production-path、Real 与用户人工验收。M5.10.4+ NOT STARTED，M5 FINAL=false。
 > **关联 ADR：** ADR-004、ADR-005、ADR-007—ADR-019
 > **M5.10.1 visual/real evidence：** TEST_FIXTURE 18 scenarios × 4 viewports = 72/72；Rich PBIX full/bounded/region/multiple-filter 9/9 requirements，Simple PBIX 4 runtime-available requirements；所有 Simple/Executive normalized fact projections parity=true，LLM/fake result/artifact=0。
 > **M5.10.1 fresh gates：** report/template/API focused 96 PASS；backend 2650 PASS / 1 Real-only skip；Semantic Compatibility 775 PASS / 121 production files；Golden 11 PASS / 1 Real-only skip；frontend 91 PASS + typecheck/lint/build；Repository Safety 390、Architecture 138、Error Ledger 82、Documentation Governance、compileall PASS。18 fixture renderer p50 1.447ms、max 4.483ms、最大 HTML 30,801 bytes；Simple/Rich PBIX teardown 后 session residual=0、active workers=0。
@@ -267,4 +267,4 @@ D:\Conda\envs\PBIAgent\python.exe scripts\manual_smoke\m2_known_answer_multiturn
 
 ---
 
-*最后更新：2026-09-14 | M5.10.2 产品、Real、Browser 与完整门禁验收收口；M5.10.3 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；M5 FINAL=false*

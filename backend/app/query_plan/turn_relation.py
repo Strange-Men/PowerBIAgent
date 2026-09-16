@@ -21,6 +21,7 @@ class TurnRelationEvidence(BaseModel):
     explicit: bool = False
     matched_cue: str | None = None
     source: str = "none"
+    semantic_input: str | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -29,6 +30,11 @@ class TurnRelationEvidence(BaseModel):
         "start over", "new question", "ignore previous", "independently",
     )
     _REPLACE: ClassVar[re.Pattern[str]] = re.compile(r"^\s*(?:改成|改为|换成|换为|调整为|改看|换看|改|换)", re.IGNORECASE)
+    _CORRECTION: ClassVar[re.Pattern[str]] = re.compile(
+        r"^\s*(?P<cue>(?:也\s*)?不是\s*.+?\s*[，,；;]\s*(?:而\s*)?是)\s*"
+        r"(?P<replacement>.+?)\s*$",
+        re.IGNORECASE,
+    )
     _FOLLOW_PREFIX: ClassVar[re.Pattern[str]] = re.compile(r"^\s*(?:那|那么|其中|只看|再看|继续|然后)", re.IGNORECASE)
     _FOLLOW_SUFFIX: ClassVar[re.Pattern[str]] = re.compile(r"呢\s*[？?。.]?\s*$", re.IGNORECASE)
 
@@ -43,6 +49,15 @@ class TurnRelationEvidence(BaseModel):
                     matched_cue=cue,
                     source="deterministic_fresh_cue",
                 )
+        correction = cls._CORRECTION.search(user_input)
+        if correction:
+            return cls(
+                kind=TurnRelationKind.REPLACE,
+                explicit=True,
+                matched_cue=correction.group("cue").strip(),
+                source="deterministic_correction_cue",
+                semantic_input=correction.group("replacement").strip(),
+            )
         match = cls._REPLACE.search(user_input)
         if match:
             return cls(

@@ -133,6 +133,10 @@ local gates → whitelist staging → commit → push main → exact-SHA CI → 
 
 main CI 失败：只能 forward-fix 新 commit；禁止 reset/rebase/force push/rewrite history。
 
+用户启动并批准一个正常 Milestone / Fix 后，代码 Agent 在规定范围内完成实现和 fresh release gates，即默认自动执行白名单 staging → commit → push `main` → exact-SHA CI verification → remote audit；普通 commit/push 不再逐次等待用户追加授权。Tag、merge、rebase、force push、history rewrite、destructive reset/clean、branch deletion、跨下一 Milestone、改变产品 North Star 与删除 ownership 不明用户资源仍须用户单独明确批准。
+
+用户人工验收与代码发布候选必须分离。若当前合同要求最终人工验收，fresh gates 达标后仍可自动 push 取得 exact-SHA CI evidence，但用户确认前不得宣告 User Manual PASS、Milestone FINAL PASS 或 M5 FINAL。人工验收后发现问题时，只允许在同一版本范围内做可复现的最小 forward-fix、重新运行 affected gates、白名单 commit 并自动 push；禁止改写已推历史。
+
 ### m5/frontend 历史状态
 
 m5/frontend 已完成归档并删除。实验历史由 archive/m5-frontend-experimental-final → 6d1620a... 永久保存：
@@ -399,7 +403,9 @@ PowerBIAgent/
 - M5.9 只实现 MCP profiling、session reuse、cache、bounded concurrency、bounded queue/backpressure、20/50/100 concurrency、restart/fault/soak；禁止修改 Semantic/DAX/VerifiedFactSet authority。
 - M5.10 只实现固定专业销售模板与“简易模板/销售模板”显式选择，固定链为 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed renderer`；禁止 LLM 临场生成 HTML/CSS/SVG。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
 - M5.10.1 已以独立 `ExecutiveSalesReportRenderer` 开放第二模板；它必须继续复用共享 Sales requirements 与同一事实 snapshot，完整 Reading Context 位于数字前，任何缺项、跨模板 fallback 或事实 parity 变化均 fail closed。
-- M5.10.2 已固化 `REQUESTED` / `FULL_AVAILABLE` coverage、presentation-only projection、四类时间 provenance 与 report artifact compensation。weak LLM 不得缩减 FULL_AVAILABLE；friendly display 不得改写 canonical identity/value/scope/provenance；M5.10.3 未启动，M5 FINAL=false。
+- M5.10.2 已固化 `REQUESTED` / `FULL_AVAILABLE` coverage、presentation-only projection、四类时间 provenance 与 report artifact compensation。weak LLM 不得缩减 FULL_AVAILABLE；friendly display 不得改写 canonical identity/value/scope/provenance。
+- M5.10.3 — 人工验收后语义安全收口的三类 P0 已完成最小实现与自动/Real Local MCP scoped acceptance；DeepSeek Real 与用户最终人工复测仍待完成。当前明确义务丢失时必须在 DAX 前澄清或 fail closed；M5.10.4+ 不得提前实现，M5 FINAL=false。
+- 本协议中的“冻结”表示 authority boundary / architecture contract frozen，不表示 implementation bug-free。production-path reproducer 证明违反既有 invariant 时，允许在现有单一链内做最小 correctness 修复；不得借此创建第二 Planner/Grounding/Memory 或改动 M5.9.2 runtime、M5.8.5 factual/report authority。
 
 ### M5.7.1 Semantic Reliability / Regression Firewall 硬规则
 
@@ -411,4 +417,4 @@ PowerBIAgent/
 
 ---
 
-*最后更新：2026-09-14 | M5.10.2 本地产品收口完成；M5.10.3 NOT STARTED；main-only；m5/rebuild 冻结；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；main-only；m5/rebuild 冻结；M5 FINAL=false*

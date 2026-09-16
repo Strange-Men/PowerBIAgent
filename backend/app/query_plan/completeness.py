@@ -337,6 +337,7 @@ class SemanticObligationCoverageGate:
 
 class CanonicalShapeCompletenessError(ValueError):
     _REASONS: ClassVar[dict[str, ClarificationReason]] = {
+        "canonical_shape_obligation_mismatch": ClarificationReason.UNSUPPORTED_SEMANTIC_REQUEST,
         "canonical_shape_measure_required": ClarificationReason.MEASURE_UNRESOLVED,
         "canonical_shape_entity_list_dimension_required": ClarificationReason.DIMENSION_UNRESOLVED,
         "canonical_shape_grouped_dimension_required": ClarificationReason.DIMENSION_UNRESOLVED,
@@ -377,9 +378,15 @@ class CanonicalShapeCompletenessGate:
     """Prove shape-specific canonical slots before deterministic DAX."""
 
     def validate(
-        self, plan: CanonicalQueryPlan, *, catalog: SemanticCatalog | None = None,
+        self,
+        plan: CanonicalQueryPlan,
+        *,
+        catalog: SemanticCatalog | None = None,
+        expected_shape: QueryShape | None = None,
     ) -> CanonicalShapeCompletenessReport:
         shape = plan.query_shape or QueryShape.SCALAR
+        if expected_shape is not None and shape != expected_shape:
+            self._fail("canonical_shape_obligation_mismatch")
         if shape != QueryShape.ENTITY_LIST and not plan.measures:
             self._fail("canonical_shape_measure_required")
         required: tuple[str, ...]

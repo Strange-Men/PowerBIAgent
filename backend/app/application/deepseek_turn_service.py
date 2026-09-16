@@ -381,6 +381,7 @@ class LLMTurnService:
             "memory_committed": False,
         }
         relation_evidence = TurnRelationEvidence.classify(message)
+        semantic_input = relation_evidence.semantic_input or message
         semantic_audit["turn_relation_evidence"] = relation_evidence.model_dump(
             mode="json"
         )
@@ -746,10 +747,44 @@ class LLMTurnService:
                 collector=collector,
             )
 
+        grounding_query_shape = (
+            question_routing.query_shape if question_routing is not None else None
+        )
+        draft_query_shape = query_plan.query_shape
+        if relation_evidence.semantic_input is not None:
+            # A correction changes slots inside the current/pending/committed
+            # analysis.  Preserve a richer current draft, but never let the
+            # Router's scalar fallback erase pending or committed shape.
+            grounding_query_shape = (
+                draft_query_shape
+                if draft_query_shape not in {None, QueryShape.SCALAR}
+                else None
+            )
+        elif (
+            grounding_query_shape == QueryShape.SCALAR
+            and draft_query_shape not in {None, QueryShape.SCALAR}
+        ):
+            # SCALAR is the Router's no-cue default.  It cannot erase a richer
+            # current-turn language obligation; Grounding and completeness must
+            # still prove every richer-shape slot before execution.
+            grounding_query_shape = draft_query_shape
         if question_routing is not None:
-            query_plan = query_plan.model_copy(update={
-                "query_shape": question_routing.query_shape,
-            })
+            query_plan = query_plan.model_copy(
+                update={"query_shape": grounding_query_shape}
+            )
+        semantic_audit["query_shape_reconciliation"] = {
+            "router": (
+                question_routing.query_shape.value
+                if question_routing is not None
+                and question_routing.query_shape is not None
+                else None
+            ),
+            "draft": draft_query_shape.value if draft_query_shape else None,
+            "effective": (
+                grounding_query_shape.value if grounding_query_shape else None
+            ),
+            "correction": relation_evidence.semantic_input is not None,
+        }
 
         template_grounding = DEFAULT_TEMPLATE_CATALOG.ground(
             message if intent.intent == IntentType.REPORT_GENERATION else "",
@@ -807,6 +842,7 @@ class LLMTurnService:
         # QueryPlan LLM 在此仅是语言草稿；canonical semantic slots 只能由
         # validated catalog + runtime members + deterministic transition 决定。
         catalog = None
+        canonical_shape_obligation: QueryShape | None = None
         if not self.powerbi.is_mock:
             try:
                 with measure_performance("semantic_catalog_build"):
@@ -847,16 +883,14 @@ class LLMTurnService:
 
                 with measure_performance("grounding"):
                     grounding = await grounding_service.ground(
-                        message,
+                        semantic_input,
                         intent,
                         query_plan,
                         semantic_committed,
                         _member_lookup,
                         pending=pending_clarification,
                         query_shape=(
-                            question_routing.query_shape
-                            if question_routing is not None
-                            else None
+                            grounding_query_shape
                         ),
                     )
                 semantic_audit["grounded_delta"] = (
@@ -865,7 +899,7 @@ class LLMTurnService:
                     else None
                 )
                 coverage = SemanticObligationCoverageGate().inspect(
-                    user_input=message,
+                    user_input=semantic_input,
                     outcome=grounding,
                     catalog=catalog,
                     relation=relation_evidence,
@@ -958,13 +992,24 @@ class LLMTurnService:
                     explicit_slots.append("filters")
                 if grounding.member_results:
                     explicit_slots.append("filters")
+                current_dimension_fields: set[str] = set()
                 for item in grounding.object_results:
                     if item.status == GroundingStatus.NOT_MENTIONED:
                         continue
                     if item.role == "measure":
                         explicit_slots.append("measure")
                     elif item.role in {"dimension", "ranking_dimension"}:
-                        explicit_slots.append("dimensions")
+                        if (
+                            item.canonical_object is not None
+                            and item.method not in {
+                                "pending_unique_shape_dimension",
+                                "committed_unique_shape_dimension",
+                            }
+                        ):
+                            explicit_slots.append("dimensions")
+                            current_dimension_fields.add(
+                                item.canonical_object.canonical_name
+                            )
                     elif item.role == "date_field":
                         explicit_slots.append("time")
                 semantic_audit.update({
@@ -1106,6 +1151,7 @@ class LLMTurnService:
                     )
                 if transition_delta is None:
                     raise ValueError("semantic_grounding_delta_missing")
+                canonical_shape_obligation = transition_delta.query_shape
                 inheritance = TurnInheritancePolicy.decide(
                     message,
                     intent,
@@ -1148,6 +1194,7 @@ class LLMTurnService:
                         transition_base,
                         canonical_template_key=template_grounding.canonical_key,
                         inheritance_mode=inheritance.mode,
+                        current_dimension_fields=current_dimension_fields,
                     )
                 query_plan = transition.query_plan
                 inherited_slots = [
@@ -1164,15 +1211,28 @@ class LLMTurnService:
                 ]
                 if (
                     transition_base is not None
+                    and bool(transition_base.filters)
                     and not grounded_delta.filters
                     and not grounded_delta.clear_filters
+                    and bool(query_plan.filters)
                 ):
                     inherited_slots.append("filters")
+                previous_filter_fields = {
+                    str(item.get("field"))
+                    for item in (
+                        transition_base.filters if transition_base is not None else []
+                    )
+                    if isinstance(item, dict) and item.get("field")
+                }
+                final_filter_fields = {item.field for item in query_plan.filters}
                 canonical_plan_hash = hashlib.sha256(
                     query_plan.model_dump_json().encode("utf-8")
                 ).hexdigest()
                 semantic_audit.update({
                     "inherited_slots": sorted(set(inherited_slots)),
+                    "removed_inherited_filter_fields": sorted(
+                        previous_filter_fields - final_filter_fields
+                    ),
                     "canonical_plan_hash": canonical_plan_hash,
                     "inheritance_decision": inheritance.model_dump(mode="json"),
                 })
@@ -1246,7 +1306,9 @@ class LLMTurnService:
         if not self.powerbi.is_mock:
             try:
                 shape_report = CanonicalShapeCompletenessGate().validate(
-                    query_plan, catalog=catalog
+                    query_plan,
+                    catalog=catalog,
+                    expected_shape=canonical_shape_obligation,
                 )
                 semantic_audit["canonical_shape_completeness"] = (
                     shape_report.model_dump(mode="json")

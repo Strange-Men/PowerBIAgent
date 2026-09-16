@@ -1,6 +1,6 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5—M5.10.2 已完成本地产品收口；发布以当前 main exact-SHA CI success 为证据；M5.10.3 NOT STARTED；M5 FINAL=false
+> **状态：** M5.5—M5.10.2 implementation complete；随后人工验收重新打开 semantic/state P0。当前为 M5.10.3 — 人工验收后语义安全收口；M5.10.4+ NOT STARTED；M5 FINAL=false
 > **适用范围：** M5.5—M5.10 长期合同；`m5/rebuild` 是历史重建/发布追溯分支，M5.8.6 后正式开发线为 `main`
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
@@ -254,17 +254,17 @@ M5.9.3 只允许修复通用 Query Shape 证据、显式月范围 deterministic 
 
 ### M5.9.4 — Business Language Stress 与泛化验收
 
-M5.9.4 状态为 PLANNED / NOT STARTED。它才负责 covering-array/property/metamorphic generation、数万至十万级 deterministic semantic harness、大规模业务自然语言组合压力与 DeepSeek-only Real stress。Kimi 不重复 Real token 压力测试，只保留 provider abstraction/mock/contract。不得在 M5.9.3 中提前实现。
+M5.9.4 状态为 COMPLETE。固定 seed 的 pairwise + bounded t-way harness 已覆盖 51,200 deterministic cases 与 DeepSeek-only 108-case Real stress；Kimi 只保留 provider abstraction/mock/contract。该历史完成证据不替代 post-M5.10.2 人工验收重新打开的 M5.10.3 P0，也不得被用作“所有自然语言均安全”的绝对声明。
 
 ### M5.10 — 复杂报表合同与专业销售模板
 
-M5.10 foundation、M5.10.1 与 M5.10.2 已依次完成本地收口：
+M5.10 foundation、M5.10.1 与 M5.10.2 已依次完成当时定义的本地实现收口：
 
 - `sales_report` 与 `sales_executive_report` 都已通过后端公开目录供用户显式选择，并各自绑定 fixed Renderer；
 - 所有 COMPLEX 模板在 Renderer 前必须提供完整 Reading Context 与 immutable data snapshot；
 - 简易/专业 Sales contract 共享同一 `SALES_QUERY_REQUIREMENTS` authority 与 factual snapshot；
 - M5.10.2 固化明确报表路由、typed `REQUESTED`/`FULL_AVAILABLE`、presentation-only projection、四类时间 provenance、artifact compensation 与两模板生命周期/并发隔离；
-- M5.10.3 Final Real E2E/stress/mutation/historical closure 尚未启动，M5 FINAL=false。
+- post-M5.10.2 人工验收随后重新打开 three-category semantic/state P0；历史 implementation PASS 不覆盖新缺陷证据。
 
 固定链为：
 
@@ -275,7 +275,11 @@ VerifiedFactSet
 → deterministic fixed HTML renderer
 ```
 
-LLM 不拥有 HTML layout、factual、coverage 或 query authority，不得临场生成 HTML/CSS/SVG。专业销售模板只显示 runtime capability、registry 与 VerifiedFactSet 共同证明的 sales-specific section；没有 Forecast/Goal/Pipeline 等事实时禁止伪造、占位或以零值代替。M5.10.2 产品收口不等于 M5 FINAL；只有后续 M5.10.3 Final Real E2E/stress/mutation/historical closure 与 exact-SHA final closure 全部门禁完成后才可声明 `M5 FINAL`。
+LLM 不拥有 HTML layout、factual、coverage 或 query authority，不得临场生成 HTML/CSS/SVG。专业销售模板只显示 runtime capability、registry 与 VerifiedFactSet 共同证明的 sales-specific section；没有 Forecast/Goal/Pipeline 等事实时禁止伪造、占位或以零值代替。
+
+人工验收后稳定化路线固定为：M5.10.3 人工验收后语义安全收口（P0 wrong-question execution）；M5.10.4 语言与 QueryShape 收口；M5.10.5 时间与事实呈现收口；M5.10.6 模板兼容与错误 UX 收口；M5.10.7 MVP 最终 Real E2E/stress/mutation/historical/exact-SHA 收口。M5.10.3 只允许在现有 Router/Grounding/Completeness/StateTransition/Pending 链内做 invariant-preserving 最小修复；M5.10.4—M5.10.7 不得提前实现。只有 M5.10.7 门禁与用户人工验收完成后才可评估 `M5 FINAL=true`。
+
+“Frozen”在本合同中统一表示 authority boundary / architecture contract frozen。它不等于 implementation bug-free；production-path reproducer 证明实现违反 accepted invariant 时允许修复，但不得创建第二套 Planner、Grounding、Memory、runtime 或 factual authority。
 
 ## 四、Generalization Gate
 
@@ -395,4 +399,4 @@ M5.8.2 已完成 Question Router、八类通用 Query Shape、shape-specific cla
 
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-09-14 M5.10.2 本地产品收口；M5.10.3 NOT STARTED；M5 FINAL=false*
+*创建日期：2026-08-26 | 最后更新：2026-09-16 M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；M5 FINAL=false*

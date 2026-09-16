@@ -1,0 +1,135 @@
+version: 1
+milestone: M5.10.3
+cases:
+  - id: ranking_profit_top3
+    user_expression: 哪三个产品最挣钱
+    previous_committed: null
+    pending_context: null
+    expected_shape_or_clarification: [ranking, clarification_required]
+    current_slots: [measure, dimension, ranking]
+    inherited_slots: []
+    replaced_slots: []
+    cleared_slots: []
+    terminal_state: clarification_required
+    dax_executed: false
+    memory_committed: false
+  - id: ranking_sales_highest_three
+    user_expression: 销售额最高的三个产品
+    previous_committed: null
+    pending_context: null
+    expected_shape_or_clarification: [ranking]
+    current_slots: [measure, dimension, ranking]
+    inherited_slots: []
+    replaced_slots: []
+    cleared_slots: []
+    terminal_state: completed
+    dax_executed: true
+    memory_committed: true
+  - id: grouped_product_sales
+    user_expression: 各产品销售额是多少？
+    previous_committed: null
+    pending_context: null
+    expected_shape_or_clarification: [grouped]
+    current_slots: [measure, dimension]
+    inherited_slots: []
+    replaced_slots: []
+    cleared_slots: []
+    terminal_state: completed
+    dax_executed: true
+    memory_committed: true
+  - id: region_sort_without_bound
+    user_expression: 销售额按区域排一下
+    previous_committed: null
+    pending_context: null
+    expected_shape_or_clarification: [ranking, clarification_required]
+    current_slots: [measure, dimension, ranking]
+    inherited_slots: []
+    replaced_slots: []
+    cleared_slots: []
+    terminal_state: clarification_required
+    dax_executed: false
+    memory_committed: false
+  - id: recent_months_shipment_trend
+    user_expression: 最近几个月的运单趋势
+    previous_committed: null
+    pending_context: null
+    expected_shape_or_clarification: [trend, clarification_required]
+    current_slots: [measure, time, dimension]
+    inherited_slots: []
+    replaced_slots: []
+    cleared_slots: []
+    terminal_state: clarification_required
+    dax_executed: false
+    memory_committed: false
+  - id: mixed_top5_customer_sales
+    user_expression: Top 5 客户按 Sales
+    previous_committed: null
+    pending_context: null
+    expected_shape_or_clarification: [ranking, clarification_required]
+    current_slots: [measure, dimension, ranking]
+    inherited_slots: []
+    replaced_slots: []
+    cleared_slots: []
+    terminal_state: clarification_required
+    dax_executed: false
+    memory_committed: false
+  - id: mixed_product_sales_top3
+    user_expression: Product 按销售额排前三
+    previous_committed: null
+    pending_context: null
+    expected_shape_or_clarification: [ranking]
+    current_slots: [measure, dimension, ranking]
+    inherited_slots: []
+    replaced_slots: []
+    cleared_slots: []
+    terminal_state: completed
+    dax_executed: true
+    memory_committed: true
+  - id: english_top3_products_sales
+    user_expression: top 3 products by sales
+    previous_committed: null
+    pending_context: null
+    expected_shape_or_clarification: [ranking, clarification_required]
+    current_slots: [measure, dimension, ranking]
+    inherited_slots: []
+    replaced_slots: []
+    cleared_slots: []
+    terminal_state: clarification_required
+    dax_executed: false
+    memory_committed: false
+  - id: mixed_south_region_sales
+    user_expression: 华南 region 的 sales
+    previous_committed: null
+    pending_context: null
+    expected_shape_or_clarification: [scalar, clarification_required]
+    current_slots: [measure, filter]
+    inherited_slots: []
+    replaced_slots: []
+    cleared_slots: []
+    terminal_state: clarification_required
+    dax_executed: false
+    memory_committed: false
+  - id: correction_measure
+    user_expression: 不是销售额，是销售数量
+    previous_committed: [measure, filter, dimension, ranking]
+    pending_context: compatible_or_absent
+    expected_shape_or_clarification: [ranking]
+    current_slots: [measure, correction]
+    inherited_slots: [filter, dimension, ranking]
+    replaced_slots: [measure]
+    cleared_slots: []
+    terminal_state: completed
+    dax_executed: true
+    memory_committed: true
+  - id: correction_region
+    user_expression: 也不是华南，是华北
+    previous_committed: [measure, filter, dimension, ranking]
+    pending_context: compatible_or_absent
+    expected_shape_or_clarification: [ranking]
+    current_slots: [filter, correction]
+    inherited_slots: [measure, dimension, ranking]
+    replaced_slots: [filter]
+    cleared_slots: []
+    terminal_state: completed
+    dax_executed: true
+    memory_committed: true

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Collection
 
 from pydantic import BaseModel, Field
 
@@ -205,6 +206,7 @@ class StateTransitionService:
         *,
         canonical_template_key: str | None = None,
         inheritance_mode: InheritanceMode = InheritanceMode.FOLLOW_UP,
+        current_dimension_fields: Collection[str] = (),
     ) -> StateTransitionResult:
         previous_measures = list(committed.measures) if committed else []
         previous_dimensions = list(committed.dimensions) if committed else []
@@ -214,6 +216,7 @@ class StateTransitionService:
         previous_time = self._previous_time(committed)
         previous_sort = committed.sort if committed else None
         previous_top_n = committed.top_n if committed else None
+        query_shape = delta.query_shape or draft.query_shape
 
         inherit_omitted = inheritance_mode != InheritanceMode.FRESH_QUESTION
 
@@ -261,6 +264,16 @@ class StateTransitionService:
             filters = []
             filter_transitions.append(FilterTransition.CLEAR)
         else:
+            current_filter_fields = {
+                item.field for item in (delta.filters or [])
+            }
+            if query_shape in {QueryShape.GROUPED, QueryShape.RANKING}:
+                promoted_fields = set(current_dimension_fields) - current_filter_fields
+                for field in promoted_fields:
+                    before = len(filters)
+                    filters = [item for item in filters if item.field != field]
+                    if len(filters) != before:
+                        filter_transitions.append(FilterTransition.REMOVE)
             for field in delta.remove_filter_fields:
                 before = len(filters)
                 filters = [item for item in filters if item.field != field]
@@ -328,7 +341,6 @@ class StateTransitionService:
                 if inherit_omitted or previous_top_n is None else SlotTransition.CLEAR
             )
 
-        query_shape = delta.query_shape or draft.query_shape
         if top_n is not None and sort is None:
             raise ValueError("canonical_top_n_requires_sort")
         if not measures and query_shape != QueryShape.ENTITY_LIST:

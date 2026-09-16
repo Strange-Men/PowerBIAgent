@@ -2,7 +2,23 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.10.3] — 2026-09-16（人工验收后语义安全收口；发布候选）
+
+- 修复 Router 的 SCALAR fallback 覆盖 richer current-turn QueryShape obligation；Canonical Shape Completeness 额外验证 grounded expected shape，无法闭合时在 DAX 前澄清。
+- 修复历史 filter 字段被当前明确提升为 grouping/ranking 时的同字段污染；只移除未在当前 turn 重述的冲突 filter，并输出 `removed_inherited_filter_fields` audit。
+- 新增 deterministic correction grammar，只将 positive replacement 送入 Grounding；shape 继承优先 current/draft → compatible pending → committed，支持 pending ranking 后续补齐。
+- 新增 11 条人工原话 corpus、26 条 focused regression、跨 Retail/Education/Operations/Logistics/unknown holdout matrix，以及 scoped deterministic-language + Real Local MCP acceptance。最终 Real run 覆盖 11 个场景、9 次真实 DAX，business/temp/session/worker residual=0。
+- Fresh local gates：backend `2758 passed, 1 skipped`；Semantic Compatibility `775 passed / 123 production files`；Golden `11 passed / 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Repository Safety 403、AI Error Ledger 90、Architecture 140、Documentation/Artifact Governance、compileall 与 diff-check PASS。
+- 当前进程未配置 DeepSeek key，且本轮禁止读取 `.env`，因此 DeepSeek-backed Real E2E 明确 BLOCKED；用户最终人工复测 PENDING。Settings.version=M5.10.3；发布以当前 main exact-SHA CI success 为证据。M5.10.3 不是 FINAL PASS，M5.10.4+ NOT STARTED，M5 FINAL=false。
+
 ## [M5.10.2] — 2026-09-15（Executive Report Product Refinement, Hardening & Visual Fidelity FIX）
+
+### Post-M5.10.2 manual acceptance reopening（2026-09-15）
+
+- M5.10.2 的 implementation/report visual completion 与当时 PASS 证据保持为历史事实；后续真实人工业务验收重新发现三类 P0：ranking/grouping 等显式义务可能静默降级执行、历史 same-field filter 可能污染新的 grouping/ranking、correction 可能错误回落到 stale pending/committed state。
+- M5.10.3 已重新定义为 **人工验收后语义安全收口**，唯一目标是 **Zero Wrong-Question Execution**。无法安全解释时允许 minimal clarification/no-match/fail closed，禁止执行另一个合法问题。
+- 原 Final Real E2E / stress / mutation / historical / exact-SHA closure 顺延到 M5.10.7；M5.10.4—M5.10.6 分别承接 Language & QueryShape、Time & Truth Presentation、Template Compatibility & Error UX。M5 FINAL remains false。
+- 本段是当前状态修正，不重写下方 M5.10.2 历史实现记录；G0 governance 完成前不修改 production/test code。
 
 - **Manual Visual Fidelity FIX：** 将 `sales_executive_report` 收紧为 repository-owned fixed executive dashboard template；新增不可变 presentation contract，固定独立 theme、section order、12-column grid、KPI 图标/色阶、visual/table mapping 与 responsive variants。runtime facts 只填预定义 slot，Simple 继续既有 adaptive presentation。
 - **Reference authority：** `01` 保持 P0 信息完整性 authority；`02` 提升为 P1 professional layout authority；`03` 提升为 P1 professional visual-language authority。三者仍不拥有事实、DAX、语义或指标 authority，未引入参考图中的同比/环比/预测/目标/集中度/AI 洞察。

@@ -7,9 +7,9 @@
 
 PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent MVP。
 
-当前版本：**M5.10.2 FIX — Executive Template Visual Fidelity**。`sales_executive_report` 已收紧为 repository-owned fixed executive dashboard template：固定 theme、12-column grid、section order、KPI icon/tone、visual/table mapping 与 responsive variants，runtime facts 只填预定义 slot。02/03 参考图分别成为 P1 layout/visual-language presentation authority；北京时间、generic currency 与 integer rank 已收口。Simple/Rich PBIX、DeepSeek-only 精确短语、真实 Chrome 与两模板事实 parity 已验证。发布以当前 main exact-SHA Full Validation (Windows) success 为证据。M5.10.3 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.10.3 — 人工验收后语义安全收口**。M5.10.2 的报表实现与视觉收口已经完成，但随后人工业务验收重新发现了三类 P0 语义/状态安全缺陷：QueryShape/semantic obligation 静默降级、历史同字段 filter 污染新 grouping/ranking、correction/pending state 泄漏。此前 PASS 是当时实现证据，不代表这些缺陷不存在；M5 FINAL=false。
 
-当前开发阶段：**M5.10.2 FIX — 专业销售模板视觉忠实度修复（本地产品收口完成；发布以当前 main exact-SHA CI success 为证据）**。本轮不实现 Remote MCP、新业务指标或 M5.10.3；M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结。
+当前开发阶段：**M5.10.3 — 人工验收后语义安全收口**。Zero Wrong-Question Execution 的最小实现、永久回归、cross-domain、全量自动门禁与 deterministic-language + Real Local MCP scoped acceptance 已通过；真实 DeepSeek E2E 因当前进程无配置 key 而 BLOCKED，用户最终人工复测仍待完成，因此不是 FINAL PASS。M5.9.2 runtime architecture、M5.8.5 factual authority 与 report factual authority 的架构合同保持冻结；这里的 frozen 只表示 authority boundary / architecture contract 不变，不表示 implementation bug-free。本轮不实现 M5.10.4+、Remote MCP、新业务指标或报表视觉。
 
 - M0—M1 已由 Tag `m1.7.2-m0-m1正式封板` 封板。
 - M0—M2 已由 Tag `m2.6.4-m0-m2-final-seal` 在 `70748da` 正式封板；M2 Local MCP + Power BI Desktop 真实链保持不变，Remote MCP 生产化继续 Deferred。
@@ -58,7 +58,8 @@ PowerBIAgent 是供公司内部少量用户使用的 Power BI 数据分析 Agent
 - **M5.8.4** 已在现有 ModelSemanticContext/SemanticCatalog/Grounding 内完成跨语言对象/成员绑定与 canonical KEEP/REPLACE 优化；report template choice 不等于本轮 report intent。LLM 仅在 runtime 已证明存在的候选 ID 中解释语言，不能产生新对象或事实。`41b6e0b` 主开发后，首次 CI [#33455159267](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33455159267) 因测试 reference date 漂移失败；`a975310` 修复测试时钟后，CI [#33457056546](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33457056546) completed/success；`3e3d8ac` 最终治理 CI [#33580808379](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33580808379) exact-SHA completed/success，M5.8.4 COMPLETE。M5.9/M5.10 不启动。
 - **M5.8.5** 已在现有链加入四个通用 correctness Gate；unknown/known+unknown member、残缺 shape、Result 语义不一致均在事实/执行边界 fail closed，TopN tie-break、trend ASC、table/chart 共序与完整 effective scope 均由确定性合同约束。Rich Sales、M3 Test、Logistics Test 的双 Provider Real 与 A→B→C→A 隔离通过；无第二套 authority、无 migration、无 M5.9/M5.10 工作。**M5.8.5 COMPLETE。**
 - **M5.10.1** 已完成独立 Professional Sales Renderer、双模板公开显式选择、Simple/Executive factual parity、Simple/Rich PBIX 与 18×4 Chrome visual/geometry acceptance；四项 mutation sanity 均可先红后绿。M5.10 foundation authority 未改变，M5.10.2 NOT STARTED。**M5 FINAL=false。**
-- **M5.10.2** 已完成 Report Request 路由、`FULL_AVAILABLE`、专业 presentation projection、provenance 时间分离与 report-specific hardening；Manual Visual Fidelity FIX 进一步冻结 fixed template contract、02/03 presentation authority、3-column structure、KPI template assets、18 点完整标签、北京时间、generic currency 与 integer rank。Rich/Simple PBIX、DeepSeek-only exact phrase、真实 Chrome 与 fact parity PASS。M5.10.3 NOT STARTED，**M5 FINAL=false。**
+- **M5.10.2** 已完成 Report Request 路由、`FULL_AVAILABLE`、专业 presentation projection、provenance 时间分离与 report-specific hardening；Manual Visual Fidelity FIX 进一步冻结 fixed template contract、02/03 presentation authority、3-column structure、KPI template assets、18 点完整标签、北京时间、generic currency 与 integer rank。Rich/Simple PBIX、DeepSeek-only exact phrase、真实 Chrome 与 fact parity PASS；该历史完成证据不覆盖后续 post-manual reopen。**M5 FINAL=false。**
+- **M5.10.3 — 人工验收后语义安全收口** 已完成三类 P0 的最小实现与自动/Real Local MCP 验证：shape/obligation downgrade 在 DAX 前澄清、same-field historical filter 按当前角色移除、correction 使用 positive replacement 并保持 pending/committed 优先级。DeepSeek Real 与用户最终人工复测仍待完成；不声明 FINAL PASS。M5.10.4+ NOT STARTED，**M5 FINAL=false。**
 
 当前真实主链：
 
@@ -121,10 +122,10 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 26. M5.4.1：Codex acceptance、pytest integration、browser/Real Smoke/MCP/report tests 创建的 conversation/report/file 必须携带可审计 test ownership（至少 test run identity 与 automation owner），在 `finally` 中通过正式 API/repository cleanup 并验证零残留。cleanup failure、pending intent、orphan 或本轮 test SQLite namespace residual 必须使 Gate FAIL。
 27. M5.4.1：test cleanup 只能处理已证明 automation-owned 的资源；标题、问题文本或“看起来像测试”不是 ownership 证据。不得删除无法确认 ownership 的用户资源；M5.5 继续 Deferred。
 28. M5.4.2：新开发线唯一基线为 `cab40b0`；原 M5.5/M5.5.1 只保留为实验历史与单项设计参考。任何新能力必须重新实现、重新回归并重新 Real Acceptance，旧 PASS 不得移植为新线证据。
-29. M5.5—M5.10 必须依次隔离为 Semantic correctness、Presentation/Localization/Resource UX truth、简易报表视觉与模板必选、LLM Provider/双模型、MCP performance/resilience、固定专业销售报表模板与两模板选择。一个 milestone 禁止同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle 多个域。
+29. M5.5—M5.10.2 已按 Semantic correctness、Presentation/Localization/Resource UX truth、简易报表视觉与模板必选、LLM Provider/双模型、MCP performance/resilience、固定专业销售报表模板与两模板选择分域完成。后续稳定化继续按 M5.10.3 人工验收后语义安全收口、M5.10.4 语言与 QueryShape 收口、M5.10.5 时间与事实呈现收口、M5.10.6 模板兼容与错误 UX 收口、M5.10.7 最终收口隔离推进。一个 milestone 禁止同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle 多个域。
 30. explicit unresolved semantic requirement 必须 clarification/no-match 且 ZERO DAX；不得把未知 member/filter（例如“火星区”）静默降级为全国或无筛选查询。当前明确表达与 runtime member authority 优先于旧 Memory。
 31. PowerBIAgent 不是 Sales Agent。影响泛化的版本必须至少验证 Sales/Retail、Education、Inventory/Operations，并以未知业务模型做最终 holdout；生产代码不得在正式 model-scoped glossary/test fixture 之外写死业务字段、member 或答案。
-32. 每轮必须执行 `Spec → Failure reproducer → Regression tests → Minimal implementation → Focused Real → Cross-domain → Full gates → User manual acceptance → commit`。自动化通过数不能替代 Real Browser/人工验收；只有 M5.10 全部门禁完成后才允许声明 `M5 FINAL`。完整合同见 `docs/specs/13_m5_generalization_and_acceptance_contract.md`。
+32. 每轮必须执行 `Spec → Failure reproducer → Regression tests → Minimal implementation → Focused Real → Cross-domain → Full gates → User manual acceptance → commit`。自动化通过数不能替代 Real Browser/人工验收；post-M5.10.2 人工验收已重新打开 stabilization，只有 M5.10.7 全部门禁完成后才允许声明 `M5 FINAL`。完整合同见 `docs/specs/13_m5_generalization_and_acceptance_contract.md`。
 33. M5.6 必须以 conversation/report 共用 Portal/floating layer 解决 action menu 裁切，并以 viewport-aware above/below positioning 避开 scroll container、scrollbar 与 stacking context；Settings Resource Manager 必须有 nested scroll contract 与 sticky 或 scrollable action toolbar。正式 Layout Gate 覆盖 first/middle/last row、scroll top/middle/bottom、100%/125% zoom、768/1080/1440 viewport height、Sidebar scroll、Settings nested scroll，并证明 destructive action 始终可达、floating menu 永不裁切。M5.6 不得修改 Grounding/DAX/MCP authority。
 34. M5.10 晚于 M5.9，新增“简易模板”与“销售模板”的显式选择；两者都必须遵守 `VerifiedFactSet → ReportData/ReportSpec → template_key → deterministic fixed HTML renderer`。专业销售模板可使用 sales-specific section，但不得伪造 Forecast/Goal/Pipeline，LLM 不拥有 HTML layout、query 或 factual authority。
 35. M5.6：`canonical_name`、runtime object identity、QueryResult/VerifiedFactSet value 与 provenance 永不因本地化改变；`display_name` 只属于 presentation。Localization key 至少包含 semantic model、object identity、object type、locale 与 schema identity，schema/object identity 变化必须使旧 display cache 失效；LLM 只可翻译 runtime 已证明存在的 bounded object candidate。
@@ -137,7 +138,7 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 42. M5.8：只允许 `OpenAICompatibleLLMProvider`、`LLMModelProfile`、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection；共用同一 authority/regression contract，现已完成并冻结。
 43. M5.8.1：只允许安全 profiling、application-owned Local MCP session reuse、tool/discovery/probe/schema/member 短 TTL bounded cache、per-key async singleflight 与最小 bounded concurrency；禁止 Redis、factual result cache、Semantic Plan cache、语义/DAX/Provider/Report/前端业务改动。M5.8.2 已完成自然语言路由与通用 Query Shape；M5.8.3 已实现 MCP-driven ModelSemanticContext 与任意 PBIX 通用语义适配；验收 temp lifecycle 自动化，正式 COMPLETE 以对应提交 CI success 为条件。
 44. M5.9：保留完整 MCP performance/resilience：bounded queue/backpressure、20/50/100 concurrency、restart/fault matrix 与 soak；禁止修改 Semantic/DAX/VerifiedFactSet authority。
-45. M5.10：只允许固定专业销售模板与“简易模板/销售模板”显式选择；禁止 LLM 临场生成 HTML/CSS/SVG。只有 M5.10 全部门禁完成后才允许声明 M5 FINAL。
+45. M5.10—M5.10.2 的固定专业销售模板与“简易模板/销售模板”显式选择合同保持有效；禁止 LLM 临场生成 HTML/CSS/SVG。M5.10.3 只修复违反现有 semantic/state invariant 的 P0，M5.10.4—M5.10.7 必须另行启动；只有 M5.10.7 全部门禁与用户人工验收完成后才允许声明 M5 FINAL。
 46. M5.7.1：日期角色选择优先级固定为用户显式指定 → model-scoped metadata → runtime relationship/default temporal role（仅在可唯一证明时）→ clarification。不得以“模型只有一个 Date/DateTime 字段”为正常执行前提，也不得在多日期角色无唯一证据时猜测。
 47. M5.7.1：benchmark 问题、expected 数值与问题→答案映射不得进入 `backend/app/**` production text/code。Gate 必须覆盖 `.py/.yaml/.yml/.json/.toml`，排除 harness/tests/docs/generated/cache/artifact，并禁止 production import/read/depend on known-answer cases、baseline、oracle 或 test-only truth；合法 model-scoped alias/runtime metadata 不得因裸业务词误报。永久 Semantic Compatibility Gate 同时检查 unresolved/invalid member ZERO DAX、time、multi-turn、unsupported、schema mutation、frontend/provider 无 semantic authority。
 48. M5.7.1 不开发报表视觉、Template/Renderer Registry、DeepSeek/Kimi Provider 或 MCP performance；M5.7.2 已在 Report Template Architecture 与简易模板质量边界内完成，M5.8 已在独立 Provider/Profile 边界内完成。
@@ -154,6 +155,8 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 59. M5.10.2：主视觉只消费 presentation-only friendly projection；exact model/source/enum/timestamp/metric identity 保留在 canonical contract/低权重 audit。`queried_at`、`snapshot_at`、`generated_at`、`data_updated_at` 各自取得真实语义，不得互相冒充。
 60. M5.10.2：report artifact 只能在 Memory commit 成功后成为 active 完成资源；commit error/cancellation 必须复用正式 repository compensation/durable delete，禁止 orphan HTML、ghost metadata 或第二套 persistence pipeline。
 61. M5.10.2 FIX：复杂 fixed template 拥有 presentation；runtime facts 只填预定义 slot。`sales_executive_report` 的 trend/region/category/products/customers 固定映射为 line-area/column/donut/ranked-hbar/ranked-table，禁止 cardinality-based 改型；generic currency 不推导 CNY，aware time 只在 presentation 转 `Asia/Shanghai`，naive time 不猜。
+62. M5.10.3：当前原始表达或当前 turn 已产生的 ranking/grouping/filter/correction/time/member-set obligation，不得被 Router、weak draft、Pending 或 Memory 静默降级；最终 CanonicalQueryPlan 丢失义务时必须在 DAX 前 clarification/fail closed。历史字段作为 FILTER、当前同字段切换为 grouping/ranking 且本轮未重新表达旧 member 时，旧 same-field filter 不得继承。current explicit correction > compatible pending delta > committed Memory。
+63. “Frozen”统一表示 authority boundary / architecture contract frozen，不表示实现已无 bug。只要 production-path reproducer 证明实现违反 accepted invariant，就允许在原链内做最小 correctness 修复；不得借修 bug 创建第二套 Planner/Grounding/Memory 或改动 M5.9.2 runtime、M5.8.5 factual/report authority。
 
 同时禁止：LangGraph、多 Agent、重新引入 PydanticAI、绕过 Harness、复制 Real Pipeline、提前跨入未批准里程碑、开发 Remote MCP；未经用户明确批准不得创建 Tag。
 
@@ -168,7 +171,9 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 - 详细修复证据、两次修复上限、Secret、Commit、Tag 规则见 `CLAUDE.md`。
 - 禁止 force push、`git reset --hard`、`git add .`、`git add -A`。
 - 只用明确白名单暂存；`.env`、Token、PBIX、真实业务输出与 `local_state/` 永不提交。
-- 文档与版本必须在 Commit 前完成；`main` 只允许在用户明确授权、fresh gates 全绿且可纯 fast-forward 时更新；不创建 Tag。
+- 用户启动并批准正常 Milestone / Fix 后，fresh gates 达标即自动执行白名单 staging → commit → push `main` → exact-SHA CI → remote audit，不再逐次询问普通 commit/push 授权。
+- Tag、merge、rebase、force push、history rewrite、destructive reset/clean、branch deletion、跨下一 Milestone、改变 North Star 或删除 ownership 不明用户资源仍须用户单独明确授权。
+- 用户人工验收与代码 push 分离：合同要求人工验收时可以先推送 release candidate 取得 exact-SHA CI，但在用户确认前不得宣告 User Manual PASS、Milestone FINAL PASS 或 M5 FINAL；后续问题只能 forward-fix，不得改写已推历史。
 
 ## 文档治理
 
@@ -187,4 +192,4 @@ Real DAX LLM authority 为 0。M3 template canonical authority、查询集合、
 
 ---
 
-*最后更新：2026-09-15 | M5.10.2 Manual Visual Fidelity FIX 本地产品收口完成；M5.10.3 NOT STARTED；M5.9.2 runtime frozen；main-only；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；main-only；M5 FINAL=false*

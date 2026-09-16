@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** M5.10.2 Manual Visual Fidelity FIX 已本地产品收口（Settings.version 仍为 M5.10.2；发布以当前 main exact-SHA CI success 为证据）。M5.9.2 runtime architecture 与 M5.8.5 factual authority 冻结；M5.10.3 NOT STARTED；main 是唯一活动开发线；M5 FINAL=false。
+> **状态：** M5.10.3 — 人工验收后语义安全收口已完成最小实现与自动/Real Local MCP scoped acceptance；Settings.version=M5.10.3。DeepSeek Real E2E 与用户最终人工复测待完成，故不标记 FINAL PASS。M5.9.2 runtime architecture 与 M5.8.5 factual authority 的架构合同冻结；main 是唯一活动开发线；M5 FINAL=false。
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -59,7 +59,11 @@
 | **M5.10** | **复杂报表合同与专业销售模板基础** | **✅ foundation 完成；exact-SHA CI 为发布证据** |
 | **M5.10.1** | **Professional Renderer + Real Visual Acceptance** | **✅ 本地收口；exact-SHA CI 为发布证据** |
 | **M5.10.2** | **Executive Report Product Refinement & Hardening + Manual Visual Fidelity FIX** | **✅ 本地产品收口；exact-SHA CI 为发布证据** |
-| **M5.10.3** | **Final Real E2E / stress / mutation / historical closure / exact-SHA final closure** | **⏳ NOT STARTED** |
+| **M5.10.3** | **人工验收后语义安全收口：P0 semantic/state safety，Zero Wrong-Question Execution** | **🟡 IMPLEMENTATION READY；DeepSeek Real / 用户最终人工验收 PENDING** |
+| **M5.10.4** | **语言与 QueryShape 收口** | **⏳ NOT STARTED** |
+| **M5.10.5** | **时间与事实呈现收口** | **⏳ NOT STARTED** |
+| **M5.10.6** | **模板兼容与错误 UX 收口** | **⏳ NOT STARTED** |
+| **M5.10.7** | **MVP 最终 Real E2E / 压力 / mutation / 历史 / exact-SHA 收口** | **⏳ NOT STARTED** |
 
 ### M5.9.3 — 业务语义解析正确性收口
 
@@ -87,11 +91,23 @@ DeepSeek-only Real 完成 108/108：104 completed、4 clarification + ZERO DAX/M
 
 filter/time 只由 CanonicalQueryPlan 与 VerifiedFactSet 一致证据投影。Metric Definition 的 tax/comparison basis 未声明时保持 UNKNOWN；当前无正式 anomaly rule 时为 CANNOT_DETERMINE；Local MCP 无权威 refresh metadata 时 `data_updated_at=None/UNKNOWN`，不得用 generated/query time 冒充。Remote MCP 只保留 source-kind boundary。
 
-M5.10.2 已完成正常产品功能的本地收口。唯一后续债务为 M5.10.3 Final Real E2E、stress、mutation、historical closure verification 与 exact-SHA final closure；当前未开始。
+M5.10.2 已完成当时定义的正常产品功能与报表视觉收口；post-manual acceptance 随后证明语义安全实现仍存在 P0。历史 PASS 不回写为失败，但不能覆盖新 evidence。当前 M5.10.3 只关闭 QueryShape/semantic obligation 静默降级、历史 same-field filter 污染以及 correction/pending state 泄漏，目标是 Zero Wrong-Question Execution；不做全面语言优化、时间展示、模板兼容或最终发布收口。
 
 Manual Visual Fidelity FIX 将专业模板从 generic adaptive card presentation 收紧为 repository-owned fixed dashboard contract。`02`/`03` 参考图现分别约束 P1 layout 与 visual language；Executive 固定 branded header、四 KPI template assets、full-width trend、12-column 三栏 structure、独立 customer ranking table 与 low-weight audit。aware time 展示为北京时间但 canonical UTC 不变；generic currency 不猜 CNY；rank 为整数。事实、DAX、Semantic、VerifiedFactSet 与 M5.9.2 runtime 均未改变。
 
 Fresh local evidence：report/template/API focused 96 PASS；backend 2650 PASS / 1 manual-real SKIP；Semantic Compatibility 775 PASS / 121 production files；Golden 11 PASS / 1 manual-real SKIP；frontend 91 PASS + typecheck/lint/build；Repository Safety 390、AI Error Ledger 82、Architecture 138、Documentation/Artifact Governance、compileall 与 staged diff-check PASS。18 fixture renderer p50 1.447ms、max 4.483ms、最大 HTML 30,801 bytes；72/72 Chrome geometry、四项 mutation、Rich/Simple PBIX factual parity 与 teardown residual=0 已通过；发布仍以当前 main exact-SHA CI success 为证据。
+
+### M5.10.3—M5.10.7 — 人工验收后稳定化路线
+
+- **M5.10.3 — 人工验收后语义安全收口：** 只处理 P0 semantic/state safety。任何明确 ranking/grouping/filter/correction/time/member-set obligation 若未进入最终 CanonicalQueryPlan，必须在 DAX 前 clarification/fail closed；同字段由历史 filter 切换为当前 grouping/ranking 时不得继承未重述旧 member；correction 优先作用于 compatible pending delta，再考虑 committed Memory。
+- **M5.10.4 — 语言与 QueryShape 收口：** 全面 paraphrase、中英混合和 QueryShape 识别质量；本轮不启动。
+- **M5.10.5 — 时间与事实呈现收口：** “最近几个月”等时间 UX、query scope 与 observed coverage 展示；本轮不启动。
+- **M5.10.6 — 模板兼容与错误 UX 收口：** template × model compatibility、frontend generic error UX 及相邻兼容问题；本轮不启动。
+- **M5.10.7 — MVP 最终收口：** Final Real E2E、stress、mutation、historical 与 exact-SHA closure；只有该阶段和用户人工验收完成后才允许评估 `M5 FINAL=true`。
+
+Frozen 只表示既有 authority boundary / architecture contract 不变，不表示 implementation bug-free。M5.10.3 允许在 QuestionRouter、Grounding/Completeness、StateTransition/TurnRelation 与 pending clarification 的现有单一链内做最小 correctness 修复；禁止第二 Planner/Grounding/Memory、runtime worker 改造、事实链变化或 report renderer 视觉修改。
+
+M5.10.3 implementation evidence：26 focused PASS；M5.9.4 的 51,200-case stress 与跨 Retail/Education/Operations/Logistics/unknown holdout regression PASS；backend `2758 passed, 1 skipped`；Semantic Compatibility `775 / 123 files`；Golden `11 / 1 manual-real skip`；frontend `91` + typecheck/lint/build；Architecture 140、Repository Safety 403、Error Ledger 90、Documentation/Artifact Governance、compileall、diff-check PASS。deterministic-language + Real Local MCP scoped run 在 Rich/Logistics 完成 11 场景、9 次真实 DAX，P0-A 与 unknown-member 为 ZERO DAX/ZERO Memory commit，全部 owned/session/worker residual=0。DeepSeek Real 因当前进程无配置 key 而 BLOCKED，用户人工复测 PENDING；M5.10.4+ 未启动。
 
 ### M5.4.2 — M5 重建基线与规划固化（已完成）
 
@@ -471,4 +487,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-09-15 | M5.10.2 Manual Visual Fidelity FIX 本地产品收口完成；M5.10.3 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；M5 FINAL=false*
