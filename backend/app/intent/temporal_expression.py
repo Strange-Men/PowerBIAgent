@@ -41,6 +41,11 @@ _YEARLESS_MONTH_RANGE = re.compile(
     r"(?:至|到|[-—–~～])\s*"
     r"(?P<end_month>0?[1-9]|1[0-2])\s*月(?:份)?"
 )
+_VAGUE_RECENT_MONTH_RANGE = re.compile(
+    r"(?:最近|过去|近)\s*(?:几|数|若干)\s*个?月(?:份)?|"
+    r"\b(?:recent|last|past)\s+(?:(?:a\s+)?few|several|some)?\s*months?\b",
+    re.IGNORECASE,
+)
 
 
 def parse_explicit_month_range(
@@ -82,3 +87,8 @@ def has_explicit_month_range(text: str) -> bool:
         or _RELATIVE_YEAR_MONTH_RANGE.search(normalized)
         or _YEARLESS_MONTH_RANGE.search(normalized)
     )
+
+
+def has_vague_recent_month_range(text: str) -> bool:
+    """Detect a month-window request whose concrete bound is unspecified."""
+    return bool(_VAGUE_RECENT_MONTH_RANGE.search(unicodedata.normalize("NFKC", text)))

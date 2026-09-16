@@ -258,7 +258,7 @@ async def run(args, root, provider_failures):
                     return
 
                 async def post(label, text, shape=None, *, conversation=None, model_key=key, profile=args.profile, template=None, blocked=False):
-                    if args.phase == "m585" and args.case and label not in args.case:
+                    if args.phase in {"m585", "m5104"} and args.case and label not in args.case:
                         return {}, {}
                     conversation = conversation or str(uuid.uuid4())
                     request_id = str(uuid.uuid4())
@@ -357,6 +357,7 @@ async def run(args, root, provider_failures):
                         "plan": plan, "clarification": body.get("clarification_question"),
                         "obligations": audit.get("semantic_obligations"),
                         "obligation_coverage": audit.get("semantic_obligation_coverage"),
+                        "shape_reconciliation": audit.get("query_shape_reconciliation"),
                         "grounded_delta": audit.get("grounded_delta"),
                         "inheritance": audit.get("inheritance_decision"),
                         "dax_executed": bool(audit.get("dax_executed")),
@@ -675,6 +676,157 @@ async def run(args, root, provider_failures):
                                 row["pass"] = False
                     print(json.dumps({"m585_provider_consistency": consistency,
                         "passed": all(item["pass"] for item in consistency)}, ensure_ascii=False), flush=True)
+                elif args.phase == "m5104":
+                    by_name = {item["display_name"]: item["key"] for item in options}
+                    required_models = {
+                        "rich": "PowerBIAgent_M3_Rich_Test",
+                        "logistics": "PowerBIAgent_M5_8_5_Logistics_Test",
+                    }
+                    if any(name not in by_name for name in required_models.values()):
+                        raise RuntimeError("m5104_two_explicit_pbix_required")
+                    model_keys = {
+                        alias: by_name[name] for alias, name in required_models.items()
+                    }
+
+                    async def completed_case(
+                        label, text, shape, *, model_alias="rich", conversation=None
+                    ):
+                        body, plan = await post(
+                            label,
+                            text,
+                            shape,
+                            model_key=model_keys[model_alias],
+                            conversation=conversation,
+                        )
+                        return body, plan
+
+                    async def blocked_case(
+                        label, text, *, model_alias="rich", conversation=None
+                    ):
+                        return await post(
+                            label,
+                            text,
+                            model_key=model_keys[model_alias],
+                            conversation=conversation,
+                            blocked=True,
+                        )
+
+                    def mark(plan, condition):
+                        if plan:
+                            summaries[-1]["pass"] &= bool(condition)
+
+                    _, grouped_cn = await completed_case(
+                        "m5104_grouped_cn", "各产品销售额是多少？", "grouped"
+                    )
+                    mark(
+                        grouped_cn,
+                        grouped_cn.get("measures") == ["Total Sales"]
+                        and grouped_cn.get("dimensions") == ["Product"],
+                    )
+                    for label, text in (
+                        ("m5104_ranking_mixed", "Product 按销售额排前三"),
+                        ("m5104_ranking_en", "top 3 products by sales"),
+                        ("m5104_ranking_word_order", "销售额前三的产品"),
+                    ):
+                        _, ranking = await completed_case(label, text, "ranking")
+                        mark(
+                            ranking,
+                            ranking.get("measures") == ["Total Sales"]
+                            and ranking.get("dimensions") == ["Product"]
+                            and ranking.get("sort") == "desc"
+                            and ranking.get("top_n") == 3,
+                        )
+                    _, grouped_en = await completed_case(
+                        "m5104_grouped_en", "sales by product", "grouped"
+                    )
+                    mark(
+                        grouped_en,
+                        grouped_en.get("measures") == ["Total Sales"]
+                        and grouped_en.get("dimensions") == ["Product"],
+                    )
+                    _, mixed_filter = await completed_case(
+                        "m5104_mixed_filter",
+                        "华南 region 的 sales",
+                        "filtered_aggregation",
+                    )
+                    mark(
+                        mixed_filter,
+                        mixed_filter.get("measures") == ["Total Sales"]
+                        and mixed_filter.get("filters")
+                        == [{"field": "Region", "operator": "eq", "value": "South"}],
+                    )
+
+                    await blocked_case(
+                        "m5104_measure_ambiguity", "哪三个产品最挣钱"
+                    )
+                    await blocked_case(
+                        "m5104_incomplete_ranking", "销售额按区域排一下"
+                    )
+                    vague, _ = await blocked_case(
+                        "m5104_vague_trend",
+                        "最近几个月的运单趋势",
+                        model_alias="logistics",
+                    )
+                    vague_audit = vague.get("execution_audit") or {}
+                    summaries[-1]["pass"] &= bool(
+                        vague_audit.get("clarification_reason")
+                        == "incomplete_time_range"
+                        and (
+                            vague_audit.get("query_shape_reconciliation") or {}
+                        ).get("effective")
+                        in {"trend", "bounded_trend"}
+                    )
+                    for label, text in (
+                        (
+                            "m5104_logistics_ranking_en",
+                            "top 3 carriers by total shipments",
+                        ),
+                        (
+                            "m5104_logistics_ranking_mixed",
+                            "承运商 top 3 by Total Shipments",
+                        ),
+                    ):
+                        _, logistics = await completed_case(
+                            label, text, "ranking", model_alias="logistics"
+                        )
+                        mark(
+                            logistics,
+                            logistics.get("measures") == ["Total Shipments"]
+                            and logistics.get("dimensions") == ["CarrierName"]
+                            and logistics.get("sort") == "desc"
+                            and logistics.get("top_n") == 3,
+                        )
+
+                    chain = str(uuid.uuid4())
+                    _, seed = await completed_case(
+                        "m5104_chain_seed", "总销售额是多少？", "scalar",
+                        conversation=chain,
+                    )
+                    mark(seed, seed.get("measures") == ["Total Sales"])
+                    _, richer = await completed_case(
+                        "m5104_chain_richer",
+                        "那么 Product 按 Total Sales 排前三",
+                        "ranking",
+                        conversation=chain,
+                    )
+                    mark(
+                        richer,
+                        richer.get("measures") == ["Total Sales"]
+                        and richer.get("dimensions") == ["Product"]
+                        and richer.get("top_n") == 3,
+                    )
+                    before_unknown = await service.pipeline.get_latest_committed_memory(
+                        chain, RuntimeDataMode.REAL
+                    )
+                    await blocked_case(
+                        "m5104_unknown_after_memory", "火星区 sales",
+                        conversation=chain,
+                    )
+                    after_unknown = await service.pipeline.get_latest_committed_memory(
+                        chain, RuntimeDataMode.REAL
+                    )
+                    summaries[-1]["pass"] &= before_unknown == after_unknown
+
                 elif args.phase == "isolation":
                     others = [item for item in options if item["display_name"] == "PowerBIAgent_M3_Test"]
                     if len(others) != 1 or others[0]["key"] == key:
@@ -763,7 +915,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model")
     parser.add_argument("--profile", default="deepseek")
-    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585"), default="focused")
+    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104"), default="focused")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--case", action="append", help="Run selected focused cases while diagnosing a failure")
     parser.add_argument("--compare-profiles", action="store_true")

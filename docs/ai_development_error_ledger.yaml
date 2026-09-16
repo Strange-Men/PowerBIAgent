@@ -3,11 +3,185 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；M5.10.4+ NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-16 | M5.10.4 COMPLETE；M5.10.5 NOT STARTED；Semantic Layer FINAL ACCEPTANCE 尚未进行；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-5104-001
+  title: Router 弱 fallback 覆盖现有 LLM draft 的开放语言 QueryShape
+  category: ERR
+  first_detected_version: M5.10.4
+  symptom: 无 deterministic shape cue 的中文、英文或中英混合 paraphrase 已由现有 QueryPlan draft 提议 GROUPED/RANKING/TREND，但 application 仍以 Router 的 SCALAR 或 None 覆盖，导致 richer current obligation 丢失或错误回退旧上下文
+  local_evidence: failure-first unit/API 证明 spread across、three leading 与 follow-up ranking 的 Router 结果仅为 SCALAR/None；基线合计 11 failed、2 passed，修复后 canonical shape 保留且无当前逐字 evidence 时在 DAX 前澄清
+  authoritative_sources:
+  - title: M5.10.4 语言理解与 QueryShape 收口用户指令
+    reason: Router 只拥有 capability、安全 floor 与高置信 evidence，现有 LLM draft 应在 bounded contract 内解释开放语言
+  - title: ADR-014 Question Routing and Query Shape Authority
+    reason: QueryShape 只定义 required slots，Router 不拥有业务对象或事实 authority
+  root_cause: QueryPlan prompt 未公开 query_shape/evidence 合同，application 又把 Router 输出视为最终 shape；SCALAR 与 None 的 fallback 语义没有和高置信结构证据区分
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在既有 QueryPlan call 增加八种现有 shape 与最长 80 字符逐字 evidence；新增 bounded reconciliation，Router 高置信 evidence 优先，SCALAR/None 仅为 fallback，有效 current LLM evidence 可保留 richer shape，非法或缺失 evidence clarification
+  regression_tests:
+  - backend/tests/unit/test_m5_10_4_language_query_shape.py
+  - backend/tests/api/test_m5_10_4_language_query_shape.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 新增第二次 shape LLM call 或第二 Planner
+  - 用 SCALAR/None fallback 覆盖有当前证据的 richer draft
+  - 接受不是当前输入逐字子串的 shape evidence
+  prevention_rules:
+  - Router、draft、Grounding 与 Completeness 的 shape 职责必须分别回归
+  - LLM shape 只能是结构建议，runtime identity/member/fact 仍由既有 authority 验证
+  related_adr: ADR-014
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.4
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.4
+- id: ERR-5104-002
+  title: 开放语言 ranking draft 的当前 bound 被 Grounding 丢弃或补造
+  category: ERR
+  first_detected_version: M5.10.4
+  symptom: QueryPlan 已从开放语序识别 RANKING、TopN 与 sort，但 Grounding 只接受有限 deterministic grammar；有当前数字证据时仍丢失 bound，而“排一下”等无 N 请求可能被错误补成完整 ranking
+  local_evidence: production-path API reproducer 覆盖 three leading、中文倒装与 follow-up；修复后当前输入证明同一 N 才保留 draft top_n/sort，不完整 ranking 返回 ranking_information_incomplete 且 DAX=0、Memory commit=false
+  authoritative_sources:
+  - title: M5.10.4 bounded reconciliation contract
+    reason: LLM 可解释语言关系，但不能从历史或默认值创造 ranking bound
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: ranking obligation 必须完整且有当前证据，缺项必须在 DAX 前 fail closed
+  root_cause: Grounding 无条件重新从固定词法提取 ranking slot，既不验证后接受 draft 的当前 evidence，也未把 LLM-selected incomplete ranking 作为显式未闭合义务
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅在当前输入出现与 draft 相同的 bounded 数字时接受 TopN，并要求逐字 shape evidence 后才接受 draft sort；Coverage 对当前 ranking shape 强制验证 sort+top_n，缺任一项即 clarification
+  regression_tests:
+  - backend/tests/unit/test_m5_10_4_language_query_shape.py
+  - backend/tests/api/test_m5_10_4_language_query_shape.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 从旧 Memory、默认值或 LLM 无证据字段补 ranking bound
+  - 不完整 ranking 静默降级 scalar/grouped 或进入 DAX
+  prevention_rules:
+  - draft ranking slot 必须逐项绑定当前输入证据
+  - Canonical ranking 始终要求 measure、dimension、direction 与 TopN 完整
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.4
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.4
+- id: ERR-5104-003
+  title: 同名 runtime 字段未进入 bounded owner selector 阻断跨语言 QueryShape
+  category: ERR
+  first_detected_version: M5.10.4
+  symptom: 当前 Catalog 中多个 table 拥有同一 canonical field name 时，开放语言 draft 虽只引用该 runtime-owned 名称，普通 mention 仍停在 AMBIGUOUS，无法安全完成 grouping/ranking/filter owner binding
+  local_evidence: test-only 跨域 schema 增加同名 field 后稳定复现；Real Rich/Logistics acceptance 需要在当前 PBIX candidate 集中绑定 owner，修复后 selector 只收到同名当前 Catalog IDs
+  authoritative_sources:
+  - title: ADR-015 Cross-language Runtime Grounding
+    reason: bounded selector 可解释语言，但只能返回调用方提供的当前 runtime candidate ID
+  root_cause: 现有 same-name ambiguity 路径在 ObjectGrounder 返回 AMBIGUOUS 后直接停止，没有复用已存在的 bounded selector；若全局放宽又会让不同明确概念被 LLM 任意选择
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅当全部 ambiguous candidates 的 normalized canonical name 完全相同且 selector 存在时，复用现有 selector并把 eligible_ids 限制为该 current Catalog 子集；不同名称的真实歧义保持 fail closed
+  regression_tests:
+  - backend/tests/unit/test_m5_10_4_language_query_shape.py
+  - backend/tests/api/test_m5_10_4_language_query_shape.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 对不同 canonical name 的歧义自动选一个
+  - 允许 selector 返回当前 Catalog 之外的 ID
+  - 按 PBIX 名称或业务字段硬编码 owner
+  prevention_rules:
+  - same-name owner disambiguation 必须有正向和 distinct-name 负向回归
+  - selector 输出仍须通过 runtime candidate membership validation
+  related_adr: ADR-015
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.4
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.4
+- id: ERR-5104-004
+  title: 单一间接短语同时证明 ranking shape 与 measure identity
+  category: ERR
+  first_detected_version: M5.10.4
+  symptom: “哪三个产品最挣钱”等表达可让同一个 bounded LLM 短语同时触发 RANKING 并选择某个 measure，系统因此把无法证明的“挣钱”当成销售额或利润执行
+  local_evidence: unit Coverage reproducer 令 bounded selector 用“最挣钱”解析 runtime measure，同时 reconciliation 也用同一 evidence 证明 ranking；修复后 measure_unresolved、ZERO DAX，Real ambiguity case 同样安全澄清
+  authoritative_sources:
+  - title: M5.10.4 Measure Ambiguity contract
+    reason: runtime 存在多个 plausible measure 时不得为提高回答率自动映射
+  - title: ADR-008 Business Semantic Grounding Authority
+    reason: LLM suggestion 不能取代足以唯一绑定 canonical measure 的证据
+  root_cause: shape evidence 与 object selection 各自 bounded，但缺少跨 obligation 的 evidence independence 检查，同一模糊短语可被重复使用为两个独立结论
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Coverage 检测 current LLM-selected shape evidence 与 bounded_llm measure phrase 相同的情况，新增 unresolved measure obligation并返回 measure_unresolved；不改变 runtime candidates 或正常明确 measure 路径
+  regression_tests:
+  - backend/tests/unit/test_m5_10_4_language_query_shape.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 用一个模糊形容词同时证明 shape 和 canonical measure
+  - 把“挣钱”等通用词硬编码为 Sales 或 Profit
+  prevention_rules:
+  - 间接语言的多个语义义务必须有独立充分证据，否则 clarification
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.4
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.4
+- id: ERR-5104-005
+  title: 模糊最近月份无法表达且错误落入 filter member clarification
+  category: ERR
+  first_detected_version: M5.10.4
+  symptom: “最近几个月的运单趋势”表达了 trend 与 shipment measure，但没有具体月份数量；旧 TimeIntentDraft 强制 recent_months 必填 months，后续 residue 可能错误表现为 filter/member 问题或发明范围
+  local_evidence: unit reproducer 证明 months=null 基线 validation 失败，production-path/Real Logistics case 未稳定得到 incomplete_time_range；修复后保留 TREND obligation并只询问时间范围，DAX=0、Memory 不变
+  authoritative_sources:
+  - title: M5.10.4 与 M5.10.5 分界
+    reason: 本轮只保留 trend/time obligation，具体“最近几个月”范围解释属于 M5.10.5
+  - title: ADR-018 Deterministic Semantic Expression Normalization
+    reason: 未完整证明的时间范围不得进入 canonical execution
+  root_cause: recent_months draft model 把具体 months 设为构造期必填，无法表示合法但不完整的自然语言；Coverage 也没有独立标记 vague recent month window
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: TimeIntentDraft 允许 recent_months 的 months=null；NFKC bounded detector 只识别模糊 recent-month 结构，Coverage 固定产生 INCOMPLETE_TIME_RANGE，不计算或猜测 start/end
+  regression_tests:
+  - backend/tests/unit/test_m5_10_4_language_query_shape.py
+  - backend/tests/api/test_m5_10_4_language_query_shape.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 把“几个月”静默映射为任意 N
+  - 将不完整时间义务误报为未知 filter/member
+  - 在 M5.10.4 实现 M5.10.5 的时间 UX/observed coverage
+  prevention_rules:
+  - 时间 draft 必须能表示不完整义务，Completeness 决定是否可执行
+  - vague time clarification 必须保持已证明的 measure 与 trend shape
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-16'
+    action: discovered
+    version: M5.10.4
+  - date: '2026-09-16'
+    action: mitigation
+    version: M5.10.4
 - id: GOV-5103-001
   title: 旧 Final Closure 路线与绝对安全声明掩盖 post-manual semantic P0
   category: GOV

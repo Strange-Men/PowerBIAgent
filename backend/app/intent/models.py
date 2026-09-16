@@ -68,7 +68,10 @@ class TimeIntentDraft(BaseModel):
             TimeIntentKind.RELATIVE_MONTH: ("relative_offset",),
             TimeIntentKind.RELATIVE_YEAR: ("relative_offset",),
             TimeIntentKind.QUARTER: ("quarter",),
-            TimeIntentKind.RECENT_MONTHS: ("months",),
+            # A vague current phrase such as "最近几个月" is a valid
+            # incomplete language draft. Grounding/Completeness will request
+            # the missing bound and must never invent one.
+            TimeIntentKind.RECENT_MONTHS: (),
             TimeIntentKind.BOUNDED_RANGE: ("start_date", "end_date"),
         }
         missing = [name for name in required[self.kind] if getattr(self, name) is None]

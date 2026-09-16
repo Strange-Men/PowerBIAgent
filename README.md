@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.10.3 — 人工验收后语义安全收口**。M5.10.2 后人工业务验收重新发现的 QueryShape/semantic obligation 静默降级、历史同字段 filter 污染和 correction/pending state 泄漏三类 P0，已完成最小实现、永久回归和 deterministic-language + Real Local MCP scoped acceptance；真实 DeepSeek E2E 与用户最终人工复测仍待完成。M5.10.4+ 尚未启动，M5 FINAL=false。
+当前版本：**M5.10.4 — 语言理解与 QueryShape 收口**。现有 QueryPlan LLM draft 可在八种既有 QueryShape 与当前 runtime candidate 内解释自然中文、英文、中英混合、倒装和常见 paraphrase；Router 高置信结构证据、Grounding runtime identity 与 Completeness fail-closed authority 保持不变。M5.10.3 已由用户人工验收通过；M5.10.4 已完成自动化、跨域、DeepSeek + Real Local MCP 验收，完整语义层人工验收统一留到 M5.10.5 后进行。M5.10.5 尚未启动，M5 FINAL=false。
 
 ## 项目概览
 
@@ -20,7 +20,7 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 - Power BI MCP runtime schema 是模型结构 authority；immutable `ModelSemanticContext` 把当前 PBIX metadata 适配为候选证据，exact identity + fingerprint 验证的 optional model override 只补充业务语言/temporal metadata，runtime members 继续验证成员值。
 - Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界。
-- Grounding 后的 Semantic Obligation Coverage、StateTransition 后的 Canonical Shape Completeness，以及 QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection 构成既有 fail-closed 设计；post-M5.10.2 人工验收证明 Router shape 覆盖、same-field 状态继承和 correction 链仍有实现缺口。M5.10.3 正在收口这些缺口，无法安全闭合时应澄清而不是执行其他问题。
+- Grounding 后的 Semantic Obligation Coverage、StateTransition 后的 Canonical Shape Completeness，以及 QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection 构成既有 fail-closed 设计；M5.10.3 已关闭 post-manual 的 shape/state P0，M5.10.4 进一步让现有 bounded LLM draft 解释开放语言，但任何无证据 shape、未知对象/成员、不完整排名或模糊时间范围仍在 DAX 前澄清。
 - `sales_report`（简易模板）与 `sales_executive_report`（专业销售经营分析模板）均由后端目录公开，报表请求必须显式选择；二者分别绑定独立固定 Renderer，禁止 fallback 或 LLM 临场生成 HTML/CSS/SVG。
 - COMPLEX 模板在 Renderer 前必须具备标题、分析期间、实际筛选、指标口径、异常状态、模型/来源、数据新鲜度和生成时间；主视觉只消费 friendly presentation projection，exact provenance 保留在 audit；`data_updated_at`、`queried_at`、`snapshot_at`、`generated_at` 不得互相代替。
 - 结构化多轮 Memory 只补当前轮真正省略的兼容槽；fresh/follow-up/replace 分离，当前明确表达始终优先；歧义、失败、unsupported 和 clarification 不污染已提交状态。
@@ -359,8 +359,9 @@ python -m alembic upgrade head
 | M5.9.5 | COMPLETE — Sidebar conversation icon 统一 16×16 grid slot；1—80 字、三状态、current/hover 真实浏览器 geometry 与 mutation sanity 通过；发布以当前 main exact-SHA CI success 为证据 |
 | M5.10.1 | 本地收口完成 — 专业 Renderer、双模板公开显式选择、Simple/Executive parity、Simple/Rich PBIX 与真实浏览器视觉验收；发布以当前 main exact-SHA CI success 为证据；M5.10.2 NOT STARTED，M5 FINAL=false |
 | M5.10.2 | 本地产品收口完成 — Report Request/FULL_AVAILABLE、专业 presentation/视觉、时间 provenance、artifact compensation/cancellation、lifecycle/stale/concurrency/security/cloud-ready 硬化；Rich/Simple PBIX 与 DeepSeek-only exact phrase PASS；该历史完成证据不覆盖 post-manual reopen，M5 FINAL=false |
-| M5.10.3 | IMPLEMENTATION READY — 人工验收后语义安全收口；DeepSeek Real BLOCKED，用户最终人工验收 PENDING |
-| M5.10.4—M5.10.7 | NOT STARTED — 语言与 QueryShape、时间与事实呈现、模板兼容与错误 UX、MVP 最终收口 |
+| M5.10.3 | COMPLETE — Zero Wrong-Question Execution；用户人工验收通过 |
+| M5.10.4 | COMPLETE — bounded 开放语言解释与 QueryShape reconciliation；DeepSeek + Real Local MCP 14/14，residual=0 |
+| M5.10.5—M5.10.7 | NOT STARTED — 时间与事实呈现、模板兼容与错误 UX、MVP 最终收口；Semantic Layer FINAL ACCEPTANCE 尚未进行 |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -389,4 +390,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.4 COMPLETE；M5.10.5 NOT STARTED；Semantic Layer FINAL ACCEPTANCE 尚未进行；M5 FINAL=false*

@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from backend.app.intent.models import IntentSpec, TimeIntentDraft, TimeIntentKind
 from backend.app.intent.temporal_expression import (
     has_explicit_month_range,
+    has_vague_recent_month_range,
     parse_explicit_month_range,
 )
 from backend.app.llm.base import LLMProvider, LLMProviderError, LLMRequest, LLMTask
@@ -1204,6 +1205,13 @@ class SemanticGroundingService:
                         non_grouping[0],
                         "current_input_non_grouping",
                     )
+            mentioned_field = await self._select_same_name_candidate(
+                mentioned_field,
+                user_input,
+                SemanticObjectType.FIELD,
+                "filter_field",
+                language_hints=(raw_filter.field,),
+            )
             if mentioned_field.status != GroundingStatus.NOT_MENTIONED:
                 field_result = mentioned_field
             elif member_candidates := self._member_evidence_fields(user_input):
@@ -1380,6 +1388,13 @@ class SemanticGroundingService:
         current_dimension = self.objects.find_mentions(
             user_input, SemanticObjectType.FIELD, dimension_role
         )
+        current_dimension = await self._select_same_name_candidate(
+            current_dimension,
+            user_input,
+            SemanticObjectType.FIELD,
+            dimension_role,
+            language_hints=tuple(draft.dimensions),
+        )
         if (
             effective_shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}
             and grouping_grain is not None
@@ -1512,6 +1527,13 @@ class SemanticGroundingService:
                     SemanticObjectType.FIELD,
                     dimension_role,
                 )
+            dimension = await self._select_same_name_candidate(
+                dimension,
+                user_input,
+                SemanticObjectType.FIELD,
+                dimension_role,
+                language_hints=tuple(draft.dimensions),
+            )
             if dimension.status == GroundingStatus.UNRESOLVED or (
                 dimension.status == GroundingStatus.NOT_MENTIONED
                 and (draft.dimensions or intent.detected_dimensions)
@@ -1678,6 +1700,45 @@ class SemanticGroundingService:
             object_results=object_results,
             member_results=member_results,
             intent_disagreements=disagreements,
+        )
+
+    async def _select_same_name_candidate(
+        self,
+        result: ObjectGroundingResult,
+        user_input: str,
+        object_type: SemanticObjectType,
+        role: SemanticObjectRole,
+        *,
+        language_hints: tuple[str, ...] = (),
+    ) -> ObjectGroundingResult:
+        """Select an owner only when runtime candidates share one name.
+
+        Distinct explicit concepts remain ambiguous. The bounded selector may
+        choose only from the current Catalog IDs, so this resolves duplicate
+        fact/dimension columns without turning the draft into object authority.
+        """
+        if (
+            result.status != GroundingStatus.AMBIGUOUS
+            or self.objects.selector is None
+        ):
+            return result
+        candidates = tuple(
+            candidate
+            for object_id in result.candidate_ids
+            if (candidate := self.catalog.get(object_id)) is not None
+        )
+        if len(candidates) < 2 or len({
+            normalize_semantic_text(candidate.canonical_name)
+            for candidate in candidates
+        }) != 1:
+            return result
+        return await self.objects.select_bounded(
+            result.phrase or user_input,
+            user_input,
+            object_type,
+            role,
+            eligible_ids=tuple(candidate.object_id for candidate in candidates),
+            language_hints=language_hints,
         )
 
     async def _runtime_month_grouping(
@@ -2369,6 +2430,14 @@ class SemanticGroundingService:
         cls, user_input: str, draft: QueryPlan, delta: GroundedSemanticDelta
     ) -> None:
         top_n = cls._extract_top_n(user_input)
+        if (
+            top_n is None
+            and delta.query_shape == QueryShape.RANKING
+            and draft.query_shape == QueryShape.RANKING
+            and draft.top_n is not None
+            and cls._draft_top_n_has_current_evidence(user_input, draft.top_n)
+        ):
+            top_n = draft.top_n
         if top_n is not None:
             delta.top_n = top_n
             delta.top_n_specified = True
@@ -2387,6 +2456,16 @@ class SemanticGroundingService:
         elif top_n is not None:
             delta.sort = "desc"
             delta.sort_specified = True
+        elif (
+            delta.query_shape == QueryShape.RANKING
+            and draft.query_shape == QueryShape.RANKING
+            and draft.sort is not None
+            and draft.query_shape_evidence is not None
+            and normalize_semantic_text(draft.query_shape_evidence)
+            in normalize_semantic_text(user_input)
+        ):
+            delta.sort = draft.sort
+            delta.sort_specified = True
 
         normalized = normalize_semantic_text(user_input)
         if any(term in normalized for term in ("清除筛选", "取消筛选", "不限条件")):
@@ -2401,6 +2480,37 @@ class SemanticGroundingService:
             delta.clear_sort = True
             delta.top_n = None
             delta.sort = None
+
+    @classmethod
+    def _draft_top_n_has_current_evidence(
+        cls, user_input: str, expected: int
+    ) -> bool:
+        """Validate only the bound; the LLM still interprets the wording."""
+        normalized = normalize_semantic_text(user_input)
+        english = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        }
+        candidates: list[int] = []
+        for match in re.finditer(
+            rf"(?:前|后|top|bottom)\s*(?P<prefix>{cls._RANKING_NUMBER})|"
+            rf"(?P<suffix>{cls._RANKING_NUMBER})\s*(?:个|项|名)|"
+            r"\b(?P<english>one|two|three|four|five|six|seven|eight|nine|ten)\b"
+            r"(?=\s+(?:leading|trailing|highest|lowest|best|worst))",
+            normalized,
+            re.IGNORECASE,
+        ):
+            raw = match.group("prefix") or match.group("suffix")
+            value = (
+                int(raw)
+                if raw and raw.isdigit()
+                else cls._parse_chinese_integer(raw)
+                if raw
+                else english[match.group("english").casefold()]
+            )
+            if value is not None:
+                candidates.append(value)
+        return expected in candidates
 
     @classmethod
     def _extract_top_n(cls, user_input: str) -> int | None:
@@ -2494,6 +2604,8 @@ class SemanticGroundingService:
             re.search(r"(?:最近|过去)\s*\d+\s*个?月", user_input)
             or has_explicit_month_range(user_input)
         ):
+            return "month"
+        if has_vague_recent_month_range(user_input):
             return "month"
         return None
 

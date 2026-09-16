@@ -2,6 +2,19 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.10.4] — 2026-09-16（语言理解与 QueryShape 收口）
+
+- **M5.10.3 状态：** 用户已确认人工复测无问题，M5.10.3 COMPLETE / 用户人工验收通过；历史提交中的当时阻塞证据保持不改写。
+- **开放语言职责：** 在既有 QueryPlan LLM 调用中加入 `query_shape` / 逐字 `query_shape_evidence` bounded contract，支持自然中文、英文、中英混合、倒装与常见 paraphrase；未增加第二次 shape LLM call，也未新增 QueryShape enum。
+- **Shape reconciliation：** Router 高置信结构证据保持优先，`SCALAR`/`None` 仅为弱 fallback；当前有逐字证据的 richer LLM shape 可进入既有 Grounding，缺失或非法证据在 DAX 前澄清。correction/pending/committed 优先级继续沿用 M5.10.3。
+- **Grounding / execution firewall：** LLM 只能从当前 runtime Catalog candidate 中建议对象；同名字段通过同一 bounded selector 选 owner。ranking 的 TopN/sort 必须有当前输入证据，不完整排名、同一间接短语同时证明 shape 与 measure、以及“最近几个月”无具体范围均 clarification + ZERO DAX/ZERO factual Memory。
+- **泛化与永久回归：** failure-first 为 `11 failed, 2 passed`；focused/current semantic 307、邻近 semantic 703、M5.9.4 51,200-case stress 29、Semantic Compatibility 775、full backend `2798 passed, 1 skipped`。覆盖 Sales/Retail、Education、Inventory/Operations、Logistics 与 unknown holdout；QueryShape 集合保持八种不变。
+- **Fresh release gates：** Golden `11 passed / 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 140、Repository Safety 406、AI Error Ledger 95、Documentation/Artifact Governance、compileall、version consistency 47 与 `git diff --check` PASS。
+- **Local Real：** configured DeepSeek + Real Local MCP 在 Rich/Logistics PBIX 完成 14/14；10 个真实 DAX/VerifiedFactSet witness，ambiguity/incomplete ranking/vague trend/unknown member 安全澄清，business/temp residual=0，未读取或输出 `.env`/Secret。
+- **边界：** M5.9.2 runtime、Provider architecture、deterministic DAX、VerifiedFactSet、Memory、Report、frontend 与 persistence 均未改动；M5.10.5 未启动。完整语义层用户人工验收统一安排在 M5.10.5 完成后，M5 FINAL=false。
+
+**Settings.version:** M5.10.4
+
 ## [M5.10.3] — 2026-09-16（人工验收后语义安全收口；发布候选）
 
 - 修复 Router 的 SCALAR fallback 覆盖 richer current-turn QueryShape obligation；Canonical Shape Completeness 额外验证 grounded expected shape，无法闭合时在 DAX 前澄清。

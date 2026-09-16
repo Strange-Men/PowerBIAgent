@@ -99,6 +99,7 @@ from backend.app.query_plan.clarification_reasons import clarification_question
 from backend.app.query_plan.completeness import (
     CanonicalShapeCompletenessError,
     CanonicalShapeCompletenessGate,
+    QueryShapeReconciliationPolicy,
     SemanticObligationCoverageGate,
 )
 from backend.app.query_plan.grounding import (
@@ -747,36 +748,31 @@ class LLMTurnService:
                 collector=collector,
             )
 
-        grounding_query_shape = (
+        router_query_shape = (
             question_routing.query_shape if question_routing is not None else None
         )
         draft_query_shape = query_plan.query_shape
-        if relation_evidence.semantic_input is not None:
-            # A correction changes slots inside the current/pending/committed
-            # analysis.  Preserve a richer current draft, but never let the
-            # Router's scalar fallback erase pending or committed shape.
-            grounding_query_shape = (
-                draft_query_shape
-                if draft_query_shape not in {None, QueryShape.SCALAR}
-                else None
-            )
-        elif (
-            grounding_query_shape == QueryShape.SCALAR
-            and draft_query_shape not in {None, QueryShape.SCALAR}
-        ):
-            # SCALAR is the Router's no-cue default.  It cannot erase a richer
-            # current-turn language obligation; Grounding and completeness must
-            # still prove every richer-shape slot before execution.
-            grounding_query_shape = draft_query_shape
-        if question_routing is not None:
-            query_plan = query_plan.model_copy(
-                update={"query_shape": grounding_query_shape}
-            )
+        shape_reconciliation = QueryShapeReconciliationPolicy.reconcile(
+            user_input=message,
+            router_shape=router_query_shape,
+            draft_shape=draft_query_shape,
+            draft_evidence=query_plan.query_shape_evidence,
+            correction=relation_evidence.semantic_input is not None,
+        )
+        grounding_query_shape = shape_reconciliation.effective_shape
+        # Only verbatim current-turn evidence may travel with an LLM-selected
+        # shape.  The draft remains a language interpretation; Grounding still
+        # owns runtime identities and Completeness still owns execution safety.
+        query_plan = query_plan.model_copy(
+            update={
+                "query_shape": grounding_query_shape,
+                "query_shape_evidence": shape_reconciliation.draft_evidence,
+            }
+        )
         semantic_audit["query_shape_reconciliation"] = {
             "router": (
-                question_routing.query_shape.value
-                if question_routing is not None
-                and question_routing.query_shape is not None
+                router_query_shape.value
+                if router_query_shape is not None
                 else None
             ),
             "draft": draft_query_shape.value if draft_query_shape else None,
@@ -784,6 +780,13 @@ class LLMTurnService:
                 grounding_query_shape.value if grounding_query_shape else None
             ),
             "correction": relation_evidence.semantic_input is not None,
+            "source": shape_reconciliation.source,
+            "router_strength": shape_reconciliation.router_strength,
+            "draft_evidence": shape_reconciliation.draft_evidence,
+            "conflict": shape_reconciliation.conflict,
+            "requires_clarification": (
+                shape_reconciliation.requires_clarification
+            ),
         }
 
         template_grounding = DEFAULT_TEMPLATE_CATALOG.ground(
@@ -910,9 +913,11 @@ class LLMTurnService:
                             *intent.detected_dimensions,
                             *query_plan.measures,
                             *query_plan.dimensions,
+                            shape_reconciliation.draft_evidence,
                         )
                         if isinstance(value, str) and value.strip()
                     ),
+                    shape_reconciliation=shape_reconciliation,
                 )
                 semantic_audit["semantic_obligations"] = [
                     item.model_dump(mode="json") for item in coverage.obligations

@@ -3,7 +3,19 @@
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
 > **最后更新：** 2026-09-16
 
-## 当前阶段 — M5.10.3 — 人工验收后语义安全收口（产品版本 M5.10.3）
+## 当前阶段 — M5.10.4 — 语言理解与 QueryShape 收口（产品版本 M5.10.4）
+
+正式开发基线为 clean `main@0c8b0984c507d0a595e319d0a7c5dd7918863df0`；任务启动时 local HEAD == `origin/main`。M5.10.3 已由用户确认人工复测无问题并标记 COMPLETE。M5.10.4 的目标是在现有 QueryShape、runtime candidate 与 canonical authority 内释放已有 LLM QueryPlan draft 的开放语言解释能力，不增加第二次 shape call、Planner、Grounding、Memory 或 QueryShape。
+
+现有 QueryPlan prompt 新增八种 QueryShape 与逐字 `query_shape_evidence` bounded contract。QuestionRouter 继续负责 capability routing、安全 floor 与高置信结构 cue；`SCALAR` 和 `None` 仅作为弱 fallback，不能覆盖有当前证据的 richer LLM draft。reconciliation 只产生结构义务：对象与 member identity 仍必须由当前 runtime Catalog/Grounding 验证，StateTransition 仍拥有 canonical state，Completeness 仍在 DAX 前 fail closed。
+
+Grounding 只在当前输入证明相同数值 bound 时接受 draft ranking TopN/sort；同名 runtime 字段只允许 bounded selector 在当前 Catalog candidate IDs 内选 owner。同一间接短语不得同时独立证明 ranking shape 与 measure identity。不完整 ranking、非法/缺失 shape evidence、未知/歧义对象/member，以及无具体数量的“最近几个月/recent months”均返回对应 clarification，并保持 ZERO DAX / ZERO factual Memory commit。vague-month 只保留 trend/time obligation，具体时间范围属于 M5.10.5，未在本轮发明默认值。
+
+Fresh local evidence：failure-first `11 failed, 2 passed`；focused/current semantic `307 passed`；邻近 semantic `703 passed`；M5.9.4 stress 入口 `29 passed`，覆盖 51,200 generated cases 与 Logistics；Semantic Compatibility `775 passed / 123 production files`；backend `2798 passed, 1 skipped`；Golden `11 passed / 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 140、Repository Safety 406、AI Error Ledger 95、Documentation/Artifact Governance、compileall、version consistency 47 与 diff-check PASS。configured DeepSeek + Real Local MCP 在 `PowerBIAgent_M3_Rich_Test` / `PowerBIAgent_M5_8_5_Logistics_Test` 完成 14/14，含 10 个真实 DAX/VerifiedFactSet witness；ambiguity、incomplete ranking、vague trend、unknown member 安全澄清，business/temp residual=0，zero override，未读取或输出 `.env`/Secret。
+
+QueryShape enum、M5.9.2 runtime、M5.8 Provider architecture、Memory/persistence、Deterministic DAX、VerifiedFactSet、Report 与 frontend 均未修改。M5.10.4 COMPLETE；M5.10.5 NOT STARTED。按用户要求，完整 Semantic Layer FINAL ACCEPTANCE 统一在 M5.10.5 完成后进行；M5 FINAL=false。
+
+## 上一阶段 — M5.10.3 — 人工验收后语义安全收口（COMPLETE）
 
 正式开发基线为 clean `main@82ba346fde7cf71ba1d3bfeb4038f660500ff8be`；任务启动时 local HEAD == `origin/main`、工作区干净且无 merge/rebase/cherry-pick/revert 中间状态。发布候选 Settings.version=M5.10.3。M5.10.2 的实现、报表视觉与当时 exact-SHA 证据仍是历史事实，但后续真实人工业务验收重新打开了 semantic/state P0，因此不能据旧 PASS 宣告 M5 FINAL。
 
@@ -13,7 +25,7 @@ G0 governance、production-path failure reproducers、permanent regression、最
 
 Fresh evidence：focused M5.10.3 `26 passed`；M5.9.4 51,200-case stress、跨 Retail/Education/Operations/Logistics/unknown holdout 均 PASS；backend `2758 passed, 1 skipped`；Semantic Compatibility `775 passed / 123 production files`；Golden `11 passed / 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 140、Repository Safety 403、AI Error Ledger 90、Documentation/Artifact Governance、compileall 与 diff-check PASS。
 
-Scoped Real 使用显式 `_env_file=None` 的 deterministic acceptance language provider，只替换语言草稿；schema/member/DAX/QueryResult/Result Inspection/VerifiedFactSet 均走 production + Real Local MCP。同一 session 在 `PowerBIAgent_M3_Rich_Test` 与 `PowerBIAgent_M5_8_5_Logistics_Test` 完成 11 场景、9 次真实 DAX：P0-A clarification + ZERO DAX/Memory；P0-B 移除 stale Region filter；P0-C 依次保留 ranking 并替换 Total Quantity/North；unknown ZERO DAX 且 Memory 不变；normal 与跨模型/会话隔离通过。business/temp/session/worker residual=0。当前进程无配置 DeepSeek key，本轮未读取 `.env`，所以 DeepSeek-backed Real E2E 明确 BLOCKED；用户人工复测 PENDING。M5.10.4+ NOT STARTED，M5 FINAL=false。
+Scoped Real 使用显式 `_env_file=None` 的 deterministic acceptance language provider，只替换语言草稿；schema/member/DAX/QueryResult/Result Inspection/VerifiedFactSet 均走 production + Real Local MCP。同一 session 在 `PowerBIAgent_M3_Rich_Test` 与 `PowerBIAgent_M5_8_5_Logistics_Test` 完成 11 场景、9 次真实 DAX：P0-A clarification + ZERO DAX/Memory；P0-B 移除 stale Region filter；P0-C 依次保留 ranking 并替换 Total Quantity/North；unknown ZERO DAX 且 Memory 不变；normal 与跨模型/会话隔离通过。business/temp/session/worker residual=0。用户随后确认人工复测无问题，因此 M5.10.3 COMPLETE；当时 DeepSeek BLOCKED 仍作为历史执行环境事实保留。
 
 ## 上一阶段 — M5.10.2 Manual Visual Fidelity FIX
 
@@ -190,8 +202,9 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 | **M5.10** | **复杂报表合同与专业销售模板基础** | **✅ COMPLETE；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10.1** | **Professional Renderer + Real Visual Acceptance** | **✅ 本地收口；exact-SHA CI 为发布证据** |
 | **M5.10.2** | **Executive Report Product Refinement & Manual Visual Fidelity FIX** | **✅ implementation complete；post-manual semantic P0 reopened** |
-| **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **🟡 IMPLEMENTATION READY；DeepSeek Real / 用户最终人工验收 PENDING** |
-| **M5.10.4—M5.10.7** | **语言/QueryShape → 时间/事实呈现 → 模板/错误 UX → MVP 最终收口** | **⏳ NOT STARTED** |
+| **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **✅ COMPLETE；用户人工验收通过** |
+| **M5.10.4** | **语言理解与 QueryShape 收口** | **✅ COMPLETE；DeepSeek + Real Local MCP 14/14** |
+| **M5.10.5—M5.10.7** | **时间/事实呈现 → 模板/错误 UX → MVP 最终收口** | **⏳ NOT STARTED；Semantic Layer FINAL ACCEPTANCE 尚未进行** |
 
 ### M5.7 completed contract
 
@@ -536,7 +549,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-M5.10.3 — 人工验收后语义安全收口已完成三类 P0 的最小实现；发布候选需以 fresh release gates、Real Local MCP、白名单 commit、push main 与 exact-SHA CI success 为证据，随后等待用户最终人工验收。M5.10.4 语言与 QueryShape 收口、M5.10.5 时间与事实呈现收口、M5.10.6 模板兼容与错误 UX 收口、M5.10.7 MVP 最终收口均未启动。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+M5.10.4 — 语言理解与 QueryShape 收口已完成本地自动化、跨域/stress 与 configured DeepSeek + Real Local MCP acceptance；发布以白名单 commit、push main 与 exact-SHA CI success 为证据。M5.10.5 时间与事实呈现收口尚未启动；完成后统一进行完整 Semantic Layer 用户人工验收。M5.10.6 模板兼容与错误 UX、M5.10.7 MVP 最终收口均未启动。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -585,4 +598,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；m5/rebuild 冻结；main-only；M5.10.4+ NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.4 COMPLETE；M5.10.5 NOT STARTED；Semantic Layer FINAL ACCEPTANCE 尚未进行；m5/rebuild 冻结；main-only；M5 FINAL=false*

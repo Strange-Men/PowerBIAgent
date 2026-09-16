@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import re
+import unicodedata
 from datetime import date
 from enum import Enum
 from typing import ClassVar
@@ -12,11 +13,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.intent.temporal_expression import (
     has_explicit_month_range,
+    has_vague_recent_month_range,
     parse_explicit_month_range,
 )
 from backend.app.query_plan.clarification_reasons import ClarificationReason
 from backend.app.query_plan.grounding import GroundingOutcome, GroundingStatus
-from backend.app.query_plan.semantic_catalog import SemanticCatalog
+from backend.app.query_plan.semantic_catalog import (
+    SemanticCatalog,
+    normalize_semantic_text,
+)
 from backend.app.query_plan.turn_relation import TurnRelationEvidence
 from backend.app.schemas.data_contracts import (
     CanonicalQueryPlan,
@@ -26,6 +31,7 @@ from backend.app.schemas.data_contracts import (
 
 
 class SemanticObligationKind(str, Enum):
+    QUERY_SHAPE = "query_shape"
     MEASURE = "measure"
     DIMENSION = "dimension"
     EXPLICIT_FILTER_MEMBER = "explicit_filter_member"
@@ -74,6 +80,88 @@ class SemanticObligationReport(BaseModel):
         ]
 
 
+class QueryShapeReconciliationReport(BaseModel):
+    """Bounded current-turn shape choice before canonical grounding."""
+
+    effective_shape: QueryShape | None = None
+    source: str
+    router_strength: str
+    draft_evidence: str | None = None
+    conflict: bool = False
+    requires_clarification: bool = False
+
+    model_config = ConfigDict(frozen=True)
+
+
+class QueryShapeReconciliationPolicy:
+    """Reconcile Router evidence with the existing LLM QueryPlan draft.
+
+    The result is only a structural obligation.  It never binds a runtime
+    object, member, date, query, result, or fact.
+    """
+
+    @classmethod
+    def reconcile(
+        cls,
+        *,
+        user_input: str,
+        router_shape: QueryShape | None,
+        draft_shape: QueryShape | None,
+        draft_evidence: str | None,
+        correction: bool = False,
+    ) -> QueryShapeReconciliationReport:
+        evidence = cls._validated_evidence(user_input, draft_evidence)
+        router_strength = (
+            "context_fallback"
+            if router_shape is None
+            else "weak_fallback"
+            if router_shape == QueryShape.SCALAR
+            else "high_confidence"
+        )
+        richer_draft = draft_shape not in {None, QueryShape.SCALAR}
+
+        if correction:
+            effective = draft_shape if richer_draft else None
+            source = "current_llm_draft" if richer_draft else "compatible_context"
+        elif router_strength == "high_confidence":
+            effective = router_shape
+            source = "router_high_confidence"
+        elif richer_draft:
+            effective = draft_shape
+            source = "current_llm_draft"
+        elif router_shape == QueryShape.SCALAR:
+            effective = QueryShape.SCALAR
+            source = "router_weak_fallback"
+        else:
+            effective = None
+            source = "compatible_context"
+
+        draft_selected = source == "current_llm_draft"
+        return QueryShapeReconciliationReport(
+            effective_shape=effective,
+            source=source,
+            router_strength=router_strength,
+            draft_evidence=evidence,
+            conflict=(
+                router_shape is not None
+                and draft_shape is not None
+                and router_shape != draft_shape
+            ),
+            requires_clarification=draft_selected and evidence is None,
+        )
+
+    @staticmethod
+    def _validated_evidence(
+        user_input: str, draft_evidence: str | None
+    ) -> str | None:
+        evidence = (draft_evidence or "").strip()
+        if not evidence or len(evidence) > 80:
+            return None
+        normalized_input = unicodedata.normalize("NFKC", user_input).casefold()
+        normalized_evidence = unicodedata.normalize("NFKC", evidence).casefold()
+        return evidence if normalized_evidence in normalized_input else None
+
+
 class SemanticObligationCoverageGate:
     """Audit result-affecting modifiers without requiring every token to bind."""
 
@@ -106,9 +194,32 @@ class SemanticObligationCoverageGate:
         catalog: SemanticCatalog,
         relation: TurnRelationEvidence,
         language_evidence: tuple[str, ...] = (),
+        shape_reconciliation: QueryShapeReconciliationReport | None = None,
     ) -> SemanticObligationReport:
         obligations: list[SemanticObligation] = []
         clarification_reason = outcome.clarification_reason
+        if (
+            shape_reconciliation is not None
+            and shape_reconciliation.source == "current_llm_draft"
+            and shape_reconciliation.effective_shape is not None
+        ):
+            obligations.append(SemanticObligation(
+                kind=SemanticObligationKind.QUERY_SHAPE,
+                status=(
+                    SemanticObligationStatus.NEEDS_CLARIFICATION
+                    if shape_reconciliation.requires_clarification
+                    else SemanticObligationStatus.RESOLVED
+                ),
+                phrase=shape_reconciliation.draft_evidence or user_input,
+                canonical_identity=shape_reconciliation.effective_shape.value,
+                evidence=(
+                    "bounded_llm_shape_evidence"
+                    if not shape_reconciliation.requires_clarification
+                    else "bounded_llm_shape_evidence_missing"
+                ),
+            ))
+            if shape_reconciliation.requires_clarification:
+                clarification_reason = ClarificationReason.UNSUPPORTED_SEMANTIC_REQUEST
         role_kind = {
             "measure": SemanticObligationKind.MEASURE,
             "dimension": SemanticObligationKind.DIMENSION,
@@ -134,6 +245,30 @@ class SemanticObligationCoverageGate:
                 canonical_identity=canonical,
                 evidence=item.method or "grounding",
             ))
+        if (
+            shape_reconciliation is not None
+            and shape_reconciliation.source == "current_llm_draft"
+            and shape_reconciliation.draft_evidence
+            and any(
+                item.role == "measure"
+                and item.status == GroundingStatus.RESOLVED
+                and item.method == "bounded_llm"
+                and normalize_semantic_text(item.phrase)
+                == normalize_semantic_text(shape_reconciliation.draft_evidence)
+                for item in outcome.object_results
+            )
+        ):
+            # One indirect phrase cannot independently prove both a result
+            # shape and a metric identity. This catches vague performance
+            # language without changing runtime candidate authority.
+            obligations.append(SemanticObligation(
+                kind=SemanticObligationKind.MEASURE,
+                status=SemanticObligationStatus.NEEDS_CLARIFICATION,
+                phrase=shape_reconciliation.draft_evidence,
+                canonical_identity=None,
+                evidence="shared_llm_shape_measure_evidence",
+            ))
+            clarification_reason = ClarificationReason.MEASURE_UNRESOLVED
         for item in outcome.member_results:
             obligations.append(SemanticObligation(
                 kind=SemanticObligationKind.EXPLICIT_FILTER_MEMBER,
@@ -208,7 +343,21 @@ class SemanticObligationCoverageGate:
                     evidence="yearless_month_range_requires_year",
                 ))
                 clarification_reason = ClarificationReason.INCOMPLETE_TIME_RANGE
-            if delta.sort_specified or delta.top_n_specified:
+            current_ranking_obligation = (
+                delta.query_shape == QueryShape.RANKING
+                and (
+                    delta.sort_specified
+                    or delta.top_n_specified
+                    or (
+                        shape_reconciliation is not None
+                        and shape_reconciliation.effective_shape
+                        == QueryShape.RANKING
+                        and shape_reconciliation.source
+                        != "compatible_context"
+                    )
+                )
+            )
+            if current_ranking_obligation:
                 complete = delta.sort is not None and delta.top_n is not None
                 obligations.append(SemanticObligation(
                     kind=SemanticObligationKind.RANKING,
@@ -217,6 +366,10 @@ class SemanticObligationCoverageGate:
                     canonical_identity=(f"{delta.sort}:top{delta.top_n}" if complete else None),
                     evidence="deterministic_analysis",
                 ))
+                if not complete:
+                    clarification_reason = (
+                        ClarificationReason.RANKING_INFORMATION_INCOMPLETE
+                    )
             for cleared, phrase in (
                 (delta.clear_filters, "filters"), (delta.clear_time, "time"),
                 (delta.clear_sort, "sort"), (delta.clear_top_n, "top_n"),
@@ -234,6 +387,16 @@ class SemanticObligationCoverageGate:
                 relation.matched_cue or relation.kind.value,
                 relation.source,
             ))
+
+        if has_vague_recent_month_range(user_input):
+            obligations.append(SemanticObligation(
+                kind=SemanticObligationKind.TIME,
+                status=SemanticObligationStatus.NEEDS_CLARIFICATION,
+                phrase=user_input,
+                canonical_identity=None,
+                evidence="vague_recent_month_range",
+            ))
+            clarification_reason = ClarificationReason.INCOMPLETE_TIME_RANGE
 
         if not any(item.status in {
             SemanticObligationStatus.NEEDS_CLARIFICATION,

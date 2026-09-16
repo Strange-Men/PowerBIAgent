@@ -164,6 +164,7 @@ class _SemanticSafetyProvider(LLMProvider):
         elif self.active == "correct_measure_ranking":
             values.update(
                 query_shape=QueryShape.RANKING,
+                query_shape_evidence="按产品排前三",
                 measures=["Total Quantity"],
                 dimensions=["Product"],
                 sort="desc",

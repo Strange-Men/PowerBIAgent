@@ -73,6 +73,8 @@ time_intent 只能为 null 或以下受限结构之一；expression 必须逐字
 ```
 例如“2025年5月”为 absolute_month；“去年五月”为 absolute_month；“上个月”为
 relative_month；“今年第一季度”为 quarter；“最近半年”为 recent_months。
+“最近几个月/过去几个月/recent months”没有具体月数，可输出 recent_months 且
+months=null；后端会保留趋势义务并询问具体范围，禁止把“几”猜成任意数值。
 最终日期范围和日期字段由后端确定性校验与 runtime schema 决定。
 
 ### FilterSpec 结构

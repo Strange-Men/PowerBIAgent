@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** 当前产品版本/Settings.version=M5.10.3。M5.10.3 — 人工验收后语义安全收口的三类 semantic/state P0 已完成最小实现、永久回归、cross-domain、全量自动门禁与 deterministic-language + Real Local MCP scoped acceptance；DeepSeek Real E2E 因当前进程无配置 key 而 BLOCKED，用户最终人工复测 PENDING。M5.9.2 runtime 与 M5.8.5 factual authority 的架构合同冻结；main-only；M5 FINAL=false。
+> **状态：** 当前产品版本/Settings.version=M5.10.4。M5.10.3 已由用户人工验收通过；M5.10.4 已完成 bounded 开放语言解释、QueryShape reconciliation、跨域/stress/full gates 与 configured DeepSeek + Real Local MCP 14/14 验收。M5.10.5 NOT STARTED；Semantic Layer FINAL ACCEPTANCE 尚未进行；M5.9.2 runtime 与 M5.8.5 factual authority 的架构合同冻结；main-only；M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -59,8 +59,8 @@
 | **M5.10** | **复杂报表合同与专业销售模板基础** | **✅ foundation 完成；以当前 main exact-SHA CI success 为发布证据** |
 | **M5.10.1** | **Professional Renderer + Real Visual Acceptance** | **✅ 本地收口；exact-SHA CI 为发布证据** |
 | **M5.10.2** | **Executive Report Product Refinement & Hardening** | **✅ 本地产品收口；exact-SHA CI 为发布证据** |
-| **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **🟡 IMPLEMENTATION READY；DeepSeek Real / 用户最终人工验收 PENDING** |
-| **M5.10.4** | **语言与 QueryShape 收口** | **⏳ NOT STARTED** |
+| **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **✅ COMPLETE；用户人工验收通过** |
+| **M5.10.4** | **语言与 QueryShape 收口** | **✅ COMPLETE；DeepSeek + Real Local MCP 14/14** |
 | **M5.10.5** | **时间与事实呈现收口** | **⏳ NOT STARTED** |
 | **M5.10.6** | **模板兼容与错误 UX 收口** | **⏳ NOT STARTED** |
 | **M5.10.7** | **MVP 最终 Real E2E / 压力 / mutation / 历史 / exact-SHA 收口** | **⏳ NOT STARTED** |
@@ -85,7 +85,15 @@
 
 允许正确完成、minimal clarification、no-match 或 fail closed；禁止 silent downgrade、partial execute 与错误 factual Memory commit。M5.10.2 历史 PASS 保留为当时实现证据，但不再用来宣称上述风险已关闭。Frozen 只表示 authority/architecture contract 不变，允许对违反 accepted invariant 的实现缺陷做原链最小修复。
 
-实现已在既有 Router → Grounding/Completeness → StateTransition/TurnRelation 单链内完成，无新 QueryShape、Planner、Memory、migration、Provider/runtime 或 report 变化。Focused 26 PASS；M5.9.4 51,200-case stress、跨 Retail/Education/Operations/Logistics/unknown holdout 与 full backend `2758 passed, 1 skipped` 均通过。最终 scoped Real 使用 deterministic acceptance language provider + 同会话 Local MCP，Rich/Logistics 共 11 场景、9 次真实 DAX，P0-A/unknown 均 ZERO DAX/Memory mutation，business/temp/session/worker residual=0。真实 DeepSeek E2E 与用户人工复测仍待完成，故本阶段不标记 FINAL PASS。
+实现已在既有 Router → Grounding/Completeness → StateTransition/TurnRelation 单链内完成，无新 QueryShape、Planner、Memory、migration、Provider/runtime 或 report 变化。Focused 26 PASS；M5.9.4 51,200-case stress、跨 Retail/Education/Operations/Logistics/unknown holdout 与 full backend `2758 passed, 1 skipped` 均通过。最终 scoped Real 使用 deterministic acceptance language provider + 同会话 Local MCP，Rich/Logistics 共 11 场景、9 次真实 DAX，P0-A/unknown 均 ZERO DAX/Memory mutation，business/temp/session/worker residual=0。用户已确认人工复测无问题，M5.10.3 COMPLETE。
+
+## M5.10.4 — 语言理解与 QueryShape 收口
+
+现有 QueryPlan LLM 调用现在可在八种既有 QueryShape 内解释自然中文、英文、中英混合、倒装和常见 paraphrase，并用最长 80 字符、逐字来自当前输入的 `query_shape_evidence` 形成 bounded 结构建议。Router 高置信结构证据继续优先；`SCALAR`/`None` 只是 fallback，不能抹除有证据的 richer current draft。runtime Catalog/Grounding 仍是对象/member identity authority，StateTransition、Completeness、Deterministic DAX 与 VerifiedFactSet authority 均未改变。
+
+Grounding 只在当前输入证明相同 bound 时接受 draft ranking TopN/sort，并把同名 runtime 字段的 owner 选择限制在当前 Catalog IDs；不完整 ranking、模糊“最近几个月”、非法/缺失 shape evidence、未知对象/member，以及同一间接短语同时承担 shape 与 measure 证据均在 DAX 前澄清。QueryShape enum、M5.9.2 runtime、Provider、Memory、Report、frontend、persistence 均未修改，M5.10.5 时间范围解释未实现。
+
+Failure-first 为 `11 failed, 2 passed`；focused/current semantic 307、邻近 semantic 703、M5.9.4 stress 29（保留 51,200 cases 与 Logistics）、Semantic Compatibility 775、full backend `2798 passed, 1 skipped`。configured DeepSeek + Real Local MCP 在 Rich/Logistics PBIX 完成 14/14 与 10 个真实 DAX/VerifiedFactSet witness，安全 clarification 与 business/temp residual=0。M5.10.4 COMPLETE；完整语义层用户人工验收统一在 M5.10.5 完成后执行，M5 FINAL=false。
 
 ## M5 重建决策与历史状态
 
@@ -326,6 +334,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.8.2—M5.10.2 已完成当时定义的本地实现收口；M5.8.5 factual correctness 与 M5.9.2 runtime 的 architecture/authority boundary 冻结。post-manual acceptance 已重新打开 M5.10.3 semantic/state P0；M5.10.4+ NOT STARTED；M5 FINAL=false。
+- M5.8.2—M5.10.4 已完成各自定义的本地实现与验收；M5.8.5 factual correctness 与 M5.9.2 runtime 的 architecture/authority boundary 冻结。M5.10.5 NOT STARTED；Semantic Layer FINAL ACCEPTANCE 尚未进行；M5 FINAL=false。
 
-*最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-16 | M5.10.4 COMPLETE；M5.10.5 NOT STARTED；Semantic Layer FINAL ACCEPTANCE 尚未进行；M5 FINAL=false*
