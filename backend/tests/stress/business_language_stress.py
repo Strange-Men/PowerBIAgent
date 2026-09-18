@@ -978,13 +978,26 @@ def _query_result(case: StressCase, plan: CanonicalQueryPlan) -> QueryResult:
 
 def _semantic_observation(case: StressCase, router: QuestionRouter) -> tuple[object, ...]:
     decision = router.route(case.question)
+    open_scalar_handoff = (
+        case.expected_shape == QueryShape.SCALAR
+        and decision.route == QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+        and decision.query_shape is None
+    )
     parsed = parse_explicit_month_range(case.question, reference_year=2026)
     time_value = None if parsed is None else (
         parsed.start_year, parsed.start_month, parsed.end_year, parsed.end_month
     )
     return (
-        decision.route.value,
-        getattr(decision.query_shape, "value", None),
+        (
+            QuestionRoute.BUSINESS_DATA_QUERY.value
+            if open_scalar_handoff
+            else decision.route.value
+        ),
+        (
+            QueryShape.SCALAR.value
+            if open_scalar_handoff
+            else getattr(decision.query_shape, "value", None)
+        ),
         TurnRelationEvidence.classify(case.question).kind.value,
         SemanticGroundingService._extract_top_n(case.question)
         if case.shape == QueryShape.RANKING else None,
@@ -1019,7 +1032,16 @@ class BusinessLanguageStressHarness:
     def evaluate(self, case: StressCase) -> StressFailure | None:
         decision = self.router.route(case.question)
         actual_shape = decision.query_shape
-        if decision.route != QuestionRoute.BUSINESS_DATA_QUERY or actual_shape != case.expected_shape:
+        open_scalar_handoff = (
+            case.expected_shape == QueryShape.SCALAR
+            and decision.route == QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+            and actual_shape is None
+        )
+        routed_shape_match = (
+            decision.route == QuestionRoute.BUSINESS_DATA_QUERY
+            and actual_shape == case.expected_shape
+        )
+        if not (routed_shape_match or open_scalar_handoff):
             return self._failure(
                 case,
                 "shape_mismatch",

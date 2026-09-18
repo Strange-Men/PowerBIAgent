@@ -108,6 +108,7 @@ class QueryShapeReconciliationPolicy:
         router_shape: QueryShape | None,
         draft_shape: QueryShape | None,
         draft_evidence: str | None,
+        draft_filter_count: int | None = None,
         correction: bool = False,
     ) -> QueryShapeReconciliationReport:
         evidence = cls._validated_evidence(user_input, draft_evidence)
@@ -119,6 +120,20 @@ class QueryShapeReconciliationPolicy:
             else "high_confidence"
         )
         richer_draft = draft_shape not in {None, QueryShape.SCALAR}
+        if (
+            richer_draft
+            and draft_shape in {
+                QueryShape.MEMBER_SET,
+                QueryShape.FILTERED_AGGREGATION,
+            }
+            and draft_filter_count is not None
+            and draft_filter_count < 2
+        ):
+            # A single member filter is still a scalar scope.  Set/combine
+            # shapes require at least two current-turn member candidates;
+            # the LLM shape label and a verbatim span alone cannot create that
+            # structural obligation.
+            richer_draft = False
 
         if correction:
             effective = draft_shape if richer_draft else None
@@ -178,6 +193,7 @@ class SemanticObligationCoverageGate:
         "最高", "最低", "最大", "最小", "最多", "最少", "最好", "最差", "最准", "最严重", "最快", "最慢", "最早", "最晚", "卖得最好", "卖的最好",
         "前十", "前三", "第一", "排名", "趋势", "走势", "变化", "月度", "年度", "逐月", "逐年", "每月", "每个月", "按月", "按年", "前", "第", "个", "是", "哪", "款", "从", "至", "到", "月", "年",
         "and", "or", "what", "which", "how", "many", "show", "list", "me", "please", "by",
+        "could", "would", "can", "you", "briefly",
         "is", "are", "has", "have", "the", "all", "for", "from", "to", "of",
         "total", "average", "top", "highest", "lowest", "trend", "monthly", "yearly", "per", "question", "new",
         "等于", "等于多少", "时",
@@ -364,7 +380,7 @@ class SemanticObligationCoverageGate:
                         and shape_reconciliation.effective_shape
                         == QueryShape.RANKING
                         and shape_reconciliation.source
-                        != "compatible_context"
+                        not in {"compatible_context", "pending_clarification"}
                     )
                 )
             )

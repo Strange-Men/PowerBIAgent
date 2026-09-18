@@ -13,7 +13,10 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, computed_field
 
 from backend.app.schemas.data_contracts import ReportSpec
-from backend.app.schemas.factual_context import ObservedCoverageStatus
+from backend.app.schemas.factual_context import (
+    DataHorizonStatus,
+    ObservedCoverageStatus,
+)
 from backend.app.schemas.report_context import (
     ExceptionAssessmentState,
     MetricDefinitionStatus,
@@ -44,6 +47,7 @@ class ReportPresentationProjection(BaseModel):
     filter_display: str
     freshness_display: str
     observed_coverage_display: str
+    data_availability_display: str
     exception_display: str
     generated_at_display: str
     queried_at_display: str
@@ -70,6 +74,7 @@ class ReportPresentationProjection(BaseModel):
             self.filter_display,
             self.freshness_display,
             self.observed_coverage_display,
+            self.data_availability_display,
             self.exception_display,
             self.generated_at_display,
             self.metric_summary,
@@ -144,6 +149,10 @@ class ProfessionalReportPresenter:
             observed_coverage_display=self._coverage_display(
                 context.observed_data_coverage
             ),
+            data_availability_display=self._availability_display(
+                context.data_availability,
+                context.metric_definitions,
+            ),
             exception_display=(
                 "暂无可验证异常基准"
                 if context.exception_assessment.state
@@ -163,6 +172,29 @@ class ProfessionalReportPresenter:
             canonical_snapshot_at=snapshot.snapshot_at.isoformat(),
             schema_fingerprint=snapshot.schema_fingerprint,
         )
+
+    @staticmethod
+    def _availability_display(data_availability, metric_definitions) -> str:
+        if not data_availability:
+            return "暂不可确定"
+        labels = {
+            item.canonical_measure: item.display_name
+            for item in metric_definitions
+        }
+        rendered: list[str] = []
+        for item in data_availability:
+            horizon = item.available_data_horizon
+            if horizon is None or horizon.status is DataHorizonStatus.UNKNOWN:
+                continue
+            label = labels.get(horizon.measure, horizon.measure)
+            if horizon.status is DataHorizonStatus.EMPTY:
+                rendered.append(f"{label}暂无可观测数据")
+            elif horizon.latest_period is not None:
+                rendered.append(
+                    f"{label}可观测至{horizon.latest_period.year}年"
+                    f"{horizon.latest_period.month}月"
+                )
+        return "；".join(rendered) if rendered else "暂不可确定"
 
     @classmethod
     def _model_display_name(cls, snapshot) -> str:

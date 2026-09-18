@@ -340,8 +340,10 @@ class TurnPipeline:
             },
         )
         if routing.route in {
+            QuestionRoute.LLM_SEMANTIC_INTERPRETATION,
             QuestionRoute.SOCIAL_CONVERSATION,
             QuestionRoute.CONCEPT_EXPLANATION,
+            QuestionRoute.PRODUCT_HELP,
         }:
             if do_conversation is None:
                 await self.snapshot_store.abort(effective_req_id, runtime_mode)
@@ -359,14 +361,31 @@ class TurnPipeline:
                     trace_id=trace_id,
                     **execute_kwargs,
                 )
-                result["llm_profile_key"] = llm_profile_key or llm_provider_name
-                result["llm_model"] = llm_model
-                result["llm_provider_protocol"] = llm_provider_protocol
-                result["user_message"] = message
-                with measure_performance("persistence"):
-                    await self._save_snapshot(result, runtime_mode, fingerprint_hash)
-                    await self.snapshot_store.complete(effective_req_id, runtime_mode)
-                return result
+                requires_business_grounding = bool(
+                    (result.get("execution_audit") or {}).get(
+                        "requires_business_grounding"
+                    )
+                )
+                if requires_business_grounding:
+                    routing = QuestionRoutingDecision(
+                        route=QuestionRoute.BUSINESS_DATA_QUERY,
+                        query_shape=None,
+                    )
+                    trace.record(
+                        "semantic_interpretation_escalated",
+                        trace_id=trace_id,
+                        request_id=effective_req_id,
+                        data_summary={"route": routing.route.value},
+                    )
+                else:
+                    result["llm_profile_key"] = llm_profile_key or llm_provider_name
+                    result["llm_model"] = llm_model
+                    result["llm_provider_protocol"] = llm_provider_protocol
+                    result["user_message"] = message
+                    with measure_performance("persistence"):
+                        await self._save_snapshot(result, runtime_mode, fingerprint_hash)
+                        await self.snapshot_store.complete(effective_req_id, runtime_mode)
+                    return result
             except BaseException:
                 await self.snapshot_store.abort(effective_req_id, runtime_mode)
                 raise
@@ -421,7 +440,10 @@ class TurnPipeline:
                 controller_config = self.config.model_copy(update={
                     "max_tool_calls": max(
                         self.config.max_tool_calls,
-                        len(full_requested_ids()) + 2,
+                        # At most one deterministic, measure-aware availability
+                        # probe may accompany each resolved report requirement,
+                        # plus schema/member work and the final renderer.
+                        len(full_requested_ids()) * 2 + 2,
                     )
                 })
             controller = TurnController(
@@ -561,7 +583,7 @@ class TurnPipeline:
                 request_id=request_id,
                 conversation_id=conversation_id,
                 terminal_state="unsupported",
-                intent=routing.route.value,
+                intent="unsupported",
                 response_type="unsupported",
                 unsupported_reason=(
                     routing.direct_answer or "该问题不属于当前产品能力范围。"

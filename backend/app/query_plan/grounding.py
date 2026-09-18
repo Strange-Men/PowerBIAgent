@@ -227,7 +227,10 @@ class BoundedLLMObjectSelector:
                 "in names, descriptions, format strings and existing definitions. Distinguish monetary amounts, "
                 "physical quantities, event/entity counts, averages and ratios. Do not confuse a sum of units "
                 "with monetary revenue merely because both concern the same activity. Ordinary translations "
-                "and synonyms are sufficient language evidence. Vague best/performance without a metric is unresolved."
+                "and synonyms are sufficient language evidence. A generic activity or domain noun without an "
+                "explicit measurement meaning is not a metric: when candidates measure different families "
+                "such as money, quantity or event count for that activity, return AMBIGUOUS even if one is a "
+                "common cultural default. Vague best/performance without a metric is unresolved."
             ),
             "dimension": (
                 "Bind the grouping or entity-list subject at the granularity requested. Compare entity/type "
@@ -1562,13 +1565,16 @@ class SemanticGroundingService:
             and len(pending.dimensions) == 1
             and not self._current_weak_phrases(
                 [*intent.detected_dimensions, *draft.dimensions], user_input)
-            and set(draft.dimensions).issubset(pending.dimensions)
-            and set(intent.detected_dimensions).issubset(pending.dimensions)
         ):
+            pending_owner = pending.dimension_tables.get(pending.dimensions[0])
             pending_candidates = [
                 item
                 for item in self.catalog.by_type(SemanticObjectType.FIELD)
                 if item.canonical_name == pending.dimensions[0]
+                and (
+                    pending_owner is None
+                    or item.table_name == pending_owner
+                )
             ]
             if len(pending_candidates) == 1:
                 current_dimension = ObjectGrounder._resolved(

@@ -35,7 +35,7 @@ def _result(rows: list[list[object]], columns: list[str]) -> QueryResult:
     )
 
 
-def test_scope_descriptor_is_plan_owned_and_answer_cannot_omit_it() -> None:
+def test_scope_descriptor_stays_in_evidence_not_user_facing_answer() -> None:
     plan = _plan(
         QueryShape.FILTERED_AGGREGATION,
         filters=[StructuredFilter(field="Hub", value="North Hub")],
@@ -54,7 +54,10 @@ def test_scope_descriptor_is_plan_owned_and_answer_cannot_omit_it() -> None:
         "模型：model · 指标：Package Count · "
         "筛选：Hub=North Hub · 查询时间：2025年5月"
     )
-    assert answer.answer.startswith(scope + "：")
+    assert not answer.answer.startswith(scope)
+    assert "模型：model" not in answer.answer
+    assert "2025年5月" in answer.answer
+    assert "North Hub" in answer.answer
     assert answer.evidence["effective_scope"] == scope
     assert answer.evidence["requested_query_scope"] == scope
     assert answer.evidence["canonical_query_scope"] == {

@@ -129,7 +129,7 @@ async def owned_request(app, database, tmp_path, domain, message, request_option
                 owner.add_conversation(conversation)
                 owner.add_sqlite_path(database)
                 response = await client.post("/api/v1/chat", json={"message": message, "semantic_model_key": domain.schema.key, "conversation_id": conversation, "request_id": str(uuid.uuid4()), **(request_options or {})})
-                assert response.status_code == 200
+                assert response.status_code == 200, response.text
                 return response.json()
 
 
@@ -210,26 +210,20 @@ async def test_measure_name_substring_does_not_create_extra_filter_field(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_runtime_trend_with_invalid_weak_intent_still_clarifies(monkeypatch, tmp_path):
-    from backend.app.llm.base import LLMValidationError
-
+async def test_runtime_trend_with_missing_date_metadata_still_clarifies_without_intent_llm(
+    monkeypatch, tmp_path
+):
     domain = domains()[0]
     domain.schema.tables[2].columns[1].expression = None
     message = f"每月{domain.measure}趋势"
-    generate = LanguageDraft.generate
-
-    async def invalid_intent(self, request, output_type):
-        if request.task == LLMTask.INTENT_RECOGNITION:
-            raise LLMValidationError("invalid weak time draft", error_code="output_schema_invalid")
-        return await generate(self, request, output_type)
-
-    monkeypatch.setattr(LanguageDraft, "generate", invalid_intent)
     app, adapter, database = create_runtime_app(monkeypatch, tmp_path, domain, message, QueryShape.TREND, True)
     body = await owned_request(app, database, tmp_path, domain, message)
     assert body["terminal_state"] == "clarification_required"
     assert body["memory_commit"] is False
     assert adapter.dax_calls == 0
-    assert body["execution_audit"]["intent_fallback"] is True
+    assert body["execution_audit"]["semantic_interpretation_authority"] == (
+        "llm_semantic_interpreter"
+    )
 
 
 @pytest.mark.asyncio

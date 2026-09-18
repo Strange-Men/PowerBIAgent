@@ -17,6 +17,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel
 
+from backend.app.answer.conversation import ConversationalAnswer
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
 from backend.app.intent.models import (
     IntentSpec,
@@ -1132,8 +1133,13 @@ class _UnsupportedRoutingProvider(_M24ScriptedDeepSeekProvider):
     ) -> LLMResponse:
         self.calls.append(request)
         if request.task == LLMTask.CONVERSATION:
-            structured = output_type(
-                answer=f"LLM conversational reply: {request.messages[-1]['content']}"
+            structured = ConversationalAnswer(
+                answer=(
+                    "可以，我来写一首短诗。"
+                    if self.active == "non_data"
+                    else ""
+                ),
+                requires_business_grounding=self.active != "non_data",
             )
         elif request.task == LLMTask.INTENT_RECOGNITION:
             messages = {
@@ -1254,6 +1260,14 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
 
     async def generate(self, request, output_type):
         self.calls.append(request)
+        if request.task == LLMTask.CONVERSATION:
+            return LLMResponse(
+                content="{}",
+                structured=ConversationalAnswer(
+                    answer="",
+                    requires_business_grounding=True,
+                ),
+            )
         if request.task == LLMTask.SEMANTIC_SELECTION:
             from backend.app.query_plan.grounding import CandidateSelection
 
@@ -1765,7 +1779,12 @@ class _M25BusinessGoldenProvider(LLMProvider):
         output_type: type[BaseModel],
     ) -> LLMResponse:
         self.calls.append(request)
-        if request.task == LLMTask.INTENT_RECOGNITION:
+        if request.task == LLMTask.CONVERSATION:
+            structured = ConversationalAnswer(
+                answer="",
+                requires_business_grounding=True,
+            )
+        elif request.task == LLMTask.INTENT_RECOGNITION:
             structured = IntentSpec(
                 intent=IntentType.DATA_QUESTION,
                 confidence=0.99,
@@ -2079,7 +2098,12 @@ class _PendingClarificationProvider(LLMProvider):
         self, request: LLMRequest, output_type: type[BaseModel]
     ) -> LLMResponse:
         self.calls.append(request)
-        if request.task == LLMTask.INTENT_RECOGNITION:
+        if request.task == LLMTask.CONVERSATION:
+            structured = ConversationalAnswer(
+                answer="",
+                requires_business_grounding=True,
+            )
+        elif request.task == LLMTask.INTENT_RECOGNITION:
             if self.active == "e1":
                 structured = IntentSpec(
                     intent=IntentType.CLARIFICATION,
@@ -2675,7 +2699,7 @@ class TestM24DeepSeekLocalChat:
                 assert bounded.status_code == 200, second
                 assert second["terminal_state"] == "completed", second
                 assert second["memory_commit"] is True
-                assert service.powerbi.dax_calls == 1
+                assert service.powerbi.dax_calls == 2
                 plan = second["execution_audit"]["canonical_query_plan"]
                 assert plan["query_shape"] == "trend"
                 reconciliation = second["execution_audit"][
@@ -2761,7 +2785,7 @@ class TestM24DeepSeekLocalChat:
                 assert may["time_range"]["end_date"] == "2025-05-31"
                 assert first_half["time_range"]["start_date"] == "2025-01-01"
                 assert first_half["time_range"]["end_date"] == "2025-06-30"
-                assert service.powerbi.dax_calls == 4
+                assert service.powerbi.dax_calls == 8
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -2815,7 +2839,7 @@ class TestM24DeepSeekLocalChat:
 
                 assert response.status_code == 200, body
                 assert body["terminal_state"] == "completed", body
-                assert service.powerbi.dax_calls == 1
+                assert service.powerbi.dax_calls == 2
                 audit = body["execution_audit"]
                 assert audit["canonical_query_scope"]["requested_time_range"] == {
                     "date_field": "Date",
@@ -2873,11 +2897,16 @@ class TestM24DeepSeekLocalChat:
                 "模型：Rich Local Model · 指标：销售额 · "
                 "查询时间：2025年5月"
             )
-            assert body["answer"].startswith(scope + "：")
+            assert not body["answer"].startswith(scope)
+            assert "模型：" not in body["answer"]
+            assert "2025年5月" in body["answer"]
+            assert "销售额" in body["answer"]
             assert audit["observed_data_coverage"]["status"] == "unknown"
-            assert "实际返回数据覆盖：未知" in body["answer"]
+            assert audit["data_availability"]["available_data_horizon"][
+                "status"
+            ] == "unknown"
             assert audit["result_semantic_inspection"]["passed"] is True
-            assert service.powerbi.dax_calls == dax_calls + 1
+            assert service.powerbi.dax_calls == dax_calls + 2
             committed = await service.pipeline.get_latest_committed_memory(
                 conversation_id, RuntimeDataMode.REAL
             )
@@ -3005,7 +3034,7 @@ class TestM24DeepSeekLocalChat:
         }
 
     @pytest.mark.asyncio
-    async def test_intent_recovery_requires_a_complete_query_language_draft(
+    async def test_semantic_interpreter_requires_a_complete_query_language_draft(
         self, monkeypatch
     ):
         app, provider = _patch_m533_multi_turn_composition(monkeypatch)
@@ -3024,7 +3053,6 @@ class TestM24DeepSeekLocalChat:
                 assert seeded.json()["terminal_state"] == "completed"
 
                 provider.active = "m55_top_product"
-                provider.fail_intent_once = True
                 ranking = await client.post("/api/v1/chat", json={
                     "message": "前三个产品",
                     "conversation_id": conversation_id,
@@ -3037,7 +3065,13 @@ class TestM24DeepSeekLocalChat:
                 assert ranking_plan["measures"] == ["Total Sales"]
                 assert ranking_plan["dimensions"] == ["Product"]
                 assert ranking_plan["top_n"] == 3
-                assert ranking_body["execution_audit"]["intent_fallback"] is True
+                assert ranking_body["execution_audit"][
+                    "semantic_interpretation_authority"
+                ] == "llm_semantic_interpreter"
+                assert all(
+                    call.task is not LLMTask.INTENT_RECOGNITION
+                    for call in provider.calls
+                )
 
                 provider.active = "failed"
                 provider.fail_query_plan_once = True
@@ -3235,10 +3269,11 @@ class TestM24DeepSeekLocalChat:
             assert replay.json()["idempotent_replay"] is True
             assert replay.json()["source_mode"] == "real"
             assert len(provider.calls) == 2
-            assert all(
-                call.task not in {LLMTask.DAX, LLMTask.ANSWER}
-                for call in provider.calls
-            )
+            assert all(call.task is not LLMTask.DAX for call in provider.calls)
+            assert [call.task for call in provider.calls] == [
+                LLMTask.QUERY_PLAN,
+                LLMTask.ANSWER,
+            ]
             assert adapter.schema_calls == 1
             assert adapter.dax_calls == 1
             query_plan_prompt = next(
@@ -3246,9 +3281,8 @@ class TestM24DeepSeekLocalChat:
             )
             assert "Total Sales" in str(query_plan_prompt.messages)
             assert "local_desktop_model" in str(query_plan_prompt.messages)
-            assert first_data["answer"] == (
-                "模型：Local Desktop Model · 指标：销售额：销售额为100.00。"
-            )
+            assert first_data["answer"] == "销售额为100.00。"
+            assert "模型：" not in first_data["answer"]
             assert [
                 block["type"] for block in first_data["presentation"]["blocks"]
             ] == ["text"]
@@ -3342,7 +3376,7 @@ class TestM24DeepSeekLocalChat:
             assert data["terminal_state"] == "tool_failed"
             assert data["error_type"] == "preview_row_data_missing"
             assert data["source_mode"] == "real"
-            assert len(provider.calls) == 2
+            assert len(provider.calls) == 1
             assert all(call.task != LLMTask.DAX for call in provider.calls)
             assert adapter.dax_calls == 1
 
@@ -3365,7 +3399,7 @@ class TestM24DeepSeekLocalChat:
             assert data["source_mode"] == "real"
             assert adapter.schema_calls == 1
             assert adapter.dax_calls == 0
-            assert len(provider.calls) == 1
+            assert len(provider.calls) == 0
 
 
 class _M582ShapeProvider(LLMProvider):
@@ -3392,7 +3426,13 @@ class _M582ShapeProvider(LLMProvider):
                     provider=self.provider_name,
                     error_code="test_conversation_failure",
                 )
-            structured = output_type(answer=f"LLM conversational reply: {text}")
+            if "支持回答" in text:
+                answer = "我支持指标查询、筛选、排名和趋势分析。"
+            elif "数据分析" in text and "范围" in text:
+                answer = "我支持只读数据分析，但不预测、不写回。"
+            else:
+                answer = f"LLM conversational reply: {text}"
+            structured = output_type(answer=answer)
         elif request.task == LLMTask.INTENT_RECOGNITION:
             measures = []
             dimensions = []
@@ -3557,7 +3597,11 @@ class TestM582ProductionRoutingAndShapes:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "question",
-        ["讲个简短的笑话", "写一句轻松的问候"],
+        [
+            "讲个简短的笑话",
+            "写一句轻松的问候",
+            "你怎样帮助我理解一张报表",
+        ],
     )
     async def test_conversational_route_uses_llm_without_business_authority(
         self, monkeypatch, question
@@ -3726,7 +3770,16 @@ class TestM582ProductionRoutingAndShapes:
         conversation_call = next(
             call for call in provider.calls if call.task == LLMTask.CONVERSATION
         )
-        assert len(conversation_call.messages) == 2
+        assert len(conversation_call.messages) == 8
+        assert conversation_call.messages[0]["role"] == "system"
+        assert [item["role"] for item in conversation_call.messages[1:-1]] == [
+            "user",
+            "assistant",
+            "user",
+            "assistant",
+            "user",
+            "assistant",
+        ]
         assert conversation_call.messages[-1] == {
             "role": "user",
             "content": "讲个简短的笑话",
@@ -3792,7 +3845,7 @@ class TestM582ProductionRoutingAndShapes:
         assert body["terminal_state"] == "response_failed", body
         assert body["error_type"] == "answer_validation_failed"
         assert body["memory_commit"] is False
-        assert service.powerbi.dax_calls == 1
+        assert service.powerbi.dax_calls == 2
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -3829,7 +3882,12 @@ class TestM582ProductionRoutingAndShapes:
         assert fragment in visible_text
         assert body["memory_commit"] is False
         assert body["tool_sequence"] == []
-        assert provider.calls == []
+        if question in {"你支持回答哪些问题？", "数据分析支持的范围在哪"}:
+            assert [call.task for call in provider.calls] == [
+                LLMTask.CONVERSATION
+            ]
+        else:
+            assert provider.calls == []
         assert service.powerbi.schema_calls == 0
         assert service.powerbi.dax_calls == 0
 
@@ -3854,7 +3912,7 @@ class TestM582ProductionRoutingAndShapes:
         assert body["clarification_question"] == "生成报表前请选择有效的模板"
         assert service.powerbi.schema_calls == 0
         assert service.powerbi.dax_calls == 0
-        assert len(provider.calls) == 1
+        assert len(provider.calls) == 0
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -3988,10 +4046,11 @@ class TestM25BusinessGoldenOffline:
         assert adapter.schema_calls == 1
         assert adapter.dax_calls == 1
         assert len(provider.calls) == 2
-        assert all(
-            call.task not in {LLMTask.DAX, LLMTask.ANSWER}
-            for call in provider.calls
-        )
+        assert all(call.task is not LLMTask.DAX for call in provider.calls)
+        assert [call.task for call in provider.calls] == [
+            LLMTask.QUERY_PLAN,
+            LLMTask.ANSWER,
+        ]
         assert data["execution_audit"]["llm_dax_call_count"] == 0
         assert data["execution_audit"]["factual_validation_pass"] is True
 

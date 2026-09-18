@@ -707,6 +707,332 @@ def check(condition, label):
         raise RuntimeError(label)
 
 
+async def m5_10_6_acceptance(
+    post, service, rich_key, other_key, *, only_label=None
+):
+    """Exercise M5.10.6 language, factual wording and state boundaries on Real."""
+
+    def assert_general(body, audit, label):
+        check(body.get("terminal_state") == "completed", label + ":not_completed")
+        check(body.get("answer"), label + ":answer_missing")
+        check(not audit.get("schema_read"), label + ":schema_read")
+        check(not audit.get("dax_executed"), label + ":dax_executed")
+        check(not body.get("memory_commit"), label + ":memory_committed")
+        check(not body.get("tool_sequence"), label + ":tool_called")
+
+    def assert_natural(body, audit, label):
+        answer = body.get("answer") or ""
+        check(body.get("terminal_state") == "completed", label + ":not_completed")
+        check(audit.get("dax_executed"), label + ":dax_missing")
+        check(body.get("memory_commit"), label + ":memory_missing")
+        check(bool(answer.strip()), label + ":answer_missing")
+        forbidden = (
+            "模型：", "指标：", "筛选：", "查询时间：",
+            rich_key, other_key, "fact_id", "result_id", "semantic_model_key",
+        )
+        check(
+            not any(item and item in answer for item in forbidden),
+            label + ":technical_leakage",
+        )
+
+    def assert_business_boundary(body, audit, label):
+        check(
+            audit.get("question_route") == "business_data_query",
+            label + ":not_business_routed",
+        )
+        check(
+            body.get("terminal_state")
+            in {"completed", "clarification_required", "unsupported"},
+            label + ":unexpected_terminal_state",
+        )
+        if body.get("terminal_state") == "completed":
+            check(audit.get("dax_executed"), label + ":completed_without_dax")
+            check(body.get("memory_commit"), label + ":completed_without_memory")
+        else:
+            check(not audit.get("dax_executed"), label + ":failed_with_dax")
+            check(not body.get("memory_commit"), label + ":failed_with_memory")
+
+    if only_label == "ambiguous_sales_overview":
+        body, audit, _ = await post(
+            only_label,
+            "2026年销售情况",
+        )
+        check(
+            body.get("terminal_state") == "clarification_required",
+            only_label + ":not_clarified",
+        )
+        check(not audit.get("dax_executed"), only_label + ":dax_executed")
+        check(not body.get("memory_commit"), only_label + ":memory_committed")
+        print(json.dumps({"m5_10_6_focused_real_passed": only_label}), flush=True)
+        return
+
+    if only_label == "pending_chain":
+        conversation = str(uuid.uuid4())
+        body, audit, _ = await post(
+            "pending_open", "前三个产品", conversation=conversation
+        )
+        check(
+            body.get("terminal_state") == "clarification_required"
+            and not audit.get("dax_executed"),
+            "pending_open:not_pending",
+        )
+        pending = await service.pipeline.get_pending_clarification(
+            conversation, RuntimeDataMode.REAL
+        )
+        check(
+            pending is not None
+            and pending.query_shape is not None
+            and pending.query_shape.value == "ranking"
+            and pending.dimensions
+            and pending.dimension_tables.get(pending.dimensions[0]),
+            "pending_open:canonical_slots_missing",
+        )
+        chain_id = pending.chain_id
+        body, audit, _ = await post(
+            "pending_general",
+            "先插一句，为什么排序会影响阅读感受？",
+            conversation=conversation,
+        )
+        assert_general(body, audit, "pending_general")
+        retained = await service.pipeline.get_pending_clarification(
+            conversation, RuntimeDataMode.REAL
+        )
+        check(
+            retained is not None
+            and retained.chain_id == chain_id
+            and retained.dimension_tables == pending.dimension_tables,
+            "pending_general:context_changed",
+        )
+        body, audit, plan = await post(
+            "pending_complete", "按销售额", conversation=conversation
+        )
+        assert_natural(body, audit, "pending_complete")
+        check(
+            plan.get("query_shape") == "ranking"
+            and plan.get("top_n") == 3,
+            "pending_complete:plan",
+        )
+        print(json.dumps({"m5_10_6_focused_real_passed": only_label}), flush=True)
+        return
+
+    for label, message in (
+        ("general_unseen", "为什么人们会把耐心比作肌肉？"),
+        (
+            "general_report_methodology",
+            "你怎样帮助我理解一张报表",
+        ),
+        (
+            "general_capability_natural",
+            "在不改动数据的前提下，你通常怎样帮助我理解一张报表？",
+        ),
+        ("general_discourse_method", "顺便说说，为什么复盘有用？"),
+    ):
+        body, audit, _ = await post(label, message)
+        assert_general(body, audit, label)
+
+    for label, message in (
+        (
+            "current_report_decline",
+            "帮我分析这张报表里今年销售额为什么下降",
+        ),
+        (
+            "current_report_top_region",
+            "当前报表销售额最高的区域",
+        ),
+    ):
+        body, audit, _ = await post(label, message)
+        assert_business_boundary(body, audit, label)
+
+    body, audit, plan = await post(
+        "natural_scalar", "2025年5月南方销售额是多少"
+    )
+    assert_natural(body, audit, "natural_scalar")
+    check(plan.get("query_shape") == "scalar", "natural_scalar:shape")
+    answer = body.get("answer") or ""
+    check("2025年5月" in answer, "natural_scalar:time_omitted")
+
+    body, audit, plan = await post(
+        "natural_top3", "销售额最高的三个产品"
+    )
+    assert_natural(body, audit, "natural_top3")
+    check(
+        plan.get("query_shape") == "ranking" and plan.get("top_n") == 3,
+        "natural_top3:plan",
+    )
+    datasets = ((body.get("presentation") or {}).get("datasets") or [])
+    check(len(datasets) == 1, "natural_top3:dataset_missing")
+    rows = datasets[0].get("formatted_rows") or datasets[0].get("rows") or []
+    check(len(rows) == 3, "natural_top3:row_count")
+    answer = body.get("answer") or ""
+    check(
+        all(row and str(row[0]) in answer for row in rows),
+        "natural_top3:item_omitted",
+    )
+
+    body, audit, plan = await post(
+        "mixed_business_paraphrase",
+        "Could you briefly show 2025年5月华南的 Total Sales?",
+    )
+    assert_natural(body, audit, "mixed_business_paraphrase")
+    check(plan.get("query_shape") == "scalar", "mixed_business_paraphrase:shape")
+
+    for label, message in (
+        ("horizon_2026", "2026年销售额情况"),
+        ("horizon_current_year", "今年销售额"),
+        ("horizon_recent_six", "最近6个月销售额趋势"),
+    ):
+        body, audit, plan = await post(label, message)
+        assert_natural(body, audit, label)
+        availability = audit.get("data_availability") or {}
+        horizon = availability.get("available_data_horizon") or {}
+        check(horizon.get("status") == "known", label + ":horizon_unproven")
+        check(
+            horizon.get("semantic_model_key") == rich_key,
+            label + ":horizon_model_mismatch",
+        )
+        check(
+            horizon.get("measure") in (plan.get("measures") or []),
+            label + ":horizon_measure_mismatch",
+        )
+        check(
+            horizon.get("temporal_dimension")
+            == (plan.get("time_range") or {}).get("date_field"),
+            label + ":horizon_time_mismatch",
+        )
+        answer = body.get("answer") or ""
+        check("数据更新到" not in answer and "数据更新至" not in answer,
+              label + ":refresh_claim")
+
+    for label, message in (
+        ("ambiguous", "哪些产品卖得最好？"),
+        ("ambiguous_sales_overview", "2026年销售情况"),
+        ("unknown_member", "火星区销售额是多少"),
+    ):
+        body, audit, _ = await post(label, message)
+        check(
+            body.get("terminal_state") == "clarification_required",
+            label + ":not_clarified",
+        )
+        check(not audit.get("dax_executed"), label + ":dax_executed")
+        check(not body.get("memory_commit"), label + ":memory_committed")
+
+    state_conversation = str(uuid.uuid4())
+    body, audit, _ = await post(
+        "state_general_first", "为什么清晰的定义很重要？",
+        conversation=state_conversation,
+    )
+    assert_general(body, audit, "state_general_first")
+    body, audit, _ = await post(
+        "state_business_second", "总销售额是多少？",
+        conversation=state_conversation,
+    )
+    assert_natural(body, audit, "state_business_second")
+    committed = await service.pipeline.get_latest_committed_memory(
+        state_conversation, RuntimeDataMode.REAL
+    )
+    check(committed is not None, "state_business_second:memory_missing")
+    memory_version = committed.memory_version
+    body, audit, _ = await post(
+        "state_general_third", "顺便说说，为什么复盘有用？",
+        conversation=state_conversation,
+    )
+    assert_general(body, audit, "state_general_third")
+    committed_after = await service.pipeline.get_latest_committed_memory(
+        state_conversation, RuntimeDataMode.REAL
+    )
+    check(
+        committed_after is not None
+        and committed_after.memory_version == memory_version,
+        "state_general_third:memory_changed",
+    )
+
+    pending_conversation = str(uuid.uuid4())
+    body, audit, _ = await post(
+        "pending_open", "前三个产品",
+        conversation=pending_conversation,
+    )
+    check(
+        body.get("terminal_state") == "clarification_required"
+        and not audit.get("dax_executed"),
+        "pending_open:not_pending",
+    )
+    pending = await service.pipeline.get_pending_clarification(
+        pending_conversation, RuntimeDataMode.REAL
+    )
+    check(pending is not None, "pending_open:context_missing")
+    check(
+        pending.query_shape is not None
+        and pending.query_shape.value == "ranking"
+        and pending.dimensions
+        and pending.dimension_tables.get(pending.dimensions[0])
+        and pending.sort == "desc"
+        and pending.top_n == 3,
+        "pending_open:canonical_slots_missing",
+    )
+    chain_id = pending.chain_id
+    body, audit, _ = await post(
+        "pending_general", "先插一句，为什么排序会影响阅读感受？",
+        conversation=pending_conversation,
+    )
+    assert_general(body, audit, "pending_general")
+    pending_after_general = await service.pipeline.get_pending_clarification(
+        pending_conversation, RuntimeDataMode.REAL
+    )
+    check(
+        pending_after_general is not None
+        and pending_after_general.chain_id == chain_id,
+        "pending_general:context_changed",
+    )
+    check(
+        pending_after_general.query_shape is not None
+        and pending_after_general.query_shape.value == "ranking"
+        and pending_after_general.dimensions == pending.dimensions
+        and pending_after_general.dimension_tables == pending.dimension_tables
+        and pending_after_general.sort == "desc"
+        and pending_after_general.top_n == 3,
+        "pending_general:canonical_slots_changed",
+    )
+    body, audit, plan = await post(
+        "pending_complete", "按销售额",
+        conversation=pending_conversation,
+    )
+    assert_natural(body, audit, "pending_complete")
+    check(
+        plan.get("query_shape") == "ranking" and plan.get("top_n") == 3,
+        "pending_complete:plan",
+    )
+
+    model_conversation = str(uuid.uuid4())
+    body, audit, _ = await post(
+        "model_a_business", "总销售额是多少？",
+        conversation=model_conversation,
+    )
+    assert_natural(body, audit, "model_a_business")
+    body, audit, _ = await post(
+        "model_between_general", "为什么数据语境很重要？",
+        conversation=model_conversation,
+    )
+    assert_general(body, audit, "model_between_general")
+    body, audit, plan = await post(
+        "model_b_business", "Total Shipments是多少？",
+        key=other_key,
+        conversation=model_conversation,
+    )
+    assert_natural(body, audit, "model_b_business")
+    check(
+        plan.get("semantic_model_key") == other_key
+        and not plan.get("filters")
+        and not plan.get("dimensions")
+        and plan.get("time_range") is None,
+        "model_b_business:cross_model_leak",
+    )
+    print(json.dumps({
+        "m5_10_6_real_passed": True,
+        "cases": 24,
+        "owned_business_residual": 0,
+    }), flush=True)
+
+
 async def run(args, root):
     database = root / "acceptance.db"
     override_path = root / "validated_override.yaml"
@@ -825,6 +1151,9 @@ async def run(args, root):
                         print(json.dumps({"case":label,
                             "clarification_reason": audit.get("clarification_reason"),
                             "question_route": audit.get("question_route"),
+                            "query_shape_reconciliation": audit.get(
+                                "query_shape_reconciliation"
+                            ),
                             "failure_stage": audit.get("failure_stage"),
                             "grounded_delta_present": bool(audit.get("grounded_delta")),
                             "semantic_obligation_coverage": audit.get("semantic_obligation_coverage"),
@@ -894,6 +1223,24 @@ async def run(args, root):
                         post, service, schema, rich_key, other[0]["key"],
                         only_label=args.case_label,
                     )
+                elif args.phase == "m5_10_6":
+                    check(args.profile == "deepseek", "m5_10_6_requires_deepseek")
+                    other = [
+                        option for option in options
+                        if option.get("selectable")
+                        and option.get("display_name") == args.other_model
+                    ]
+                    check(
+                        len(other) == 1 and other[0]["key"] != rich_key,
+                        "other_model_not_exact_unique",
+                    )
+                    await m5_10_6_acceptance(
+                        post,
+                        service,
+                        rich_key,
+                        other[0]["key"],
+                        only_label=args.case_label,
+                    )
                 elif args.phase == "rich":
                     check(len(results) == 15, "rich_case_count")
                     print(json.dumps({"rich_15_passed": True}), flush=True)
@@ -917,7 +1264,7 @@ async def main():
         "--phase",
         choices=(
             "rich", "extended", "zero", "temporal", "members",
-            "m5_9_3", "m5_9_4",
+            "m5_9_3", "m5_9_4", "m5_10_6",
         ),
         default="rich",
     )

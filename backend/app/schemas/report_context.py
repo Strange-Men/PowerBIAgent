@@ -13,7 +13,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from backend.app.schemas.factual_context import ObservedDataCoverage
+from backend.app.schemas.factual_context import (
+    DataAvailabilityContext,
+    ObservedDataCoverage,
+)
 
 
 class ReportTemplateTier(str, Enum):
@@ -261,6 +264,7 @@ class ReportReadingContext(BaseModel):
     data_source: ReportDataSourceContext
     data_freshness: ReportDataFreshness
     observed_data_coverage: ObservedDataCoverage
+    data_availability: tuple[DataAvailabilityContext, ...] = ()
     generated_at: datetime
 
     model_config = ConfigDict(frozen=True, extra="forbid")

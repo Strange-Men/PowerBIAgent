@@ -204,6 +204,8 @@ class QueryPlan(BaseModel):
     semantic_model_key: str = Field(..., min_length=1)
     query_shape: Optional[QueryShape] = None
     query_shape_evidence: Optional[str] = Field(default=None, max_length=80)
+    measure_evidence_spans: list[str] = Field(default_factory=list)
+    dimension_evidence_spans: list[str] = Field(default_factory=list)
     measures: list[str] = Field(default_factory=list)
     dimensions: list[str] = Field(default_factory=list)
     filters: list[StructuredFilter] = Field(default_factory=list)

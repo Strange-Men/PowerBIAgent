@@ -8,6 +8,7 @@ import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from backend.app.answer.conversation import ConversationalAnswer
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
 from backend.app.intent.models import IntentSpec, IntentType, TurnRelation
 from backend.app.intent.question_router import QuestionRouter
@@ -37,6 +38,15 @@ class _SemanticSafetyProvider(LLMProvider):
 
     async def generate(self, request, output_type):
         self.calls.append(request)
+        if request.task == LLMTask.CONVERSATION:
+            return LLMResponse(
+                content="{}",
+                structured=ConversationalAnswer(
+                    answer=("复盘可以帮助识别偏差并沉淀经验。" if self.active == "general" else ""),
+                    requires_business_grounding=self.active != "general",
+                ),
+                model="offline-language",
+            )
         if request.task == LLMTask.SEMANTIC_SELECTION:
             content = request.messages[-1]["content"]
             if "角色：measure" in content and "最挣钱" in content:
@@ -97,10 +107,16 @@ class _SemanticSafetyProvider(LLMProvider):
                 detected_dimensions=["区域" if self.active == "rank_region" else "产品"],
                 turn_relation=TurnRelation.FOLLOW_UP,
             )
-        elif self.active in {"correct_measure", "correct_measure_ranking"}:
+        elif self.active in {"correct_measure", "correct_measure_ranking", "complete_measure"}:
             values.update(
-                detected_measures=["销售数量"],
-                turn_relation=TurnRelation.REPLACE,
+                detected_measures=[
+                    "销售额" if self.active == "complete_measure" else "销售数量"
+                ],
+                turn_relation=(
+                    TurnRelation.FOLLOW_UP
+                    if self.active == "complete_measure"
+                    else TurnRelation.REPLACE
+                ),
             )
             if self.active == "correct_measure_ranking":
                 values["detected_dimensions"] = ["产品"]
@@ -161,6 +177,13 @@ class _SemanticSafetyProvider(LLMProvider):
             )
         elif self.active == "correct_measure":
             values["measures"] = ["Total Quantity"]
+        elif self.active == "complete_measure":
+            values.update(
+                measures=["Total Sales"],
+                # Weak canonical echo without current verbatim evidence must
+                # not rewrite the runtime-verified pending ranking dimension.
+                dimensions=["Region"],
+            )
         elif self.active == "correct_measure_ranking":
             values.update(
                 query_shape=QueryShape.RANKING,
@@ -187,9 +210,11 @@ class _SemanticSafetyProvider(LLMProvider):
             "rank_south_product": "华南销售额最高的前3个产品是什么？",
             "pending_rank": "哪个产品卖得最好？",
             "correct_measure": "不是销售额，是销售数量",
+            "complete_measure": "按销售额",
             "correct_measure_ranking": "不是销售额，是销售数量，按产品排前三",
             "correct_region": "也不是华南，是华北",
             "unknown_region": "也不是华南，是火星区",
+            "general": "顺便说说，为什么复盘有用？",
         }[self.active]
 
 
@@ -240,7 +265,9 @@ async def _post(client: AsyncClient, provider: _SemanticSafetyProvider, active: 
 async def test_ranking_draft_cannot_be_silently_downgraded_to_scalar(
     monkeypatch, message: str
 ):
-    assert QuestionRouter().route(message).query_shape == QueryShape.SCALAR
+    routing = QuestionRouter().route(message)
+    assert routing.route.value == "llm_semantic_interpretation"
+    assert routing.query_shape is None
     app, provider = _create_app(monkeypatch)
     provider.message_override = message
 
@@ -363,7 +390,9 @@ async def test_correction_completes_pending_ranking_before_committed_memory(monk
     assert pending.query_shape == QueryShape.RANKING
     assert pending.dimensions == ["Product"]
     assert pending.sort == "desc" and pending.top_n == 1
-    assert correction["terminal_state"] == "completed", correction
+    assert correction["terminal_state"] == "completed", correction.get(
+        "execution_audit"
+    )
     plan = correction["execution_audit"]["canonical_query_plan"]
     assert plan["query_shape"] == "ranking"
     assert plan["measures"] == ["Total Quantity"]
@@ -371,6 +400,52 @@ async def test_correction_completes_pending_ranking_before_committed_memory(monk
     assert plan["sort"] == "desc" and plan["top_n"] == 1
     assert service.powerbi.dax_calls == 1
     assert committed is not None and committed.memory_version == 1
+
+
+@pytest.mark.asyncio
+async def test_general_turn_preserves_pending_ranking_for_slot_only_completion(monkeypatch):
+    app, provider = _create_app(monkeypatch)
+    conversation_id = "m5106-pending-general-complete"
+
+    async with app.router.lifespan_context(app):
+        service = app.state.turn_service
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            opened = (
+                await _post(client, provider, "pending_rank", conversation_id)
+            ).json()
+            pending = await service.pipeline.get_pending_clarification(
+                conversation_id, RuntimeDataMode.REAL
+            )
+            general = (
+                await _post(client, provider, "general", conversation_id)
+            ).json()
+            pending_after_general = await service.pipeline.get_pending_clarification(
+                conversation_id, RuntimeDataMode.REAL
+            )
+            completed = (
+                await _post(client, provider, "complete_measure", conversation_id)
+            ).json()
+
+    assert opened["terminal_state"] == "clarification_required"
+    assert pending is not None
+    assert pending.query_shape is QueryShape.RANKING
+    assert pending.dimensions == ["Product"]
+    assert general["terminal_state"] == "completed"
+    assert general["memory_commit"] is False
+    assert pending_after_general is not None
+    assert pending_after_general.chain_id == pending.chain_id
+    assert pending_after_general.dimensions == ["Product"]
+    assert completed["terminal_state"] == "completed", completed.get(
+        "execution_audit"
+    )
+    plan = completed["execution_audit"]["canonical_query_plan"]
+    assert plan["query_shape"] == "ranking"
+    assert plan["measures"] == ["Total Sales"]
+    assert plan["dimensions"] == ["Product"]
+    assert plan["sort"] == "desc" and plan["top_n"] == 1
+    assert service.powerbi.dax_calls == 1
 
 
 @pytest.mark.asyncio

@@ -47,10 +47,9 @@ from backend.app.harness.tool_registry import (
     create_default_tool_gateway,
 )
 from backend.app.harness.validators.validation_service import ValidationService
-from backend.app.intent.deepseek_service import DeepSeekIntentService
 from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.intent.question_router import QuestionRoute, QuestionRoutingDecision
-from backend.app.intent.service import IntentRecognitionError
+from backend.app.intent.semantic_interpreter import LLMSemanticInterpreter
 from backend.app.intent.unsupported_policy import (
     CapabilityClass,
     classify_capability,
@@ -78,9 +77,6 @@ from backend.app.report.capability import (
     KPI_SECTION_ORDER,
     SECTION_REQUIREMENTS,
 )
-from backend.app.report.deepseek_report_intent_service import (
-    DeepSeekReportIntentService,
-)
 from backend.app.report.intent import full_requested_ids, resolve_report_intent
 from backend.app.report.plan import ReportPlanError, ReportPlanner
 from backend.app.report.reading_context import (
@@ -91,10 +87,7 @@ from backend.app.report.reading_context import (
     SALES_METRIC_DEFINITIONS,
 )
 from backend.app.powerbi.base import PowerBIAdapter
-from backend.app.query_plan.deepseek_service import (
-    DeepSeekQueryPlanService,
-    QueryPlanError,
-)
+from backend.app.query_plan.deepseek_service import QueryPlanError
 from backend.app.query_plan.clarification import PendingClarificationService
 from backend.app.query_plan.clarification_reasons import (
     ClarificationReason,
@@ -128,10 +121,14 @@ from backend.app.dax.deepseek_service import DeepSeekDAXService
 from backend.app.dax.builder import DAXBuildError, DeterministicDAXBuilder
 from backend.app.dax.safety import DAXSafetyValidator
 from backend.app.answer.deepseek_service import DeepSeekAnswerService
-from backend.app.answer.conversation import ConversationalAnswerService
+from backend.app.answer.natural import NaturalAnswerComposer
 from backend.app.core.performance import measure_performance
 from backend.app.core.async_runtime import bounded_gather_ordered
 from backend.app.facts import (
+    AvailabilityProbeBuilder,
+    AvailableDataHorizon,
+    DataAvailabilityContext,
+    DataHorizonStatus,
     FactBoundedAnswerBuilder,
     FactBoundedReportBuilder,
     FactOutputValidator,
@@ -344,7 +341,9 @@ class LLMTurnService:
             collector,
             profile=llm_snapshot.profile,
         )
-        response = await ConversationalAnswerService(observed).generate(message)
+        interpretation = await LLMSemanticInterpreter(observed).interpret_general(
+            message
+        )
         usage = collector.summary()
         trace.record(
             "conversational_llm_completed",
@@ -372,7 +371,7 @@ class LLMTurnService:
             is_mock=is_mock,
             source_mode=source_mode,
             allowed_tools=[],
-            answer_text=response.answer,
+            answer_text=interpretation.answer,
             usage=usage,
             execution_audit={
                 "capability_decision": routing.route.value,
@@ -386,6 +385,9 @@ class LLMTurnService:
                 "powerbi_tool_calls": 0,
                 "report_calls": 0,
                 "conversation_context": "current_user_message_only",
+                "requires_business_grounding": (
+                    interpretation.requires_business_grounding
+                ),
             },
             memory_commit=False,
         )
@@ -554,45 +556,23 @@ class LLMTurnService:
             )
             pending_clarification = None
 
-        # ── 3. 意图识别 ──
-        intent_service = DeepSeekIntentService(provider=observed, max_format_repairs=1)
-        try:
-            with measure_performance("intent_llm"):
-                intent = await intent_service.recognize(
-                    user_input=message,
-                    committed_memory=(
-                        semantic_committed.model_dump() if semantic_committed else None
-                    ),
-                    semantic_model_key=semantic_model_key,
-                    report_template_key=report_template_key,
-                )
-        except IntentRecognitionError:
-            routed_read_shape = (
-                question_routing is not None
-                and question_routing.route == QuestionRoute.BUSINESS_DATA_QUERY
-                and question_routing.query_shape in {
-                    QueryShape.ENTITY_LIST, QueryShape.GROUPED, QueryShape.RANKING,
-                    QueryShape.MEMBER_SET, QueryShape.FILTERED_AGGREGATION,
-                    QueryShape.TREND, QueryShape.BOUNDED_TREND,
-                }
-            )
-            if (
-                (capability != CapabilityClass.READ_ANALYSIS and not routed_read_shape)
-                or any(term in message for term in ("报告", "周报", "概览", "总览"))
-            ):
-                raise
-            intent = IntentSpec(
-                intent=IntentType.DATA_QUESTION,
-                confidence=0.0,
-                normalized_question=message.strip(),
-            )
-            semantic_audit["intent_fallback"] = True
-            trace.record(
-                "intent_language_draft_unavailable",
-                trace_id=trace_id,
-                request_id=effective_req_id,
-                data_summary={"fallback": "deterministic_grounding_only"},
-            )
+        # ── 3. Deterministic branch intent ──
+        # Open-language classification has already happened in the single
+        # Semantic Interpreter. Intent is now only a bounded pipeline branch,
+        # not a second LLM interpretation authority.
+        intent = IntentSpec(
+            intent=(
+                IntentType.REPORT_GENERATION
+                if question_routing is not None
+                and question_routing.route == QuestionRoute.REPORT_REQUEST
+                else IntentType.DATA_QUESTION
+            ),
+            confidence=1.0,
+            normalized_question=message.strip(),
+        )
+        semantic_audit["semantic_interpretation_authority"] = (
+            "llm_semantic_interpreter"
+        )
         trace.record("intent_classified", trace_id=trace_id, request_id=effective_req_id,
                      data_summary={"intent": intent.intent.value})
 
@@ -794,10 +774,13 @@ class LLMTurnService:
 
         # ── 8. QueryPlan 生成与验证 ──
         try:
-            qp_service = DeepSeekQueryPlanService(provider=observed, max_format_repairs=1)
             with measure_performance("query_plan"):
-                query_plan = await qp_service.generate(
-                    user_input=message, intent=intent, schema=schema,
+                interpretation = await LLMSemanticInterpreter(
+                    observed
+                ).interpret_business(
+                    user_input=message,
+                    intent=intent,
+                    schema=schema,
                     committed_memory=(
                         semantic_committed.model_dump() if semantic_committed else None
                     ),
@@ -805,6 +788,31 @@ class LLMTurnService:
                     report_template_key=report_template_key,
                     enforce_semantic_grounding=not self.powerbi.is_mock,
                 )
+                if interpretation.query_plan is None:
+                    raise QueryPlanError("semantic_interpretation_query_plan_missing")
+                query_plan = interpretation.query_plan
+                semantic_audit["semantic_interpretation_draft"] = (
+                    interpretation.model_dump(
+                        mode="json", exclude={"query_plan", "answer"}
+                    )
+                )
+                current_text = semantic_input.casefold()
+                measure_evidence = tuple(
+                    phrase.strip()
+                    for phrase in interpretation.measure_evidence_spans
+                    if phrase.strip()
+                    and phrase.strip().casefold() in current_text
+                )
+                dimension_evidence = tuple(
+                    phrase.strip()
+                    for phrase in interpretation.dimension_evidence_spans
+                    if phrase.strip()
+                    and phrase.strip().casefold() in current_text
+                )
+                intent = intent.model_copy(update={
+                    "detected_measures": list(measure_evidence),
+                    "detected_dimensions": list(dimension_evidence),
+                })
         except QueryPlanError as e:
             # A missing weak draft cannot prove that a filter/time requirement
             # was omitted by the user. Continuing with an empty draft can turn
@@ -840,6 +848,7 @@ class LLMTurnService:
             router_shape=router_query_shape,
             draft_shape=draft_query_shape,
             draft_evidence=query_plan.query_shape_evidence,
+            draft_filter_count=len(query_plan.filters),
             correction=relation_evidence.semantic_input is not None,
         )
         grounding_query_shape = shape_reconciliation.effective_shape
@@ -1716,6 +1725,7 @@ class LLMTurnService:
                 )
 
         verified_facts: VerifiedFactSet | None = None
+        data_availability: DataAvailabilityContext | None = None
         if not self.powerbi.is_mock:
             try:
                 verified_facts = VerifiedFactSetBuilder().build(
@@ -1745,6 +1755,20 @@ class LLMTurnService:
                     "row_count": verified_facts.row_count,
                     "truncated": verified_facts.truncated,
                 },
+            )
+            data_availability = await self._resolve_data_availability(
+                query_plan=query_plan,
+                schema=schema,
+                observed_facts=verified_facts,
+                request_validator=request_validator,
+                exec_ctx=exec_ctx,
+                controller=controller,
+                trace=trace,
+                trace_id=trace_id,
+                request_id=effective_req_id,
+            )
+            semantic_audit["data_availability"] = data_availability.model_dump(
+                mode="json"
             )
 
         # ── 11. 生成 Answer 或 ReportSpec ──
@@ -1841,13 +1865,31 @@ class LLMTurnService:
                         )
                     )
                     with measure_performance("answer_presentation"):
-                        response_obj = FactBoundedAnswerBuilder().build(
+                        fallback_response = FactBoundedAnswerBuilder().build(
                             query_plan,
                             query_result,
                             verified_facts,
                             display_bindings=display_bindings,
                             effective_scope=effective_scope,
+                            data_availability=data_availability,
                         )
+                        try:
+                            response_obj = await NaturalAnswerComposer(
+                                observed,
+                                max_repairs=1,
+                            ).compose(
+                                fallback_response,
+                                verified_facts,
+                                data_availability=data_availability,
+                            )
+                        except Exception as exc:
+                            response_obj = fallback_response
+                            trace.record(
+                                "natural_answer_fallback",
+                                trace_id=trace_id,
+                                request_id=effective_req_id,
+                                data_summary={"reason": type(exc).__name__},
+                            )
                 else:
                     answer_service = DeepSeekAnswerService(
                         provider=observed, max_repairs=1
@@ -2222,10 +2264,10 @@ class LLMTurnService:
         # counted separately as llm_report_intent_call_count.
         llm_report_intent_ids: tuple[str, ...] = ()
         if not self.powerbi.is_mock:
-            llm_report_intent_ids = await DeepSeekReportIntentService(
-                observed_provider,
-                max_format_repairs=0,
-            ).draft(message)
+            report_draft = await LLMSemanticInterpreter(
+                observed_provider
+            ).interpret_report_sections(message)
+            llm_report_intent_ids = report_draft.report_section_candidates
         signal = resolve_report_intent(message, llm_draft=llm_report_intent_ids)
         trace.record(
             "report_intent_resolved",
@@ -2535,6 +2577,36 @@ class LLMTurnService:
             reading_context = None
             data_snapshot = None
             if template_key == "sales_executive_report":
+                availability_by_binding: dict[
+                    tuple[str, str, str], DataAvailabilityContext
+                ] = {}
+                for query in execution_plan.queries:
+                    plan = query.query_plan
+                    if plan.time_range is None or len(plan.measures) != 1:
+                        continue
+                    binding = (
+                        plan.semantic_model_key,
+                        plan.measures[0],
+                        plan.time_range.date_field,
+                    )
+                    if binding in availability_by_binding:
+                        continue
+                    availability_by_binding[binding] = (
+                        await self._resolve_data_availability(
+                            query_plan=plan,
+                            schema=schema,
+                            observed_facts=filtered_facts[query.requirement_key],
+                            request_validator=request_validator,
+                            exec_ctx=exec_ctx,
+                            controller=controller,
+                            trace=trace,
+                            trace_id=trace_id,
+                            request_id=effective_req_id,
+                        )
+                    )
+                report_data_availability = tuple(
+                    availability_by_binding.values()
+                )
                 analysis_period, active_filters = ReportScopeContextBuilder().build(
                     {
                         query.requirement_key: query.query_plan
@@ -2578,6 +2650,7 @@ class LLMTurnService:
                     analysis_period=analysis_period,
                     active_filters=active_filters,
                     observed_data_coverage=observed_data_coverage,
+                    data_availability=report_data_availability,
                     metric_definition_keys=metric_definition_keys,
                     exception_assessment=ExceptionAssessment.cannot_determine(),
                     snapshot=data_snapshot,
@@ -2588,6 +2661,17 @@ class LLMTurnService:
                     trace_id=trace_id,
                     request_id=effective_req_id,
                     data_summary=observed_data_coverage.model_dump(mode="json"),
+                )
+                trace.record(
+                    "report_data_availability",
+                    trace_id=trace_id,
+                    request_id=effective_req_id,
+                    data_summary={
+                        "bindings": [
+                            item.model_dump(mode="json")
+                            for item in report_data_availability
+                        ]
+                    },
                 )
             report_spec = SalesReportSpecBuilder().build(
                 report_data_contract,
@@ -2875,6 +2959,106 @@ class LLMTurnService:
             "time_range": current_time_range,
             "dimension_tables": dimension_tables,
         })
+
+    async def _resolve_data_availability(
+        self,
+        *,
+        query_plan: CanonicalQueryPlan,
+        schema: SemanticModelSchema,
+        observed_facts: VerifiedFactSet,
+        request_validator: ValidationService,
+        exec_ctx: Any,
+        controller: TurnController,
+        trace: TraceRecorder,
+        trace_id: str,
+        request_id: str,
+    ) -> DataAvailabilityContext:
+        """Prove a measure-aware horizon through the existing execution chain."""
+        if query_plan.time_range is None or len(query_plan.measures) != 1:
+            return DataAvailabilityContext(
+                observed_data_coverage=observed_facts.observed_data_coverage
+            )
+        probe_builder = AvailabilityProbeBuilder()
+        try:
+            probe_plan = probe_builder.build_plan(query_plan)
+            probe_request = DeterministicDAXBuilder().build(
+                probe_plan,
+                schema,
+                request_id=f"{request_id}:availability",
+                max_rows=1,
+                timeout_seconds=self.settings.powerbi_query_timeout_seconds,
+            )
+            safety = DAXSafetyValidator().validate(probe_request.dax, schema)
+            if not safety.is_valid:
+                raise ValueError("availability_probe_dax_safety_failed")
+            consistency = request_validator.validate_dax_query_plan_consistency(
+                probe_request,
+                probe_plan,
+                schema,
+            )
+            if not consistency.is_valid:
+                raise ValueError("availability_probe_dax_consistency_failed")
+            probe_result: QueryResult = await self.tool_gateway.execute(
+                TOOL_NAME_DAX,
+                exec_ctx,
+                probe_request,
+                trace=trace,
+                controller=controller,
+            )
+            result_validation = request_validator.validate_query_result(
+                probe_result,
+                expected_source_mode=self._source_mode,
+            )
+            if not result_validation.is_valid or probe_result.error is not None:
+                raise ValueError("availability_probe_result_invalid")
+            ResultSemanticInspectionGate().inspect(
+                probe_plan,
+                probe_result,
+                dax_semantic_verified=True,
+            )
+            probe_facts = VerifiedFactSetBuilder().build(
+                probe_plan,
+                probe_result,
+            )
+            horizon = probe_builder.derive_horizon(
+                probe_plan,
+                probe_result,
+                probe_facts,
+            )
+            trace.record(
+                "available_data_horizon_verified",
+                trace_id=trace_id,
+                request_id=request_id,
+                data_summary={
+                    "status": horizon.status.value,
+                    "measure": horizon.measure,
+                    "temporal_dimension": horizon.temporal_dimension,
+                    "latest_period": (
+                        horizon.latest_period.isoformat()
+                        if horizon.latest_period is not None
+                        else None
+                    ),
+                    "result_id": horizon.source_result_id,
+                    "fact_set_id": horizon.source_fact_set_id,
+                },
+            )
+        except Exception as exc:
+            horizon = AvailableDataHorizon(
+                status=DataHorizonStatus.UNKNOWN,
+                semantic_model_key=query_plan.semantic_model_key,
+                measure=query_plan.measures[0],
+                temporal_dimension=query_plan.time_range.date_field,
+            )
+            trace.record(
+                "available_data_horizon_unknown",
+                trace_id=trace_id,
+                request_id=request_id,
+                data_summary={"reason": type(exc).__name__},
+            )
+        return DataAvailabilityContext(
+            observed_data_coverage=observed_facts.observed_data_coverage,
+            available_data_horizon=horizon,
+        )
 
     def _application_today(self):
         return datetime.now(timezone.utc).astimezone(

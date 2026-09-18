@@ -15,10 +15,12 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from backend.app.intent.temporal_expression import has_explicit_month_range
+from backend.app.intent.unsupported_policy import CapabilityClass, classify_capability
 from backend.app.schemas.data_contracts import QueryShape
 
 
 class QuestionRoute(str, Enum):
+    LLM_SEMANTIC_INTERPRETATION = "llm_semantic_interpretation"
     SOCIAL_CONVERSATION = "social_conversation"
     SYSTEM_DATETIME = "system_datetime"
     CONCEPT_EXPLANATION = "concept_explanation"
@@ -171,7 +173,7 @@ class QuestionRouter:
     _SYSTEM = re.compile(r"(?:你|当前|现在).{0,5}(?:是|使用|用的).{0,4}(?:什么|哪个|哪种)?.{0,3}模型")
     _FOLLOW_ON_DATA_REQUEST = re.compile(
         r"(?:顺便|再|然后|同时|另外|并且?|还|[，,；;。]\s*).{0,80}"
-        r"(?:看|查|查询|分析|统计|比较|多少|哪些|谁|趋势|排名|报表)",
+        r"(?:看|查|查询|分析|统计|比较|多少|哪些|谁|趋势|排名)",
         re.IGNORECASE,
     )
     _UNSUPPORTED_EXTERNAL = re.compile(
@@ -223,7 +225,7 @@ class QuestionRouter:
     _ABSOLUTE_MONTH = re.compile(r"(?:\d{4}年\d{1,2}月|\d{4}[-/]\d{1,2})")
     _ENTITY_LIST = re.compile(
         r"(?:有|包含|包括|销售了|提供)(?:哪些|什么)|"
-        r"(?:哪些|什么).{0,8}(?:有|可选)|"
+        r"哪些.{0,8}(?:有|可选)|"
         r"(?:列出|展示|显示).{0,3}(?:所有|全部)?|(?<![A-Za-z0-9_])list\s+(?:all|the)\b", re.IGNORECASE,
     )
     _GROUPED = re.compile(
@@ -251,6 +253,12 @@ class QuestionRouter:
         r"\d{1,2}\s*月(?:份)?)\s*[？?。.!]*\s*$",
         re.IGNORECASE,
     )
+    _SCALAR_QUESTION = re.compile(
+        r"(?:是多少|有多少|多少(?:个|件|笔|人|元)?|总数|总量|"
+        r"平均(?:值|数|分|金额)?)\s*[？?。.!]*\s*$|"
+        r"\b(?:how\s+much|how\s+many|total|average)\b[^\n。！？!?]*[?]?\s*$",
+        re.IGNORECASE,
+    )
 
     _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 
@@ -271,12 +279,23 @@ class QuestionRouter:
         public_model_name: str | None = None,
     ) -> QuestionRoutingDecision:
         text = question.strip()
+        capability = classify_capability(text)
+        if capability in {
+            CapabilityClass.FUTURE_PREDICTION,
+            CapabilityClass.MODEL_WRITE,
+            CapabilityClass.DATA_DELETE,
+            CapabilityClass.ARBITRARY_CODE,
+        }:
+            return QuestionRoutingDecision(
+                QuestionRoute.UNSUPPORTED_GENERAL,
+                direct_answer=(
+                    "当前为只读分析模式，不支持预测、修改、删除、写入模型"
+                    "或执行任意代码。"
+                ),
+            )
         if self._has_report_generation_evidence(text):
             return QuestionRoutingDecision(QuestionRoute.REPORT_REQUEST)
-        if (
-            self._HELP.search(text)
-            and not self._FOLLOW_ON_DATA_REQUEST.search(text)
-        ):
+        if self._HELP.search(text) and not self._FOLLOW_ON_DATA_REQUEST.search(text):
             return QuestionRoutingDecision(
                 QuestionRoute.PRODUCT_HELP,
                 direct_answer=PRODUCT_HELP_ANSWER,
@@ -291,9 +310,7 @@ class QuestionRouter:
                 direct_answer=f"当前使用的模型是 {display_name}。",
             )
         if self._SOCIAL.fullmatch(text):
-            return QuestionRoutingDecision(
-                QuestionRoute.SOCIAL_CONVERSATION,
-            )
+            return QuestionRoutingDecision(QuestionRoute.SOCIAL_CONVERSATION)
         if self._CURRENT_DATE.fullmatch(text):
             return QuestionRoutingDecision(
                 QuestionRoute.SYSTEM_DATETIME,
@@ -305,9 +322,7 @@ class QuestionRouter:
                 direct_answer=self._current_time_answer(),
             )
         if self._CONCEPT.fullmatch(text):
-            return QuestionRoutingDecision(
-                QuestionRoute.CONCEPT_EXPLANATION,
-            )
+            return QuestionRoutingDecision(QuestionRoute.CONCEPT_EXPLANATION)
         if self._is_calculator(text):
             try:
                 value = SafeCalculator().calculate(text)
@@ -331,9 +346,23 @@ class QuestionRouter:
                 QuestionRoute.UNSUPPORTED_GENERAL,
                 direct_answer="我无法判断你的现实身份。",
             )
+        shape = self._query_shape(text)
+        if (
+            shape is not QueryShape.SCALAR
+            or self._FOLLOW_ON_DATA_REQUEST.search(text)
+            or self._INHERIT_SHAPE.search(text)
+            or self._BOUNDED_TIME_ONLY.fullmatch(text)
+            or self._SCALAR_QUESTION.search(text)
+        ):
+            return QuestionRoutingDecision(
+                QuestionRoute.BUSINESS_DATA_QUERY,
+                query_shape=shape,
+            )
+        # Ordinary open language is not classified by a growing regex lexicon.
+        # The no-tool semantic interpreter decides general vs business; a
+        # business decision is then escalated into the strict runtime pipeline.
         return QuestionRoutingDecision(
-            QuestionRoute.BUSINESS_DATA_QUERY,
-            query_shape=self._query_shape(text),
+            QuestionRoute.LLM_SEMANTIC_INTERPRETATION,
         )
 
     @classmethod

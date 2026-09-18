@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** 当前产品版本/Settings.version=M5.10.5。M5.10.5 FIX 已在本地关闭 conversational LLM、numeric provenance firewall、复合路由与 pending shape residual，并通过 configured DeepSeek + Real Local MCP 19/19。当前为 FIX RELEASE CANDIDATE，Remote exact-SHA CI / final audit 尚未发生；M5.10.6 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；main-only；M5 FINAL=false。
+> **状态：** 当前产品版本/Settings.version=M5.10.6。M5.10.6 implementation、fresh local gates 与最终 production code 上 configured DeepSeek + Real Local MCP 24/24 已通过，residual=0；当前为 local release candidate，Remote exact-SHA CI / final audit PENDING。Semantic Layer FINAL USER ACCEPTANCE 尚未进行；main-only；M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -61,9 +61,10 @@
 | **M5.10.2** | **Executive Report Product Refinement & Hardening** | **✅ 本地产品收口；exact-SHA CI 为发布证据** |
 | **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **✅ COMPLETE；用户人工验收通过** |
 | **M5.10.4** | **语言与 QueryShape 收口** | **✅ COMPLETE；DeepSeek + Real Local MCP 14/14** |
-| **M5.10.5** | **时间语义、语义边界与事实防火墙收口** | **FIX RELEASE CANDIDATE；Remote exact-SHA CI PENDING** |
-| **M5.10.6** | **模板兼容与错误 UX 收口** | **⏳ NOT STARTED** |
-| **M5.10.7** | **MVP 最终 Real E2E / 压力 / mutation / 历史 / exact-SHA 收口** | **⏳ NOT STARTED** |
+| **M5.10.5** | **时间语义、事实防火墙与安全基线** | **✅ COMPLETE；`9dfbf2f` / CI `35088162355` success** |
+| **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **🟡 LOCAL RELEASE CANDIDATE；Remote CI PENDING** |
+| **M5.10.7** | **模板兼容与错误 UX 收口** | **⏳ NOT STARTED** |
+| **M5.10.8** | **MVP 最终 Real E2E / 压力 / mutation / 历史 / exact-SHA 收口** | **⏳ NOT STARTED** |
 
 ## M5.10 — 复杂报表合同与专业销售模板基础
 
@@ -103,7 +104,15 @@ Failure-first 为 `11 failed, 2 passed`；focused/current semantic 307、邻近 
 
 Post-release audit confirmed two release-blocking gaps: social/creative turns were still canned or unsupported, and provenance digits could enter the business numeric allowlist. The FIX reuses the selected existing LLM provider in a current-message-only no-tool lane and separates verified business values from exact deterministic scope/coverage fragments; model/source-field/source-row/result/fact/hash metadata never authorizes a business number. The sweep also closed mixed system/help/weather prefix overcapture, greeting/courtesy residue, and weak-draft overwrite of a pending canonical QueryShape.
 
-Fresh local automated：focused `770 passed`；M5.9.4 formal entry `29 passed` 与 51,200/51,200；Semantic Compatibility `870 passed / 125 production files`；full backend `2903 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 142、Repository Safety 409、AI Error Ledger 104、Documentation/Artifact Governance、compileall、version consistency 49 与 diff-check PASS。configured DeepSeek + Real Local MCP 19/19、19 execution witnesses、business residual=0、temporary residual=0。Local automated / Local Real / Remote CI 分离记录；Remote exact-SHA CI 仍为 PENDING。当前为 M5.10.5 FIX RELEASE CANDIDATE；完成远端 CI 与 final audit 前不声明 READY；M5.10.6 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false。
+Fresh local automated 与 Local Real 证据保持原记录。发布 commit 为 `9dfbf2f72bad299e41a138e9072a11caf8c678a7`，GitHub Actions Run `35088162355` exact-SHA completed/success。人工测试确认时间/事实安全主体有效，同时发现用户主回答泄露 technical scope、普通聊天与 capability wording 不够自然，以及 requested range 与模型真实业务数据 horizon 解释不足。M5.10.5 COMPLETE；这些新缺口进入 M5.10.6，Semantic Layer FINAL ACCEPTANCE 顺延，M5 FINAL=false。
+
+## M5.10.6 — LLM 语义理解与自然事实表达重构
+
+本阶段将普通开放语言收敛到唯一 `SemanticInterpretationDraft` 合同：QuestionRouter 降为 risk/capability preflight，LLM 解释 general/business mode、八种既有 QueryShape 与 runtime candidate intention；SemanticCatalog/Grounding、StateTransition、Completeness、Deterministic DAX、Result Inspection 与 VerifiedFactSet 继续证明 canonical semantics、执行与事实。General conversation default-open，但无 tools/schema/member/DAX/report/business state，并以 `requires_business_grounding` 防止误路由后猜测组织事实。
+
+用户回答改为共享 Natural Answer Composer：只消费 VerifiedFactSet、由 canonical identity 派生的 user-facing scope 与真实 data availability context，随后通过 FactOutputValidator；technical canonical scope 只保留在 audit。新增 measure-aware `available_data_horizon`，只能由现有 result 或 canonical-derived deterministic auxiliary probe 证明，不能使用当前日期、Date 表最大日期、requested end、LLM 或 provenance 时间猜测，也不能冒充 refresh time。Report 只复用共享事实与 availability context。本轮不做模板兼容、错误 UX、MCP/Provider/runtime 重构、migration、新 QueryShape/analysis capability 或 Renderer redesign。
+
+Fresh local evidence：focused 15、Router/API 246、cross-language 168、numeric mutation 39、pending/state/grounding 193、M5.9.4 formal 17（51,200/51,200）、M5.10.4 43、M5.10.5 补充回归 276；Semantic Compatibility `878 / 128 production files`；backend `2928 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；frontend 91 + typecheck/lint/build；Architecture 145、Repository Safety 414、Error Ledger 105、Documentation/Artifact Governance、compileall、version consistency 49 与 diff-check PASS。最终 production code 的 configured DeepSeek + Real Local MCP 24/24、automation residual=0。Remote exact-SHA CI 与 final remote audit 尚未发生。
 
 ## M5 重建决策与历史状态
 
@@ -229,7 +238,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 | Remote MCP 管理员与授权条件 | 重新批准 Remote 后 |
 | mixed Chinese-English、全面 paraphrase 与 QueryShape 语言优化 | M5.10.4 |
 | M5.10.5 时间/对话边界/numeric firewall | FIX local + Real complete；Remote exact-SHA CI pending |
-| template × model compatibility、frontend generic error UX | M5.10.6 |
+| template × model compatibility、frontend generic error UX | M5.10.7 |
 | Final MVP Real E2E / stress / mutation / historical / exact-SHA closure | M5.10.7 |
 | Settings UX、full-width UI、same-name PBIX、新业务指标/模板、Remote MCP、Entra、PostgreSQL、Deployment | M5.10.4+ 或后续独立批准 |
 
@@ -265,7 +274,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - **M5.9** 已完成完整 queue/backpressure、20/50/100 concurrency、restart/fault matrix 与 soak；M5.9.1 仅收口 shutdown/enqueue 与 retry ownership，不降低 factual validation 或修改 Semantic/DAX/VerifiedFactSet authority。
 - **M5.8.4** 已完成现有语义链的跨语言绑定、runtime 成员验证、KEEP/REPLACE 与 Report/Data 状态收口；完整 A–E 复核、失败样本、最终门禁与 CI 条件见 [专项计划](milestones/m5/m5_8_4_cross_language_grounding_plan.md)。没有新建第二套模型/Planner/Catalog。
 - **M5.8.5** 已完成 Semantic Obligation Coverage、Canonical Shape Completeness、Result Semantic Inspection 与 Deterministic Query Scope；TopN tie/order、trend ASC、fresh 优先级和 table/chart shared order 均有永久回归，三 PBIX/双 Provider Real 与 2,304 stress 通过。
-- **M5.10—M5.10.2** 已完成固定专业销售报表模板和显式两模板选择。“简易模板”与“销售模板”都只消费 VerifiedFactSet/ReportData/ReportSpec，不允许 LLM 生成 HTML/CSS/SVG、查询或事实。M5.10.3 只做 semantic/state P0 safety；M5.10.4—M5.10.7 按路线隔离。只有 M5.10.7 全部门禁与用户人工验收完成后才允许声明 M5 FINAL。
+- **M5.10—M5.10.2** 已完成固定专业销售报表模板和显式两模板选择。“简易模板”与“销售模板”都只消费 VerifiedFactSet/ReportData/ReportSpec，不允许 LLM 生成 HTML/CSS/SVG、查询或事实。M5.10.3 只做 semantic/state P0 safety；M5.10.4—M5.10.8 按路线隔离。只有 M5.10.8 全部门禁与用户人工验收完成后才允许声明 M5 FINAL。
 - 每个 milestone 禁止同时大规模修改 Semantic、MCP、Presentation、Report、Resource lifecycle 多个域。
 
 ### M5.6 执行合同与 Layout Gate（COMPLETE）
@@ -344,6 +353,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.8.2—M5.10.5 已完成各自定义的本地实现与自动/Real 验收；M5.10.5 FIX 仍等待 Remote exact-SHA CI / final audit。M5.8.5 factual correctness 与 M5.9.2 runtime 的 architecture/authority boundary 冻结；M5.10.6 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false。
+- M5.8.2—M5.10.5 已完成各自定义的本地实现与自动/Real 验收；M5.10.5 FIX `9dfbf2f` 的 exact-SHA CI Run `35088162355` success。M5.8.5 factual correctness 与 M5.9.2 runtime 的 architecture/authority boundary 冻结；M5.10.6 为 LOCAL RELEASE CANDIDATE，Remote exact-SHA CI / final audit PENDING；Semantic Layer FINAL ACCEPTANCE 尚未进行；M5 FINAL=false。
 
-*最后更新：2026-09-16 | M5.10.5 FIX RELEASE CANDIDATE；REMOTE EXACT-SHA CI PENDING；M5.10.6 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false*
+*最后更新：2026-09-18 | M5.10.6 LOCAL RELEASE CANDIDATE；Remote exact-SHA CI / final audit PENDING；M5.10.7/8 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false*

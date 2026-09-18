@@ -244,7 +244,7 @@ class TestTurnPipelineUnifiedControlSurface:
             }
 
         await pipeline.execute(
-            message="测试消息",
+            message="销售额是多少",
             conversation_id=None,
             request_id=None,
             semantic_model_key="test_model",

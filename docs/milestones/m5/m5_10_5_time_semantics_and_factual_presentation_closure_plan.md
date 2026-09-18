@@ -2,13 +2,14 @@
 
 ## Status and baseline
 
-- Status: FIX RELEASE CANDIDATE — local automated and Real acceptance complete;
-  remote exact-SHA CI and final remote audit pending.
+- Status: COMPLETE — FIX commit
+  `9dfbf2f72bad299e41a138e9072a11caf8c678a7`; exact-SHA GitHub Actions Run
+  `35088162355` completed/success.
 - Original baseline: clean `main@3cca00b8cc37007411ef60015c419ff6e34530f1`.
 - FIX baseline: `main@3d6a00693c0371603f6c3087acea73d09b8e6acd`.
 - Product version at start: `M5.10.4`.
 - M5.10.3 and M5.10.4: COMPLETE; Semantic Layer FINAL ACCEPTANCE remains pending.
-- `M5.10.6 NOT STARTED`; `M5 FINAL=false`.
+- `M5.10.6 ACTIVE`; `M5 FINAL=false`.
 
 ## Single goal
 
@@ -134,9 +135,20 @@ whitelist commit/push → exact-SHA CI and remote audit.
   conversational calls, deterministic date/time, business escalation,
   business↔social isolation, vague-time pending completion, coverage and the
   2025 fixed report scope.
-- Remote exact-SHA CI evidence: PENDING until the FIX commit is pushed and the
-  workflow completes. No local count is recorded as remote evidence.
+- Remote exact-SHA CI evidence: FIX SHA
+  `9dfbf2f72bad299e41a138e9072a11caf8c678a7`; GitHub Actions Run
+  `35088162355` completed/success. Local automated and Local Real counts above
+  remain separate evidence and are not relabeled as remote results.
+
+## Manual test conclusion and handoff
+
+The user confirmed the factual-safety core is effective. Manual testing also
+proved that the normal answer still exposes technical scope, general/capability
+responses are not sufficiently natural, requested range is not clearly
+distinguished from the observable business-data horizon, and a model whose 2026
+sales facts end in March can be misread as a full-year statement. These are not
+retroactive M5.10.5 failures; they are the failure-first baseline for M5.10.6.
 
 ---
 
-*Created: 2026-09-16 | Updated: 2026-09-16 | M5.10.5 FIX RELEASE CANDIDATE | REMOTE EXACT-SHA CI PENDING | M5.10.6 NOT STARTED | Semantic Layer FINAL ACCEPTANCE PENDING | M5 FINAL=false*
+*Created: 2026-09-16 | Updated: 2026-09-17 | M5.10.5 COMPLETE | 9dfbf2f / CI 35088162355 success | M5.10.6 ACTIVE | Semantic Layer FINAL ACCEPTANCE PENDING | M5 FINAL=false*

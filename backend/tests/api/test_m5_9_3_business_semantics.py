@@ -77,7 +77,10 @@ async def test_explicit_month_range_reaches_dax_with_complete_endpoints(
 
     assert body["terminal_state"] == "completed", body.get("error_type")
     assert body["memory_commit"] is True
-    assert adapter.dax_calls == 1
+    assert adapter.dax_calls == 2
+    assert body["execution_audit"]["data_availability"][
+        "available_data_horizon"
+    ] is not None
     plan = body["execution_audit"]["canonical_query_plan"]
     assert plan["query_shape"] == "bounded_trend"
     assert plan["dimension_order"] == "asc"

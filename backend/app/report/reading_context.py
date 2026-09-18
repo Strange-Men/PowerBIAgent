@@ -9,6 +9,7 @@ from typing import Mapping
 from backend.app.facts import FactType, VerifiedFactSet
 from backend.app.schemas.data_contracts import CanonicalQueryPlan, QueryResult
 from backend.app.schemas.factual_context import (
+    DataAvailabilityContext,
     ObservedCoverageStatus,
     ObservedDataCoverage,
 )
@@ -283,6 +284,7 @@ class ReportReadingContextBuilder:
         snapshot: ReportDataSnapshot,
         generated_at: datetime,
         observed_data_coverage: ObservedDataCoverage | None = None,
+        data_availability: tuple[DataAvailabilityContext, ...] = (),
     ) -> ReportReadingContext:
         if not metric_definition_keys:
             raise ReportReadingContextError("report_metric_definitions_required")
@@ -335,6 +337,7 @@ class ReportReadingContextBuilder:
                     )
                 )
             ),
+            data_availability=data_availability,
             generated_at=generated_at,
         )
 

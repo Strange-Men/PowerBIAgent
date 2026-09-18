@@ -3,6 +3,7 @@
 import pytest
 
 import backend.tests.api.test_model_semantic_context as runtime_tests
+from backend.app.answer.conversation import ConversationalAnswer
 from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.llm.base import LLMResponse, LLMTask
 from backend.app.schemas.data_contracts import QueryShape, QueryPlan, ColumnMembersResult, StructuredFilter, FilterOperator
@@ -132,7 +133,11 @@ async def test_zero_override_cross_language_shapes_at_chat_boundary(monkeypatch,
 
     class CrossLanguageDraft(runtime_tests.LanguageDraft):
         async def generate(self, request, output_type):
-            if request.task == LLMTask.INTENT_RECOGNITION:
+            if request.task == LLMTask.CONVERSATION:
+                output = ConversationalAnswer(
+                    requires_business_grounding=True,
+                )
+            elif request.task == LLMTask.INTENT_RECOGNITION:
                 output = IntentSpec(intent=IntentType.DATA_QUESTION, confidence=1, normalized_question=message,
                     detected_measures=[] if shape == QueryShape.ENTITY_LIST else [domain.measure_text],
                     detected_dimensions=[domain.dimension_text] if shape in {QueryShape.ENTITY_LIST, QueryShape.GROUPED, QueryShape.RANKING} else [])
@@ -141,7 +146,9 @@ async def test_zero_override_cross_language_shapes_at_chat_boundary(monkeypatch,
                 # of binding: the selector still must see runtime candidates.
                 output = QueryPlan(normalized_question=message, semantic_model_key=domain.schema.key,
                     measures=[] if shape == QueryShape.ENTITY_LIST else [domain.measure],
-                    dimensions=[domain.dimension] if shape in {QueryShape.ENTITY_LIST, QueryShape.GROUPED, QueryShape.RANKING} else [])
+                    dimensions=[domain.dimension] if shape in {QueryShape.ENTITY_LIST, QueryShape.GROUPED, QueryShape.RANKING} else [],
+                    measure_evidence_spans=[] if shape == QueryShape.ENTITY_LIST else [domain.measure_text],
+                    dimension_evidence_spans=[domain.dimension_text] if shape in {QueryShape.ENTITY_LIST, QueryShape.GROUPED, QueryShape.RANKING} else [])
             elif request.task == LLMTask.SEMANTIC_SELECTION:
                 role = request.messages[-1]["content"].splitlines()[0]
                 identity = f"measure:{measure_table}:{domain.measure}" if role == "角色：measure" else f"field:{domain.dimension_table}:{domain.dimension}"
@@ -166,7 +173,10 @@ async def test_zero_override_cross_language_shapes_at_chat_boundary(monkeypatch,
     plan = body["execution_audit"]["canonical_query_plan"]
     assert plan["query_shape"] == shape.value
     assert plan["measures"] == ([] if shape == QueryShape.ENTITY_LIST else [domain.measure])
-    assert body["memory_commit"] and adapter.dax_calls == 1
+    # This matrix proves cross-language canonical binding. A turn may additionally
+    # execute one bounded, canonical availability probe when temporal evidence is
+    # present; the dedicated availability tests assert that probe in detail.
+    assert body["memory_commit"] and adapter.dax_calls in {1, 2}
     if shape in {QueryShape.ENTITY_LIST, QueryShape.GROUPED, QueryShape.RANKING, QueryShape.MEMBER_SET}:
         assert plan["dimensions"] == [domain.dimension]
         assert plan["dimension_tables"][domain.dimension] == domain.dimension_table

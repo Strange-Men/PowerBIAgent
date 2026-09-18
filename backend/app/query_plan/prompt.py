@@ -44,6 +44,9 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 27. query_shape_evidence 只能逐字复制当前输入中表达结果形态或语言关系的最小短语（最长 80 字符），不得包含完整问题；没有明确证据或两种形态都合理时必须为 null
 28. ranking 只有在当前输入明确表达排名时才能提议；top_n 和 sort 只提取当前输入明确表达的范围与方向，缺少 N 或方向时保持 null，禁止从历史上下文或默认值补造
 29. 对象名仍只能是当前 Schema 中的候选；成员值只保留当前原文并由 runtime 验证。query_shape 与 query_shape_evidence 永远不能证明对象存在、成员存在或事实成立
+30. measure_evidence_spans / dimension_evidence_spans 只能逐字复制当前输入中分别表达指标/维度概念的最小短语；不得填 canonical 对象名（除非用户原文就是该名称），不得改写、翻译或补造
+31. Shape 语义固定：scalar 是一个汇总值（可带单个或多个普通筛选）；entity_list 是无 Measure 的去重成员列表；grouped 是按维度拆分 Measure；ranking 必须有明确排名；member_set 是两个以上明确成员分别返回；filtered_aggregation 是两个以上明确成员合并后返回一个汇总值；trend 是时间序列；bounded_trend 是带明确起止范围的月度时间序列。单个 member 筛选不得提议 member_set 或 filtered_aggregation
+32. query_shape_evidence 必须与 measure_evidence_spans / dimension_evidence_spans 的对象短语彼此独立；一个短语不能同时证明结果形态和对象含义。若当前输入只有指标、时间或“情况/概况/overview”等泛化措辞，没有独立的分组、排名、集合、合并或趋势证据，则 query_shape 只能为 scalar 或 null，query_shape_evidence 必须为 null
 
 ## QueryPlan JSON Schema
 
@@ -55,6 +58,8 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
   "semantic_model_key": "<语义模型 Key>",
   "query_shape": "<现有 QueryShape 或 null>",
   "query_shape_evidence": "<当前输入中的最小形态证据短语或 null>",
+  "measure_evidence_spans": ["<当前输入中的指标概念原文>"],
+  "dimension_evidence_spans": ["<当前输入中的维度概念原文>"],
   "measures": ["<Schema 中明确存在的度量值名>"],
   "dimensions": ["<维度列名>"],
   "filters": [],
@@ -73,6 +78,8 @@ SYSTEM_PROMPT = """你是 Power BI 数据分析 Agent 的查询计划生成器�
 - semantic_model_key：当前使用的语义模型 Key（必填）
 - query_shape：当前问题的 bounded 结果形态建议；只能使用现有八种 QueryShape，不得创建新形态
 - query_shape_evidence：逐字来自当前输入的最小语言关系片段；不确定时为 null
+- measure_evidence_spans：逐字来自当前输入、与 measures 候选对应的最小指标短语；无则空数组
+- dimension_evidence_spans：逐字来自当前输入、与 dimensions 候选对应的最小维度短语；无则空数组
 - measures：用户问题中涉及的业务度量值，只能从 Schema 的“度量值”列表选取；禁止填普通列
 - dimensions：用户问题中涉及的维度列（分组依据），只能从 Schema 中选取
 - filters：筛选条件数组，每个元素包含 field/operator/value

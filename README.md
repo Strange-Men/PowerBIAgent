@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.10.5 — 时间语义、语义边界与事实防火墙收口**。bounded 低风险聊天使用现有 selected LLM provider 的 current-message-only no-tool lane；系统日期时间 deterministic，数据查询与报表继续使用严格 runtime/canonical/VerifiedFactSet authority。provenance metadata 数字不能成为业务 numeric claim authority。FIX 已通过本地自动化和 DeepSeek + Real Local MCP 19/19，Remote exact-SHA CI / final audit 待执行；M5.10.6 未启动，Semantic Layer FINAL ACCEPTANCE PENDING，M5 FINAL=false。
+当前版本：**M5.10.6 — LLM 语义理解与自然事实表达重构**。正式起始基线仍为 `main@9dfbf2f72bad299e41a138e9072a11caf8c678a7`（M5.10.5 exact-SHA CI Run `35088162355` success）；M5.10.6 implementation 已进入 fresh full-gate / Real 验证阶段，尚未提交或发布。Semantic Layer FINAL ACCEPTANCE PENDING，M5 FINAL=false。
 
 ## 项目概览
 
@@ -362,8 +362,9 @@ python -m alembic upgrade head
 | M5.10.2 | 本地产品收口完成 — Report Request/FULL_AVAILABLE、专业 presentation/视觉、时间 provenance、artifact compensation/cancellation、lifecycle/stale/concurrency/security/cloud-ready 硬化；Rich/Simple PBIX 与 DeepSeek-only exact phrase PASS；该历史完成证据不覆盖 post-manual reopen，M5 FINAL=false |
 | M5.10.3 | COMPLETE — Zero Wrong-Question Execution；用户人工验收通过 |
 | M5.10.4 | COMPLETE — bounded 开放语言解释与 QueryShape reconciliation；DeepSeek + Real Local MCP 14/14，residual=0 |
-| M5.10.5 | FIX RELEASE CANDIDATE — no-tool conversational LLM、numeric provenance firewall、确定性时间、scope/coverage/report truth；Remote exact-SHA CI pending |
-| M5.10.6—M5.10.7 | NOT STARTED — 模板兼容与错误 UX、MVP 最终收口；Semantic Layer FINAL ACCEPTANCE PENDING |
+| M5.10.5 | COMPLETE — `9dfbf2f` / CI `35088162355` success；确定性时间、事实防火墙与安全基线 |
+| M5.10.6 | ACTIVE — LLM 语义理解、自然事实表达与 available data horizon |
+| M5.10.7—M5.10.8 | NOT STARTED — 模板兼容/错误 UX、MVP 最终收口；Semantic Layer FINAL ACCEPTANCE PENDING |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -392,4 +393,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-16 | M5.10.5 FIX RELEASE CANDIDATE；REMOTE EXACT-SHA CI PENDING；M5.10.6 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false*
+*最后更新：2026-09-17 | M5.10.5 COMPLETE / CI 35088162355 success；M5.10.6 ACTIVE；M5.10.7/8 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false*

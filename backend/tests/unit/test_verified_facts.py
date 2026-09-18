@@ -20,6 +20,7 @@ from backend.app.query_plan.semantic_catalog import SemanticObjectType
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
     CanonicalQueryPlan,
+    FilterOperator,
     QueryResult,
     QueryShape,
     StructuredFilter,
@@ -180,9 +181,9 @@ def test_fact_bounded_topn_answer_uses_result_items_for_ties():
     facts = VerifiedFactSetBuilder().build(plan, result)
     answer = FactBoundedAnswerBuilder().build(plan, result, facts)
 
-    assert "首项" in answer.answer
+    assert "依次" in answer.answer
     assert "CategoryA" in answer.answer
-    assert "CategoryB" not in answer.answer
+    assert "CategoryB" in answer.answer
     assert "第1位" not in answer.answer
     assert "第2位" not in answer.answer
     assert FactOutputValidator().validate_answer(answer, facts) == []
@@ -460,6 +461,54 @@ def test_topn_number_is_valid_only_inside_the_verified_ranking_scope():
     assert "unverified_numeric_claim" in FactOutputValidator().validate_answer(
         mutated, facts
     )
+
+
+@pytest.mark.parametrize("member", ["Product 2026", "Store 3", "Region 01"])
+def test_numeric_member_is_valid_only_inside_its_verified_member_fragment(member):
+    plan = _plan(
+        filters=[
+            StructuredFilter(
+                field="Location",
+                operator=FilterOperator.EQ,
+                value=member,
+            )
+        ]
+    )
+    result = _result()
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    answer = FactBoundedAnswerBuilder().build(plan, result, facts)
+    assert member in answer.answer
+    assert FactOutputValidator().validate_answer(answer, facts) == []
+
+    leaked_number = next(iter(FactOutputValidator._NUMBER.findall(member)))
+    mutated = answer.model_copy(update={
+        "answer": f"筛选成员为{member}，销售额是{leaked_number}。",
+    })
+    assert "unverified_numeric_claim" in FactOutputValidator().validate_answer(
+        mutated, facts
+    )
+
+
+def test_verified_date_fragment_cannot_authorize_its_year_or_month_as_metric_value():
+    plan = _bounded_monthly_plan()
+    result = _result(
+        ["[YearMonth]", "[Total Sales]"],
+        [["2026-03-01", 100]],
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    answer = FactBoundedAnswerBuilder().build(plan, result, facts)
+    assert "2026年3月" in answer.answer
+    assert FactOutputValidator().validate_answer(answer, facts) == []
+
+    validator = FactOutputValidator()
+    for claim in (
+        "2026年3月，销售额是2026。",
+        "2026年3月，销量是3。",
+    ):
+        mutated = answer.model_copy(update={"answer": claim})
+        assert "unverified_numeric_claim" in validator.validate_answer(
+            mutated, facts
+        )
 
 
 def test_factset_has_no_causal_fact_type():

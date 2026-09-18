@@ -2,6 +2,19 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.10.6] — 2026-09-18（发布候选：LLM 语义理解与自然事实表达重构）
+
+- **G0 governance calibration：** M5.10.5 FIX SHA `9dfbf2f72bad299e41a138e9072a11caf8c678a7` 的 exact-SHA CI Run `35088162355` 已 completed/success，状态改为 COMPLETE。人工测试确认事实安全主体有效，同时正式记录 technical-scope leakage、general/capability wording 与 available business-data horizon 缺口。
+- **统一语言职责：** QuestionRouter 收缩为 risk/capability/high-confidence floor；未预写表达进入唯一 bounded Semantic Interpreter。General lane current-message-only、no-tool，并以 `requires_business_grounding` 升级当前企业/PBI事实请求；Semantic Draft 的 evidence span 仍由既有 Grounding/Completeness 与 runtime candidate authority 验证。
+- **自然事实与 horizon：** 用户主回答不再暴露 opaque model key、canonical IDs 或 mechanical scope；Top3 完整列出 verified members。`requested_query_scope`、`observed_data_coverage` 与 measure/temporal-dimension-aware `available_data_horizon` 分离；辅助 probe 复用 canonical plan → deterministic DAX/Layer 3 → QueryResult/Inspection → VerifiedFactSet，Report 复用同一 availability context。
+- **事实防火墙与状态：** business metric numeric authority 与结构数字分离；year、TopN、numeric member、date 和 provenance/technical numbers 只能在 verified semantic fragment 中出现。General turn 不消费或改写 pending/business Memory；同名字段用 pending `dimension_tables` 证明 owner。
+- **Failure-first：** Real report-methodology false-positive、weak draft shape upgrade、pending owner ambiguity、empty-range natural wording 与 numeric laundering mutation 均形成永久回归。Final sweep 另发现两处旧 Router oracle 仍要求 direct BUSINESS/2-message conversation，均只更新为更强的新合同；production 未再修改。
+- **Fresh local automated：** M5.10.6 focused 15；Router/API 246；cross-language 168；numeric mutation 39；pending/state/grounding 193；M5.9.4 formal 17（内部 51,200/51,200）；M5.10.4 43；M5.10.5 补充回归 276；Semantic Compatibility `878 passed / 128 production files`；full backend `2928 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 145、Repository Safety 414、AI Error Ledger 105、Documentation/Artifact Governance、compileall、version consistency 49 与 diff-check PASS。
+- **Local Real：** 最终 production code 上 configured DeepSeek + Real Local MCP `24/24 PASS`，覆盖 general/business boundary、自然 scalar/Top3、中英混合、horizon、unknown/ambiguity ZERO DAX、pending/general/model isolation；automation-owned business/temp residual=0。
+- **边界：** QueryShape 仍为八种；无第二 Planner/Grounding/Memory/Intent authority、Agent、migration、MCP runtime/Provider rewrite、LLM DAX、新业务数学、template compatibility 或 Renderer redesign。M5.10.7/8 NOT STARTED；Remote exact-SHA CI / final audit PENDING，M5 FINAL=false。
+
+**Settings.version:** M5.10.6（local release candidate；exact-SHA evidence pending）
+
 ## [M5.10.5] — 2026-09-16（FIX：语义边界与事实防火墙最终收口）
 
 - **真实 conversational lane：** 现有 QuestionRouter 将 bounded 低风险问候、闲聊、创意短任务和通用概念解释送入新增的最小 `LLMTask.CONVERSATION`；继续复用已选 provider/profile、retry/error、usage 与 trace。请求只含边界 prompt 和当前用户消息，禁止 schema/member/DAX/report/Power BI tool、committed business Memory 与 pending semantic mutation。
@@ -10,8 +23,8 @@
 - **Failure-first：** conversational/numeric 初始 7 RED + routing 2 RED；本轮额外发现 discourse residue 4 RED、无连接词复合路由 3 RED、pending shape mutation 1 RED，均先复现再最小修复。model-v2、source rows、canonical year 与 Top3 negative mutation 全部拒绝错误指标数字。
 - **Fresh local automated：** focused `770 passed`；M5.9.4 formal entry `29 passed`（固定 seed 51,200/51,200）；Semantic Compatibility `870 passed / 125 production files`；full backend `2903 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 142、Repository Safety 409、AI Error Ledger 104、Documentation/Artifact Governance、compileall、version consistency 49 与 `git diff --check` PASS。
 - **Local Real：** configured DeepSeek + Real Local MCP 在 `PowerBIAgent_M3_Rich_Test` 完成 19/19、19 个真实 execution witnesses、business residual=0、temporary residual=0；包含真实 joke/greeting LLM call、system datetime ZERO LLM、business escalation、business↔social Memory 隔离、时间/coverage/report 回归。
-- **Evidence governance：** Local automated、Local Real 与 Remote exact-SHA CI 严格分栏。Remote exact-SHA CI 当前 PENDING，本文不预写远端 pytest/warning/Golden/frontend/Architecture/Safety 数字。
-- **边界与状态：** Settings.version 保持 M5.10.5；QueryShape 仍八种；无第二 Planner/Grounding/Memory/Agent，无 migration、MCP runtime、Provider architecture、report factual authority、Renderer 或 frontend redesign 变化；M5.10.6 未启动。当前为 FIX RELEASE CANDIDATE，完成 exact-SHA CI 与最终远端审计前不声明 FIX COMPLETE 或 READY FOR SEMANTIC LAYER FINAL USER ACCEPTANCE；Semantic Layer FINAL ACCEPTANCE PENDING，M5 FINAL=false。
+- **Evidence governance：** Local automated、Local Real 与 Remote exact-SHA CI 严格分栏。FIX commit `9dfbf2f72bad299e41a138e9072a11caf8c678a7` 对应 GitHub Actions Run `35088162355` completed/success；不把本地测试数字重标为远端 evidence。
+- **边界与状态：** Settings.version 保持 M5.10.5；QueryShape 仍八种；无第二 Planner/Grounding/Memory/Agent，无 migration、MCP runtime、Provider architecture、report factual authority、Renderer 或 frontend redesign 变化。M5.10.5 COMPLETE；人工测试结论与新缺口进入 M5.10.6；Semantic Layer FINAL ACCEPTANCE 顺延，M5 FINAL=false。
 
 **Settings.version:** M5.10.5
 

@@ -29,7 +29,7 @@ _PROJECTION_CUE = re.compile(
     re.IGNORECASE,
 )
 _MODEL_WRITE = re.compile(
-    r"(?:写入|修改|更新|新增|创建).*(?:模型|字段|度量值|Measure|PBIX|Power\s*BI)",
+    r"(?:写入|修改|更新|新增|创建).*(?:数据|表|模型|字段|度量值|Measure|PBIX|Power\s*BI)",
     re.IGNORECASE,
 )
 _DATA_DELETE = re.compile(r"(?:删除|清空|销毁).*(?:数据|表|模型)", re.IGNORECASE)

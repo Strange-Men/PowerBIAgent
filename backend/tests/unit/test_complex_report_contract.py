@@ -58,6 +58,13 @@ from backend.app.schemas.report_context import (
     ReportReadingContext,
     ReportTemplateTier,
 )
+from backend.app.schemas.factual_context import (
+    AvailableDataHorizon,
+    DataAvailabilityContext,
+    DataHorizonStatus,
+    ObservedCoverageStatus,
+    ObservedDataCoverage,
+)
 
 
 NOW = datetime(2026, 9, 11, 8, 30, tzinfo=timezone.utc)
@@ -118,6 +125,41 @@ def _reading_context(
         exception_assessment=ExceptionAssessment.cannot_determine(),
         snapshot=snapshot or _snapshot(),
         generated_at=NOW,
+    )
+
+
+def test_report_reading_context_consumes_shared_measure_aware_availability():
+    availability = DataAvailabilityContext(
+        observed_data_coverage=ObservedDataCoverage(
+            status=ObservedCoverageStatus.UNKNOWN
+        ),
+        available_data_horizon=AvailableDataHorizon(
+            status=DataHorizonStatus.KNOWN,
+            latest_period=date(2026, 3, 31),
+            grain="month",
+            semantic_model_key="local_desktop:model-a",
+            measure="Total Sales",
+            temporal_dimension="Order Date",
+            source_result_id="availability-result",
+            source_fact_set_id="availability-facts",
+        ),
+    )
+    context = ReportReadingContextBuilder().build(
+        report_title="销售经营分析报表",
+        analysis_period=_period(),
+        active_filters=_filters(),
+        metric_definition_keys=("total_sales",),
+        exception_assessment=ExceptionAssessment.cannot_determine(),
+        snapshot=_snapshot(),
+        generated_at=NOW,
+        data_availability=(availability,),
+    )
+
+    assert context.data_availability == (availability,)
+    assert context.data_freshness.data_updated_at == UPDATED
+    assert (
+        context.data_availability[0].available_data_horizon.latest_period
+        == date(2026, 3, 31)
     )
 
 

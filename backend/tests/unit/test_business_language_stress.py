@@ -70,7 +70,7 @@ def test_generator_covers_51200_safe_reproducible_cases() -> None:
         ("请问上个月各产品净营收", QueryShape.GROUPED, None),
         ("华南的产品净营收分别是多少，2025年5月", QueryShape.GROUPED, None),
         ("请问list all 产品", QueryShape.ENTITY_LIST, None),
-        ("重新分析：2025年5月净营收", QueryShape.SCALAR, None),
+        ("重新分析：2025年5月净营收", None, None),
         ("其中华南净营收是多少", None, None),
         ("前几个产品销售额", QueryShape.RANKING, None),
         ("第一个产品销售额", QueryShape.RANKING, 1),

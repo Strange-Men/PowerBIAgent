@@ -36,16 +36,24 @@ def test_explicit_report_generation_language_routes_before_metric_clarification(
 
 
 @pytest.mark.parametrize(
-    "question",
+    ("question", "expected_route"),
     (
-        "报表里的销售额是多少？",
-        "报告中的订单数是多少？",
-        "这份报表为什么没有客户？",
-        "销售额是多少？",
+        ("报表里的销售额是多少？", QuestionRoute.BUSINESS_DATA_QUERY),
+        ("报告中的订单数是多少？", QuestionRoute.BUSINESS_DATA_QUERY),
+        (
+            "这份报表为什么没有客户？",
+            QuestionRoute.LLM_SEMANTIC_INTERPRETATION,
+        ),
+        ("销售额是多少？", QuestionRoute.BUSINESS_DATA_QUERY),
     ),
 )
-def test_report_content_questions_do_not_become_generation_requests(question: str):
-    assert QuestionRouter().route(question).route is QuestionRoute.BUSINESS_DATA_QUERY
+def test_report_content_questions_do_not_become_generation_requests(
+    question: str,
+    expected_route: QuestionRoute,
+):
+    decision = QuestionRouter().route(question)
+    assert decision.route is expected_route
+    assert decision.route is not QuestionRoute.REPORT_REQUEST
 
 
 def test_full_available_is_explicit_and_weak_llm_cannot_shrink_it():

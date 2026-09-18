@@ -7,6 +7,7 @@ import json
 import pytest
 
 import backend.tests.api.test_model_semantic_context as runtime_tests
+from backend.app.answer.conversation import ConversationalAnswer
 from backend.app.intent.models import IntentSpec, IntentType, TurnRelation
 from backend.app.intent.question_router import QuestionRouter
 from backend.app.llm.base import LLMResponse, LLMTask
@@ -23,7 +24,9 @@ class _OpenLanguageDraft(runtime_tests.LanguageDraft):
             if self.shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}
             else self.domain.dimension
         )
-        if request.task == LLMTask.INTENT_RECOGNITION:
+        if request.task == LLMTask.CONVERSATION:
+            output = ConversationalAnswer(requires_business_grounding=True)
+        elif request.task == LLMTask.INTENT_RECOGNITION:
             output = IntentSpec(
                 intent=IntentType.DATA_QUESTION,
                 confidence=1,
@@ -55,6 +58,19 @@ class _OpenLanguageDraft(runtime_tests.LanguageDraft):
                 query_shape_evidence=evidence,
                 measures=[self.domain.measure],
                 dimensions=[dimension],
+                measure_evidence_spans=[
+                    item
+                    for item in (self.domain.measure, self.domain.measure_text)
+                    if item in self.message
+                ][:1],
+                dimension_evidence_spans=[
+                    item
+                    for item in (
+                        dimension,
+                        self.domain.dimension_text,
+                    )
+                    if item in self.message
+                ][:1],
                 # Deliberately hallucinate complete ranking slots for the open
                 # form: Grounding must reject the unevidenced bound.
                 sort="desc" if self.shape == QueryShape.RANKING else None,
@@ -76,7 +92,7 @@ async def test_richer_current_llm_ranking_survives_weak_router_fallback(
     prefix = "那么" if follow_up else ""
     message = f"{prefix} {domain.measure} 领先的三项 {domain.dimension}"
     router_shape = QuestionRouter().route(message).query_shape
-    assert router_shape is (None if follow_up else QueryShape.SCALAR)
+    assert router_shape is None
 
     monkeypatch.setattr(runtime_tests, "LanguageDraft", _OpenLanguageDraft)
     app, adapter, database = runtime_tests.create_runtime_app(
@@ -154,7 +170,7 @@ async def test_incomplete_open_language_ranking_clarifies_without_dax(
 ):
     domain = domains()[0]
     message = f"请把 {domain.dimension} 按照 {domain.measure} 排一下"
-    assert QuestionRouter().route(message).query_shape == QueryShape.SCALAR
+    assert QuestionRouter().route(message).query_shape is None
 
     monkeypatch.setattr(runtime_tests, "LanguageDraft", _OpenLanguageDraft)
     app, adapter, database = runtime_tests.create_runtime_app(

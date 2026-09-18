@@ -1159,7 +1159,6 @@ async def test_production_turn_uses_capability_resolved_queries_and_replays():
     assert adapter.execute_count == 4
     assert repository.store_count == 1
     assert [call.task.value for call in provider.calls] == [
-        "intent_recognition",
         "query_plan",
         "report_intent",
     ]
@@ -1288,10 +1287,19 @@ async def test_current_report_year_is_canonical_scope_and_reading_context(
     )
 
     assert result["terminal_state"] == "completed", result
+    scoped_queries = [
+        dax for dax, _, _ in adapter.result_semantics if "DATESBETWEEN" in dax
+    ]
+    availability_probes = [
+        dax for dax, _, _ in adapter.result_semantics if "DATESBETWEEN" not in dax
+    ]
+    assert scoped_queries
     assert all(
         "DATE(2025,1,1)" in dax and "DATE(2025,12,31)" in dax
-        for dax, _, _ in adapter.result_semantics
-    ), adapter.result_semantics
+        for dax in scoped_queries
+    ), scoped_queries
+    assert availability_probes
+    assert all("ORDER BY" in dax and "DESC" in dax for dax in availability_probes)
     audit = result["execution_audit"]
     assert all(
         plan["time_range"]["start_date"] == "2025-01-01"
@@ -1894,7 +1902,7 @@ async def test_report_template_required_gate_precedes_planning_and_artifact(
     assert result.get("report") is None
     assert result["memory_commit"] is False
     assert result["tool_sequence"] == []
-    assert [call.task.value for call in provider.calls] == ["intent_recognition"]
+    assert provider.calls == []
     assert adapter.schema_count == 0
     assert adapter.execute_count == 0
     assert repository.store_count == 0

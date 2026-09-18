@@ -486,11 +486,11 @@ class FactBoundedAnswerBuilder:
         display_bindings: dict[str, Any] | None = None,
         locale: str = "zh-CN",
         effective_scope: str | None = None,
+        data_availability: Any | None = None,
     ) -> AnswerSpec:
         # Local import avoids making the factual authority module depend on the
         # presentation package during module initialization.
         from backend.app.presentation.formatter import (
-            PresentationFormatKind,
             PresentationFormatter,
         )
         from backend.app.presentation.query_scope import (
@@ -503,8 +503,27 @@ class FactBoundedAnswerBuilder:
         parts: list[str] = []
         metrics: dict[str, Any] = {}
         metric_provenance: dict[str, dict[str, str]] = {}
+        natural_prefix = self._natural_scope_prefix(plan, formatter)
+        user_facing_measure = self._measure_label(plan, bindings)
+        horizon_prefix, horizon_shortfall = self._horizon_prefix(
+            plan,
+            data_availability,
+            formatter,
+            measure_label=user_facing_measure,
+        )
+        if horizon_prefix:
+            parts.append(horizon_prefix)
         if facts.empty:
-            parts.append("当前查询范围未返回数据。")
+            if horizon_shortfall and plan.time_range is not None:
+                measure_label = self._field_label(
+                    plan.measures[0], plan.measures[0], bindings
+                ) if plan.measures else "相关"
+                parts.append(
+                    f"你查询的{self._render_time_range(plan.time_range, formatter)}"
+                    f"未返回{measure_label}数据，因此目前无法分析该期间。"
+                )
+            else:
+                parts.append("当前查询范围未返回数据。")
         elif plan.top_n is not None:
             ranking = facts.by_type(FactType.RANKING)[0]
             used.append(ranking)
@@ -519,9 +538,18 @@ class FactBoundedAnswerBuilder:
             measure_label = self._field_label(
                 first["measure"], measure_field, bindings
             )
+            names = [
+                self._dimension_text(
+                    item["dimensions"], ranking.source_fields, formatter, bindings
+                )
+                for item in ranking.values
+            ]
+            joined = self._join_items(names)
+            direction = "最高" if plan.sort == "desc" else "最低"
             parts.append(
-                f"TopN结果共返回{len(ranking.values)}项；首项为{dimension_text}，"
-                f"{measure_label}为{self._format_value(first['value'], measure_field, formatter, bindings)}。"
+                f"{natural_prefix}{measure_label}{direction}的项目依次是{joined}；"
+                f"其中{dimension_text}{direction}，为"
+                f"{self._format_value(first['value'], measure_field, formatter, bindings)}。"
             )
         elif plan.dimensions and not plan.measures:
             entities = facts.by_type(FactType.ENTITY_VALUE)
@@ -544,7 +572,8 @@ class FactBoundedAnswerBuilder:
                 )
                 measure_field = item.source_fields[-1]
                 parts.append(
-                    f"{dimension_text}的{self._field_label(item.measure or measure_field, measure_field, bindings)}"
+                    f"{natural_prefix}{dimension_text}的"
+                    f"{self._field_label(item.measure or measure_field, measure_field, bindings)}"
                     f"为{self._format_value(item.value, measure_field, formatter, bindings)}。"
                 )
             elif self._is_time_grouped(plan, primary):
@@ -582,8 +611,13 @@ class FactBoundedAnswerBuilder:
             used.extend(scalar)
             for item in scalar:
                 source_field = item.source_fields[-1]
+                time_prefix = natural_prefix
+                if horizon_shortfall and plan.time_range is not None:
+                    horizon = data_availability.available_data_horizon
+                    assert horizon is not None and horizon.latest_period is not None
+                    time_prefix = f"截至{horizon.latest_period.month}月，"
                 parts.append(
-                    f"{self._field_label(item.measure or source_field, source_field, bindings)}"
+                    f"{time_prefix}{self._field_label(item.measure or source_field, source_field, bindings)}"
                     f"为{self._format_value(item.value, source_field, formatter, bindings)}。"
                 )
                 if self._is_number(item.value):
@@ -595,19 +629,8 @@ class FactBoundedAnswerBuilder:
 
         for item in facts.by_type(FactType.APPLIED_FILTER):
             used.append(item)
-            if not effective_scope:
-                value = item.value
-                parts.append(
-                    f"筛选条件：{value['field']}={formatter.format(value['value'])}。"
-                )
         for item in facts.by_type(FactType.APPLIED_TIME_RANGE):
             used.append(item)
-            if not effective_scope:
-                value = item.value
-                parts.append(
-                    f"时间范围：{formatter.format(value['start_date'], PresentationFormatKind.DATE)}"
-                    f"至{formatter.format(value['end_date'], PresentationFormatKind.DATE)}。"
-                )
         metadata = facts.by_type(FactType.RESULT_METADATA)[0]
         used.append(metadata)
         coverage = facts.observed_data_coverage
@@ -615,13 +638,18 @@ class FactBoundedAnswerBuilder:
             coverage_facts = facts.by_type(FactType.OBSERVED_DATA_COVERAGE)
             if coverage_facts:
                 used.append(coverage_facts[0])
-            parts.append(self._coverage_text(coverage, locale))
+            if coverage.status is ObservedCoverageStatus.PARTIAL or (
+                data_availability is None
+                and coverage.status in {
+                    ObservedCoverageStatus.EMPTY,
+                    ObservedCoverageStatus.UNKNOWN,
+                }
+            ):
+                parts.append(self._coverage_text(coverage, locale))
         if facts.truncated:
             parts.append("结果已截断，可能不完整。")
         unique_used = list({item.fact_id: item for item in used}.values())
         text = "".join(parts)
-        if effective_scope:
-            text = f"{effective_scope}：{text}"
         return AnswerSpec(
             answer=text,
             summary=text,
@@ -640,6 +668,13 @@ class FactBoundedAnswerBuilder:
                     DeterministicQueryScopeDescriptor.canonical_evidence(plan)
                 ),
                 "observed_data_coverage": coverage.model_dump(mode="json"),
+                "data_availability": (
+                    data_availability.model_dump(mode="json")
+                    if data_availability is not None
+                    else None
+                ),
+                "user_facing_scope": natural_prefix,
+                "user_facing_measure": user_facing_measure,
             },
             filters=list(plan.filters),
             semantic_model_key=result.semantic_model_key,
@@ -647,6 +682,77 @@ class FactBoundedAnswerBuilder:
             verified_fact_set_id=facts.fact_set_id,
             fact_ids=[item.fact_id for item in unique_used],
         )
+
+    @classmethod
+    def _natural_scope_prefix(cls, plan: CanonicalQueryPlan, formatter: Any) -> str:
+        parts: list[str] = []
+        if plan.time_range is not None:
+            parts.append(cls._render_time_range(plan.time_range, formatter))
+        for item in plan.filters:
+            values = item.value if isinstance(item.value, (list, tuple)) else [item.value]
+            parts.append("、".join(formatter.format(value) for value in values))
+        return "，".join(parts) + ("，" if parts else "")
+
+    @staticmethod
+    def _render_time_range(time_range: TimeRangeSpec, formatter: Any) -> str:
+        start, end = time_range.start_date, time_range.end_date
+        if start.year == end.year and start.month == end.month:
+            return f"{start.year}年{start.month}月"
+        if start.month == 1 and end.month == 12 and start.year == end.year:
+            return f"{start.year}年"
+        return f"{start.year}年{start.month}月至{end.year}年{end.month}月"
+
+    @staticmethod
+    def _join_items(items: list[str]) -> str:
+        if len(items) <= 1:
+            return "".join(items)
+        if len(items) == 2:
+            return f"{items[0]}和{items[1]}"
+        return "、".join(items[:-1]) + f"和{items[-1]}"
+
+    @classmethod
+    def _horizon_prefix(
+        cls,
+        plan: CanonicalQueryPlan,
+        data_availability: Any | None,
+        formatter: Any,
+        *,
+        measure_label: str | None = None,
+    ) -> tuple[str, bool]:
+        if data_availability is None or data_availability.available_data_horizon is None:
+            return "", False
+        from backend.app.facts.availability import DataHorizonStatus
+
+        horizon = data_availability.available_data_horizon
+        if horizon.status is not DataHorizonStatus.KNOWN or horizon.latest_period is None:
+            return "", False
+        measure = measure_label or (
+            plan.measures[0] if plan.measures else horizon.measure
+        )
+        shortfall = bool(
+            plan.time_range is not None
+            and horizon.latest_period < plan.time_range.end_date
+        )
+        if not shortfall:
+            return "", False
+        return (
+            f"当前模型中可观测到的{measure}数据截至"
+            f"{horizon.latest_period.year}年{horizon.latest_period.month}月；",
+            True,
+        )
+
+    @staticmethod
+    def _measure_label(
+        plan: CanonicalQueryPlan,
+        bindings: dict[str, Any],
+    ) -> str | None:
+        if not plan.measures:
+            return None
+        canonical = plan.measures[0]
+        for binding in bindings.values():
+            if getattr(binding, "canonical_name", None) == canonical:
+                return binding.display_name
+        return canonical
 
     @staticmethod
     def _coverage_text(
@@ -865,6 +971,8 @@ class FactOutputValidator:
     )
     _CAUSAL = ("因为", "导致", "原因", "归因于", "由于")
     _TREND = ("上升", "下降", "增长", "减少", "趋势")
+    _COMPARISON = ("同比", "环比", "百分点", "较上期", "比去年", "比上月")
+    _AVAILABILITY = ("可观测到", "数据截至", "更新到", "更新至")
 
     def validate_answer(
         self, answer: AnswerSpec, facts: VerifiedFactSet
@@ -951,6 +1059,10 @@ class FactOutputValidator:
         errors: list[str] = []
         if any(term in text for term in self._CAUSAL):
             errors.append("unverified_causal_claim")
+        if any(term in text for term in self._COMPARISON):
+            errors.append("unverified_comparison_claim")
+        if any(term in text for term in ("更新到", "更新至")):
+            errors.append("unverified_refresh_claim")
         if any(term in text for term in self._TREND) and not any(
             item.provenance.plan_semantics.get("query_shape")
             in {QueryShape.TREND.value, QueryShape.BOUNDED_TREND.value}
@@ -987,7 +1099,13 @@ class FactOutputValidator:
         ):
             errors.append("unverified_minimum_claim")
         numeric_text = text
-        for fragment in trusted_fragments:
+        contextual_fragments = (
+            *trusted_fragments,
+            *self._verified_non_metric_fragments(used),
+        )
+        for fragment in sorted(
+            set(contextual_fragments), key=len, reverse=True
+        ):
             if fragment:
                 numeric_text = numeric_text.replace(fragment, "")
         if row_count is not None:
@@ -1044,6 +1162,87 @@ class FactOutputValidator:
             elif isinstance(effective_scope, str) and effective_scope:
                 trusted.append(effective_scope)
 
+        plan = None
+        plan_semantics = (
+            facts.facts[0].provenance.plan_semantics if facts.facts else None
+        )
+        try:
+            plan = CanonicalQueryPlan.model_validate(plan_semantics)
+        except Exception:
+            pass
+        user_facing_scope = evidence.get("user_facing_scope", "")
+        if user_facing_scope:
+            from backend.app.presentation.formatter import PresentationFormatter
+
+            formatter = PresentationFormatter(locale="zh-CN")
+            expected_scope = (
+                FactBoundedAnswerBuilder._natural_scope_prefix(
+                    plan, formatter
+                )
+                if plan is not None
+                else None
+            )
+            if user_facing_scope != expected_scope:
+                errors.append("user_facing_scope_mismatch")
+            else:
+                trusted.append(user_facing_scope)
+                if plan is not None and plan.time_range is not None and facts.empty:
+                    # Empty-result wording omits the display prefix's trailing
+                    # comma. Trust the canonical date numbers only while they
+                    # remain inside this deterministic no-row clause; never
+                    # add them to metric numeric authority.
+                    rendered_time = FactBoundedAnswerBuilder._render_time_range(
+                        plan.time_range,
+                        formatter,
+                    )
+                    trusted.append(f"你查询的{rendered_time}未返回")
+
+        availability_payload = evidence.get("data_availability")
+        if availability_payload is not None:
+            try:
+                from backend.app.facts.availability import DataAvailabilityContext
+                from backend.app.presentation.formatter import PresentationFormatter
+
+                availability = DataAvailabilityContext.model_validate(
+                    availability_payload
+                )
+                if availability.observed_data_coverage != facts.observed_data_coverage:
+                    errors.append("data_availability_coverage_mismatch")
+                if plan is None:
+                    errors.append("data_availability_plan_missing")
+                else:
+                    horizon = availability.available_data_horizon
+                    if horizon is not None and (
+                        horizon.semantic_model_key != plan.semantic_model_key
+                        or horizon.measure not in plan.measures
+                        or (
+                            plan.time_range is not None
+                            and horizon.temporal_dimension
+                            != plan.time_range.date_field
+                        )
+                    ):
+                        errors.append("available_data_horizon_binding_mismatch")
+                    prefix, _ = FactBoundedAnswerBuilder._horizon_prefix(
+                        plan,
+                        availability,
+                        PresentationFormatter(locale="zh-CN"),
+                        measure_label=(
+                            evidence.get("user_facing_measure")
+                            if isinstance(
+                                evidence.get("user_facing_measure"), str
+                            )
+                            else None
+                        ),
+                    )
+                    if prefix:
+                        trusted.append(prefix)
+                        if horizon is not None and horizon.latest_period is not None:
+                            trusted.append(f"截至{horizon.latest_period.month}月，")
+            except Exception:
+                errors.append("data_availability_invalid")
+        elif any(term in answer.answer for term in self._AVAILABILITY):
+            errors.append("unverified_availability_claim")
+
         coverage = facts.observed_data_coverage
         trusted.extend((
             FactBoundedAnswerBuilder._coverage_text(coverage, "zh-CN"),
@@ -1061,22 +1260,59 @@ class FactOutputValidator:
                 FactType.MINIMUM,
             }:
                 self._collect_numbers(item.value, allowed)
-                self._collect_numbers(item.dimensions, allowed)
-            elif item.fact_type is FactType.ENTITY_VALUE:
-                self._collect_numbers(item.value, allowed)
-                self._collect_numbers(item.dimensions, allowed)
             elif item.fact_type is FactType.RANKING:
                 for ranked in item.values:
                     if not isinstance(ranked, dict):
                         continue
                     self._collect_numbers(ranked.get("value"), allowed)
-                    self._collect_numbers(ranked.get("dimensions"), allowed)
-            elif item.fact_type is FactType.APPLIED_FILTER:
-                # Filter values are verified user-visible dimension/member
-                # facts. Field identities and technical provenance are not.
-                if isinstance(item.value, dict):
-                    self._collect_numbers(item.value.get("value"), allowed)
         return allowed
+
+    @classmethod
+    def _verified_non_metric_fragments(
+        cls,
+        facts: list[VerifiedFact],
+    ) -> tuple[str, ...]:
+        """Trust dimension/member numbers only inside their exact rendering."""
+        values: list[Any] = []
+        for item in facts:
+            values.extend(item.dimensions.values())
+            if item.fact_type is FactType.ENTITY_VALUE:
+                values.append(item.value)
+            elif item.fact_type is FactType.RANKING:
+                for ranked in item.values:
+                    if isinstance(ranked, dict):
+                        values.extend((ranked.get("dimensions") or {}).values())
+            elif item.fact_type is FactType.APPLIED_FILTER and isinstance(
+                item.value, dict
+            ):
+                raw = item.value.get("value")
+                values.extend(raw if isinstance(raw, list) else [raw])
+        fragments: set[str] = set()
+        for value in values:
+            if value is None:
+                continue
+            fragments.add(str(value))
+            parsed = cls._display_date(value)
+            if parsed is not None:
+                fragments.update({
+                    f"{parsed.year}年{parsed.month}月",
+                    f"{parsed.year}年{parsed.month}月{parsed.day}日",
+                    parsed.isoformat(),
+                })
+        return tuple(fragments)
+
+    @staticmethod
+    def _display_date(value: Any) -> date | None:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value[:10])
+            except ValueError:
+                return None
+        return None
 
     def _collect_numbers(self, value: Any, output: set[str]) -> None:
         if isinstance(value, bool) or value is None:

@@ -10,6 +10,12 @@ from backend.app.facts.verified import (
     VerifiedFactSet,
     VerifiedFactSetBuilder,
 )
+from backend.app.facts.availability import (
+    AvailabilityProbeBuilder,
+    AvailableDataHorizon,
+    DataAvailabilityContext,
+    DataHorizonStatus,
+)
 from backend.app.schemas.factual_context import (
     ObservedCoverageStatus,
     ObservedDataCoverage,
@@ -26,4 +32,8 @@ __all__ = [
     "VerifiedFactSetBuilder",
     "ObservedCoverageStatus",
     "ObservedDataCoverage",
+    "AvailabilityProbeBuilder",
+    "AvailableDataHorizon",
+    "DataAvailabilityContext",
+    "DataHorizonStatus",
 ]

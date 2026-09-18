@@ -764,6 +764,63 @@ class TestMemberAndTimeGrounding:
         assert merged.executable_delta.time_range.end_date == date(2026, 8, 31)
 
     @pytest.mark.asyncio
+    async def test_pending_dimension_owner_resolves_duplicate_canonical_field(self):
+        schema = SemanticModelSchema(
+            name="Duplicate Product",
+            key="local_desktop_model",
+            tables=[
+                TableSchema(
+                    name="Sales",
+                    columns=[ColumnSchema(name="Product", data_type="String")],
+                    measures=[MeasureSchema(name="Total Sales", data_type="Double")],
+                ),
+                TableSchema(
+                    name="Products",
+                    columns=[ColumnSchema(name="Product", data_type="String")],
+                ),
+            ],
+        )
+        catalog = SemanticCatalogBuilder().build(schema)
+        pending = PendingClarificationContext(
+            conversation_id="pending-duplicate-dimension",
+            semantic_model_key=schema.key,
+            schema_fingerprint=catalog.schema_fingerprint,
+            query_shape=QueryShape.RANKING,
+            dimensions=["Product"],
+            dimension_tables={"Product": "Sales"},
+            sort="desc",
+            top_n=3,
+            missing_slots=["measure"],
+            runtime_mode=RuntimeDataMode.REAL,
+            last_request_id="ranking-turn",
+        )
+
+        async def no_lookup(*_):
+            raise AssertionError("member lookup should not run")
+
+        outcome = await SemanticGroundingService(catalog).ground(
+            "by Total Sales",
+            _intent(detected_measures=["Total Sales"]),
+            _draft(measures=["Total Sales"], dimensions=["Products"]),
+            None,
+            no_lookup,
+            pending=pending,
+            query_shape=QueryShape.RANKING,
+        )
+
+        assert outcome.status is GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.dimensions == ["Product"]
+        assert outcome.delta.dimension_tables == {"Product": "Sales"}
+        dimension = next(
+            item for item in outcome.object_results
+            if item.role == "ranking_dimension"
+        )
+        assert dimension.method == "pending_unique_shape_dimension"
+        assert dimension.canonical_object is not None
+        assert dimension.canonical_object.table_name == "Sales"
+
+    @pytest.mark.asyncio
     async def test_runtime_only_extra_date_does_not_override_glossary_date(self):
         schema = _schema(two_dates=True)
         catalog = SemanticCatalogBuilder().build_from_data(schema, _glossary())

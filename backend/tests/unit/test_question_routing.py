@@ -100,12 +100,13 @@ def test_low_risk_capabilities_do_not_enter_business_routing(
         "介绍一下华南销售额同比",
     ],
 )
-def test_concept_route_does_not_swallow_business_fact_requests(
+def test_open_interpreter_receives_ambiguous_concept_business_language(
     question: str,
 ) -> None:
     decision = QuestionRouter().route(question)
 
-    assert decision.route is QuestionRoute.BUSINESS_DATA_QUERY
+    assert decision.route is QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+    assert decision.query_shape is None
 
 
 @pytest.mark.parametrize(
@@ -128,7 +129,12 @@ def test_concept_route_does_not_swallow_business_fact_requests(
 def test_conversational_language_does_not_overcapture_business_requests(
     question: str,
 ) -> None:
-    assert QuestionRouter().route(question).route is QuestionRoute.BUSINESS_DATA_QUERY
+    decision = QuestionRouter().route(question)
+    if question in {"销售额是什么意思", "解释一下我们今年销售额同比"}:
+        assert decision.route is QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+        assert decision.query_shape is None
+    else:
+        assert decision.route is QuestionRoute.BUSINESS_DATA_QUERY
 
 
 def test_current_external_fact_without_authority_stays_unsupported() -> None:

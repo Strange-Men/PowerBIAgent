@@ -11,7 +11,7 @@ from backend.app.intent.models import (
     TimeIntentKind,
 )
 from backend.app.intent.prompt import SYSTEM_PROMPT as INTENT_SYSTEM_PROMPT
-from backend.app.intent.question_router import QuestionRouter
+from backend.app.intent.question_router import QuestionRoute, QuestionRouter
 from backend.app.llm.base import LLMProvider, LLMResponse, LLMTask
 from backend.app.query_plan.completeness import (
     QueryShapeReconciliationPolicy,
@@ -49,6 +49,8 @@ def test_query_plan_prompt_exposes_bounded_query_shape_contract() -> None:
         assert shape.value in SYSTEM_PROMPT
     assert "语言理解" in SYSTEM_PROMPT
     assert "canonical" in SYSTEM_PROMPT.casefold()
+    assert "一个短语不能同时证明结果形态和对象含义" in SYSTEM_PROMPT
+    assert "单个 member 筛选不得提议" in SYSTEM_PROMPT
 
 
 def test_intent_prompt_forbids_inventing_vague_month_count() -> None:
@@ -121,6 +123,23 @@ def test_bounded_recent_months_are_consumed_as_time_not_filter_residue() -> None
     )
 
 
+def test_cross_language_polite_display_words_are_not_business_modifier_residue() -> None:
+    question = "Could you briefly show 运单数?"
+    report = SemanticObligationCoverageGate().inspect(
+        user_input=question,
+        outcome=_resolved_outcome(),
+        catalog=_catalog(),
+        relation=TurnRelationEvidence.classify(question),
+        language_evidence=("运单数",),
+    )
+
+    assert report.executable is True
+    assert not any(
+        item.evidence == "bounded_result_affecting_modifier_residue"
+        for item in report.obligations
+    )
+
+
 def test_required_query_shape_set_is_unchanged() -> None:
     assert {shape.value for shape in QueryShape} == {
         "scalar",
@@ -136,7 +155,9 @@ def test_required_query_shape_set_is_unchanged() -> None:
 
 def test_open_language_examples_reach_only_router_fallbacks() -> None:
     router = QuestionRouter()
-    assert router.route("请给出 NetRevenue 领先的三项 AreaName").query_shape == QueryShape.SCALAR
+    unseen = router.route("请给出 NetRevenue 领先的三项 AreaName")
+    assert unseen.route is QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+    assert unseen.query_shape is None
     assert router.route("那么请给出 NetRevenue 领先的三项 AreaName").query_shape is None
 
 
@@ -162,6 +183,20 @@ def test_bounded_reconciliation_preserves_stronger_proven_shape(
 
     assert report.effective_shape == expected
     assert report.source == source
+
+
+def test_single_member_filter_cannot_upgrade_scalar_to_set_aggregation() -> None:
+    message = "2025年5月南方销售额是多少"
+    report = QueryShapeReconciliationPolicy.reconcile(
+        user_input=message,
+        router_shape=QueryShape.SCALAR,
+        draft_shape=QueryShape.FILTERED_AGGREGATION,
+        draft_evidence="南方",
+        draft_filter_count=1,
+    )
+
+    assert report.effective_shape is QueryShape.SCALAR
+    assert report.source == "router_weak_fallback"
     assert report.requires_clarification is False
 
 

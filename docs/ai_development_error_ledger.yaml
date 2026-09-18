@@ -3,11 +3,53 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-16 | M5.10.5 FIX RELEASE CANDIDATE；REMOTE EXACT-SHA CI PENDING；M5.10.6 NOT STARTED；M5 FINAL=false
+# 最后更新：2026-09-18 | M5.10.6 LOCAL RELEASE CANDIDATE；Remote exact-SHA CI PENDING；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-5106-001
+  title: 技术 scope 泄露、开放语言职责碎片化与业务数据 horizon 缺失
+  category: ERR
+  first_detected_version: M5.10.6
+  symptom: 普通回答显示 opaque model/canonical field/mechanical scope；未命中聊天 regex 的自然请求可能错误进入 business/unsupported；requested scope 与 observed coverage 无法说明当前 measure 在模型中的最新可观测业务期间
+  local_evidence: M5.10.5 后人工测试确认原始差距；M5.10.6 failure-first 与最终 Real 24/24 证明 report methodology 保持 GENERAL、current report facts 升级 BUSINESS、natural scalar/Top3 无 technical leakage、2026/recent-six 使用 verified horizon，numeric/pending/unknown/ambiguity mutations 均 fail closed。Final sweep 发现两处旧 Router oracle，仅同步 test contract 后 full backend 2928/1 通过，production 未再修改
+  authoritative_sources:
+  - title: M5.10.6 用户正式任务
+    reason: LLM 负责开放语言理解与自然措辞，runtime/canonical/factual chain 证明语义、执行和事实，三类 scope 必须分离
+  - title: ADR-008 / ADR-009 / ADR-016
+    reason: runtime Grounding、deterministic execution 与 VerifiedFactSet authority 不得被 presentation 重构绕过
+  root_cause: QuestionRouter、Intent/QueryPlan LLM 与 shape reconciliation 分担开放语言分类；Answer 直接展示 deterministic technical scope；现有事实合同只有 requested scope 与 per-result observed coverage，没有 measure-aware model data horizon
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在现有 TurnPipeline 内建立唯一 bounded Semantic Interpreter 与 current-message-only general lane；Router 仅保留 risk/capability/high-confidence floor。Natural Answer 只消费 VerifiedFactSet、verified user-facing scope 与 shared DataAvailabilityContext，并通过 FactOutputValidator；horizon probe 复用 deterministic DAX/Layer 3/Inspection/VerifiedFactSet。business metric numeric authority 与 structural/technical numbers 分离；pending canonical shape/owner 不被弱 draft 改写
+  regression_tests:
+  - backend/tests/unit/test_m5_10_6_semantic_and_natural_answer.py
+  - backend/tests/api/test_chat.py
+  - backend/tests/api/test_cross_language_grounding.py
+  - backend/tests/api/test_m5_10_3_semantic_safety.py
+  - backend/tests/unit/test_verified_facts.py
+  - backend/tests/unit/test_business_language_stress.py
+  - scripts/manual_smoke/semantic_context_real_acceptance.py
+  prohibited_patterns:
+  - 通过新增 social/business synonym regex 穷举开放语言
+  - LLM 直接生成 canonical identity、日期、DAX、horizon、业务数字或 factual Memory
+  - 用 Date table 最大值、当前日期、requested end 或 provenance 时间猜 available horizon
+  - 为 report 建立第二套 availability 或 natural-answer logic
+  prevention_rules:
+  - LLM understands; Runtime proves
+  - natural answer 必须在 LLM presentation 后通过 FactOutputValidator
+  - requested scope、observed coverage 与 available data horizon 分别建立可审计证据
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-17'
+    action: discovered
+    version: M5.10.6
+  - date: '2026-09-18'
+    action: mitigation
+    version: M5.10.6
 - id: GOV-5105-001
   title: Local automated、Local Real 与 Remote CI 证据混写
   category: GOV

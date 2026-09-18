@@ -196,6 +196,9 @@ class MockTurnService:
         # ── 构建 Scenario 与 effective_report_template_key ──
         effective_template_key: Optional[str] = report_template_key
         resolved_scenario: Optional[MockScenarioSelection] = scenario
+        explicit_scenario_control = (
+            scenario is not None or intent_key is not None or powerbi_key is not None
+        )
 
         if scenario is None:
             from backend.app.application.mock_scenario_resolver import (
@@ -256,6 +259,7 @@ class MockTurnService:
             do_conversation=self._do_conversation,
             resolved_scenario=resolved_scenario,
             effective_template_key=effective_template_key,
+            explicit_scenario_control=explicit_scenario_control,
         )
 
     async def _do_conversation(
@@ -270,12 +274,38 @@ class MockTurnService:
         routing: QuestionRoutingDecision,
         trace: TraceRecorder,
         trace_id: str,
+        resolved_scenario: Optional[MockScenarioSelection] = None,
+        explicit_scenario_control: bool = False,
         **_: Any,
     ) -> dict[str, Any]:
         """Exercise the same no-tool lane against the offline Mock provider."""
         collector = LLMCallCollector()
-        observed = ObservedLLMProvider(self.llm_provider, collector)
-        response = await ConversationalAnswerService(observed).generate(message)
+        # The offline provider cannot semantically classify arbitrary language.
+        # Its explicit scenario selection is fixture control only; production
+        # Real routing never reads this value.
+        known_pipeline_scenario = (
+            resolved_scenario is not None
+            and resolved_scenario.intent_key in {
+                "data_question",
+                "data_question_multiround",
+                "report_generation",
+                "clarification",
+                "unsupported",
+            }
+        )
+        fixture_escalation = (
+            routing.route is QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+            and resolved_scenario is not None
+            and (explicit_scenario_control or known_pipeline_scenario)
+        )
+        if fixture_escalation:
+            requires_business_grounding = True
+            response_answer = ""
+        else:
+            observed = ObservedLLMProvider(self.llm_provider, collector)
+            response = await ConversationalAnswerService(observed).generate(message)
+            requires_business_grounding = response.requires_business_grounding
+            response_answer = response.answer or ""
         return self.pipeline.build_result(
             request_id=effective_req_id,
             conversation_id=effective_conv_id,
@@ -287,7 +317,12 @@ class MockTurnService:
             is_mock=is_mock,
             source_mode=source_mode,
             allowed_tools=[],
-            answer_text=response.answer,
+            answer_text=(
+                routing.direct_answer
+                if routing.route == QuestionRoute.PRODUCT_HELP
+                and routing.direct_answer
+                else response_answer
+            ),
             usage=collector.summary(),
             execution_audit={
                 "capability_decision": routing.route.value,
@@ -301,6 +336,7 @@ class MockTurnService:
                 "powerbi_tool_calls": 0,
                 "report_calls": 0,
                 "conversation_context": "current_user_message_only",
+                "requires_business_grounding": requires_business_grounding,
             },
             memory_commit=False,
         )
@@ -326,6 +362,7 @@ class MockTurnService:
         committed: Optional[StructuredWorkMemory] = None,
         pending_clarification: Optional[PendingClarificationContext] = None,
         question_routing: QuestionRoutingDecision | None = None,
+        explicit_scenario_control: bool = False,
     ) -> dict[str, Any]:
         """Owner 执行 Mock LLM 管线（控制面由共享 TurnPipeline 骨架提供）"""
         # 确保 resolved_scenario 有效
