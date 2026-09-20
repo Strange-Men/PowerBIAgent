@@ -339,16 +339,33 @@ class TurnPipeline:
                 ),
             },
         )
+        committed: StructuredWorkMemory | None = None
+        pending_clarification: PendingClarificationContext | None = None
+        semantic_context_loaded = False
         if routing.route in {
             QuestionRoute.LLM_SEMANTIC_INTERPRETATION,
             QuestionRoute.SOCIAL_CONVERSATION,
             QuestionRoute.CONCEPT_EXPLANATION,
             QuestionRoute.PRODUCT_HELP,
+            QuestionRoute.REPORT_REQUEST,
         }:
             if do_conversation is None:
                 await self.snapshot_store.abort(effective_req_id, runtime_mode)
                 raise RuntimeError("conversational_llm_callback_missing")
             try:
+                # Validate and snapshot persisted semantic context before any
+                # open-language call. The Understanding Layer may describe a
+                # follow-up against this bounded context, but never mutates it.
+                with measure_performance("persistence"):
+                    committed = await self.memory_repo.get_latest_committed(
+                        effective_conv_id, runtime_mode
+                    )
+                    pending_clarification = (
+                        await self.memory_repo.get_pending_clarification(
+                            effective_conv_id, runtime_mode
+                        )
+                    )
+                semantic_context_loaded = True
                 result = await do_conversation(
                     message=message,
                     effective_conv_id=effective_conv_id,
@@ -359,23 +376,35 @@ class TurnPipeline:
                     routing=routing,
                     trace=trace,
                     trace_id=trace_id,
+                    committed=committed,
+                    pending_clarification=pending_clarification,
                     **execute_kwargs,
                 )
-                requires_business_grounding = bool(
-                    (result.get("execution_audit") or {}).get(
-                        "requires_business_grounding"
-                    )
+                semantic_frame = result.pop("_semantic_frame", None)
+                semantic_mode = getattr(
+                    getattr(semantic_frame, "mode", None), "value", None
                 )
-                if requires_business_grounding:
+                if semantic_mode in {"data", "report"}:
                     routing = QuestionRoutingDecision(
-                        route=QuestionRoute.BUSINESS_DATA_QUERY,
+                        route=(
+                            QuestionRoute.REPORT_REQUEST
+                            if semantic_mode == "report"
+                            else QuestionRoute.BUSINESS_DATA_QUERY
+                        ),
                         query_shape=None,
                     )
+                    execute_kwargs = {
+                        **execute_kwargs,
+                        "semantic_frame": semantic_frame,
+                    }
                     trace.record(
                         "semantic_interpretation_escalated",
                         trace_id=trace_id,
                         request_id=effective_req_id,
-                        data_summary={"route": routing.route.value},
+                        data_summary={
+                            "route": routing.route.value,
+                            "semantic_mode": semantic_mode,
+                        },
                     )
                 else:
                     result["llm_profile_key"] = llm_profile_key or llm_provider_name
@@ -414,14 +443,16 @@ class TurnPipeline:
 
         # ── OWNER: 执行前准备（统一控制面） ──
         try:
-            # 加载 committed memory
-            with measure_performance("persistence"):
-                committed = await self.memory_repo.get_latest_committed(
-                    effective_conv_id, runtime_mode
-                )
-                pending_clarification = await self.memory_repo.get_pending_clarification(
-                    effective_conv_id, runtime_mode
-                )
+            if not semantic_context_loaded:
+                with measure_performance("persistence"):
+                    committed = await self.memory_repo.get_latest_committed(
+                        effective_conv_id, runtime_mode
+                    )
+                    pending_clarification = (
+                        await self.memory_repo.get_pending_clarification(
+                            effective_conv_id, runtime_mode
+                        )
+                    )
 
             # 构建上下文
             context = self.context_builder.build(

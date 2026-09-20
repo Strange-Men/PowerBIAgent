@@ -9,6 +9,7 @@ M0.4.1 修复：
 """
 
 import asyncio
+import json
 import re
 import uuid
 
@@ -17,14 +18,15 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel
 
-from backend.app.answer.conversation import ConversationalAnswer
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
-from backend.app.intent.models import (
-    IntentSpec,
-    IntentType,
-    TimeIntentDraft,
-    TimeIntentKind,
-    TurnRelation,
+from backend.app.intent.models import TimeIntentDraft, TimeIntentKind, TurnRelation
+from backend.app.intent.semantic_interpreter import (
+    RankingIntent,
+    SemanticCoverageDecision,
+    SemanticEvidenceSpan,
+    SemanticFilterMention,
+    SemanticFrame,
+    SemanticInterpretationMode,
 )
 from backend.app.llm.base import (
     LLMProvider,
@@ -58,6 +60,141 @@ from backend.app.schemas.data_contracts import (
     StructuredFilter,
     TableSchema,
 )
+from backend.app.query_plan.grounding import CandidateSelection, SemanticEquivalenceVeto
+
+
+def _coverage_response() -> SemanticCoverageDecision:
+    return SemanticCoverageDecision(decision="ACCEPT")
+
+
+def _semantic_frame(
+    text: str,
+    *,
+    mode: SemanticInterpretationMode = SemanticInterpretationMode.DATA,
+    shape: QueryShape | None = QueryShape.SCALAR,
+    measures: tuple[str, ...] = (),
+    dimensions: tuple[str, ...] = (),
+    filters: tuple[SemanticFilterMention, ...] = (),
+    time_mentions: tuple[str, ...] = (),
+    time_intent: TimeIntentDraft | None = None,
+    relation: TurnRelation = TurnRelation.FRESH_QUESTION,
+    ranking: RankingIntent | None = None,
+    comparison_intent: str | None = None,
+    unresolved: tuple[str, ...] = (),
+    changed_slots: tuple[str, ...] = (),
+    referenced_context_slots: tuple[str, ...] = (),
+    general_answer: str = "",
+) -> SemanticFrame:
+    if mode is SemanticInterpretationMode.GENERAL:
+        return SemanticFrame(mode=mode, general_answer=general_answer)
+    evidence: list[SemanticEvidenceSpan] = []
+    evidence.extend(SemanticEvidenceSpan(slot="measure", text=item) for item in measures)
+    evidence.extend(SemanticEvidenceSpan(slot="dimension", text=item) for item in dimensions)
+    evidence.extend(
+        SemanticEvidenceSpan(slot="filter", text=item.evidence_span) for item in filters
+    )
+    evidence.extend(SemanticEvidenceSpan(slot="unresolved", text=item) for item in unresolved)
+    if time_intent is not None:
+        if not time_mentions:
+            time_mentions = (time_intent.expression,)
+    evidence.extend(SemanticEvidenceSpan(slot="time", text=item) for item in time_mentions)
+    if shape is not None:
+        shape_evidence = (
+            ranking.evidence_span
+            if ranking is not None
+            else measures[0] if measures
+            else dimensions[0] if dimensions
+            else filters[0].evidence_span if filters
+            else time_mentions[0] if time_mentions
+            else unresolved[0] if unresolved
+            else text
+        )
+        evidence.append(SemanticEvidenceSpan(slot="query_shape", text=shape_evidence))
+    if ranking is not None:
+        evidence.append(SemanticEvidenceSpan(slot="ranking", text=ranking.evidence_span))
+    if comparison_intent is not None:
+        evidence.append(SemanticEvidenceSpan(slot="comparison", text=comparison_intent))
+    return SemanticFrame(
+        mode=mode,
+        relation=relation,
+        query_shape=shape,
+        measure_mentions=measures,
+        dimension_mentions=dimensions,
+        filter_mentions=filters,
+        time_mentions=time_mentions,
+        time_intent=time_intent,
+        ranking_intent=ranking,
+        comparison_intent=comparison_intent,
+        unresolved_mentions=unresolved,
+        evidence_spans=tuple(evidence),
+        changed_slots=changed_slots,
+        referenced_context_slots=referenced_context_slots,
+        output_mode="report" if mode is SemanticInterpretationMode.REPORT else "answer",
+    )
+
+
+def _current_understanding_text(request: LLMRequest) -> str:
+    content = request.messages[-1]["content"]
+    marker = "当前用户输入："
+    if marker not in content:
+        return content
+    return content.split(marker, 1)[1].split("\n", 1)[0]
+
+
+def _bounded_selection(
+    request: LLMRequest,
+    aliases: dict[str, str],
+    *,
+    unresolved: set[str] | None = None,
+) -> CandidateSelection:
+    content = request.messages[-1]["content"]
+    unresolved = unresolved or set()
+    if content.startswith("{"):
+        payload = json.loads(content)
+        phrase = payload["requested_value"]
+        if phrase in unresolved:
+            return CandidateSelection(outcome="UNRESOLVED")
+        target = aliases.get(phrase, phrase)
+        candidate = next(
+            (
+                item["candidate_id"]
+                for item in payload["candidates"]
+                if item["value"] == target
+            ),
+            None,
+        )
+    else:
+        phrase = content.split("\n当前输入：", 1)[0].split("当前短语：", 1)[-1]
+        if phrase in unresolved:
+            return CandidateSelection(outcome="UNRESOLVED")
+        target = aliases.get(phrase, phrase)
+        match = re.search(
+            r'"object_id"\s*:\s*"([^"]+)"[^{}]*?'
+            r'"canonical_name"\s*:\s*"' + re.escape(target) + r'"',
+            content,
+        )
+        candidate = match.group(1) if match else None
+    if candidate is None:
+        return CandidateSelection(outcome="UNRESOLVED")
+    return CandidateSelection(
+        outcome="RESOLVED", candidate_id=candidate, matched_phrase=phrase
+    )
+
+
+def _equivalence_veto(request: LLMRequest) -> SemanticEquivalenceVeto:
+    payload = json.loads(request.messages[-1]["content"])
+    return SemanticEquivalenceVeto(
+        decision=(
+            "REJECT"
+            if payload["requested_literal"] in {"深圳", "火星区"}
+            else "ACCEPT"
+        ),
+        mismatch=(
+            "PROPER_ENTITY"
+            if payload["requested_literal"] in {"深圳", "火星区"}
+            else "NONE"
+        ),
+    )
 
 
 def _llm_test_profile(
@@ -495,8 +632,13 @@ class TestChatRealModeRejection:
                 response = await c.post("/api/v1/chat", json={
                     "message": "测试",
                 })
-                # M1.5: Chat 已启用，假 Key 会导致鉴权/连接错误（非 503 mode guard）
-                assert response.status_code in (502, 500)
+                # The unified Understanding Layer converts provider failure to
+                # an explicit fail-closed turn; it never falls into Mock.
+                assert response.status_code == 200
+                data = response.json()
+                assert data["terminal_state"] == "validation_failed"
+                assert data["error_type"] == "SemanticInterpretationError"
+                assert data["memory_commit"] is False
 
     @pytest.mark.asyncio
     async def test_deepseek_chat_no_fallback_to_mock(self):
@@ -514,12 +656,12 @@ class TestChatRealModeRejection:
                 response = await c.post("/api/v1/chat", json={
                     "message": "测试",
                 })
-                # M1.5: 不返回 Mock 模式的 200，必须是错误状态
-                assert response.status_code != 200
-                # 必须不是 503 mode guard
                 data = response.json()
-                if isinstance(data.get("detail"), dict):
-                    assert data["detail"].get("error_type") != "deepseek_pipeline_not_ready"
+                assert response.status_code == 200
+                assert data["terminal_state"] == "validation_failed"
+                assert data["error_type"] == "SemanticInterpretationError"
+                assert data["answer"] is None
+                assert data["memory_commit"] is False
 
 
 class TestChatConcurrent:
@@ -1069,22 +1211,28 @@ class _M24ScriptedDeepSeekProvider(LLMProvider):
         output_type: type[BaseModel],
     ) -> LLMResponse:
         self.calls.append(request)
-        if request.task == LLMTask.CONVERSATION:
-            structured = output_type(
-                answer=f"LLM conversational reply: {request.messages[-1]['content']}"
-            )
-        elif request.task == LLMTask.INTENT_RECOGNITION:
-            structured = IntentSpec(
-                intent=IntentType.DATA_QUESTION,
-                confidence=0.99,
-                normalized_question="总销售额是多少？",
-                detected_measures=["Total Sales"],
-            )
-        elif request.task == LLMTask.QUERY_PLAN:
-            structured = QueryPlan(
-                normalized_question="总销售额是多少？",
-                semantic_model_key="local_desktop_model",
-                measures=["Total Sales"],
+        if request.task == LLMTask.UNDERSTANDING:
+            text = _current_understanding_text(request)
+            if not any(item in text for item in ("销售额", "利润")):
+                structured = _semantic_frame(
+                    text,
+                    mode=SemanticInterpretationMode.GENERAL,
+                    shape=None,
+                    general_answer=f"LLM conversational reply: {text}",
+                )
+            else:
+                mention = (
+                    "总销售额" if "总销售额" in text
+                    else "销售额" if "销售额" in text
+                    else "利润"
+                )
+                structured = _semantic_frame(text, measures=(mention,))
+        elif request.task == LLMTask.UNDERSTANDING_COVERAGE:
+            structured = _coverage_response()
+        elif request.task == LLMTask.SEMANTIC_SELECTION:
+            structured = _bounded_selection(
+                request,
+                {"总销售额": "Total Sales", "销售额": "Total Sales", "利润": "Total Sales"},
             )
         elif request.task == LLMTask.DAX:
             structured = DAXRequest(
@@ -1132,56 +1280,48 @@ class _UnsupportedRoutingProvider(_M24ScriptedDeepSeekProvider):
         output_type: type[BaseModel],
     ) -> LLMResponse:
         self.calls.append(request)
-        if request.task == LLMTask.CONVERSATION:
-            structured = ConversationalAnswer(
-                answer=(
-                    "可以，我来写一首短诗。"
-                    if self.active == "non_data"
-                    else ""
-                ),
-                requires_business_grounding=self.active != "non_data",
-            )
-        elif request.task == LLMTask.INTENT_RECOGNITION:
-            messages = {
-                "normal": "总销售额是多少？",
-                "unknown": "客户幸福指数是多少？",
-                "comparison": "销售额同比去年如何？",
-                "filter": "销售额中类别包含 Furniture",
-                "non_data": "帮我写一首诗",
-            }
-            structured = IntentSpec(
-                intent=IntentType.UNSUPPORTED,
-                confidence=0.7,
-                normalized_question=messages[self.active],
-                unsupported_reason="scripted false-or-true unsupported",
-            )
-        elif request.task == LLMTask.QUERY_PLAN:
-            if self.active == "unknown":
-                structured = QueryPlan(
-                    normalized_question="客户幸福指数是多少？",
-                    semantic_model_key="local_desktop_model",
+        if request.task == LLMTask.UNDERSTANDING:
+            text = _current_understanding_text(request)
+            if self.active == "non_data":
+                structured = _semantic_frame(
+                    text,
+                    mode=SemanticInterpretationMode.GENERAL,
+                    shape=None,
+                    general_answer="可以，我来写一首短诗。",
+                )
+            elif self.active == "unknown":
+                structured = _semantic_frame(
+                    text, shape=None, unresolved=("客户幸福指数",)
+                )
+            elif self.active == "comparison":
+                structured = _semantic_frame(
+                    text,
+                    measures=("销售额",),
+                    comparison_intent="同比去年",
                 )
             elif self.active == "filter":
-                structured = QueryPlan(
-                    normalized_question="销售额中类别包含 Furniture",
-                    semantic_model_key="local_desktop_model",
-                    measures=["Total Sales"],
-                    filters=[StructuredFilter(
-                        field="Category",
+                structured = _semantic_frame(
+                    text,
+                    shape=QueryShape.FILTERED_AGGREGATION,
+                    measures=("销售额",),
+                    filters=(SemanticFilterMention(
+                        field_mention="类别",
+                        member_mention="Furniture",
                         operator="contains",
-                        value="Furniture",
-                    )],
+                        evidence_span="类别包含 Furniture",
+                    ),),
                 )
             else:
-                structured = QueryPlan(
-                    normalized_question=(
-                        "销售额同比去年如何？"
-                        if self.active == "comparison"
-                        else "总销售额是多少？"
-                    ),
-                    semantic_model_key="local_desktop_model",
-                    measures=["Total Sales"],
-                )
+                mention = "总销售额" if "总销售额" in text else "销售额"
+                structured = _semantic_frame(text, measures=(mention,))
+        elif request.task == LLMTask.UNDERSTANDING_COVERAGE:
+            structured = _coverage_response()
+        elif request.task == LLMTask.SEMANTIC_SELECTION:
+            structured = _bounded_selection(
+                request,
+                {"总销售额": "Total Sales", "销售额": "Total Sales", "类别": "Category"},
+                unresolved={"客户幸福指数"},
+            )
         else:
             raise AssertionError(f"unexpected LLM task: {request.task}")
         return LLMResponse(
@@ -1260,183 +1400,83 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
 
     async def generate(self, request, output_type):
         self.calls.append(request)
-        if request.task == LLMTask.CONVERSATION:
+        if request.task == LLMTask.SEMANTIC_EQUIVALENCE_VETO:
             return LLMResponse(
-                content="{}",
-                structured=ConversationalAnswer(
-                    answer="",
-                    requires_business_grounding=True,
-                ),
+                content="{}", structured=_equivalence_veto(request)
             )
         if request.task == LLMTask.SEMANTIC_SELECTION:
-            from backend.app.query_plan.grounding import CandidateSelection
-
-            assert self.active == "m55_unknown_member"
-            return LLMResponse(content="{}", structured=CandidateSelection(outcome="UNRESOLVED"))
-        if request.task == LLMTask.INTENT_RECOGNITION and self.fail_intent_once:
+            content = request.messages[-1]["content"]
+            member_call = content.startswith("{")
+            structured = _bounded_selection(
+                request,
+                (
+                    {"华南": "华南", "南区": "华南"}
+                    if member_call
+                    else {
+                        "销售额": "Total Sales",
+                        "总销售额": "Total Sales",
+                        "销量": "Total Quantity",
+                        "总销量": "Total Quantity",
+                        "区域": "Region",
+                        "产品": "Product",
+                        "几个月": "YearMonth",
+                        "月": "YearMonth",
+                        "华南": "Region",
+                        "南区": "Region",
+                        "火星区": "Region",
+                    }
+                ),
+                unresolved={"火星区"} if member_call else set(),
+            )
+            return LLMResponse(content="{}", structured=structured)
+        if request.task == LLMTask.UNDERSTANDING and self.fail_intent_once:
             self.fail_intent_once = False
-            raise RuntimeError("injected intent outage")
-        if request.task == LLMTask.QUERY_PLAN and self.fail_query_plan_once:
+            raise LLMServiceError(
+                "injected understanding outage",
+                provider=self.provider_name,
+                error_code="test_understanding_failure",
+            )
+        if request.task == LLMTask.UNDERSTANDING_COVERAGE and self.fail_query_plan_once:
             self.fail_query_plan_once = False
-            raise RuntimeError("injected query-plan outage")
-        messages = {
-            "current": "本月销售额是多少？",
-            "absolute": "2025年5月销售额多少？",
-            "last_may": "去年五月",
-            "previous_month": "上个月",
-            "recent_half": "最近半年",
-            "top_region": "销售额最高的前3个区域是什么？",
-            "south": "那只看华南呢？",
-            "last_year": "改成去年。",
-            "fresh_quantity": "总销量是多少？",
-            "failed": "总销售额是多少？",
-            "model_switch": "总销售额是多少？",
-            "m55_south": "那南区呢",
-            "m55_last_year": "换成去年",
-            "m55_top_product": "前三个产品呢",
-            "m55_unknown_member": "火星区销售额",
-            "m5105_vague_time": "最近几个月的销售额趋势",
-            "m5105_bounded_time": "最近6个月",
-            "m5105_explicit_range": "2026年1月至6月销售额趋势",
-            "m5105_last_year": "改成去年",
-            "m5105_may": "只看五月",
-            "m5105_first_half": "从1月到6月",
-        }
-        if request.task == LLMTask.INTENT_RECOGNITION:
-            values = {
-                "intent": IntentType.DATA_QUESTION,
-                "confidence": 0.99,
-                "normalized_question": messages[self.active],
+            raise LLMServiceError(
+                "injected understanding coverage outage",
+                provider=self.provider_name,
+                error_code="test_understanding_coverage_failure",
+            )
+        if request.task == LLMTask.UNDERSTANDING_COVERAGE:
+            structured = _coverage_response()
+        elif request.task == LLMTask.UNDERSTANDING:
+            text = _current_understanding_text(request)
+            fresh = TurnRelation.FRESH_QUESTION
+            follow = TurnRelation.FOLLOW_UP
+            replace = TurnRelation.REPLACE
+            scalar: dict[str, object] = {"shape": QueryShape.SCALAR}
+            cases: dict[str, dict[str, object]] = {
+                "current": {**scalar, "measures": ("销售额",), "time_intent": TimeIntentDraft(kind=TimeIntentKind.RELATIVE_MONTH, expression="本月", relative_offset=0)},
+                "absolute": {**scalar, "measures": ("销售额",), "time_intent": TimeIntentDraft(kind=TimeIntentKind.ABSOLUTE_MONTH, expression="2025年5月", year=2025, month=5)},
+                "last_may": {**scalar, "relation": replace, "time_mentions": ("去年五月",), "referenced_context_slots": ("measure",)},
+                "previous_month": {**scalar, "relation": replace, "time_intent": TimeIntentDraft(kind=TimeIntentKind.RELATIVE_MONTH, expression="上个月", relative_offset=-1), "referenced_context_slots": ("measure",)},
+                "recent_half": {**scalar, "relation": replace, "time_intent": TimeIntentDraft(kind=TimeIntentKind.RECENT_MONTHS, expression="最近半年", months=6), "referenced_context_slots": ("measure",)},
+                "top_region": {"shape": QueryShape.RANKING, "measures": ("销售额",), "dimensions": ("区域",), "ranking": RankingIntent(direction="desc", top_n=3, evidence_span="最高的前3个")},
+                "south": {"shape": QueryShape.RANKING, "relation": follow, "filters": (SemanticFilterMention(member_mention="华南", evidence_span="华南"),), "ranking": RankingIntent(direction="desc", top_n=3, evidence_span="华南"), "referenced_context_slots": ("measure", "dimension", "ranking", "time")},
+                "last_year": {"shape": QueryShape.RANKING, "relation": replace, "time_intent": TimeIntentDraft(kind=TimeIntentKind.RELATIVE_YEAR, expression="去年", relative_offset=-1), "ranking": RankingIntent(direction="desc", top_n=3, evidence_span="去年"), "referenced_context_slots": ("measure", "dimension", "ranking")},
+                "fresh_quantity": {**scalar, "measures": ("总销量",)},
+                "failed": {**scalar, "measures": ("总销售额",)},
+                "model_switch": {**scalar, "measures": ("总销售额",)},
+                "m55_south": {**scalar, "relation": follow, "filters": (SemanticFilterMention(member_mention="南区", evidence_span="南区"),), "referenced_context_slots": ("measure", "time")},
+                "m55_last_year": {**scalar, "relation": replace, "time_intent": TimeIntentDraft(kind=TimeIntentKind.RELATIVE_YEAR, expression="去年", relative_offset=-1), "referenced_context_slots": ("measure",)},
+                "m55_top_product": {"shape": QueryShape.RANKING, "relation": follow, "dimensions": ("产品",), "ranking": RankingIntent(direction="desc", top_n=3, evidence_span="前三个"), "referenced_context_slots": ("measure", "time")},
+                "m55_unknown_member": {**scalar, "measures": ("销售额",), "filters": (SemanticFilterMention(member_mention="火星区", evidence_span="火星区"),)},
+                "m5105_vague_time": {"shape": QueryShape.TREND, "measures": ("销售额",), "dimensions": ("几个月",), "time_intent": TimeIntentDraft(kind=TimeIntentKind.RECENT_MONTHS, expression="最近几个月")},
+                "m5105_bounded_time": {"shape": None, "relation": follow, "time_intent": TimeIntentDraft(kind=TimeIntentKind.RECENT_MONTHS, expression="最近6个月", months=6), "changed_slots": ("time",), "referenced_context_slots": ("query_shape", "measure", "dimension")},
+                "m5105_explicit_range": {"shape": QueryShape.BOUNDED_TREND, "measures": ("销售额",), "dimensions": ("月",), "time_intent": TimeIntentDraft(kind=TimeIntentKind.BOUNDED_RANGE, expression="2026年1月至6月", start_date="2026-01-01", end_date="2026-06-30")},
+                "m5105_last_year": {"shape": QueryShape.BOUNDED_TREND, "relation": replace, "time_intent": TimeIntentDraft(kind=TimeIntentKind.RELATIVE_YEAR, expression="去年", relative_offset=-1), "referenced_context_slots": ("measure", "dimension")},
+                "m5105_may": {"shape": QueryShape.BOUNDED_TREND, "relation": follow, "time_intent": TimeIntentDraft(kind=TimeIntentKind.ABSOLUTE_MONTH, expression="五月", year=2025, month=5), "referenced_context_slots": ("measure", "dimension", "time")},
+                "m5105_first_half": {"shape": QueryShape.BOUNDED_TREND, "relation": follow, "time_intent": TimeIntentDraft(kind=TimeIntentKind.BOUNDED_RANGE, expression="从1月到6月", start_date="2025-01-01", end_date="2025-06-30"), "referenced_context_slots": ("measure", "dimension", "time")},
             }
-            if self.active in {
-                "current", "absolute", "top_region", "failed", "model_switch",
-                "m55_unknown_member", "m5105_vague_time",
-                "m5105_explicit_range",
-            }:
-                values["detected_measures"] = ["销售额"]
-                values["turn_relation"] = TurnRelation.FRESH_QUESTION
-            elif self.active == "fresh_quantity":
-                values["detected_measures"] = ["销量"]
-                values["turn_relation"] = TurnRelation.FRESH_QUESTION
-            elif self.active in {"m55_south", "m55_top_product"}:
-                values["turn_relation"] = TurnRelation.FOLLOW_UP
-            else:
-                values["turn_relation"] = (
-                    TurnRelation.FOLLOW_UP
-                    if self.active in {
-                        "south", "m5105_bounded_time", "m5105_may",
-                        "m5105_first_half",
-                    }
-                    else TurnRelation.REPLACE
-                )
-            if self.active == "absolute":
-                values["detected_time_range"] = "2025年5月"
-                values["time_intent"] = TimeIntentDraft(
-                    kind=TimeIntentKind.ABSOLUTE_MONTH,
-                    expression="2025年5月",
-                    year=2025,
-                    month=5,
-                )
-            elif self.active in {
-                "current", "last_may", "previous_month", "recent_half", "last_year"
-            }:
-                values["detected_time_range"] = messages[self.active]
-            elif self.active in {
-                "m5105_vague_time", "m5105_explicit_range",
-                "m5105_last_year", "m5105_may", "m5105_first_half",
-            }:
-                values["detected_time_range"] = messages[self.active]
-                if self.active == "m5105_vague_time":
-                    values["time_intent"] = TimeIntentDraft(
-                        kind=TimeIntentKind.RECENT_MONTHS,
-                        expression=messages[self.active],
-                        months=None,
-                    )
-            if self.active == "m5105_bounded_time":
-                values["detected_time_range"] = messages[self.active]
-                values["time_intent"] = TimeIntentDraft(
-                    kind=TimeIntentKind.RECENT_MONTHS,
-                    expression=messages[self.active],
-                    months=6,
-                )
-            if self.active == "top_region":
-                values["detected_dimensions"] = ["区域"]
-            if self.active in {"south", "m55_south", "m55_unknown_member"}:
-                values["detected_filters"] = [
-                    {
-                        "field": "区域",
-                        "operator": "eq",
-                        "value": (
-                            "华南" if self.active == "south"
-                            else "南区" if self.active == "m55_south"
-                            else "火星区"
-                        ),
-                    }
-                ]
-            if self.active == "m55_top_product":
-                values["detected_dimensions"] = ["产品"]
-            structured = IntentSpec(**values)
-        elif request.task == LLMTask.QUERY_PLAN:
-            values = {
-                "normalized_question": messages[self.active],
-                "semantic_model_key": self.model_key,
-            }
-            if self.active in {
-                "current", "absolute", "last_may", "previous_month",
-                "recent_half", "top_region", "south", "last_year", "failed",
-                "model_switch", "m55_south", "m55_last_year",
-                "m55_top_product", "m55_unknown_member", "m5105_vague_time",
-                "m5105_explicit_range",
-            }:
-                values["measures"] = ["Total Sales"]
-            elif self.active in {
-                "m5105_bounded_time", "m5105_last_year", "m5105_may",
-                "m5105_first_half",
-            }:
-                values["measures"] = []
-            else:
-                values["measures"] = ["Total Quantity"]
-            if self.active in {"top_region", "south", "last_year"}:
-                values["dimensions"] = ["Region"]
-                values["sort"] = "desc"
-                values["top_n"] = 3
-            if self.active == "m55_top_product":
-                values["dimensions"] = ["Product"]
-                values["sort"] = "desc"
-                values["top_n"] = 3
-            if self.active in {"south", "m55_south", "m55_unknown_member"}:
-                values["filters"] = [
-                    StructuredFilter(
-                        field="Region",
-                        value=(
-                            "华南" if self.active == "south"
-                            else "南区" if self.active == "m55_south"
-                            else "火星区"
-                        ),
-                    )
-                ]
-            if self.active in {
-                "current", "absolute", "last_may", "previous_month", "recent_half", "last_year"
-            }:
-                values["time_range"] = messages[self.active]
-            if self.active == "m5105_vague_time":
-                values.update({
-                    "query_shape": QueryShape.TREND,
-                    "query_shape_evidence": "趋势",
-                    "time_range": messages[self.active],
-                })
-            elif self.active == "m5105_bounded_time":
-                values.update({
-                    "query_shape": QueryShape.BOUNDED_TREND,
-                    "query_shape_evidence": "最近6个月",
-                    "time_range": messages[self.active],
-                })
-            if self.active in {
-                "m5105_explicit_range", "m5105_last_year", "m5105_may",
-                "m5105_first_half",
-            }:
-                values["time_range"] = messages[self.active]
-            structured = QueryPlan(**values)
+            values = cases[self.active]
+            values.setdefault("relation", fresh)
+            structured = _semantic_frame(text, **values)
         else:
             raise AssertionError(f"unexpected LLM task: {request.task}")
         return LLMResponse(
@@ -1633,19 +1673,20 @@ class _M56MonthlyTrendProvider(LLMProvider):
         return False
 
     async def generate(self, request, output_type):
-        if request.task == LLMTask.INTENT_RECOGNITION:
-            structured = IntentSpec(
-                intent=IntentType.DATA_QUESTION,
-                confidence=0.99,
-                normalized_question="每个月销售额趋势",
-                detected_measures=["销售额"],
-                turn_relation=TurnRelation.FRESH_QUESTION,
+        if request.task == LLMTask.UNDERSTANDING:
+            text = _current_understanding_text(request)
+            structured = _semantic_frame(
+                text,
+                shape=QueryShape.TREND,
+                measures=("销售额",),
+                dimensions=("每个月",),
             )
-        elif request.task == LLMTask.QUERY_PLAN:
-            structured = QueryPlan(
-                normalized_question="每个月销售额趋势",
-                semantic_model_key="local_desktop_model",
-                measures=["Total Sales"],
+        elif request.task == LLMTask.UNDERSTANDING_COVERAGE:
+            structured = _coverage_response()
+        elif request.task == LLMTask.SEMANTIC_SELECTION:
+            structured = _bounded_selection(
+                request,
+                {"销售额": "Total Sales", "每个月": "YearMonth"},
             )
         else:
             raise AssertionError(f"unexpected LLM task: {request.task}")
@@ -1779,43 +1820,35 @@ class _M25BusinessGoldenProvider(LLMProvider):
         output_type: type[BaseModel],
     ) -> LLMResponse:
         self.calls.append(request)
-        if request.task == LLMTask.CONVERSATION:
-            structured = ConversationalAnswer(
-                answer="",
-                requires_business_grounding=True,
+        if request.task == LLMTask.UNDERSTANDING:
+            measure_mention = "销售额" if self.measure == "Total Sales" else "总数量"
+            dimension_mention = "产品" if self.dimension == "Product" else "类别"
+            structured = _semantic_frame(
+                self.question,
+                shape=(QueryShape.RANKING if self.top_n is not None else QueryShape.GROUPED),
+                measures=(measure_mention,),
+                dimensions=(dimension_mention,),
+                ranking=(
+                    RankingIntent(
+                        direction="desc",
+                        top_n=self.top_n,
+                        evidence_span=f"最高的前{self.top_n}个",
+                    )
+                    if self.top_n is not None
+                    else None
+                ),
             )
-        elif request.task == LLMTask.INTENT_RECOGNITION:
-            structured = IntentSpec(
-                intent=IntentType.DATA_QUESTION,
-                confidence=0.99,
-                normalized_question=self.question,
-                detected_measures=[self.measure],
-                detected_dimensions=[self.dimension],
-            )
-        elif request.task == LLMTask.QUERY_PLAN:
-            structured = QueryPlan(
-                normalized_question=self.question,
-                semantic_model_key="local_desktop_model",
-                measures=[self.measure],
-                dimensions=[self.dimension],
-                sort=self.sort,
-                top_n=self.top_n,
-            )
-        elif request.task == LLMTask.DAX:
-            grouped = (
-                f"SUMMARIZECOLUMNS('Sales'[{self.dimension}], "
-                f"\"{self.measure}\", [{self.measure}])"
-            )
-            if self.top_n is None:
-                dax = f"EVALUATE {grouped}"
-            else:
-                dax = (
-                    f"EVALUATE TOPN({self.top_n}, {grouped}, "
-                    f"[{self.measure}], DESC) ORDER BY [{self.measure}] DESC"
-                )
-            structured = DAXRequest(
-                semantic_model_key="local_desktop_model",
-                dax=dax,
+        elif request.task == LLMTask.UNDERSTANDING_COVERAGE:
+            structured = _coverage_response()
+        elif request.task == LLMTask.SEMANTIC_SELECTION:
+            structured = _bounded_selection(
+                request,
+                {
+                    "销售额": "Total Sales",
+                    "总数量": "Total Quantity",
+                    "产品": "Product",
+                    "类别": "Category",
+                },
             )
         elif request.task == LLMTask.ANSWER:
             structured = AnswerSpec(
@@ -2067,6 +2100,7 @@ def _patch_m56_monthly_trend_composition(monkeypatch):
     registry = LLMProviderRegistry()
     registry.register(_deepseek_test_profile(), provider)
     monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
+    _patch_fake_runtime_glossary(monkeypatch)
     monkeypatch.setattr(
         main_module, "LocalMCPPowerBIAdapter", _M56MonthlyTrendAdapter
     )
@@ -2098,109 +2132,84 @@ class _PendingClarificationProvider(LLMProvider):
         self, request: LLMRequest, output_type: type[BaseModel]
     ) -> LLMResponse:
         self.calls.append(request)
-        if request.task == LLMTask.CONVERSATION:
-            structured = ConversationalAnswer(
-                answer="",
-                requires_business_grounding=True,
+        if request.task == LLMTask.UNDERSTANDING_COVERAGE:
+            structured = _coverage_response()
+        elif request.task == LLMTask.SEMANTIC_SELECTION:
+            content = request.messages[-1]["content"]
+            structured = (
+                CandidateSelection(outcome="AMBIGUOUS")
+                if "当前短语：产品还是类别" in content
+                else CandidateSelection(outcome="UNRESOLVED")
+                if "当前短语：哪个" in content
+                else _bounded_selection(
+                    request,
+                    {
+                        "销售额": "Total Sales",
+                        "总销售额": "Total Sales",
+                        "销量": "Total Quantity",
+                        "产品": "Product",
+                        "类别": "Category",
+                    },
+                )
             )
-        elif request.task == LLMTask.INTENT_RECOGNITION:
-            if self.active == "e1":
-                structured = IntentSpec(
-                    intent=IntentType.CLARIFICATION,
-                    confidence=0.8,
-                    normalized_question="哪个表现最好？",
-                    needs_clarification=True,
-                    clarification_question="请明确指标和维度。",
-                )
-            elif self.active == "e2":
-                structured = IntentSpec(
-                    intent=IntentType.DATA_QUESTION,
-                    confidence=0.99,
-                    normalized_question="按销售额",
-                    detected_measures=["Total Sales"],
-                )
-            elif self.active == "e3":
-                structured = IntentSpec(
-                    intent=IntentType.DATA_QUESTION,
-                    confidence=0.99,
-                    normalized_question="按产品",
-                    detected_measures=["Total Sales"],
-                    detected_dimensions=["Product"],
-                )
-            elif self.active == "override":
-                structured = IntentSpec(
-                    intent=IntentType.DATA_QUESTION,
-                    confidence=0.99,
-                    normalized_question="改成按产品看销量",
-                    detected_measures=["Total Quantity"],
-                    detected_dimensions=["Product"],
-                )
-            elif self.active == "ambiguous":
-                structured = IntentSpec(
-                    intent=IntentType.DATA_QUESTION,
-                    confidence=0.99,
-                    normalized_question="按产品还是类别",
-                    detected_measures=["Total Sales"],
-                    detected_dimensions=["Product", "Category"],
-                )
-            elif self.active in {"abandon", "unrelated"}:
-                structured = IntentSpec(
-                    intent=IntentType.DATA_QUESTION,
-                    confidence=0.99,
-                    normalized_question=(
-                        "重新开始，总销售额"
-                        if self.active == "abandon"
-                        else "总销售额是多少？"
-                    ),
-                    detected_measures=["Total Sales"],
-                )
-            else:
-                raise AssertionError(f"unknown scripted turn: {self.active}")
-        elif request.task == LLMTask.QUERY_PLAN:
-            plans = {
-                "e1": QueryPlan(
-                    normalized_question="哪个表现最好？",
-                    semantic_model_key="local_desktop_model",
-                    sort="desc",
-                    top_n=1,
+        elif request.task == LLMTask.UNDERSTANDING:
+            text = _current_understanding_text(request)
+            follow = TurnRelation.FOLLOW_UP
+            shared_context = ("query_shape", "ranking", "top_n", "sort")
+            frames = {
+                "e1": _semantic_frame(
+                    text,
+                    shape=QueryShape.RANKING,
+                    dimensions=("哪个",),
+                    ranking=RankingIntent(direction="desc", top_n=1, evidence_span="最好"),
                 ),
-                "e2": QueryPlan(
-                    normalized_question="按销售额",
-                    semantic_model_key="local_desktop_model",
-                    measures=["Total Sales"],
+                "e2": _semantic_frame(
+                    text,
+                    shape=None,
+                    measures=("销售额",),
+                    relation=follow,
+                    changed_slots=("measure",),
+                    referenced_context_slots=shared_context + ("dimension",),
                 ),
-                # The repeated measure is only a weak draft echo.  The current
-                # utterance explicitly contributes Product; pending owns Sales.
-                "e3": QueryPlan(
-                    normalized_question="按产品",
-                    semantic_model_key="local_desktop_model",
-                    measures=["Total Sales"],
-                    dimensions=["Product"],
+                "e3": _semantic_frame(
+                    text,
+                    shape=None,
+                    dimensions=("产品",),
+                    relation=follow,
+                    changed_slots=("dimension",),
+                    referenced_context_slots=shared_context + ("measure",),
                 ),
-                "override": QueryPlan(
-                    normalized_question="改成按产品看销量",
-                    semantic_model_key="local_desktop_model",
-                    measures=["Total Quantity"],
-                    dimensions=["Product"],
+                "override": _semantic_frame(
+                    text,
+                    shape=None,
+                    measures=("销量",),
+                    dimensions=("产品",),
+                    relation=follow,
+                    changed_slots=("measure", "dimension"),
+                    referenced_context_slots=shared_context,
                 ),
-                "ambiguous": QueryPlan(
-                    normalized_question="按产品还是类别",
-                    semantic_model_key="local_desktop_model",
-                    measures=["Total Sales"],
-                    dimensions=["Product", "Category"],
+                "ambiguous": _semantic_frame(
+                    text,
+                    shape=None,
+                    dimensions=("产品还是类别",),
+                    relation=follow,
+                    changed_slots=("dimension",),
+                    referenced_context_slots=shared_context + ("measure",),
                 ),
-                "abandon": QueryPlan(
-                    normalized_question="重新开始，总销售额",
-                    semantic_model_key="local_desktop_model",
-                    measures=["Total Sales"],
+                "abandon": _semantic_frame(
+                    text,
+                    shape=QueryShape.SCALAR,
+                    measures=("总销售额",),
+                    relation=TurnRelation.FRESH_QUESTION,
                 ),
-                "unrelated": QueryPlan(
-                    normalized_question="总销售额是多少？",
-                    semantic_model_key="local_desktop_model",
-                    measures=["Total Sales"],
+                "unrelated": _semantic_frame(
+                    text,
+                    shape=QueryShape.SCALAR,
+                    measures=("总销售额",),
+                    relation=TurnRelation.FRESH_QUESTION,
                 ),
             }
-            structured = plans[self.active]
+            structured = frames[self.active]
         else:
             raise AssertionError(f"unexpected LLM task: {request.task}")
         return LLMResponse(
@@ -2338,7 +2347,7 @@ class TestPendingClarificationProductionPath:
                 third = await self._post(client, conversation_id, "pending-e3", "按产品")
                 assert third.status_code == 200
                 body = third.json()
-                assert body["terminal_state"] == "completed"
+                assert body["terminal_state"] == "completed", json.dumps(body, ensure_ascii=False, indent=2)
                 assert body["memory_commit"] is True
                 assert body["execution_audit"]["canonical_query_plan"]["measures"] == ["Total Sales"]
                 assert body["execution_audit"]["canonical_query_plan"]["dimensions"] == ["Product"]
@@ -2493,7 +2502,7 @@ class TestPendingClarificationProductionPath:
                 result = await self._post(
                     client, conversation_id, "override-e3", "改成按产品看销量"
                 )
-                assert result.json()["terminal_state"] == "completed"
+                assert result.json()["terminal_state"] == "completed", json.dumps(result.json(), ensure_ascii=False, indent=2)
                 committed = await service.pipeline.get_latest_committed_memory(
                     conversation_id, RuntimeDataMode.REAL
                 )
@@ -2516,7 +2525,7 @@ class TestPendingClarificationProductionPath:
                 ambiguous = await self._post(
                     client, ambiguous_id, "ambiguous-e3", "按产品还是类别"
                 )
-                assert ambiguous.json()["terminal_state"] == "clarification_required", ambiguous.json()
+                assert ambiguous.json()["terminal_state"] == "clarification_required", json.dumps(ambiguous.json(), ensure_ascii=False, indent=2)
                 assert await service.pipeline.get_latest_committed_memory(
                     ambiguous_id, RuntimeDataMode.REAL
                 ) is None
@@ -2597,11 +2606,11 @@ class TestM24DeepSeekLocalChat:
         )
         transport = ASGITransport(app=app)
         cases = (
-            ("你好", "social_conversation", "LLM conversational reply", 1),
-            ("谢谢", "social_conversation", "LLM conversational reply", 1),
+            ("你好", "llm_semantic_interpretation", "LLM conversational reply", 1),
+            ("谢谢", "llm_semantic_interpretation", "LLM conversational reply", 1),
             ("今天几号", "system_datetime", "Asia/Shanghai", 0),
             ("现在几点", "system_datetime", "Asia/Shanghai", 0),
-            ("什么是同比", "concept_explanation", "LLM conversational reply", 1),
+            ("什么是同比", "llm_semantic_interpretation", "LLM conversational reply", 1),
         )
 
         async with app.router.lifespan_context(app):
@@ -2702,12 +2711,11 @@ class TestM24DeepSeekLocalChat:
                 assert service.powerbi.dax_calls == 2
                 plan = second["execution_audit"]["canonical_query_plan"]
                 assert plan["query_shape"] == "trend"
-                reconciliation = second["execution_audit"][
-                    "query_shape_reconciliation"
-                ]
-                assert reconciliation["draft"] == "bounded_trend"
-                assert reconciliation["effective"] == "trend"
-                assert reconciliation["source"] == "pending_clarification"
+                shape_context = second["execution_audit"]["query_shape_context"]
+                assert shape_context == {
+                    "effective": "trend",
+                    "source": "pending_clarification",
+                }
                 assert plan["measures"] == ["Total Sales"]
                 assert plan["dimensions"] == ["YearMonth"]
                 assert plan["time_range"]["start_date"] == "2026-04-01"
@@ -3067,10 +3075,9 @@ class TestM24DeepSeekLocalChat:
                 assert ranking_plan["top_n"] == 3
                 assert ranking_body["execution_audit"][
                     "semantic_interpretation_authority"
-                ] == "llm_semantic_interpreter"
-                assert all(
-                    call.task is not LLMTask.INTENT_RECOGNITION
-                    for call in provider.calls
+                ] == "semantic_frame"
+                assert any(
+                    call.task is LLMTask.UNDERSTANDING for call in provider.calls
                 )
 
                 provider.active = "failed"
@@ -3183,32 +3190,15 @@ class TestM24DeepSeekLocalChat:
             body = response.json()
             assert response.status_code == 200, body
             assert body["terminal_state"] == "completed", body
-            assert body["execution_audit"]["capability_decision"] == "READ_ANALYSIS"
+            assert body["execution_audit"]["capability_decision"] == "UNKNOWN"
             assert service.powerbi.dax_calls == 1
 
     @pytest.mark.asyncio
-    async def test_catalog_alias_can_correct_intent_clarification(self, monkeypatch):
-        class ClarifyingProvider(_M24ScriptedDeepSeekProvider):
-            async def generate(self, request, output_type):
-                if request.task == LLMTask.INTENT_RECOGNITION:
-                    self.calls.append(request)
-                    return LLMResponse(
-                        content="{}",
-                        structured=IntentSpec(
-                            intent=IntentType.CLARIFICATION,
-                            confidence=0.7,
-                            normalized_question="销售额是多少？",
-                            needs_clarification=True,
-                            clarification_question="请明确指标。",
-                        ),
-                        model="fake-deepseek",
-                    )
-                return await super().generate(request, output_type)
-
+    async def test_catalog_alias_binds_language_frame(self, monkeypatch):
         import backend.app.llm.factory as llm_factory
         import backend.app.main as main_module
 
-        provider = ClarifyingProvider()
+        provider = _M24ScriptedDeepSeekProvider()
         registry = LLMProviderRegistry()
         registry.register(_deepseek_test_profile(), provider)
         monkeypatch.setattr(llm_factory, "build_llm_registry", lambda settings: registry)
@@ -3268,19 +3258,20 @@ class TestM24DeepSeekLocalChat:
             assert replay.status_code == 200
             assert replay.json()["idempotent_replay"] is True
             assert replay.json()["source_mode"] == "real"
-            assert len(provider.calls) == 2
+            assert len(provider.calls) == 3
             assert all(call.task is not LLMTask.DAX for call in provider.calls)
             assert [call.task for call in provider.calls] == [
-                LLMTask.QUERY_PLAN,
+                LLMTask.UNDERSTANDING,
+                LLMTask.UNDERSTANDING_COVERAGE,
                 LLMTask.ANSWER,
             ]
             assert adapter.schema_calls == 1
             assert adapter.dax_calls == 1
-            query_plan_prompt = next(
-                call for call in provider.calls if call.task == LLMTask.QUERY_PLAN
+            understanding_prompt = next(
+                call for call in provider.calls if call.task == LLMTask.UNDERSTANDING
             )
-            assert "Total Sales" in str(query_plan_prompt.messages)
-            assert "local_desktop_model" in str(query_plan_prompt.messages)
+            assert "总销售额是多少？" in str(understanding_prompt.messages)
+            assert "Total Sales" not in str(understanding_prompt.messages)
             assert first_data["answer"] == "销售额为100.00。"
             assert "模型：" not in first_data["answer"]
             assert [
@@ -3376,7 +3367,7 @@ class TestM24DeepSeekLocalChat:
             assert data["terminal_state"] == "tool_failed"
             assert data["error_type"] == "preview_row_data_missing"
             assert data["source_mode"] == "real"
-            assert len(provider.calls) == 1
+            assert len(provider.calls) == 2
             assert all(call.task != LLMTask.DAX for call in provider.calls)
             assert adapter.dax_calls == 1
 
@@ -3399,7 +3390,7 @@ class TestM24DeepSeekLocalChat:
             assert data["source_mode"] == "real"
             assert adapter.schema_calls == 1
             assert adapter.dax_calls == 0
-            assert len(provider.calls) == 0
+            assert len(provider.calls) == 2
 
 
 class _M582ShapeProvider(LLMProvider):
@@ -3419,60 +3410,124 @@ class _M582ShapeProvider(LLMProvider):
     async def generate(self, request, output_type):
         self.calls.append(request)
         text = self.question
-        if request.task.value == "conversation":
+        if request.task == LLMTask.UNDERSTANDING:
             if self.fail_conversation:
                 raise LLMServiceError(
-                    "conversation unavailable",
+                    "understanding unavailable",
                     provider=self.provider_name,
-                    error_code="test_conversation_failure",
+                    error_code="test_understanding_failure",
                 )
-            if "支持回答" in text:
-                answer = "我支持指标查询、筛选、排名和趋势分析。"
-            elif "数据分析" in text and "范围" in text:
-                answer = "我支持只读数据分析，但不预测、不写回。"
+            if "生成" in text and "报表" in text:
+                structured = _semantic_frame(
+                    text,
+                    mode=SemanticInterpretationMode.REPORT,
+                    shape=None,
+                    unresolved=("销售",),
+                )
+            elif not any(
+                token in text
+                for token in (
+                    "平均订单", "订单数", "销量", "销售额", "哪些产品",
+                    "手机", "电脑", "卖得最好",
+                )
+            ):
+                if "支持回答" in text:
+                    answer = "我支持指标查询、筛选、排名和趋势分析。"
+                elif "数据分析" in text and "范围" in text:
+                    answer = "我支持只读数据分析，但不预测、不写回。"
+                else:
+                    answer = f"LLM conversational reply: {text}"
+                structured = _semantic_frame(
+                    text,
+                    mode=SemanticInterpretationMode.GENERAL,
+                    shape=None,
+                    general_answer=answer,
+                )
             else:
-                answer = f"LLM conversational reply: {text}"
-            structured = output_type(answer=answer)
-        elif request.task == LLMTask.INTENT_RECOGNITION:
-            measures = []
-            dimensions = []
-            if "平均订单" in text:
-                measures = ["平均订单金额"]
-            elif "订单数" in text:
-                measures = ["总订单数"]
-            elif "销量" in text:
-                measures = ["销量"]
-            elif "销售额" in text:
-                measures = ["销售额"]
-            if "产品" in text:
-                dimensions = ["产品"]
-            structured = IntentSpec(
-                intent=IntentType.DATA_QUESTION,
-                confidence=0.99,
-                normalized_question=text,
-                detected_measures=measures,
-                detected_dimensions=dimensions,
-                detected_time_range=(text if "2025年8月" in text else None),
-            )
-        elif request.task == LLMTask.QUERY_PLAN:
-            measures = []
-            dimensions = []
-            if "平均订单" in text:
-                measures = ["Average Order Value"]
-            elif "订单数" in text:
-                measures = ["Total Orders"]
-            elif "销量" in text:
-                measures = ["Total Quantity"]
-            elif "销售额" in text:
-                measures = ["Total Sales"]
-            if "产品" in text:
-                dimensions = ["Product"]
-            structured = QueryPlan(
-                normalized_question=text,
-                semantic_model_key="local_desktop_model",
-                measures=measures,
-                dimensions=dimensions,
-                time_range=(text if "2025年8月" in text else None),
+                measure = (
+                    "平均订单金额" if "平均订单" in text
+                    else "总订单数" if "订单数" in text
+                    else "销量" if "销量" in text
+                    else "销售额"
+                )
+                measures = (measure,)
+                if "我们销售了哪些产品" in text:
+                    structured = _semantic_frame(
+                        text,
+                        shape=QueryShape.ENTITY_LIST,
+                        measures=(),
+                        dimensions=("产品",),
+                    )
+                elif "手机和笔记本" in text:
+                    structured = _semantic_frame(
+                        text,
+                        shape=QueryShape.MEMBER_SET,
+                        measures=measures,
+                        filters=(
+                            SemanticFilterMention(member_mention="手机", evidence_span="手机"),
+                            SemanticFilterMention(member_mention="笔记本", evidence_span="笔记本"),
+                        ),
+                    )
+                elif "手机和电脑" in text:
+                    structured = _semantic_frame(
+                        text,
+                        shape=QueryShape.FILTERED_AGGREGATION,
+                        measures=measures,
+                        filters=(
+                            SemanticFilterMention(member_mention="手机", evidence_span="手机"),
+                            SemanticFilterMention(member_mention="电脑", evidence_span="电脑"),
+                        ),
+                    )
+                elif "2025年8月" in text:
+                    expression = (
+                        "2025年8月到2026年1月"
+                        if "到" in text
+                        else "从2025年8月至2026年1月"
+                    )
+                    dimension = "按月" if "按月" in text else "月"
+                    structured = _semantic_frame(
+                        text,
+                        shape=QueryShape.BOUNDED_TREND,
+                        measures=measures,
+                        dimensions=(dimension,),
+                        time_intent=TimeIntentDraft(
+                            kind=TimeIntentKind.BOUNDED_RANGE,
+                            expression=expression,
+                            start_date="2025-08-01",
+                            end_date="2026-01-31",
+                        ),
+                    )
+                elif "最高" in text or "最好" in text:
+                    structured = _semantic_frame(
+                        text,
+                        shape=QueryShape.RANKING,
+                        measures=(() if "卖得最好" in text else measures),
+                        dimensions=("产品",),
+                        ranking=RankingIntent(
+                            direction="desc",
+                            top_n=1,
+                            evidence_span="最好" if "最好" in text else "最高",
+                        ),
+                    )
+                else:
+                    structured = _semantic_frame(text, measures=measures)
+        elif request.task == LLMTask.UNDERSTANDING_COVERAGE:
+            structured = _coverage_response()
+        elif request.task == LLMTask.SEMANTIC_SELECTION:
+            structured = _bounded_selection(
+                request,
+                {
+                    "平均订单金额": "Average Order Value",
+                    "总订单数": "Total Orders",
+                    "销量": "Total Quantity",
+                    "销售额": "Total Sales",
+                    "产品": "Product",
+                    "手机": "Product",
+                    "笔记本": "Product",
+                    "电脑": "Product",
+                    "月": "YearMonth",
+                    "按月": "YearMonth",
+                },
             )
         else:
             raise AssertionError(f"unexpected LLM task: {request.task}")
@@ -3627,9 +3682,9 @@ class TestM582ProductionRoutingAndShapes:
         assert response.status_code == 200, body
         assert body["response_type"] == "answer"
         assert body["answer"].startswith("LLM conversational reply:")
-        assert [call.task.value for call in provider.calls] == ["conversation"]
+        assert [call.task.value for call in provider.calls] == ["understanding"]
         assert body["usage"]["call_count"] == 1
-        assert body["usage"]["per_task"] == {"conversation": 1}
+        assert body["usage"]["per_task"] == {"understanding": 1}
         assert body["tool_sequence"] == []
         assert body["allowed_tools"] == []
         assert body["memory_commit"] is False
@@ -3663,9 +3718,10 @@ class TestM582ProductionRoutingAndShapes:
                 })
 
         body = response.json()
-        assert response.status_code == 503, body
-        assert body["error_type"] == "llm_service_unavailable"
-        assert [call.task.value for call in provider.calls] == ["conversation"]
+        assert response.status_code == 200, body
+        assert body["terminal_state"] == "validation_failed"
+        assert body["error_type"] == "SemanticInterpretationError"
+        assert [call.task.value for call in provider.calls] == ["understanding"]
         assert service.powerbi.schema_calls == 0
         assert service.powerbi.member_calls == 0
         assert service.powerbi.dax_calls == 0
@@ -3705,7 +3761,7 @@ class TestM582ProductionRoutingAndShapes:
 
         body = response.json()
         assert response.status_code == 200, body
-        assert [call.task.value for call in provider.calls] == ["conversation"]
+        assert [call.task.value for call in provider.calls] == ["understanding"]
         assert retained is not None
         assert retained.chain_id == pending.chain_id
         assert retained.last_request_id == pending.last_request_id
@@ -3768,22 +3824,15 @@ class TestM582ProductionRoutingAndShapes:
         assert committed_after.memory_version == committed_before.memory_version
         assert second.json()["terminal_state"] == "completed", second.json()
         conversation_call = next(
-            call for call in provider.calls if call.task == LLMTask.CONVERSATION
+            call
+            for call in provider.calls
+            if call.task == LLMTask.UNDERSTANDING
+            and "当前用户输入：讲个简短的笑话" in call.messages[-1]["content"]
         )
-        assert len(conversation_call.messages) == 8
+        assert len(conversation_call.messages) == 2
         assert conversation_call.messages[0]["role"] == "system"
-        assert [item["role"] for item in conversation_call.messages[1:-1]] == [
-            "user",
-            "assistant",
-            "user",
-            "assistant",
-            "user",
-            "assistant",
-        ]
-        assert conversation_call.messages[-1] == {
-            "role": "user",
-            "content": "讲个简短的笑话",
-        }
+        assert conversation_call.messages[-1]["role"] == "user"
+        assert "当前用户输入：讲个简短的笑话" in conversation_call.messages[-1]["content"]
         assert "平均订单金额是多少" not in " ".join(
             item["content"] for item in conversation_call.messages
         )
@@ -3811,7 +3860,7 @@ class TestM582ProductionRoutingAndShapes:
         assert service.powerbi.schema_calls == 1
         assert service.powerbi.dax_calls == 1
         assert provider.calls
-        assert all(call.task != LLMTask.CONVERSATION for call in provider.calls)
+        assert provider.calls[0].task is LLMTask.UNDERSTANDING
 
     @pytest.mark.asyncio
     async def test_production_path_rejects_coverage_row_number_as_metric_claim(
@@ -3884,7 +3933,7 @@ class TestM582ProductionRoutingAndShapes:
         assert body["tool_sequence"] == []
         if question in {"你支持回答哪些问题？", "数据分析支持的范围在哪"}:
             assert [call.task for call in provider.calls] == [
-                LLMTask.CONVERSATION
+                LLMTask.UNDERSTANDING
             ]
         else:
             assert provider.calls == []
@@ -3912,7 +3961,10 @@ class TestM582ProductionRoutingAndShapes:
         assert body["clarification_question"] == "生成报表前请选择有效的模板"
         assert service.powerbi.schema_calls == 0
         assert service.powerbi.dax_calls == 0
-        assert len(provider.calls) == 0
+        assert [call.task for call in provider.calls] == [
+            LLMTask.UNDERSTANDING,
+            LLMTask.UNDERSTANDING_COVERAGE,
+        ]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -4045,10 +4097,11 @@ class TestM25BusinessGoldenOffline:
         assert f"[{dimension}]" in memory.last_dax
         assert adapter.schema_calls == 1
         assert adapter.dax_calls == 1
-        assert len(provider.calls) == 2
+        assert len(provider.calls) == 3
         assert all(call.task is not LLMTask.DAX for call in provider.calls)
         assert [call.task for call in provider.calls] == [
-            LLMTask.QUERY_PLAN,
+            LLMTask.UNDERSTANDING,
+            LLMTask.UNDERSTANDING_COVERAGE,
             LLMTask.ANSWER,
         ]
         assert data["execution_audit"]["llm_dax_call_count"] == 0

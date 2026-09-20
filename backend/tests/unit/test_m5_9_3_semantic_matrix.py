@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from backend.app.intent.models import IntentSpec, IntentType
+from backend.app.intent.semantic_interpreter import (
+    RankingIntent,
+    SemanticEvidenceSpan,
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
 from backend.app.intent.question_router import QuestionRoute, QuestionRouter
 from backend.app.intent.temporal_expression import parse_explicit_month_range
 from backend.app.query_plan.grounding import GroundingStatus, SemanticGroundingService
@@ -15,10 +20,8 @@ from backend.app.query_plan.semantic_catalog import (
 from backend.app.schemas.data_contracts import (
     ColumnSchema,
     MeasureSchema,
-    QueryPlan,
     QueryShape,
     SemanticModelSchema,
-    StructuredFilter,
     TableSchema,
 )
 
@@ -68,8 +71,8 @@ def test_grouping_matrix_is_not_member_set(model: str, question: str) -> None:
     decision = QuestionRouter().route(question)
 
     assert model
-    assert decision.route == QuestionRoute.BUSINESS_DATA_QUERY
-    assert decision.query_shape == QueryShape.GROUPED
+    assert decision.route == QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+    assert decision.query_shape is None
 
 
 @pytest.mark.parametrize(
@@ -87,8 +90,8 @@ def test_explicit_month_range_matrix_preserves_both_endpoints(
     parsed = parse_explicit_month_range(question)
 
     assert model
-    assert decision.route == QuestionRoute.BUSINESS_DATA_QUERY
-    assert decision.query_shape == QueryShape.BOUNDED_TREND
+    assert decision.route == QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+    assert decision.query_shape is None
     assert parsed is not None
     assert (parsed.start_year, parsed.start_month) == (2025, 1)
     assert (parsed.end_year, parsed.end_month) == (2025, 6)
@@ -108,8 +111,25 @@ def test_ranking_matrix_preserves_chinese_and_numeric_top_n_shape(
     decision = QuestionRouter().route(question)
 
     assert model
-    assert decision.route == QuestionRoute.BUSINESS_DATA_QUERY
-    assert decision.query_shape == QueryShape.RANKING
+    assert decision.route == QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+    assert decision.query_shape is None
+    top_n = 10 if "十" in question else 3
+    frame = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        query_shape=QueryShape.RANKING,
+        measure_mentions=((next((item[4] for item in MODEL_TERMS if item[0] == model), "指标")),),
+        dimension_mentions=((next((item[2] for item in MODEL_TERMS if item[0] == model), "维度")),),
+        ranking_intent=RankingIntent(
+            direction="desc", top_n=top_n, evidence_span=question
+        ),
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="query_shape", text=question),
+            SemanticEvidenceSpan(slot="measure", text=(next((item[4] for item in MODEL_TERMS if item[0] == model), "指标"))),
+            SemanticEvidenceSpan(slot="dimension", text=(next((item[2] for item in MODEL_TERMS if item[0] == model), "维度"))),
+            SemanticEvidenceSpan(slot="ranking", text=question),
+        ),
+    )
+    assert frame.ranking_intent.top_n == top_n
 
 
 def _catalog(
@@ -172,30 +192,20 @@ async def test_grouping_filter_firewall_matrix(
     async def no_lookup(*_):
         raise AssertionError("GROUPED wording must not invoke member lookup")
 
+    frame = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        query_shape=QueryShape.GROUPED,
+        measure_mentions=(measure,),
+        dimension_mentions=(dimension,),
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="query_shape", text=question),
+            SemanticEvidenceSpan(slot="measure", text=measure),
+            SemanticEvidenceSpan(slot="dimension", text=dimension),
+        ),
+    )
     outcome = await SemanticGroundingService(
         _catalog(model, field, dimension, measure_name, measure)
-    ).ground(
-        question,
-        IntentSpec(
-            intent=IntentType.DATA_QUESTION,
-            confidence=0.9,
-            normalized_question=question,
-            detected_measures=[measure],
-            detected_dimensions=[dimension],
-            detected_filters=[{"field": field, "value": dimension}],
-        ),
-        QueryPlan(
-            normalized_question=question,
-            semantic_model_key=f"{model}_model",
-            query_shape=QueryShape.GROUPED,
-            measures=[measure_name],
-            dimensions=[field],
-            filters=[StructuredFilter(field=field, value=dimension)],
-        ),
-        None,
-        no_lookup,
-        query_shape=QueryShape.GROUPED,
-    )
+    ).ground_frame(question, frame, None, no_lookup)
 
     assert outcome.status == GroundingStatus.RESOLVED
     assert outcome.delta is not None

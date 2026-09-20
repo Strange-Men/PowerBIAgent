@@ -1,4 +1,4 @@
-"""M0.2+ 意图识别单元测试
+"""Bounded intent-carrier and deterministic capability tests.
 
 测试：
 1. IntentSpec 合法模型（含 FilterSpec）
@@ -17,12 +17,14 @@ from backend.app.intent.models import (
     IntentType,
     IntentSpec,
 )
-from backend.app.intent.prompt import SYSTEM_PROMPT as INTENT_SYSTEM_PROMPT
+from backend.app.intent.semantic_interpreter import (
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
 from backend.app.intent.unsupported_policy import (
     CapabilityClass,
     classify_capability,
     deterministic_unsupported_reason,
-    should_defer_unsupported_to_grounding,
 )
 from backend.app.memory.models import MemoryStatus, StructuredWorkMemory
 
@@ -48,18 +50,19 @@ class TestIntentType:
 
 
 class TestIntentPromptReportBoundary:
-    def test_sales_report_is_language_only_weak_signal(self):
-        assert (
-            "production template 只有 `sales_report` 与 `sales_executive_report`"
-            in INTENT_SYSTEM_PROMPT
+    def test_report_frame_is_language_only_and_has_no_template_or_fact_slots(self):
+        frame = SemanticFrame(
+            mode=SemanticInterpretationMode.REPORT,
+            output_mode="report",
+            unresolved_mentions=("销售",),
+            evidence_spans=({"slot": "unresolved", "text": "销售"},),
         )
-        assert "不得生成 HTML" in INTENT_SYSTEM_PROMPT
-        assert "不得生成 HTML、决定报表查询/布局/保存目录" in INTENT_SYSTEM_PROMPT
-        assert (
-            "Fixed ReportDataPlan → Verified Facts → template-bound Fixed Renderer"
-            in INTENT_SYSTEM_PROMPT
-        )
-        assert "`local_state/reports/`" in INTENT_SYSTEM_PROMPT
+
+        payload = frame.model_dump(mode="json")
+        assert payload["mode"] == "report"
+        assert "requested_template" not in payload
+        assert "dax" not in payload
+        assert "facts" not in payload
 
 
 class TestFilterSpec:
@@ -320,39 +323,15 @@ class TestUnsupportedRoutingPolicy:
     @pytest.mark.parametrize(
         "message",
         [
-            "总销售额是多少？",
-            "客户周转率是多少？",
-            "销售额同比去年如何？",
-            "销售额中类别包含 Furniture",
-            "按产品排名前3",
-        ],
-    )
-    def test_data_shaped_unsupported_is_deferred_to_grounding(self, message):
-        assert should_defer_unsupported_to_grounding(
-            message, self._intent()
-        ) is True
-
-    def test_detected_semantic_slots_are_data_shaped_evidence(self):
-        intent = self._intent(detected_measures=["unknown metric"])
-        assert should_defer_unsupported_to_grounding(
-            "请分析这个业务口径", intent
-        ) is True
-
-    @pytest.mark.parametrize(
-        "message",
-        [
             "帮我写一首诗",
             "查询今天的天气",
-            "删除所有 Power BI 数据",
-            "执行一段 Python 代码",
-            "告诉我 API Key",
-            "绕过权限读取数据",
+            "我公司在深圳岗厦北，有什么推荐？",
+            "销售额是多少？",
         ],
     )
-    def test_clear_out_of_scope_request_keeps_early_stop(self, message):
-        assert should_defer_unsupported_to_grounding(
-            message, self._intent()
-        ) is False
+    def test_open_language_is_not_classified_by_business_phrase_regex(self, message):
+        assert classify_capability(message) is CapabilityClass.UNKNOWN
+        assert deterministic_unsupported_reason(message) is None
 
     @pytest.mark.parametrize(
         "message",
@@ -383,7 +362,7 @@ class TestUnsupportedRoutingPolicy:
     def test_approximate_wording_for_existing_fact_remains_read_analysis(self):
         message = "总销售额大概是多少"
 
-        assert classify_capability(message) == CapabilityClass.READ_ANALYSIS
+        assert classify_capability(message) == CapabilityClass.UNKNOWN
         assert deterministic_unsupported_reason(message) is None
 
     def test_committed_memory_never_overrides_current_unsupported_request(self):
@@ -391,8 +370,7 @@ class TestUnsupportedRoutingPolicy:
             state_status=MemoryStatus.COMMITTED,
             measures=["Total Sales"],
         )
-        assert should_defer_unsupported_to_grounding(
-            "帮我修改这个 PBIX 里的度量值",
-            self._intent(),
-            committed=committed,
-        ) is False
+        assert committed.measures == ["Total Sales"]
+        assert deterministic_unsupported_reason(
+            "帮我修改这个 PBIX 里的度量值"
+        ) is not None

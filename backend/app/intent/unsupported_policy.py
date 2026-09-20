@@ -1,13 +1,13 @@
-"""Deterministic routing policy for an LLM ``UNSUPPORTED`` classification."""
+"""Deterministic capability and safety preflight.
+
+Only closed operation categories are classified here. Open language and
+business meaning belong exclusively to ``LLMSemanticInterpreter``.
+"""
 
 from __future__ import annotations
 
 import re
 from enum import Enum
-
-from backend.app.intent.models import IntentSpec
-from backend.app.memory.models import PendingClarificationContext, StructuredWorkMemory
-
 
 class CapabilityClass(str, Enum):
     """Closed registry for bounded language classification."""
@@ -50,7 +50,6 @@ _DETERMINISTICALLY_OUT_OF_SCOPE = tuple(
         r"(?:密钥|API\s*Key|Token|密码|Client\s*Secret)",
         r"(?:绕过|规避).*(?:权限|白名单|安全|验证)",
         r"(?:修改|泄露|显示).*(?:系统\s*Prompt|系统提示词)",
-        r"(?:写诗|写一首诗|讲笑话|翻译|天气|新闻|订餐|发邮件)",
     )
 )
 
@@ -74,20 +73,6 @@ def deterministic_unsupported_reason(user_input: str) -> str | None:
         return "当前为只读分析模式，不支持修改、删除、写入模型或执行任意代码。"
     return None
 
-_DATA_SHAPED = re.compile(
-    r"(?:"
-    r"数据|报表|报告|指标|度量|字段|维度|筛选|过滤|"
-    r"销售|销量|数量|订单|利润|收入|成本|金额|件数|周转率|"
-    r"本月|本年|今年|去年|日期|时间|最近\s*\d+|"
-    r"排名|排行|前\s*(?:\d+|[零〇一二两三四五六七八九十百]+)|"
-    r"top\s*\d+|最高|最低|最大|最小|"
-    r"同比|环比|比较|对比|大于|小于|超过|等于|包含|"
-    r"多少|总计|合计|平均"
-    r")",
-    re.IGNORECASE,
-)
-
-
 def classify_capability(user_input: str) -> CapabilityClass:
     """Classify into a registry enum without granting execution authority.
 
@@ -106,40 +91,4 @@ def classify_capability(user_input: str) -> CapabilityClass:
         return CapabilityClass.ARBITRARY_CODE
     if _FUTURE_CUE.search(normalized) and _PROJECTION_CUE.search(normalized):
         return CapabilityClass.FUTURE_PREDICTION
-    if _DATA_SHAPED.search(normalized):
-        return CapabilityClass.READ_ANALYSIS
     return CapabilityClass.UNKNOWN
-
-
-def should_defer_unsupported_to_grounding(
-    user_input: str,
-    intent: IntentSpec,
-    *,
-    committed: StructuredWorkMemory | None = None,
-    pending: PendingClarificationContext | None = None,
-    report_template_key: str | None = None,
-) -> bool:
-    """Return true only when an unsupported result still looks data-shaped.
-
-    Destructive, privileged, arbitrary-code, and clearly non-data requests keep
-    the cheap early stop.  Data/report-shaped requests continue through the
-    existing authoritative Grounding and capability checks, which may resolve
-    them or request clarification without committing Memory.
-    """
-
-    normalized = user_input.strip()
-    if any(pattern.search(normalized) for pattern in _DETERMINISTICALLY_OUT_OF_SCOPE):
-        return False
-    # Existing Memory/Pending state is deliberately irrelevant: it can never
-    # turn the current unsupported request into a data query.
-    if report_template_key is not None:
-        return True
-    if (
-        intent.detected_measures
-        or intent.detected_dimensions
-        or intent.detected_filters
-        or intent.detected_time_range is not None
-        or intent.requested_template is not None
-    ):
-        return True
-    return bool(_DATA_SHAPED.search(normalized))

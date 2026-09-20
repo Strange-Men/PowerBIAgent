@@ -5,13 +5,14 @@
 
 ## 当前开发入口
 
-- 当前版本：**M5.10.6**（implementation 已进入 fresh full-gate / Real 验证阶段）。
-- 正式基线：`main@9dfbf2f72bad299e41a138e9072a11caf8c678a7`。
+- 当前版本：**M5.10.6**（Understanding Layer FIX local release candidate）。
+- 本轮正式基线：`main@276d67d783f5af75dd4e55ba20e910679d623be3`。
 - `M5.10.5 — 时间语义、事实防火墙与安全基线` 已 COMPLETE；exact-SHA CI
   Run `35088162355` success。人工测试确认事实安全主体有效，同时暴露自然回答、
   default-open conversation、capability wording 与 available data horizon 缺口。
-- 当前阶段：`M5.10.6 — LLM 语义理解与自然事实表达重构`。production implementation
-  已落地，完整 fresh gates、Real 与 exact-SHA 发布证据尚未完成。
+- 当前阶段：`M5.10.6 — LLM 语义理解与自然事实表达重构`。单一 `SemanticFrame`
+  implementation、fresh local gates 与 configured DeepSeek + Real Local MCP 21/21 已完成；
+  whitelist commit/push、exact-SHA CI 与 final remote audit 尚未完成。
 - `M5.10.7 — 模板兼容与错误 UX 收口`、`M5.10.8 — MVP 最终 Real E2E / stress /
   mutation / historical / exact-SHA 收口` 均未启动。
 - Semantic Layer 最终人工验收在 M5.10.6 完成后进行；`M5 FINAL=false`。
@@ -68,7 +69,7 @@
 
 - `main` 是唯一活动开发线；流程固定为 failure-first → minimal implementation → fresh gates
   → Real → 白名单 staging → commit → push main → exact-SHA CI → remote audit。
-- 当前提交名固定为：`M5.10.6_LLM语义理解与自然事实表达重构`；不打 Tag。
+- 当前提交名固定为：`M5.10.6_FIX_理解层重构与旧语义链清理`；不打 Tag。
 - 禁止 `git add .`、`git add -A`、force push、rebase、history rewrite、`reset --hard`、
   `clean`、branch deletion。remote main 已前进则停止。
 - CI 失败只允许 forward-fix；同一 root cause 最多两轮。禁止降低 validator、删除 negative
@@ -78,4 +79,4 @@
 
 ---
 
-*最后更新：2026-09-17 | M5.10.5 COMPLETE / CI 35088162355 success；M5.10.6 ACTIVE；M5.10.7/8 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false*
+*最后更新：2026-09-20 | M5.10.6 FIX LOCAL RELEASE CANDIDATE；Remote exact-SHA CI PENDING；M5.10.7/8 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false*

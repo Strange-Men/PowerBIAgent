@@ -1,19 +1,30 @@
 """Context/override integration at the actual Chat boundary, with owned cleanup."""
 
+import json
+import calendar
+import re
 import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from backend.app.config.settings import LLMMode, PersistenceBackend, PowerBIMode, Settings
-from backend.app.intent.models import IntentSpec, IntentType, TurnRelation
+from backend.app.intent.models import TimeIntentDraft, TimeIntentKind, TurnRelation
+from backend.app.intent.semantic_interpreter import (
+    RankingIntent,
+    SemanticCoverageDecision,
+    SemanticEvidenceSpan,
+    SemanticFilterMention,
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
 from backend.app.llm.base import LLMProvider, LLMResponse, LLMTask
 from backend.app.llm.profiles import LLMModelProfile, LLMProviderProtocol
 from backend.app.llm.registry import LLMProviderRegistry
 from backend.app.persistence.artifact_ownership import ArtifactOwnershipRegistry, managed_test_run, probe_owned_sqlite_residuals
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.presentation.localization import DisplayTranslationResponse
-from backend.app.query_plan.grounding import CandidateSelection
+from backend.app.query_plan.grounding import CandidateSelection, SemanticEquivalenceVeto
 from backend.app.schemas.data_contracts import ColumnMembersResult, QueryPlan, QueryResult, QueryShape, TableSchema, ColumnSchema
 from backend.tests.fixtures.semantic_context_domains import domains
 
@@ -26,21 +37,195 @@ class LanguageDraft(LLMProvider):
         self.domain, self.message, self.shape = domain, message, shape
 
     async def generate(self, request, output_type):
-        if request.task == LLMTask.INTENT_RECOGNITION:
-            output = IntentSpec(intent=IntentType.DATA_QUESTION, confidence=1, normalized_question=self.message, turn_relation=TurnRelation.FRESH_QUESTION)
-        elif request.task == LLMTask.QUERY_PLAN:
-            output = QueryPlan(normalized_question=self.message, semantic_model_key=self.domain.schema.key, query_shape=self.shape)
+        if request.task == LLMTask.UNDERSTANDING:
+            output = self.semantic_frame()
+        elif request.task == LLMTask.UNDERSTANDING_COVERAGE:
+            output = SemanticCoverageDecision(decision="ACCEPT")
         elif request.task == LLMTask.DISPLAY_TRANSLATION:
             # Presentation may request translation after canonical grounding;
             # an empty bounded response preserves canonical labels unchanged.
             output = DisplayTranslationResponse()
         elif request.task == LLMTask.SEMANTIC_SELECTION:
-            # This metadata-only fixture has no extra linguistic evidence.
-            # Missing runtime grouping remains clarification with ZERO DAX.
-            output = CandidateSelection(outcome="UNRESOLVED")
+            output = self.semantic_selection(request)
+        elif request.task == LLMTask.SEMANTIC_EQUIVALENCE_VETO:
+            payload = json.loads(request.messages[-1]["content"])
+            output = SemanticEquivalenceVeto(
+                decision=(
+                    "REJECT"
+                    if payload["requested_literal"] in {"深圳", "火星区"}
+                    else "ACCEPT"
+                ),
+                mismatch=(
+                    "PROPER_ENTITY"
+                    if payload["requested_literal"] in {"深圳", "火星区"}
+                    else "NONE"
+                ),
+            )
         else:
             raise AssertionError(f"metadata binding must need no {request.task}")
         return LLMResponse(content="{}", structured=output, model="offline-language")
+
+    def semantic_frame(self) -> SemanticFrame:
+        message = self.message
+        measure = next(
+            (
+                item
+                for item in (self.domain.measure_text, self.domain.measure)
+                if item in message
+            ),
+            "不存在的指标" if "不存在的指标" in message else self.domain.measure,
+        )
+        dimension_name = (
+            self.domain.month
+            if self.shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}
+            else self.domain.dimension
+        )
+        dimension = next(
+            (
+                item
+                for item in (
+                    self.domain.dimension_text,
+                    self.domain.dimension,
+                    dimension_name,
+                )
+                if item in message
+            ),
+            "每个月"
+            if "每个月" in message
+            else "每月"
+            if "每月" in message
+            else "Monthly"
+            if "Monthly" in message
+            else dimension_name,
+        )
+        measures = () if self.shape is QueryShape.ENTITY_LIST else (measure,)
+        dimension_shapes = {
+            QueryShape.ENTITY_LIST,
+            QueryShape.GROUPED,
+            QueryShape.RANKING,
+            QueryShape.MEMBER_SET,
+            QueryShape.TREND,
+            QueryShape.BOUNDED_TREND,
+        }
+        dimensions = (dimension,) if self.shape in dimension_shapes else ()
+        evidence = [SemanticEvidenceSpan(slot="query_shape", text=message)]
+        evidence.extend(
+            SemanticEvidenceSpan(slot="measure", text=item) for item in measures
+        )
+        evidence.extend(
+            SemanticEvidenceSpan(slot="dimension", text=item)
+            for item in dimensions
+        )
+        filters = ()
+        quoted = re.search(r'\[([^\]]+)\]\s*等于\s*"([^"]+)"', message)
+        if quoted:
+            field = quoted.group(1)
+            member = quoted.group(2)
+            filters = (SemanticFilterMention(
+                field_mention=field,
+                member_mention=member,
+                evidence_span=member,
+            ),)
+            evidence.append(SemanticEvidenceSpan(slot="filter", text=member))
+        ranking = None
+        if self.shape is QueryShape.RANKING:
+            ranking = RankingIntent(
+                direction="desc",
+                top_n=1,
+                evidence_span=message,
+            )
+            evidence.append(SemanticEvidenceSpan(slot="ranking", text=message))
+        time_mentions: tuple[str, ...] = ()
+        time_intent = None
+        if self.shape is QueryShape.BOUNDED_TREND:
+            chinese = re.search(
+                r"(\d{4})年(\d{1,2})月(?:至|到)(?:(\d{4})年)?(\d{1,2})月",
+                message,
+            )
+            english = re.search(
+                r"(\d{4})-(\d{2})\s+to\s+(\d{4})-(\d{2})",
+                message,
+                re.IGNORECASE,
+            )
+            if chinese:
+                start_year = int(chinese.group(1))
+                start_month = int(chinese.group(2))
+                end_year = int(chinese.group(3) or chinese.group(1))
+                end_month = int(chinese.group(4))
+                time_text = chinese.group(0)
+            elif english:
+                start_year = int(english.group(1))
+                start_month = int(english.group(2))
+                end_year = int(english.group(3))
+                end_month = int(english.group(4))
+                time_text = english.group(0)
+            else:
+                raise AssertionError("bounded trend fixture requires an explicit range")
+            time_mentions = (time_text,)
+            time_intent = TimeIntentDraft(
+                kind=TimeIntentKind.BOUNDED_RANGE,
+                expression=time_text,
+                start_date=f"{start_year:04d}-{start_month:02d}-01",
+                end_date=(
+                    f"{end_year:04d}-{end_month:02d}-"
+                    f"{calendar.monthrange(end_year, end_month)[1]:02d}"
+                ),
+            )
+            evidence.append(SemanticEvidenceSpan(slot="time", text=time_text))
+        return SemanticFrame(
+            mode=SemanticInterpretationMode.DATA,
+            relation=TurnRelation.FRESH_QUESTION,
+            query_shape=self.shape,
+            measure_mentions=measures,
+            dimension_mentions=dimensions,
+            filter_mentions=filters,
+            time_mentions=time_mentions,
+            time_intent=time_intent,
+            ranking_intent=ranking,
+            evidence_spans=tuple(evidence),
+        )
+
+    def semantic_selection(self, request):
+        content = request.messages[-1]["content"]
+        if content.startswith("{"):
+            payload = json.loads(content)
+            requested = payload["requested_value"]
+            candidate = next(
+                (
+                    item["candidate_id"]
+                    for item in payload["candidates"]
+                    if item["value"] == requested
+                ),
+                None,
+            )
+            return CandidateSelection(
+                outcome="RESOLVED" if candidate else "UNRESOLVED",
+                candidate_id=candidate,
+                matched_phrase=requested if candidate else None,
+            )
+        role = content.splitlines()[0]
+        current_phrase = content.split("\n当前输入：", 1)[0].split("当前短语：", 1)[-1]
+        if current_phrase == "不存在的指标":
+            return CandidateSelection(outcome="UNRESOLVED")
+        target = (
+            self.domain.measure
+            if role == "角色：measure"
+            else self.domain.month
+            if self.shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}
+            else self.domain.dimension
+        )
+        pattern = re.compile(
+            r'"object_id"\s*:\s*"([^"]+)"[^{}]*?'
+            r'"canonical_name"\s*:\s*"' + re.escape(target) + r'"'
+        )
+        match = pattern.search(content)
+        if match is None:
+            return CandidateSelection(outcome="UNRESOLVED")
+        return CandidateSelection(
+            outcome="RESOLVED",
+            candidate_id=match.group(1),
+            matched_phrase=current_phrase,
+        )
 
 
 class RuntimeAdapter(PowerBIAdapter):
@@ -218,11 +403,13 @@ async def test_runtime_trend_with_missing_date_metadata_still_clarifies_without_
     message = f"每月{domain.measure}趋势"
     app, adapter, database = create_runtime_app(monkeypatch, tmp_path, domain, message, QueryShape.TREND, True)
     body = await owned_request(app, database, tmp_path, domain, message)
-    assert body["terminal_state"] == "clarification_required"
+    assert body["terminal_state"] == "clarification_required", (
+        body.get("error_type"), body.get("execution_audit"), body.get("trace")
+    )
     assert body["memory_commit"] is False
     assert adapter.dax_calls == 0
     assert body["execution_audit"]["semantic_interpretation_authority"] == (
-        "llm_semantic_interpreter"
+        "semantic_frame"
     )
 
 

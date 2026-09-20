@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+import json
 
 import pytest
 
@@ -14,6 +15,13 @@ from backend.app.intent.models import (
     TurnRelation,
 )
 from backend.app.intent.question_router import QuestionRouter
+from backend.app.intent.semantic_interpreter import (
+    RankingIntent,
+    SemanticEvidenceSpan,
+    SemanticFilterMention,
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
 from backend.app.intent.temporal_expression import has_vague_recent_month_range
 from backend.app.memory.models import (
     MemoryStatus,
@@ -22,6 +30,7 @@ from backend.app.memory.models import (
     StructuredWorkMemory,
 )
 from backend.app.query_plan.clarification import PendingClarificationService
+from backend.app.query_plan.clarification_reasons import ClarificationReason
 from backend.app.query_plan.grounding import (
     BoundedLLMObjectSelector,
     CandidateSelection,
@@ -462,9 +471,16 @@ class TestSemanticCatalogAndObjectGrounding:
 
 
 class _SelectionProvider(LLMProvider):
-    def __init__(self, candidate_id: str | None, outcome="RESOLVED"):
+    def __init__(
+        self,
+        candidate_id: str | None,
+        outcome="RESOLVED",
+        *,
+        matched_phrase: str | None = None,
+    ):
         self.candidate_id = candidate_id
         self.outcome = outcome
+        self.matched_phrase = matched_phrase
         self.calls = 0
 
     @property
@@ -478,16 +494,53 @@ class _SelectionProvider(LLMProvider):
     async def generate(self, request, output_type):
         self.calls += 1
         assert output_type is CandidateSelection
+        content = request.messages[-1]["content"]
+        matched_phrase = (
+            json.loads(content)["requested_value"]
+            if content.startswith("{")
+            else content.split("\n当前输入：", 1)[0].split("当前短语：", 1)[-1]
+        )
         return LLMResponse(
             content="{}",
             structured=CandidateSelection(
-                outcome=self.outcome, candidate_id=self.candidate_id
+                outcome=self.outcome,
+                candidate_id=self.candidate_id,
+                matched_phrase=(
+                    self.matched_phrase or matched_phrase
+                    if self.outcome == "RESOLVED"
+                    else None
+                ),
             ),
             model="selector-adversarial",
         )
 
 
 class TestMemberAndTimeGrounding:
+    @pytest.mark.asyncio
+    async def test_structural_selection_accepts_smaller_validated_evidence_span(self):
+        catalog = _catalog()
+        candidate = next(
+            item for item in catalog.objects
+            if item.object_id == "field:Sales:Product"
+        )
+        selector = BoundedLLMObjectSelector(
+            _SelectionProvider(
+                candidate.object_id,
+                matched_phrase="下降",
+            )
+        )
+
+        result = await selector.select(
+            "为什么下降",
+            "帮我分析为什么下降",
+            (candidate,),
+            role="dimension",
+            selection_constraint="validated temporal grouping",
+        )
+
+        assert result.status == GroundingStatus.RESOLVED
+        assert result.canonical_object == candidate
+
     def test_member_exact_normalized_ambiguous_and_unresolved(self):
         field = next(
             item for item in _catalog().objects if item.canonical_name == "Category"
@@ -847,7 +900,11 @@ class TestMemberAndTimeGrounding:
         from backend.tests.fixtures.model_overrides import activate_registry, bound_registry
 
         schema = _rich_temporal_schema()
-        activate_registry(monkeypatch, bound_registry(schema, ["desktop_sales_language", "desktop_calendar_roles"]))
+        registry = bound_registry(schema, ["desktop_calendar_roles"])
+        registry["overrides"][0]["objects"] = {
+            "measure:Sales:Total Sales": {"aliases": ["销售额"]}
+        }
+        activate_registry(monkeypatch, registry)
         catalog = SemanticCatalogBuilder().build(schema)
 
         async def no_lookup(*_):
@@ -1190,10 +1247,13 @@ class TestGroundingAuthorityAndStateTransition:
             filters=[StructuredFilter(field="Category", value="South")]
         )
         follow = TurnInheritancePolicy.decide(
-            "那华东呢？", _intent(), follow_delta, committed
+            "那华东呢？",
+            _intent(turn_relation=TurnRelation.FOLLOW_UP),
+            follow_delta,
+            committed,
         )
         replace = TurnInheritancePolicy.decide(
-            "改成去年", _intent(),
+            "改成去年", _intent(turn_relation=TurnRelation.REPLACE),
             GroundedSemanticDelta(time_specified=True), committed,
         )
         assert follow.mode == InheritanceMode.FOLLOW_UP
@@ -1434,6 +1494,7 @@ class TestGroundingAuthorityAndStateTransition:
                     structured=CandidateSelection(
                         outcome="RESOLVED",
                         candidate_id="measure:Sales:Total Sales",
+                        matched_phrase="净销售表现",
                     ),
                     model="selector-fake",
                 )
@@ -2214,6 +2275,184 @@ class TestSemanticCorrectnessFailureReproducers:
         assert outcome.pending_eligible is False
 
     @pytest.mark.asyncio
+    async def test_semantic_frame_trend_uses_runtime_date_grouping_without_schema_mention(
+        self,
+    ):
+        catalog, _ = _m55_domain_catalog(
+            model_key="education_fixture",
+            table_name="LearningFacts",
+            measure_name="PresenceRatio",
+            measure_alias="出勤率",
+            member_field="CampusNode",
+            member_field_alias="校区",
+            member_aliases={"东校区": "East Campus"},
+            member_suffixes=["校区"],
+            ranking_field="GradeBand",
+            ranking_alias="年级",
+            runtime_members=["East Campus"],
+            include_month_group=True,
+        )
+
+        async def no_lookup(*_):
+            raise AssertionError("temporal grouping must not query members")
+
+        outcome = await SemanticGroundingService(
+            catalog, today=lambda: date(2026, 9, 20)
+        ).ground_frame(
+            "最近6个月出勤率趋势",
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                query_shape=QueryShape.BOUNDED_TREND,
+                measure_mentions=("出勤率",),
+                time_mentions=("最近6个月",),
+                time_intent=TimeIntentDraft(
+                    kind=TimeIntentKind.RECENT_MONTHS,
+                    expression="最近6个月",
+                    months=6,
+                ),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="query_shape", text="趋势"),
+                    SemanticEvidenceSpan(slot="measure", text="出勤率"),
+                    SemanticEvidenceSpan(slot="time", text="最近6个月"),
+                ),
+            ),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.dimensions == ["PeriodBucket"]
+        assert outcome.delta.dimension_order == "asc"
+        assert outcome.delta.time_range is not None
+        assert outcome.delta.time_range.date_field == "EventDate"
+        assert any(
+            item.method == "runtime_temporal_grouping_date_binding"
+            for item in outcome.object_results
+        )
+
+    @pytest.mark.asyncio
+    async def test_semantic_frame_trend_without_runtime_grouping_fails_before_dax(
+        self,
+    ):
+        catalog, _ = _m55_domain_catalog(
+            model_key="education_fixture",
+            table_name="LearningFacts",
+            measure_name="PresenceRatio",
+            measure_alias="出勤率",
+            member_field="CampusNode",
+            member_field_alias="校区",
+            member_aliases={"东校区": "East Campus"},
+            member_suffixes=["校区"],
+            ranking_field="GradeBand",
+            ranking_alias="年级",
+            runtime_members=["East Campus"],
+            include_month_group=False,
+        )
+
+        async def no_lookup(*_):
+            raise AssertionError("failed grouping must not query members")
+
+        outcome = await SemanticGroundingService(catalog).ground_frame(
+            "出勤率趋势",
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                query_shape=QueryShape.TREND,
+                measure_mentions=("出勤率",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="query_shape", text="趋势"),
+                    SemanticEvidenceSpan(slot="measure", text="出勤率"),
+                ),
+            ),
+            None,
+            no_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.UNRESOLVED
+        assert outcome.pending_eligible is False
+        assert outcome.clarification_reason == ClarificationReason.DIMENSION_UNRESOLVED
+        assert any(
+            item.method == "temporal_grouping_for_date_binding_missing"
+            for item in outcome.object_results
+        )
+
+    @pytest.mark.asyncio
+    async def test_semantic_frame_trend_accepts_complete_runtime_month_grain_proof(
+        self,
+    ):
+        schema = _rich_temporal_schema()
+        schema.tables[1].columns[0].is_key = True
+        schema.relationships[0].to_cardinality = "one"
+        catalog = SemanticCatalogBuilder().build_from_data(
+            schema,
+            {
+                "version": 1,
+                "semantic_model_key": schema.key,
+                "schema_fingerprint": compute_schema_fingerprint(schema),
+                "measures": {},
+                "fields": {
+                    "Date": {
+                        "table_name": "Date",
+                        "object_type": "field",
+                        "temporal_role": "default",
+                    }
+                },
+            },
+        )
+        provider = _SelectionProvider("field:Date:YearMonth")
+
+        async def lookup(field, limit):
+            assert field.object_id == "field:Date:YearMonth"
+            assert limit == 100
+            return ColumnMembersResult(
+                semantic_model_key=schema.key,
+                table_name="Date",
+                field_name="YearMonth",
+                values=[
+                    "2025-01-01T00:00:00",
+                    "2025-02-01T00:00:00",
+                ],
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(
+            catalog,
+            selector=BoundedLLMObjectSelector(provider),
+        ).ground_frame(
+            "销售额趋势",
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                query_shape=QueryShape.TREND,
+                measure_mentions=("Total Sales",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="query_shape", text="趋势"),
+                    SemanticEvidenceSpan(slot="measure", text="销售额"),
+                ),
+            ),
+            None,
+            lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED, [
+            (
+                item.role,
+                item.status,
+                item.method,
+                item.candidate_ids,
+                item.canonical_object.object_id if item.canonical_object else None,
+            )
+            for item in outcome.object_results
+        ]
+        assert outcome.delta is not None
+        assert outcome.delta.dimensions == ["YearMonth"]
+        assert outcome.delta.dimension_tables == {"YearMonth": "Date"}
+        assert outcome.delta.dimension_order == "asc"
+        assert any(
+            item.method == "runtime_complete_month_members"
+            for item in outcome.object_results
+        )
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         (
             "model_key", "table_name", "measure_name", "measure_alias",
@@ -2651,7 +2890,12 @@ class TestM582QueryShapes:
             MeasureSchema(name="Total Orders", data_type="Int64"),
             MeasureSchema(name="Average Order Value", data_type="Double"),
         ])
-        activate_registry(monkeypatch, bound_registry(schema, ["desktop_order_language"]))
+        registry = bound_registry(schema, [])
+        registry["overrides"][0]["objects"] = {
+            "measure:Sales:Total Orders": {"aliases": ["总订单数"]},
+            "measure:Sales:Average Order Value": {"aliases": ["平均订单金额"]},
+        }
+        activate_registry(monkeypatch, registry)
         catalog = SemanticCatalogBuilder().build(schema)
         grounder = ObjectGrounder(catalog)
 
@@ -3055,8 +3299,6 @@ class TestM582QueryShapes:
         })
         catalog = _catalog(glossary)
         grounding = SemanticGroundingService(catalog)
-        router = QuestionRouter()
-
         async def lookup(field, limit):
             assert field.canonical_name == "Category"
             assert limit == 100
@@ -3084,30 +3326,19 @@ class TestM582QueryShapes:
                 memory_version=version,
             )
 
-        async def execute(
-            question,
-            *,
-            intent,
-            draft,
-            committed,
-        ):
-            decision = router.route(question)
-            outcome = await grounding.ground(
-                question,
-                intent,
-                draft.model_copy(update={"query_shape": decision.query_shape}),
-                committed,
-                lookup,
-                query_shape=decision.query_shape,
+        async def execute(question, frame, committed):
+            outcome = await grounding.ground_frame(
+                question, frame, committed, lookup
             )
             assert outcome.status == GroundingStatus.RESOLVED
             assert outcome.delta is not None
+            intent = _intent(turn_relation=frame.relation)
             inheritance = TurnInheritancePolicy.decide(
                 question, intent, outcome.delta, committed
             )
             assert not inheritance.requires_clarification
             return StateTransitionService().merge(
-                draft,
+                _draft(query_shape=frame.query_shape),
                 outcome.delta,
                 committed,
                 inheritance_mode=inheritance.mode,
@@ -3115,21 +3346,35 @@ class TestM582QueryShapes:
 
         plan = await execute(
             "销售额是多少",
-            intent=_intent(detected_measures=["销售额"]),
-            draft=_draft(measures=["Total Sales"]),
-            committed=None,
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                query_shape=QueryShape.SCALAR,
+                measure_mentions=("销售额",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="query_shape", text="销售额"),
+                    SemanticEvidenceSpan(slot="measure", text="销售额"),
+                ),
+            ),
+            None,
         )
         assert plan.query_shape == QueryShape.SCALAR
         memory = committed_from(plan, 1)
 
         plan = await execute(
             "那各地区呢",
-            intent=_intent(
-                detected_dimensions=["地区"],
-                turn_relation=TurnRelation.FOLLOW_UP,
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                relation=TurnRelation.FOLLOW_UP,
+                query_shape=QueryShape.GROUPED,
+                dimension_mentions=("地区",),
+                referenced_context_slots=("measures",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="relation", text="那"),
+                    SemanticEvidenceSpan(slot="query_shape", text="各地区"),
+                    SemanticEvidenceSpan(slot="dimension", text="地区"),
+                ),
             ),
-            draft=_draft(dimensions=["Category"]),
-            committed=memory,
+            memory,
         )
         assert plan.query_shape == QueryShape.GROUPED
         assert plan.measures == ["Total Sales"]
@@ -3138,9 +3383,21 @@ class TestM582QueryShapes:
 
         plan = await execute(
             "最高的是哪个",
-            intent=_intent(turn_relation=TurnRelation.FOLLOW_UP),
-            draft=_draft(),
-            committed=memory,
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                relation=TurnRelation.FOLLOW_UP,
+                query_shape=QueryShape.RANKING,
+                ranking_intent=RankingIntent(
+                    direction="desc", top_n=1, evidence_span="最高"
+                ),
+                referenced_context_slots=("measures", "dimensions"),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="relation", text="哪个"),
+                    SemanticEvidenceSpan(slot="query_shape", text="最高"),
+                    SemanticEvidenceSpan(slot="ranking", text="最高"),
+                ),
+            ),
+            memory,
         )
         assert plan.query_shape == QueryShape.RANKING
         assert plan.measures == ["Total Sales"]
@@ -3151,12 +3408,19 @@ class TestM582QueryShapes:
 
         plan = await execute(
             "换成销量",
-            intent=_intent(
-                detected_measures=["销量"],
-                turn_relation=TurnRelation.REPLACE,
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                relation=TurnRelation.REPLACE,
+                query_shape=None,
+                measure_mentions=("销量",),
+                referenced_context_slots=("query_shape", "dimensions", "ranking"),
+                changed_slots=("measure",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="relation", text="换成"),
+                    SemanticEvidenceSpan(slot="measure", text="销量"),
+                ),
             ),
-            draft=_draft(measures=["Total Quantity"]),
-            committed=memory,
+            memory,
         )
         assert plan.query_shape == QueryShape.RANKING
         assert plan.measures == ["Total Quantity"]
@@ -3166,9 +3430,19 @@ class TestM582QueryShapes:
 
         plan = await execute(
             "只看华南",
-            intent=_intent(turn_relation=TurnRelation.FOLLOW_UP),
-            draft=_draft(),
-            committed=memory,
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                relation=TurnRelation.FOLLOW_UP,
+                query_shape=None,
+                member_mentions=("华南",),
+                referenced_context_slots=("query_shape", "measures", "dimensions"),
+                changed_slots=("filters",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="relation", text="只看"),
+                    SemanticEvidenceSpan(slot="member", text="华南"),
+                ),
+            ),
+            memory,
         )
         assert plan.query_shape == QueryShape.RANKING
         assert plan.filters == [StructuredFilter(field="Category", value="South")]
@@ -3204,6 +3478,7 @@ class TestPendingClarificationContract:
         outcome: GroundingOutcome,
         message: str,
         request_id: str,
+        relation: TurnRelation | None = None,
     ):
         return PendingClarificationService().merge(
             previous=previous,
@@ -3216,12 +3491,22 @@ class TestPendingClarificationContract:
             runtime_mode=RuntimeDataMode.REAL,
             intent="data_question",
             committed=None,
+            relation=relation,
         )
 
     def test_partial_slots_accumulate_without_becoming_executable(self):
         first = self._merge(
             None,
-            GroundingOutcome(status=GroundingStatus.NOT_MENTIONED),
+            GroundingOutcome(
+                status=GroundingStatus.NOT_MENTIONED,
+                delta=GroundedSemanticDelta(
+                    query_shape=QueryShape.RANKING,
+                    sort="desc",
+                    sort_specified=True,
+                    top_n=1,
+                    top_n_specified=True,
+                ),
+            ),
             "哪个表现最好？",
             "e1",
         )
@@ -3361,11 +3646,15 @@ class TestPendingClarificationContract:
             previous,
             GroundingOutcome(
                 status=GroundingStatus.RESOLVED,
-                delta=GroundedSemanticDelta(measures=["Total Sales"]),
+                delta=GroundedSemanticDelta(
+                    query_shape=QueryShape.SCALAR,
+                    measures=["Total Sales"],
+                ),
                 object_results=[self._resolved("measure", "Total Sales")],
             ),
             "总销售额是多少？",
             "independent-scalar",
+            TurnRelation.FRESH_QUESTION,
         )
         assert merged.complete
         assert merged.context.measures == ["Total Sales"]

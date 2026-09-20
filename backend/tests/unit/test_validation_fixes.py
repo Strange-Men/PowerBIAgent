@@ -1326,226 +1326,33 @@ class TestQueryPlanTemplateValidation:
             assert "<script>" not in err, f"错误消息不应包含不可信输入: {err}"
 
 
-class TestQueryPlanServiceTemplateRepair:
-    """DeepSeekQueryPlanService 模板修复"""
+class TestRemovedQueryPlanLanguageAuthority:
+    """Template identity is code-owned after the old QueryPlan LLM deletion."""
 
-    @pytest.mark.asyncio
-    async def test_chinese_template_triggers_repair_then_succeeds(self):
-        """首次中文模板名称触发修复，修复后合法 Key 通过"""
-        from backend.app.query_plan.deepseek_service import DeepSeekQueryPlanService
-        from backend.app.llm.base import LLMProvider, LLMResponse, LLMRequest
-        from backend.app.schemas.data_contracts import QueryPlan as QP
+    def test_template_validation_does_not_require_a_query_plan_llm(self):
+        from backend.app.query_plan.template_catalog import DEFAULT_TEMPLATE_CATALOG
 
-        class RepairProvider(LLMProvider):
-            provider_name = "repair"
-            is_mock = False
-            def __init__(self):
-                self.calls: list[LLMRequest] = []
-            async def generate(self, request: LLMRequest, output_type):
-                self.calls.append(request)
-                if len(self.calls) == 1:
-                    plan = QP(
-                        normalized_question="销售经营周报",
-                        semantic_model_key="mock_sales_model",
-                        measures=["TotalSales"],
-                        dimensions=["Region"],
-                        requested_template="销售经营周报",
-                    )
-                    return LLMResponse(
-                        content="{}", structured=plan, model="test",
-                        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-                    )
-                else:
-                    plan = QP(
-                        normalized_question="销售经营周报",
-                        semantic_model_key="mock_sales_model",
-                        measures=["TotalSales"],
-                        dimensions=["Region"],
-                        requested_template="sales_report",
-                    )
-                    return LLMResponse(
-                        content="{}", structured=plan, model="test",
-                        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-                    )
-
-        from backend.app.schemas.data_contracts import SemanticModelSchema, TableSchema, ColumnSchema, MeasureSchema
-        schema = SemanticModelSchema(
-            name="Test", key="mock_sales_model",
-            tables=[
-                TableSchema(name="Sales", columns=[
-                    ColumnSchema(name="Region", data_type="string"),
-                    ColumnSchema(name="SalesAmount", data_type="decimal"),
-                ], measures=[
-                    MeasureSchema(name="TotalSales", data_type="decimal"),
-                ]),
-            ],
+        resolved = DEFAULT_TEMPLATE_CATALOG.ground(
+            "生成销售报表",
+            explicit_template_key="sales_report",
+            required=True,
         )
-        intent = IntentSpec(
-            intent=IntentType.REPORT_GENERATION,
-            confidence=0.9,
-            normalized_question="销售经营周报",
+        assert resolved.canonical_key == "sales_report"
+
+    def test_unknown_template_fails_without_llm_repair(self):
+        from backend.app.query_plan.template_catalog import (
+            DEFAULT_TEMPLATE_CATALOG,
+            TemplateGroundingStatus,
         )
 
-        provider = RepairProvider()
-        svc = DeepSeekQueryPlanService(provider=provider, max_format_repairs=1)
-        plan = await svc.generate("销售经营周报", intent, schema, semantic_model_key="mock_sales_model")
-        assert plan.requested_template == "sales_report"
-        assert len(provider.calls) == 2, f"应为2次调用，实际{len(provider.calls)}"
-
-    @pytest.mark.asyncio
-    async def test_invalid_template_fails_after_2_attempts(self):
-        """两次仍非法模板则失败"""
-        from backend.app.query_plan.deepseek_service import DeepSeekQueryPlanService, QueryPlanError
-        from backend.app.llm.base import LLMProvider, LLMResponse, LLMRequest
-        from backend.app.schemas.data_contracts import QueryPlan as QP
-
-        class StubbornProvider(LLMProvider):
-            provider_name = "stubborn"
-            is_mock = False
-            def __init__(self):
-                self.calls: list[LLMRequest] = []
-            async def generate(self, request: LLMRequest, output_type):
-                self.calls.append(request)
-                plan = QP(
-                    normalized_question="测试",
-                    semantic_model_key="mock_sales_model",
-                    measures=["TotalSales"],
-                    dimensions=["Region"],
-                    requested_template="bad_template",
-                )
-                return LLMResponse(
-                    content="{}", structured=plan, model="test",
-                    usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-                )
-
-        from backend.app.schemas.data_contracts import SemanticModelSchema, TableSchema, ColumnSchema, MeasureSchema
-        schema = SemanticModelSchema(
-            name="Test", key="mock_sales_model",
-            tables=[
-                TableSchema(name="Sales", columns=[
-                    ColumnSchema(name="Region", data_type="string"),
-                    ColumnSchema(name="SalesAmount", data_type="decimal"),
-                ], measures=[
-                    MeasureSchema(name="TotalSales", data_type="decimal"),
-                ]),
-            ],
+        unresolved = DEFAULT_TEMPLATE_CATALOG.ground(
+            "生成报表",
+            explicit_template_key="bad_template",
+            required=True,
         )
-        intent = IntentSpec(
-            intent=IntentType.REPORT_GENERATION,
-            confidence=0.9,
-            normalized_question="测试",
-        )
-
-        provider = StubbornProvider()
-        svc = DeepSeekQueryPlanService(provider=provider, max_format_repairs=1)
-        with pytest.raises(QueryPlanError, match="template"):
-            await svc.generate("测试", intent, schema, semantic_model_key="mock_sales_model")
-        assert len(provider.calls) == 2
-
-    @pytest.mark.asyncio
-    async def test_valid_template_no_repair(self):
-        """合法模板一次通过，无需修复"""
-        from backend.app.query_plan.deepseek_service import DeepSeekQueryPlanService
-        from backend.app.llm.base import LLMProvider, LLMResponse, LLMRequest
-        from backend.app.schemas.data_contracts import QueryPlan as QP
-
-        class OneCallProvider(LLMProvider):
-            provider_name = "onecall"
-            is_mock = False
-            def __init__(self):
-                self.calls: list[LLMRequest] = []
-            async def generate(self, request: LLMRequest, output_type):
-                self.calls.append(request)
-                plan = QP(
-                    normalized_question="测试",
-                    semantic_model_key="mock_sales_model",
-                    measures=["TotalSales"],
-                    dimensions=["Region"],
-                    requested_template="sales_report",
-                )
-                return LLMResponse(
-                    content="{}", structured=plan, model="test",
-                    usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-                )
-
-        from backend.app.schemas.data_contracts import SemanticModelSchema, TableSchema, ColumnSchema, MeasureSchema
-        schema = SemanticModelSchema(
-            name="Test", key="mock_sales_model",
-            tables=[
-                TableSchema(name="Sales", columns=[
-                    ColumnSchema(name="Region", data_type="string"),
-                    ColumnSchema(name="SalesAmount", data_type="decimal"),
-                ], measures=[
-                    MeasureSchema(name="TotalSales", data_type="decimal"),
-                ]),
-            ],
-        )
-        intent = IntentSpec(
-            intent=IntentType.REPORT_GENERATION,
-            confidence=0.9,
-            normalized_question="测试",
-        )
-
-        provider = OneCallProvider()
-        svc = DeepSeekQueryPlanService(provider=provider, max_format_repairs=1)
-        plan = await svc.generate("测试", intent, schema, semantic_model_key="mock_sales_model")
-        assert plan.requested_template == "sales_report"
-        assert len(provider.calls) == 1
-
-    @pytest.mark.asyncio
-    async def test_provider_calls_max_2(self):
-        """Provider 最多调用2次"""
-        from backend.app.query_plan.deepseek_service import DeepSeekQueryPlanService, QueryPlanError
-        from backend.app.llm.base import LLMProvider, LLMResponse, LLMRequest
-        from backend.app.schemas.data_contracts import QueryPlan as QP
-
-        class MaxCallProvider(LLMProvider):
-            provider_name = "maxcall"
-            is_mock = False
-            def __init__(self):
-                self.calls: list[LLMRequest] = []
-            async def generate(self, request: LLMRequest, output_type):
-                self.calls.append(request)
-                if len(self.calls) > 2:
-                    raise RuntimeError("超过最大调用次数")
-                plan = QP(
-                    normalized_question="测试",
-                    semantic_model_key="mock_sales_model",
-                    measures=["TotalSales"],
-                    dimensions=["Region"],
-                    requested_template="销售经营周报",
-                )
-                return LLMResponse(
-                    content="{}", structured=plan, model="test",
-                    usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-                )
-
-        from backend.app.schemas.data_contracts import SemanticModelSchema, TableSchema, ColumnSchema, MeasureSchema
-        schema = SemanticModelSchema(
-            name="Test", key="mock_sales_model",
-            tables=[
-                TableSchema(name="Sales", columns=[
-                    ColumnSchema(name="Region", data_type="string"),
-                    ColumnSchema(name="SalesAmount", data_type="decimal"),
-                ], measures=[
-                    MeasureSchema(name="TotalSales", data_type="decimal"),
-                ]),
-            ],
-        )
-        intent = IntentSpec(
-            intent=IntentType.REPORT_GENERATION,
-            confidence=0.9,
-            normalized_question="测试",
-        )
-
-        provider = MaxCallProvider()
-        svc = DeepSeekQueryPlanService(provider=provider, max_format_repairs=1)
-        with pytest.raises(QueryPlanError):
-            await svc.generate("测试", intent, schema, semantic_model_key="mock_sales_model")
-        assert len(provider.calls) == 2, f"应为2次，实际{len(provider.calls)}"
+        assert unresolved.status is TemplateGroundingStatus.UNRESOLVED
 
 
-# ══════════════════════════════════════════════════════════════════
 # M2.4 Layer 2 / Layer 3 真实 Schema 语义验证
 # ══════════════════════════════════════════════════════════════════
 

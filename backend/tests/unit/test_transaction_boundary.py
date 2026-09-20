@@ -24,6 +24,11 @@ from backend.app.application.turn_pipeline import TurnPipeline
 from backend.app.config.settings import Settings
 from backend.app.harness.models import HarnessConfig
 from backend.app.harness.runtime.turn_controller import TurnController
+from backend.app.intent.semantic_interpreter import (
+    SemanticEvidenceSpan,
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
 from backend.app.llm.base import LLMProvider
 from backend.app.llm.mock import MockLLMProvider
 from backend.app.memory.models import (
@@ -456,6 +461,27 @@ class TestM24RealSourceModeSnapshotReplay:
                 is_mock=False,
             )
 
+        async def real_do_understand(**kwargs: Any) -> dict[str, Any]:
+            result = pipeline.build_result(
+                request_id=kwargs["effective_req_id"],
+                conversation_id=kwargs["effective_conv_id"],
+                terminal_state="completed",
+                intent="llm_semantic_interpretation",
+                response_type="answer",
+                answer_text="",
+                source_mode="real",
+                is_mock=False,
+            )
+            result["_semantic_frame"] = SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                query_shape=None,
+                unresolved_mentions=("总销售额",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="unresolved", text="总销售额"),
+                ),
+            )
+            return result
+
         execute_kwargs = {
             "message": "总销售额是多少？",
             "conversation_id": "conv-real-replay",
@@ -467,6 +493,7 @@ class TestM24RealSourceModeSnapshotReplay:
             "llm_provider_name": "deepseek",
             "powerbi_provider_name": "local_mcp",
             "do_execute": real_do_execute,
+            "do_conversation": real_do_understand,
         }
 
         first = await pipeline.execute(**execute_kwargs)

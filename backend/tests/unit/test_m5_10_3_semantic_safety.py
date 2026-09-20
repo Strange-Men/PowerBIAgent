@@ -8,6 +8,12 @@ import pytest
 import yaml
 
 from backend.app.memory.models import MemoryStatus, StructuredWorkMemory
+from backend.app.intent.models import TurnRelation
+from backend.app.intent.semantic_interpreter import (
+    SemanticEvidenceSpan,
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
 from backend.app.query_plan.completeness import (
     CanonicalShapeCompletenessError,
     CanonicalShapeCompletenessGate,
@@ -18,7 +24,6 @@ from backend.app.query_plan.state_transition import (
     InheritanceMode,
     StateTransitionService,
 )
-from backend.app.query_plan.turn_relation import TurnRelationEvidence, TurnRelationKind
 from backend.app.schemas.data_contracts import (
     CanonicalQueryPlan,
     QueryPlan,
@@ -74,23 +79,43 @@ def test_manual_regression_corpus_preserves_all_reported_phrases_and_boundaries(
         ("不是 OnHandUnits, 是 ReservedUnits", "ReservedUnits"),
     ],
 )
-def test_correction_relation_extracts_only_positive_replacement(
+def test_correction_relation_is_owned_by_the_understanding_frame(
     message: str, semantic_input: str
 ) -> None:
-    evidence = TurnRelationEvidence.classify(message)
+    frame = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        relation=TurnRelation.REPLACE,
+        query_shape=None,
+        measure_mentions=(semantic_input,),
+        changed_slots=("measure",),
+        referenced_context_slots=("query_shape",),
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="measure", text=semantic_input),
+        ),
+    )
 
-    assert evidence.kind == TurnRelationKind.REPLACE
-    assert evidence.explicit is True
-    assert evidence.source == "deterministic_correction_cue"
-    assert evidence.semantic_input == semantic_input
+    assert semantic_input in message
+    assert frame.relation is TurnRelation.REPLACE
+    assert frame.measure_mentions == (semantic_input,)
+    assert frame.changed_slots == ("measure",)
 
 
 @pytest.mark.parametrize(
     "message",
     ["华南不是最高的区域", "销售额不是负数", "库存不是空的"],
 )
-def test_plain_negation_is_not_misclassified_as_replacement(message: str) -> None:
-    assert TurnRelationEvidence.classify(message).kind == TurnRelationKind.UNSPECIFIED
+def test_plain_negation_has_no_deterministic_phrase_classifier(message: str) -> None:
+    frame = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        relation=TurnRelation.UNCLEAR,
+        query_shape=None,
+        unresolved_mentions=(message,),
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="unresolved", text=message),
+        ),
+    )
+
+    assert frame.relation is TurnRelation.UNCLEAR
 
 
 def _committed() -> StructuredWorkMemory:

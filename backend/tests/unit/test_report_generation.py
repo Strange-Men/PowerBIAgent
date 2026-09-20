@@ -23,7 +23,18 @@ from backend.app.application.mock_turn_service import MockTurnService
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
 from backend.app.facts import FactType, VerifiedFactSet, VerifiedFactSetBuilder
 from backend.app.harness.models import HarnessConfig
-from backend.app.intent.models import IntentSpec, IntentType
+from backend.app.intent.models import (
+    IntentSpec,
+    IntentType,
+    TimeIntentDraft,
+    TimeIntentKind,
+)
+from backend.app.intent.semantic_interpreter import (
+    SemanticCoverageDecision,
+    SemanticEvidenceSpan,
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
 from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
 from backend.app.memory.models import MemoryStatus, RuntimeDataMode
 from backend.app.memory.repository import InMemoryMemoryRepository
@@ -737,7 +748,7 @@ class _CountingReportRepository(InMemoryReportRepository):
 
 
 class _ReportLanguageProvider(LLMProvider):
-    """Fake real provider: intent → query plan → bounded report-intent draft."""
+    """Fake real provider: unified understanding → report presentation draft."""
 
     def __init__(self) -> None:
         self.calls: list[LLMRequest] = []
@@ -752,18 +763,19 @@ class _ReportLanguageProvider(LLMProvider):
 
     async def generate(self, request: LLMRequest, output_type: type) -> LLMResponse:
         self.calls.append(request)
-        if output_type is IntentSpec:
-            structured = IntentSpec(
-                intent=IntentType.REPORT_GENERATION,
-                confidence=1.0,
-                normalized_question="生成销售分析报表",
-                requested_template="sales_report",
+        if output_type is SemanticFrame:
+            structured = SemanticFrame(
+                mode=SemanticInterpretationMode.REPORT,
+                query_shape=None,
+                output_mode="report",
+                unresolved_mentions=("销售",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="unresolved", text="销售"),
+                ),
             )
-        elif output_type is QueryPlan:
-            structured = QueryPlan(
-                normalized_question="生成销售分析报表",
-                semantic_model_key="local_desktop_model",
-                requested_template="sales_report",
+        elif output_type is SemanticCoverageDecision:
+            structured = SemanticCoverageDecision(
+                decision="ACCEPT",
             )
         elif output_type is ReportIntentDraft:
             structured = ReportIntentDraft(
@@ -783,26 +795,25 @@ class _TimeScopedReportLanguageProvider(_ReportLanguageProvider):
 
     async def generate(self, request: LLMRequest, output_type: type) -> LLMResponse:
         self.calls.append(request)
-        if output_type is IntentSpec:
-            structured = IntentSpec(
-                intent=IntentType.REPORT_GENERATION,
-                confidence=1.0,
-                normalized_question="生成2025年销售经营分析报表",
-                detected_time_range="2025年",
-                time_intent={
-                    "kind": "absolute_year",
-                    "expression": "2025年",
-                    "year": 2025,
-                },
-                requested_template="sales_executive_report",
+        if output_type is SemanticFrame:
+            structured = SemanticFrame(
+                mode=SemanticInterpretationMode.REPORT,
+                query_shape=None,
+                output_mode="report",
+                time_mentions=("2025年",),
+                time_intent=TimeIntentDraft(
+                    kind=TimeIntentKind.ABSOLUTE_YEAR,
+                    expression="2025年",
+                    year=2025,
+                ),
+                unresolved_mentions=("销售",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="time", text="2025年"),
+                    SemanticEvidenceSpan(slot="unresolved", text="销售"),
+                ),
             )
-        elif output_type is QueryPlan:
-            structured = QueryPlan(
-                normalized_question="生成2025年销售经营分析报表",
-                semantic_model_key="local_desktop_model",
-                time_range="2025年",
-                requested_template="sales_executive_report",
-            )
+        elif output_type is SemanticCoverageDecision:
+            structured = SemanticCoverageDecision(decision="ACCEPT")
         elif output_type is ReportIntentDraft:
             structured = ReportIntentDraft(report_section_ids=[])
         else:
@@ -814,25 +825,24 @@ class _VagueTimeReportLanguageProvider(_ReportLanguageProvider):
     async def generate(self, request: LLMRequest, output_type: type) -> LLMResponse:
         self.calls.append(request)
         question = "生成最近几个月的销售经营分析报表"
-        if output_type is IntentSpec:
-            structured = IntentSpec(
-                intent=IntentType.REPORT_GENERATION,
-                confidence=1.0,
-                normalized_question=question,
-                detected_time_range="最近几个月",
-                time_intent={
-                    "kind": "recent_months",
-                    "expression": "最近几个月",
-                },
-                requested_template="sales_executive_report",
+        if output_type is SemanticFrame:
+            structured = SemanticFrame(
+                mode=SemanticInterpretationMode.REPORT,
+                query_shape=None,
+                output_mode="report",
+                time_mentions=("最近几个月",),
+                time_intent=TimeIntentDraft(
+                    kind=TimeIntentKind.RECENT_MONTHS,
+                    expression="最近几个月",
+                ),
+                unresolved_mentions=("销售",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="time", text="最近几个月"),
+                    SemanticEvidenceSpan(slot="unresolved", text="销售"),
+                ),
             )
-        elif output_type is QueryPlan:
-            structured = QueryPlan(
-                normalized_question=question,
-                semantic_model_key="local_desktop_model",
-                time_range="最近几个月",
-                requested_template="sales_executive_report",
-            )
+        elif output_type is SemanticCoverageDecision:
+            structured = SemanticCoverageDecision(decision="ACCEPT")
         else:
             raise AssertionError(f"unexpected LLM output type: {output_type}")
         return LLMResponse(content="{}", structured=structured, model="test")
@@ -1159,7 +1169,8 @@ async def test_production_turn_uses_capability_resolved_queries_and_replays():
     assert adapter.execute_count == 4
     assert repository.store_count == 1
     assert [call.task.value for call in provider.calls] == [
-        "query_plan",
+        "understanding",
+        "understanding_coverage",
         "report_intent",
     ]
     assert replay["idempotent_replay"] is True
@@ -1865,7 +1876,7 @@ async def test_production_report_executes_only_validated_queries_with_bounded_pa
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("template_key", [None, "unknown_template", "sales_weekly"])
-async def test_report_template_required_gate_precedes_planning_and_artifact(
+async def test_report_template_required_gate_follows_understanding_but_precedes_report_planning(
     template_key,
 ):
     adapter = _RealReportAdapter()
@@ -1902,7 +1913,10 @@ async def test_report_template_required_gate_precedes_planning_and_artifact(
     assert result.get("report") is None
     assert result["memory_commit"] is False
     assert result["tool_sequence"] == []
-    assert provider.calls == []
+    assert [call.task for call in provider.calls] == [
+        LLMTask.UNDERSTANDING,
+        LLMTask.UNDERSTANDING_COVERAGE,
+    ]
     assert adapter.schema_count == 0
     assert adapter.execute_count == 0
     assert repository.store_count == 0

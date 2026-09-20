@@ -2,18 +2,17 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
-## [M5.10.6] — 2026-09-18（发布候选：LLM 语义理解与自然事实表达重构）
+## [M5.10.6] — 2026-09-20（FIX 发布候选：Understanding Layer 重构与旧语义链清理）
 
-- **G0 governance calibration：** M5.10.5 FIX SHA `9dfbf2f72bad299e41a138e9072a11caf8c678a7` 的 exact-SHA CI Run `35088162355` 已 completed/success，状态改为 COMPLETE。人工测试确认事实安全主体有效，同时正式记录 technical-scope leakage、general/capability wording 与 available business-data horizon 缺口。
-- **统一语言职责：** QuestionRouter 收缩为 risk/capability/high-confidence floor；未预写表达进入唯一 bounded Semantic Interpreter。General lane current-message-only、no-tool，并以 `requires_business_grounding` 升级当前企业/PBI事实请求；Semantic Draft 的 evidence span 仍由既有 Grounding/Completeness 与 runtime candidate authority 验证。
-- **自然事实与 horizon：** 用户主回答不再暴露 opaque model key、canonical IDs 或 mechanical scope；Top3 完整列出 verified members。`requested_query_scope`、`observed_data_coverage` 与 measure/temporal-dimension-aware `available_data_horizon` 分离；辅助 probe 复用 canonical plan → deterministic DAX/Layer 3 → QueryResult/Inspection → VerifiedFactSet，Report 复用同一 availability context。
-- **事实防火墙与状态：** business metric numeric authority 与结构数字分离；year、TopN、numeric member、date 和 provenance/technical numbers 只能在 verified semantic fragment 中出现。General turn 不消费或改写 pending/business Memory；同名字段用 pending `dimension_tables` 证明 owner。
-- **Failure-first：** Real report-methodology false-positive、weak draft shape upgrade、pending owner ambiguity、empty-range natural wording 与 numeric laundering mutation 均形成永久回归。Final sweep 另发现两处旧 Router oracle 仍要求 direct BUSINESS/2-message conversation，均只更新为更强的新合同；production 未再修改。
-- **Fresh local automated：** M5.10.6 focused 15；Router/API 246；cross-language 168；numeric mutation 39；pending/state/grounding 193；M5.9.4 formal 17（内部 51,200/51,200）；M5.10.4 43；M5.10.5 补充回归 276；Semantic Compatibility `878 passed / 128 production files`；full backend `2928 passed, 1 skipped`；Golden `11 passed, 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/build；Architecture 145、Repository Safety 414、AI Error Ledger 105、Documentation/Artifact Governance、compileall、version consistency 49 与 diff-check PASS。
-- **Local Real：** 最终 production code 上 configured DeepSeek + Real Local MCP `24/24 PASS`，覆盖 general/business boundary、自然 scalar/Top3、中英混合、horizon、unknown/ambiguity ZERO DAX、pending/general/model isolation；automation-owned business/temp residual=0。
-- **边界：** QueryShape 仍为八种；无第二 Planner/Grounding/Memory/Intent authority、Agent、migration、MCP runtime/Provider rewrite、LLM DAX、新业务数学、template compatibility 或 Renderer redesign。M5.10.7/8 NOT STARTED；Remote exact-SHA CI / final audit PENDING，M5 FINAL=false。
+- **重开与 failure-first：** 已发布的 `276d67d` / CI Run `35296985175` 只保留为 superseded historical evidence。人工验收发现多套自然语言 authority 后，Acceptance Failure Corpus 在未改 production 的 baseline 连续两次稳定 `12/12 RED`，覆盖普通聊天误路由、跨语言 member、unknown、shape/scalar、pending、explain-change 与 presentation。
+- **单一 Understanding authority：** 新 `SemanticFrame` 是唯一开放语言合同，表达 mode/relation/query shape、language mentions、analysis goal、changed/context slots、unresolved mentions 与 exact evidence spans。QuestionRouter 只保留确定性 capability/safety preflight；删除旧 Intent LLM、自然语言 QueryPlan LLM、conversation facade、QueryPlan prompt、TurnRelation regex 与 shape reconciliation fallback。
+- **Runtime binding 与 canonical state：** `SemanticCatalog/Grounding` 只在当前 runtime candidate set 中绑定 object/member；member category-label proposal 仍须独立 veto 与 exact runtime verification，支持华南/南方→South，同时拒绝深圳→South 与火星区。deterministic temporal resolver 决定 canonical time；完整 runtime month-start snapshot 可形成 request-scoped temporal grouping proof。`StateTransition/Completeness` 才能修改并证明 canonical state。
+- **执行与事实链冻结：** QueryShape 仍为八种；production main path 只使用 deterministic DAX。QueryResult、Inspection、VerifiedFactSet、Natural Answer 与 FactOutputValidator 权限未放宽；EXPLAIN_CHANGE 只能陈述已证明变化，不能编造因果。General turn current-message-only、no-tool、ZERO business state mutation；Report 复用同一 semantic/factual/availability chain。
+- **Fresh local automated：** full backend `2764 passed, 1 skipped`；Semantic Compatibility `801 passed / 122 production files`；M5.9.4 formal `51,200/51,200`，canonical mismatch、unexpected execution、wrong DAX、modifier loss 与 cross-model bleed 均为 0；Golden `11 passed, 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/production build；Architecture 139、Repository Safety 416、AI Error Ledger 109、Documentation/Artifact Governance、compileall、version consistency 49 与 diff-check PASS。首轮 frontend worker 启动超时在独占资源复跑后全绿，未触发 production 修改。
+- **Local Real：** 最终 production code 上 configured DeepSeek + Real Local MCP `21/21 PASS`，20 个真实 execution witnesses，zero override、wrong DAX=0、business residual=0、temporary residual=0；覆盖 4 General、三种 South 跨语言表达、ambiguity/scalar/unknown/ranking、pending→general→follow-up、explain-change、真实 horizon 与 cross-model isolation。
+- **边界与发布状态：** 无新 QueryShape、第二 Planner/Grounding/Memory/Intent authority、Agent、migration、MCP runtime/Provider rewrite、LLM DAX、新业务数学、template compatibility 或 Renderer redesign。M5.10.7/8 NOT STARTED；whitelist commit/push、Remote exact-SHA CI 与 final remote audit PENDING；M5 FINAL=false。
 
-**Settings.version:** M5.10.6（local release candidate；exact-SHA evidence pending）
+**Settings.version:** M5.10.6（FIX local release candidate；exact-SHA evidence pending）
 
 ## [M5.10.5] — 2026-09-16（FIX：语义边界与事实防火墙最终收口）
 

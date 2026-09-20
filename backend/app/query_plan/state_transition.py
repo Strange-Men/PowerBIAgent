@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 from backend.app.intent.models import IntentSpec, TurnRelation
 from backend.app.memory.models import StructuredWorkMemory
 from backend.app.query_plan.grounding import GroundedSemanticDelta
-from backend.app.query_plan.turn_relation import TurnRelationEvidence, TurnRelationKind
 from backend.app.schemas.data_contracts import (
     CanonicalQueryPlan,
     QueryPlan,
@@ -61,13 +60,11 @@ class TurnInheritancePolicy:
         delta: GroundedSemanticDelta,
         committed: StructuredWorkMemory | None,
     ) -> InheritanceDecision:
-        relation = TurnRelationEvidence.classify(user_input)
-        if relation.kind == TurnRelationKind.FRESH and relation.explicit:
+        if intent.turn_relation == TurnRelation.FRESH_QUESTION:
             return InheritanceDecision(
                 mode=InheritanceMode.FRESH_QUESTION,
-                reason="deterministic_explicit_fresh_cue",
-                evidence_source=relation.source,
-                matched_cue=relation.matched_cue,
+                reason="semantic_frame_fresh",
+                evidence_source="semantic_frame",
             )
         if committed is None:
             return InheritanceDecision(
@@ -87,20 +84,18 @@ class TurnInheritancePolicy:
             or delta.clear_sort
             or delta.clear_top_n
         )
-        if relation.kind == TurnRelationKind.REPLACE:
+        if intent.turn_relation == TurnRelation.REPLACE:
             return InheritanceDecision(
                 mode=InheritanceMode.REPLACE,
-                reason="deterministic_replace_cue",
-                evidence_source=relation.source,
-                matched_cue=relation.matched_cue,
+                reason="semantic_frame_replace",
+                evidence_source="semantic_frame",
             )
-        if relation.kind == TurnRelationKind.FOLLOW_UP:
+        if intent.turn_relation == TurnRelation.FOLLOW_UP:
             if has_current_slot:
                 return InheritanceDecision(
                     mode=InheritanceMode.FOLLOW_UP,
-                    reason="deterministic_follow_up_cue",
-                    evidence_source=relation.source,
-                    matched_cue=relation.matched_cue,
+                    reason="semantic_frame_follow_up",
+                    evidence_source="semantic_frame",
                 )
             return InheritanceDecision(
                 requires_clarification=True,
@@ -146,24 +141,10 @@ class TurnInheritancePolicy:
                 mode=InheritanceMode.FRESH_QUESTION,
                 reason="current_entity_list_is_self_contained",
             )
-        if intent.turn_relation == TurnRelation.REPLACE and has_current_slot:
-            return InheritanceDecision(
-                mode=InheritanceMode.REPLACE,
-                reason="bounded_replace_signal",
-            )
-        if intent.turn_relation == TurnRelation.FOLLOW_UP and has_current_slot:
-            return InheritanceDecision(
-                mode=InheritanceMode.FOLLOW_UP,
-                reason="bounded_follow_up_signal",
-            )
-        if intent.turn_relation == TurnRelation.FRESH_QUESTION:
-            return InheritanceDecision(
-                requires_clarification=True,
-                reason="fresh_question_missing_measure",
-            )
         return InheritanceDecision(
             requires_clarification=True,
-            reason="insufficient_inheritance_evidence",
+            reason="semantic_frame_relation_unclear",
+            evidence_source="semantic_frame",
         )
 
 

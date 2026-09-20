@@ -7,79 +7,83 @@ import json
 import pytest
 
 import backend.tests.api.test_model_semantic_context as runtime_tests
-from backend.app.answer.conversation import ConversationalAnswer
-from backend.app.intent.models import IntentSpec, IntentType, TurnRelation
+from backend.app.intent.models import TurnRelation
+from backend.app.intent.semantic_interpreter import (
+    RankingIntent,
+    SemanticEvidenceSpan,
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
 from backend.app.intent.question_router import QuestionRouter
-from backend.app.llm.base import LLMResponse, LLMTask
-from backend.app.schemas.data_contracts import QueryPlan, QueryShape
+from backend.app.llm.base import LLMTask
+from backend.app.schemas.data_contracts import QueryShape
 from backend.tests.fixtures.semantic_context_domains import domains
 
 
 class _OpenLanguageDraft(runtime_tests.LanguageDraft):
-    """Existing QueryPlan call interprets structure; it owns no runtime ID."""
+    """One SemanticFrame understands structure; runtime binds every ID."""
 
-    async def generate(self, request, output_type):
+    def semantic_frame(self) -> SemanticFrame:
         dimension = (
             self.domain.month
             if self.shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}
             else self.domain.dimension
         )
-        if request.task == LLMTask.CONVERSATION:
-            output = ConversationalAnswer(requires_business_grounding=True)
-        elif request.task == LLMTask.INTENT_RECOGNITION:
-            output = IntentSpec(
-                intent=IntentType.DATA_QUESTION,
-                confidence=1,
-                normalized_question=self.message,
-                turn_relation=(
-                    TurnRelation.FOLLOW_UP
-                    if self.message.startswith("那么")
-                    else TurnRelation.FRESH_QUESTION
-                ),
-                detected_measures=[self.domain.measure],
-                detected_dimensions=[dimension],
+        evidence = next(
+            phrase
+            for phrase in (
+                "领先的三项",
+                "three leading",
+                "spread across",
+                "over time",
+                "排一下",
             )
-        elif request.task == LLMTask.QUERY_PLAN:
-            evidence = next(
-                phrase
-                for phrase in (
-                    "领先的三项",
-                    "three leading",
-                    "spread across",
-                    "over time",
-                    "排一下",
+            if phrase in self.message
+        )
+        measure = next(
+            item
+            for item in (self.domain.measure, self.domain.measure_text)
+            if item in self.message
+        )
+        dimension_mention = next(
+            (
+                item
+                for item in (
+                    dimension,
+                    self.domain.dimension_text,
+                    "monthly",
                 )
-                if phrase in self.message
+                if item in self.message
+            ),
+            dimension,
+        )
+        ranking = None
+        if self.shape is QueryShape.RANKING:
+            ranking = RankingIntent(
+                direction="desc",
+                top_n=(3 if evidence in {"领先的三项", "three leading"} else None),
+                evidence_span=evidence,
             )
-            output = QueryPlan(
-                normalized_question=self.message,
-                semantic_model_key=self.domain.schema.key,
-                query_shape=self.shape,
-                query_shape_evidence=evidence,
-                measures=[self.domain.measure],
-                dimensions=[dimension],
-                measure_evidence_spans=[
-                    item
-                    for item in (self.domain.measure, self.domain.measure_text)
-                    if item in self.message
-                ][:1],
-                dimension_evidence_spans=[
-                    item
-                    for item in (
-                        dimension,
-                        self.domain.dimension_text,
-                    )
-                    if item in self.message
-                ][:1],
-                # Deliberately hallucinate complete ranking slots for the open
-                # form: Grounding must reject the unevidenced bound.
-                sort="desc" if self.shape == QueryShape.RANKING else None,
-                top_n=3 if self.shape == QueryShape.RANKING else None,
-            )
-        else:
-            return await super().generate(request, output_type)
-        return LLMResponse(
-            content="{}", structured=output, model="offline-open-language"
+        spans = [
+            SemanticEvidenceSpan(slot="query_shape", text=evidence),
+            SemanticEvidenceSpan(slot="measure", text=measure),
+            SemanticEvidenceSpan(slot="dimension", text=dimension_mention),
+        ]
+        if ranking is not None:
+            spans.append(SemanticEvidenceSpan(slot="ranking", text=evidence))
+        return SemanticFrame(
+            mode=SemanticInterpretationMode.DATA,
+            relation=(
+                TurnRelation.FOLLOW_UP
+                if self.message.startswith("那么")
+                else TurnRelation.FRESH_QUESTION
+            ),
+            query_shape=self.shape,
+            measure_mentions=(measure,),
+            dimension_mentions=(dimension_mention,),
+            ranking_intent=ranking,
+            referenced_context_slots=("query_shape",) if self.message.startswith("那么") else (),
+            evidence_spans=tuple(spans),
         )
 
 
@@ -157,10 +161,8 @@ async def test_open_language_shapes_are_grounded_against_each_runtime_domain(
     )
     plan = body["execution_audit"]["canonical_query_plan"]
     assert plan["query_shape"] == shape.value
-    audit = body["execution_audit"]["query_shape_reconciliation"]
-    assert audit["draft_evidence"] == evidence
-    if audit["router_strength"] != "high_confidence":
-        assert audit["source"] == "current_llm_draft"
+    assert body["execution_audit"]["query_shape_authority"] == "semantic_frame"
+    assert body["execution_audit"]["semantic_frame"]["query_shape"] == shape.value
     assert adapter.dax_calls == 1 and body["memory_commit"] is True
 
 
@@ -194,21 +196,23 @@ async def test_unverifiable_shape_evidence_is_zero_dax_and_zero_memory(
     message = f"{domain.measure} leaderboard {domain.dimension}"
 
     class _InvalidEvidenceDraft(_OpenLanguageDraft):
-        async def generate(self, request, output_type):
-            if request.task != LLMTask.QUERY_PLAN:
-                return await super().generate(request, output_type)
-            output = QueryPlan(
-                normalized_question=self.message,
-                semantic_model_key=self.domain.schema.key,
+        def semantic_frame(self):
+            return SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
                 query_shape=QueryShape.RANKING,
-                query_shape_evidence="top three",
-                measures=[self.domain.measure],
-                dimensions=[self.domain.dimension],
-                sort="desc",
-                top_n=3,
-            )
-            return LLMResponse(
-                content="{}", structured=output, model="offline-open-language"
+                measure_mentions=(self.domain.measure,),
+                dimension_mentions=(self.domain.dimension,),
+                ranking_intent=RankingIntent(
+                    direction="desc",
+                    top_n=3,
+                    evidence_span="top three",
+                ),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="query_shape", text="top three"),
+                    SemanticEvidenceSpan(slot="measure", text=self.domain.measure),
+                    SemanticEvidenceSpan(slot="dimension", text=self.domain.dimension),
+                    SemanticEvidenceSpan(slot="ranking", text="top three"),
+                ),
             )
 
     monkeypatch.setattr(runtime_tests, "LanguageDraft", _InvalidEvidenceDraft)
@@ -220,9 +224,6 @@ async def test_unverifiable_shape_evidence_is_zero_dax_and_zero_memory(
         app, database, tmp_path, domain, message
     )
 
-    assert body["terminal_state"] == "clarification_required"
-    audit = body["execution_audit"]["query_shape_reconciliation"]
-    assert audit["effective"] == "ranking"
-    assert audit["draft_evidence"] is None
-    assert audit["requires_clarification"] is True
+    assert body["terminal_state"] == "validation_failed"
+    assert body["execution_audit"]["semantic_interpretation_authority"] == "semantic_frame"
     assert adapter.dax_calls == 0 and body["memory_commit"] is False

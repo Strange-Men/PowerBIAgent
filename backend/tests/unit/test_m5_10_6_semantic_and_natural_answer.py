@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 
 from backend.app.answer.natural import NaturalAnswerComposer, NaturalAnswerDraft
-from backend.app.answer.conversation import ConversationalAnswer, ConversationalAnswerService
 from backend.app.facts import FactBoundedAnswerBuilder, FactOutputValidator, VerifiedFactSetBuilder
 from backend.app.facts.availability import (
     AvailabilityProbeBuilder,
@@ -17,7 +16,13 @@ from backend.app.facts.availability import (
     DataHorizonStatus,
 )
 from backend.app.intent.question_router import QuestionRoute, QuestionRouter
-from backend.app.intent.semantic_interpreter import LLMSemanticInterpreter
+from backend.app.intent.semantic_interpreter import (
+    LLMSemanticInterpreter,
+    SemanticCoverageDecision,
+    SemanticEvidenceSpan,
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
 from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
 from backend.app.schemas.data_contracts import (
     AnswerSpec,
@@ -85,77 +90,111 @@ def test_unseen_general_language_enters_open_interpreter_not_business_default():
         assert router.route(text).route is QuestionRoute.LLM_SEMANTIC_INTERPRETATION
 
 
-def test_conversation_result_can_escalate_to_business_grounding():
-    escalation = ConversationalAnswer(answer="", requires_business_grounding=True)
-    general = ConversationalAnswer(answer="当然，我们聊点轻松的。", requires_business_grounding=False)
-    assert escalation.requires_business_grounding is True
-    assert general.requires_business_grounding is False
+def test_semantic_frame_mode_is_the_only_general_business_boundary():
+    business = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        query_shape=QueryShape.SCALAR,
+        measure_mentions=("销售额",),
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="query_shape", text="销售额"),
+            SemanticEvidenceSpan(slot="measure", text="销售额"),
+        ),
+    )
+    general = SemanticFrame(
+        mode=SemanticInterpretationMode.GENERAL,
+        general_answer="当然，我们聊点轻松的。",
+    )
+    assert business.mode is SemanticInterpretationMode.DATA
+    assert general.mode is SemanticInterpretationMode.GENERAL
 
 
 @pytest.mark.asyncio
-async def test_open_interpreter_uses_one_no_tool_decision_for_business_escalation():
+async def test_open_interpreter_emits_one_frame_then_veto_only_coverage():
     provider = _QueuedProvider(
-        ConversationalAnswer(answer="", requires_business_grounding=True)
+        SemanticFrame(
+            mode=SemanticInterpretationMode.DATA,
+            query_shape=QueryShape.SCALAR,
+            measure_mentions=("华南销售额",),
+            evidence_spans=(
+                SemanticEvidenceSpan(slot="query_shape", text="看一下"),
+                SemanticEvidenceSpan(slot="measure", text="华南销售额"),
+            ),
+        ),
+        SemanticCoverageDecision(decision="ACCEPT"),
     )
-    draft = await LLMSemanticInterpreter(provider).interpret_general(
+    draft = await LLMSemanticInterpreter(provider).interpret(
         "谢谢，再帮我看一下华南销售额"
     )
 
-    assert draft.requires_business_grounding is True
-    assert draft.answer == ""
-    assert [call.task for call in provider.calls] == [LLMTask.CONVERSATION]
+    assert draft.mode is SemanticInterpretationMode.DATA
+    assert draft.general_answer == ""
+    assert [call.task for call in provider.calls] == [
+        LLMTask.UNDERSTANDING,
+        LLMTask.UNDERSTANDING_COVERAGE,
+    ]
     assert "华南销售额" in provider.calls[0].messages[-1]["content"]
     assert provider.calls[0].metadata == {}
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("user_input", "result", "requires_business_grounding"),
+    ("user_input", "frame", "expected_mode"),
     [
         (
             "你怎样帮助我理解一张报表",
-            ConversationalAnswer(
-                answer="我可以解释指标、筛选、趋势和需要核验的问题。"
+            SemanticFrame(
+                mode=SemanticInterpretationMode.GENERAL,
+                general_answer="我可以解释指标、筛选、趋势和需要核验的问题。",
             ),
-            False,
+            SemanticInterpretationMode.GENERAL,
         ),
         (
             "帮我分析这张报表里今年销售额为什么下降",
-            ConversationalAnswer(requires_business_grounding=True),
-            True,
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                query_shape=QueryShape.SCALAR,
+                measure_mentions=("销售额",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="query_shape", text="销售额"),
+                    SemanticEvidenceSpan(slot="measure", text="销售额"),
+                ),
+            ),
+            SemanticInterpretationMode.DATA,
         ),
         (
             "当前报表销售额最高的区域",
-            ConversationalAnswer(requires_business_grounding=True),
-            True,
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                query_shape=QueryShape.SCALAR,
+                measure_mentions=("销售额",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="query_shape", text="销售额"),
+                    SemanticEvidenceSpan(slot="measure", text="销售额"),
+                ),
+            ),
+            SemanticInterpretationMode.DATA,
         ),
     ],
 )
-async def test_conversation_boundary_uses_bounded_semantic_examples(
+async def test_understanding_boundary_uses_bounded_semantic_frame(
     user_input,
-    result,
-    requires_business_grounding,
+    frame,
+    expected_mode,
 ):
-    provider = _QueuedProvider(result)
+    responses = [frame]
+    if frame.mode is not SemanticInterpretationMode.GENERAL:
+        responses.append(SemanticCoverageDecision(decision="ACCEPT"))
+    provider = _QueuedProvider(*responses)
 
-    answer = await ConversationalAnswerService(provider).generate(user_input)
+    answer = await LLMSemanticInterpreter(provider).interpret(user_input)
 
-    assert answer.requires_business_grounding is requires_business_grounding
-    assert len(provider.calls) == 1
+    assert answer.mode is expected_mode
+    assert len(provider.calls) == (1 if expected_mode is SemanticInterpretationMode.GENERAL else 2)
     request = provider.calls[0]
-    assert request.task is LLMTask.CONVERSATION
-    assert request.messages[-1] == {"role": "user", "content": user_input}
+    assert request.task is LLMTask.UNDERSTANDING
+    assert user_input in request.messages[-1]["content"]
     assert request.metadata == {}
-    assert len(request.messages) == 8
-    assert request.messages[1]["role"] == "user"
-    assert "理解一张报表" in request.messages[1]["content"]
-    assert '"requires_business_grounding":false' in request.messages[2]["content"]
-    assert request.messages[3]["role"] == "user"
-    assert "本月销售额" in request.messages[3]["content"]
-    assert '"requires_business_grounding":true' in request.messages[4]["content"]
-    assert "不改动数据" in request.messages[5]["content"]
-    assert "理解一张报表" in request.messages[5]["content"]
-    assert '"requires_business_grounding":false' in request.messages[6]["content"]
+    assert len(request.messages) == 2
 
 
 def test_natural_scalar_answer_does_not_expose_canonical_scope_prefix():

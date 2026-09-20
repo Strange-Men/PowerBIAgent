@@ -1,8 +1,4 @@
-"""LLM Provider 抽象基类
-
-所有 LLM Provider 必须实现此接口。
-Provider 支持多种 task：意图识别、QueryPlan、DAX、AnswerSpec、ReportSpec。
-"""
+"""LLM Provider abstraction for bounded language and presentation tasks."""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -15,8 +11,11 @@ from pydantic import BaseModel
 class LLMTask(str, Enum):
     """LLM 任务类型枚举 — 避免任意字符串拼写错误"""
     CONVERSATION = "conversation"
+    UNDERSTANDING = "understanding"
+    UNDERSTANDING_COVERAGE = "understanding_coverage"
     INTENT_RECOGNITION = "intent_recognition"
     SEMANTIC_SELECTION = "semantic_selection"
+    SEMANTIC_EQUIVALENCE_VETO = "semantic_equivalence_veto"
     DISPLAY_TRANSLATION = "display_translation"
     QUERY_PLAN = "query_plan"
     DAX = "dax"
@@ -46,7 +45,7 @@ class LLMRequest:
     """统一的 LLM 请求结构"""
 
     messages: list[dict[str, str]] = field(default_factory=list)
-    task: LLMTask = LLMTask.INTENT_RECOGNITION
+    task: LLMTask = LLMTask.UNDERSTANDING
     scenario_key: Optional[str] = None  # Mock 场景选择键
     metadata: dict[str, Any] = field(default_factory=dict)
 

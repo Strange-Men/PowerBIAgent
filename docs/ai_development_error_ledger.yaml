@@ -3,11 +3,146 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-18 | M5.10.6 LOCAL RELEASE CANDIDATE；Remote exact-SHA CI PENDING；M5 FINAL=false
+# 最后更新：2026-09-20 | M5.10.6 FIX LOCAL RELEASE CANDIDATE / exact-SHA PENDING；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-5106-005
+  title: Understanding evidence 拆散复合成员且 coverage 把指示性报表上下文当业务对象
+  category: ERR
+  first_detected_version: M5.10.6
+  symptom: 复合成员名可能被拆成 member 与独立 field mention；“当前报表”“帮我分析”等指示性上下文可能被 coverage critic 错报为遗漏业务对象，阻断合法 explain-change
+  local_evidence: compound-member 与 explain-change focused/Real probes 先复现错误；修复后复合成员保留完整 exact span，coverage 忽略非具体业务对象的 deictic request context，最终 Real explain-change 与 21/21 全量通过
+  authoritative_sources:
+  - title: M5.10.6 SemanticFrame evidence contract
+    reason: 每个语义槽必须绑定当前输入 exact span，但同一复合成员不得被无证据拆成第二业务槽
+  root_cause: Understanding prompt 未明确 compound member 的原子性，coverage prompt 又把请求上下文名词与可绑定 schema/object mention 混为一类
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Understanding 明确 compound member 必须整体保留，除非用户独立写出字段名否则 field_mention 为空；veto-only coverage 明确忽略不指向具体业务对象的 deictic/report-help context
+  regression_tests:
+  - backend/tests/unit/test_m5_10_6_understanding_failure_corpus.py
+  - backend/tests/unit/test_semantic_grounding.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 从复合成员内部词元创造独立 field/object mention
+  - 把当前报表或帮我分析本身当作未绑定业务对象
+  prevention_rules:
+  - language slots 必须逐字取证且复合实体 span 保持原子
+  - coverage critic 只能 veto 真正遗漏的业务 semantic span，不能绑定或改写 frame
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-20'
+    action: mitigation
+    version: M5.10.6
+- id: ERR-5106-004
+  title: Trend temporal grouping 错误要求 LLM 提供 schema date identity
+  category: ERR
+  first_detected_version: M5.10.6
+  symptom: TREND/BOUNDED_TREND 已有 metric 与 time intent，但 imported PBIX 缺静态 month expression 时仍因 LLM 未命名 canonical date field 而 clarification
+  local_evidence: temporal focused tests 与 Real 最近6个月/今年 explain-change 复现 grouping 不完整；最终请求在完整 runtime month-start snapshot 下形成 request-scoped proof，Real horizon/explain 使用 runtime_complete_month_members 并通过
+  authoritative_sources:
+  - title: M5.10.6 time authority contract
+    reason: LLM 只表达 language-level time intent，canonical date field 与 TimeRange 必须由 runtime 和 deterministic resolver 证明
+  - title: ADR-008 runtime semantic authority
+    reason: schema identity 不能由自然语言模型创造
+  root_cause: CanonicalShapeCompletenessGate 只能接受静态 date-expression binding，导致语言草稿被错误要求承担 canonical temporal grouping authority
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Grounding 先解析 runtime canonical date field；无静态 expression 时，bounded proposal 只能选择 date-like runtime field，并要求完整且不超过 100 个成员全部为 exact month starts，再把 object ID 作为 request-scoped proof 交给 Completeness，不修改 Catalog
+  regression_tests:
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/unit/test_semantic_completeness.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 要求 LLM 输出 canonical date field 或 canonical TimeRange
+  - 用 Date table max、requested end 或当前日期冒充 runtime data proof
+  prevention_rules:
+  - temporal grouping proof 必须来自静态 metadata 或完整 runtime structural evidence
+  - request-scoped proof 不得写回 Catalog 或扩大长期 authority
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-20'
+    action: mitigation
+    version: M5.10.6
+- id: ERR-5106-003
+  title: Member exact-equivalence 过度保守，category label 与 specific entity 边界未结构化
+  category: ERR
+  first_detected_version: M5.10.6
+  symptom: 通用 selector 为阻止深圳→South 而同时拒绝华南/南方→South；放宽提示又可能把具体地点当作区域类别成员
+  local_evidence: 三种 South 语言形式与深圳/火星区 Real/focused probes 同时运行；最终 configured DeepSeek + Real Local MCP 中三种 South 均绑定 runtime South，深圳与火星区均 UNRESOLVED，wrong DAX=0
+  authoritative_sources:
+  - title: M5.10.6 runtime-bounded member contract
+    reason: LLM 可解释语言等价但只能选择当前 runtime member；外部知识的 entity-to-category inference 必须拒绝
+  - title: ADR-015 Cross-language Runtime Grounding
+    reason: member identity 由 runtime candidate set 与独立安全验证共同证明
+  root_cause: 单一 free-form equivalence 判断没有显式区分 category label、proper named entity 与 unknown，导致正向翻译和 containment 安全互相拉扯
+  failed_attempts:
+  - 仅收紧同集合同粒度提示会让正常 category label 偶发 abstain
+  repair_attempt_count: 2
+  final_fix: selector 输出结构化 literal kind；category-label abstention 允许一次 bounded runtime candidate proposal，随后独立 SemanticEquivalenceVeto 只能拒绝明显 specific-instance/unsafe mismatch，runtime 最后验证 exact candidate membership；无领域或 PBIX hardcode
+  regression_tests:
+  - backend/tests/unit/test_cross_language_grounding.py
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/api/test_cross_language_grounding.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 硬编码华南等于 South 或任何业务域 member alias
+  - 用地理、组织或外部知识把 specific entity 归入 runtime category
+  prevention_rules:
+  - 正向 category translation 与 unknown/specific entity ZERO DAX 必须成对验证
+  - veto 只能拒绝，不能创造 candidate、canonical member 或扩大 scope
+  related_adr: ADR-015
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-20'
+    action: mitigation
+    version: M5.10.6
+- id: ERR-5106-002
+  title: Understanding facade 保留多套自然语言 authority，人工验收推翻发布候选结论
+  category: ERR
+  first_detected_version: M5.10.6
+  symptom: 普通地点推荐被“有什么”误路由为业务 entity-list；华南/南方成员理解依赖硬编码 glossary；“销售”歧义、明确 scalar、为什么下降与 slot-only follow-up 仍被 Router shape、QueryPlan LLM、reconciliation、Completeness residue 和 TurnRelation regex 竞争解释
+  local_evidence: main@276d67d 已 commit/push 且 exact-SHA CI Run 35296985175 success，但 2026-09-18 人工验收确认事实链总体安全、开放理解层仍 FAIL；新增 Acceptance Failure Corpus 在未改 production 的 baseline 连续两次稳定 12/12 RED，覆盖 A—H 全部人工失败类
+  authoritative_sources:
+  - title: M5.10.6 Understanding Layer 重构与旧语义链清理用户指令
+    reason: 用户语言只能由一个 bounded SemanticFrame authority 解释，runtime 分别绑定 canonical object/member/time/state，禁止 legacy semantic fallback
+  - title: M5.10.6 原 authority contract
+    reason: LLM understands; Runtime proves，既有 deterministic DAX、Inspection、VerifiedFactSet 与 FactOutputValidator authority 冻结
+  root_cause: LLMSemanticInterpreter 仅包装 ConversationalAnswerService、DeepSeekQueryPlanService 与 DeepSeekReportIntentService；Router、QueryPlan prompt、QueryShapeReconciliationPolicy、SemanticObligationCoverageGate、TurnRelationEvidence 和 glossary workaround 仍构成 overlapping semantic authority
+  failed_attempts:
+  - 把多个既有语言服务包装成单一 facade，但未建立独立 bounded SemanticFrame 或切断旧 QueryPlan/Router semantic call graph
+  repair_attempt_count: 1
+  final_fix: 建立单一 SemanticFrame 与 UNDERSTANDING/UNDERSTANDING_COVERAGE(veto-only) 合同；QuestionRouter 降为 deterministic capability/safety preflight，production 以 ground_frame 单链进入 runtime binding/state/completeness；删除旧 Intent、QueryPlan、conversation、TurnRelation semantic 服务与 prompt，且不保留 fallback
+  regression_tests:
+  - backend/tests/unit/test_m5_10_6_understanding_failure_corpus.py
+  - backend/tests/api/test_chat.py
+  - backend/tests/unit/test_question_routing.py
+  prohibited_patterns:
+  - 为人工失败继续增加 Router social/concept/ranking/grouped/entity-list/trend phrase regex
+  - 新 Understanding Layer 失败后 fallback 旧 QueryPlan 或 Router semantic authority
+  - 用 business_glossary 硬编码一般语言等价关系通过验收
+  - 降低 Grounding、Completeness、FactOutputValidator 或删除 negative tests
+  prevention_rules:
+  - Acceptance Failure Corpus 必须先在 published baseline 稳定 RED，再修改 production
+  - SemanticFrame 只表达带 exact evidence span 的语言 mention、relation、shape 与 unresolved mention
+  - canonical object/member/time/state、DAX 与 numeric fact authority 必须保持单一且可审计
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-18'
+    action: discovered
+    version: M5.10.6
+  - date: '2026-09-20'
+    action: mitigation
+    version: M5.10.6
 - id: ERR-5106-001
   title: 技术 scope 泄露、开放语言职责碎片化与业务数据 horizon 缺失
   category: ERR

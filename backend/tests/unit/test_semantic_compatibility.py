@@ -234,7 +234,7 @@ async def test_explicit_date_role_beats_model_scoped_default():
 @pytest.mark.parametrize(
     ("message", "expected"),
     [
-        ("大概销售额是多少", CapabilityClass.READ_ANALYSIS),
+        ("大概销售额是多少", CapabilityClass.UNKNOWN),
         ("估算明年销售额", CapabilityClass.FUTURE_PREDICTION),
         ("预测明年销售额", CapabilityClass.FUTURE_PREDICTION),
         ("删除所有数据", CapabilityClass.DATA_DELETE),
@@ -243,7 +243,7 @@ async def test_explicit_date_role_beats_model_scoped_default():
 )
 def test_capability_boundary_is_wording_stable(message, expected):
     assert classify_capability(message) == expected
-    if expected == CapabilityClass.READ_ANALYSIS:
+    if expected == CapabilityClass.UNKNOWN:
         assert deterministic_unsupported_reason(message) is None
     else:
         assert deterministic_unsupported_reason(message) is not None

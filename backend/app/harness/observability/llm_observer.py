@@ -7,7 +7,7 @@
 用法：
     collector = LLMCallCollector(input_cost_per_m=0.14, output_cost_per_m=0.28)
     observed = ObservedLLMProvider(inner_provider, collector)
-    # 将 observed 传给 DeepSeekIntentService 等
+    # Pass the observed provider into the bounded task service.
     # 请求结束后调用 collector.summary()
 """
 

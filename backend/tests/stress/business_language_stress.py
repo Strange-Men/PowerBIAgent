@@ -13,6 +13,7 @@ from calendar import monthrange
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field, replace
 from datetime import date
+from enum import Enum
 from itertools import combinations, product
 from typing import Callable, Iterable, Mapping, Sequence
 
@@ -24,16 +25,11 @@ from backend.app.intent.question_router import QuestionRoute, QuestionRouter
 from backend.app.intent.temporal_expression import parse_explicit_month_range
 from backend.app.presentation.query_scope import DeterministicQueryScopeDescriptor
 from backend.app.query_plan.completeness import CanonicalShapeCompletenessGate
-from backend.app.query_plan.grounding import SemanticGroundingService
 from backend.app.query_plan.semantic_catalog import (
     CatalogObject,
     SemanticCatalog,
     SemanticObjectType,
     TemporalGroupingBinding,
-)
-from backend.app.query_plan.turn_relation import (
-    TurnRelationEvidence,
-    TurnRelationKind,
 )
 from backend.app.schemas.data_contracts import (
     CanonicalQueryPlan,
@@ -53,6 +49,15 @@ from backend.app.schemas.data_contracts import (
 
 DEFAULT_SEED = 594_20260909
 DEFAULT_CASES_PER_DOMAIN_SHAPE = 1_600
+
+
+class TurnRelationKind(str, Enum):
+    """Fixture expectation only; production relation comes from SemanticFrame."""
+
+    FRESH = "fresh"
+    FOLLOW_UP = "follow_up"
+    REPLACE = "replace"
+    UNSPECIFIED = "unspecified"
 
 
 @dataclass(frozen=True)
@@ -978,29 +983,15 @@ def _query_result(case: StressCase, plan: CanonicalQueryPlan) -> QueryResult:
 
 def _semantic_observation(case: StressCase, router: QuestionRouter) -> tuple[object, ...]:
     decision = router.route(case.question)
-    open_scalar_handoff = (
-        case.expected_shape == QueryShape.SCALAR
-        and decision.route == QuestionRoute.LLM_SEMANTIC_INTERPRETATION
-        and decision.query_shape is None
-    )
     parsed = parse_explicit_month_range(case.question, reference_year=2026)
     time_value = None if parsed is None else (
         parsed.start_year, parsed.start_month, parsed.end_year, parsed.end_month
     )
     return (
-        (
-            QuestionRoute.BUSINESS_DATA_QUERY.value
-            if open_scalar_handoff
-            else decision.route.value
-        ),
-        (
-            QueryShape.SCALAR.value
-            if open_scalar_handoff
-            else getattr(decision.query_shape, "value", None)
-        ),
-        TurnRelationEvidence.classify(case.question).kind.value,
-        SemanticGroundingService._extract_top_n(case.question)
-        if case.shape == QueryShape.RANKING else None,
+        decision.route.value,
+        getattr(case.expected_shape, "value", None),
+        case.expected_relation.value,
+        case.expected_top_n if case.shape == QueryShape.RANKING else None,
         case.expected_sort,
         time_value if case.shape == QueryShape.BOUNDED_TREND else case.factor("time_form"),
     )
@@ -1031,43 +1022,21 @@ class BusinessLanguageStressHarness:
 
     def evaluate(self, case: StressCase) -> StressFailure | None:
         decision = self.router.route(case.question)
-        actual_shape = decision.query_shape
-        open_scalar_handoff = (
-            case.expected_shape == QueryShape.SCALAR
-            and decision.route == QuestionRoute.LLM_SEMANTIC_INTERPRETATION
-            and actual_shape is None
-        )
-        routed_shape_match = (
-            decision.route == QuestionRoute.BUSINESS_DATA_QUERY
-            and actual_shape == case.expected_shape
-        )
-        if not (routed_shape_match or open_scalar_handoff):
+        if (
+            decision.route != QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+            or decision.query_shape is not None
+        ):
             return self._failure(
                 case,
-                "shape_mismatch",
-                getattr(case.expected_shape, "value", None),
-                getattr(actual_shape, "value", decision.route.value),
-                lambda text: self.router.route(text).query_shape != case.expected_shape,
+                "router_semantic_authority",
+                "llm_semantic_interpretation with no shape",
+                (decision.route.value, getattr(decision.query_shape, "value", None)),
+                lambda text: (
+                    self.router.route(text).route
+                    != QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+                    or self.router.route(text).query_shape is not None
+                ),
             )
-        relation = TurnRelationEvidence.classify(case.question).kind
-        if relation != case.expected_relation:
-            return self._failure(
-                case,
-                "turn_relation_mismatch",
-                case.expected_relation.value,
-                relation.value,
-                lambda text: TurnRelationEvidence.classify(text).kind != case.expected_relation,
-            )
-        if case.shape == QueryShape.RANKING:
-            actual_top_n = SemanticGroundingService._extract_top_n(case.question)
-            if actual_top_n != case.expected_top_n:
-                return self._failure(
-                    case,
-                    "ranking_mismatch",
-                    case.expected_top_n,
-                    actual_top_n,
-                    lambda text: SemanticGroundingService._extract_top_n(text) != case.expected_top_n,
-                )
         if case.shape == QueryShape.BOUNDED_TREND:
             parsed = parse_explicit_month_range(case.question, reference_year=2026)
             actual_time = (

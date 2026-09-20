@@ -1,7 +1,8 @@
-"""QueryPlan — M1.3 真实 QueryPlan 生成
+"""Runtime semantic binding and canonical deterministic query planning."""
 
-包含：
-- DeepSeekQueryPlanService：基于 DeepSeek Provider 的真实 QueryPlan 生成
-- Prompt：集中式 QueryPlan 提示词构造
-- Context：Schema 安全视图工具
-"""
+from backend.app.query_plan.grounding import (
+    CandidateSelection,
+    SemanticEquivalenceVeto,
+)
+
+__all__ = ["CandidateSelection", "SemanticEquivalenceVeto"]

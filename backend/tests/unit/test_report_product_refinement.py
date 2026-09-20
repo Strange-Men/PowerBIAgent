@@ -38,13 +38,13 @@ def test_explicit_report_generation_language_routes_before_metric_clarification(
 @pytest.mark.parametrize(
     ("question", "expected_route"),
     (
-        ("报表里的销售额是多少？", QuestionRoute.BUSINESS_DATA_QUERY),
-        ("报告中的订单数是多少？", QuestionRoute.BUSINESS_DATA_QUERY),
+        ("报表里的销售额是多少？", QuestionRoute.LLM_SEMANTIC_INTERPRETATION),
+        ("报告中的订单数是多少？", QuestionRoute.LLM_SEMANTIC_INTERPRETATION),
         (
             "这份报表为什么没有客户？",
             QuestionRoute.LLM_SEMANTIC_INTERPRETATION,
         ),
-        ("销售额是多少？", QuestionRoute.BUSINESS_DATA_QUERY),
+        ("销售额是多少？", QuestionRoute.LLM_SEMANTIC_INTERPRETATION),
     ),
 )
 def test_report_content_questions_do_not_become_generation_requests(

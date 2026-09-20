@@ -1,12 +1,21 @@
 """Cross-language and template state at the formal HTTP/SQLite boundary."""
 
+import json
+
 import pytest
 
 import backend.tests.api.test_model_semantic_context as runtime_tests
-from backend.app.answer.conversation import ConversationalAnswer
-from backend.app.intent.models import IntentSpec, IntentType
-from backend.app.llm.base import LLMResponse, LLMTask
-from backend.app.schemas.data_contracts import QueryShape, QueryPlan, ColumnMembersResult, StructuredFilter, FilterOperator
+from backend.app.intent.models import TimeIntentDraft, TimeIntentKind
+from backend.app.intent.semantic_interpreter import (
+    RankingIntent,
+    SemanticCoverageDecision,
+    SemanticEvidenceSpan,
+    SemanticFilterMention,
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
+from backend.app.llm.base import LLMTask
+from backend.app.schemas.data_contracts import QueryShape, ColumnMembersResult
 from backend.app.query_plan.grounding import CandidateSelection
 from backend.tests.fixtures.semantic_context_domains import domains
 
@@ -18,11 +27,7 @@ async def test_missing_language_draft_never_executes_partial_intent_as_unfiltere
 
     class MissingDraft(runtime_tests.LanguageDraft):
         async def generate(self, request, output_type):
-            if request.task == LLMTask.INTENT_RECOGNITION:
-                return LLMResponse(content="{}", model="offline-language", structured=IntentSpec(
-                    intent=IntentType.DATA_QUESTION, confidence=1, normalized_question=self.message,
-                    detected_measures=[self.domain.measure_text]))
-            if request.task == LLMTask.QUERY_PLAN:
+            if request.task == LLMTask.UNDERSTANDING:
                 raise LLMProviderError("must not leak", error_category=LLMErrorCategory(category))
             return await super().generate(request, output_type)
 
@@ -40,37 +45,43 @@ async def test_missing_language_draft_never_executes_partial_intent_as_unfiltere
 @pytest.mark.parametrize("domain", domains(), ids=lambda item: item.schema.key)
 async def test_unknown_modifier_without_domain_suffix_is_zero_dax(monkeypatch, tmp_path, domain):
     message = f"地球{domain.measure_text}是多少"
+    class OmittedModifierDraft(runtime_tests.LanguageDraft):
+        async def generate(self, request, output_type):
+            if request.task is LLMTask.UNDERSTANDING_COVERAGE:
+                return LLMResponse(
+                    content="{}",
+                    structured=SemanticCoverageDecision(
+                        decision="MISSING_SEMANTIC_SPAN",
+                        missing_span="地球",
+                    ),
+                    model="offline-coverage",
+                )
+            return await super().generate(request, output_type)
+
+    from backend.app.llm.base import LLMResponse
+    monkeypatch.setattr(runtime_tests, "LanguageDraft", OmittedModifierDraft)
     app, adapter, database = runtime_tests.create_runtime_app(
         monkeypatch, tmp_path, domain, message, QueryShape.SCALAR, reject_dax=True
     )
     body = await runtime_tests.owned_request(
         app, database, tmp_path, domain, message
     )
-    assert body["terminal_state"] == "clarification_required"
+    assert body["terminal_state"] == "validation_failed"
     assert body["memory_commit"] is False
     assert adapter.dax_calls == 0
     audit = body["execution_audit"]
-    assert audit["semantic_obligation_coverage"] is False
-    assert audit["clarification_reason"] == "filter_field_unresolved"
-    assert any(
-        item["phrase"] == "地球" and item["status"] == "NEEDS_CLARIFICATION"
-        for item in audit["semantic_obligations"]
-    )
+    assert audit["semantic_interpretation_authority"] == "semantic_frame"
+    assert audit["dax_executed"] is False
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("template", [None, "sales_report", "stale-template"])
-@pytest.mark.parametrize("draft_intent", [IntentType.REPORT_GENERATION, IntentType.CLARIFICATION])
-async def test_template_selection_and_weak_report_intent_do_not_hijack_data(monkeypatch, tmp_path, template, draft_intent):
-    class StaleIntent(runtime_tests.LanguageDraft):
-        async def generate(self, request, output_type):
-            if request.task == LLMTask.INTENT_RECOGNITION:
-                output = IntentSpec(intent=draft_intent, confidence=.8, normalized_question=self.message,
-                    needs_clarification=draft_intent == IntentType.CLARIFICATION,
-                    clarification_question="请确认" if draft_intent == IntentType.CLARIFICATION else None)
-                return LLMResponse(content="{}", structured=output, model="offline-language")
-            return await super().generate(request, output_type)
-    monkeypatch.setattr(runtime_tests, "LanguageDraft", StaleIntent)
+@pytest.mark.parametrize("obsolete_intent_hint", ["report", "clarification"])
+async def test_template_selection_and_weak_report_intent_do_not_hijack_data(
+    monkeypatch, tmp_path, template, obsolete_intent_hint
+):
+    assert obsolete_intent_hint in {"report", "clarification"}
+    monkeypatch.setattr(runtime_tests, "LanguageDraft", runtime_tests.LanguageDraft)
     domain = domains()[0]
     message = f"{domain.measure_text}是多少"
     app, adapter, database = runtime_tests.create_runtime_app(monkeypatch, tmp_path, domain, message, QueryShape.SCALAR)
@@ -132,31 +143,110 @@ async def test_zero_override_cross_language_shapes_at_chat_boundary(monkeypatch,
     measure_table = next(t.name for t in domain.schema.tables if any(m.name == domain.measure for m in t.measures))
 
     class CrossLanguageDraft(runtime_tests.LanguageDraft):
-        async def generate(self, request, output_type):
-            if request.task == LLMTask.CONVERSATION:
-                output = ConversationalAnswer(
-                    requires_business_grounding=True,
+        def semantic_frame(self):
+            measure = domain.measure_text
+            dimension = domain.dimension_text
+            spans = [
+                SemanticEvidenceSpan(slot="query_shape", text=message),
+            ]
+            measures = () if shape is QueryShape.ENTITY_LIST else (measure,)
+            spans.extend(
+                SemanticEvidenceSpan(slot="measure", text=item)
+                for item in measures
+            )
+            dimension_mentions = ()
+            if shape in {
+                QueryShape.ENTITY_LIST,
+                QueryShape.GROUPED,
+                QueryShape.RANKING,
+            }:
+                dimension_mentions = (dimension,)
+                spans.append(SemanticEvidenceSpan(slot="dimension", text=dimension))
+            elif shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}:
+                grouping = "每月" if "每月" in message else "Monthly"
+                dimension_mentions = (grouping,)
+                spans.append(SemanticEvidenceSpan(slot="dimension", text=grouping))
+            filters = ()
+            members = ()
+            if shape in {QueryShape.MEMBER_SET, QueryShape.FILTERED_AGGREGATION}:
+                member_values = (
+                    ("甲站", "乙站")
+                    if direction == "zh_to_en"
+                    else ("Alpha", "Beta")
                 )
-            elif request.task == LLMTask.INTENT_RECOGNITION:
-                output = IntentSpec(intent=IntentType.DATA_QUESTION, confidence=1, normalized_question=message,
-                    detected_measures=[] if shape == QueryShape.ENTITY_LIST else [domain.measure_text],
-                    detected_dimensions=[domain.dimension_text] if shape in {QueryShape.ENTITY_LIST, QueryShape.GROUPED, QueryShape.RANKING} else [])
-            elif request.task == LLMTask.QUERY_PLAN:
-                # Weak canonical suggestions are intentionally NOT the source
-                # of binding: the selector still must see runtime candidates.
-                output = QueryPlan(normalized_question=message, semantic_model_key=domain.schema.key,
-                    measures=[] if shape == QueryShape.ENTITY_LIST else [domain.measure],
-                    dimensions=[domain.dimension] if shape in {QueryShape.ENTITY_LIST, QueryShape.GROUPED, QueryShape.RANKING} else [],
-                    measure_evidence_spans=[] if shape == QueryShape.ENTITY_LIST else [domain.measure_text],
-                    dimension_evidence_spans=[domain.dimension_text] if shape in {QueryShape.ENTITY_LIST, QueryShape.GROUPED, QueryShape.RANKING} else [])
-            elif request.task == LLMTask.SEMANTIC_SELECTION:
-                role = request.messages[-1]["content"].splitlines()[0]
-                identity = f"measure:{measure_table}:{domain.measure}" if role == "角色：measure" else f"field:{domain.dimension_table}:{domain.dimension}"
-                assert identity in request.messages[-1]["content"]
-                output = CandidateSelection(outcome="RESOLVED", candidate_id=identity)
+                members = member_values
+                filters = tuple(
+                    SemanticFilterMention(
+                        field_mention=None,
+                        member_mention=value,
+                        evidence_span=value,
+                    )
+                    for value in member_values
+                )
+                spans.extend(
+                    SemanticEvidenceSpan(slot="member", text=value)
+                    for value in member_values
+                )
+                spans.extend(
+                    SemanticEvidenceSpan(slot="filter", text=value)
+                    for value in member_values
+                )
+            ranking = None
+            if shape is QueryShape.RANKING:
+                ranking = RankingIntent(
+                    direction="desc", top_n=1, evidence_span=message
+                )
+                spans.append(SemanticEvidenceSpan(slot="ranking", text=message))
+            time_mentions = ()
+            time_intent = None
+            if shape is QueryShape.BOUNDED_TREND:
+                time_text = (
+                    "2025年1月到2025年3月"
+                    if "2025年1月到2025年3月" in message
+                    else "2025-01 to 2025-03"
+                )
+                time_mentions = (time_text,)
+                time_intent = TimeIntentDraft(
+                    kind=TimeIntentKind.BOUNDED_RANGE,
+                    expression=time_text,
+                    start_date="2025-01-01",
+                    end_date="2025-03-31",
+                )
+                spans.append(SemanticEvidenceSpan(slot="time", text=time_text))
+            return SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                query_shape=shape,
+                measure_mentions=measures,
+                dimension_mentions=dimension_mentions,
+                member_mentions=members,
+                filter_mentions=filters,
+                time_mentions=time_mentions,
+                time_intent=time_intent,
+                ranking_intent=ranking,
+                evidence_spans=tuple(spans),
+            )
+
+        def semantic_selection(self, request):
+            content = request.messages[-1]["content"]
+            if content.startswith("{"):
+                return super().semantic_selection(request)
+            role = content.splitlines()[0]
+            phrase = content.partition("当前短语：")[2].partition("\n当前输入：")[0]
+            if role == "角色：measure":
+                identity = f"measure:{measure_table}:{domain.measure}"
+            elif role == "角色：dimension" and shape in {
+                QueryShape.TREND,
+                QueryShape.BOUNDED_TREND,
+            }:
+                identity = f"field:{domain.month_table}:{domain.month}"
             else:
-                return await super().generate(request, output_type)
-            return LLMResponse(content="{}", structured=output, model="offline-cross-language")
+                identity = f"field:{domain.dimension_table}:{domain.dimension}"
+            assert identity in content
+            return CandidateSelection(
+                outcome="RESOLVED",
+                candidate_id=identity,
+                matched_phrase=phrase,
+            )
 
     class MembersAdapter(runtime_tests.RuntimeAdapter):
         async def get_column_members(self, request):
@@ -169,7 +259,9 @@ async def test_zero_override_cross_language_shapes_at_chat_boundary(monkeypatch,
     adapter_shape = QueryShape.TREND if shape == QueryShape.BOUNDED_TREND else QueryShape.SCALAR if shape == QueryShape.FILTERED_AGGREGATION else shape
     app, adapter, database = runtime_tests.create_runtime_app(monkeypatch, tmp_path, domain, message, adapter_shape)
     body = await runtime_tests.owned_request(app, database, tmp_path, domain, message)
-    assert body["terminal_state"] == "completed", body.get("execution_audit")
+    assert body["terminal_state"] == "completed", json.dumps(
+        body.get("execution_audit"), ensure_ascii=False, indent=2
+    )
     plan = body["execution_audit"]["canonical_query_plan"]
     assert plan["query_shape"] == shape.value
     assert plan["measures"] == ([] if shape == QueryShape.ENTITY_LIST else [domain.measure])
@@ -198,26 +290,68 @@ async def test_zero_override_abstention_never_reaches_dax_or_memory(monkeypatch,
     measure_id = "measure:Transactions:NetRevenue"
     field_id = "field:Areas:AreaName"
     class AbstainingDraft(runtime_tests.LanguageDraft):
-        async def generate(self, request, output_type):
-            if request.task == LLMTask.INTENT_RECOGNITION:
-                output = IntentSpec(intent=IntentType.DATA_QUESTION, confidence=1, normalized_question=message,
-                    detected_measures=["净营收" if failure == "mixed_unknown_member" else "幸福指数"],
-                    detected_dimensions=["经营分区"] if failure != "mixed_unknown_member" else [])
-            elif request.task == LLMTask.QUERY_PLAN:
-                output = QueryPlan(normalized_question=message, semantic_model_key=domain.schema.key,
-                    measures=[domain.measure], dimensions=[domain.dimension] if failure != "mixed_unknown_member" else [],
-                    filters=[StructuredFilter(field=domain.dimension, operator=FilterOperator.IN_SET, value=["甲站", "未知站"])] if failure == "mixed_unknown_member" else [])
-            elif request.task == LLMTask.SEMANTIC_SELECTION:
-                content = request.messages[-1]["content"]
-                if content.startswith("{"):
-                    output = CandidateSelection(outcome="UNRESOLVED")
-                elif "角色：measure" in content:
-                    output = CandidateSelection(outcome="AMBIGUOUS" if failure == "ambiguous_metric" else "UNRESOLVED") if failure in {"unknown_metric", "ambiguous_metric"} else CandidateSelection(outcome="RESOLVED", candidate_id="measure:Other:Ghost" if failure == "foreign_id" else measure_id)
-                else:
-                    output = CandidateSelection(outcome="AMBIGUOUS") if failure == "ambiguous_dimension" else CandidateSelection(outcome="RESOLVED", candidate_id=field_id)
+        def semantic_frame(self):
+            metric = "净营收" if failure == "mixed_unknown_member" else "幸福指数"
+            spans = [
+                SemanticEvidenceSpan(slot="query_shape", text=message),
+                SemanticEvidenceSpan(slot="measure", text=metric),
+            ]
+            filters = ()
+            members = ()
+            dimensions = ()
+            frame_shape = QueryShape.MEMBER_SET if failure == "mixed_unknown_member" else QueryShape.GROUPED
+            if failure == "mixed_unknown_member":
+                members = ("甲站", "未知站")
+                filters = tuple(
+                    SemanticFilterMention(
+                        field_mention=None,
+                        member_mention=value,
+                        evidence_span=value,
+                    )
+                    for value in members
+                )
+                spans.extend(
+                    SemanticEvidenceSpan(slot="member", text=value)
+                    for value in members
+                )
+                spans.extend(
+                    SemanticEvidenceSpan(slot="filter", text=value)
+                    for value in members
+                )
             else:
-                return await super().generate(request, output_type)
-            return LLMResponse(content="{}", structured=output, model="offline-abstention")
+                dimensions = ("经营分区",)
+                spans.append(SemanticEvidenceSpan(slot="dimension", text="经营分区"))
+            return SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                query_shape=frame_shape,
+                measure_mentions=(metric,),
+                dimension_mentions=dimensions,
+                member_mentions=members,
+                filter_mentions=filters,
+                evidence_spans=tuple(spans),
+            )
+
+        def semantic_selection(self, request):
+            content = request.messages[-1]["content"]
+            if content.startswith("{"):
+                return CandidateSelection(outcome="UNRESOLVED")
+            phrase = content.split("\n当前输入：", 1)[0].split("当前短语：", 1)[-1]
+            if "角色：measure" in content:
+                if failure in {"unknown_metric", "ambiguous_metric"}:
+                    return CandidateSelection(
+                        outcome="AMBIGUOUS" if failure == "ambiguous_metric" else "UNRESOLVED"
+                    )
+                identity = "measure:Other:Ghost" if failure == "foreign_id" else measure_id
+            else:
+                if failure == "ambiguous_dimension":
+                    return CandidateSelection(outcome="AMBIGUOUS")
+                identity = field_id
+            return CandidateSelection(
+                outcome="RESOLVED",
+                candidate_id=identity,
+                matched_phrase=phrase,
+            )
+
     class Members(runtime_tests.RuntimeAdapter):
         async def get_column_members(self, request):
             return ColumnMembersResult(semantic_model_key=request.semantic_model_key, table_name=request.table_name,

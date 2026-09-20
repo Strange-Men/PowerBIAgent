@@ -430,7 +430,56 @@ async def run(args, root, provider_failures):
                                 "semantic_model_key", "columns", "rows", "row_count", "source_mode",
                                 "result_id", "request_id"}),
                             "verified_fact_set": witness["facts"].model_dump(mode="json")}
-                    print(json.dumps(summary, ensure_ascii=False, default=str), flush=True)
+                    emitted = summary
+                    if args.phase == "m5106":
+                        emitted = {
+                            "case": label,
+                            "pass": bool(summary["pass"]),
+                            "http": response.status_code,
+                            "terminal": body.get("terminal_state"),
+                            "response_type": body.get("response_type"),
+                            "query_shape": plan.get("query_shape"),
+                            "dax_executed": bool(audit.get("dax_executed")),
+                            "memory_commit": bool(body.get("memory_commit")),
+                            "deterministic_dax": audit.get("deterministic_dax"),
+                            "llm_dax_call_count": audit.get("llm_dax_call_count"),
+                            "factual_validation_pass": audit.get(
+                                "factual_validation_pass"
+                            ),
+                            "semantic_error_code": audit.get(
+                                "semantic_interpretation_error_code"
+                            ),
+                            "clarification_reason": audit.get(
+                                "clarification_reason"
+                            ),
+                            "object_statuses": [
+                                {
+                                    "role": item.get("role"),
+                                    "status": item.get("status"),
+                                    "method": item.get("method"),
+                                }
+                                for item in (
+                                    audit.get("object_grounding_status") or []
+                                )
+                            ],
+                            "member_statuses": [
+                                {
+                                    "status": item.get("status"),
+                                    "method": item.get("method"),
+                                }
+                                for item in (
+                                    audit.get("member_grounding_status") or []
+                                )
+                            ],
+                            "provider_failures": provider_failures.get(
+                                request_id, []
+                            ),
+                            "latency_ms": summary["latency_ms"],
+                        }
+                    print(
+                        json.dumps(emitted, ensure_ascii=False, default=str),
+                        flush=True,
+                    )
                     return body, plan
 
                 cases = [
@@ -1091,6 +1140,366 @@ async def run(args, root, provider_failures):
                         == hashlib.sha256(html.encode("utf-8")).hexdigest()
                     )
 
+                elif args.phase == "m5106":
+                    def mark(condition):
+                        summaries[-1]["pass"] &= bool(condition)
+
+                    async def general_case(label, text, *, conversation=None, model_key=key):
+                        before_witnesses = len(witnesses)
+                        body, plan = await post(
+                            label,
+                            text,
+                            conversation=conversation,
+                            model_key=model_key,
+                        )
+                        audit = body.get("execution_audit") or {}
+                        usage = body.get("usage") or {}
+                        mark(
+                            not plan
+                            and body.get("terminal_state") == "completed"
+                            and body.get("response_type") == "answer"
+                            and not body.get("memory_commit")
+                            and body.get("tool_sequence") == []
+                            and audit.get("semantic_mode") == "general"
+                            and audit.get("schema_read") is False
+                            and audit.get("member_lookup") is False
+                            and audit.get("dax_executed") is False
+                            and audit.get("pending_semantic_mutation") is False
+                            and audit.get("powerbi_tool_calls") == 0
+                            and audit.get("report_calls") == 0
+                            and usage.get("call_count") == 1
+                            and (usage.get("per_task") or {}).get("understanding") == 1
+                            and len(witnesses) == before_witnesses
+                        )
+                        return body
+
+                    async def completed_business(
+                        label,
+                        text,
+                        shape,
+                        *,
+                        conversation=None,
+                        model_key=key,
+                    ):
+                        body, plan = await post(
+                            label,
+                            text,
+                            shape,
+                            conversation=conversation,
+                            model_key=model_key,
+                        )
+                        audit = body.get("execution_audit") or {}
+                        mark(
+                            audit.get("semantic_interpretation_authority")
+                            == "semantic_frame"
+                            and audit.get("query_shape_authority")
+                            == "semantic_frame"
+                            and audit.get("deterministic_dax") is True
+                            and audit.get("llm_dax_call_count") == 0
+                            and audit.get("layer3_pass") is True
+                            and audit.get("factual_validation_pass") is True
+                        )
+                        return body, plan
+
+                    for label, text in (
+                        ("m5106_general_tired", "我今天有点累，聊两句"),
+                        (
+                            "m5106_general_location",
+                            "我公司在深圳岗厦北，有什么推荐？",
+                        ),
+                        (
+                            "m5106_general_mean",
+                            "为什么平均数容易受极端值影响",
+                        ),
+                        (
+                            "m5106_general_report_help",
+                            "你怎样帮助我理解一张报表",
+                        ),
+                    ):
+                        await general_case(label, text)
+
+                    for label, text, display_term in (
+                        (
+                            "m5106_south_localized",
+                            "2025年5月南方销售额是多少",
+                            "南方",
+                        ),
+                        (
+                            "m5106_south_conventional",
+                            "2025年5月华南销售额是多少",
+                            "华南",
+                        ),
+                        (
+                            "m5106_south_mixed_language",
+                            "Could you briefly show 2025年5月华南销售额",
+                            "华南",
+                        ),
+                    ):
+                        body, plan = await completed_business(
+                            label, text, "scalar"
+                        )
+                        answer = body.get("answer") or ""
+                        mark(
+                            plan.get("measures") == ["Total Sales"]
+                            and plan.get("filters")
+                            == [
+                                {
+                                    "field": "Region",
+                                    "operator": "eq",
+                                    "value": "South",
+                                }
+                            ]
+                            and (plan.get("time_range") or {}).get("start_date")
+                            == "2025-05-01"
+                            and (plan.get("time_range") or {}).get("end_date")
+                            == "2025-05-31"
+                            and display_term in answer
+                            and not any(
+                                token in answer
+                                for token in (
+                                    "Total Sales",
+                                    "Region=South",
+                                    "local_desktop_model",
+                                    "measure:",
+                                )
+                            )
+                        )
+
+                    ambiguous_conversation = str(uuid.uuid4())
+                    before_ambiguous = len(witnesses)
+                    ambiguous, _ = await post(
+                        "m5106_ambiguous_sales",
+                        "2026年销售情况",
+                        conversation=ambiguous_conversation,
+                        blocked=True,
+                    )
+                    ambiguous_audit = ambiguous.get("execution_audit") or {}
+                    mark(
+                        not ambiguous.get("memory_commit")
+                        and not ambiguous_audit.get("dax_executed")
+                        and len(witnesses) == before_ambiguous
+                        and ambiguous_audit.get("clarification_reason")
+                        in {
+                            "measure_ambiguous",
+                            "measure_unresolved",
+                            "unsupported_semantic_request",
+                        }
+                    )
+
+                    for label, text in (
+                        ("m5106_scalar_absolute", "2026年销售额情况"),
+                        ("m5106_scalar_relative", "今年销售额"),
+                    ):
+                        body, plan = await completed_business(
+                            label, text, "scalar"
+                        )
+                        mark(
+                            plan.get("measures") == ["Total Sales"]
+                            and plan.get("dimensions") == []
+                            and plan.get("sort") is None
+                            and plan.get("top_n") is None
+                            and plan.get("time_range") is not None
+                        )
+
+                    unknown_conversation = str(uuid.uuid4())
+                    before_unknown = len(witnesses)
+                    unknown, _ = await post(
+                        "m5106_unknown_member",
+                        "火星区销售额",
+                        conversation=unknown_conversation,
+                        blocked=True,
+                    )
+                    unknown_audit = unknown.get("execution_audit") or {}
+                    mark(
+                        not unknown.get("memory_commit")
+                        and not unknown_audit.get("dax_executed")
+                        and len(witnesses) == before_unknown
+                        and any(
+                            item.get("status") in {"UNRESOLVED", "AMBIGUOUS"}
+                            for item in (
+                                unknown_audit.get("member_grounding_status") or []
+                            )
+                        )
+                    )
+
+                    ranking_body, ranking_plan = await completed_business(
+                        "m5106_ranking",
+                        "销售额最高的三个产品",
+                        "ranking",
+                    )
+                    mark(
+                        ranking_plan.get("measures") == ["Total Sales"]
+                        and ranking_plan.get("dimensions") == ["Product"]
+                        and ranking_plan.get("sort") == "desc"
+                        and ranking_plan.get("top_n") == 3
+                    )
+
+                    chain = str(uuid.uuid4())
+                    _, initial_plan = await completed_business(
+                        "m5106_chain_initial",
+                        "销售额最高的三个产品",
+                        "ranking",
+                        conversation=chain,
+                    )
+                    _, quantity_plan = await completed_business(
+                        "m5106_chain_quantity",
+                        "改成销售数量",
+                        "ranking",
+                        conversation=chain,
+                    )
+                    memory_before_general = (
+                        await service.pipeline.get_latest_committed_memory(
+                            chain, RuntimeDataMode.REAL
+                        )
+                    )
+                    witness_count = len(witnesses)
+                    await general_case(
+                        "m5106_chain_general",
+                        "讲个笑话",
+                        conversation=chain,
+                    )
+                    memory_after_general = (
+                        await service.pipeline.get_latest_committed_memory(
+                            chain, RuntimeDataMode.REAL
+                        )
+                    )
+                    _, final_plan = await completed_business(
+                        "m5106_chain_sales",
+                        "按销售额",
+                        "ranking",
+                        conversation=chain,
+                    )
+                    mark(
+                        initial_plan.get("measures") == ["Total Sales"]
+                        and quantity_plan.get("measures") == ["Total Quantity"]
+                        and memory_before_general == memory_after_general
+                        and len(witnesses) == witness_count + 1
+                        and final_plan.get("measures") == ["Total Sales"]
+                        and final_plan.get("dimensions") == ["Product"]
+                        and final_plan.get("sort") == "desc"
+                        and final_plan.get("top_n") == 3
+                    )
+
+                    explanation, explanation_plan = await post(
+                        "m5106_explain_change",
+                        "帮我分析当前报表里今年销售额为什么下降",
+                    )
+                    explanation_audit = explanation.get("execution_audit") or {}
+                    explanation_answer = explanation.get("answer") or ""
+                    mark(
+                        explanation.get("terminal_state") == "completed"
+                        and explanation.get("memory_commit")
+                        and explanation_plan.get("measures") == ["Total Sales"]
+                        and explanation_plan.get("time_range") is not None
+                        and explanation_audit.get("dax_executed")
+                        and explanation_audit.get("deterministic_dax") is True
+                        and explanation_audit.get("llm_dax_call_count") == 0
+                        and "不能证明具体原因" in explanation_answer
+                    )
+
+                    horizon, horizon_plan = await post(
+                        "m5106_horizon",
+                        "最近6个月销售额趋势",
+                    )
+                    horizon_audit = horizon.get("execution_audit") or {}
+                    mark(
+                        horizon.get("terminal_state") == "completed"
+                        and horizon.get("memory_commit")
+                        and horizon_plan.get("query_shape")
+                        in {"trend", "bounded_trend"}
+                        and horizon_plan.get("measures") == ["Total Sales"]
+                        and horizon_plan.get("time_range") is not None
+                        and (
+                            horizon_audit.get("data_availability") or {}
+                        ).get("available_data_horizon")
+                        is not None
+                        and horizon_audit.get("dax_executed")
+                    )
+
+                    second_models = [item for item in options if item["key"] != key]
+                    if not second_models:
+                        summaries.append(
+                            {
+                                "case": "m5106_cross_model_unavailable",
+                                "pass": False,
+                            }
+                        )
+                        print(
+                            json.dumps(
+                                {
+                                    "case": "m5106_cross_model_unavailable",
+                                    "pass": False,
+                                    "available_target_count": 0,
+                                }
+                            ),
+                            flush=True,
+                        )
+                    else:
+                        second_model = next(
+                            (
+                                item
+                                for item in second_models
+                                if item["display_name"]
+                                == "PowerBIAgent_M3_Test"
+                            ),
+                            second_models[0],
+                        )
+                        second_schema = schemas[second_model["key"]]
+                        second_measures = [
+                            measure.name
+                            for table in second_schema.tables
+                            for measure in table.measures
+                        ]
+                        if not second_measures:
+                            raise RuntimeError(
+                                "m5106_cross_model_measure_unavailable"
+                            )
+                        second_measure = second_measures[0]
+                        cross_model = str(uuid.uuid4())
+                        _, model_a_plan = await completed_business(
+                            "m5106_cross_model_a",
+                            "总销售额是多少",
+                            "scalar",
+                            conversation=cross_model,
+                        )
+                        memory_a = (
+                            await service.pipeline.get_latest_committed_memory(
+                                cross_model, RuntimeDataMode.REAL
+                            )
+                        )
+                        await general_case(
+                            "m5106_cross_model_general",
+                            "我今天有点累，聊两句",
+                            conversation=cross_model,
+                        )
+                        memory_general = (
+                            await service.pipeline.get_latest_committed_memory(
+                                cross_model, RuntimeDataMode.REAL
+                            )
+                        )
+                        _, model_b_plan = await completed_business(
+                            "m5106_cross_model_b",
+                            f"{second_measure}是多少",
+                            "scalar",
+                            conversation=cross_model,
+                            model_key=second_model["key"],
+                        )
+                        memory_b = (
+                            await service.pipeline.get_latest_committed_memory(
+                                cross_model, RuntimeDataMode.REAL
+                            )
+                        )
+                        mark(
+                            model_a_plan.get("measures") == ["Total Sales"]
+                            and memory_a == memory_general
+                            and model_b_plan.get("measures") == [second_measure]
+                            and memory_b is not None
+                            and memory_b.semantic_model_key
+                            == second_model["key"]
+                            and memory_b.measures == [second_measure]
+                            and memory_b.filters == []
+                        )
+
                 elif args.phase == "isolation":
                     others = [item for item in options if item["display_name"] == "PowerBIAgent_M3_Test"]
                     if len(others) != 1 or others[0]["key"] == key:
@@ -1179,7 +1588,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model")
     parser.add_argument("--profile", default="deepseek")
-    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104", "m5105"), default="focused")
+    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104", "m5105", "m5106"), default="focused")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--case", action="append", help="Run selected focused cases while diagnosing a failure")
     parser.add_argument("--compare-profiles", action="store_true")

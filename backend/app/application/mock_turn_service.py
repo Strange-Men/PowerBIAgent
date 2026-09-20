@@ -15,7 +15,6 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 from backend.app.application.turn_pipeline import TurnPipeline
-from backend.app.answer.conversation import ConversationalAnswerService
 from backend.app.harness.errors import (
     ToolExecutionError,
     ToolNotRegisteredError,
@@ -32,11 +31,14 @@ from backend.app.harness.runtime.turn_controller import TurnController, TurnStat
 from backend.app.harness.observability.trace_recorder import TraceRecorder
 from backend.app.harness.observability.llm_observer import (
     LLMCallCollector,
-    ObservedLLMProvider,
 )
 from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.models import IntentSpec, IntentType
 from backend.app.intent.question_router import QuestionRoute, QuestionRoutingDecision
+from backend.app.intent.semantic_interpreter import (
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
 from backend.app.llm.base import LLMRequest, LLMTask
 from backend.app.llm.mock import MockLLMProvider
 from backend.app.memory.models import (
@@ -67,6 +69,7 @@ from backend.app.schemas.data_contracts import (
     KPISpec,
     QueryPlan,
     QueryResult,
+    QueryShape,
     ReportSpec,
     SemanticModelSchema,
     UserContext,
@@ -294,19 +297,64 @@ class MockTurnService:
             }
         )
         fixture_escalation = (
-            routing.route is QuestionRoute.LLM_SEMANTIC_INTERPRETATION
-            and resolved_scenario is not None
-            and (explicit_scenario_control or known_pipeline_scenario)
+            routing.route is QuestionRoute.REPORT_REQUEST
+            or (
+                routing.route is QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+                and resolved_scenario is not None
+                and (explicit_scenario_control or known_pipeline_scenario)
+            )
         )
-        if fixture_escalation:
-            requires_business_grounding = True
-            response_answer = ""
-        else:
-            observed = ObservedLLMProvider(self.llm_provider, collector)
-            response = await ConversationalAnswerService(observed).generate(message)
-            requires_business_grounding = response.requires_business_grounding
-            response_answer = response.answer or ""
-        return self.pipeline.build_result(
+        requires_business_grounding = fixture_escalation
+        response_answer = (
+            ""
+            if requires_business_grounding
+            else "Mock 模式只提供固定的离线通用回答。"
+        )
+        semantic_mode = (
+            SemanticInterpretationMode.REPORT
+            if routing.route is QuestionRoute.REPORT_REQUEST
+            or (
+                resolved_scenario is not None
+                and resolved_scenario.intent_key == "report_generation"
+            )
+            else SemanticInterpretationMode.DATA
+            if requires_business_grounding
+            else SemanticInterpretationMode.GENERAL
+        )
+        fixture_evidence = message[:200]
+        semantic_frame = SemanticFrame(
+            mode=semantic_mode,
+            query_shape=(
+                QueryShape.SCALAR
+                if semantic_mode is not SemanticInterpretationMode.GENERAL
+                else None
+            ),
+            output_mode=(
+                "report"
+                if semantic_mode is SemanticInterpretationMode.REPORT
+                else "answer"
+            ),
+            measure_mentions=(
+                (fixture_evidence,)
+                if semantic_mode is not SemanticInterpretationMode.GENERAL
+                else ()
+            ),
+            evidence_spans=(
+                ({"slot": "query_shape", "text": fixture_evidence},)
+                if semantic_mode is not SemanticInterpretationMode.GENERAL
+                else ()
+            ) + (
+                ({"slot": "measure", "text": fixture_evidence},)
+                if semantic_mode is not SemanticInterpretationMode.GENERAL
+                else ()
+            ),
+            general_answer=(
+                response_answer
+                if semantic_mode is SemanticInterpretationMode.GENERAL
+                else ""
+            ),
+        )
+        result = self.pipeline.build_result(
             request_id=effective_req_id,
             conversation_id=effective_conv_id,
             terminal_state="completed",
@@ -340,6 +388,8 @@ class MockTurnService:
             },
             memory_commit=False,
         )
+        result["_semantic_frame"] = semantic_frame
+        return result
 
     async def _do_execute(
         self,
@@ -362,6 +412,7 @@ class MockTurnService:
         committed: Optional[StructuredWorkMemory] = None,
         pending_clarification: Optional[PendingClarificationContext] = None,
         question_routing: QuestionRoutingDecision | None = None,
+        semantic_frame: SemanticFrame | None = None,
         explicit_scenario_control: bool = False,
     ) -> dict[str, Any]:
         """Owner 执行 Mock LLM 管线（控制面由共享 TurnPipeline 骨架提供）"""

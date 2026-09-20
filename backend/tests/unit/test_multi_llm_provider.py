@@ -472,10 +472,10 @@ async def test_observation_uses_public_profile_and_error_taxonomy_without_secret
     assert call["profile_key"] == "kimi-k2.6"
     assert call["provider_protocol"] == "openai_chat_completions"
     assert call["model"] == "azure/Kimi-K2.6"
-    assert call["task"] == "intent_recognition"
+    assert call["task"] == "understanding"
     assert call["error_category"] == "rate_limit"
     assert secret not in json.dumps(call)
     public_usage = summary.to_dict()
-    assert public_usage["per_task"] == {"intent_recognition": 1}
+    assert public_usage["per_task"] == {"understanding": 1}
     assert public_usage["calls"] == [call]
     assert secret not in json.dumps(public_usage)

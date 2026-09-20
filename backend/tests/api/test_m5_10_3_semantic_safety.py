@@ -2,22 +2,29 @@
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from backend.app.answer.conversation import ConversationalAnswer
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
-from backend.app.intent.models import IntentSpec, IntentType, TurnRelation
+from backend.app.intent.models import TurnRelation
+from backend.app.intent.semantic_interpreter import (
+    RankingIntent,
+    SemanticCoverageDecision,
+    SemanticEvidenceSpan,
+    SemanticFilterMention,
+    SemanticFrame,
+    SemanticInterpretationMode,
+)
 from backend.app.intent.question_router import QuestionRouter
 from backend.app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMTask
 from backend.app.llm.registry import LLMProviderRegistry
 from backend.app.memory.models import RuntimeDataMode
-from backend.app.query_plan.grounding import CandidateSelection
-from backend.app.query_plan.turn_relation import TurnRelationEvidence, TurnRelationKind
-from backend.app.schemas.data_contracts import QueryPlan, QueryResult, QueryShape, StructuredFilter
+from backend.app.query_plan.grounding import CandidateSelection, SemanticEquivalenceVeto
+from backend.app.schemas.data_contracts import QueryResult, QueryShape
 from backend.tests.api.test_chat import (
     _M533MultiTurnAdapter,
     _deepseek_test_profile,
@@ -38,39 +45,45 @@ class _SemanticSafetyProvider(LLMProvider):
 
     async def generate(self, request, output_type):
         self.calls.append(request)
-        if request.task == LLMTask.CONVERSATION:
-            return LLMResponse(
-                content="{}",
-                structured=ConversationalAnswer(
-                    answer=("复盘可以帮助识别偏差并沉淀经验。" if self.active == "general" else ""),
-                    requires_business_grounding=self.active != "general",
-                ),
-                model="offline-language",
-            )
-        if request.task == LLMTask.SEMANTIC_SELECTION:
+        if request.task is LLMTask.UNDERSTANDING:
+            structured = self._frame()
+        elif request.task is LLMTask.UNDERSTANDING_COVERAGE:
+            structured = SemanticCoverageDecision(decision="ACCEPT")
+        elif request.task is LLMTask.SEMANTIC_SELECTION:
             content = request.messages[-1]["content"]
             if "角色：measure" in content and "最挣钱" in content:
-                selected = CandidateSelection(
-                    outcome="RESOLVED",
-                    candidate_id="measure:Sales:Total Sales",
-                    matched_phrase="最挣钱",
-                )
+                structured = CandidateSelection(outcome="UNRESOLVED")
             elif "角色：ranking_dimension" in content and "产品" in content:
-                selected = CandidateSelection(
+                structured = CandidateSelection(
                     outcome="RESOLVED",
                     candidate_id="field:Sales:Product",
                     matched_phrase="产品",
                 )
+            elif "角色：filter_field" in content and any(
+                item in content for item in ("华南", "华北", "火星区")
+            ):
+                phrase = content.partition("当前短语：")[2].partition("\n当前输入：")[0]
+                structured = CandidateSelection(
+                    outcome="RESOLVED",
+                    candidate_id="field:Sales:Region",
+                    matched_phrase=phrase,
+                )
             else:
-                selected = CandidateSelection(outcome="UNRESOLVED")
-            return LLMResponse(
-                content="{}", structured=selected, model="offline-language"
+                structured = CandidateSelection(outcome="UNRESOLVED")
+        elif request.task is LLMTask.SEMANTIC_EQUIVALENCE_VETO:
+            payload = json.loads(request.messages[-1]["content"])
+            structured = SemanticEquivalenceVeto(
+                decision=(
+                    "REJECT"
+                    if payload["requested_literal"] in {"深圳", "火星区"}
+                    else "ACCEPT"
+                ),
+                mismatch=(
+                    "PROPER_ENTITY"
+                    if payload["requested_literal"] in {"深圳", "火星区"}
+                    else "NONE"
+                ),
             )
-
-        if request.task == LLMTask.INTENT_RECOGNITION:
-            structured = self._intent()
-        elif request.task == LLMTask.QUERY_PLAN:
-            structured = self._plan()
         else:
             raise AssertionError(f"unexpected LLM task: {request.task}")
         return LLMResponse(
@@ -80,127 +93,115 @@ class _SemanticSafetyProvider(LLMProvider):
             usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
         )
 
-    def _intent(self) -> IntentSpec:
-        values: dict[str, object] = {
-            "intent": IntentType.DATA_QUESTION,
-            "confidence": 0.99,
-            "normalized_question": self._message(),
-        }
-        if self.active == "p0_a":
-            values.update(
-                detected_measures=["最挣钱"],
-                detected_dimensions=["哪三个产品"],
-                turn_relation=TurnRelation.FRESH_QUESTION,
+    def _frame(self) -> SemanticFrame:
+        message = self._message()
+        if self.active == "general":
+            return SemanticFrame(
+                mode=SemanticInterpretationMode.GENERAL,
+                general_answer="复盘可以帮助识别偏差并沉淀经验。",
             )
-        elif self.active in {"south_seed", "rank_south_product"}:
-            values.update(
-                detected_measures=["销售额"],
-                detected_filters=[
-                    {"field": "区域", "operator": "eq", "value": "华南"}
-                ],
-                turn_relation=TurnRelation.FRESH_QUESTION,
-            )
-            if self.active == "rank_south_product":
-                values["detected_dimensions"] = ["产品"]
-        elif self.active in {"rank_region", "pending_rank"}:
-            values.update(
-                detected_dimensions=["区域" if self.active == "rank_region" else "产品"],
-                turn_relation=TurnRelation.FOLLOW_UP,
-            )
-        elif self.active in {"correct_measure", "correct_measure_ranking", "complete_measure"}:
-            values.update(
-                detected_measures=[
-                    "销售额" if self.active == "complete_measure" else "销售数量"
-                ],
-                turn_relation=(
-                    TurnRelation.FOLLOW_UP
-                    if self.active == "complete_measure"
-                    else TurnRelation.REPLACE
-                ),
-            )
-            if self.active == "correct_measure_ranking":
-                values["detected_dimensions"] = ["产品"]
-        elif self.active in {"correct_region", "unknown_region"}:
-            values.update(
-                detected_filters=[{
-                    "field": "区域",
-                    "operator": "eq",
-                    "value": "华北" if self.active == "correct_region" else "火星区",
-                }],
-                turn_relation=TurnRelation.REPLACE,
-            )
-        else:  # pragma: no cover - fixture exhaustiveness
-            raise AssertionError(self.active)
-        return IntentSpec.model_validate(values)
 
-    def _plan(self) -> QueryPlan:
-        values: dict[str, object] = {
-            "normalized_question": self._message(),
-            "semantic_model_key": "local_desktop_model",
-        }
+        relation = TurnRelation.FRESH_QUESTION
+        shape = None
+        measures: tuple[str, ...] = ()
+        dimensions: tuple[str, ...] = ()
+        filters: tuple[SemanticFilterMention, ...] = ()
+        members: tuple[str, ...] = ()
+        ranking = None
+        changed: tuple[str, ...] = ()
+        referenced: tuple[str, ...] = ()
+        spans: list[SemanticEvidenceSpan] = []
+
         if self.active == "p0_a":
-            values.update(
-                query_shape=QueryShape.RANKING,
-                measures=["Total Sales"],
-                dimensions=["Product"],
-                sort="desc",
+            shape = QueryShape.RANKING
+            measures = (("最赚钱" if "最赚钱" in message else "最挣钱"),)
+            dimensions = ("产品",)
+            ranking = RankingIntent(
+                direction="desc",
                 top_n=3,
+                evidence_span=("三个" if "三个" in message else "3个"),
             )
         elif self.active == "south_seed":
-            values.update(
-                query_shape=QueryShape.SCALAR,
-                measures=["Total Sales"],
-                filters=[StructuredFilter(field="Region", value="华南")],
-            )
+            shape = QueryShape.SCALAR
+            measures = ("销售额",)
+            members = ("华南",)
+            filters = (SemanticFilterMention(
+                field_mention="区域", member_mention="华南", evidence_span="华南"
+            ),)
         elif self.active == "rank_region":
-            values.update(
-                query_shape=QueryShape.RANKING,
-                dimensions=["Region"],
-                sort="desc",
-                top_n=1,
-            )
+            relation = TurnRelation.FOLLOW_UP
+            shape = QueryShape.RANKING
+            dimensions = ("区域",)
+            ranking = RankingIntent(direction="desc", top_n=1, evidence_span="最好")
+            changed = ("query_shape", "dimension", "ranking")
+            referenced = ("measure", "filters")
         elif self.active == "rank_south_product":
-            values.update(
-                query_shape=QueryShape.RANKING,
-                measures=["Total Sales"],
-                dimensions=["Product"],
-                filters=[StructuredFilter(field="Region", value="华南")],
-                sort="desc",
-                top_n=1,
-            )
+            shape = QueryShape.RANKING
+            measures = ("销售额",)
+            dimensions = ("产品",)
+            members = ("华南",)
+            filters = (SemanticFilterMention(
+                field_mention=None, member_mention="华南", evidence_span="华南"
+            ),)
+            ranking = RankingIntent(direction="desc", top_n=3, evidence_span="最高的前3个")
         elif self.active == "pending_rank":
-            values.update(
-                query_shape=QueryShape.RANKING,
-                dimensions=["Product"],
-                sort="desc",
-                top_n=1,
-            )
-        elif self.active == "correct_measure":
-            values["measures"] = ["Total Quantity"]
+            relation = TurnRelation.FOLLOW_UP
+            shape = QueryShape.RANKING
+            dimensions = ("产品",)
+            ranking = RankingIntent(direction="desc", top_n=1, evidence_span="最好")
+            changed = ("query_shape", "dimension", "ranking")
+            referenced = ("measure",)
+        elif self.active in {"correct_measure", "correct_measure_ranking"}:
+            relation = TurnRelation.REPLACE
+            measures = ("销售数量",)
+            changed = ("measure",)
+            referenced = ("query_shape", "dimension", "filter", "ranking")
+            if self.active == "correct_measure_ranking":
+                shape = QueryShape.RANKING
+                dimensions = ("产品",)
+                ranking = RankingIntent(direction="desc", top_n=3, evidence_span="排前三")
+                changed = ("measure", "query_shape", "dimension", "ranking")
         elif self.active == "complete_measure":
-            values.update(
-                measures=["Total Sales"],
-                # Weak canonical echo without current verbatim evidence must
-                # not rewrite the runtime-verified pending ranking dimension.
-                dimensions=["Region"],
-            )
-        elif self.active == "correct_measure_ranking":
-            values.update(
-                query_shape=QueryShape.RANKING,
-                query_shape_evidence="按产品排前三",
-                measures=["Total Quantity"],
-                dimensions=["Product"],
-                sort="desc",
-                top_n=3,
-            )
+            relation = TurnRelation.FOLLOW_UP
+            measures = ("销售额",)
+            changed = ("measure",)
+            referenced = ("query_shape", "dimension", "ranking")
         elif self.active in {"correct_region", "unknown_region"}:
-            values["filters"] = [StructuredFilter(
-                field="Region",
-                value="华北" if self.active == "correct_region" else "火星区",
-            )]
-        else:  # pragma: no cover - fixture exhaustiveness
+            relation = TurnRelation.REPLACE
+            value = "华北" if self.active == "correct_region" else "火星区"
+            members = (value,)
+            filters = (SemanticFilterMention(
+                field_mention=None, member_mention=value, evidence_span=value
+            ),)
+            changed = ("filter",)
+            referenced = ("query_shape", "measure", "dimension", "ranking")
+        else:
             raise AssertionError(self.active)
-        return QueryPlan.model_validate(values)
+
+        if shape is not None:
+            spans.append(SemanticEvidenceSpan(slot="query_shape", text=message))
+        spans.extend(SemanticEvidenceSpan(slot="measure", text=item) for item in measures)
+        spans.extend(SemanticEvidenceSpan(slot="dimension", text=item) for item in dimensions)
+        spans.extend(SemanticEvidenceSpan(slot="member", text=item) for item in members)
+        spans.extend(
+            SemanticEvidenceSpan(slot="filter", text=item.evidence_span)
+            for item in filters
+        )
+        if ranking is not None:
+            spans.append(SemanticEvidenceSpan(slot="ranking", text=ranking.evidence_span))
+        return SemanticFrame(
+            mode=SemanticInterpretationMode.DATA,
+            relation=relation,
+            query_shape=shape,
+            measure_mentions=measures,
+            dimension_mentions=dimensions,
+            member_mentions=members,
+            filter_mentions=filters,
+            ranking_intent=ranking,
+            changed_slots=changed,
+            referenced_context_slots=referenced,
+            evidence_spans=tuple(spans),
+        )
 
     def _message(self) -> str:
         return self.message_override or {
@@ -285,7 +286,7 @@ async def test_ranking_draft_cannot_be_silently_downgraded_to_scalar(
     assert body["memory_commit"] is False
     assert service.powerbi.dax_calls == 0
     assert memory is None
-    assert body["execution_audit"]["grounded_delta"]["query_shape"] == "ranking"
+    assert body["execution_audit"]["semantic_frame"]["query_shape"] == "ranking"
 
 
 @pytest.mark.asyncio
@@ -302,7 +303,11 @@ async def test_same_field_filter_is_removed_when_current_turn_ranks_that_field(m
             conversation_id, RuntimeDataMode.REAL
         )
 
-    assert seeded["terminal_state"] == "completed", seeded
+    assert seeded["terminal_state"] == "completed", (
+        seeded.get("execution_audit", {}).get("clarification_reason"),
+        seeded.get("execution_audit", {}).get("object_grounding_status"),
+        seeded.get("execution_audit", {}).get("member_grounding_status"),
+    )
     assert seeded["execution_audit"]["canonical_query_plan"]["filters"] == [{
         "field": "Region", "operator": "eq", "value": "华南"
     }]
@@ -322,13 +327,11 @@ async def test_same_field_filter_is_removed_when_current_turn_ranks_that_field(m
 
 @pytest.mark.asyncio
 async def test_correction_chain_replaces_current_slots_without_losing_ranking(monkeypatch):
-    assert TurnRelationEvidence.classify(
-        "不是销售额，是销售数量"
-    ).kind == TurnRelationKind.REPLACE
-    assert TurnRelationEvidence.classify(
-        "也不是华南，是华北"
-    ).kind == TurnRelationKind.REPLACE
     app, provider = _create_app(monkeypatch)
+    provider.active = "correct_measure"
+    assert provider._frame().relation is TurnRelation.REPLACE
+    provider.active = "correct_region"
+    assert provider._frame().relation is TurnRelation.REPLACE
     conversation_id = "m5103-p0-c"
 
     async with app.router.lifespan_context(app):
@@ -341,7 +344,11 @@ async def test_correction_chain_replaces_current_slots_without_losing_ranking(mo
             conversation_id, RuntimeDataMode.REAL
         )
 
-    assert seeded["terminal_state"] == "completed", seeded
+    assert seeded["terminal_state"] == "completed", (
+        seeded.get("execution_audit", {}).get("clarification_reason"),
+        seeded.get("execution_audit", {}).get("object_grounding_status"),
+        seeded.get("execution_audit", {}).get("member_grounding_status"),
+    )
     assert measure["terminal_state"] == "completed", measure
     measure_plan = measure["execution_audit"]["canonical_query_plan"]
     assert measure_plan["query_shape"] == "ranking"

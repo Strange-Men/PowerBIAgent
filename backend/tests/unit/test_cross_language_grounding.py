@@ -4,13 +4,14 @@ import json
 import pytest
 
 from backend.app.intent.models import IntentSpec, IntentType
-from backend.app.intent.question_router import QuestionRouter
+from backend.app.intent.question_router import QuestionRoute, QuestionRouter
 from backend.app.memory.models import StructuredWorkMemory, MemoryStatus
 from backend.app.llm.base import LLMProvider, LLMResponse, LLMTask
 from backend.app.query_plan.grounding import (
     BoundedLLMObjectSelector, CandidateSelection, GroundingStatus,
+    MemberCandidateSelection,
     ObjectGrounder, SemanticGroundingService,
-    MemberGrounder,
+    MemberGrounder, SemanticEquivalenceVeto,
 )
 from backend.app.query_plan.semantic_catalog import SemanticCatalogBuilder, SemanticObjectType
 from backend.app.schemas.data_contracts import (
@@ -114,12 +115,28 @@ class Selector(LLMProvider):
         self.requests = []
 
     async def generate(self, request, output_type):
+        if request.task == LLMTask.SEMANTIC_EQUIVALENCE_VETO:
+            assert output_type is SemanticEquivalenceVeto
+            return LLMResponse(
+                content="{}",
+                structured=SemanticEquivalenceVeto(
+                    decision="ACCEPT", mismatch="NONE"
+                ),
+                model="fixture-selector",
+            )
         assert request.task == LLMTask.SEMANTIC_SELECTION
-        assert output_type is CandidateSelection
+        assert output_type in {CandidateSelection, MemberCandidateSelection}
         self.requests.append(request)
         value = self.selections.pop(0)
+        content = request.messages[-1]["content"]
+        matched_phrase = (
+            json.loads(content)["requested_value"]
+            if content.startswith("{")
+            else content.split("\n当前输入：", 1)[0].split("当前短语：", 1)[-1]
+        )
         choice = CandidateSelection(outcome=value if value in {"AMBIGUOUS", "UNRESOLVED"} else "RESOLVED",
-                                    candidate_id=None if value in {"AMBIGUOUS", "UNRESOLVED"} else value)
+                                    candidate_id=None if value in {"AMBIGUOUS", "UNRESOLVED"} else value,
+                                    matched_phrase=None if value in {"AMBIGUOUS", "UNRESOLVED"} else matched_phrase)
         return LLMResponse(content="{}", structured=choice, model="fixture-selector")
 
 
@@ -160,7 +177,9 @@ async def test_bounded_selector_preserves_caller_role_on_every_return_path(
                 )
             elif scenario == "resolved":
                 selection = CandidateSelection(
-                    outcome="RESOLVED", candidate_id=candidate.object_id
+                    outcome="RESOLVED",
+                    candidate_id=candidate.object_id,
+                    matched_phrase="跨语言短语",
                 )
             else:
                 selection = CandidateSelection(outcome=scenario.upper())
@@ -177,7 +196,7 @@ async def test_bounded_selector_preserves_caller_role_on_every_return_path(
     candidate = catalog.get(candidate_id)
     result = await BoundedLLMObjectSelector(RoleContractProvider()).select(
         "跨语言短语",
-        "跨语言问题",
+        "跨语言短语问题",
         (candidate,),
         role=role,
     )
@@ -468,12 +487,12 @@ async def test_same_current_member_literal_from_two_weak_drafts_is_validated_onc
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("values,truncated,expected", [
-    (["2025-01-01T00:00:00", "2025-02-01T00:00:00"], False, GroundingStatus.RESOLVED),
+    (["2025-01-01T00:00:00", "2025-02-01T00:00:00"], False, GroundingStatus.UNRESOLVED),
     (["2025-01-01T00:00:00", "2025-02-02T00:00:00"], False, GroundingStatus.UNRESOLVED),
     (["2025-01-01T00:00:00"], True, GroundingStatus.UNRESOLVED),
     ([], False, GroundingStatus.UNRESOLVED),
 ])
-async def test_imported_month_field_requires_language_and_complete_runtime_grain_proof(values, truncated, expected):
+async def test_imported_month_field_without_temporal_metadata_fails_closed(values, truncated, expected):
     runtime = schema()
     runtime.tables[0].columns[-1].expression = None
     provider = Selector(["field:Orders:Month"])
@@ -481,12 +500,15 @@ async def test_imported_month_field_requires_language_and_complete_runtime_grain
         return ColumnMembersResult(semantic_model_key=runtime.key, table_name=field.table_name,
             field_name=field.canonical_name, values=values, truncated=truncated, source_mode="real")
     result = await SemanticGroundingService(SemanticCatalogBuilder().build(runtime), selector=BoundedLLMObjectSelector(provider)).ground(
-        "每月Total Sales趋势", IntentSpec(intent=IntentType.DATA_QUESTION, confidence=1, normalized_question="每月Total Sales趋势"),
+        "每月Total Sales趋势", IntentSpec(
+            intent=IntentType.DATA_QUESTION,
+            confidence=1,
+            normalized_question="每月Total Sales趋势",
+            detected_dimensions=["每月"],
+        ),
         QueryPlan(normalized_question="每月Total Sales趋势", semantic_model_key=runtime.key), None, lookup, query_shape=QueryShape.TREND)
-    assert result.status == expected
-    if expected == GroundingStatus.RESOLVED:
-        assert result.delta.dimensions == ["Month"]
-        assert result.delta.dimension_order == "asc"
+    assert result.status == expected, result.model_dump()
+    assert result.delta is None
 
 
 @pytest.mark.parametrize("question,shape", [
@@ -502,7 +524,9 @@ async def test_imported_month_field_requires_language_and_complete_runtime_grain
     ("Units for South and North combined", QueryShape.FILTERED_AGGREGATION),
 ])
 def test_english_shape_language_has_no_business_object_authority(question, shape):
-    assert QuestionRouter().route(question).query_shape == shape
+    decision = QuestionRouter().route(question)
+    assert decision.route is QuestionRoute.LLM_SEMANTIC_INTERPRETATION
+    assert decision.query_shape is None
 
 
 @pytest.mark.asyncio
@@ -511,8 +535,19 @@ def test_english_shape_language_has_no_business_object_authority(question, shape
 async def test_runtime_member_language_choice_never_creates_a_member(requested, choice, expected):
     class RuntimeMemberSelector(Selector):
         async def generate(self, request, output_type):
+            if request.task == LLMTask.SEMANTIC_EQUIVALENCE_VETO:
+                return await super().generate(request, output_type)
             candidates = json.loads(request.messages[-1]["content"])["candidates"]
             selected = next((x["candidate_id"] for x in candidates if x["value"] == choice), None)
+            if selected is not None:
+                return LLMResponse(
+                    content="{}",
+                    structured=CandidateSelection(
+                        outcome="RESOLVED",
+                        candidate_id=selected,
+                        matched_phrase=requested,
+                    ),
+                )
             self.selections = [selected or ("AMBIGUOUS" if choice == "AMBIGUOUS" else "UNRESOLVED")]
             return await super().generate(request, output_type)
     catalog = SemanticCatalogBuilder().build(schema())

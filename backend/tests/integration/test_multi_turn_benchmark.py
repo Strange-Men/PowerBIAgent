@@ -15,7 +15,7 @@ from backend.app.harness.cases.production_e2e_runner import (
     _topn_boundary_tie_observed,
     exact_known_answer_schedule,
 )
-from backend.app.query_plan import prompt as query_plan_prompt
+from backend.app.intent.semantic_interpreter import UNDERSTANDING_SYSTEM_PROMPT
 from backend.app.schemas.data_contracts import QueryResult
 
 
@@ -166,13 +166,13 @@ async def test_oracle_failure_fails_turn_and_conversation(tmp_path: Path):
     assert not summary.passed
 
 
-def test_eight_known_answer_cases_include_two_prompt_holdouts():
+def test_eight_known_answer_cases_include_two_understanding_prompt_holdouts():
     cases = MultiTurnBenchmarkRunner().load_known_answer_cases()
     holdouts = [item for item in cases if item.holdout]
     assert len(cases) == 8
     assert len(holdouts) == 2
     for holdout in holdouts:
-        assert holdout.message not in query_plan_prompt.SYSTEM_PROMPT
+        assert holdout.message not in UNDERSTANDING_SYSTEM_PROMPT
 
 
 def test_real_known_answer_schedule_never_deduplicates_by_oracle_key():

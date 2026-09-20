@@ -12,6 +12,7 @@ from typing import Iterable
 
 from pydantic import BaseModel
 
+from backend.app.intent.models import TurnRelation
 from backend.app.memory.models import (
     PendingClarificationContext,
     PendingSemanticSlot,
@@ -24,7 +25,7 @@ from backend.app.query_plan.grounding import (
     GroundingOutcome,
     GroundingStatus,
 )
-from backend.app.query_plan.turn_relation import TurnRelationEvidence, TurnRelationKind
+from backend.app.query_plan.clarification_reasons import ClarificationReason
 from backend.app.schemas.data_contracts import QueryShape, StructuredFilter
 
 
@@ -38,21 +39,13 @@ class ClarificationMergeResult(BaseModel):
 class PendingClarificationService:
     """Merge current authoritative partial semantics into a pending chain."""
 
-    _INDEPENDENT_QUERY_TERMS = (
-        "是多少",
-        "多少",
-        "单独看",
-        "不比较",
-        "重新分析",
-    )
-
     @classmethod
-    def should_abandon(cls, user_input: str) -> bool:
-        evidence = TurnRelationEvidence.classify(user_input)
-        return (
-            evidence.kind == TurnRelationKind.FRESH
-            and evidence.explicit
-        ) or "取消澄清" in user_input
+    def should_abandon(
+        cls,
+        user_input: str,
+        relation: TurnRelation | None = None,
+    ) -> bool:
+        return relation is TurnRelation.FRESH_QUESTION or "取消澄清" in user_input
 
     def merge(
         self,
@@ -67,6 +60,7 @@ class PendingClarificationService:
         runtime_mode: RuntimeDataMode,
         intent: str,
         committed: StructuredWorkMemory | None,
+        relation: TurnRelation | None = None,
         required_missing_slots: Iterable[PendingSemanticSlot] = (),
     ) -> ClarificationMergeResult:
         if previous is not None and (
@@ -76,10 +70,7 @@ class PendingClarificationService:
             or previous.intent != intent
         ):
             previous = None
-        if (
-            previous is not None
-            and self._starts_independent_query(previous, outcome, user_input)
-        ):
+        if previous is not None and relation is TurnRelation.FRESH_QUESTION:
             previous = None
 
         measures = list(previous.measures) if previous else []
@@ -181,20 +172,6 @@ class PendingClarificationService:
         elif delta.clear_top_n:
             top_n = None
 
-        analysis_sort, analysis_top_n = self._safe_analysis(user_input)
-        if analysis_sort is not None:
-            sort = analysis_sort
-            self._record(
-                provenance, "analysis", request_id,
-                "deterministic_analysis", "best/ranking rule",
-            )
-        if analysis_top_n is not None:
-            top_n = analysis_top_n
-            self._record(
-                provenance, "analysis", request_id,
-                "deterministic_analysis", "best/top_n rule",
-            )
-
         if delta.measures is not None or resolved_measures:
             self._record(
                 provenance, "measure", request_id,
@@ -284,38 +261,6 @@ class PendingClarificationService:
         ]
 
     @staticmethod
-    def _safe_analysis(user_input: str) -> tuple[str | None, int | None]:
-        if "最好" in user_input:
-            return "desc", 1
-        return None, None
-
-    @classmethod
-    def _starts_independent_query(
-        cls,
-        previous: PendingClarificationContext,
-        outcome: GroundingOutcome,
-        user_input: str,
-    ) -> bool:
-        """Discard an unfinished ranking chain for a standalone scalar query.
-
-        Business identity still comes from the Grounding outcome.  The fixed
-        language rule only classifies the current utterance as a new analysis
-        request rather than a one-slot clarification answer.
-        """
-        if previous.top_n is None and previous.sort is None:
-            return False
-        if any(term in user_input for term in ("最好", "最高", "最低", "排名", "Top", "top")):
-            return False
-        resolved_measure = any(
-            item.role == "measure"
-            and item.status == GroundingStatus.RESOLVED
-            for item in outcome.object_results
-        )
-        return resolved_measure and any(
-            term in user_input for term in cls._INDEPENDENT_QUERY_TERMS
-        )
-
-    @staticmethod
     def _missing_slots(
         measures: list[str],
         dimensions: list[str],
@@ -361,6 +306,12 @@ class PendingClarificationService:
             for item in outcome.member_results
         ) and "filter" not in missing:
             missing.append("filter")
+        if (
+            outcome.clarification_reason
+            is ClarificationReason.INCOMPLETE_TIME_RANGE
+            and "time" not in missing
+        ):
+            missing.append("time")
         order: tuple[PendingSemanticSlot, ...] = (
             "measure", "dimension", "filter", "time", "analysis", "template"
         )

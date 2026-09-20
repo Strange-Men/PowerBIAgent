@@ -47,14 +47,17 @@ from backend.app.harness.tool_registry import (
     create_default_tool_gateway,
 )
 from backend.app.harness.validators.validation_service import ValidationService
-from backend.app.intent.models import IntentSpec, IntentType
+from backend.app.intent.models import FilterSpec, IntentSpec, IntentType, TurnRelation
 from backend.app.intent.question_router import QuestionRoute, QuestionRoutingDecision
-from backend.app.intent.semantic_interpreter import LLMSemanticInterpreter
+from backend.app.intent.semantic_interpreter import (
+    LLMSemanticInterpreter,
+    SemanticFrame,
+    SemanticInterpretationError,
+    SemanticInterpretationMode,
+)
 from backend.app.intent.unsupported_policy import (
-    CapabilityClass,
     classify_capability,
     deterministic_unsupported_reason,
-    should_defer_unsupported_to_grounding,
 )
 from backend.app.llm.base import LLMProvider, LLMTask
 from backend.app.llm.profiles import (
@@ -78,6 +81,9 @@ from backend.app.report.capability import (
     SECTION_REQUIREMENTS,
 )
 from backend.app.report.intent import full_requested_ids, resolve_report_intent
+from backend.app.report.deepseek_report_intent_service import (
+    DeepSeekReportIntentService,
+)
 from backend.app.report.plan import ReportPlanError, ReportPlanner
 from backend.app.report.reading_context import (
     ReportDataSnapshotBuilder,
@@ -87,7 +93,6 @@ from backend.app.report.reading_context import (
     SALES_METRIC_DEFINITIONS,
 )
 from backend.app.powerbi.base import PowerBIAdapter
-from backend.app.query_plan.deepseek_service import QueryPlanError
 from backend.app.query_plan.clarification import PendingClarificationService
 from backend.app.query_plan.clarification_reasons import (
     ClarificationReason,
@@ -96,8 +101,6 @@ from backend.app.query_plan.clarification_reasons import (
 from backend.app.query_plan.completeness import (
     CanonicalShapeCompletenessError,
     CanonicalShapeCompletenessGate,
-    QueryShapeReconciliationPolicy,
-    SemanticObligationCoverageGate,
 )
 from backend.app.query_plan.grounding import (
     BoundedLLMObjectSelector,
@@ -112,12 +115,10 @@ from backend.app.query_plan.state_transition import (
     StateTransitionService,
     TurnInheritancePolicy,
 )
-from backend.app.query_plan.turn_relation import TurnRelationEvidence, TurnRelationKind
 from backend.app.query_plan.template_catalog import (
     DEFAULT_TEMPLATE_CATALOG,
     TemplateGroundingStatus,
 )
-from backend.app.dax.deepseek_service import DeepSeekDAXService
 from backend.app.dax.builder import DAXBuildError, DeterministicDAXBuilder
 from backend.app.dax.safety import DAXSafetyValidator
 from backend.app.answer.deepseek_service import DeepSeekAnswerService
@@ -181,6 +182,7 @@ from backend.app.schemas.data_contracts import (
     TimeRangeSpec,
     UserContext,
 )
+from backend.app.query_plan.semantic_frame_adapter import build_grounding_draft
 from backend.app.schemas.report_context import (
     ExceptionAssessment,
     ReportDataSourceKind,
@@ -324,6 +326,8 @@ class LLMTurnService:
         trace: TraceRecorder,
         trace_id: str,
         llm_snapshot: LLMProviderSnapshot,
+        committed: StructuredWorkMemory | None = None,
+        pending_clarification: PendingClarificationContext | None = None,
         **_: Any,
     ) -> dict[str, Any]:
         """Execute one isolated no-tool conversational LLM request."""
@@ -341,9 +345,62 @@ class LLMTurnService:
             collector,
             profile=llm_snapshot.profile,
         )
-        interpretation = await LLMSemanticInterpreter(observed).interpret_general(
-            message
+        forced_mode = (
+            SemanticInterpretationMode.REPORT
+            if routing.route is QuestionRoute.REPORT_REQUEST
+            else None
         )
+        try:
+            interpretation = await LLMSemanticInterpreter(observed).interpret(
+                message,
+                pending_context=(
+                    pending_clarification.model_dump(mode="json")
+                    if pending_clarification is not None
+                    else None
+                ),
+                committed_context=(
+                    committed.model_dump(mode="json")
+                    if committed is not None
+                    else None
+                ),
+                forced_mode=forced_mode,
+            )
+        except SemanticInterpretationError as exc:
+            usage = collector.summary()
+            trace.record(
+                "semantic_interpretation_failed",
+                trace_id=trace_id,
+                request_id=effective_req_id,
+                data_summary={"error_type": type(exc).__name__},
+            )
+            return self.pipeline.build_result(
+                request_id=effective_req_id,
+                conversation_id=effective_conv_id,
+                terminal_state="validation_failed",
+                intent=routing.route.value,
+                response_type="error",
+                trace=trace,
+                trace_id=trace_id,
+                is_mock=is_mock,
+                source_mode=source_mode,
+                allowed_tools=[],
+                usage=usage,
+                execution_audit={
+                    "capability_decision": routing.route.value,
+                    "question_route": routing.route.value,
+                    "semantic_interpretation_authority": "semantic_frame",
+                    "semantic_interpretation_error_code": exc.code,
+                    "schema_read": False,
+                    "member_lookup": False,
+                    "dax_executed": False,
+                    "memory_committed": False,
+                    "pending_semantic_mutation": False,
+                    "powerbi_tool_calls": 0,
+                    "report_calls": 0,
+                },
+                memory_commit=False,
+                error_type=type(exc).__name__,
+            )
         usage = collector.summary()
         trace.record(
             "conversational_llm_completed",
@@ -360,7 +417,7 @@ class LLMTurnService:
                 "total_tokens": usage.total_tokens,
             },
         )
-        return self.pipeline.build_result(
+        result = self.pipeline.build_result(
             request_id=effective_req_id,
             conversation_id=effective_conv_id,
             terminal_state="completed",
@@ -371,7 +428,7 @@ class LLMTurnService:
             is_mock=is_mock,
             source_mode=source_mode,
             allowed_tools=[],
-            answer_text=interpretation.answer,
+            answer_text=interpretation.general_answer,
             usage=usage,
             execution_audit={
                 "capability_decision": routing.route.value,
@@ -385,12 +442,13 @@ class LLMTurnService:
                 "powerbi_tool_calls": 0,
                 "report_calls": 0,
                 "conversation_context": "current_user_message_only",
-                "requires_business_grounding": (
-                    interpretation.requires_business_grounding
-                ),
+                "semantic_mode": interpretation.mode.value,
+                "semantic_frame": interpretation.model_dump(mode="json"),
             },
             memory_commit=False,
         )
+        result["_semantic_frame"] = interpretation
+        return result
 
     # ── 核心执行管线 ──
 
@@ -414,6 +472,7 @@ class LLMTurnService:
         committed: Optional[StructuredWorkMemory] = None,
         pending_clarification: Optional[PendingClarificationContext] = None,
         question_routing: QuestionRoutingDecision | None = None,
+        semantic_frame: SemanticFrame | None = None,
     ) -> dict[str, Any]:
         """Owner 执行 DeepSeek LLM 管线（控制面由共享 TurnPipeline 骨架提供）"""
 
@@ -450,6 +509,67 @@ class LLMTurnService:
             },
         )
 
+        if semantic_frame is None:
+            try:
+                semantic_frame = await LLMSemanticInterpreter(observed).interpret(
+                    message,
+                    pending_context=(
+                        pending_clarification.model_dump(mode="json")
+                        if pending_clarification is not None
+                        else None
+                    ),
+                    committed_context=(
+                        committed.model_dump(mode="json")
+                        if committed is not None
+                        else None
+                    ),
+                    forced_mode=(
+                        SemanticInterpretationMode.REPORT
+                        if question_routing is not None
+                        and question_routing.route is QuestionRoute.REPORT_REQUEST
+                        else None
+                    ),
+                )
+            except SemanticInterpretationError as exc:
+                return self._build_result(
+                    effective_req_id,
+                    effective_conv_id,
+                    "validation_failed",
+                    intent=IntentType.DATA_QUESTION.value,
+                    error_type=type(exc).__name__,
+                    trace=trace,
+                    trace_id=trace_id,
+                    is_mock=False,
+                    source_mode=self._source_mode,
+                    collector=collector,
+                    execution_audit={
+                        "semantic_interpretation_authority": "semantic_frame",
+                        "semantic_interpretation_error_code": exc.code,
+                        "dax_executed": False,
+                        "memory_committed": False,
+                    },
+                )
+        if semantic_frame.mode is SemanticInterpretationMode.GENERAL:
+            return self._build_result(
+                effective_req_id,
+                effective_conv_id,
+                "completed",
+                intent="general",
+                response_type="answer",
+                answer_text=semantic_frame.general_answer,
+                trace=trace,
+                trace_id=trace_id,
+                is_mock=False,
+                source_mode=self._source_mode,
+                collector=collector,
+                execution_audit={
+                    "semantic_interpretation_authority": "semantic_frame",
+                    "semantic_frame": semantic_frame.model_dump(mode="json"),
+                    "dax_executed": False,
+                    "memory_committed": False,
+                },
+            )
+
         capability = classify_capability(message)
         semantic_audit: dict[str, Any] = {
             "request_id": effective_req_id,
@@ -459,18 +579,24 @@ class LLMTurnService:
                 question_routing.route.value if question_routing else None
             ),
             "query_shape": (
-                question_routing.query_shape.value
-                if question_routing and question_routing.query_shape
+                semantic_frame.query_shape.value
+                if semantic_frame.query_shape is not None
                 else None
             ),
             "dax_executed": False,
             "memory_committed": False,
+            "semantic_interpretation_authority": "semantic_frame",
+            "semantic_frame": semantic_frame.model_dump(mode="json"),
         }
-        relation_evidence = TurnRelationEvidence.classify(message)
-        semantic_input = relation_evidence.semantic_input or message
-        semantic_audit["turn_relation_evidence"] = relation_evidence.model_dump(
-            mode="json"
-        )
+        semantic_input = message
+        semantic_audit["turn_relation_evidence"] = {
+            "kind": semantic_frame.relation.value,
+            "source": "semantic_frame",
+            "changed_slots": list(semantic_frame.changed_slots),
+            "referenced_context_slots": list(
+                semantic_frame.referenced_context_slots
+            ),
+        }
         trace.record(
             "capability_decision",
             trace_id=trace_id,
@@ -537,10 +663,7 @@ class LLMTurnService:
             allowed_templates=DEFAULT_TEMPLATE_CATALOG.allowed_keys,
         )
 
-        if (
-            relation_evidence.kind == TurnRelationKind.FRESH
-            and relation_evidence.explicit
-        ):
+        if semantic_frame.relation is TurnRelation.FRESH_QUESTION:
             semantic_committed = None
             await self.pipeline.clear_pending_clarification(
                 effective_conv_id, runtime_mode
@@ -549,7 +672,9 @@ class LLMTurnService:
 
         if (
             pending_clarification is not None
-            and PendingClarificationService.should_abandon(message)
+            and PendingClarificationService.should_abandon(
+                message, semantic_frame.relation
+            )
         ):
             await self.pipeline.clear_pending_clarification(
                 effective_conv_id, runtime_mode
@@ -560,18 +685,35 @@ class LLMTurnService:
         # Open-language classification has already happened in the single
         # Semantic Interpreter. Intent is now only a bounded pipeline branch,
         # not a second LLM interpretation authority.
+        frame_filters = [
+            FilterSpec(
+                field=item.field_mention or item.member_mention,
+                operator=item.operator,
+                value=item.member_mention,
+            )
+            for item in semantic_frame.filter_mentions
+        ]
         intent = IntentSpec(
             intent=(
                 IntentType.REPORT_GENERATION
-                if question_routing is not None
-                and question_routing.route == QuestionRoute.REPORT_REQUEST
+                if semantic_frame.mode is SemanticInterpretationMode.REPORT
                 else IntentType.DATA_QUESTION
             ),
             confidence=1.0,
             normalized_question=message.strip(),
+            detected_measures=list(semantic_frame.measure_mentions),
+            detected_dimensions=list(semantic_frame.dimension_mentions),
+            detected_filters=frame_filters,
+            detected_time_range=(
+                semantic_frame.time_mentions[0]
+                if semantic_frame.time_mentions
+                else None
+            ),
+            time_intent=semantic_frame.time_intent,
+            turn_relation=semantic_frame.relation,
         )
         semantic_audit["semantic_interpretation_authority"] = (
-            "llm_semantic_interpreter"
+            "semantic_frame"
         )
         trace.record("intent_classified", trace_id=trace_id, request_id=effective_req_id,
                      data_summary={"intent": intent.intent.value})
@@ -601,69 +743,6 @@ class LLMTurnService:
                 intent = intent.model_copy(update={"intent": IntentType.DATA_QUESTION,
                     "needs_clarification": False, "clarification_question": None,
                     "unsupported_reason": None, "requested_template": None})
-
-        # ── 4. unsupported 可按产品契约早停；Real clarification 只作为
-        # linguistic diagnostic。数据/报表范围内的 canonical semantic
-        # authority 统一交给后续 Grounding，不再做 Measure-only 特判。
-        if intent.intent == IntentType.UNSUPPORTED:
-            if should_defer_unsupported_to_grounding(
-                message,
-                intent,
-                committed=semantic_committed,
-                pending=pending_clarification,
-                report_template_key=report_template_key,
-            ):
-                provisional_intent = (
-                    IntentType.REPORT_GENERATION
-                    if question_routing and question_routing.route == QuestionRoute.REPORT_REQUEST
-                    else IntentType.DATA_QUESTION
-                )
-                intent = intent.model_copy(update={
-                    "intent": provisional_intent,
-                    "unsupported_reason": None,
-                })
-                trace.record(
-                    "intent_unsupported_deferred_to_grounding",
-                    trace_id=trace_id,
-                    request_id=effective_req_id,
-                    data_summary={"provisional_intent": provisional_intent.value},
-                )
-            else:
-                await self.pipeline.clear_pending_clarification(
-                    effective_conv_id, runtime_mode
-                )
-                trace.record("request_completed", trace_id=trace_id, request_id=effective_req_id,
-                            data_summary={"terminal_state": "unsupported"})
-                return self._build_result(
-                    effective_req_id, effective_conv_id, "unsupported",
-                    intent=intent.intent.value, response_type="unsupported",
-                    unsupported_reason=intent.unsupported_reason,
-                    trace=trace, trace_id=trace_id, is_mock=False,
-                    source_mode=self._source_mode,
-                    collector=collector,
-                    execution_audit={
-                        **semantic_audit,
-                        "committed_memory_mutated": False,
-                    },
-                )
-
-        if intent.intent == IntentType.CLARIFICATION and not self.powerbi.is_mock:
-            provisional_intent = (
-                IntentType.REPORT_GENERATION
-                if question_routing and question_routing.route == QuestionRoute.REPORT_REQUEST
-                else IntentType.DATA_QUESTION
-            )
-            intent = intent.model_copy(update={
-                "intent": provisional_intent,
-                "needs_clarification": False,
-                "clarification_question": None,
-            })
-            trace.record(
-                "intent_clarification_deferred_to_grounding",
-                trace_id=trace_id,
-                request_id=effective_req_id,
-                data_summary={"provisional_intent": provisional_intent.value},
-            )
 
         if intent.intent == IntentType.REPORT_GENERATION:
             template_grounding = self.pipeline.preflight_report_template(
@@ -772,114 +851,27 @@ class LLMTurnService:
 
         controller.record_tool_execution_succeeded()
 
-        # ── 8. QueryPlan 生成与验证 ──
+        # ── 8. SemanticFrame → non-canonical Grounding carrier ──
         try:
             with measure_performance("query_plan"):
-                interpretation = await LLMSemanticInterpreter(
-                    observed
-                ).interpret_business(
-                    user_input=message,
-                    intent=intent,
-                    schema=schema,
-                    committed_memory=(
-                        semantic_committed.model_dump() if semantic_committed else None
-                    ),
+                query_plan = build_grounding_draft(
+                    semantic_frame,
+                    user_input=semantic_input,
                     semantic_model_key=semantic_model_key,
-                    report_template_key=report_template_key,
-                    enforce_semantic_grounding=not self.powerbi.is_mock,
                 )
-                if interpretation.query_plan is None:
-                    raise QueryPlanError("semantic_interpretation_query_plan_missing")
-                query_plan = interpretation.query_plan
                 semantic_audit["semantic_interpretation_draft"] = (
-                    interpretation.model_dump(
-                        mode="json", exclude={"query_plan", "answer"}
-                    )
+                    semantic_frame.model_dump(mode="json")
                 )
-                current_text = semantic_input.casefold()
-                measure_evidence = tuple(
-                    phrase.strip()
-                    for phrase in interpretation.measure_evidence_spans
-                    if phrase.strip()
-                    and phrase.strip().casefold() in current_text
-                )
-                dimension_evidence = tuple(
-                    phrase.strip()
-                    for phrase in interpretation.dimension_evidence_spans
-                    if phrase.strip()
-                    and phrase.strip().casefold() in current_text
-                )
-                intent = intent.model_copy(update={
-                    "detected_measures": list(measure_evidence),
-                    "detected_dimensions": list(dimension_evidence),
-                })
-        except QueryPlanError as e:
-            # A missing weak draft cannot prove that a filter/time requirement
-            # was omitted by the user. Continuing with an empty draft can turn
-            # a filtered question into an unfiltered query. Fail before DAX;
-            # this does not grant the draft canonical object authority.
-            return await self._fail_result(
-                memory,
-                effective_req_id,
-                effective_conv_id,
-                controller,
-                trace,
-                terminal_state=TurnState.VALIDATION_FAILED,
-                error_type=type(e).__name__,
-                reason=str(e),
-                stage="query_plan_generation",
-                trace_id=trace_id,
-                collector=collector,
-            )
         except Exception as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
                 terminal_state=TurnState.VALIDATION_FAILED, error_type=type(e).__name__,
-                reason=str(e), stage="query_plan_generation", trace_id=trace_id,
+                reason=str(e), stage="semantic_frame_projection", trace_id=trace_id,
                 collector=collector,
             )
 
-        router_query_shape = (
-            question_routing.query_shape if question_routing is not None else None
-        )
-        draft_query_shape = query_plan.query_shape
-        shape_reconciliation = QueryShapeReconciliationPolicy.reconcile(
-            user_input=message,
-            router_shape=router_query_shape,
-            draft_shape=draft_query_shape,
-            draft_evidence=query_plan.query_shape_evidence,
-            draft_filter_count=len(query_plan.filters),
-            correction=relation_evidence.semantic_input is not None,
-        )
-        grounding_query_shape = shape_reconciliation.effective_shape
-        # Only verbatim current-turn evidence may travel with an LLM-selected
-        # shape.  The draft remains a language interpretation; Grounding still
-        # owns runtime identities and Completeness still owns execution safety.
-        query_plan = query_plan.model_copy(
-            update={
-                "query_shape": grounding_query_shape,
-                "query_shape_evidence": shape_reconciliation.draft_evidence,
-            }
-        )
-        semantic_audit["query_shape_reconciliation"] = {
-            "router": (
-                router_query_shape.value
-                if router_query_shape is not None
-                else None
-            ),
-            "draft": draft_query_shape.value if draft_query_shape else None,
-            "effective": (
-                grounding_query_shape.value if grounding_query_shape else None
-            ),
-            "correction": relation_evidence.semantic_input is not None,
-            "source": shape_reconciliation.source,
-            "router_strength": shape_reconciliation.router_strength,
-            "draft_evidence": shape_reconciliation.draft_evidence,
-            "conflict": shape_reconciliation.conflict,
-            "requires_clarification": (
-                shape_reconciliation.requires_clarification
-            ),
-        }
+        grounding_query_shape = semantic_frame.query_shape
+        semantic_audit["query_shape_authority"] = "semantic_frame"
 
         template_grounding = DEFAULT_TEMPLATE_CATALOG.ground(
             message if intent.intent == IntentType.REPORT_GENERATION else "",
@@ -934,9 +926,10 @@ class LLMTurnService:
                 )
 
         # ── 8.1 Business Semantic Grounding ──
-        # QueryPlan LLM 在此仅是语言草稿；canonical semantic slots 只能由
-        # validated catalog + runtime members + deterministic transition 决定。
+        # SemanticFrame only carries literal language mentions; canonical
+        # slots come from the runtime catalog/members and state transition.
         catalog = None
+        user_facing_filter_values: dict[tuple[str, str], str] = {}
         canonical_shape_obligation: QueryShape | None = None
         if not self.powerbi.is_mock:
             try:
@@ -958,35 +951,25 @@ class LLMTurnService:
                 if (
                     pending_clarification is not None
                     and pending_clarification.query_shape is not None
-                    and router_query_shape is None
+                    and semantic_frame.query_shape is None
+                    and semantic_frame.relation in {
+                        TurnRelation.FOLLOW_UP,
+                        TurnRelation.REPLACE,
+                    }
                 ):
-                    # A pending chain already owns a runtime-validated shape.
-                    # A slot-only reply may fill its missing time/member slot,
-                    # but a weak LLM shape draft cannot rewrite that shape.
+                    # State owns an already runtime-validated pending shape;
+                    # a frame that explicitly references it may fill slots.
                     grounding_query_shape = pending_clarification.query_shape
-                    shape_reconciliation = shape_reconciliation.model_copy(
-                        update={
-                            "effective_shape": grounding_query_shape,
-                            "source": "pending_clarification",
-                            "router_strength": "canonical_pending_context",
-                            "requires_clarification": False,
-                        }
-                    )
                     query_plan = query_plan.model_copy(
                         update={
                             "query_shape": grounding_query_shape,
                             "query_shape_evidence": None,
                         }
                     )
-                    semantic_audit["query_shape_reconciliation"].update({
+                    semantic_audit["query_shape_context"] = {
                         "effective": grounding_query_shape.value,
-                        "source": shape_reconciliation.source,
-                        "router_strength": (
-                            shape_reconciliation.router_strength
-                        ),
-                        "draft_evidence": None,
-                        "requires_clarification": False,
-                    })
+                        "source": "pending_clarification",
+                    }
                 grounding_service = SemanticGroundingService(
                     catalog,
                     selector=BoundedLLMObjectSelector(observed),
@@ -1010,10 +993,9 @@ class LLMTurnService:
                     )
 
                 with measure_performance("grounding"):
-                    grounding = await grounding_service.ground(
+                    grounding = await grounding_service.ground_frame(
                         semantic_input,
-                        intent,
-                        query_plan,
+                        semantic_frame,
                         semantic_committed,
                         _member_lookup,
                         pending=pending_clarification,
@@ -1026,113 +1008,14 @@ class LLMTurnService:
                     if grounding.delta is not None
                     else None
                 )
-                coverage = SemanticObligationCoverageGate().inspect(
-                    user_input=semantic_input,
-                    outcome=grounding,
-                    catalog=catalog,
-                    relation=relation_evidence,
-                    language_evidence=tuple(
-                        value
-                        for value in (
-                            *intent.detected_measures,
-                            *intent.detected_dimensions,
-                            *query_plan.measures,
-                            *query_plan.dimensions,
-                            shape_reconciliation.draft_evidence,
-                        )
-                        if isinstance(value, str) and value.strip()
-                    ),
-                    shape_reconciliation=shape_reconciliation,
+                semantic_audit["semantic_obligation_coverage"] = (
+                    grounding.status == GroundingStatus.RESOLVED
                 )
-                semantic_audit["semantic_obligations"] = [
-                    item.model_dump(mode="json") for item in coverage.obligations
-                ]
-                semantic_audit["semantic_obligation_coverage"] = coverage.executable
                 semantic_audit["clarification_reason"] = (
-                    coverage.clarification_reason.value
-                    if coverage.clarification_reason is not None
-                    else (
-                        grounding.clarification_reason.value
-                        if grounding.clarification_reason is not None
-                        else None
-                    )
+                    grounding.clarification_reason.value
+                    if grounding.clarification_reason is not None
+                    else None
                 )
-                if (
-                    not coverage.executable
-                    and grounding.status == GroundingStatus.RESOLVED
-                ):
-                    obligation_pending = None
-                    if (
-                        coverage.clarification_reason
-                        == ClarificationReason.INCOMPLETE_TIME_RANGE
-                        and grounding.pending_eligible
-                    ):
-                        obligation_pending = PendingClarificationService().merge(
-                            previous=pending_clarification,
-                            outcome=grounding,
-                            user_input=message,
-                            conversation_id=effective_conv_id,
-                            request_id=effective_req_id,
-                            semantic_model_key=semantic_model_key,
-                            schema_fingerprint=catalog.schema_fingerprint,
-                            runtime_mode=runtime_mode,
-                            intent=intent.intent.value,
-                            committed=semantic_committed,
-                            required_missing_slots=("time",),
-                        )
-                        await self.pipeline.save_pending_clarification(
-                            obligation_pending.context, runtime_mode
-                        )
-                    else:
-                        await self.pipeline.clear_pending_clarification(
-                            effective_conv_id, runtime_mode
-                        )
-                    await self.pipeline.mark_memory_failed(
-                        effective_req_id,
-                        runtime_mode,
-                        reason="semantic_obligation_incomplete",
-                        stage="semantic_obligation_coverage",
-                    )
-                    controller.set_failure_reason("semantic_obligation_incomplete")
-                    controller.transition(TurnState.CLARIFICATION_REQUIRED)
-                    unresolved = "、".join(coverage.unresolved_phrases) or "当前业务修饰条件"
-                    question = (
-                        clarification_question(coverage.clarification_reason)
-                        if coverage.clarification_reason is not None
-                        else (
-                            f"无法将“{unresolved}”完整绑定到当前模型的业务条件，"
-                            "请改用模型中存在的明确成员。"
-                        )
-                    )
-                    return self._build_result(
-                        effective_req_id,
-                        effective_conv_id,
-                        "clarification_required",
-                        intent=intent.intent.value,
-                        response_type="clarification",
-                        clarification_question=question,
-                        trace=trace,
-                        trace_id=trace_id,
-                        is_mock=False,
-                        source_mode=self._source_mode,
-                        collector=collector,
-                        execution_audit={
-                            **semantic_audit,
-                            "pending_clarification": obligation_pending is not None,
-                            "clarification_chain_id": (
-                                obligation_pending.context.chain_id
-                                if obligation_pending is not None
-                                else None
-                            ),
-                            "missing_slots": (
-                                obligation_pending.context.missing_slots
-                                if obligation_pending is not None
-                                else []
-                            ),
-                            "committed_memory_mutated": False,
-                            "schema_fingerprint": catalog.schema_fingerprint,
-                        },
-                    )
                 grounded_delta = grounding.delta
                 explicit_slots: list[str] = []
                 if grounded_delta is not None:
@@ -1195,6 +1078,17 @@ class LLMTurnService:
                         for item in grounding.member_results
                     ],
                 })
+                user_facing_filter_values = {
+                    (
+                        item.field.canonical_name,
+                        str(item.canonical_value),
+                    ): str(item.requested_value)
+                    for item in grounding.member_results
+                    if item.status is GroundingStatus.RESOLVED
+                    and item.canonical_value is not None
+                    and isinstance(item.requested_value, str)
+                    and item.requested_value.strip()
+                }
                 if not grounding.pending_eligible:
                     await self.pipeline.clear_pending_clarification(
                         effective_conv_id, runtime_mode
@@ -1249,6 +1143,7 @@ class LLMTurnService:
                         runtime_mode=runtime_mode,
                         intent=intent.intent.value,
                         committed=semantic_committed,
+                        relation=semantic_frame.relation,
                     )
                 if clarification_merge is not None and not clarification_merge.complete:
                     await self.pipeline.save_pending_clarification(
@@ -1472,6 +1367,12 @@ class LLMTurnService:
                     query_plan,
                     catalog=catalog,
                     expected_shape=canonical_shape_obligation,
+                    runtime_temporal_grouping_ids=tuple(
+                        item.canonical_object.object_id
+                        for item in grounding.object_results
+                        if item.method == "runtime_complete_month_members"
+                        and item.canonical_object is not None
+                    ),
                 )
                 semantic_audit["canonical_shape_completeness"] = (
                     shape_report.model_dump(mode="json")
@@ -1540,26 +1441,13 @@ class LLMTurnService:
 
         # ── 9. DAX 生成与验证 ──
         try:
-            if self.powerbi.is_mock:
-                # Historical Mock compatibility only. Real canonical execution
-                # is exclusively plan + runtime schema -> deterministic builder.
-                dax_service = DeepSeekDAXService(
-                    provider=observed, max_dax_repairs=1
-                )
-                dax_request = await dax_service.generate(
-                    query_plan=query_plan,
-                    schema=schema,
-                    semantic_model_key=semantic_model_key,
+            with measure_performance("dax_build"):
+                dax_request = DeterministicDAXBuilder().build(
+                    query_plan,
+                    schema,
                     request_id=effective_req_id,
+                    timeout_seconds=self.settings.powerbi_query_timeout_seconds,
                 )
-            else:
-                with measure_performance("dax_build"):
-                    dax_request = DeterministicDAXBuilder().build(
-                        query_plan,
-                        schema,
-                        request_id=effective_req_id,
-                        timeout_seconds=self.settings.powerbi_query_timeout_seconds,
-                    )
         except Exception as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
@@ -1831,6 +1719,16 @@ class LLMTurnService:
                         display_bindings = dict(
                             zip(presentation_fields, resolved)
                         )
+                        if semantic_frame.measure_mentions:
+                            original_measure = semantic_frame.measure_mentions[0]
+                            for field, binding in list(display_bindings.items()):
+                                if (
+                                    binding.canonical_name in query_plan.measures
+                                    and binding.source.value == "fallback"
+                                ):
+                                    display_bindings[field] = binding.model_copy(
+                                        update={"display_name": original_measure}
+                                    )
                         trace.record(
                             "presentation_localization_resolved",
                             trace_id=trace_id,
@@ -1872,7 +1770,20 @@ class LLMTurnService:
                             display_bindings=display_bindings,
                             effective_scope=effective_scope,
                             data_availability=data_availability,
+                            user_facing_filter_values=(
+                                user_facing_filter_values
+                            ),
                         )
+                        if semantic_frame.analysis_goal.value == "EXPLAIN_CHANGE":
+                            boundary = "当前数据可以描述已验证的变化，但不能证明具体原因。"
+                            fallback_response = fallback_response.model_copy(update={
+                                "answer": fallback_response.answer + boundary,
+                                "summary": fallback_response.summary + boundary,
+                                "evidence": {
+                                    **fallback_response.evidence,
+                                    "causal_analysis_boundary": "not_proven",
+                                },
+                            })
                         try:
                             response_obj = await NaturalAnswerComposer(
                                 observed,
@@ -2106,7 +2017,7 @@ class LLMTurnService:
             execution_audit={
                 **semantic_audit,
                 "canonical_query_plan": query_plan.model_dump(mode="json"),
-                "deterministic_dax": not self.powerbi.is_mock,
+                "deterministic_dax": True,
                 "dax_fingerprint": hashlib.sha256(
                     dax_request.dax.encode("utf-8")
                 ).hexdigest(),
@@ -2126,9 +2037,7 @@ class LLMTurnService:
                     if verified_facts else []
                 ),
                 "factual_validation_pass": verified_facts is not None,
-                "llm_dax_call_count": sum(
-                    item.task == "dax" for item in collector.observations
-                ),
+                "llm_dax_call_count": 0,
                 "memory_version": committed_memory.memory_version,
             },
         )
@@ -2258,16 +2167,16 @@ class LLMTurnService:
                 collector=collector,
             )
 
-        # ── 1. Bounded report-intent weak signal (LLM, registry IDs only) ──
+        # ── 1. Presentation-only report section weak signal ──
         # Any failure fails closed to an empty draft; the deterministic
         # matcher below is always the floor.  The call is observed and
         # counted separately as llm_report_intent_call_count.
         llm_report_intent_ids: tuple[str, ...] = ()
         if not self.powerbi.is_mock:
-            report_draft = await LLMSemanticInterpreter(
+            report_draft = await DeepSeekReportIntentService(
                 observed_provider
-            ).interpret_report_sections(message)
-            llm_report_intent_ids = report_draft.report_section_candidates
+            ).draft(message)
+            llm_report_intent_ids = report_draft
         signal = resolve_report_intent(message, llm_draft=llm_report_intent_ids)
         trace.record(
             "report_intent_resolved",

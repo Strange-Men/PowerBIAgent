@@ -487,6 +487,7 @@ class FactBoundedAnswerBuilder:
         locale: str = "zh-CN",
         effective_scope: str | None = None,
         data_availability: Any | None = None,
+        user_facing_filter_values: dict[tuple[str, str], str] | None = None,
     ) -> AnswerSpec:
         # Local import avoids making the factual authority module depend on the
         # presentation package during module initialization.
@@ -503,7 +504,12 @@ class FactBoundedAnswerBuilder:
         parts: list[str] = []
         metrics: dict[str, Any] = {}
         metric_provenance: dict[str, dict[str, str]] = {}
-        natural_prefix = self._natural_scope_prefix(plan, formatter)
+        filter_labels = user_facing_filter_values or {}
+        natural_prefix = self._natural_scope_prefix(
+            plan,
+            formatter,
+            user_facing_filter_values=filter_labels,
+        )
         user_facing_measure = self._measure_label(plan, bindings)
         horizon_prefix, horizon_shortfall = self._horizon_prefix(
             plan,
@@ -675,6 +681,14 @@ class FactBoundedAnswerBuilder:
                 ),
                 "user_facing_scope": natural_prefix,
                 "user_facing_measure": user_facing_measure,
+                "user_facing_filter_values": [
+                    {
+                        "field": field,
+                        "canonical_value": canonical,
+                        "display_value": display,
+                    }
+                    for (field, canonical), display in sorted(filter_labels.items())
+                ],
             },
             filters=list(plan.filters),
             semantic_model_key=result.semantic_model_key,
@@ -684,13 +698,23 @@ class FactBoundedAnswerBuilder:
         )
 
     @classmethod
-    def _natural_scope_prefix(cls, plan: CanonicalQueryPlan, formatter: Any) -> str:
+    def _natural_scope_prefix(
+        cls,
+        plan: CanonicalQueryPlan,
+        formatter: Any,
+        *,
+        user_facing_filter_values: dict[tuple[str, str], str] | None = None,
+    ) -> str:
         parts: list[str] = []
+        labels = user_facing_filter_values or {}
         if plan.time_range is not None:
             parts.append(cls._render_time_range(plan.time_range, formatter))
         for item in plan.filters:
             values = item.value if isinstance(item.value, (list, tuple)) else [item.value]
-            parts.append("、".join(formatter.format(value) for value in values))
+            parts.append("、".join(
+                formatter.format(labels.get((item.field, str(value)), value))
+                for value in values
+            ))
         return "，".join(parts) + ("，" if parts else "")
 
     @staticmethod
@@ -1057,7 +1081,11 @@ class FactOutputValidator:
         row_count: int | None = None,
     ) -> list[str]:
         errors: list[str] = []
-        if any(term in text for term in self._CAUSAL):
+        claim_text = text
+        for fragment in sorted(set(trusted_fragments), key=len, reverse=True):
+            if fragment:
+                claim_text = claim_text.replace(fragment, "")
+        if any(term in claim_text for term in self._CAUSAL):
             errors.append("unverified_causal_claim")
         if any(term in text for term in self._COMPARISON):
             errors.append("unverified_comparison_claim")
@@ -1175,9 +1203,35 @@ class FactOutputValidator:
             from backend.app.presentation.formatter import PresentationFormatter
 
             formatter = PresentationFormatter(locale="zh-CN")
+            display_filter_values: dict[tuple[str, str], str] = {}
+            raw_display_filters = evidence.get("user_facing_filter_values", [])
+            if not isinstance(raw_display_filters, list):
+                errors.append("user_facing_filter_values_invalid")
+                raw_display_filters = []
+            canonical_filter_keys = {
+                (item.field, str(value))
+                for item in (plan.filters if plan is not None else [])
+                for value in (
+                    item.value
+                    if isinstance(item.value, (list, tuple))
+                    else [item.value]
+                )
+            }
+            for item in raw_display_filters:
+                if not isinstance(item, dict):
+                    errors.append("user_facing_filter_values_invalid")
+                    continue
+                key = (str(item.get("field", "")), str(item.get("canonical_value", "")))
+                display = item.get("display_value")
+                if key not in canonical_filter_keys or not isinstance(display, str) or not display.strip():
+                    errors.append("user_facing_filter_values_invalid")
+                    continue
+                display_filter_values[key] = display.strip()
             expected_scope = (
                 FactBoundedAnswerBuilder._natural_scope_prefix(
-                    plan, formatter
+                    plan,
+                    formatter,
+                    user_facing_filter_values=display_filter_values,
                 )
                 if plan is not None
                 else None
@@ -1196,6 +1250,14 @@ class FactOutputValidator:
                         formatter,
                     )
                     trusted.append(f"你查询的{rendered_time}未返回")
+
+        causal_boundary = evidence.get("causal_analysis_boundary")
+        if causal_boundary is not None:
+            expected_boundary = "当前数据可以描述已验证的变化，但不能证明具体原因。"
+            if causal_boundary != "not_proven" or expected_boundary not in answer.answer:
+                errors.append("causal_analysis_boundary_invalid")
+            else:
+                trusted.append(expected_boundary)
 
         availability_payload = evidence.get("data_availability")
         if availability_payload is not None:

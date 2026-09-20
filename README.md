@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.10.6 — LLM 语义理解与自然事实表达重构**。正式起始基线仍为 `main@9dfbf2f72bad299e41a138e9072a11caf8c678a7`（M5.10.5 exact-SHA CI Run `35088162355` success）；M5.10.6 implementation 已进入 fresh full-gate / Real 验证阶段，尚未提交或发布。Semantic Layer FINAL ACCEPTANCE PENDING，M5 FINAL=false。
+当前版本：**M5.10.6 — LLM 语义理解与自然事实表达重构**。本轮 FIX 基线为 `main@276d67d783f5af75dd4e55ba20e910679d623be3`；单一 `SemanticFrame` implementation、fresh local gates 与 configured DeepSeek + Real Local MCP 21/21 已完成，当前等待 whitelist commit/push、exact-SHA CI 与 final remote audit。Semantic Layer FINAL ACCEPTANCE PENDING，M5 FINAL=false。
 
 ## 项目概览
 
@@ -16,11 +16,11 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 ## 核心能力
 
 - 自然语言 Power BI 数据问答，Mock 与 Real 共用同一 TurnPipeline 执行骨架。
-- Semantic Grounding 前的 Question Router 按事实风险区分问候/闲聊/短创作、系统日期时间、bounded 概念解释、产品帮助、公开模型信息、安全基础算术、数据查询、报表与不支持请求；低风险 conversational turn 只把当前消息交给现有 LLM provider，不读取 schema、不执行 DAX/报表、不接触或污染 semantic Memory，当前日期时间来自可配置 application timezone。
+- Semantic Grounding 前的 Question Router 只处理确定性 capability/safety；唯一 `SemanticFrame` Understanding Layer 解释普通聊天、data/report mode、八种 QueryShape、relation、业务 mention 与 exact evidence spans。General turn 只把当前消息交给现有 LLM provider，不读取 schema、不执行 DAX/报表、不接触或污染 semantic Memory，当前日期时间来自可配置 application timezone。
 - Power BI MCP runtime schema 是模型结构 authority；immutable `ModelSemanticContext` 把当前 PBIX metadata 适配为候选证据，exact identity + fingerprint 验证的 optional model override 只补充业务语言/temporal metadata，runtime members 继续验证成员值。
 - Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界；requested query scope 只由实际执行的 CanonicalQueryPlan 投影，observed data coverage 只由返回 rows 证明，空 rows 明确表示“当前查询范围未返回数据”而不是 0。
-- Grounding 后的 Semantic Obligation Coverage、StateTransition 后的 Canonical Shape Completeness，以及 QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection 构成既有 fail-closed 设计；M5.10.3 已关闭 post-manual 的 shape/state P0，M5.10.4 进一步让现有 bounded LLM draft 解释开放语言，但任何无证据 shape、未知对象/成员、不完整排名或模糊时间范围仍在 DAX 前澄清。
+- veto-only Understanding Coverage、runtime Grounding、StateTransition 后的 Canonical Shape Completeness，以及 QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection 构成 fail-closed 设计；任何无证据 shape、未知对象/成员、不完整排名或模糊时间范围仍在 DAX 前澄清。旧 Intent/QueryPlan/TurnRelation 自然语言 authority 已从 production 主链删除。
 - `sales_report`（简易模板）与 `sales_executive_report`（专业销售经营分析模板）均由后端目录公开，报表请求必须显式选择；二者分别绑定独立固定 Renderer，禁止 fallback 或 LLM 临场生成 HTML/CSS/SVG。
 - COMPLEX 模板在 Renderer 前必须具备标题、分析期间、实际筛选、observed coverage、指标口径、异常状态、模型/来源、数据新鲜度和生成时间；当前轮明确时间进入全部固定子查询，多查询 coverage 保守汇总；`data_updated_at`、`queried_at`、`snapshot_at`、`generated_at` 不得互相代替。
 - 结构化多轮 Memory 只补当前轮真正省略的兼容槽；fresh/follow-up/replace 分离，当前明确表达始终优先；歧义、失败、unsupported 和 clarification 不污染已提交状态。
@@ -363,7 +363,7 @@ python -m alembic upgrade head
 | M5.10.3 | COMPLETE — Zero Wrong-Question Execution；用户人工验收通过 |
 | M5.10.4 | COMPLETE — bounded 开放语言解释与 QueryShape reconciliation；DeepSeek + Real Local MCP 14/14，residual=0 |
 | M5.10.5 | COMPLETE — `9dfbf2f` / CI `35088162355` success；确定性时间、事实防火墙与安全基线 |
-| M5.10.6 | ACTIVE — LLM 语义理解、自然事实表达与 available data horizon |
+| M5.10.6 | FIX LOCAL RELEASE CANDIDATE — 单一 Understanding Layer；Remote exact-SHA CI PENDING |
 | M5.10.7—M5.10.8 | NOT STARTED — 模板兼容/错误 UX、MVP 最终收口；Semantic Layer FINAL ACCEPTANCE PENDING |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
@@ -393,4 +393,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-17 | M5.10.5 COMPLETE / CI 35088162355 success；M5.10.6 ACTIVE；M5.10.7/8 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false*
+*最后更新：2026-09-20 | M5.10.6 FIX LOCAL RELEASE CANDIDATE；Remote exact-SHA CI PENDING；M5.10.7/8 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false*

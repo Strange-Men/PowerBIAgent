@@ -243,6 +243,25 @@ class TestTurnPipelineUnifiedControlSurface:
                 "allowed_tools": [],
             }
 
+        async def understand_callback(**kwargs):
+            from backend.app.intent.semantic_interpreter import (
+                SemanticFrame,
+                SemanticInterpretationMode,
+            )
+            from backend.app.schemas.data_contracts import QueryShape
+
+            return {
+                "_semantic_frame": SemanticFrame(
+                    mode=SemanticInterpretationMode.DATA,
+                    query_shape=QueryShape.SCALAR,
+                    measure_mentions=("销售额",),
+                    evidence_spans=(
+                        {"slot": "query_shape", "text": "销售额"},
+                        {"slot": "measure", "text": "销售额"},
+                    ),
+                )
+            }
+
         await pipeline.execute(
             message="销售额是多少",
             conversation_id=None,
@@ -253,6 +272,7 @@ class TestTurnPipelineUnifiedControlSurface:
             is_mock=True,
             llm_provider_name="mock",
             powerbi_provider_name="mock_powerbi",
+            do_conversation=understand_callback,
             do_execute=capture_callback,
         )
 

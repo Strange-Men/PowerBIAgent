@@ -8,8 +8,6 @@ import pytest
 
 from backend.app.intent.question_router import QuestionRouter
 from backend.app.intent.temporal_expression import parse_explicit_month_range
-from backend.app.query_plan.grounding import SemanticGroundingService
-from backend.app.query_plan.turn_relation import TurnRelationEvidence, TurnRelationKind
 from backend.app.schemas.data_contracts import QueryShape
 from backend.tests.stress.business_language_stress import (
     DEFAULT_SEED,
@@ -81,16 +79,8 @@ def test_minimal_adversarial_shape_reproducers(
 ) -> None:
     decision = QuestionRouter().route(question)
 
-    assert decision.query_shape == shape
-    if shape == QueryShape.RANKING:
-        assert SemanticGroundingService._extract_top_n(question) == top_n
-
-
-def test_among_prefix_is_explicit_follow_up_evidence() -> None:
-    evidence = TurnRelationEvidence.classify("其中华南净营收是多少")
-
-    assert evidence.kind == TurnRelationKind.FOLLOW_UP
-    assert evidence.explicit
+    assert decision.route.value == "llm_semantic_interpretation"
+    assert decision.query_shape is None
 
 
 @pytest.mark.parametrize(
@@ -106,7 +96,7 @@ def test_relative_year_bounded_range_minimal_reproducer(question: str) -> None:
     decision = QuestionRouter().route(question)
     parsed = parse_explicit_month_range(question, reference_year=2026)
 
-    assert decision.query_shape == QueryShape.BOUNDED_TREND
+    assert decision.query_shape is None
     assert parsed is not None
     assert (parsed.start_year, parsed.start_month) == (2026, 1)
     assert (parsed.end_year, parsed.end_month) == (2026, 6)
@@ -115,7 +105,7 @@ def test_relative_year_bounded_range_minimal_reproducer(question: str) -> None:
 def test_yearless_bounded_range_is_detected_but_not_invented() -> None:
     question = "1月到6月每个月的销售额趋势"
 
-    assert QuestionRouter().route(question).query_shape == QueryShape.BOUNDED_TREND
+    assert QuestionRouter().route(question).query_shape is None
     assert parse_explicit_month_range(question, reference_year=2026) is None
 
 
