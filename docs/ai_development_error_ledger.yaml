@@ -8,6 +8,45 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-5106-009
+  title: 人工验收 follow-up、yearless month、Report output 与 member display 集成合同不一致
+  category: ERR
+  first_detected_version: M5.10.6
+  symptom: committed state 已存在时 partial grounding 仍表现失忆；无年份月份可在模型校验阶段失败；已选模板的纯报表请求在 ReportPlan 前 validation_failed；中文 presentation 泄漏 South/North；前端普通 turn 后清空模板选择
+  local_evidence: 人工验收复现；pre-fix Real trace 5a9ff42a-2382-4c3b-8c90-287b4987c299 为 SemanticInterpretationError、2 LLM calls、ZERO MCP/report calls；post-fix configured DeepSeek + Real Local MCP 完成 9 个真实查询并生成 sales_executive_report artifact
+  authoritative_sources:
+  - title: M5.10.6 FIX 人工验收集成缺陷定点收口用户指令
+    reason: 只修已证明的 integration contract，保持 runtime canonical 与事实 authority
+  root_cause: Pending merge 未消费当前 SemanticFrame 的 referenced/changed slot 边界；TimeIntentDraft 把 language draft 与 canonical completeness 混为一体；统一理解层把纯 REPORT output frame 错套 DATA query shape 义务；template selection 生命周期绑定任何 submit；presentation 只本地化字段名而未投影 runtime-verified member alias
+  failed_attempts:
+  - Real diagnostic wrapper 曾把 LLMUsageSummary 当 dict 读取，导致 AttributeError 丢失 stage；改用对象属性后确认请求在 semantic interpretation 阶段失败
+  repair_attempt_count: 1
+  final_fix: Pending 只按 frame 引用继承且 changed slot 优先清空；yearless month 由 Grounding 以兼容 committed year 解析或澄清；只放行无 data slots 的 REPORT output frame；模板仅在 completed report 后消费；verified member alias 仅用于中文 display projection
+  regression_tests:
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/unit/test_deepseek_intent_service.py
+  - backend/tests/unit/test_report_generation.py
+  - backend/tests/unit/test_presentation_localization.py
+  - frontend/src/hooks/usePowerBIAgent.race.test.tsx
+  prohibited_patterns:
+  - 为 follow-up 默认继承全部 committed state
+  - 为无年份月份猜当前年、最近年或数据最大年
+  - 要求纯模板报表请求发明 DATA query shape
+  - 在 Grounding、DAX、VerifiedFactSet 或 Memory 中本地化 canonical member
+  prevention_rules:
+  - language draft completeness 与 canonical runtime completeness 分层验证
+  - UI transient selection 只由成功消费该选择的响应清除
+  - presentation alias 必须 model-scoped、runtime-bound 且不改变 canonical facts
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-23'
+    action: discovered
+    version: M5.10.6
+  - date: '2026-09-23'
+    action: focused_and_real_verified
+    version: M5.10.6
 - id: ERR-5106-006
   title: Explain-change exact evidence 在真实 DeepSeek 重复运行中仍不稳定
   category: ERR

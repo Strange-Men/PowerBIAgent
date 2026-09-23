@@ -4,6 +4,7 @@
 
 ## [M5.10.6] — 2026-09-23（Real Stress 与人工 residual 本地最终收口；remote pending）
 
+- **人工验收集成缺陷定点收口：** Pending clarification 仅按当前 `SemanticFrame.referenced_context_slots` 继承 committed canonical slots，并拒绝继承 `changed_slots`；yearless absolute month 保留为 language draft，有同日期字段 committed year 才解析，否则明确询问年份并保持 ZERO DAX。纯 REPORT output frame 不再被 DATA query shape 校验误拒，已选择 `sales_executive_report` 的 Real DeepSeek + Local MCP 请求完成 9 个真实查询并生成对应 artifact。前端仅在 report completed 后消费模板选择；中文 summary/table/chart member display 复用 model-scoped verified alias，canonical `South/North` 不变。Focused backend `52 passed`、frontend targeted `13 passed`、typecheck、targeted py_compile 与 diff-check PASS；等待本 FIX commit/push 与用户人工验收。
 - **已发布 FIX 证据：** Understanding Layer 重构与旧语义链清理已提交并 push 到 `main@6b9abd890d58bed5768687733d2c1172532850ec`；GitHub Actions Run `35496889792` 对该 exact SHA completed/success。下述 21/21 Local Real 与 fresh automated 数字仍是该已发布 FIX 的独立本地证据，不冒充远程执行结果。
 - **Post-release 人工 residual：** 最新人工验收证明 21-case Real 覆盖面不足：`South` literal runtime member 可偶发失败，English wrapper + 中文 member 可产生筛选字段歧义，普通答案仍可泄漏 `Total Sales` / `South` 等 canonical technical name，General LLM 可把附近商家/实时天气/股价/新闻当作已核实事实回答。M5.10.6 因此标记 `USER ACCEPTANCE RESIDUAL FOUND` 与 `FINAL ACCEPTANCE REOPENED`。
 - **新的验收工作：** 先将上述 residual 固化为 Final Acceptance Residual Corpus，再建立 configured DeepSeek + Real Local MCP 的 Real Language Stress Corpus；目标不少于 72 个 unique scenarios / 120 次 Real executions，24 个高风险场景各3次稳定性重复。预期由 runtime schema/member/canonical invariant 确定，禁止用同一 LLM 自评。完成 RED 前不修 production；同根因最多两轮 forward-fix。

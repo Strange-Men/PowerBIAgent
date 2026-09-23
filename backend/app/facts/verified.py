@@ -490,6 +490,7 @@ class FactBoundedAnswerBuilder:
         data_availability: Any | None = None,
         user_facing_filter_values: dict[tuple[str, str], str] | None = None,
         user_facing_measure_labels: dict[str, str] | None = None,
+        user_facing_member_values: dict[tuple[str, str], str] | None = None,
     ) -> AnswerSpec:
         # Local import avoids making the factual authority module depend on the
         # presentation package during module initialization.
@@ -507,6 +508,7 @@ class FactBoundedAnswerBuilder:
         metrics: dict[str, Any] = {}
         metric_provenance: dict[str, dict[str, str]] = {}
         filter_labels = user_facing_filter_values or {}
+        member_labels = user_facing_member_values or {}
         measure_labels = user_facing_measure_labels or {}
         for canonical, label in measure_labels.items():
             if canonical not in plan.measures or not label.strip():
@@ -560,6 +562,7 @@ class FactBoundedAnswerBuilder:
                 ranking.source_fields,
                 formatter,
                 bindings,
+                member_labels=member_labels,
             )
             measure_field = ranking.source_fields[-1]
             measure_label = self._field_label(
@@ -567,7 +570,8 @@ class FactBoundedAnswerBuilder:
             )
             names = [
                 self._dimension_text(
-                    item["dimensions"], ranking.source_fields, formatter, bindings
+                    item["dimensions"], ranking.source_fields, formatter, bindings,
+                    member_labels=member_labels,
                 )
                 for item in ranking.values
             ]
@@ -595,6 +599,7 @@ class FactBoundedAnswerBuilder:
                     item.source_fields,
                     formatter,
                     bindings,
+                    member_labels=member_labels,
                     month=self._is_time_grouped(plan, primary),
                 )
                 measure_field = item.source_fields[-1]
@@ -627,7 +632,7 @@ class FactBoundedAnswerBuilder:
                     used.append(maximum)
                     measure_field = maximum.source_fields[-1]
                     parts.append(
-                        f"{self._dimension_text(maximum.dimensions, maximum.source_fields, formatter, bindings)}"
+                        f"{self._dimension_text(maximum.dimensions, maximum.source_fields, formatter, bindings, member_labels=member_labels)}"
                         f"的{self._field_label(maximum.measure or measure_field, measure_field, bindings)}最高，"
                         f"为{self._format_value(maximum.value, measure_field, formatter, bindings)}。"
                     )
@@ -847,6 +852,7 @@ class FactBoundedAnswerBuilder:
         formatter: Any,
         bindings: dict[str, Any],
         *,
+        member_labels: dict[tuple[str, str], str] | None = None,
         month: bool = False,
     ) -> str:
         from backend.app.presentation.formatter import PresentationFormatKind
@@ -860,9 +866,11 @@ class FactBoundedAnswerBuilder:
                     value, PresentationFormatKind.MONTH
                 )
             else:
-                display_value = cls._format_value(
-                    value, source_field, formatter, bindings
-                )
+                display_value = (member_labels or {}).get((canonical_name, str(value)))
+                if display_value is None:
+                    display_value = cls._format_value(
+                        value, source_field, formatter, bindings
+                    )
             rendered.append(f"{label}{display_value}")
         return "，".join(rendered)
 

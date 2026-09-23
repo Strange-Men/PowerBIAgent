@@ -46,6 +46,7 @@ class StructuredPresentationBuilder:
         answer_text: str,
         *,
         display_bindings: dict[str, DisplayLocalization] | None = None,
+        display_values: dict[tuple[str, str], str] | None = None,
         locale: str = "zh-CN",
     ) -> PresentationEnvelope:
         cls._validate_authority(result, facts)
@@ -54,6 +55,7 @@ class StructuredPresentationBuilder:
             result,
             facts,
             display_bindings=display_bindings,
+            display_values=display_values,
             locale=locale,
         )
         blocks: list[object] = [TextPresentationBlock(content=answer_text)]
@@ -135,6 +137,7 @@ class StructuredPresentationBuilder:
         facts: VerifiedFactSet,
         *,
         display_bindings: dict[str, DisplayLocalization] | None,
+        display_values: dict[tuple[str, str], str] | None = None,
         locale: str,
     ) -> PresentationDataset:
         verified_fields = {
@@ -187,7 +190,10 @@ class StructuredPresentationBuilder:
             formatter = PresentationFormatter(locale=locale)
             formatted_rows = [
                 [
-                    formatter.format(value, binding.format_kind)
+                    (display_values or {}).get(
+                        (binding.canonical_name, str(value)),
+                        formatter.format(value, binding.format_kind),
+                    )
                     for value, binding in zip(row, effective_bindings)
                 ]
                 for row in raw_rows

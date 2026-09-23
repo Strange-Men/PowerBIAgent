@@ -790,6 +790,30 @@ class _ReportLanguageProvider(LLMProvider):
         return LLMResponse(content="{}", structured=structured, model="test")
 
 
+class _PureReportLanguageProvider(_ReportLanguageProvider):
+    """A template-selected report request with no data-query language slots."""
+
+    async def generate(self, request: LLMRequest, output_type: type) -> LLMResponse:
+        if output_type is SemanticFrame:
+            self.calls.append(request)
+            return LLMResponse(
+                content="{}",
+                structured=SemanticFrame(
+                    mode=SemanticInterpretationMode.REPORT,
+                    query_shape=None,
+                    output_mode="report",
+                    evidence_spans=(
+                        SemanticEvidenceSpan(
+                            slot="output_mode",
+                            text="专业销售经营分析报表",
+                        ),
+                    ),
+                ),
+                model="test",
+            )
+        return await super().generate(request, output_type)
+
+
 class _TimeScopedReportLanguageProvider(_ReportLanguageProvider):
     """Report request whose current-turn year must reach every fixed query."""
 
@@ -1243,6 +1267,43 @@ async def test_production_full_available_executes_all_nine_sections_with_true_ti
     assert "local_desktop_model" in audit_footer
     assert "2026-09-14 09:00 北京时间" in main_visual
     assert "2026-09-14T01:00:01+00:00" in audit_footer
+    assert repository.store_count == 1
+
+
+@pytest.mark.asyncio
+async def test_selected_executive_template_accepts_pure_report_output_frame():
+    adapter = _RichRealReportAdapter()
+    repository = _CountingReportRepository()
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        powerbi_local_semantic_model_key="local_desktop_model",
+        max_tool_calls=8,
+    )
+    service = DeepSeekTurnService(
+        memory_repo=InMemoryMemoryRepository(),
+        llm_provider=_PureReportLanguageProvider(),
+        powerbi_adapter=adapter,
+        report_renderer=ExecutiveSalesReportRenderer(),
+        report_repository=repository,
+        settings=settings,
+        config=HarnessConfig.from_settings(settings),
+    )
+
+    result = await service.execute(
+        message="生成专业销售经营分析报表",
+        conversation_id="conv-pure-executive",
+        request_id="req-pure-executive",
+        semantic_model_key="local_desktop_model",
+        report_template_key="sales_executive_report",
+    )
+
+    assert result["terminal_state"] == "completed"
+    assert result["response_type"] == "report"
+    assert result["report"]["template_key"] == "sales_executive_report"
+    assert result["execution_audit"]["query_count"] == 9
+    assert adapter.execute_count == 9
     assert repository.store_count == 1
 
 

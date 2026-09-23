@@ -134,6 +134,37 @@ async def test_report_mode_is_forced_without_creating_template_authority() -> No
 
 
 @pytest.mark.asyncio
+async def test_pure_report_output_frame_does_not_require_data_query_shape() -> None:
+    provider = _QueueProvider(
+        SemanticFrame(
+            mode=SemanticInterpretationMode.REPORT,
+            query_shape=None,
+            output_mode="report",
+            evidence_spans=(
+                SemanticEvidenceSpan(
+                    slot="output_mode", text="专业销售经营分析报表"
+                ),
+            ),
+        ),
+        _accept(),
+    )
+
+    frame = await LLMSemanticInterpreter(provider).interpret(
+        "生成专业销售经营分析报表",
+        forced_mode=SemanticInterpretationMode.REPORT,
+    )
+
+    assert frame.mode is SemanticInterpretationMode.REPORT
+    assert frame.output_mode == "report"
+    assert frame.query_shape is None
+    assert frame.unresolved_mentions == ()
+    assert [request.task for request, _ in provider.calls] == [
+        LLMTask.UNDERSTANDING,
+        LLMTask.UNDERSTANDING_COVERAGE,
+    ]
+
+
+@pytest.mark.asyncio
 async def test_follow_up_relation_and_changed_slots_are_language_only() -> None:
     provider = _QueueProvider(
         SemanticFrame(

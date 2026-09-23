@@ -580,6 +580,15 @@ export function usePowerBIAgent() {
           updatedAt: localResourceNow(),
         }))
         if (
+          response.intent === 'report_generation' &&
+          response.response_type === 'report' &&
+          response.terminal_state === 'completed' &&
+          activeConversationIdRef.current === conversationId &&
+          selectedReportTemplateRef.current?.key === template?.key
+        ) {
+          setSelectedReportTemplate(null)
+        }
+        if (
           response.error_type === 'stale_instance' ||
           response.error_type === 'DESKTOP_STALE_INSTANCE'
         ) {
@@ -653,12 +662,6 @@ export function usePowerBIAgent() {
         }
       } finally {
         runningConversationIdsRef.current.delete(conversationId)
-        if (
-          activeConversationIdRef.current === conversationId &&
-          selectedReportTemplateRef.current?.key === template?.key
-        ) {
-          setSelectedReportTemplate(null)
-        }
       }
     },
     [

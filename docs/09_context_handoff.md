@@ -3,6 +3,12 @@
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
 > **最后更新：** 2026-09-23
 
+## M5.10.6 人工验收集成缺陷定点收口 — 2026-09-23
+
+当前 implementation 已关闭四类人工验收 residual：Pending merge 只继承当前 frame 明确引用且未 changed 的 committed canonical slots；yearless month 作为不完整语言 draft，仅以兼容 committed year 确定性解析；模板选择只在 report completed 后消费；中文 presentation 从 model-scoped verified member alias 显示南区/北区，canonical execution、VerifiedFactSet 与 Memory 仍为 South/North。
+
+Report pre-fix Real diagnosis 为 `validation_failed / SemanticInterpretationError`，trace `5a9ff42a-2382-4c3b-8c90-287b4987c299`，2 LLM calls、ZERO MCP/report calls。根因是纯 REPORT output frame 被 DATA query 的 shape/unresolved 结构校验误拒。最小修复只允许无 data slots 的 REPORT frame 进入既有 selected template → ReportPlan 链，DATA fail-closed 规则不变。Post-fix configured DeepSeek + Real Local MCP 服务完成 `sales_executive_report`，执行 9 个真实 MCP 查询并生成 artifact。Focused backend `52 passed`，frontend targeted `13 passed`，typecheck 与 targeted py_compile PASS；commit/push 与用户人工验收待本轮完成。M5.10.7/8 NOT STARTED，M5 FINAL=false。
+
 ## 当前阶段 — M5.10.6 FIX — LOCAL RELEASE CANDIDATE
 
 本轮正式基线为 `main@6b9abd890d58bed5768687733d2c1172532850ec`；GitHub Actions Run `35496889792` 对该旧 FIX exact SHA completed/success。Settings.version 保持 M5.10.6。最新人工 residual 已重新进入 failure-first、Real stress 与 final gate 流程；当前 production worktree 是本地 release candidate，尚未 commit/push，不得把旧 CI 冒充本轮 remote evidence。

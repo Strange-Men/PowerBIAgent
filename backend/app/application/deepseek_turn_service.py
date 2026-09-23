@@ -173,6 +173,7 @@ from backend.app.presentation.localization import (
     DisplayLocalizationError,
     DisplayLocalizationService,
     JsonDisplayLocalizationRegistry,
+    localize_member_text,
 )
 from backend.app.presentation.models import PresentationEnvelope
 from backend.app.presentation.query_scope import DeterministicQueryScopeDescriptor
@@ -1171,6 +1172,7 @@ class LLMTurnService:
                         intent=intent.intent.value,
                         committed=semantic_committed,
                         relation=semantic_frame.relation,
+                        semantic_frame=semantic_frame,
                     )
                 if clarification_merge is not None and not clarification_merge.complete:
                     await self.pipeline.save_pending_clarification(
@@ -1691,6 +1693,7 @@ class LLMTurnService:
         report_data: Optional[dict[str, Any]] = None
         response_type: str = ""
         display_bindings: dict[str, DisplayLocalization] | None = None
+        member_display_values: dict[tuple[str, str], str] = {}
 
         if intent.intent == IntentType.DATA_QUESTION:
             response_type = "answer"
@@ -1757,6 +1760,38 @@ class LLMTurnService:
                         display_bindings = dict(
                             zip(presentation_fields, resolved)
                         )
+                        field_values: dict[str, set[str]] = {
+                            field: set() for field in query_plan.dimensions
+                        }
+                        for field in query_plan.dimensions:
+                            for index, column in enumerate(query_result.columns):
+                                if column == field or column.endswith(f"[{field}]"):
+                                    field_values[field].update(
+                                        str(row[index]) for row in query_result.rows
+                                        if row[index] is not None
+                                    )
+                        for item in query_plan.filters:
+                            values = item.value if isinstance(item.value, list) else [item.value]
+                            field_values.setdefault(item.field, set()).update(
+                                str(value) for value in values if value is not None
+                            )
+                        try:
+                            member_display_values = localization.resolve_member_labels(
+                                field_values,
+                                locale="zh-CN",
+                                table_hints=query_plan.dimension_tables,
+                            )
+                        except DisplayLocalizationError:
+                            member_display_values = {}
+                        user_facing_filter_values = {
+                            **{
+                                (item.field, str(value)): member_display_values[(item.field, str(value))]
+                                for item in query_plan.filters
+                                for value in (item.value if isinstance(item.value, list) else [item.value])
+                                if (item.field, str(value)) in member_display_values
+                            },
+                            **user_facing_filter_values,
+                        }
                         if semantic_frame.measure_mentions:
                             original_measure = semantic_frame.measure_mentions[0]
                             for field, binding in list(display_bindings.items()):
@@ -1814,6 +1849,7 @@ class LLMTurnService:
                             user_facing_measure_labels=(
                                 user_facing_measure_labels
                             ),
+                            user_facing_member_values=member_display_values,
                         )
                         if semantic_frame.analysis_goal.value == "EXPLAIN_CHANGE":
                             boundary = "当前数据可以描述已验证的变化，但不能证明具体原因。"
@@ -1842,6 +1878,15 @@ class LLMTurnService:
                                 request_id=effective_req_id,
                                 data_summary={"reason": type(exc).__name__},
                             )
+                        if member_display_values:
+                            response_obj = response_obj.model_copy(update={
+                                "answer": localize_member_text(
+                                    response_obj.answer, member_display_values
+                                ),
+                                "summary": localize_member_text(
+                                    response_obj.summary, member_display_values
+                                ),
+                            })
                 else:
                     answer_service = DeepSeekAnswerService(
                         provider=observed, max_repairs=1
@@ -2046,6 +2091,7 @@ class LLMTurnService:
                     verified_facts,
                     answer_text,
                     display_bindings=display_bindings,
+                    display_values=member_display_values,
                 )
             elif report_data is not None:
                 presentation = StructuredPresentationBuilder.build_report(

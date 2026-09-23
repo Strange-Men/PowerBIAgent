@@ -13,6 +13,30 @@
 - Current product version: `M5.10.6`; keep it unchanged throughout this redesign.
 - Semantic Layer FINAL ACCEPTANCE follows this milestone; `M5 FINAL=false`.
 
+## Targeted manual-acceptance integration closure — 2026-09-23
+
+- Pending clarification seeds committed canonical state only for slots explicitly
+  named in `referenced_context_slots`; corresponding `changed_slots` values are
+  cleared before current grounding wins. Unknown replacement members retain proven
+  measure/field context but remain MEMBER_NO_MATCH with ZERO execution/commit.
+- `ABSOLUTE_MONTH(month, year=null)` is a valid language draft. Grounding resolves it
+  only from a compatible committed date-field year; otherwise it asks for the year.
+  EXPLAIN_CHANGE keeps the existing non-causal factual boundary.
+- Pre-fix selected-template Real diagnosis stopped before ReportPlan with
+  `validation_failed / SemanticInterpretationError`, 2 LLM calls and ZERO MCP/report
+  calls. The pure REPORT output frame was incorrectly required to invent a DATA query
+  shape or unresolved business term. The validator now admits only an otherwise empty
+  REPORT frame; DATA structure validation remains unchanged.
+- Post-fix configured DeepSeek + Real Local MCP completed the selected executive
+  report service path with 9 real query executions and a non-null
+  `sales_executive_report` artifact.
+- Frontend template selection persists through ordinary turns and failures and is
+  consumed only by a completed report. Chinese presentation uses model-scoped verified
+  member aliases for summary/table/chart display while canonical values remain intact.
+- Focused evidence: backend `52 passed`; frontend targeted `13 passed`; frontend
+  typecheck and targeted Python compilation passed. Commit/push and user manual
+  acceptance remain; M5.10.7/8 are not started and `M5 FINAL=false`.
+
 ## Final acceptance reopening — 2026-09-20
 
 The published FIX remains valid historical evidence, including its local automated

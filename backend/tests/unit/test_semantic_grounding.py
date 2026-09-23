@@ -16,6 +16,7 @@ from backend.app.intent.models import (
 )
 from backend.app.intent.question_router import QuestionRouter
 from backend.app.intent.semantic_interpreter import (
+    AnalysisGoal,
     RankingIntent,
     SemanticEvidenceSpan,
     SemanticFilterMention,
@@ -37,6 +38,7 @@ from backend.app.query_plan.grounding import (
     GroundedSemanticDelta,
     GroundingOutcome,
     GroundingStatus,
+    MemberGroundingResult,
     MemberGrounder,
     ObjectGroundingResult,
     ObjectGrounder,
@@ -842,6 +844,55 @@ class TestMemberAndTimeGrounding:
 
         assert grounder.ground("只看五月", field) is None
         assert grounder.ground("从1月到6月", field) is None
+
+    def test_yearless_absolute_month_draft_uses_only_compatible_context(self):
+        field = next(
+            item for item in _catalog().objects if item.canonical_name == "OrderDate"
+        )
+        draft = TimeIntentDraft(
+            kind=TimeIntentKind.ABSOLUTE_MONTH, expression="6月", month=6
+        )
+        prior = TimeRangeSpec(
+            date_field="OrderDate", start_date=date(2025, 1, 1),
+            end_date=date(2025, 12, 31),
+            mode=TimeRangeMode.EXPLICIT_RANGE,
+        )
+        grounder = TimeGrounder(lambda: date(2026, 8, 13))
+        resolved = grounder.ground("6月", field, draft, prior)
+        assert resolved is not None
+        assert (resolved.start_date, resolved.end_date) == (
+            date(2025, 6, 1), date(2025, 6, 30)
+        )
+        assert grounder.ground("6月", field, draft) is None
+        assert grounder.ground(
+            "6月", field, draft,
+            prior.model_copy(update={"date_field": "OtherDate"}),
+        ) is None
+
+    @pytest.mark.asyncio
+    async def test_explain_change_yearless_month_requires_year_before_execution(self):
+        frame = SemanticFrame(
+            mode=SemanticInterpretationMode.DATA,
+            query_shape=QueryShape.SCALAR,
+            measure_mentions=("销售额",),
+            time_mentions=("6月",),
+            time_intent=TimeIntentDraft(
+                kind=TimeIntentKind.ABSOLUTE_MONTH, expression="6月", month=6
+            ),
+            analysis_goal=AnalysisGoal.EXPLAIN_CHANGE,
+        )
+
+        async def no_lookup(*_):
+            raise AssertionError("year clarification must not query members")
+
+        outcome = await SemanticGroundingService(_catalog()).ground_frame(
+            "为什么6月销售额下降了？", frame, None, no_lookup
+        )
+        assert outcome.status is GroundingStatus.UNRESOLVED
+        assert outcome.clarification_reason is ClarificationReason.INCOMPLETE_TIME_RANGE
+        assert outcome.clarification_question == "请明确是哪一年的6月。"
+        assert outcome.delta is not None
+        assert outcome.delta.time_range is None
 
     @pytest.mark.parametrize(
         ("phrase", "expected_start", "expected_end"),
@@ -3764,6 +3815,115 @@ class TestPendingClarificationContract:
             committed=None,
             relation=relation,
         )
+
+    @staticmethod
+    def _committed_context(shape: QueryShape = QueryShape.RANKING):
+        return StructuredWorkMemory(
+            conversation_id="clarification-chain",
+            semantic_model_key="local_desktop_model",
+            state_status=MemoryStatus.COMMITTED,
+            runtime_mode=RuntimeDataMode.REAL,
+            measures=["Total Sales"],
+            dimensions=["Category"],
+            filters=[StructuredFilter(field="Category", value="South").model_dump(mode="json")],
+            sort="desc" if shape is QueryShape.RANKING else None,
+            top_n=3 if shape is QueryShape.RANKING else None,
+            last_query_plan={
+                "query_shape": shape.value,
+                "dimension_tables": {"Category": "Sales"},
+            },
+            memory_version=2,
+        )
+
+    def _merge_with_frame(self, outcome, frame, committed):
+        return PendingClarificationService().merge(
+            previous=None, outcome=outcome, user_input="follow-up",
+            conversation_id="clarification-chain", request_id="follow-up",
+            semantic_model_key="local_desktop_model",
+            schema_fingerprint=compute_schema_fingerprint(_schema()),
+            runtime_mode=RuntimeDataMode.REAL, intent="data_question",
+            committed=committed, semantic_frame=frame,
+        )
+
+    def test_committed_context_survives_partial_measure_replacement(self):
+        merged = self._merge_with_frame(
+            GroundingOutcome(
+                status=GroundingStatus.UNRESOLVED,
+                delta=GroundedSemanticDelta(measures=["Total Quantity"]),
+            ),
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                relation=TurnRelation.REPLACE,
+                changed_slots=("measure",),
+                referenced_context_slots=(
+                    "query_shape", "dimensions", "filters", "ranking"
+                ),
+            ),
+            self._committed_context(),
+        )
+        assert merged.context.measures == ["Total Quantity"]
+        assert merged.context.dimensions == ["Category"]
+        assert merged.context.filters == [StructuredFilter(field="Category", value="South")]
+        assert merged.context.query_shape is QueryShape.RANKING
+        assert (merged.context.sort, merged.context.top_n) == ("desc", 3)
+
+    def test_unknown_replacement_member_preserves_measure_and_field_only(self):
+        field = next(item for item in _catalog().objects if item.canonical_name == "Category")
+        merged = self._merge_with_frame(
+            GroundingOutcome(
+                status=GroundingStatus.UNRESOLVED,
+                delta=GroundedSemanticDelta(query_shape=QueryShape.MEMBER_SET),
+                member_results=[MemberGroundingResult(
+                    status=GroundingStatus.UNRESOLVED,
+                    field=field, requested_value="火星区",
+                )],
+                clarification_reason=ClarificationReason.MEMBER_NO_MATCH,
+                clarification_question="筛选值未匹配模型中的任何成员，请确认后重试。",
+            ),
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                relation=TurnRelation.FOLLOW_UP,
+                changed_slots=("filters",),
+                referenced_context_slots=("query_shape", "measures", "dimensions"),
+            ),
+            self._committed_context(QueryShape.MEMBER_SET),
+        )
+        assert merged.context.measures == ["Total Sales"]
+        assert merged.context.dimensions == ["Category"]
+        assert merged.context.filters == []
+        assert merged.context.missing_slots == ["filter"]
+        assert merged.clarification_question == "筛选值未匹配模型中的任何成员，请确认后重试。"
+        assert merged.executable_delta is None
+
+    def test_changed_and_fresh_slots_never_seed_committed_values(self):
+        outcome = GroundingOutcome(
+            status=GroundingStatus.UNRESOLVED,
+            delta=GroundedSemanticDelta(query_shape=QueryShape.GROUPED),
+        )
+        committed = self._committed_context(QueryShape.GROUPED)
+        changed = self._merge_with_frame(
+            outcome,
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                relation=TurnRelation.REPLACE,
+                changed_slots=("measure",),
+                referenced_context_slots=("measure", "dimensions"),
+            ),
+            committed,
+        )
+        fresh = self._merge_with_frame(
+            outcome,
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                relation=TurnRelation.FRESH_QUESTION,
+                referenced_context_slots=("measure", "dimensions"),
+            ),
+            committed,
+        )
+        assert changed.context.measures == []
+        assert changed.context.dimensions == ["Category"]
+        assert fresh.context.measures == []
+        assert fresh.context.dimensions == []
 
     def test_partial_slots_accumulate_without_becoming_executable(self):
         first = self._merge(

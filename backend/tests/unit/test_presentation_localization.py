@@ -6,6 +6,7 @@ import pytest
 
 from backend.app.dax.builder import DeterministicDAXBuilder
 from backend.app.facts import VerifiedFactSetBuilder
+from backend.app.facts.verified import FactBoundedAnswerBuilder
 from backend.app.presentation.builder import StructuredPresentationBuilder
 from backend.app.presentation.formatter import (
     PresentationFormatKind,
@@ -18,6 +19,7 @@ from backend.app.presentation.localization import (
     DisplayLocalizationSource,
     DisplayTranslationCandidate,
     JsonDisplayLocalizationRegistry,
+    localize_member_text,
 )
 from backend.app.query_plan.semantic_catalog import (
     CatalogObject,
@@ -87,6 +89,58 @@ def _catalog(
         schema_fingerprint="a" * 64,
         objects=objects,
     )
+
+
+@pytest.mark.asyncio
+async def test_verified_member_aliases_localize_answer_and_table_only() -> None:
+    catalog = _catalog(
+        CatalogObject(
+            object_id="field:Sales:Region", canonical_name="Region",
+            object_type=SemanticObjectType.FIELD, table_name="Sales",
+            data_type="string", display_name="区域",
+            member_aliases={"南区": "South", "北区": "North"},
+            source=SemanticObjectSource.GLOSSARY,
+        ),
+        CatalogObject(
+            object_id="measure:Sales:Total Sales", canonical_name="Total Sales",
+            object_type=SemanticObjectType.MEASURE, table_name="Sales",
+            data_type="decimal", display_name="销售额",
+        ),
+    )
+    plan = CanonicalQueryPlan(
+        normalized_question="各区域销售额", semantic_model_key="model",
+        measures=["Total Sales"], dimensions=["Region"],
+        dimension_tables={"Region": "Sales"},
+    )
+    result = QueryResult(
+        query_id="localized-members", semantic_model_key="model",
+        source_mode="real", columns=["Sales[Region]", "[Total Sales]"],
+        rows=[["South", 10], ["North", 8]], row_count=2,
+    )
+    facts = VerifiedFactSetBuilder().build(plan, result)
+    localization = DisplayLocalizationService(catalog)
+    bindings = await localization.resolve_fields(
+        result.columns, locale="zh-CN", table_hints=plan.dimension_tables
+    )
+    labels = localization.resolve_member_labels(
+        {"Region": {"South", "North"}}, locale="zh-CN",
+        table_hints=plan.dimension_tables,
+    )
+    answer = FactBoundedAnswerBuilder().build(
+        plan, result, facts,
+        display_bindings=dict(zip(result.columns, bindings, strict=True)),
+        user_facing_member_values=labels,
+    )
+    presentation = StructuredPresentationBuilder.build_answer(
+        plan, result, facts, answer.answer,
+        display_bindings=dict(zip(result.columns, bindings, strict=True)),
+        display_values=labels,
+    )
+    assert labels == {("Region", "South"): "南区", ("Region", "North"): "北区"}
+    assert "South" not in answer.summary and "North" not in answer.summary
+    assert localize_member_text("区域South和区域North", labels) == "区域南区和区域北区"
+    assert presentation.datasets[0].rows == result.rows
+    assert [row[0] for row in presentation.datasets[0].formatted_rows] == ["南区", "北区"]
 
 
 @pytest.mark.parametrize(

@@ -329,6 +329,25 @@ class DisplayLocalizationService:
                 )
         return tuple(resolved[item.object_id] for item in objects)
 
+    def resolve_member_labels(
+        self,
+        field_values: dict[str, set[str]],
+        *,
+        locale: str,
+        table_hints: dict[str, str] | None = None,
+    ) -> dict[tuple[str, str], str]:
+        """Display glossary aliases only for values observed in verified results."""
+        if not locale.casefold().startswith("zh"):
+            return {}
+        labels: dict[tuple[str, str], str] = {}
+        for field, values in field_values.items():
+            item = self._resolve_runtime_object(field, table_hints=table_hints)
+            for alias, canonical in item.member_aliases.items():
+                if canonical in values and _contains_cjk(alias):
+                    labels.setdefault((item.canonical_name, canonical), alias)
+        return labels
+
+
     def binding_for_registry(
         self,
         *,
@@ -425,6 +444,26 @@ class DisplayLocalizationService:
         if len(matches) != 1:
             raise DisplayLocalizationError("display_object_unknown")
         return matches[0]
+
+
+def localize_member_text(
+    value: str, labels: dict[tuple[str, str], str]
+) -> str:
+    """Replace only unambiguous, catalog-bound canonical member tokens."""
+    by_value: dict[str, str | None] = {}
+    for (_, canonical), display in labels.items():
+        previous = by_value.get(canonical)
+        by_value[canonical] = display if previous is None else (
+            display if previous == display else ""
+        )
+    for canonical, display in sorted(by_value.items(), key=lambda item: -len(item[0])):
+        if display and canonical != display:
+            value = re.sub(
+                rf"(?<![A-Za-z0-9_]){re.escape(canonical)}(?![A-Za-z0-9_])",
+                display,
+                value,
+            )
+    return value
 
 
 def compute_display_schema_identity(catalog: SemanticCatalog) -> str:

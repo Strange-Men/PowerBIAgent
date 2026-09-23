@@ -286,8 +286,9 @@ For DATA/REPORT:
 - An explicit month interval used as a monthly series is query_shape=bounded_trend;
   an unbounded/current/recent series is trend. “2025 H2”, “2025年后6个月”, and
   “2025年7月至12月” are bounded_range with start_date=2025-07-01 and
-  end_date=2025-12-31. A month without a year or reference context is incomplete:
-  keep it unresolved and do not emit an invalid absolute_month.
+  end_date=2025-12-31. A month without a year or reference context is a valid
+  incomplete language draft: emit absolute_month with its month and year=null.
+  Runtime grounding must require a compatible committed year or clarification.
 - Each result-affecting mention and structural decision must have a verbatim
   evidence_spans entry copied from the current message. Put possibly important
   unexpressed/unclear business language in unresolved_mentions.
@@ -515,6 +516,27 @@ class LLMSemanticInterpreter:
     @staticmethod
     def _validate_structure(frame: SemanticFrame) -> None:
         if frame.mode is SemanticInterpretationMode.GENERAL:
+            return
+        if (
+            frame.mode is SemanticInterpretationMode.REPORT
+            and frame.output_mode == "report"
+            and frame.query_shape is None
+            and not any((
+                frame.measure_mentions,
+                frame.dimension_mentions,
+                frame.member_mentions,
+                frame.filter_mentions,
+                frame.time_mentions,
+                frame.time_intent is not None,
+                frame.ranking_intent is not None,
+                frame.comparison_intent is not None,
+                frame.unresolved_mentions,
+                frame.changed_slots,
+                frame.referenced_context_slots,
+            ))
+        ):
+            # The selected template and ReportPlan own fixed report query scope.
+            # A pure output request carries no data-query shape to invent.
             return
         if (
             frame.query_shape is None

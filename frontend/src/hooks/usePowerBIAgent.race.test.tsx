@@ -499,6 +499,52 @@ describe('conversation-owned chat concurrency', () => {
 })
 
 describe('report presentation synchronization', () => {
+  it('keeps the exact template through ordinary and failed turns until a report completes', async () => {
+    api.sendChat.mockImplementation((body: ChatRequest) => {
+      if (body.message === 'failed report') {
+        return Promise.resolve({
+          ...response(body, ''),
+          terminal_state: 'response_failed',
+          intent: 'report_generation',
+          response_type: 'error',
+          error_type: 'report_pipeline_failed',
+        })
+      }
+      if (body.message === 'completed report') {
+        return Promise.resolve({
+          ...response(body, '报表已生成'),
+          intent: 'report_generation',
+          response_type: 'report',
+          report: {
+            report_id: 'rpt-a',
+            template_key: 'sales_report',
+            contract_version: '1.0',
+            view_reference: '/api/reports/rpt-a',
+            download_reference: '/api/reports/rpt-a/download',
+            content_type: 'text/html; charset=utf-8',
+            content_hash: 'a'.repeat(64),
+          },
+        })
+      }
+      return Promise.resolve(response(body, '普通回答'))
+    })
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(result.current.loadingReportTemplates).toBe(false))
+    act(() => {
+      result.current.startNewChat()
+      result.current.setSelectedReportTemplate(result.current.reportTemplateOptions[0])
+    })
+    await act(async () => { await result.current.submitMessage('ordinary question') })
+    expect(result.current.selectedReportTemplate?.key).toBe('sales_report')
+    await act(async () => { await result.current.submitMessage('failed report') })
+    expect(result.current.selectedReportTemplate?.key).toBe('sales_report')
+    await act(async () => { await result.current.submitMessage('completed report') })
+    expect(result.current.selectedReportTemplate).toBeNull()
+    expect(api.sendChat.mock.calls.map(([body]) => body.report_template_key)).toEqual([
+      'sales_report', 'sales_report', 'sales_report',
+    ])
+  })
+
   it('keeps rename and delete tombstone synchronized with the active report card', async () => {
     api.getConversationHistory.mockResolvedValue(history('A', '', true))
     const { result } = renderHook(() => usePowerBIAgent())

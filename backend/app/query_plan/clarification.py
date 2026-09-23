@@ -13,6 +13,7 @@ from typing import Iterable
 from pydantic import BaseModel
 
 from backend.app.intent.models import TurnRelation
+from backend.app.intent.semantic_interpreter import SemanticFrame
 from backend.app.memory.models import (
     PendingClarificationContext,
     PendingSemanticSlot,
@@ -27,6 +28,7 @@ from backend.app.query_plan.grounding import (
 )
 from backend.app.query_plan.clarification_reasons import ClarificationReason
 from backend.app.schemas.data_contracts import QueryShape, StructuredFilter
+from backend.app.query_plan.state_transition import StateTransitionService
 
 
 class ClarificationMergeResult(BaseModel):
@@ -61,8 +63,11 @@ class PendingClarificationService:
         intent: str,
         committed: StructuredWorkMemory | None,
         relation: TurnRelation | None = None,
+        semantic_frame: SemanticFrame | None = None,
         required_missing_slots: Iterable[PendingSemanticSlot] = (),
     ) -> ClarificationMergeResult:
+        if semantic_frame is not None:
+            relation = semantic_frame.relation
         if previous is not None and (
             previous.semantic_model_key != semantic_model_key
             or previous.schema_fingerprint != schema_fingerprint
@@ -86,6 +91,58 @@ class PendingClarificationService:
             key: list(values)
             for key, values in (previous.slot_provenance.items() if previous else [])
         }
+
+        if (
+            previous is None
+            and committed is not None
+            and relation in {TurnRelation.FOLLOW_UP, TurnRelation.REPLACE}
+            and semantic_frame is not None
+        ):
+            referenced = set(semantic_frame.referenced_context_slots)
+            changed = set(semantic_frame.changed_slots)
+
+            def inherits(*names: str) -> bool:
+                return bool(referenced.intersection(names)) and not changed.intersection(names)
+
+            if inherits("measure", "measures"):
+                measures = list(committed.measures)
+            if inherits("dimension", "dimensions"):
+                dimensions = list(committed.dimensions)
+                dimension_tables = StateTransitionService._previous_dimension_tables(committed)
+                dimension_order = StateTransitionService._previous_dimension_order(committed)
+            if inherits("filter", "filters", "member"):
+                filters = StateTransitionService._previous_filters(committed)
+                dimension_tables.update(StateTransitionService._previous_dimension_tables(committed))
+            if inherits("time", "time_range"):
+                time_range = StateTransitionService._previous_time(committed)
+            if inherits("ranking", "sort"):
+                sort = committed.sort
+            if inherits("ranking", "top_n"):
+                top_n = committed.top_n
+            if inherits("query_shape") and committed.last_query_plan is not None:
+                raw_shape = committed.last_query_plan.get("query_shape")
+                if raw_shape in QueryShape._value2member_map_:
+                    query_shape = QueryShape(raw_shape)
+
+        if semantic_frame is not None and relation in {
+            TurnRelation.FOLLOW_UP, TurnRelation.REPLACE
+        }:
+            changed = set(semantic_frame.changed_slots)
+            if changed.intersection({"measure", "measures"}):
+                measures = []
+            if changed.intersection({"dimension", "dimensions"}):
+                dimensions = []
+                dimension_order = None
+            if changed.intersection({"filter", "filters", "member"}):
+                filters = []
+            if changed.intersection({"time", "time_range"}):
+                time_range = None
+            if changed.intersection({"ranking", "sort"}):
+                sort = None
+            if changed.intersection({"ranking", "top_n"}):
+                top_n = None
+            if "query_shape" in changed:
+                query_shape = None
 
         delta = outcome.delta or GroundedSemanticDelta()
         if delta.query_shape is not None:

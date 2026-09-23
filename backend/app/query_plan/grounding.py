@@ -974,7 +974,12 @@ class TimeGrounder:
             return None
         normalized_input = normalize_semantic_text(user_input)
         today = self._today()
-        contextual_year = self._reference_year(reference_time_range)
+        contextual_year = (
+            self._reference_year(reference_time_range)
+            if reference_time_range is not None
+            and reference_time_range.date_field == date_field.canonical_name
+            else None
+        )
         bounded_month = self._bounded_month_range(
             normalized_input,
             date_field,
@@ -1100,7 +1105,9 @@ class TimeGrounder:
         if absolute_year:
             return self._year_range(date_field, int(absolute_year.group(1)))
         if self._draft_has_current_evidence(normalized_input, time_intent):
-            return self._resolve_draft(time_intent, date_field, today)
+            return self._resolve_draft(
+                time_intent, date_field, today, contextual_year=contextual_year
+            )
         return None
 
     @classmethod
@@ -1160,11 +1167,15 @@ class TimeGrounder:
         draft: TimeIntentDraft | None,
         date_field: CatalogObject,
         today: date,
+        *,
+        contextual_year: int | None = None,
     ) -> TimeRangeSpec | None:
         if draft is None:
             return None
         if draft.kind == TimeIntentKind.ABSOLUTE_MONTH:
-            return self._month_range(date_field, draft.year or 0, draft.month or 0)
+            return self._month_range(
+                date_field, draft.year or contextual_year or 0, draft.month or 0
+            )
         if draft.kind == TimeIntentKind.ABSOLUTE_YEAR:
             year = draft.year or 0
             return self._year_range(date_field, year)
@@ -1953,7 +1964,10 @@ class SemanticGroundingService:
             if committed is not None
             and isinstance(committed.time_range, TimeRangeSpec)
             else None
-        )
+        ) if (
+            frame.relation in {TurnRelation.FOLLOW_UP, TurnRelation.REPLACE}
+            and {"time", "time_range"}.intersection(frame.referenced_context_slots)
+        ) else None
         if frame.time_intent is not None:
             date_result = temporal_date_result or self._resolve_date_field(
                 " ".join(frame.time_mentions)
@@ -1977,11 +1991,17 @@ class SemanticGroundingService:
                 reference_time_range=reference_time_range,
             )
             if time_range is None:
+                question = (
+                    f"请明确是哪一年的{frame.time_intent.month}月。"
+                    if frame.time_intent.kind is TimeIntentKind.ABSOLUTE_MONTH
+                    and frame.time_intent.year is None
+                    else clarification_question(ClarificationReason.INCOMPLETE_TIME_RANGE)
+                )
                 return self._clarification(
                     GroundingStatus.UNRESOLVED,
                     object_results,
                     member_results,
-                    clarification_question(ClarificationReason.INCOMPLETE_TIME_RANGE),
+                    question,
                     [],
                     reason=ClarificationReason.INCOMPLETE_TIME_RANGE,
                     delta=delta,

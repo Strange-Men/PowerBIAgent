@@ -63,7 +63,7 @@ class TimeIntentDraft(BaseModel):
         if not self.expression:
             raise ValueError("time intent expression must not be blank")
         required: dict[TimeIntentKind, tuple[str, ...]] = {
-            TimeIntentKind.ABSOLUTE_MONTH: ("year", "month"),
+            TimeIntentKind.ABSOLUTE_MONTH: ("month",),
             TimeIntentKind.ABSOLUTE_YEAR: ("year",),
             TimeIntentKind.RELATIVE_MONTH: ("relative_offset",),
             TimeIntentKind.RELATIVE_YEAR: ("relative_offset",),
