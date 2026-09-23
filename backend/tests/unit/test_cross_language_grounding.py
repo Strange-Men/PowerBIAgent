@@ -487,12 +487,12 @@ async def test_same_current_member_literal_from_two_weak_drafts_is_validated_onc
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("values,truncated,expected", [
-    (["2025-01-01T00:00:00", "2025-02-01T00:00:00"], False, GroundingStatus.UNRESOLVED),
+    (["2025-01-01T00:00:00", "2025-02-01T00:00:00"], False, GroundingStatus.RESOLVED),
     (["2025-01-01T00:00:00", "2025-02-02T00:00:00"], False, GroundingStatus.UNRESOLVED),
     (["2025-01-01T00:00:00"], True, GroundingStatus.UNRESOLVED),
     ([], False, GroundingStatus.UNRESOLVED),
 ])
-async def test_imported_month_field_without_temporal_metadata_fails_closed(values, truncated, expected):
+async def test_imported_month_field_requires_complete_runtime_month_start_proof(values, truncated, expected):
     runtime = schema()
     runtime.tables[0].columns[-1].expression = None
     provider = Selector(["field:Orders:Month"])
@@ -508,7 +508,15 @@ async def test_imported_month_field_without_temporal_metadata_fails_closed(value
         ),
         QueryPlan(normalized_question="每月Total Sales趋势", semantic_model_key=runtime.key), None, lookup, query_shape=QueryShape.TREND)
     assert result.status == expected, result.model_dump()
-    assert result.delta is None
+    if expected is GroundingStatus.RESOLVED:
+        assert result.delta is not None
+        assert result.delta.dimensions == ["Month"]
+        assert any(
+            item.method == "runtime_complete_month_members"
+            for item in result.object_results
+        )
+    else:
+        assert result.delta is None
 
 
 @pytest.mark.parametrize("question,shape", [

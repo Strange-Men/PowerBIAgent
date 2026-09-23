@@ -1,11 +1,15 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-09-20
+> **最后更新：** 2026-09-23
 
-## 当前阶段 — M5.10.6 FIX — Understanding Layer 重构与旧语义链清理（LOCAL RELEASE CANDIDATE）
+## 当前阶段 — M5.10.6 FIX — LOCAL RELEASE CANDIDATE
 
-本轮基线为 `main@276d67d783f5af75dd4e55ba20e910679d623be3`，且恢复检查时仍等于 `origin/main`；该 SHA 的原 M5.10.6 implementation / CI Run `35296985175` 仅是 superseded historical evidence。Settings.version 保持 M5.10.6。当前 dirty worktree 已完成 Understanding Layer FIX 的单链 implementation、fresh local gates 与最终 production Real，下一步仅为 governance/static final、whitelist staging、commit/push、exact-SHA CI 与 remote audit。
+本轮正式基线为 `main@6b9abd890d58bed5768687733d2c1172532850ec`；GitHub Actions Run `35496889792` 对该旧 FIX exact SHA completed/success。Settings.version 保持 M5.10.6。最新人工 residual 已重新进入 failure-first、Real stress 与 final gate 流程；当前 production worktree 是本地 release candidate，尚未 commit/push，不得把旧 CI 冒充本轮 remote evidence。
+
+Final Acceptance Residual Corpus 已在 production 修改前稳定 RED；Real Language Stress corpus 已固定为 72 unique / 24 high-risk。首次 configured DeepSeek + Real Local MCP baseline 实际执行 72 个 unique scenario、82 个含 setup 的真实 chat turn、194 次 LLM call 与 143 次 MCP/tool execution，用于暴露失败而非发布证明。两轮最小 forward-fix 后，literal/localized member、English wrapper、canonical horizon label、外部实时事实防火墙、同名 owner、member-set/filtered aggregation、具名月份/H2 与 state follow-up 已有 focused Real 通过证据；相关自动化 `212 passed`。
+
+三项语义 residual 已按 2026-09-21 NEW RESIDUAL CLOSURE PHASE 收口。独立 END-TO-END trace 随后把重复 504 归类为 B：多个合法 bounded stage 累计超过旧 120 秒 overall deadline，没有 retry、loop、duplicate 或 MCP/DAX runaway。production request SLA 最小调整为 180 秒；LLM/provider、MCP、render 120 秒与 DAX 30 秒不变。最终 Stress 72 unique / 24 high-risk×3 / 130 turns 为 130/130，584 LLM calls、395 MCP/tool executions、138 witnesses，request/provider timeout、HTTP 504、wrong semantic/fact/Memory/leakage/stability 与 residual 均为 0。Critical Real 21/21、20 witnesses；fresh Semantic Compatibility 807、backend 2804/1 及全部本地 automated/governance/drift gate 已通过。只待 whitelist commit/push、新 exact-SHA CI 与 remote audit。
 
 Acceptance Failure Corpus 在未改 production 的 published baseline 连续两次稳定 `12/12 RED`。实现后唯一 `SemanticFrame` 解释当前语言的 mode、relation、八种 QueryShape、mentions、analysis goal、changed/context slots、unresolved mentions 与 exact evidence spans；QuestionRouter 只保留 deterministic capability/safety。旧 `ConversationalAnswerService`、Intent LLM、自然语言 QueryPlan LLM/prompt、TurnRelation regex 与 Router-vs-LLM shape reconciliation 已删除，production call graph 不存在 legacy semantic fallback。
 
@@ -19,7 +23,7 @@ Fresh local automated：full backend `2764 passed, 1 skipped`；Semantic Compati
 
 Local Real 独立记录：最终 production code 上 configured DeepSeek + Real Local MCP `21/21 PASS`、20 个真实 execution witnesses、zero override、wrong DAX=0、business residual=0、temporary residual=0；覆盖 4 General、general/business boundary、三种 South 跨语言表达、ambiguity、absolute/relative scalar、unknown、ranking、ranking→quantity→general→sales、explain-change、真实 horizon 与 cross-model isolation。最终 automated sweep 之后仅修改 stale test oracle 与治理文档，因此 Real 仍对应最终 production 内容。
 
-Remote exact-SHA CI 尚未发生，不得用上述 Local 数字冒充远端证据。最终 commit 固定为 `M5.10.6_FIX_理解层重构与旧语义链清理`，不打 Tag；若 `origin/main` 前进则停止。M5.10.7/8 NOT STARTED，Semantic Layer FINAL USER ACCEPTANCE PENDING，M5 FINAL=false。
+已发布 FIX 的 Remote exact-SHA CI 为 `6b9abd8` / Run `35496889792` success，不得与 Local automated 或 Local Real 数字混写。新 stress/residual closure 的提交名固定为 `M5.10.6_FIX_真实LLM压力验收与人工残留收口`，不打 Tag；只有 residual=0、72+/120+ Real Stress、high-risk stability、Critical Real Acceptance、full gates、drift audit 全部通过后才允许 whitelist commit/push。若 fresh remote main 已前进则停止。M5.10.7/8 NOT STARTED，M5 FINAL=false。
 
 ## 上一阶段 — M5.10.5 FIX — 语义边界与事实防火墙最终收口（COMPLETE）
 
@@ -239,7 +243,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 | **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **✅ COMPLETE；用户人工验收通过** |
 | **M5.10.4** | **语言理解与 QueryShape 收口** | **✅ COMPLETE；DeepSeek + Real Local MCP 14/14** |
 | **M5.10.5** | **时间语义、事实防火墙与安全基线** | **✅ COMPLETE；`9dfbf2f` / CI `35088162355` success** |
-| **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **🟡 FIX LOCAL RELEASE CANDIDATE；REMOTE CI PENDING** |
+| **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **🟡 LOCAL RELEASE CANDIDATE；Real 130/130 + 21/21；all local gates PASS** |
 | **M5.10.7—M5.10.8** | **模板/错误 UX → MVP 最终收口** | **⏳ NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING** |
 
 ### M5.7 completed contract
@@ -585,7 +589,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-M5.10.6 FIX 的 Acceptance Failure Corpus、SemanticFrame 单链、runtime Binder/StateTransition 接线、旧 semantic authority 删除、fresh automated 与最终 production Real 均已完成。下一步只做治理/static final → explicit whitelist staging → commit/push main → exact-SHA CI → remote audit；完成前不得进入 M5.10.7/8。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+M5.10.6 本地 Real 与 core automated 已通过。下一步仅完成剩余 governance/drift/diff gate，核对 remote main 未前进后按白名单 staging，使用固定提交名 commit/push，再等待并审计该 exact SHA 的 CI。任何 gate 失败只允许同根因 minimal forward-fix；不得进入 M5.10.7/8。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -634,4 +638,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-20 | M5.10.6 FIX LOCAL RELEASE CANDIDATE；Remote exact-SHA CI PENDING；M5.10.7/8 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；m5/rebuild 冻结；main-only；M5 FINAL=false*
+*最后更新：2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE；Real Stress 130/130、Critical Real 21/21、all local gates PASS；new commit/CI pending；M5.10.7/8 NOT STARTED；m5/rebuild 冻结；main-only；M5 FINAL=false*

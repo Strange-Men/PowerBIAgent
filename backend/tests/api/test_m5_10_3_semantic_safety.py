@@ -12,6 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
 from backend.app.intent.models import TurnRelation
 from backend.app.intent.semantic_interpreter import (
+    GeneralFactScope,
     RankingIntent,
     SemanticCoverageDecision,
     SemanticEvidenceSpan,
@@ -98,6 +99,7 @@ class _SemanticSafetyProvider(LLMProvider):
         if self.active == "general":
             return SemanticFrame(
                 mode=SemanticInterpretationMode.GENERAL,
+                general_fact_scope=GeneralFactScope.TIME_STABLE_OR_NONFACTUAL,
                 general_answer="复盘可以帮助识别偏差并沉淀经验。",
             )
 

@@ -5,14 +5,16 @@
 
 ## 当前开发入口
 
-- 当前版本：**M5.10.6**（Understanding Layer FIX local release candidate）。
-- 本轮正式基线：`main@276d67d783f5af75dd4e55ba20e910679d623be3`。
+- 当前版本：**M5.10.6**（Real LLM Stress 与人工 residual final local release candidate）。
+- 本轮正式基线：`main@6b9abd890d58bed5768687733d2c1172532850ec`。
 - `M5.10.5 — 时间语义、事实防火墙与安全基线` 已 COMPLETE；exact-SHA CI
   Run `35088162355` success。人工测试确认事实安全主体有效，同时暴露自然回答、
   default-open conversation、capability wording 与 available data horizon 缺口。
-- 当前阶段：`M5.10.6 — LLM 语义理解与自然事实表达重构`。单一 `SemanticFrame`
-  implementation、fresh local gates 与 configured DeepSeek + Real Local MCP 21/21 已完成；
-  whitelist commit/push、exact-SHA CI 与 final remote audit 尚未完成。
+- 当前阶段：`M5.10.6 — LLM 语义理解与自然事实表达重构`。Final Real Stress
+  72 unique / 24 high-risk×3 / 130 turns 已 130/130，Critical Real 21/21；fresh Semantic
+  Compatibility 807 与 backend 2804/1 已通过。overall request SLA 从 120 秒 evidence-driven
+  调整为 180 秒，LLM/MCP/render 120 秒与 DAX 30 秒不变。治理/drift 门禁、whitelist
+  commit/push、exact-SHA CI 与 final remote audit 尚未完成。
 - `M5.10.7 — 模板兼容与错误 UX 收口`、`M5.10.8 — MVP 最终 Real E2E / stress /
   mutation / historical / exact-SHA 收口` 均未启动。
 - Semantic Layer 最终人工验收在 M5.10.6 完成后进行；`M5 FINAL=false`。
@@ -69,7 +71,7 @@
 
 - `main` 是唯一活动开发线；流程固定为 failure-first → minimal implementation → fresh gates
   → Real → 白名单 staging → commit → push main → exact-SHA CI → remote audit。
-- 当前提交名固定为：`M5.10.6_FIX_理解层重构与旧语义链清理`；不打 Tag。
+- 当前提交名固定为：`M5.10.6_FIX_真实LLM压力验收与人工残留收口`；不打 Tag。
 - 禁止 `git add .`、`git add -A`、force push、rebase、history rewrite、`reset --hard`、
   `clean`、branch deletion。remote main 已前进则停止。
 - CI 失败只允许 forward-fix；同一 root cause 最多两轮。禁止降低 validator、删除 negative
@@ -79,4 +81,4 @@
 
 ---
 
-*最后更新：2026-09-20 | M5.10.6 FIX LOCAL RELEASE CANDIDATE；Remote exact-SHA CI PENDING；M5.10.7/8 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false*
+*最后更新：2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE；Real Stress 130/130；Critical Real 21/21；all local gates PASS；Remote exact-SHA CI PENDING；M5.10.7/8 NOT STARTED；M5 FINAL=false*

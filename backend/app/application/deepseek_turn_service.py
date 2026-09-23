@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -50,10 +51,17 @@ from backend.app.harness.validators.validation_service import ValidationService
 from backend.app.intent.models import FilterSpec, IntentSpec, IntentType, TurnRelation
 from backend.app.intent.question_router import QuestionRoute, QuestionRoutingDecision
 from backend.app.intent.semantic_interpreter import (
+    GeneralFactScope,
     LLMSemanticInterpreter,
     SemanticFrame,
     SemanticInterpretationError,
     SemanticInterpretationMode,
+)
+
+
+_CURRENT_EXTERNAL_FACT_SAFE_ANSWER = (
+    "我目前没有可验证的实时外部数据，无法确认具体商家、营业状态、天气、行情或新闻。"
+    "你可以提供可信来源，或让我帮你整理不依赖实时信息的通用选择方法。"
 )
 from backend.app.intent.unsupported_policy import (
     classify_capability,
@@ -234,7 +242,7 @@ class LLMTurnService:
                 provider_protocol=LLMProviderProtocol.OPENAI_CHAT_COMPLETIONS,
                 base_url=settings.deepseek_base_url,
                 model=settings.deepseek_model,
-                timeout_seconds=float(settings.request_timeout_seconds),
+                timeout_seconds=float(settings.llm_provider_timeout_seconds),
                 capabilities=LLMCapabilityFlags(),
             )
             llm_registry = LLMProviderRegistry()
@@ -428,7 +436,12 @@ class LLMTurnService:
             is_mock=is_mock,
             source_mode=source_mode,
             allowed_tools=[],
-            answer_text=interpretation.general_answer,
+            answer_text=(
+                _CURRENT_EXTERNAL_FACT_SAFE_ANSWER
+                if interpretation.general_fact_scope
+                is GeneralFactScope.REQUIRES_CURRENT_EXTERNAL_FACTS
+                else interpretation.general_answer
+            ),
             usage=usage,
             execution_audit={
                 "capability_decision": routing.route.value,
@@ -556,7 +569,12 @@ class LLMTurnService:
                 "completed",
                 intent="general",
                 response_type="answer",
-                answer_text=semantic_frame.general_answer,
+                answer_text=(
+                    _CURRENT_EXTERNAL_FACT_SAFE_ANSWER
+                    if semantic_frame.general_fact_scope
+                    is GeneralFactScope.REQUIRES_CURRENT_EXTERNAL_FACTS
+                    else semantic_frame.general_answer
+                ),
                 trace=trace,
                 trace_id=trace_id,
                 is_mock=False,
@@ -930,6 +948,7 @@ class LLMTurnService:
         # slots come from the runtime catalog/members and state transition.
         catalog = None
         user_facing_filter_values: dict[tuple[str, str], str] = {}
+        user_facing_measure_labels: dict[str, str] = {}
         canonical_shape_obligation: QueryShape | None = None
         if not self.powerbi.is_mock:
             try:
@@ -1088,6 +1107,14 @@ class LLMTurnService:
                     and item.canonical_value is not None
                     and isinstance(item.requested_value, str)
                     and item.requested_value.strip()
+                }
+                user_facing_measure_labels = {
+                    item.canonical_object.canonical_name: item.phrase
+                    for item in grounding.object_results
+                    if item.role == "measure"
+                    and item.status is GroundingStatus.RESOLVED
+                    and item.canonical_object is not None
+                    and item.phrase.strip()
                 }
                 if not grounding.pending_eligible:
                     await self.pipeline.clear_pending_clarification(
@@ -1687,6 +1714,17 @@ class LLMTurnService:
                             field
                             for field in query_result.columns
                             if field in verified_fields
+                            or (
+                                (
+                                    re.search(r"\[([^\]]+)\]\s*$", field).group(1)
+                                    if re.search(r"\[([^\]]+)\]\s*$", field)
+                                    else field
+                                )
+                                in {
+                                    *query_plan.measures,
+                                    *query_plan.dimensions,
+                                }
+                            )
                         ]
                         registry = JsonDisplayLocalizationRegistry(
                             self.settings.presentation_localization_registry_path
@@ -1773,6 +1811,9 @@ class LLMTurnService:
                             user_facing_filter_values=(
                                 user_facing_filter_values
                             ),
+                            user_facing_measure_labels=(
+                                user_facing_measure_labels
+                            ),
                         )
                         if semantic_frame.analysis_goal.value == "EXPLAIN_CHANGE":
                             boundary = "当前数据可以描述已验证的变化，但不能证明具体原因。"
@@ -1832,6 +1873,9 @@ class LLMTurnService:
                         "error_code": "answer_fact_validation_failed",
                     })
             if not answer_validation.is_valid:
+                semantic_audit["answer_validation_errors"] = list(
+                    answer_validation.errors
+                )
                 await self.pipeline.mark_memory_failed(
                     effective_req_id, runtime_mode,
                     reason=str(answer_validation.errors), stage="answer_validation"
@@ -1843,6 +1887,7 @@ class LLMTurnService:
                     intent=intent.intent.value, error_type="answer_validation_failed",
                     trace=trace, trace_id=trace_id, is_mock=False,
                     source_mode=self._source_mode, collector=collector,
+                    execution_audit=semantic_audit,
                 )
             trace.record("answer_validated", trace_id=trace_id, request_id=effective_req_id)
         else:

@@ -3,11 +3,195 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-20 | M5.10.6 FIX LOCAL RELEASE CANDIDATE / exact-SHA PENDING；M5 FINAL=false
+# 最后更新：2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-5106-006
+  title: Explain-change exact evidence 在真实 DeepSeek 重复运行中仍不稳定
+  category: ERR
+  first_detected_version: M5.10.6
+  symptom: 为什么今年销售额下降？在第二轮 forward-fix 后连续两次返回 semantic_evidence_not_verbatim，阻断 canonical trend 与 deterministic DAX；同组其他 explain paraphrase 可通过但不能满足稳定性门禁
+  local_evidence: 历史 configured DeepSeek + Real Local MCP post-round-2 runs 在端口 8020 与 8021 均返回 semantic_evidence_not_verbatim；2026-09-21 exact trace 证明两次原始 frame 的唯一非法 span 均为 analysis_goal=为什么下降，而原文“为什么今年销售额下降？”中该文本不是连续子串。new-disposition focused 三问 9/9 PASS，但随后完整 72 unique / 130-turn Stress 中 explain_worse_cn 生成 schema 已禁止的 legacy analysis_goal evidence slot，触发 output_schema_invalid / evidence_spans literal_error，证明同一 lifecycle root 尚未稳定关闭
+  authoritative_sources:
+  - title: M5.10.6 真实 LLM 压力验收与人工残留收口用户指令
+    reason: high-risk 或自然语言语义合同任一次不一致即失败；同根因最多两轮，第二轮后仍失败必须 STOP 并记 OPEN P0/P1
+  - title: SemanticFrame exact evidence contract
+    reason: Understanding 输出只能引用当前消息逐字 span，runtime 不得接受非 verbatim evidence
+  root_cause: SemanticFrame 把 analysis_goal 同时建模为结构 enum 与可自由生成的 evidence slot；DeepSeek 因而把不连续的“为什么”与“下降”重组为“为什么下降”。validator 正确 fail closed，且第一轮精确 repair 反馈虽已传入第二次调用仍被模型原样忽略；最终证明是重复 evidence representation 的生命周期不一致，不是 Unicode、标点、Grounding 或 DAX 问题
+  failed_attempts:
+  - 第一轮收紧 EXPLAIN_CHANGE query-shape/analysis evidence 与禁止因果维度后仍产生 temporal grouping residual
+  - 第二轮改为 runtime 时间证据优先并收紧维度边界后，两个 explain paraphrase 通过，但该句连续两次仍在 verbatim validator 失败
+  repair_attempt_count: 2
+  disposition:
+    classification: root-cause reclassified / new authorized path
+    authorization: 用户于 2026-09-21 明确授权在 exact trace 后最多两轮新的 bounded minimal forward-fix；历史 repair_attempt_count 2 原样保留
+    new_path_history:
+    - round: 1
+      result: validator 将具体 error code、slot 与非法文本送入既有单次 repair；自动化 GREEN，但 Real trace 证明模型仍原样重复非法 span，因此未关闭 P1
+    - round: 2
+      result: analysis_goal 收敛为纯结构 enum 并从 SemanticEvidenceSpan slot schema 删除；focused Real 9/9 PASS，但完整 final Stress 的 explain_worse_cn 仍输出 legacy slot 并在严格 schema fail closed；达到新路径第二轮上限，按用户合同 STOP OPEN P1
+  residual_closure_phase:
+    authorization: 用户于 2026-09-21 再授权 NEW RESIDUAL CLOSURE PHASE，要求先 exact trace，再按独立根因最多两轮 minimal forward-fix
+    rounds:
+    - round: 1
+      result: trace 证明 raw response 仍携带已退休 analysis_goal evidence slot；adapter 只删除该 legacy slot，剩余 spans 继续 exact validation
+    - round: 2
+      result: trace 证明 query_shape evidence 把结构 enum“趋势”误当原文 anchor；repair contract 明确结构标签不得冒充 evidence，未加入句子级 few-shot
+  final_fix: CLOSED；legacy analysis_goal evidence 在 adapter boundary 删除，query_shape repair 只接受当前消息 verbatim structure anchor；exact-evidence firewall 与 negative mutation rejection 均未放宽。explain_worse_cn focused 3/3 与扩大 affected subset 3/3 Real PASS
+  regression_tests:
+  - backend/tests/unit/test_m5_10_6_final_acceptance_residual_corpus.py
+  - backend/tests/unit/test_m5_10_6_understanding_failure_corpus.py
+  - backend/tests/unit/test_deepseek_intent_service.py
+  - scripts/manual_smoke/m5_10_6_real_language_stress_cases.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 第三轮继续随机调 prompt
+  - 绕过 semantic_evidence_not_verbatim validator
+  - 用另外两条 explain PASS 或 majority vote 掩盖该失败
+  prevention_rules:
+  - exact evidence validation 保持 fail closed
+  - P1 关闭前不得运行发布提交、push 或宣称 final stress complete
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-20'
+    action: discovered
+    version: M5.10.6
+  - date: '2026-09-21'
+    action: disposition_reclassified
+    version: M5.10.6
+  - date: '2026-09-21'
+    action: focused_real_passed
+    version: M5.10.6
+  - date: '2026-09-21'
+    action: full_stress_failed_stop
+    version: M5.10.6
+  - date: '2026-09-21'
+    action: residual_closure_focused_real_passed
+    version: M5.10.6
+- id: ERR-5106-007
+  title: Final Real Stress 暴露同名维度 owner 与成员重复稳定性 residual
+  category: ERR
+  first_detected_version: M5.10.6
+  symptom: 修复后完整 72 unique / 130-turn Real Stress 中 grouped_category_mixed 以 dimension_ambiguous fail closed，member_north_lower 三次 canonical signature 不一致；因此 final stability gate 失败
+  local_evidence: configured DeepSeek + Real Local MCP final run 产生 391 LLM calls、288 MCP/tool executions、135 witnesses，125/130 turn-level PASS；failed contracts 包含 grouped_category_mixed 与 member_north_lower stability_mismatch，temporary residual=0，wrong member/unknown execution/Memory mutation/cross-model bleed/technical leakage/external hallucination 均为 0
+  authoritative_sources:
+  - title: M5.10.6 真实 LLM 压力验收与人工残留收口用户指令
+    reason: 任一 unique contract failure 或 high-risk 三次 signature 不一致均为 Stress FAIL，禁止 majority vote
+  root_cause: Category 的两个同名候选分别属于 Sales 与 Product，但旧 owner 判定只识别“候选字段本身就是 relationship endpoint”的 direct path，无法用已落地 measure:Sales 与 Sales[Product]→Product[Product] active many-to-one 表级路径证明 Product[Category]；North lowercase 则因无显式 field 时先依赖 bounded LLM 选字段，LLM 返回 UNRESOLVED 时 runtime normalized exact member proof 尚未运行
+  failed_attempts:
+  - 依赖 bounded LLM 在重复同名 Category 字段间稳定选择未满足 final gate
+  repair_attempt_count: 1
+  final_fix: CLOSED；同名 owner 只在 canonical measure fact table 的 active many-to-one path 唯一指向一个候选 owner 时绑定，多条等价路径保持 AMBIGUOUS；单 member literal 只在 active one-side relationship key 的完整 runtime members 中唯一 exact/normalized exact 时先于 LLM 绑定，member-set 保留既有字段复用路径。Track B 3/3、Track C 3/3、扩大 affected subset 15/15 Real PASS
+  regression_tests:
+  - backend/tests/unit/test_m5_10_6_final_acceptance_residual_corpus.py
+  - backend/tests/unit/test_semantic_grounding.py
+  - scripts/manual_smoke/m5_10_6_real_language_stress_cases.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 为 Category 或 North 添加 PBIX-specific hardcode
+  - 用后续成功或 majority vote 覆盖任一次 stability mismatch
+  prevention_rules:
+  - 同名维度只能由 runtime relationship/owner metadata 或明确用户限定证明
+  - high-risk 三次 signature 必须逐项一致
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-21'
+    action: discovered
+    version: M5.10.6
+  - date: '2026-09-21'
+    action: residual_closure_focused_real_passed
+    version: M5.10.6
+- id: ERR-5106-008
+  title: Real multi-stage request SLA mismatch
+  category: ERR
+  first_detected_version: M5.10.6
+  symptom: 三项语义 residual 关闭后，fresh 72 unique / 130-turn Stress 在不同正常业务 case 上重复返回 HTTP 504 request_deadline_exceeded；turn 无 canonical outcome、ZERO DAX、ZERO Memory，旧 120 秒外层总预算无法稳定容纳受限的多阶段 Real flow
+  local_evidence: END-TO-END LATENCY TRACE 将故障归类为 B（多个合法 bounded calls 累加超过 120），而非单次 provider 卡死、retry、MCP bottleneck、loop 或 duplicate。代表性 trace 中 Understanding 13.358 秒、coverage 8.018 秒、两个 selector 2.069/1.888 秒、schema 0.476 秒、member 0.688 秒、DAX 1.175 秒、horizon 1.584 秒；Natural Answer 在仍有 90.706 秒 remaining budget 时开始，最终被旧 120 秒 overall deadline 取消。调用数量符合正式 contract，retry=0，未发现重复 schema/member snapshot/selector/probe。180 秒配置后的 Critical Real unknown-member turn 总耗时 130.525 秒并完成，单次最慢 LLM 113.085 秒，直接证明合法请求可超过旧 120 秒但仍低于新 SLA，且单 provider 120 秒 timeout 未放宽。最终生产代码 full Stress 72 unique / 24 high-risk×3 / 130 turns 全部通过，584 LLM calls、395 MCP/tool executions、138 witnesses；request p50/p95/max=11.087/53.160/87.251 秒，max single LLM=83.397 秒，request/provider timeout 与 HTTP 504 均为 0，business/temp residual=0
+  authoritative_sources:
+  - title: M5.10.6 Real Language Stress contract
+    reason: Final Stress 必须使用当前 production chain，不能把无 canonical outcome 的 deadline response 冒充 semantic mismatch 或 PASS
+  - title: TurnPipeline request deadline authority
+    reason: production Settings.request_timeout_seconds 绑定唯一 request-local remaining deadline 与外层 asyncio timeout；旧基线为 120 秒，本轮只允许 evidence-driven 最小 SLA 调整
+  root_cause: overall request SLA 与既有 child timeouts 错误地使用同一 120 秒默认值；多个正常且分别 bounded 的 Understanding、coverage/selector、tool/DAX/horizon 与 Natural Answer 阶段可以合法累计超过 120 秒。剩余预算架构本身正确，未发现 retry、loop、duplicate 或 MCP/DAX runaway；旧 stress runner 另将 504 空 body 错分为 semantic mismatch，该观测问题与 SLA 根因分别修复
+  failed_attempts:
+  - 在未记录 HTTP/error_type 时把一次空 signature 当作 ranking_top3_en semantic instability；focused 3/3 后仍无法解释旧失败
+  - 增强诊断后继续 fresh full，scalar case 明确重复 504，证明不能靠随机重跑直到成功
+  - 一次 180 秒 Stress 的 grouped_product_cn 在 Understanding 66.426 秒后因后续 provider 长尾于 overall deadline 失败；focused 3/3 随后 p50 3.812 秒、max 15.742 秒且无 timeout，归类为 provider transient，不作为扩大到 240 秒的 SLA 证据
+  repair_attempt_count: 2
+  final_fix: CLOSED；production overall request SLA 从 120 秒最小提高到 180 秒并继续使用既有 remaining-deadline 架构。单次 LLM/provider、MCP 与 render timeout 均保持 120 秒，DAX timeout 保持 30 秒；没有新增 retry/timeout framework。超时取消仍释放 request ownership，ZERO partial Memory/factual commit/residual。新增回归覆盖合法累计 >120 且 <180 完成、provider 自身 timeout、overall >180 controlled failure、ZERO partial state/residual、retry 与 availability probe 不得突破 overall deadline。180 秒最终 Real 全绿，因此不评估 240 秒
+  regression_tests:
+  - backend/tests/unit/test_request_sla.py
+  - backend/tests/unit/test_settings.py
+  - backend/tests/unit/test_harness_config.py
+  - backend/tests/unit/test_llm_factory.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 把 504 计成 semantic mismatch
+  - 忽略 transient 并宣称 130/130
+  - 随机重跑直到无超时
+  - 将 overall SLA 同步复制到 provider/MCP/DAX/tool timeout
+  - 用单次 provider transient 为依据继续扩大到 240 秒
+  prevention_rules:
+  - Stress failure 输出必须携带 HTTP、terminal、response_type 与 error_type
+  - 只有具备 canonical outcome 的 run 才进入 semantic stability signature
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-21'
+    action: discovered_and_classified
+    version: M5.10.6
+  - date: '2026-09-22'
+    action: latency_trace_and_sla_fix
+    version: M5.10.6
+  - date: '2026-09-23'
+    action: full_stress_and_critical_real_passed
+    version: M5.10.6
+- id: GOV-5106-001
+  title: 21-case Real acceptance 覆盖不足导致 M5.10.6 过早冻结
+  category: GOV
+  first_detected_version: M5.10.6
+  symptom: 已发布 Understanding Layer FIX 在 configured DeepSeek + Real Local MCP 21/21 和 exact-SHA CI success 后，最新人工验收仍发现 literal South、English wrapper + Chinese member、canonical presentation leakage 与 General 外部实时事实幻觉，证明固定小题集不足以证明开放语言稳定性
+  local_evidence: main@6b9abd890d58bed5768687733d2c1172532850ec 已对应 GitHub Actions Run 35496889792 exact-SHA success；用户随后提供四类真实人工 residual，并要求建立不少于 72 unique / 120 Real executions 及 24 个 high-risk 三次稳定性重复的新验收
+  authoritative_sources:
+  - title: M5.10.6 真实 LLM 压力验收与人工残留收口用户指令
+    reason: 用户明确重新打开 Final Acceptance，规定 residual corpus、Real Stress 规模、独立 deterministic expected contract 与完成标准
+  - title: ADR-016 Presentation Truth and semantic completeness
+    reason: 语义义务、canonical shape、result inspection 与用户可见事实必须由单一可审计链证明，历史 PASS 不能覆盖新反例
+  root_cause: 当时 Real acceptance 主要覆盖已知核心问句，没有系统覆盖未预写 paraphrase、中英混合 wrapper、literal/runtime member 对称性、外部当前事实边界和同一输入的多次真实运行稳定性
+  failed_attempts:
+  - 以 21/21 固定 Real case 和单次执行 residual=0 作为长期冻结证据
+  repair_attempt_count: 2
+  final_fix: CLOSED LOCAL；72 unique / 24 high-risk×3 corpus 在最终生产代码上完成 130/130，584 configured DeepSeek calls、395 Real Local MCP/tool executions、138 execution witnesses，所有 semantic/factual/Memory/leakage/stability/timeout 指标为 0，business/temp residual=0。Critical Real 21/21、20 execution witnesses、General 四例各恰好一次 LLM、ambiguous/unknown ZERO DAX/Memory 通过。最后 sweep 额外关闭 generic General structural reset 与非英语 bare activity noun 不得继承 English “sales” monetary convention；未加入 stress phrase/PBIX dictionary。fresh full automated/governance/drift 全部通过；commit/push 与 exact-SHA CI 仍须按实际完成后分别记录
+  regression_tests:
+  - backend/tests/unit/test_m5_10_6_final_acceptance_residual_corpus.py
+  - scripts/manual_smoke/m5_10_6_real_language_stress_cases.py
+  - scripts/manual_smoke/cross_language_real_acceptance.py
+  prohibited_patterns:
+  - 用少量固定句子的单次 PASS 声称开放语言稳定
+  - 用同一 LLM 判定自己的语义结果是否正确
+  - 以 majority vote 隐藏任一 high-risk stability mismatch
+  - 把 stress 问句、PBIX 名、member 或预期答案写入 production prompt/regex/glossary
+  prevention_rules:
+  - 开放语言发布必须同时报告 unique scenarios、Real LLM calls、Real MCP executions 与 repeated-run stability
+  - 预期语义合同必须来自 runtime schema/member 和 deterministic canonical invariants
+  - 人工 residual 优先级高于旧 automated/Real/CI PASS，发现后必须重新打开验收
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-20'
+    action: discovered
+    version: M5.10.6
+  - date: '2026-09-23'
+    action: final_acceptance_local_real_passed
+    version: M5.10.6
 - id: ERR-5106-005
   title: Understanding evidence 拆散复合成员且 coverage 把指示性报表上下文当业务对象
   category: ERR

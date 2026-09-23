@@ -98,6 +98,20 @@ class TestDeepSeekModeFactory:
         assert provider.provider_name == "deepseek"
         assert provider.is_mock is False
 
+    def test_provider_timeout_is_not_enlarged_with_overall_request_sla(self):
+        fake_key = "sk-" + ("T" * 24)
+        settings = Settings(
+            llm_mode="deepseek",
+            powerbi_mode="mock",
+            deepseek_api_key=fake_key,  # type: ignore[arg-type]
+            request_timeout_seconds=180,
+            llm_provider_timeout_seconds=120,
+        )
+
+        snapshot = build_llm_registry(settings).get("deepseek")
+
+        assert snapshot.profile.timeout_seconds == 120.0
+
     def test_mock_still_accessible_in_deepseek_mode(self):
         """DeepSeek 模式仍可获取 Mock Provider"""
         fake_key = "sk-" + ("C" * 24)

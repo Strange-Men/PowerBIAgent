@@ -177,7 +177,7 @@ async def lifespan(app: FastAPI):
             package=settings.powerbi_local_mcp_package,
             semantic_model_key=settings.powerbi_local_semantic_model_key,
             readonly=settings.powerbi_local_mcp_readonly,
-            timeout=float(settings.request_timeout_seconds),
+            timeout=float(settings.powerbi_local_mcp_timeout_seconds),
             max_retries=settings.max_powerbi_retries,
             worker_count=settings.powerbi_local_mcp_workers,
             max_pending_operations=settings.powerbi_local_mcp_queue_capacity,

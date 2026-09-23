@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.10.6 — LLM 语义理解与自然事实表达重构**。本轮 FIX 基线为 `main@276d67d783f5af75dd4e55ba20e910679d623be3`；单一 `SemanticFrame` implementation、fresh local gates 与 configured DeepSeek + Real Local MCP 21/21 已完成，当前等待 whitelist commit/push、exact-SHA CI 与 final remote audit。Semantic Layer FINAL ACCEPTANCE PENDING，M5 FINAL=false。
+当前版本：**M5.10.6 — LLM 语义理解与自然事实表达重构**。Final Acceptance 重开后的语义 residual 与独立 Real multi-stage request SLA mismatch 已完成本地收口：END-TO-END trace 证明合法 bounded 多阶段调用可累计超过旧 120 秒，因此 overall request SLA 最小调整为 180 秒；LLM/provider、MCP 与 render 仍为 120 秒，DAX 仍为 30 秒。最终 configured DeepSeek + Real Local MCP Stress 为 72 unique / 24 high-risk×3 / 130 turns，130/130 PASS；Critical Real 21/21。fresh Semantic Compatibility 807、backend 2804/1 及全部本地 automated/governance/drift gate 已通过；当前为 **LOCAL RELEASE CANDIDATE**，只待白名单提交、push、exact-SHA CI 与 remote audit。M5.10.7/8 NOT STARTED，M5 FINAL=false。
 
 ## 项目概览
 
@@ -363,8 +363,8 @@ python -m alembic upgrade head
 | M5.10.3 | COMPLETE — Zero Wrong-Question Execution；用户人工验收通过 |
 | M5.10.4 | COMPLETE — bounded 开放语言解释与 QueryShape reconciliation；DeepSeek + Real Local MCP 14/14，residual=0 |
 | M5.10.5 | COMPLETE — `9dfbf2f` / CI `35088162355` success；确定性时间、事实防火墙与安全基线 |
-| M5.10.6 | FIX LOCAL RELEASE CANDIDATE — 单一 Understanding Layer；Remote exact-SHA CI PENDING |
-| M5.10.7—M5.10.8 | NOT STARTED — 模板兼容/错误 UX、MVP 最终收口；Semantic Layer FINAL ACCEPTANCE PENDING |
+| M5.10.6 | LOCAL RELEASE CANDIDATE — Real Stress 130/130、Critical Real 21/21、all local gates PASS；commit/push/exact-SHA CI pending |
+| M5.10.7—M5.10.8 | NOT STARTED — 模板兼容/错误 UX、MVP 最终收口；不得由本轮提前进入 |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -393,4 +393,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-20 | M5.10.6 FIX LOCAL RELEASE CANDIDATE；Remote exact-SHA CI PENDING；M5.10.7/8 NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING；M5 FINAL=false*
+*最后更新：2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE；Real Stress 130/130、Critical Real 21/21、all local gates PASS；new commit/CI pending；M5.10.7/8 NOT STARTED；M5 FINAL=false*

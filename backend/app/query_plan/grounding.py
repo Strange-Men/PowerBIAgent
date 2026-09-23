@@ -466,7 +466,16 @@ class BoundedLLMObjectSelector:
                 "and synonyms are sufficient language evidence. A generic activity or domain noun without an "
                 "explicit measurement meaning is not a metric: when candidates measure different families "
                 "such as money, quantity or event count for that activity, return AMBIGUOUS even if one is a "
-                "common cultural default. Vague best/performance without a metric is unresolved."
+                "common cultural default. In ordinary English analytics, the standalone metric noun 'sales' "
+                "means monetary sales/revenue; quantity requires language such as units, quantity, volume, "
+                "or items sold. That convention applies only when the user's literal metric phrase is English; "
+                "never transfer the English default to another language's bare activity noun. When that language "
+                "distinguishes the activity from amount and quantity, the bare activity remains AMBIGUOUS. "
+                "Apply the same measurement distinction in every language: a conventional "
+                "compound metric noun whose semantic head explicitly denotes quantity, volume, units, or "
+                "count is an explicit quantity request even when its modifier names the business activity. "
+                "Do not downgrade that compound metric noun to a generic activity. Vague best/performance "
+                "without a metric is unresolved."
             ),
             "dimension": (
                 "Bind the grouping or entity-list subject at the granularity requested. Compare entity/type "
@@ -502,6 +511,11 @@ class BoundedLLMObjectSelector:
                 "Untrusted language hypotheses may help interpret a translation, but are NOT runtime evidence "
                 "or a binding decision. Reject a hypothesis that changes the user's meaning, measurement unit "
                 "or granularity; consider every eligible candidate, not only the suggested names. "
+                "A code-proven structural constraint is authoritative only about whether the current phrase "
+                "is present and which slot it fills, never about canonical identity. When that constraint proves "
+                "an explicit current-slot replacement, do not return UNRESOLVED merely because you think the "
+                "role was omitted; still return AMBIGUOUS when distinct candidates fit equally and UNRESOLVED "
+                "when no candidate matches the phrase's meaning. "
                 'Output JSON only: {"outcome":"RESOLVED|AMBIGUOUS|UNRESOLVED","candidate_id":"exact object_id or null",'
                 '"matched_phrase":"minimal exact substring from 当前输入 that denotes only the selected concept, or null"}. '
                 "For RESOLVED, copy the ID exactly and copy only the metric/dimension/filter-field phrase from the current input; "
@@ -550,7 +564,10 @@ class BoundedLLMObjectSelector:
                     matched_phrase == phrase
                     or (
                         bool(selection_constraint)
-                        and matched_phrase in phrase
+                        and (
+                            matched_phrase in phrase
+                            or phrase in matched_phrase
+                        )
                     )
                 )
             )
@@ -909,7 +926,15 @@ class TimeGrounder:
         re.IGNORECASE,
     )
     _ABSOLUTE_MONTH = re.compile(
-        r"(?<!\d)(\d{4})\s*年\s*(\d{1,2})\s*月(?:份)?"
+        r"(?<!\d)(?P<year>\d{4})\s*年\s*"
+        r"(?P<month>十[一二]|十二|十|[一二三四五六七八九]|\d{1,2})"
+        r"\s*月(?:份)?"
+    )
+    _HALF_YEAR = re.compile(
+        r"(?:(?P<zh_year>\d{4})\s*年?\s*"
+        r"(?P<zh_half>上半年|下半年|前\s*6\s*个月|后\s*6\s*个月)|"
+        r"(?P<en_year>\d{4})\s*(?P<en_half>h\s*[12]))",
+        re.IGNORECASE,
     )
     _NUMERIC_MONTH = re.compile(
         r"(?<!\d)(\d{4})\s*[-/]\s*(0?[1-9]|1[0-2])(?!\s*[-/]?\s*\d)"
@@ -962,9 +987,11 @@ class TimeGrounder:
             return bounded_month
         absolute_month = self._ABSOLUTE_MONTH.search(normalized_input)
         if absolute_month:
-            return self._month_range(
-                date_field, int(absolute_month.group(1)), int(absolute_month.group(2))
-            )
+            month = self._parse_number(absolute_month.group("month"))
+            if month is not None:
+                return self._month_range(
+                    date_field, int(absolute_month.group("year")), month
+                )
         numeric_month = self._NUMERIC_MONTH.search(normalized_input)
         if numeric_month:
             return self._month_range(
@@ -994,6 +1021,25 @@ class TimeGrounder:
             )
             if quarter is not None:
                 return self._quarter_range(date_field, year, quarter)
+        half_year = self._HALF_YEAR.search(normalized_input)
+        if half_year:
+            year = int(half_year.group("zh_year") or half_year.group("en_year"))
+            half = normalize_semantic_text(
+                half_year.group("zh_half") or half_year.group("en_half")
+            )
+            first_month = 1 if half in {"上半年", "前6个月", "h1"} else 7
+            last_month = first_month + 5
+            return TimeRangeSpec(
+                date_field=date_field.canonical_name,
+                start_date=date(year, first_month, 1),
+                end_date=date(
+                    year,
+                    last_month,
+                    calendar.monthrange(year, last_month)[1],
+                ),
+                mode=TimeRangeMode.EXPLICIT_RANGE,
+                grain="month",
+            )
         if "上个月" in normalized_input or "上月" in normalized_input:
             year, month = self._shift_month(today.year, today.month, -1)
             return self._month_range(date_field, year, month)
@@ -1081,6 +1127,7 @@ class TimeGrounder:
                 and cls._YEARLESS_NAMED_MONTH.search(normalized_input)
             )
             or cls._QUARTER.search(normalized_input)
+            or cls._HALF_YEAR.search(normalized_input)
             or cls._RECENT_MONTHS.search(normalized_input)
             or cls._ABSOLUTE_YEAR.search(normalized_input)
             or len(cls._ISO_DATE.findall(normalized_input)) == 2
@@ -1448,21 +1495,48 @@ class SemanticGroundingService:
             mention: str,
             object_type: SemanticObjectType,
             role: SemanticObjectRole,
+            *,
+            compatible_measure_tables: tuple[str, ...] = (),
+            selection_constraint: str = "",
         ) -> ObjectGroundingResult:
-            return await self.objects.select_bounded(
+            result = await self.objects.select_bounded(
                 mention,
                 user_input,
                 object_type,
                 role,
                 language_hints=(mention,),
+                selection_constraint=selection_constraint,
+            )
+            return await self._select_same_name_candidate(
+                result,
+                user_input,
+                object_type,
+                role,
+                language_hints=(mention,),
+                compatible_measure_tables=compatible_measure_tables,
             )
 
         measure_required = effective_shape != QueryShape.ENTITY_LIST
         measure_missing = False
         grounded_measures: list[str] = []
+        grounded_measure_tables: set[str] = set()
+        measure_selection_constraint = ""
+        if (
+            frame.relation is not TurnRelation.FRESH_QUESTION
+            and "measure" in frame.changed_slots
+        ):
+            measure_selection_constraint = (
+                "SemanticFrame proves an explicit current-turn measure replacement: "
+                "the current phrase is present and denotes the changed measure slot. "
+                "This does not prove which candidate matches and does not waive "
+                "AMBIGUOUS or UNRESOLVED when candidates do not uniquely fit."
+            )
         for mention in frame.measure_mentions:
             result = await bind_object(
-                mention, SemanticObjectType.MEASURE, "measure"
+                mention,
+                SemanticObjectType.MEASURE,
+                "measure",
+                selection_constraint=measure_selection_constraint,
             )
             object_results.append(result)
             if self._requires_clarification(result) or result.canonical_object is None:
@@ -1477,6 +1551,7 @@ class SemanticGroundingService:
                 )
             if result.canonical_object.canonical_name not in grounded_measures:
                 grounded_measures.append(result.canonical_object.canonical_name)
+            grounded_measure_tables.add(result.canonical_object.table_name)
         if grounded_measures:
             delta.measures = grounded_measures
         elif measure_required and not (
@@ -1490,6 +1565,24 @@ class SemanticGroundingService:
                 method="semantic_frame_measure_missing",
             ))
 
+        if not grounded_measure_tables:
+            contextual_measures = (
+                pending.measures
+                if pending is not None and pending.measures
+                else committed.measures
+                if committed is not None
+                else []
+            )
+            normalized_contextual = {
+                normalize_semantic_text(name) for name in contextual_measures
+            }
+            grounded_measure_tables.update(
+                obj.table_name
+                for obj in self.catalog.by_type(SemanticObjectType.MEASURE)
+                if normalize_semantic_text(obj.canonical_name)
+                in normalized_contextual
+            )
+
         dimension_role: SemanticObjectRole = (
             "ranking_dimension"
             if effective_shape == QueryShape.RANKING
@@ -1498,7 +1591,10 @@ class SemanticGroundingService:
         grounded_dimensions: list[str] = []
         for mention in frame.dimension_mentions:
             result = await bind_object(
-                mention, SemanticObjectType.FIELD, dimension_role
+                mention,
+                SemanticObjectType.FIELD,
+                dimension_role,
+                compatible_measure_tables=tuple(sorted(grounded_measure_tables)),
             )
             object_results.append(result)
             if self._requires_clarification(result) or result.canonical_object is None:
@@ -1577,14 +1673,7 @@ class SemanticGroundingService:
                 runtime_grouping = await self._runtime_month_grouping(
                     user_input,
                     member_lookup,
-                    evidence_phrase=next(
-                        (
-                            item.text
-                            for item in frame.evidence_spans
-                            if item.slot == "query_shape" and item.text in user_input
-                        ),
-                        user_input,
-                    ),
+                    evidence_phrase=user_input,
                 )
                 grouping_result = runtime_grouping
             object_results.append(grouping_result)
@@ -1664,7 +1753,32 @@ class SemanticGroundingService:
                     pending_eligible=False,
                 )
             field_result: ObjectGroundingResult
-            if field_mention:
+            proven_member: MemberGroundingResult | None = None
+            runtime_literal_field: ObjectGroundingResult | None = None
+            runtime_literal_complete_no_match = False
+            if (
+                not field_mention
+                and committed is None
+                and pending is None
+                and effective_shape not in {
+                    QueryShape.MEMBER_SET,
+                    QueryShape.FILTERED_AGGREGATION,
+                }
+            ):
+                (
+                    runtime_literal_field,
+                    proven_member,
+                    runtime_literal_complete_no_match,
+                ) = (
+                    await self._resolve_unique_runtime_literal_member_field(
+                        member_mention,
+                        member_lookup,
+                        tuple(sorted(grounded_measure_tables)),
+                    )
+                )
+            if runtime_literal_field is not None:
+                field_result = runtime_literal_field
+            elif field_mention:
                 field_result = await bind_object(
                     field_mention, SemanticObjectType.FIELD, "filter_field"
                 )
@@ -1688,6 +1802,59 @@ class SemanticGroundingService:
                 field_result = await bind_object(
                     member_mention, SemanticObjectType.FIELD, "filter_field"
                 )
+            field_result = await self._select_same_name_candidate(
+                field_result,
+                user_input,
+                SemanticObjectType.FIELD,
+                "filter_field",
+                language_hints=tuple(
+                    item
+                    for item in (field_mention, member_mention)
+                    if item
+                ),
+            )
+            if (
+                runtime_literal_complete_no_match
+                and field_result.status is GroundingStatus.UNRESOLVED
+            ):
+                field_result = field_result.model_copy(
+                    update={"method": "runtime_complete_literal_member_no_match"}
+                )
+                object_results.append(field_result)
+                return self._clarification(
+                    GroundingStatus.UNRESOLVED,
+                    object_results,
+                    member_results,
+                    clarification_question(ClarificationReason.MEMBER_NO_MATCH),
+                    [],
+                    reason=ClarificationReason.MEMBER_NO_MATCH,
+                    delta=delta,
+                )
+            if (
+                field_result.status == GroundingStatus.AMBIGUOUS
+                and 1 <= len(field_result.candidate_ids) <= 2
+            ):
+                runtime_matches: list[
+                    tuple[CatalogObject, MemberGroundingResult]
+                ] = []
+                for object_id in field_result.candidate_ids:
+                    candidate = self.catalog.get(object_id)
+                    if candidate is None:
+                        continue
+                    candidate_members = await member_lookup(candidate, 100)
+                    member_match = MemberGrounder.resolve(
+                        candidate, member_mention, candidate_members
+                    )
+                    if member_match.status == GroundingStatus.RESOLVED:
+                        runtime_matches.append((candidate, member_match))
+                if len(runtime_matches) == 1:
+                    field_result = ObjectGrounder._resolved(
+                        "filter_field",
+                        member_mention,
+                        runtime_matches[0][0],
+                        "unique_runtime_member_field",
+                    )
+                    proven_member = runtime_matches[0][1]
             object_results.append(field_result)
             if (
                 self._requires_clarification(field_result)
@@ -1711,11 +1878,15 @@ class SemanticGroundingService:
                     delta=delta,
                 )
             field = field_result.canonical_object
-            members = await member_lookup(field, 100)
-            member = MemberGrounder.resolve(field, member_mention, members)
+            members = None
+            member = proven_member
+            if member is None:
+                members = await member_lookup(field, 100)
+                member = MemberGrounder.resolve(field, member_mention, members)
             if (
                 member.status == GroundingStatus.UNRESOLVED
                 and self.objects.selector is not None
+                and members is not None
                 and members.semantic_model_key == self.catalog.semantic_model_key
             ):
                 member = await self.objects.selector.select_member(
@@ -2613,6 +2784,7 @@ class SemanticGroundingService:
         role: SemanticObjectRole,
         *,
         language_hints: tuple[str, ...] = (),
+        compatible_measure_tables: tuple[str, ...] = (),
     ) -> ObjectGroundingResult:
         """Select an owner only when runtime candidates share one name.
 
@@ -2620,10 +2792,10 @@ class SemanticGroundingService:
         choose only from the current Catalog IDs, so this resolves duplicate
         fact/dimension columns without turning the draft into object authority.
         """
-        if (
-            result.status != GroundingStatus.AMBIGUOUS
-            or self.objects.selector is None
-        ):
+        if result.status not in {
+            GroundingStatus.RESOLVED,
+            GroundingStatus.AMBIGUOUS,
+        }:
             return result
         candidates = tuple(
             candidate
@@ -2635,6 +2807,98 @@ class SemanticGroundingService:
             for candidate in candidates
         }) != 1:
             return result
+        if (
+            object_type is SemanticObjectType.FIELD
+            and role in {"dimension", "ranking_dimension", "filter_field"}
+            and self.catalog.context is not None
+        ):
+            candidate_ids = {candidate.object_id for candidate in candidates}
+            one_side_ids: set[str] = set()
+            for relationship in self.catalog.context.relationships:
+                if not relationship.is_active:
+                    continue
+                endpoints = {
+                    relationship.from_object_id,
+                    relationship.to_object_id,
+                }
+                if not endpoints.issubset(candidate_ids):
+                    continue
+                if (relationship.from_cardinality or "").casefold() == "one":
+                    one_side_ids.add(relationship.from_object_id)
+                if (relationship.to_cardinality or "").casefold() == "one":
+                    one_side_ids.add(relationship.to_object_id)
+            owners = [
+                candidate
+                for candidate in candidates
+                if candidate.object_id in one_side_ids
+            ]
+            if len(owners) == 1:
+                return ObjectGrounder._resolved(
+                    role,
+                    result.phrase or user_input,
+                    owners[0],
+                    "runtime_relationship_dimension_owner",
+                )
+            if compatible_measure_tables:
+                object_tables = {
+                    item.object_id: item.table_name
+                    for item in self.catalog.context.columns
+                }
+                compatible_owner_tables: set[str] = set()
+                measure_tables = set(compatible_measure_tables)
+                for relationship in self.catalog.context.relationships:
+                    if not relationship.is_active:
+                        continue
+                    from_table = object_tables.get(relationship.from_object_id)
+                    to_table = object_tables.get(relationship.to_object_id)
+                    from_cardinality = (
+                        relationship.from_cardinality or ""
+                    ).casefold()
+                    to_cardinality = (
+                        relationship.to_cardinality or ""
+                    ).casefold()
+                    if (
+                        from_table in measure_tables
+                        and from_cardinality == "many"
+                        and to_cardinality == "one"
+                        and to_table is not None
+                    ):
+                        compatible_owner_tables.add(to_table)
+                    if (
+                        to_table in measure_tables
+                        and to_cardinality == "many"
+                        and from_cardinality == "one"
+                        and from_table is not None
+                    ):
+                        compatible_owner_tables.add(from_table)
+                compatible_owners = [
+                    candidate
+                    for candidate in candidates
+                    if candidate.table_name in compatible_owner_tables
+                ]
+                if len(compatible_owners) == 1:
+                    return ObjectGrounder._resolved(
+                        role,
+                        result.phrase or user_input,
+                        compatible_owners[0],
+                        "runtime_measure_relationship_dimension_owner",
+                    )
+                return ObjectGroundingResult(
+                    status=GroundingStatus.AMBIGUOUS,
+                    role=role,
+                    phrase=result.phrase or user_input,
+                    candidate_ids=tuple(
+                        candidate.object_id
+                        for candidate in (compatible_owners or candidates)
+                    ),
+                    method=(
+                        "runtime_measure_relationship_dimension_owner_ambiguous"
+                        if compatible_owners
+                        else "runtime_measure_relationship_dimension_owner_unproven"
+                    ),
+                )
+        if result.status != GroundingStatus.AMBIGUOUS or self.objects.selector is None:
+            return result
         return await self.objects.select_bounded(
             result.phrase or user_input,
             user_input,
@@ -2643,6 +2907,125 @@ class SemanticGroundingService:
             eligible_ids=tuple(candidate.object_id for candidate in candidates),
             language_hints=language_hints,
         )
+
+    async def _resolve_unique_runtime_literal_member_field(
+        self,
+        requested_value: str,
+        member_lookup: MemberLookup,
+        measure_tables: tuple[str, ...],
+    ) -> tuple[
+        ObjectGroundingResult | None,
+        MemberGroundingResult | None,
+        bool,
+    ]:
+        """Bind a literal member through complete runtime values before LLM selection.
+
+        The search is bounded to categorical active one-side relationship keys
+        reachable from the already grounded measure table. Semantic aliases and
+        inferred categories are intentionally excluded from this precedence path.
+        """
+
+        if self.catalog.context is None or not measure_tables:
+            return None, None, False
+        object_tables = {
+            item.object_id: item.table_name
+            for item in self.catalog.context.columns
+        }
+        dimension_object_ids: set[str] = set()
+        fact_tables = set(measure_tables)
+        for relationship in self.catalog.context.relationships:
+            if not relationship.is_active:
+                continue
+            from_table = object_tables.get(relationship.from_object_id)
+            to_table = object_tables.get(relationship.to_object_id)
+            from_cardinality = (
+                relationship.from_cardinality or ""
+            ).casefold()
+            to_cardinality = (
+                relationship.to_cardinality or ""
+            ).casefold()
+            if (
+                from_table in fact_tables
+                and from_cardinality == "many"
+                and to_cardinality == "one"
+                and to_table is not None
+            ):
+                dimension_object_ids.add(relationship.to_object_id)
+            if (
+                to_table in fact_tables
+                and to_cardinality == "many"
+                and from_cardinality == "one"
+                and from_table is not None
+            ):
+                dimension_object_ids.add(relationship.from_object_id)
+        candidates = tuple(
+            obj
+            for obj in self.catalog.by_type(SemanticObjectType.FIELD)
+            if obj.object_id in dimension_object_ids
+            and any(
+                token in obj.data_type.casefold()
+                for token in ("string", "text")
+            )
+        )
+        if not candidates or len(candidates) > 12:
+            return None, None, False
+
+        matches: list[tuple[CatalogObject, MemberGroundingResult]] = []
+        for field in candidates:
+            members = await member_lookup(field, 100)
+            if (
+                members.truncated
+                or members.semantic_model_key != self.catalog.semantic_model_key
+                or members.table_name != field.table_name
+                or members.field_name != field.canonical_name
+            ):
+                return None, None, False
+            member = MemberGrounder.resolve(field, requested_value, members)
+            if member.method in {"runtime_exact", "runtime_normalized"}:
+                matches.append((field, member))
+            elif member.method in {
+                "runtime_duplicate_exact",
+                "runtime_normalized_ambiguous",
+            }:
+                return (
+                    ObjectGrounder._ambiguous(
+                        "filter_field",
+                        requested_value,
+                        [field],
+                        "runtime_literal_member_ambiguous",
+                    ),
+                    None,
+                    False,
+                )
+        if len(matches) == 1:
+            field, member = matches[0]
+            return (
+                ObjectGrounder._resolved(
+                    "filter_field",
+                    requested_value,
+                    field,
+                    "unique_runtime_literal_member_field",
+                ),
+                member,
+                False,
+            )
+        if len(matches) > 1:
+            return (
+                ObjectGrounder._ambiguous(
+                    "filter_field",
+                    requested_value,
+                    [field for field, _ in matches],
+                    "multiple_runtime_literal_member_fields",
+                ),
+                None,
+                False,
+            )
+        # Every eligible runtime snapshot was complete and none contained an
+        # exact/normalized literal. Keep the LLM's cross-language field/member
+        # path available; if it also cannot identify a field, this proof lets
+        # the caller return a stable member-no-match instead of oscillating
+        # between field-unresolved and member-no-match.
+        return None, None, True
 
     async def _runtime_month_grouping(
         self,
@@ -2661,7 +3044,7 @@ class SemanticGroundingService:
             if ("date" in obj.data_type.casefold() or "time" in obj.data_type.casefold()))
         selected = await self.objects.select_bounded(
             evidence_phrase
-            or "本轮明确要求按月分组：选择模型中表示跨年月份的现有字段，不能选择原始日级日期或仅月号。没有这种字段则 UNRESOLVED。",
+            or user_input,
             user_input,
             SemanticObjectType.FIELD,
             "dimension",
@@ -3360,6 +3743,7 @@ class SemanticGroundingService:
                 TimeGrounder._NUMERIC_MONTH,
                 TimeGrounder._RELATIVE_NAMED_MONTH,
                 TimeGrounder._QUARTER,
+                TimeGrounder._HALF_YEAR,
                 TimeGrounder._ABSOLUTE_YEAR,
                 TimeGrounder._ISO_DATE,
             )

@@ -22,7 +22,10 @@ class HarnessConfig(BaseModel):
     application_timezone: str = Field(default="Asia/Shanghai", min_length=1)
 
     # ── 超时与限制 ──
-    request_timeout_seconds: int = Field(default=120, ge=10)
+    request_timeout_seconds: int = Field(default=180, ge=10, le=240)
+    llm_provider_timeout_seconds: int = Field(default=120, ge=10, le=240)
+    powerbi_local_mcp_timeout_seconds: int = Field(default=120, ge=10, le=240)
+    report_render_timeout_seconds: int = Field(default=120, ge=10, le=240)
     powerbi_query_timeout_seconds: int = Field(default=30, ge=5, le=300)
 
     # M3 sales_report requires schema + four DAX calls + render/store.
@@ -57,6 +60,11 @@ class HarnessConfig(BaseModel):
             application_timezone=settings.application_timezone,
             # ── 超时 ──
             request_timeout_seconds=settings.request_timeout_seconds,
+            llm_provider_timeout_seconds=settings.llm_provider_timeout_seconds,
+            powerbi_local_mcp_timeout_seconds=(
+                settings.powerbi_local_mcp_timeout_seconds
+            ),
+            report_render_timeout_seconds=settings.report_render_timeout_seconds,
             powerbi_query_timeout_seconds=settings.powerbi_query_timeout_seconds,
             # ── 限制 ──
             max_tool_calls=settings.max_tool_calls,

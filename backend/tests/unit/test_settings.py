@@ -225,6 +225,10 @@ class TestSettingsNoSecretLeak:
 
     def test_safe_repr_exposes_only_safe_runtime_bounds(self):
         safe = Settings(_env_file=None).safe_repr()
+        assert safe["request_timeout_seconds"] == 180
+        assert safe["llm_provider_timeout_seconds"] == 120
+        assert safe["powerbi_local_mcp_timeout_seconds"] == 120
+        assert safe["report_render_timeout_seconds"] == 120
         assert safe["powerbi_local_mcp_workers"] == 2
         assert safe["powerbi_local_mcp_queue_capacity"] == 32
         assert safe["powerbi_local_mcp_per_request_limit"] == 2

@@ -50,6 +50,9 @@ from backend.app.query_plan.semantic_catalog import (
     SemanticCatalogBuilder,
     SemanticObjectType,
 )
+from backend.app.query_plan.model_semantic_context import (
+    ModelSemanticContextBuilder,
+)
 from backend.app.query_plan.state_transition import (
     CommittedMemoryCorruptionError,
     FilterTransition,
@@ -482,6 +485,7 @@ class _SelectionProvider(LLMProvider):
         self.outcome = outcome
         self.matched_phrase = matched_phrase
         self.calls = 0
+        self.requests = []
 
     @property
     def provider_name(self):
@@ -493,6 +497,7 @@ class _SelectionProvider(LLMProvider):
 
     async def generate(self, request, output_type):
         self.calls += 1
+        self.requests.append(request)
         assert output_type is CandidateSelection
         content = request.messages[-1]["content"]
         matched_phrase = (
@@ -515,7 +520,222 @@ class _SelectionProvider(LLMProvider):
         )
 
 
+class _ReplacementConstraintProvider(LLMProvider):
+    """Resolve only when runtime receives the frame-proven replacement scope."""
+
+    @property
+    def provider_name(self):
+        return "replacement-constraint"
+
+    @property
+    def is_mock(self):
+        return False
+
+    async def generate(self, request, output_type):
+        assert output_type is CandidateSelection
+        content = request.messages[-1]["content"]
+        constrained = "explicit current-turn measure replacement" in content
+        return LLMResponse(
+            content="{}",
+            structured=CandidateSelection(
+                outcome="RESOLVED" if constrained else "UNRESOLVED",
+                candidate_id=(
+                    "measure:Sales:Total Quantity" if constrained else None
+                ),
+                matched_phrase="销售数量" if constrained else None,
+            ),
+            model="replacement-constraint",
+        )
+
+
 class TestMemberAndTimeGrounding:
+    @pytest.mark.asyncio
+    async def test_follow_up_measure_replacement_passes_frame_proven_constraint(self):
+        catalog = SemanticCatalogBuilder().build(_schema())
+        grounding = SemanticGroundingService(
+            catalog,
+            selector=BoundedLLMObjectSelector(_ReplacementConstraintProvider()),
+        )
+        committed = StructuredWorkMemory(
+            conversation_id="constraint-conversation",
+            request_id="constraint-previous",
+            semantic_model_key="local_desktop_model",
+            state_status=MemoryStatus.COMMITTED,
+            measures=["Total Sales"],
+            dimensions=["Product"],
+            sort="desc",
+            top_n=3,
+            last_query_plan=_draft(
+                query_shape=QueryShape.RANKING,
+                measures=["Total Sales"],
+                dimensions=["Product"],
+                sort="desc",
+                top_n=3,
+            ).model_dump(mode="json"),
+            memory_version=1,
+        )
+
+        async def unused_lookup(*_: object):
+            raise AssertionError("measure replacement must not enumerate members")
+
+        outcome = await grounding.ground_frame(
+            "改成销售数量",
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                relation=TurnRelation.FOLLOW_UP,
+                measure_mentions=("销售数量",),
+                changed_slots=("measure",),
+                referenced_context_slots=(
+                    "query_shape", "dimensions", "sort", "top_n"
+                ),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="relation", text="改成"),
+                    SemanticEvidenceSpan(slot="measure", text="销售数量"),
+                ),
+            ),
+            committed,
+            unused_lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.measures == ["Total Quantity"]
+
+    @pytest.mark.asyncio
+    async def test_complete_runtime_member_miss_stabilizes_unresolved_field_as_no_match(self):
+        schema = SemanticModelSchema(
+            name="Runtime member proof",
+            key="runtime_member_proof",
+            tables=[
+                TableSchema(
+                    name="Sales",
+                    columns=[ColumnSchema(name="Region", data_type="String")],
+                    measures=[MeasureSchema(name="Total Sales", data_type="Double")],
+                ),
+                TableSchema(
+                    name="Region",
+                    columns=[
+                        ColumnSchema(
+                            name="Region", data_type="String", is_key=True
+                        )
+                    ],
+                ),
+            ],
+            relationships=[
+                RelationshipSchema(
+                    from_table="Sales",
+                    from_column="Region",
+                    to_table="Region",
+                    to_column="Region",
+                    from_cardinality="many",
+                    to_cardinality="one",
+                    is_active=True,
+                )
+            ],
+        )
+        catalog = SemanticCatalogBuilder().build_from_data(
+            schema,
+            {
+                "version": 1,
+                "semantic_model_key": schema.key,
+                "schema_fingerprint": compute_schema_fingerprint(schema),
+                "measures": {
+                    "Total Sales": {
+                        "table_name": "Sales",
+                        "object_type": "measure",
+                        "aliases": ["销售额"],
+                    }
+                },
+                "fields": {},
+            },
+        ).model_copy(update={
+            "context": ModelSemanticContextBuilder().build(schema),
+        })
+        grounding = SemanticGroundingService(
+            catalog,
+            selector=BoundedLLMObjectSelector(
+                _SelectionProvider(None, outcome="UNRESOLVED")
+            ),
+        )
+        assert catalog.context is not None
+        lookup_calls = []
+
+        async def lookup(field, limit):
+            lookup_calls.append(field.object_id)
+            assert field.object_id == "field:Region:Region"
+            assert limit == 100
+            return ColumnMembersResult(
+                semantic_model_key=schema.key,
+                table_name=field.table_name,
+                field_name=field.canonical_name,
+                values=["North", "South"],
+                source_mode="real",
+            )
+
+        direct_proof = await grounding._resolve_unique_runtime_literal_member_field(
+            "火星区", lookup, ("Sales",)
+        )
+        assert direct_proof == (None, None, True)
+        assert lookup_calls == ["field:Region:Region"]
+        lookup_calls.clear()
+
+        outcome = await grounding.ground_frame(
+            "火星区销售额是多少",
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                query_shape=QueryShape.SCALAR,
+                measure_mentions=("销售额",),
+                member_mentions=("火星区",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="query_shape", text="销售额"),
+                    SemanticEvidenceSpan(slot="measure", text="销售额"),
+                    SemanticEvidenceSpan(slot="member", text="火星区"),
+                ),
+            ),
+            None,
+            lookup,
+        )
+
+        assert outcome.status == GroundingStatus.UNRESOLVED
+        assert lookup_calls == ["field:Region:Region"]
+        assert outcome.delta is not None
+        assert outcome.delta.filters is None
+        assert outcome.clarification_reason == ClarificationReason.MEMBER_NO_MATCH
+
+    @pytest.mark.asyncio
+    async def test_measure_selector_preserves_explicit_compound_quantity_meaning(self):
+        provider = _SelectionProvider("measure:Sales:Total Quantity")
+        selector = BoundedLLMObjectSelector(provider)
+
+        await selector.select(
+            "销量",
+            "销量最大的三款产品",
+            tuple(_catalog().by_type(SemanticObjectType.MEASURE)),
+            role="measure",
+        )
+
+        prompt = provider.requests[0].messages[0]["content"]
+        assert "in every language" in prompt
+        assert "compound metric noun" in prompt
+
+    @pytest.mark.asyncio
+    async def test_measure_selector_does_not_export_english_default_across_languages(self):
+        provider = _SelectionProvider(None, outcome="AMBIGUOUS")
+        selector = BoundedLLMObjectSelector(provider)
+
+        result = await selector.select(
+            "一般活动词",
+            "一般活动词情况",
+            tuple(_catalog().by_type(SemanticObjectType.MEASURE)),
+            role="measure",
+        )
+
+        prompt = provider.requests[0].messages[0]["content"]
+        assert result.status == GroundingStatus.AMBIGUOUS
+        assert "only when the user's literal metric phrase is English" in prompt
+        assert "never transfer the English default" in prompt
+        assert "bare activity remains AMBIGUOUS" in prompt
+
     @pytest.mark.asyncio
     async def test_structural_selection_accepts_smaller_validated_evidence_span(self):
         catalog = _catalog()
@@ -2451,6 +2671,57 @@ class TestSemanticCorrectnessFailureReproducers:
             item.method == "runtime_complete_month_members"
             for item in outcome.object_results
         )
+
+    @pytest.mark.asyncio
+    async def test_runtime_month_grouping_accepts_exact_grain_anchor_from_full_input(self):
+        schema = _rich_temporal_schema()
+        schema.tables[1].columns[0].is_key = True
+        schema.relationships[0].to_cardinality = "one"
+        catalog = SemanticCatalogBuilder().build_from_data(
+            schema,
+            {
+                "version": 1,
+                "semantic_model_key": schema.key,
+                "schema_fingerprint": compute_schema_fingerprint(schema),
+                "measures": {},
+                "fields": {"Date": {"table_name": "Date", "object_type": "field", "temporal_role": "default"}},
+            },
+        )
+        provider = _SelectionProvider(
+            "field:Date:YearMonth", matched_phrase="month"
+        )
+
+        async def lookup(field, limit):
+            return ColumnMembersResult(
+                semantic_model_key=schema.key,
+                table_name="Date",
+                field_name="YearMonth",
+                values=["2025-07-01T00:00:00", "2025-08-01T00:00:00"],
+                source_mode="real",
+            )
+
+        outcome = await SemanticGroundingService(
+            catalog, selector=BoundedLLMObjectSelector(provider)
+        ).ground_frame(
+            "2025 H2 sales trend by month",
+            SemanticFrame(
+                mode=SemanticInterpretationMode.DATA,
+                query_shape=QueryShape.BOUNDED_TREND,
+                measure_mentions=("Total Sales",),
+                time_mentions=("2025 H2",),
+                evidence_spans=(
+                    SemanticEvidenceSpan(slot="query_shape", text="trend by month"),
+                    SemanticEvidenceSpan(slot="measure", text="sales"),
+                    SemanticEvidenceSpan(slot="time", text="2025 H2"),
+                ),
+            ),
+            None,
+            lookup,
+        )
+
+        assert outcome.status == GroundingStatus.RESOLVED
+        assert outcome.delta is not None
+        assert outcome.delta.dimensions == ["YearMonth"]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

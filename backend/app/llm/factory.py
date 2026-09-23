@@ -42,7 +42,7 @@ def _openai_profile(
         provider_protocol=LLMProviderProtocol.OPENAI_CHAT_COMPLETIONS,
         base_url=base_url,
         model=model,
-        timeout_seconds=float(settings.request_timeout_seconds),
+        timeout_seconds=float(settings.llm_provider_timeout_seconds),
         capabilities=LLMCapabilityFlags(
             json_object_response=True,
             deterministic_temperature=True,

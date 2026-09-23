@@ -109,7 +109,13 @@ class Settings(BaseSettings):
     powerbi_local_mcp_readonly: bool = Field(default=True)
 
     # ── 资源限制 ──────────────────────────────
-    request_timeout_seconds: int = Field(default=120, ge=10)
+    # End-to-end request SLA is deliberately independent from child-stage
+    # limits.  A legal semantic turn can contain several bounded LLM/tool
+    # stages, so increasing this budget must never enlarge any one operation.
+    request_timeout_seconds: int = Field(default=180, ge=10, le=240)
+    llm_provider_timeout_seconds: int = Field(default=120, ge=10, le=240)
+    powerbi_local_mcp_timeout_seconds: int = Field(default=120, ge=10, le=240)
+    report_render_timeout_seconds: int = Field(default=120, ge=10, le=240)
     powerbi_query_timeout_seconds: int = Field(default=30, ge=5, le=300)
     max_tool_calls: int = Field(default=8, ge=1)
     max_dax_repairs: int = Field(default=1, ge=0)
@@ -320,6 +326,12 @@ class Settings(BaseSettings):
                 self.powerbi_local_mcp_admission_timeout_seconds
             ),
             "report_query_concurrency": self.report_query_concurrency,
+            "request_timeout_seconds": self.request_timeout_seconds,
+            "llm_provider_timeout_seconds": self.llm_provider_timeout_seconds,
+            "powerbi_local_mcp_timeout_seconds": (
+                self.powerbi_local_mcp_timeout_seconds
+            ),
+            "report_render_timeout_seconds": self.report_render_timeout_seconds,
             "llm_max_attempts": self.llm_max_attempts,
             "persistence_backend": self.persistence_backend.value,
             "max_tool_calls": self.max_tool_calls,

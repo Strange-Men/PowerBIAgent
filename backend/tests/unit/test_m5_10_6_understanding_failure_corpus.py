@@ -501,7 +501,6 @@ async def test_g_why_decline_is_explain_change_not_a_filter_guess() -> None:
                 SemanticEvidenceSpan(slot="query_shape", text="销售额"),
                 SemanticEvidenceSpan(slot="measure", text="销售额"),
                 SemanticEvidenceSpan(slot="time", text="今年"),
-                SemanticEvidenceSpan(slot="analysis_goal", text="为什么下降"),
             ),
         ),
     )

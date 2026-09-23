@@ -9,6 +9,7 @@ import calendar
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
+from types import SimpleNamespace
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -488,6 +489,7 @@ class FactBoundedAnswerBuilder:
         effective_scope: str | None = None,
         data_availability: Any | None = None,
         user_facing_filter_values: dict[tuple[str, str], str] | None = None,
+        user_facing_measure_labels: dict[str, str] | None = None,
     ) -> AnswerSpec:
         # Local import avoids making the factual authority module depend on the
         # presentation package during module initialization.
@@ -499,18 +501,33 @@ class FactBoundedAnswerBuilder:
         )
 
         formatter = PresentationFormatter(locale=locale)
-        bindings = display_bindings or {}
+        bindings = dict(display_bindings or {})
         used: list[VerifiedFact] = []
         parts: list[str] = []
         metrics: dict[str, Any] = {}
         metric_provenance: dict[str, dict[str, str]] = {}
         filter_labels = user_facing_filter_values or {}
+        measure_labels = user_facing_measure_labels or {}
+        for canonical, label in measure_labels.items():
+            if canonical not in plan.measures or not label.strip():
+                continue
+            for source_field in result.columns:
+                match = re.search(r"\[([^\]]+)\]\s*$", source_field)
+                source_canonical = match.group(1) if match else source_field
+                if source_canonical == canonical and source_field not in bindings:
+                    bindings[source_field] = SimpleNamespace(
+                        canonical_name=canonical,
+                        display_name=label,
+                        format_kind=None,
+                    )
         natural_prefix = self._natural_scope_prefix(
             plan,
             formatter,
             user_facing_filter_values=filter_labels,
         )
-        user_facing_measure = self._measure_label(plan, bindings)
+        user_facing_measure = self._measure_label(
+            plan, bindings, user_facing_measure_labels=measure_labels
+        )
         horizon_prefix, horizon_shortfall = self._horizon_prefix(
             plan,
             data_availability,
@@ -521,9 +538,13 @@ class FactBoundedAnswerBuilder:
             parts.append(horizon_prefix)
         if facts.empty:
             if horizon_shortfall and plan.time_range is not None:
-                measure_label = self._field_label(
-                    plan.measures[0], plan.measures[0], bindings
-                ) if plan.measures else "相关"
+                measure_label = user_facing_measure or (
+                    self._field_label(
+                        plan.measures[0], plan.measures[0], bindings
+                    )
+                    if plan.measures
+                    else "相关"
+                )
                 parts.append(
                     f"你查询的{self._render_time_range(plan.time_range, formatter)}"
                     f"未返回{measure_label}数据，因此目前无法分析该期间。"
@@ -681,6 +702,7 @@ class FactBoundedAnswerBuilder:
                 ),
                 "user_facing_scope": natural_prefix,
                 "user_facing_measure": user_facing_measure,
+                "user_facing_measure_labels": dict(sorted(measure_labels.items())),
                 "user_facing_filter_values": [
                     {
                         "field": field,
@@ -769,10 +791,15 @@ class FactBoundedAnswerBuilder:
     def _measure_label(
         plan: CanonicalQueryPlan,
         bindings: dict[str, Any],
+        *,
+        user_facing_measure_labels: dict[str, str] | None = None,
     ) -> str | None:
         if not plan.measures:
             return None
         canonical = plan.measures[0]
+        verified_label = (user_facing_measure_labels or {}).get(canonical)
+        if verified_label:
+            return verified_label
         for binding in bindings.values():
             if getattr(binding, "canonical_name", None) == canonical:
                 return binding.display_name

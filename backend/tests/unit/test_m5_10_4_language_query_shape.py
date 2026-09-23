@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from backend.app.intent.question_router import QuestionRoute, QuestionRouter
 from backend.app.intent.semantic_interpreter import (
+    GeneralFactScope,
     RankingIntent,
     SemanticEvidenceSpan,
     SemanticFrame,
@@ -85,6 +86,7 @@ def test_general_frame_cannot_smuggle_business_slots() -> None:
     with pytest.raises(ValidationError):
         SemanticFrame(
             mode=SemanticInterpretationMode.GENERAL,
+            general_fact_scope=GeneralFactScope.TIME_STABLE_OR_NONFACTUAL,
             general_answer="当然。",
             measure_mentions=("销售额",),
         )

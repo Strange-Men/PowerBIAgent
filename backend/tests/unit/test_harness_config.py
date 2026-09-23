@@ -91,6 +91,9 @@ class TestFromSettingsMapping:
             powerbi_mode="mock",
             harness_mode="test",
             request_timeout_seconds=60,
+            llm_provider_timeout_seconds=50,
+            powerbi_local_mcp_timeout_seconds=40,
+            report_render_timeout_seconds=30,
             powerbi_query_timeout_seconds=15,
             max_tool_calls=5,
             max_dax_repairs=2,
@@ -111,6 +114,9 @@ class TestFromSettingsMapping:
 
         # 超时
         assert config.request_timeout_seconds == 60
+        assert config.llm_provider_timeout_seconds == 50
+        assert config.powerbi_local_mcp_timeout_seconds == 40
+        assert config.report_render_timeout_seconds == 30
         assert config.powerbi_query_timeout_seconds == 15
 
         # 限制
@@ -189,6 +195,7 @@ class TestMainLifespanConfig:
             powerbi_query_timeout_seconds=45,
             max_powerbi_retries=3,
             request_timeout_seconds=90,
+            report_render_timeout_seconds=70,
         )
         config = HarnessConfig.from_settings(settings)
 
@@ -209,9 +216,9 @@ class TestMainLifespanConfig:
         assert dax_tool.timeout_seconds == 45.0
         assert dax_tool.max_retries == 3
 
-        # render_report 使用 request_timeout_seconds，max_retries=0
+        # render_report 使用独立子阶段超时，不能随请求总 SLA 一起放大
         render_tool = service.tool_gateway.get_tool(TOOL_NAME_RENDER)
-        assert render_tool.timeout_seconds == 90.0
+        assert render_tool.timeout_seconds == 70.0
         assert render_tool.max_retries == 0
 
     @pytest.mark.anyio
@@ -409,6 +416,7 @@ class TestSharedToolRegistry:
             powerbi_query_timeout_seconds=25,
             max_powerbi_retries=2,
             request_timeout_seconds=80,
+            report_render_timeout_seconds=60,
         )
         gateway = create_default_tool_gateway(powerbi, renderer, config)
 
@@ -421,7 +429,7 @@ class TestSharedToolRegistry:
         assert dax_tool.max_retries == 2
 
         render_tool = gateway.get_tool(TOOL_NAME_RENDER)
-        assert render_tool.timeout_seconds == 80.0
+        assert render_tool.timeout_seconds == 60.0
         assert render_tool.max_retries == 0
 
     def test_tool_names_not_hardcoded_in_service(self):

@@ -17,6 +17,7 @@ from backend.app.facts.availability import (
 )
 from backend.app.intent.question_router import QuestionRoute, QuestionRouter
 from backend.app.intent.semantic_interpreter import (
+    GeneralFactScope,
     LLMSemanticInterpreter,
     SemanticCoverageDecision,
     SemanticEvidenceSpan,
@@ -102,6 +103,7 @@ def test_semantic_frame_mode_is_the_only_general_business_boundary():
     )
     general = SemanticFrame(
         mode=SemanticInterpretationMode.GENERAL,
+        general_fact_scope=GeneralFactScope.TIME_STABLE_OR_NONFACTUAL,
         general_answer="当然，我们聊点轻松的。",
     )
     assert business.mode is SemanticInterpretationMode.DATA
@@ -144,6 +146,7 @@ async def test_open_interpreter_emits_one_frame_then_veto_only_coverage():
             "你怎样帮助我理解一张报表",
             SemanticFrame(
                 mode=SemanticInterpretationMode.GENERAL,
+                general_fact_scope=GeneralFactScope.TIME_STABLE_OR_NONFACTUAL,
                 general_answer="我可以解释指标、筛选、趋势和需要核验的问题。",
             ),
             SemanticInterpretationMode.GENERAL,

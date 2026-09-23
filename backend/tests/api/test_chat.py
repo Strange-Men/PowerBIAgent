@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
 from backend.app.intent.models import TimeIntentDraft, TimeIntentKind, TurnRelation
 from backend.app.intent.semantic_interpreter import (
+    GeneralFactScope,
     RankingIntent,
     SemanticCoverageDecision,
     SemanticEvidenceSpan,
@@ -84,9 +85,16 @@ def _semantic_frame(
     changed_slots: tuple[str, ...] = (),
     referenced_context_slots: tuple[str, ...] = (),
     general_answer: str = "",
+    general_fact_scope: GeneralFactScope = (
+        GeneralFactScope.TIME_STABLE_OR_NONFACTUAL
+    ),
 ) -> SemanticFrame:
     if mode is SemanticInterpretationMode.GENERAL:
-        return SemanticFrame(mode=mode, general_answer=general_answer)
+        return SemanticFrame(
+            mode=mode,
+            general_fact_scope=general_fact_scope,
+            general_answer=general_answer,
+        )
     evidence: list[SemanticEvidenceSpan] = []
     evidence.extend(SemanticEvidenceSpan(slot="measure", text=item) for item in measures)
     evidence.extend(SemanticEvidenceSpan(slot="dimension", text=item) for item in dimensions)
@@ -3442,6 +3450,11 @@ class _M582ShapeProvider(LLMProvider):
                     mode=SemanticInterpretationMode.GENERAL,
                     shape=None,
                     general_answer=answer,
+                    general_fact_scope=(
+                        GeneralFactScope.REQUIRES_CURRENT_EXTERNAL_FACTS
+                        if "岗厦北" in text
+                        else GeneralFactScope.TIME_STABLE_OR_NONFACTUAL
+                    ),
                 )
             else:
                 measure = (
@@ -3649,6 +3662,36 @@ def _patch_m582_shape_composition(monkeypatch, question: str):
 
 
 class TestM582ProductionRoutingAndShapes:
+    @pytest.mark.asyncio
+    async def test_current_external_general_answer_fails_closed_without_tools(
+        self, monkeypatch
+    ):
+        question = "我公司在深圳岗厦北，有什么工作餐推荐？"
+        app, provider = _patch_m582_shape_composition(monkeypatch, question)
+        async with app.router.lifespan_context(app):
+            service = app.state.turn_service
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/v1/chat", json={
+                    "message": question,
+                    "conversation_id": str(uuid.uuid4()),
+                    "request_id": str(uuid.uuid4()),
+                    "semantic_model_key": "local_desktop_model",
+                })
+
+        body = response.json()
+        assert response.status_code == 200, body
+        assert "没有可验证的实时外部数据" in body["answer"]
+        assert "LLM conversational reply" not in body["answer"]
+        assert [call.task.value for call in provider.calls] == ["understanding"]
+        assert body["tool_sequence"] == []
+        assert body["memory_commit"] is False
+        assert body["execution_audit"]["dax_executed"] is False
+        assert service.powerbi.schema_calls == 0
+        assert service.powerbi.member_calls == 0
+        assert service.powerbi.dax_calls == 0
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "question",

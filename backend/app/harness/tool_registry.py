@@ -135,7 +135,7 @@ def register_default_tools(
         description="渲染报表为 HTML",
         input_model=ReportSpec,
         output_model=ReportArtifact,
-        timeout_seconds=float(config.request_timeout_seconds),
+        timeout_seconds=float(config.report_render_timeout_seconds),
         max_retries=0,
         read_only=True,
         allowed_intents=[IntentType.REPORT_GENERATION],

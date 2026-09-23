@@ -38,12 +38,13 @@
 
 ## 当前开发入口
 
-- Baseline：`main@276d67d783f5af75dd4e55ba20e910679d623be3`。
+- Baseline：`main@6b9abd890d58bed5768687733d2c1172532850ec`。
 - M5.10.5 COMPLETE；exact-SHA CI Run `35088162355` success。
 - 当前：`M5.10.6 — LLM 语义理解与自然事实表达重构`；专项计划：
   `docs/milestones/m5/m5_10_6_llm_semantic_interpretation_and_natural_factual_presentation_plan.md`。
-- 当前单一 `SemanticFrame` implementation、fresh local gates 与 configured DeepSeek + Real
-  Local MCP 21/21 已完成；只剩 whitelist commit/push、exact-SHA CI 与 remote audit。
+- Final Real Stress 72 unique / 24 high-risk×3 / 130 turns 已 130/130；Critical Real 21/21。
+  fresh Semantic Compatibility 807 与 backend 2804/1 已通过；其余治理/drift gate、whitelist
+  commit/push、exact-SHA CI 与 remote audit 尚待完成。
 - 下一步仅为 M5.10.7 模板兼容与错误 UX，随后 M5.10.8 最终收口；二者均 NOT STARTED。
 - Settings.version 固定为 M5.10.6；不得升级 M5.10.7。
 - Semantic Layer FINAL ACCEPTANCE 在 M5.10.6 后进行；`M5 FINAL=false`。
@@ -53,7 +54,7 @@
 - 正式流程：Spec → RED reproducer → regression → minimal implementation → focused/cross-domain/
   full gates → Real DeepSeek + Local MCP → whitelist staging → commit → push main → exact-SHA CI
   → remote audit。
-- Commit：`M5.10.6_FIX_理解层重构与旧语义链清理`；不打 Tag，不自动进入 M5.10.7。
+- Commit：`M5.10.6_FIX_真实LLM压力验收与人工残留收口`；不打 Tag，不自动进入 M5.10.7。
 - 禁止 `git add .` / `git add -A`、force、rebase、history rewrite、reset hard、clean、branch
   deletion。Push 前再次核对 remote main；若已前进则停止。
 - CI 失败只做 failure reproducer 驱动的 minimal forward-fix；同根因最多两轮。
@@ -65,4 +66,4 @@
 
 ---
 
-*最后更新：2026-09-20 | M5.10.6 FIX LOCAL RELEASE CANDIDATE；Remote exact-SHA CI PENDING；M5.10.7/8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE；Real Stress 130/130；Critical Real 21/21；all local gates PASS；Remote exact-SHA CI PENDING；M5.10.7/8 NOT STARTED；M5 FINAL=false*

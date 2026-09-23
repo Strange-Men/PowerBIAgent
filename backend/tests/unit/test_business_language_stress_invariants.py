@@ -3,6 +3,7 @@
 import pytest
 
 from backend.app.intent.semantic_interpreter import (
+    GeneralFactScope,
     SemanticEvidenceSpan,
     SemanticFrame,
     SemanticInterpretationMode,
@@ -117,6 +118,7 @@ def test_catalog_domain_words_live_only_in_test_runtime_metadata(
 def test_general_location_recommendation_has_zero_business_slots() -> None:
     frame = SemanticFrame(
         mode=SemanticInterpretationMode.GENERAL,
+        general_fact_scope=GeneralFactScope.REQUIRES_CURRENT_EXTERNAL_FACTS,
         general_answer="我没有实时地点工具，但可以按预算和偏好帮你整理选择标准。",
     )
     assert frame.query_shape is None

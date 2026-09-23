@@ -12,7 +12,7 @@ import unicodedata
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from backend.app.intent.models import FilterOperator, TimeIntentDraft, TurnRelation
 from backend.app.llm.base import (
@@ -28,15 +28,29 @@ from backend.app.schemas.data_contracts import QueryShape
 class SemanticInterpretationError(ValueError):
     """The language frame is unavailable or violates its evidence contract."""
 
-    def __init__(self, code: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        repair_detail: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
+        self.repair_detail = repair_detail or {}
 
 
 class SemanticInterpretationMode(str, Enum):
     GENERAL = "general"
     DATA = "data"
     REPORT = "report"
+
+
+class GeneralFactScope(str, Enum):
+    """Whether a GENERAL answer would require unavailable current facts."""
+
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    TIME_STABLE_OR_NONFACTUAL = "TIME_STABLE_OR_NONFACTUAL"
+    REQUIRES_CURRENT_EXTERNAL_FACTS = "REQUIRES_CURRENT_EXTERNAL_FACTS"
 
 
 class AnalysisGoal(str, Enum):
@@ -77,7 +91,6 @@ class SemanticEvidenceSpan(BaseModel):
         "time",
         "ranking",
         "comparison",
-        "analysis_goal",
         "output_mode",
         "unresolved",
     ]
@@ -125,15 +138,45 @@ class SemanticFrame(BaseModel):
     evidence_spans: tuple[SemanticEvidenceSpan, ...] = ()
     changed_slots: tuple[str, ...] = ()
     referenced_context_slots: tuple[str, ...] = ()
+    general_fact_scope: GeneralFactScope = GeneralFactScope.NOT_APPLICABLE
     general_answer: str = Field(default="", max_length=2000)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def remove_legacy_analysis_goal_evidence(cls, value: Any) -> Any:
+        """Drop the retired redundant slot before nested schema validation.
+
+        ``analysis_goal`` is carried only by the structural enum.  This input
+        compatibility boundary does not accept or rewrite any authoritative
+        evidence: every remaining span is still checked verbatim against the
+        current user message by ``_validate_evidence``.
+        """
+        if not isinstance(value, dict):
+            return value
+        spans = value.get("evidence_spans")
+        if not isinstance(spans, (list, tuple)):
+            return value
+        filtered = [
+            item
+            for item in spans
+            if not (
+                isinstance(item, dict)
+                and item.get("slot") == "analysis_goal"
+            )
+        ]
+        if len(filtered) == len(spans):
+            return value
+        return {**value, "evidence_spans": filtered}
 
     @model_validator(mode="after")
     def validate_mode(self) -> "SemanticFrame":
         if self.mode is SemanticInterpretationMode.GENERAL:
             if not self.general_answer.strip():
                 raise ValueError("general_frame_answer_required")
+            if self.general_fact_scope is GeneralFactScope.NOT_APPLICABLE:
+                raise ValueError("general_frame_fact_scope_required")
             if any((
                 self.query_shape is not None,
                 self.measure_mentions,
@@ -151,6 +194,8 @@ class SemanticFrame(BaseModel):
                 raise ValueError("general_frame_business_slots_forbidden")
         elif self.general_answer.strip():
             raise ValueError("business_frame_answer_forbidden")
+        elif self.general_fact_scope is not GeneralFactScope.NOT_APPLICABLE:
+            raise ValueError("business_frame_general_fact_scope_forbidden")
         if self.mode is SemanticInterpretationMode.REPORT and self.output_mode != "report":
             raise ValueError("report_frame_output_mode_required")
         if self.mode is SemanticInterpretationMode.DATA and self.output_mode != "answer":
@@ -172,7 +217,20 @@ JSON object, never a wrapper such as {"semantic_frame": {...}}.
 
 Modes:
 - mode="general": the request can be answered without current organization/Power BI facts.
-  Answer naturally in general_answer. Do not emit any business semantic slots.
+  Answer naturally in general_answer. Do not emit any business semantic slots. Set
+  general_fact_scope=TIME_STABLE_OR_NONFACTUAL for conversation, writing, concepts,
+  or advice that needs no current external facts. Set
+  general_fact_scope=REQUIRES_CURRENT_EXTERNAL_FACTS when a reliable answer would
+  require current external state such as nearby businesses, opening status, weather,
+  market prices, finance, or news. In that case do not invent specifics: say that you
+  cannot verify the current facts and offer only a general method or request a trusted
+  source. The runtime will enforce this boundary without granting you fact authority.
+  GENERAL has one strict structural reset regardless of the topic. Emit
+  query_shape=null; every mention/filter/unresolved/evidence/changed/context array
+  empty; and time_intent, ranking_intent, comparison_intent all null. A place,
+  requested recommendation, or other external subject is current-message content,
+  not an unresolved business mention: keep it only in general_answer. This GENERAL
+  reset overrides the DATA/REPORT evidence rules below.
 - mode="data": the user requests current model facts or a follow-up that changes a data query.
 - mode="report": the user explicitly requests report output. Report section selection is not yours.
 
@@ -182,6 +240,8 @@ field is a JSON array, including changed_slots and referenced_context_slots. Eac
 evidence_spans item has exactly two keys: slot and text. Each filter_mentions item
 has exactly field_mention, member_mention, operator, and evidence_span. Never add
 offsets, explanations, confidence, reasoning, or alternate field names.
+Always emit general_fact_scope. Use NOT_APPLICABLE for DATA/REPORT; for GENERAL use
+exactly one of TIME_STABLE_OR_NONFACTUAL or REQUIRES_CURRENT_EXTERNAL_FACTS.
 
 For DATA/REPORT:
 - query_shape is exactly one of scalar, entity_list, grouped, ranking, member_set,
@@ -200,16 +260,34 @@ For DATA/REPORT:
 - A generic activity noun such as “销售” is not a metric when money and quantity are
   both plausible: keep it unresolved and do not invent ranking/grouping.
 - “销售额” is a monetary metric mention and an otherwise ungrouped request is scalar.
+  The ordinary English metric noun “sales” likewise denotes monetary sales/revenue;
+  quantity requires an explicit units/quantity/volume/items-sold expression. That
+  English convention applies only when the user's literal metric wording is English;
+  never transfer it to another language's bare activity noun. When that language
+  distinguishes the activity from amount and quantity, keep the bare activity
+  unresolved so runtime candidates can prove ambiguity.
 - For ranking, put the literal noun or noun phrase naming the entities being ranked
   in dimension_mentions with an exact dimension evidence span (for example, the
   user-written product/customer/site term). Ranking language, direction, or TopN
   belongs in ranking_intent and does not replace that entity mention. Omit the
   current dimension only when a genuine follow-up explicitly inherits it through
   referenced_context_slots.
+- Distinguish explicit member lists from grouped categories. When the user names two
+  or more concrete members and asks for each member's value (for example “华南和华北
+  分别是多少”), use member_set. When the same named members are combined into one
+  aggregate (“合在一起/combined/together”), use filtered_aggregation. Use grouped
+  only when the user asks across a category/dimension rather than enumerating members.
 - “为什么下降” means analysis_goal=EXPLAIN_CHANGE. It is not a filter/member. The
   system may prove a change but cannot infer a cause without verified cause evidence.
+  Do not copy decline/worse/caused wording into dimension_mentions; leave the
+  dimension empty so runtime metadata can prove the temporal grouping.
 - TimeIntent is language meaning only. “最近几个月” has months=null and must remain
   incomplete. Never choose a date field or fill a missing number.
+- An explicit month interval used as a monthly series is query_shape=bounded_trend;
+  an unbounded/current/recent series is trend. “2025 H2”, “2025年后6个月”, and
+  “2025年7月至12月” are bounded_range with start_date=2025-07-01 and
+  end_date=2025-12-31. A month without a year or reference context is incomplete:
+  keep it unresolved and do not emit an invalid absolute_month.
 - Each result-affecting mention and structural decision must have a verbatim
   evidence_spans entry copied from the current message. Put possibly important
   unexpressed/unclear business language in unresolved_mentions.
@@ -229,10 +307,20 @@ For DATA/REPORT:
   morpheme inside that member is not a separate dimension or filter field mention.
   Set filter field_mention=null unless the current message contains an independently
   written field noun, and never invent a field mention merely to help grounding.
+- Preserve the concrete entity phrase in dimension_mentions. Generic grouping words
+  such as “维度/dimension/by/each/分别” are grammar, not part of an entity name; for
+  “产品维度” the dimension mention is “产品”, not the whole grammatical phrase.
 - For an explanation request such as “为什么下降”, use analysis_goal=EXPLAIN_CHANGE;
   represent the requested observable change with an allowed existing query shape and
-  exact current-message evidence. Phrases such as “当前报表里” are request context,
+  exact current-message evidence. Use a trend shape when a time series is needed to
+  prove the requested change. analysis_goal is a structural enum only: never emit an
+  analysis_goal evidence_spans item. Anchor the observable change with query_shape
+  evidence copied verbatim from the message—never paraphrase “decline/下降/变差”.
+  Phrases such as “当前报表里” are request context,
   not a filter, member, or unresolved business object.
+- Colloquial “对比/compare” that only asks to show grouped categories side by side is
+  GROUPED presentation wording, not comparison_intent. Set comparison_intent only
+  for an explicit unsupported comparison basis such as YoY/MoM or two named periods.
 - GENERAL requests about locations, recommendations, concepts, or casual chat stay
   GENERAL unless they explicitly require current Power BI/organization facts. Do not
   treat generic “有什么/what is available” as entity_list by itself. For GENERAL,
@@ -308,6 +396,9 @@ class LLMSemanticInterpreter:
         )
         last_error: Exception | None = None
         for attempt in range(self._max_repairs + 1):
+            repair_instruction = (
+                self._repair_instruction(last_error) if attempt else ""
+            )
             messages = [
                 {
                     "role": "system",
@@ -315,10 +406,7 @@ class LLMSemanticInterpreter:
                         UNDERSTANDING_SYSTEM_PROMPT
                         + "\nExact output JSON Schema:\n"
                         + _UNDERSTANDING_OUTPUT_SCHEMA
-                    ) + (
-                        "\nPrevious output violated the SemanticFrame/evidence contract. Repair it; "
-                        "do not change or invent user meaning."
-                        if attempt else ""
+                        + repair_instruction
                     ),
                 },
                 {"role": "user", "content": user_message},
@@ -353,9 +441,14 @@ class LLMSemanticInterpreter:
                 self._validate_evidence(frame, user_input)
                 await self._validate_coverage(frame, user_input)
                 return frame
-            except (LLMProviderError, LLMValidationError) as exc:
+            except LLMValidationError as exc:
+                # One bounded semantic repair may correct a structurally valid
+                # JSON object that violates a SemanticFrame cross-field rule.
+                # Transport/provider retries remain governed by the provider.
                 last_error = exc
-                if isinstance(exc, LLMProviderError) and not exc.retryable:
+            except LLMProviderError as exc:
+                last_error = exc
+                if not exc.retryable:
                     break
             except (SemanticInterpretationError, ValueError, TypeError) as exc:
                 last_error = exc
@@ -366,6 +459,58 @@ class LLMSemanticInterpreter:
         else:
             code = "semantic_frame_invalid"
         raise SemanticInterpretationError(code) from last_error
+
+    @staticmethod
+    def _repair_instruction(last_error: Exception | None) -> str:
+        base = (
+            "\nPrevious output violated the SemanticFrame/evidence contract. "
+            "Repair it; do not change or invent user meaning."
+        )
+        if isinstance(last_error, LLMValidationError):
+            cause = last_error.__cause__
+            if isinstance(cause, ValidationError) and any(
+                "general_frame_business_slots_forbidden" in item.get("msg", "")
+                for item in cause.errors(
+                    include_input=False,
+                    include_context=False,
+                    include_url=False,
+                )
+            ):
+                return (
+                    base
+                    + "\nValidation code: general_frame_business_slots_forbidden. "
+                    + "For mode=general, keep all business slots and evidence_spans empty, "
+                    + "including unresolved_mentions. Express the safe current-external-fact "
+                    + "boundary only through general_fact_scope and general_answer."
+                )
+            return base
+        if not isinstance(last_error, SemanticInterpretationError):
+            return base
+        if last_error.code != "semantic_evidence_not_verbatim":
+            return base
+        slot = last_error.repair_detail.get("slot")
+        text = last_error.repair_detail.get("text")
+        if not slot or not text:
+            return base
+        instruction = (
+            base
+            + "\nValidation code: semantic_evidence_not_verbatim. "
+            + "The invalid evidence_spans entry is slot="
+            + json.dumps(slot, ensure_ascii=False)
+            + ", text="
+            + json.dumps(text, ensure_ascii=False)
+            + ". Its text is not a contiguous verbatim substring of the current "
+            + "user message. Replace it with exact contiguous current-message text "
+            + "that anchors the same slot, or omit the span when it is optional."
+        )
+        if slot == "query_shape":
+            instruction += (
+                " A query_shape evidence span is current-message wording that signals "
+                "the requested result structure, not a translation of the query_shape enum. "
+                "For a change-explanation request, use exact observable change wording from "
+                "the message as the anchor; never invent a trend label absent from the input."
+            )
+        return instruction
 
     @staticmethod
     def _validate_structure(frame: SemanticFrame) -> None:
@@ -415,6 +560,15 @@ class LLMSemanticInterpreter:
             raise SemanticInterpretationError("semantic_changed_slot_invalid")
         if any(slot not in allowed_slots for slot in frame.referenced_context_slots):
             raise SemanticInterpretationError("semantic_context_slot_invalid")
+        for item in frame.filter_mentions:
+            if item.field_mention is None:
+                continue
+            field = unicodedata.normalize("NFKC", item.field_mention).casefold()
+            member = unicodedata.normalize("NFKC", item.member_mention).casefold()
+            if field == member:
+                raise SemanticInterpretationError(
+                    "semantic_filter_field_not_independent"
+                )
 
     async def _validate_coverage(
         self, frame: SemanticFrame, user_input: str
@@ -483,7 +637,10 @@ class LLMSemanticInterpreter:
         spans = list(frame.evidence_spans)
         for span in spans:
             if unicodedata.normalize("NFKC", span.text).casefold() not in normalized:
-                raise SemanticInterpretationError("semantic_evidence_not_verbatim")
+                raise SemanticInterpretationError(
+                    "semantic_evidence_not_verbatim",
+                    repair_detail={"slot": span.slot, "text": span.text},
+                )
         required: list[tuple[str, str]] = []
         required.extend(("measure", item) for item in frame.measure_mentions)
         required.extend(("dimension", item) for item in frame.dimension_mentions)

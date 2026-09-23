@@ -2,7 +2,14 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
-## [M5.10.6] — 2026-09-20（FIX 发布候选：Understanding Layer 重构与旧语义链清理）
+## [M5.10.6] — 2026-09-23（Real Stress 与人工 residual 本地最终收口；remote pending）
+
+- **已发布 FIX 证据：** Understanding Layer 重构与旧语义链清理已提交并 push 到 `main@6b9abd890d58bed5768687733d2c1172532850ec`；GitHub Actions Run `35496889792` 对该 exact SHA completed/success。下述 21/21 Local Real 与 fresh automated 数字仍是该已发布 FIX 的独立本地证据，不冒充远程执行结果。
+- **Post-release 人工 residual：** 最新人工验收证明 21-case Real 覆盖面不足：`South` literal runtime member 可偶发失败，English wrapper + 中文 member 可产生筛选字段歧义，普通答案仍可泄漏 `Total Sales` / `South` 等 canonical technical name，General LLM 可把附近商家/实时天气/股价/新闻当作已核实事实回答。M5.10.6 因此标记 `USER ACCEPTANCE RESIDUAL FOUND` 与 `FINAL ACCEPTANCE REOPENED`。
+- **新的验收工作：** 先将上述 residual 固化为 Final Acceptance Residual Corpus，再建立 configured DeepSeek + Real Local MCP 的 Real Language Stress Corpus；目标不少于 72 个 unique scenarios / 120 次 Real executions，24 个高风险场景各3次稳定性重复。预期由 runtime schema/member/canonical invariant 确定，禁止用同一 LLM 自评。完成 RED 前不修 production；同根因最多两轮 forward-fix。
+- **本轮 stress 与停止条件：** 已建立严格 72 unique / 24 high-risk 的 deterministic corpus；首次 configured DeepSeek + Real Local MCP baseline 执行 72 个 unique scenario（82 个含 setup 的真实 chat turn、194 次真实 LLM call、143 次真实 MCP/tool execution），用于暴露而非宣称通过。两轮最小修复后，literal/localized member、English wrapper、同名 dimension owner、member-set/filtered aggregation、具名月份/H2、state follow-up、外部实时事实防火墙与 canonical horizon 展示均在 focused Real 得到通过证据；相关自动化 `212 passed`。
+- **最终 residual 与 SLA closure：** explain exact evidence、duplicated Category owner、lowercase literal member、General structural reset 与 non-English bare activity ambiguity 均以 generic contract 收口，未加入 stress phrase/PBIX dictionary。独立 latency trace 证明旧 HTTP 504 属于合法 bounded 多阶段调用累计超过 overall 120 秒，而非 hung child call、retry、MCP/tool bottleneck、duplicate 或 loop；production overall request SLA 最小调整为 180 秒，LLM/provider、MCP、render 仍为 120 秒，DAX 仍为 30 秒。一次 180 秒内 provider long-tail 被归类为 transient，未作为扩大到 240 秒的依据。
+- **最终 Real 与 local gates：** configured DeepSeek + Real Local MCP Stress 72 unique / 24 high-risk×3 / 130 turns 为 130/130，584 LLM calls、395 MCP/tool executions、138 witnesses；p50/p95/max request latency 11.087/53.160/87.251 秒，max single LLM 83.397 秒，全部 semantic/factual/Memory/leakage/stability/timeout 与 business/temp residual 指标为 0。Critical Real 21/21、20 witnesses。fresh Semantic Compatibility `807 passed / 122 production files`，backend `2804 passed, 1 skipped`；frontend、Golden、Architecture、Repository Safety、Error Ledger、Documentation/Artifact Governance、compileall、version consistency 与 diff-check 均 PASS。当前为 LOCAL RELEASE CANDIDATE，只待 commit/push、新 exact-SHA CI 与 remote audit。
 
 - **重开与 failure-first：** 已发布的 `276d67d` / CI Run `35296985175` 只保留为 superseded historical evidence。人工验收发现多套自然语言 authority 后，Acceptance Failure Corpus 在未改 production 的 baseline 连续两次稳定 `12/12 RED`，覆盖普通聊天误路由、跨语言 member、unknown、shape/scalar、pending、explain-change 与 presentation。
 - **单一 Understanding authority：** 新 `SemanticFrame` 是唯一开放语言合同，表达 mode/relation/query shape、language mentions、analysis goal、changed/context slots、unresolved mentions 与 exact evidence spans。QuestionRouter 只保留确定性 capability/safety preflight；删除旧 Intent LLM、自然语言 QueryPlan LLM、conversation facade、QueryPlan prompt、TurnRelation regex 与 shape reconciliation fallback。
@@ -10,9 +17,9 @@
 - **执行与事实链冻结：** QueryShape 仍为八种；production main path 只使用 deterministic DAX。QueryResult、Inspection、VerifiedFactSet、Natural Answer 与 FactOutputValidator 权限未放宽；EXPLAIN_CHANGE 只能陈述已证明变化，不能编造因果。General turn current-message-only、no-tool、ZERO business state mutation；Report 复用同一 semantic/factual/availability chain。
 - **Fresh local automated：** full backend `2764 passed, 1 skipped`；Semantic Compatibility `801 passed / 122 production files`；M5.9.4 formal `51,200/51,200`，canonical mismatch、unexpected execution、wrong DAX、modifier loss 与 cross-model bleed 均为 0；Golden `11 passed, 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/production build；Architecture 139、Repository Safety 416、AI Error Ledger 109、Documentation/Artifact Governance、compileall、version consistency 49 与 diff-check PASS。首轮 frontend worker 启动超时在独占资源复跑后全绿，未触发 production 修改。
 - **Local Real：** 最终 production code 上 configured DeepSeek + Real Local MCP `21/21 PASS`，20 个真实 execution witnesses，zero override、wrong DAX=0、business residual=0、temporary residual=0；覆盖 4 General、三种 South 跨语言表达、ambiguity/scalar/unknown/ranking、pending→general→follow-up、explain-change、真实 horizon 与 cross-model isolation。
-- **边界与发布状态：** 无新 QueryShape、第二 Planner/Grounding/Memory/Intent authority、Agent、migration、MCP runtime/Provider rewrite、LLM DAX、新业务数学、template compatibility 或 Renderer redesign。M5.10.7/8 NOT STARTED；whitelist commit/push、Remote exact-SHA CI 与 final remote audit PENDING；M5 FINAL=false。
+- **边界与当前状态：** 无新 QueryShape、第二 Planner/Grounding/Memory/Intent authority、Agent、migration、MCP runtime/Provider rewrite、LLM DAX、新业务数学、template compatibility 或 Renderer redesign。已发布 FIX 的 exact-SHA CI 仍只作为历史证据；本轮 final local Real/core automated 已通过，governance/drift 与新 commit/push/CI 尚待完成。M5.10.7/8 NOT STARTED，M5 FINAL=false。
 
-**Settings.version:** M5.10.6（FIX local release candidate；exact-SHA evidence pending）
+**Settings.version:** M5.10.6（LOCAL RELEASE CANDIDATE；REMOTE EVIDENCE PENDING）
 
 ## [M5.10.5] — 2026-09-16（FIX：语义边界与事实防火墙最终收口）
 

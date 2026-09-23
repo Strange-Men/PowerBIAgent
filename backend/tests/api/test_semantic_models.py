@@ -79,6 +79,23 @@ def test_openapi_declares_read_only_discovery_route():
     assert set(operation) == {"get"}
 
 
+def test_discovery_tools_keep_bounded_mcp_timeout_below_request_sla():
+    settings = Settings(
+        request_timeout_seconds=180,
+        powerbi_local_mcp_timeout_seconds=120,
+        _env_file=None,
+    )
+    service = SemanticModelDiscoveryService(
+        _RealDiscoveryAdapter(SemanticModelSchema(name="Desktop", key="model")),
+        settings,
+    )
+
+    discover = service._gateway.get_tool("discover_semantic_models")
+    probe = service._gateway.get_tool("probe_semantic_model_compatibility")
+    assert discover.timeout_seconds == 120.0
+    assert probe.timeout_seconds == 120.0
+
+
 class _RealDiscoveryAdapter(PowerBIAdapter):
     def __init__(self, schema: SemanticModelSchema):
         self.schema = schema

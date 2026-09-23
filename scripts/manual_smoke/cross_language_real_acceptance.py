@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import math
 import sys
 import time
 import uuid
@@ -40,16 +41,61 @@ from backend.app.query_plan.model_semantic_context import ModelSemanticContextBu
 from backend.app.schemas.data_contracts import CanonicalQueryPlan, UserContext, ColumnMembersRequest
 from backend.app.facts.verified import VerifiedFactSetBuilder
 from scripts.acceptance_tempdir import owned_acceptance_tempdir
+from scripts.manual_smoke.m5_10_6_real_language_stress_cases import (
+    CASES as M5106_STRESS_CASES,
+    CATEGORY_COUNTS as M5106_STRESS_CATEGORY_COUNTS,
+    FOCUSED_EXPLAIN_CASES as M5106_FOCUSED_EXPLAIN_CASES,
+)
 
 ACCEPTANCE_REQUEST = ContextVar("cross_language_acceptance_request", default=None)
 
 
 @contextmanager
-def observe_provider_failures(failures, *, provider_type=OpenAICompatibleLLMProvider):
+def observe_provider_failures(
+    failures, timings=None, *, provider_type=OpenAICompatibleLLMProvider
+):
     """Observe safe categories before weak-draft services handle exceptions."""
+    timings = timings if timings is not None else {}
     original = provider_type.generate
+    original_once = getattr(provider_type, "_generate_once", None)
+
+    async def generate_once(self, request, output_type):
+        started = time.perf_counter()
+        outcome = "success"
+        failure_category = None
+        failure_code = None
+        try:
+            return await original_once(self, request, output_type)
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except LLMProviderError as error:
+            outcome = "provider_error"
+            failure_category = error.error_category.value
+            failure_code = error.error_code
+            raise
+        except Exception:
+            outcome = "error"
+            raise
+        finally:
+            timing = {
+                "kind": "provider_attempt",
+                "task": request.task.value,
+                "outcome": outcome,
+                "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+            }
+            if failure_category is not None:
+                timing["failure_category"] = failure_category
+            if failure_code in {
+                "connect_timeout", "read_timeout", "pool_timeout",
+                "write_timeout", "request_deadline_timeout",
+            }:
+                timing["failure_code"] = failure_code
+            timings.setdefault(ACCEPTANCE_REQUEST.get(), []).append(timing)
 
     async def generate(self, request, output_type):
+        started = time.perf_counter()
+        outcome = "success"
         try:
             response = await original(self, request, output_type)
             if request.task.value in {"intent_recognition", "query_plan"}:
@@ -58,9 +104,11 @@ def observe_provider_failures(failures, *, provider_type=OpenAICompatibleLLMProv
                         failure["repaired"] = True
             return response
         except LLMProviderError as error:
+            outcome = "provider_error"
             failure = {"task": request.task.value, "category": error.error_category.value}
             if error.error_code in {"invalid_content_json", "output_schema_invalid", "empty_content",
                     "connect_timeout", "read_timeout", "pool_timeout", "write_timeout",
+                    "request_deadline_timeout",
                     "connect_error", "read_error", "write_error", "connection_error",
                     "remote_protocol_error", "invalid_choices", "invalid_http_json"}:
                 failure["code"] = error.error_code
@@ -74,12 +122,26 @@ def observe_provider_failures(failures, *, provider_type=OpenAICompatibleLLMProv
                         include_url=False)[:12]]
             failures.setdefault(ACCEPTANCE_REQUEST.get(), []).append(failure)
             raise
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        finally:
+            timings.setdefault(ACCEPTANCE_REQUEST.get(), []).append({
+                "kind": "provider_call",
+                "task": request.task.value,
+                "outcome": outcome,
+                "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+            })
 
+    if original_once is not None:
+        provider_type._generate_once = generate_once
     provider_type.generate = generate
     try:
         yield
     finally:
         provider_type.generate = original
+        if original_once is not None:
+            provider_type._generate_once = original_once
 
 
 def negative_outcome_verified(audit, provider_failures, label):
@@ -145,7 +207,7 @@ async def tracked_acceptance_turns(service, owner, root, *, browser=False, drain
         service.execute = original
 
 
-async def run(args, root, provider_failures):
+async def run(args, root, provider_failures, provider_timings):
     bootstrap_started = time.perf_counter()
     database = root / "acceptance.db"
     override = root / "empty_override.yaml"
@@ -170,16 +232,20 @@ async def run(args, root, provider_failures):
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=args.port, log_level="critical", access_log=False,
         timeout_graceful_shutdown=10))
     server_task = asyncio.create_task(server.serve())
+    service = None
     witnesses, selections, summaries = {}, {}, []
+    tool_timings = {}
     original_select = BoundedLLMObjectSelector.select
     original_member_select = BoundedLLMObjectSelector.select_member
+    original_tool_execute = None
     member_selections = []
 
     async def observe_selection(self, phrase, user_input, candidates, committed_context="", **kwargs):
         result = await original_select(self, phrase, user_input, candidates, committed_context, **kwargs)
         selections.setdefault(ACCEPTANCE_REQUEST.get(), []).append({"role": kwargs.get("role"), "phrase": phrase,
             "candidate_evidence": kwargs.get("evidence"), "status": result.status.value,
-            "selected_id": result.canonical_object.object_id if result.canonical_object else None})
+            "selected_id": result.canonical_object.object_id if result.canonical_object else None,
+            "candidate_ids": list(result.candidate_ids), "method": result.method})
         return result
 
     BoundedLLMObjectSelector.select = observe_selection
@@ -190,6 +256,37 @@ async def run(args, root, provider_failures):
             "truncated": members.truncated, "status": result.status.value, "method": result.method})
         return result
     BoundedLLMObjectSelector.select_member = observe_member
+
+    async def observe_tool_execute(
+        tool_name, execution_context, input_data, trace=None, controller=None
+    ):
+        request_id = ACCEPTANCE_REQUEST.get()
+        started = time.perf_counter()
+        outcome = "success"
+        try:
+            return await original_tool_execute(
+                tool_name,
+                execution_context,
+                input_data,
+                trace=trace,
+                controller=controller,
+            )
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except Exception:
+            outcome = "error"
+            raise
+        finally:
+            if request_id is not None:
+                tool_timings.setdefault(request_id, []).append({
+                    "tool": tool_name,
+                    "outcome": outcome,
+                    "duration_ms": round(
+                        (time.perf_counter() - started) * 1000, 2
+                    ),
+                })
+
     try:
         for _ in range(200):
             if server.started:
@@ -200,13 +297,15 @@ async def run(args, root, provider_failures):
             await asyncio.sleep(.05)
         if not server.started:
             raise RuntimeError("server_start_timeout")
+        service = app.state.turn_service
+        original_tool_execute = service.tool_gateway.execute
+        service.tool_gateway.execute = observe_tool_execute
         # Local acceptance traffic must not take the machine's external proxy.
         # The longer observer deadline lets production's own LLM timeouts finish;
         # it does not change provider timeouts or retry failed semantic choices.
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{args.port}", timeout=600, trust_env=False) as client:
             reply = await client.get("/api/v1/semantic-models")
             options = [item for item in reply.json()["items"] if item.get("selectable")]
-            service = app.state.turn_service
             schemas = {}
             for item in options:
                 execution = ToolExecutionContext(runtime_mode=RuntimeDataMode.REAL, user=UserContext(allowed_semantic_models=[item["key"]]))
@@ -257,7 +356,7 @@ async def run(args, root, provider_failures):
                         await asyncio.sleep(.2)
                     return
 
-                async def post(label, text, shape=None, *, conversation=None, model_key=key, profile=args.profile, template=None, blocked=False):
+                async def post(label, text, shape=None, *, conversation=None, model_key=key, profile=args.profile, template=None, blocked=False, allow_unsupported=False):
                     if args.phase in {"m585", "m5104"} and args.case and label not in args.case:
                         return {}, {}
                     conversation = conversation or str(uuid.uuid4())
@@ -275,7 +374,14 @@ async def run(args, root, provider_failures):
                     report = body.get("report") or {}
                     if report.get("report_id"):
                         owner.add_report(report["report_id"], html_path=root / "reports" / (report["report_id"] + ".html"))
-                    success = response.status_code == 200 and body.get("terminal_state") == ("clarification_required" if blocked else "completed")
+                    expected_terminal = "clarification_required" if blocked else "completed"
+                    success = response.status_code == 200 and (
+                        body.get("terminal_state") == expected_terminal
+                        or (
+                            allow_unsupported
+                            and body.get("terminal_state") == "unsupported"
+                        )
+                    )
                     if blocked:
                         success &= not audit.get("dax_executed") and not body.get("memory_commit")
                         success &= negative_outcome_verified(audit, provider_failures.get(request_id, []), label)
@@ -353,6 +459,8 @@ async def run(args, root, provider_failures):
                         "semantic_model": next((item["display_name"] for item in options if item["key"] == model_key), model_key),
                         "pass": bool(success),
                         "provider_failures": provider_failures.get(request_id, []),
+                        "provider_timings": provider_timings.get(request_id, []),
+                        "tool_timings": tool_timings.get(request_id, []),
                         "http": response.status_code, "terminal": body.get("terminal_state"), "error": body.get("error_type"),
                         "plan": plan, "clarification": body.get("clarification_question"),
                         "obligations": audit.get("semantic_obligations"),
@@ -370,7 +478,32 @@ async def run(args, root, provider_failures):
                         "objects": audit.get("object_grounding_status"), "selections": [{"role": x["role"], "phrase": x["phrase"], "status": x["status"], "selected_id": x["selected_id"]} for x in selections.get(request_id, [])],
                         "members": audit.get("member_grounding_status"),
                         "member_evidence": [entry for entry in member_selections if entry["request_id"] == request_id],
-                        "latency_ms": round((time.perf_counter()-started)*1000, 2), "performance": {
+                        "latency_ms": round((time.perf_counter()-started)*1000, 2),
+                        "llm_call_count": sum(
+                            item.get("kind") == "provider_call"
+                            for item in provider_timings.get(request_id, [])
+                        ),
+                        "reported_usage_call_count": int(
+                            (body.get("usage") or {}).get("call_count") or 0
+                        ),
+                        "max_single_llm_ms": max(
+                            (
+                                item["duration_ms"]
+                                for item in provider_timings.get(request_id, [])
+                                if item.get("kind") == "provider_attempt"
+                            ),
+                            default=0,
+                        ),
+                        "max_logical_llm_call_ms": max(
+                            (
+                                item["duration_ms"]
+                                for item in provider_timings.get(request_id, [])
+                                if item.get("kind") == "provider_call"
+                            ),
+                            default=0,
+                        ),
+                        "tool_call_count": len(body.get("tool_sequence") or []),
+                        "performance": {
                             "total_turn_ms": (audit.get("performance") or {}).get("total_turn_ms"),
                             "session_reuse_rate": (audit.get("performance") or {}).get("session_reuse_rate"),
                             "stages": {name: sum(op["duration_ms"] for op in (audit.get("performance") or {}).get("operations", []) if op["operation"] == name)
@@ -431,7 +564,7 @@ async def run(args, root, provider_failures):
                                 "result_id", "request_id"}),
                             "verified_fact_set": witness["facts"].model_dump(mode="json")}
                     emitted = summary
-                    if args.phase == "m5106":
+                    if args.phase in {"m5106", "m5106stress"}:
                         emitted = {
                             "case": label,
                             "pass": bool(summary["pass"]),
@@ -449,6 +582,13 @@ async def run(args, root, provider_failures):
                             "semantic_error_code": audit.get(
                                 "semantic_interpretation_error_code"
                             ),
+                            "error_type": body.get("error_type"),
+                            "answer_validation_errors": audit.get(
+                                "answer_validation_errors"
+                            ),
+                            "semantic_frame": audit.get("semantic_frame"),
+                            "grounded_delta": audit.get("grounded_delta"),
+                            "inheritance": audit.get("inheritance_decision"),
                             "clarification_reason": audit.get(
                                 "clarification_reason"
                             ),
@@ -475,11 +615,24 @@ async def run(args, root, provider_failures):
                                 request_id, []
                             ),
                             "latency_ms": summary["latency_ms"],
+                            "llm_call_count": summary["llm_call_count"],
+                            "max_single_llm_ms": summary["max_single_llm_ms"],
+                            "max_logical_llm_call_ms": summary[
+                                "max_logical_llm_call_ms"
+                            ],
+                            "tool_call_count": summary["tool_call_count"],
                         }
-                    print(
-                        json.dumps(emitted, ensure_ascii=False, default=str),
-                        flush=True,
-                    )
+                        if args.candidate_evidence:
+                            emitted["candidate_evidence"] = summary.get(
+                                "candidate_evidence", []
+                            )
+                    if not (
+                        args.phase == "m5106stress" and args.stress_summary_only
+                    ):
+                        print(
+                            json.dumps(emitted, ensure_ascii=False, default=str),
+                            flush=True,
+                        )
                     return body, plan
 
                 cases = [
@@ -1500,6 +1653,403 @@ async def run(args, root, provider_failures):
                             and memory_b.filters == []
                         )
 
+                elif args.phase == "m5106stress":
+                    stress_results = {}
+                    stability = {}
+                    request_latencies_ms = []
+                    provider_call_latencies_ms = []
+                    provider_logical_call_latencies_ms = []
+                    stress_metrics = {
+                        "real_chat_turns": 0,
+                        "real_llm_calls": 0,
+                        "real_mcp_executions": 0,
+                        "completed": 0,
+                        "clarification": 0,
+                        "unsupported": 0,
+                        "provider_transient": 0,
+                        "request_timeout_count": 0,
+                        "provider_timeout_count": 0,
+                        "http_504_count": 0,
+                        "wrong_mode": 0,
+                        "wrong_query_shape": 0,
+                        "wrong_object": 0,
+                        "wrong_member": 0,
+                        "wrong_time": 0,
+                        "wrong_dax": 0,
+                        "wrong_factual_answer": 0,
+                        "unexpected_dax_on_unknown": 0,
+                        "unexpected_memory_mutation": 0,
+                        "cross_model_bleed": 0,
+                        "technical_presentation_leakage": 0,
+                        "external_fact_hallucination": 0,
+                        "stability_mismatch": 0,
+                    }
+
+                    def record_turn(body, summary):
+                        audit = body.get("execution_audit") or {}
+                        stress_metrics["real_chat_turns"] += 1
+                        stress_metrics["real_llm_calls"] += int(
+                            summary["llm_call_count"]
+                        )
+                        stress_metrics["real_mcp_executions"] += len(
+                            body.get("tool_sequence") or []
+                        )
+                        terminal = body.get("terminal_state")
+                        if terminal == "completed":
+                            stress_metrics["completed"] += 1
+                        elif terminal == "clarification_required":
+                            stress_metrics["clarification"] += 1
+                        if body.get("response_type") == "unsupported":
+                            stress_metrics["unsupported"] += 1
+                        if audit.get("provider_failure"):
+                            stress_metrics["provider_transient"] += 1
+                        request_latencies_ms.append(float(summary["latency_ms"]))
+                        provider_call_latencies_ms.extend(
+                            float(item["duration_ms"])
+                            for item in summary.get("provider_timings", [])
+                            if item.get("kind") == "provider_attempt"
+                        )
+                        provider_logical_call_latencies_ms.extend(
+                            float(item["duration_ms"])
+                            for item in summary.get("provider_timings", [])
+                            if item.get("kind") == "provider_call"
+                        )
+                        if body.get("error_type") == "request_deadline_exceeded":
+                            stress_metrics["request_timeout_count"] += 1
+                        if summary.get("http") == 504:
+                            stress_metrics["http_504_count"] += 1
+                        stress_metrics["provider_timeout_count"] += sum(
+                            item.get("kind") == "provider_attempt"
+                            and item.get("failure_category") == "timeout"
+                            for item in summary.get("provider_timings", [])
+                        )
+
+                    def add_failure(case_id, code):
+                        stress_results.setdefault(case_id, []).append(code)
+                        if code in stress_metrics:
+                            stress_metrics[code] += 1
+
+                    def normalized_signature(body, plan, summary):
+                        audit = body.get("execution_audit") or {}
+                        frame = audit.get("semantic_frame") or {}
+                        canonical = {
+                            name: value
+                            for name, value in plan.items()
+                            if name not in {"normalized_question", "inherited_context"}
+                        }
+                        return {
+                            "terminal": body.get("terminal_state"),
+                            "response_type": body.get("response_type"),
+                            "mode": frame.get("mode") or audit.get("semantic_mode"),
+                            "general_fact_scope": frame.get("general_fact_scope"),
+                            "relation": frame.get("relation"),
+                            "plan": canonical,
+                            "clarification_reason": audit.get("clarification_reason"),
+                            "dax_executed": bool(audit.get("dax_executed")),
+                            "memory_commit": bool(body.get("memory_commit")),
+                            "result_hash": summary.get("result_hash"),
+                        }
+
+                    async def support_turn(case_id, index, spec, conversation):
+                        outcome = spec["outcome"]
+                        body, plan = await post(
+                            f"support__{case_id}__{index}",
+                            spec["text"],
+                            spec.get("shape") if outcome == "completed" else None,
+                            conversation=conversation,
+                            blocked=outcome == "blocked",
+                        )
+                        record_turn(body, summaries[-1])
+                        if outcome == "general":
+                            audit = body.get("execution_audit") or {}
+                            if (
+                                body.get("terminal_state") != "completed"
+                                or body.get("memory_commit")
+                                or audit.get("dax_executed")
+                            ):
+                                add_failure(case_id, "unexpected_memory_mutation")
+                        return body, plan
+
+                    async def run_stress_case(case, run_index):
+                        case_id = case["id"]
+                        conversation = str(uuid.uuid4())
+                        for index, spec in enumerate(case.get("setup", []), 1):
+                            await support_turn(case_id, index, spec, conversation)
+                        outcome = case["outcome"]
+                        label = (
+                            f"stress__{case_id}"
+                            if run_index == 1
+                            else f"stress_repeat{run_index}__{case_id}"
+                        )
+                        body, plan = await post(
+                            label,
+                            case["text"],
+                            case.get("shape")
+                            if outcome in {"completed", "explain"}
+                            else None,
+                            conversation=conversation,
+                            blocked=outcome == "blocked",
+                            template=case.get("template"),
+                            allow_unsupported=outcome == "external",
+                        )
+                        record_turn(body, summaries[-1])
+                        audit = body.get("execution_audit") or {}
+                        answer = body.get("answer") or ""
+                        summary = summaries[-1]
+                        errors = []
+
+                        def fail(code):
+                            errors.append(code)
+                            add_failure(case_id, code)
+
+                        transient_error = (
+                            body.get("error_type") in {
+                                "request_deadline_exceeded",
+                                "llm_provider_error",
+                                "llm_response_error",
+                                "llm_validation_error",
+                            }
+                            and summary.get("http") in {502, 503, 504}
+                        ) or any(
+                            failure.get("category") in {
+                                "connection", "timeout", "rate_limit", "service"
+                            }
+                            for failure in summary.get("provider_failures", [])
+                        )
+                        if transient_error:
+                            errors.append("provider_transient")
+                            stress_results.setdefault(case_id, []).append(
+                                "provider_transient"
+                            )
+                            stress_metrics["provider_transient"] += 1
+                            print(json.dumps({
+                                "stress_contract": case_id,
+                                "category": case["category"],
+                                "run": run_index,
+                                "pass": False,
+                                "errors": errors,
+                                "http": summary.get("http"),
+                                "terminal": body.get("terminal_state"),
+                                "response_type": body.get("response_type"),
+                                "error_type": body.get("error_type"),
+                                "semantic_error_code": None,
+                                "provider_failures": summary.get("provider_failures"),
+                                "provider_timings": summary.get("provider_timings"),
+                                "tool_timings": summary.get("tool_timings"),
+                                "signature": None,
+                            }, ensure_ascii=False, default=str), flush=True)
+                            if args.stress_stop_on_transient:
+                                raise RuntimeError(
+                                    "stress_provider_transient_trace_complete"
+                                )
+                            return
+
+                        if outcome == "general":
+                            if (
+                                plan
+                                or body.get("terminal_state") != "completed"
+                                or body.get("response_type") != "answer"
+                                or body.get("memory_commit")
+                                or body.get("tool_sequence")
+                                or audit.get("semantic_mode") != "general"
+                                or audit.get("dax_executed")
+                            ):
+                                fail("wrong_mode")
+                        elif outcome == "external":
+                            frame = audit.get("semantic_frame") or {}
+                            bounded_general = (
+                                audit.get("semantic_mode") == "general"
+                                and frame.get("general_fact_scope")
+                                == "REQUIRES_CURRENT_EXTERNAL_FACTS"
+                            )
+                            bounded_direct = (
+                                body.get("terminal_state") == "unsupported"
+                                and body.get("response_type") == "unsupported"
+                            )
+                            safe_wording = bounded_direct or any(
+                                token in answer
+                                for token in (
+                                    "没有可验证", "无法确认", "无法回答", "不能核实"
+                                )
+                            )
+                            unsafe_specifics = any(
+                                token in answer
+                                for token in (
+                                    "肯德基", "汉堡王", "星巴克", "瑞幸",
+                                    "晴", "多云", "美元", "涨到", "跌到",
+                                )
+                            )
+                            if not (
+                                not plan
+                                and not body.get("memory_commit")
+                                and not body.get("tool_sequence")
+                                and not audit.get("dax_executed")
+                                and (bounded_general or bounded_direct)
+                                and safe_wording
+                                and not unsafe_specifics
+                            ):
+                                fail("external_fact_hallucination")
+                        elif outcome == "blocked":
+                            if body.get("terminal_state") != "clarification_required":
+                                fail("wrong_mode")
+                            if audit.get("dax_executed"):
+                                fail("unexpected_dax_on_unknown")
+                            if body.get("memory_commit"):
+                                fail("unexpected_memory_mutation")
+                        elif outcome == "report":
+                            report = body.get("report") or {}
+                            if not (
+                                body.get("terminal_state") == "completed"
+                                and body.get("response_type") == "report"
+                                and body.get("memory_commit")
+                                and report.get("template_key") == case["template"]
+                                and report.get("report_id")
+                                and report.get("content_hash")
+                            ):
+                                fail("wrong_factual_answer")
+                        else:
+                            if body.get("terminal_state") != "completed":
+                                fail("wrong_mode")
+                            if plan.get("query_shape") != case.get("shape"):
+                                fail("wrong_query_shape")
+                            if plan.get("measures") != case.get("measures", []):
+                                fail("wrong_object")
+                            if "dimensions" in case and plan.get("dimensions") != case["dimensions"]:
+                                fail("wrong_object")
+                            if "filters" in case and plan.get("filters") != case["filters"]:
+                                fail("wrong_member")
+                            if case.get("time") and not plan.get("time_range"):
+                                fail("wrong_time")
+                            expected_time = case.get("time_range")
+                            if expected_time and any(
+                                (plan.get("time_range") or {}).get(key) != value
+                                for key, value in expected_time.items()
+                            ):
+                                fail("wrong_time")
+                            if "top_n" in case and plan.get("top_n") != case["top_n"]:
+                                fail("wrong_query_shape")
+                            if "sort" in case and plan.get("sort") != case["sort"]:
+                                fail("wrong_query_shape")
+                            if not (
+                                audit.get("dax_executed")
+                                and audit.get("deterministic_dax") is True
+                                and audit.get("llm_dax_call_count") == 0
+                                and audit.get("factual_validation_pass") is True
+                                and body.get("memory_commit")
+                            ):
+                                fail("wrong_dax")
+                            if outcome == "explain" and "不能证明具体原因" not in answer:
+                                fail("wrong_factual_answer")
+                            forbidden = [
+                                "Region=South", "semantic_model_key", "local_desktop:",
+                                "measure:", "fact-", "result-",
+                            ]
+                            if "Total Sales" not in case["text"]:
+                                forbidden.append("Total Sales")
+                            if "Total Quantity" not in case["text"]:
+                                forbidden.append("Total Quantity")
+                            if any(token in answer for token in forbidden):
+                                fail("technical_presentation_leakage")
+                            if "数据更新至" in answer:
+                                fail("wrong_factual_answer")
+
+                        if errors:
+                            summary["pass"] = False
+                        signature = normalized_signature(body, plan, summary)
+                        stability.setdefault(case_id, []).append(signature)
+                        if (
+                            not args.stress_summary_only
+                            or errors
+                            or not summary.get("pass")
+                        ):
+                            print(json.dumps({
+                                "stress_contract": case_id,
+                                "category": case["category"],
+                                "run": run_index,
+                                "pass": not errors and bool(summary.get("pass")),
+                                "errors": errors,
+                                "http": summary.get("http"),
+                                "terminal": body.get("terminal_state"),
+                                "response_type": body.get("response_type"),
+                                "error_type": body.get("error_type"),
+                                "semantic_error_code": (
+                                    (body.get("execution_audit") or {}).get(
+                                        "semantic_interpretation_error_code"
+                                    )
+                                ),
+                                "provider_failures": summary.get("provider_failures"),
+                                "provider_timings": summary.get("provider_timings"),
+                                "tool_timings": summary.get("tool_timings"),
+                                "signature": signature,
+                            }, ensure_ascii=False, default=str), flush=True)
+
+                    selectable_cases = [*M5106_STRESS_CASES]
+                    if args.case:
+                        selectable_cases.extend(M5106_FOCUSED_EXPLAIN_CASES)
+                    selected_cases = [
+                        case for case in selectable_cases
+                        if not args.case or case["id"] in args.case
+                    ]
+                    for case in selected_cases:
+                        await run_stress_case(case, 1)
+                    if not args.stress_baseline_only:
+                        for run_index in (2, 3):
+                            for case in selected_cases:
+                                if case.get("high_risk") or args.stress_repeat_selected:
+                                    await run_stress_case(case, run_index)
+
+                    for case_id, signatures in stability.items():
+                        if len(signatures) < 2:
+                            continue
+                        if any(item != signatures[0] for item in signatures[1:]):
+                            stress_metrics["stability_mismatch"] += 1
+                            stress_results.setdefault(case_id, []).append(
+                                "stability_mismatch"
+                            )
+                            for item in summaries:
+                                if item.get("case", "").endswith(f"__{case_id}"):
+                                    item["pass"] = False
+                            print(json.dumps({
+                                "stability_mismatch_detail": case_id,
+                                "signatures": signatures,
+                            }, ensure_ascii=False, default=str), flush=True)
+
+                    def percentile(values, quantile):
+                        if not values:
+                            return 0
+                        ordered = sorted(values)
+                        index = max(0, math.ceil(len(ordered) * quantile) - 1)
+                        return round(ordered[index], 2)
+
+                    stress_metrics["request_latency_ms"] = {
+                        "p50": percentile(request_latencies_ms, 0.50),
+                        "p95": percentile(request_latencies_ms, 0.95),
+                        "max": round(max(request_latencies_ms), 2)
+                        if request_latencies_ms else 0,
+                    }
+                    stress_metrics["max_single_llm_attempt_ms"] = (
+                        round(max(provider_call_latencies_ms), 2)
+                        if provider_call_latencies_ms else 0
+                    )
+                    stress_metrics["max_logical_llm_call_ms"] = (
+                        round(max(provider_logical_call_latencies_ms), 2)
+                        if provider_logical_call_latencies_ms else 0
+                    )
+
+                    print(json.dumps({
+                        "real_language_stress": {
+                            "declared_unique_scenarios": len(M5106_STRESS_CASES),
+                            "executed_unique_scenarios": len(selected_cases),
+                            "category_counts": M5106_STRESS_CATEGORY_COUNTS,
+                            "high_risk_scenarios": sum(
+                                bool(item.get("high_risk")) for item in selected_cases
+                            ),
+                            "metrics": stress_metrics,
+                            "failed_contracts": stress_results,
+                            "baseline_only": bool(args.stress_baseline_only),
+                        }
+                    }, ensure_ascii=False, default=str), flush=True)
+
                 elif args.phase == "isolation":
                     others = [item for item in options if item["display_name"] == "PowerBIAgent_M3_Test"]
                     if len(others) != 1 or others[0]["key"] == key:
@@ -1577,6 +2127,8 @@ async def run(args, root, provider_failures):
     finally:
         BoundedLLMObjectSelector.select = original_select
         BoundedLLMObjectSelector.select_member = original_member_select
+        if service is not None and original_tool_execute is not None:
+            service.tool_gateway.execute = original_tool_execute
         server.should_exit = True
         await asyncio.wait_for(server_task, timeout=30)
 
@@ -1588,18 +2140,23 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model")
     parser.add_argument("--profile", default="deepseek")
-    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104", "m5105", "m5106"), default="focused")
+    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104", "m5105", "m5106", "m5106stress"), default="focused")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--case", action="append", help="Run selected focused cases while diagnosing a failure")
     parser.add_argument("--compare-profiles", action="store_true")
     parser.add_argument("--m585-single-profile", action="store_true", help="Run only --profile for focused M5.8.5 diagnosis")
     parser.add_argument("--candidate-evidence", action="store_true", help="Print bounded runtime metadata for diagnosis; never prompts or secrets")
     parser.add_argument("--witness-evidence", action="store_true", help="Print validated DAX/result/fact witnesses to the console only; never commit business output")
+    parser.add_argument("--stress-baseline-only", action="store_true", help="Run the 72 unique stress scenarios once without the 24 high-risk repeats")
+    parser.add_argument("--stress-repeat-selected", action="store_true", help="Repeat explicitly selected stress cases three times for a focused stability check")
+    parser.add_argument("--stress-summary-only", action="store_true", help="Suppress passing per-case stress output while retaining failures and final metrics")
+    parser.add_argument("--stress-stop-on-transient", action="store_true", help="Stop after the first classified provider/deadline transient for bounded latency diagnosis")
     args = parser.parse_args()
     with owned_acceptance_tempdir(prefix="powerbiagent-context-real-") as root:
         provider_failures = {}
-        with observe_provider_failures(provider_failures):
-            asyncio.run(run(args, root, provider_failures))
+        provider_timings = {}
+        with observe_provider_failures(provider_failures, provider_timings):
+            asyncio.run(run(args, root, provider_failures, provider_timings))
 
 
 if __name__ == "__main__":
