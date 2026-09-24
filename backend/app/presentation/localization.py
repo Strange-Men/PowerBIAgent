@@ -20,7 +20,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.app.llm.base import (
     LLMProvider,
-    LLMProviderError,
     LLMRequest,
     LLMTask,
 )
@@ -147,7 +146,10 @@ class BoundedLLMDisplayTranslator:
             response = await self._provider.generate(
                 request, DisplayTranslationResponse
             )
-        except LLMProviderError:
+        except Exception:
+            # Display translation is optional and must never turn a proved
+            # business result into a failed response.  Cancellation remains
+            # unaffected because asyncio.CancelledError is a BaseException.
             return {}
         structured = response.structured
         if not isinstance(structured, DisplayTranslationResponse):

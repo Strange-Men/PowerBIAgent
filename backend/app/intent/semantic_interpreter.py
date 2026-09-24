@@ -416,19 +416,36 @@ class LLMSemanticInterpreter:
     ) -> SemanticFrame:
         if not user_input.strip():
             raise SemanticInterpretationError("semantic_input_blank")
+        previous_user_message = self._bounded_previous_user_message(
+            committed_context
+        )
         context = {
             "pending": self._bounded_context(pending_context),
             "committed": self._bounded_context(committed_context),
             "forced_mode": forced_mode.value if forced_mode is not None else None,
         }
-        user_message = (
-            f"当前用户输入：{user_input}\n"
-            "必要的结构化上下文："
-            f"{json.dumps(context, ensure_ascii=False, default=str)}\n"
-            "只输出 SemanticFrame JSON。"
-        )
         last_error: Exception | None = None
         for attempt in range(self._max_repairs + 1):
+            attempt_context = context
+            if (
+                isinstance(last_error, SemanticInterpretationError)
+                and last_error.code
+                == "semantic_relation_continuity_review_required"
+                and previous_user_message
+            ):
+                attempt_context = {
+                    **context,
+                    "committed": {
+                        **(context["committed"] or {}),
+                        "previous_user_message": previous_user_message,
+                    },
+                }
+            user_message = (
+                f"当前用户输入：{user_input}\n"
+                "必要的结构化上下文："
+                f"{json.dumps(attempt_context, ensure_ascii=False, default=str)}\n"
+                "只输出 SemanticFrame JSON。"
+            )
             repair_instruction = (
                 self._repair_instruction(last_error) if attempt else ""
             )
@@ -473,6 +490,7 @@ class LLMSemanticInterpreter:
                 frame = self._validate_relation_continuity(
                     frame,
                     context["committed"],
+                    previous_user_message=previous_user_message,
                     require_review=attempt == 0,
                 )
                 self._validate_structure(frame)
@@ -691,6 +709,7 @@ class LLMSemanticInterpreter:
         frame: SemanticFrame,
         committed_context: dict[str, Any] | None,
         *,
+        previous_user_message: str,
         require_review: bool,
     ) -> SemanticFrame:
         """Make the frame's relation consistent with proved slot continuity.
@@ -736,17 +755,11 @@ class LLMSemanticInterpreter:
             or frame.ranking_intent is not None
             or bool(frame.filter_mentions)
         )
-        declares_transformation = bool(
-            frame.changed_slots or frame.referenced_context_slots
-        )
         relation_has_explicit_evidence = any(
             span.slot == "relation" for span in frame.evidence_spans
         )
-        previous_message = str(
-            committed_context.get("previous_user_message") or ""
-        )
         previous_normalized = unicodedata.normalize(
-            "NFKC", previous_message
+            "NFKC", previous_user_message
         ).casefold()
         topic_mentions = [
             *frame.measure_mentions,
@@ -768,11 +781,40 @@ class LLMSemanticInterpreter:
             for mention in topic_mentions
             if mention.strip()
         )
+        explicit_current_slots: set[str] = set()
+        if frame.measure_mentions:
+            explicit_current_slots.add("measure")
+        if frame.dimension_mentions:
+            explicit_current_slots.add("dimension")
+        if frame.member_mentions:
+            explicit_current_slots.add("member")
+        if frame.filter_mentions:
+            explicit_current_slots.add("filter")
+        if frame.time_mentions or frame.time_intent is not None:
+            explicit_current_slots.add("time_range")
+        if frame.ranking_intent is not None:
+            explicit_current_slots.update(("ranking", "sort"))
+            if frame.ranking_intent.top_n is not None:
+                explicit_current_slots.add("top_n")
+        slot_aliases = {
+            "measures": "measure",
+            "dimensions": "dimension",
+            "filters": "filter",
+            "time": "time_range",
+        }
+        declared_current_slots = {
+            slot_aliases.get(slot, slot) for slot in frame.changed_slots
+        }
+        partial_slot_transformation = (
+            frame.query_shape is None
+            and bool(declared_current_slots)
+            and declared_current_slots.issubset(explicit_current_slots)
+        )
         continuity_is_proved = (
             committed_has_scope
             and not relation_has_explicit_evidence
             and (
-                declares_transformation
+                partial_slot_transformation
                 or (
                     current_has_topic
                     and transforms_structure
@@ -887,15 +929,23 @@ class LLMSemanticInterpreter:
             "top_n",
             "missing_slots",
         }
-        bounded = {key: value[key] for key in allowed if key in value}
+        return {key: value[key] for key in allowed if key in value}
+
+    @staticmethod
+    def _bounded_previous_user_message(
+        value: dict[str, Any] | None,
+    ) -> str:
+        """Extract prior wording for a proved DATA/REPORT continuity review only."""
+        if not value:
+            return ""
         previous = value.get("previous_user_message")
         if previous is None:
             previous = value.get("analysis_goal")
             if isinstance(previous, str) and previous.startswith("用户提问:"):
                 previous = previous.removeprefix("用户提问:").strip()
         if isinstance(previous, str) and previous.strip():
-            bounded["previous_user_message"] = previous.strip()[:1000]
-        return bounded
+            return previous.strip()[:1000]
+        return ""
 
     @staticmethod
     def _validate_evidence(frame: SemanticFrame, user_input: str) -> None:

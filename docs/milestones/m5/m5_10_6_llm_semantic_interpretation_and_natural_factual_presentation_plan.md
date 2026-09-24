@@ -134,6 +134,22 @@ failed round the status is OPEN P0/P1, not prompt-tuning continuation.
   and diff-check. Structural audit kept eight QueryShapes and all forbidden
   architecture boundaries unchanged.
 
+## CI semantic compatibility regression closure — 2026-09-24
+
+- Commit `598ce62` kept the intended 5-turn continuity behavior but regressed the
+  permanent Semantic Compatibility Gate to 16 failed / 801 passed. The causes were
+  unconditional previous-user wording in the first Understanding prompt,
+  self-supporting continuity from model-declared changed/context slots, and an
+  optional member display translation call inserted into the core provider sequence.
+- Previous wording is now exposed only in the bounded second continuity review after
+  independent DATA/REPORT evidence; complete fresh requests cannot be normalized by
+  changed slots alone. Member display in the formal answer path uses verified aliases
+  or the model-scoped registry and safely retains canonical display on a miss; optional
+  translation failures cannot fail a proved result.
+- Focused continuity passed 9/9, presentation localization 19/19, the exact failed CI
+  nodes 16/16, and the complete Semantic Compatibility Gate 817/817. No Real stress or
+  repeated 5-turn run was performed for this compatibility-only forward fix.
+
 ## Manual acceptance reopening — 2026-09-18
 
 Manual acceptance found overlapping natural-language authorities despite the

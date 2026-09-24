@@ -195,7 +195,7 @@ async def test_complete_same_topic_ranking_is_allowed_as_follow_up() -> None:
     assert "not from whether the current sentence is grammatically complete" in prompt
     assert "stays on the same business topic" in prompt
     assert "measure, dimension, or" in prompt
-    assert '"previous_user_message": "那各地区的销售额分别是多少？"' in (
+    assert '"previous_user_message": "那各地区的销售额分别是多少？"' not in (
         provider.calls[0][0].messages[1]["content"]
     )
 
@@ -261,6 +261,51 @@ async def test_repeated_fresh_ranking_is_normalized_by_continuity_invariant() ->
     repair_prompt = provider.calls[1][0].messages[0]["content"]
     assert "semantic_relation_continuity_review_required" in repair_prompt
     assert "Grammatical completeness does not imply semantic freshness" in repair_prompt
+    assert '"previous_user_message": "那各地区的销售额分别是多少？"' not in (
+        provider.calls[0][0].messages[1]["content"]
+    )
+    assert '"previous_user_message": "那各地区的销售额分别是多少？"' in (
+        provider.calls[1][0].messages[1]["content"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_changed_slots_alone_do_not_prove_continuity() -> None:
+    fresh = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        relation=TurnRelation.FRESH_QUESTION,
+        query_shape=QueryShape.SCALAR,
+        measure_mentions=("总订单数",),
+        changed_slots=("measure",),
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="query_shape", text="总订单数"),
+            SemanticEvidenceSpan(slot="measure", text="总订单数"),
+        ),
+    )
+    provider = _QueueProvider(fresh, _accept())
+
+    result = await LLMSemanticInterpreter(provider).interpret(
+        "总订单数是多少？",
+        committed_context={
+            "query_shape": "ranking",
+            "measures": ["Total Sales"],
+            "dimensions": ["Region"],
+            "filters": [{"field": "Region", "operator": "eq", "value": "South"}],
+            "analysis_goal": "用户提问: 销售额最高的三个地区",
+            "time_range": {
+                "date_field": "Date",
+                "start_date": "2025-05-01",
+                "end_date": "2025-05-31",
+            },
+        },
+    )
+
+    assert result.relation is TurnRelation.FRESH_QUESTION
+    assert result.referenced_context_slots == ()
+    assert [request.task for request, _ in provider.calls] == [
+        LLMTask.UNDERSTANDING,
+        LLMTask.UNDERSTANDING_COVERAGE,
+    ]
 
 
 @pytest.mark.asyncio

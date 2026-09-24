@@ -8,6 +8,40 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-5106-011
+  title: Continuity 修复扩大上下文与 display provider 调用导致 Semantic Compatibility 回归
+  category: ERR
+  first_detected_version: M5.10.6
+  symptom: main@598ce62 的 CI Run 35936941063 在父提交成功的 Semantic Compatibility Gate 中产生 16 failures；business→GENERAL prompt 泄漏旧业务问题，多类已完成 DAX 请求因额外 DISPLAY_TRANSLATION 调用变为 response_failed
+  local_evidence: 修复前本地同构 Gate 16 failed / 801 passed；修复后原失败节点 16/16、continuity focused 9/9、presentation localization 19/19、完整 Gate 817/817 PASS
+  authoritative_sources:
+  - title: M5.10.6 FIX CI 语义兼容性回归收口用户指令
+    reason: 保留人工 5-turn continuity，只缩窄 previous message、continuity proof 与 display enhancement 边界
+  root_cause: previous_user_message 无条件进入首次 Understanding prompt；模型声明的 changed/context slots 可反向独立证明 continuation；正式 answer path 对未命中成员标签复用核心 semantic provider 发起可选 display translation
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: previous wording 仅在独立 DATA/REPORT continuity 证据触发的第二次 review 中暴露；完整 fresh query 的 changed slots 不再是 continuity 证明，只有无 query shape 且 changed slots 与当前显式 mentions 自洽的 partial replacement 可作为结构证据；正式成员展示只消费 verified alias/registry，miss 保留 canonical display，optional translator exception fail-soft
+  regression_tests:
+  - backend/tests/unit/test_deepseek_intent_service.py
+  - backend/tests/unit/test_presentation_localization.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 向 GENERAL 或未证明 continuity 的首次 Understanding prompt 注入历史业务原文
+  - 仅因 changed_slots 或 referenced_context_slots 非空强制 follow_up
+  - 让 display-only provider 调用决定业务 turn 成败
+  prevention_rules:
+  - historical wording exposure 必须晚于 mode 与 independent continuity evidence
+  - display enhancement miss/unavailable 必须保持已验证业务结果 completed
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-24'
+    action: exact_sha_ci_regression_reproduced
+    version: M5.10.6
+  - date: '2026-09-24'
+    action: compatibility_forward_fix_passed
+    version: M5.10.6
 - id: ERR-5106-010
   title: 同主题完整 ranking 请求的 relation 在 Real Understanding 中非确定性失真
   category: ERR
@@ -21,7 +55,7 @@ entries:
   failed_attempts:
   - 只扩充 continuity prompt 并允许模型 review 后再次确认 fresh，重复链仍复现 time_range 丢失
   repair_attempt_count: 2
-  final_fix: relation/changed/context slots 设为必填；最近 committed 用户问题以有界输入进入 Understanding；同一边界用上一轮原文与当前 Frame 的 verbatim topic overlap、slot transformation 和 committed slot presence 证明 continuity，review 后重复 fresh 时确定性规范 relation/changed/referenced slots。显式 reset evidence、无共享主题与独立 fresh 请求保持 fresh；explicit measure replacement 首答 AMBIGUOUS 时仅做一次 bounded family review
+  final_fix: relation/changed/context slots 设为必填；最近 committed 用户问题只在独立 continuity evidence 触发的有界第二次 review 中进入 Understanding；同一边界用上一轮原文与当前 Frame 的 verbatim topic overlap、slot transformation 和 committed slot presence 证明 continuity，review 后重复 fresh 时确定性规范 relation/changed/referenced slots。显式 reset evidence、无共享主题与独立 fresh 请求保持 fresh；explicit measure replacement 首答 AMBIGUOUS 时仅做一次 bounded family review
   regression_tests:
   - backend/tests/unit/test_deepseek_intent_service.py
   - backend/tests/unit/test_semantic_grounding.py
