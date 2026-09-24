@@ -112,6 +112,421 @@ async def test_data_uses_understanding_then_veto_only_coverage() -> None:
 
 
 @pytest.mark.asyncio
+async def test_understanding_contract_preserves_compatible_omitted_follow_up_scope() -> None:
+    frame = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        relation=TurnRelation.FOLLOW_UP,
+        query_shape=QueryShape.GROUPED,
+        measure_mentions=("销售额",),
+        dimension_mentions=("地区",),
+        changed_slots=("query_shape", "dimension"),
+        referenced_context_slots=("time", "time_range"),
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="relation", text="那"),
+            SemanticEvidenceSpan(slot="query_shape", text="各地区"),
+            SemanticEvidenceSpan(slot="measure", text="销售额"),
+            SemanticEvidenceSpan(slot="dimension", text="地区"),
+        ),
+    )
+    provider = _QueueProvider(frame, _accept())
+
+    result = await LLMSemanticInterpreter(provider).interpret(
+        "那各地区的销售额分别是多少？",
+        committed_context={
+            "measures": ["Total Sales"],
+            "time_range": {
+                "date_field": "Order Date",
+                "start_date": "2025-05-01",
+                "end_date": "2025-05-31",
+            },
+        },
+    )
+
+    assert result.relation is TurnRelation.FOLLOW_UP
+    assert set(result.referenced_context_slots) == {"time", "time_range"}
+    prompt = provider.calls[0][0].messages[0]["content"]
+    assert "deictic or conversational continuation" in prompt
+    assert "including time/time_range" in prompt
+
+
+@pytest.mark.asyncio
+async def test_complete_same_topic_ranking_is_allowed_as_follow_up() -> None:
+    frame = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        relation=TurnRelation.FOLLOW_UP,
+        query_shape=QueryShape.RANKING,
+        measure_mentions=("销售额",),
+        dimension_mentions=("地区",),
+        ranking_intent={
+            "direction": "desc",
+            "top_n": 3,
+            "evidence_span": "前三个",
+        },
+        changed_slots=("query_shape", "ranking", "sort", "top_n"),
+        referenced_context_slots=("time", "time_range"),
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="query_shape", text="最高的前三个"),
+            SemanticEvidenceSpan(slot="measure", text="销售额"),
+            SemanticEvidenceSpan(slot="dimension", text="地区"),
+            SemanticEvidenceSpan(slot="ranking", text="前三个"),
+        ),
+    )
+    provider = _QueueProvider(frame, _accept())
+
+    result = await LLMSemanticInterpreter(provider).interpret(
+        "销售额最高的前三个地区是哪几个？",
+        committed_context={
+            "query_shape": "grouped",
+            "measures": ["Total Sales"],
+            "dimensions": ["Region"],
+            "analysis_goal": "用户提问: 那各地区的销售额分别是多少？",
+            "time_range": {
+                "date_field": "Date",
+                "start_date": "2025-05-01",
+                "end_date": "2025-05-31",
+            },
+        },
+    )
+
+    assert result.relation is TurnRelation.FOLLOW_UP
+    assert result.changed_slots == ("query_shape", "ranking", "sort", "top_n")
+    assert set(result.referenced_context_slots) == {"time", "time_range"}
+    prompt = provider.calls[0][0].messages[0]["content"]
+    assert "not from whether the current sentence is grammatically complete" in prompt
+    assert "stays on the same business topic" in prompt
+    assert "measure, dimension, or" in prompt
+    assert '"previous_user_message": "那各地区的销售额分别是多少？"' in (
+        provider.calls[0][0].messages[1]["content"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_repeated_fresh_ranking_is_normalized_by_continuity_invariant() -> None:
+    fresh = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        relation=TurnRelation.FRESH_QUESTION,
+        query_shape=QueryShape.RANKING,
+        measure_mentions=("销售额",),
+        dimension_mentions=("地区",),
+        ranking_intent={
+            "direction": "desc",
+            "top_n": 3,
+            "evidence_span": "前三个",
+        },
+        changed_slots=("query_shape", "ranking_intent"),
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="query_shape", text="最高的前三个"),
+            SemanticEvidenceSpan(slot="measure", text="销售额"),
+            SemanticEvidenceSpan(slot="dimension", text="地区"),
+            SemanticEvidenceSpan(slot="ranking", text="前三个"),
+        ),
+    )
+    reviewed_but_still_fresh = fresh.model_copy(
+        update={
+            "changed_slots": (),
+        }
+    )
+    provider = _QueueProvider(fresh, reviewed_but_still_fresh, _accept())
+
+    result = await LLMSemanticInterpreter(provider).interpret(
+        "销售额最高的前三个地区是哪几个？",
+        committed_context={
+            "query_shape": "grouped",
+            "measures": ["Total Sales"],
+            "dimensions": ["Region"],
+            "analysis_goal": "用户提问: 那各地区的销售额分别是多少？",
+            "time_range": {
+                "date_field": "Date",
+                "start_date": "2025-05-01",
+                "end_date": "2025-05-31",
+            },
+        },
+    )
+
+    assert result.relation is TurnRelation.FOLLOW_UP
+    assert result.changed_slots == (
+        "dimension",
+        "measure",
+        "query_shape",
+        "ranking",
+        "sort",
+        "top_n",
+    )
+    assert result.referenced_context_slots == ("time_range",)
+    assert [request.task for request, _ in provider.calls] == [
+        LLMTask.UNDERSTANDING,
+        LLMTask.UNDERSTANDING,
+        LLMTask.UNDERSTANDING_COVERAGE,
+    ]
+    repair_prompt = provider.calls[1][0].messages[0]["content"]
+    assert "semantic_relation_continuity_review_required" in repair_prompt
+    assert "Grammatical completeness does not imply semantic freshness" in repair_prompt
+
+
+@pytest.mark.asyncio
+async def test_unrelated_ranking_topic_stays_fresh() -> None:
+    fresh = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        relation=TurnRelation.FRESH_QUESTION,
+        query_shape=QueryShape.RANKING,
+        measure_mentions=("利润",),
+        dimension_mentions=("产品",),
+        ranking_intent={
+            "direction": "desc",
+            "top_n": 5,
+            "evidence_span": "前五个",
+        },
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="query_shape", text="最高的前五个"),
+            SemanticEvidenceSpan(slot="measure", text="利润"),
+            SemanticEvidenceSpan(slot="dimension", text="产品"),
+            SemanticEvidenceSpan(slot="ranking", text="前五个"),
+        ),
+    )
+    provider = _QueueProvider(fresh, _accept())
+
+    result = await LLMSemanticInterpreter(provider).interpret(
+        "利润最高的前五个产品是什么？",
+        committed_context={
+            "query_shape": "grouped",
+            "measures": ["Total Sales"],
+            "dimensions": ["Region"],
+            "analysis_goal": "用户提问: 那各地区的销售额分别是多少？",
+            "time_range": {
+                "date_field": "Date",
+                "start_date": "2025-05-01",
+                "end_date": "2025-05-31",
+            },
+        },
+    )
+
+    assert result.relation is TurnRelation.FRESH_QUESTION
+    assert result.referenced_context_slots == ()
+    assert [request.task for request, _ in provider.calls].count(
+        LLMTask.UNDERSTANDING
+    ) == 1
+
+
+@pytest.mark.asyncio
+async def test_explicit_reset_keeps_same_topic_ranking_fresh() -> None:
+    frame = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        relation=TurnRelation.FRESH_QUESTION,
+        query_shape=QueryShape.RANKING,
+        measure_mentions=("销售额",),
+        dimension_mentions=("地区",),
+        ranking_intent={
+            "direction": "desc",
+            "top_n": 3,
+            "evidence_span": "前三个",
+        },
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="relation", text="新问题"),
+            SemanticEvidenceSpan(slot="query_shape", text="最高的前三个"),
+            SemanticEvidenceSpan(slot="measure", text="销售额"),
+            SemanticEvidenceSpan(slot="dimension", text="地区"),
+            SemanticEvidenceSpan(slot="ranking", text="前三个"),
+        ),
+    )
+    provider = _QueueProvider(frame, _accept())
+
+    result = await LLMSemanticInterpreter(provider).interpret(
+        "新问题：销售额最高的前三个地区是哪几个？",
+        committed_context={
+            "query_shape": "grouped",
+            "measures": ["Total Sales"],
+            "dimensions": ["Region"],
+            "analysis_goal": "用户提问: 那各地区的销售额分别是多少？",
+            "time_range": {
+                "date_field": "Date",
+                "start_date": "2025-05-01",
+                "end_date": "2025-05-31",
+            },
+        },
+    )
+
+    assert result.relation is TurnRelation.FRESH_QUESTION
+    assert result.referenced_context_slots == ()
+    assert [request.task for request, _ in provider.calls].count(
+        LLMTask.UNDERSTANDING
+    ) == 1
+
+
+@pytest.mark.asyncio
+async def test_repeated_fresh_explicit_replacement_is_normalized() -> None:
+    fresh = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        relation=TurnRelation.FRESH_QUESTION,
+        query_shape=None,
+        measure_mentions=("销量",),
+        changed_slots=("measure",),
+        evidence_spans=(SemanticEvidenceSpan(slot="measure", text="销量"),),
+    )
+    provider = _QueueProvider(fresh, fresh, _accept())
+
+    result = await LLMSemanticInterpreter(provider).interpret(
+        "换成销量。",
+        committed_context={
+            "query_shape": "ranking",
+            "measures": ["Total Sales"],
+            "dimensions": ["Region"],
+            "filters": [{"field": "Region", "operator": "eq", "value": "South"}],
+            "time_range": {
+                "date_field": "Date",
+                "start_date": "2025-05-01",
+                "end_date": "2025-05-31",
+            },
+            "sort": "desc",
+            "top_n": 3,
+            "analysis_goal": "用户提问: 只看南区。",
+        },
+    )
+
+    assert result.relation is TurnRelation.FOLLOW_UP
+    assert result.changed_slots == ("measure",)
+    assert set(result.referenced_context_slots) == {
+        "query_shape",
+        "dimension",
+        "filter",
+        "time_range",
+        "sort",
+        "top_n",
+    }
+
+
+@pytest.mark.asyncio
+async def test_illegal_relation_slot_gets_exact_repair() -> None:
+    invalid = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        relation=TurnRelation.FOLLOW_UP,
+        query_shape=QueryShape.RANKING,
+        dimension_mentions=("地区",),
+        ranking_intent={
+            "direction": "desc",
+            "top_n": 3,
+            "evidence_span": "前三个",
+        },
+        changed_slots=("ranking_intent",),
+        referenced_context_slots=("measure", "time_range"),
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="query_shape", text="前三个地区"),
+            SemanticEvidenceSpan(slot="dimension", text="地区"),
+            SemanticEvidenceSpan(slot="ranking", text="前三个"),
+        ),
+    )
+    repaired = invalid.model_copy(update={"changed_slots": ("ranking",)})
+    provider = _QueueProvider(invalid, repaired, _accept())
+
+    result = await LLMSemanticInterpreter(provider).interpret("前三个地区")
+
+    assert result.changed_slots == ("ranking",)
+    repair_prompt = provider.calls[1][0].messages[0]["content"]
+    assert "semantic_changed_slot_invalid" in repair_prompt
+    assert "Use ranking, never ranking_intent" in repair_prompt
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "measure", "time_text"),
+    [
+        ("新问题：2024年订单数是多少？", "订单数", "2024年"),
+        ("总订单数是多少？", "总订单数", None),
+    ],
+)
+async def test_explicit_reset_or_different_complete_topic_stays_fresh(
+    message: str, measure: str, time_text: str | None
+) -> None:
+    spans = [
+        SemanticEvidenceSpan(slot="query_shape", text=measure),
+        SemanticEvidenceSpan(slot="measure", text=measure),
+    ]
+    if time_text is not None:
+        spans.append(SemanticEvidenceSpan(slot="time", text=time_text))
+    frame = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        relation=TurnRelation.FRESH_QUESTION,
+        query_shape=QueryShape.SCALAR,
+        measure_mentions=(measure,),
+        time_mentions=(time_text,) if time_text is not None else (),
+        time_intent=(
+            TimeIntentDraft(
+                kind=TimeIntentKind.ABSOLUTE_YEAR,
+                expression=time_text,
+                year=2024,
+            )
+            if time_text is not None
+            else None
+        ),
+        evidence_spans=tuple(spans),
+    )
+    provider = _QueueProvider(frame, _accept())
+
+    result = await LLMSemanticInterpreter(provider).interpret(
+        message,
+        committed_context={
+            "query_shape": "grouped",
+            "measures": ["Total Sales"],
+            "dimensions": ["Region"],
+            "time_range": {
+                "date_field": "Date",
+                "start_date": "2025-05-01",
+                "end_date": "2025-05-31",
+            },
+        },
+    )
+
+    assert result.relation is TurnRelation.FRESH_QUESTION
+    assert result.referenced_context_slots == ()
+    prompt = provider.calls[0][0].messages[0]["content"]
+    assert "explicit new-question/reset signal" in prompt
+    assert "different business topic" in prompt
+
+
+@pytest.mark.asyncio
+async def test_yearless_named_month_non_verbatim_mention_gets_exact_repair() -> None:
+    invalid = SemanticFrame(
+        mode=SemanticInterpretationMode.DATA,
+        query_shape=QueryShape.TREND,
+        measure_mentions=("销售额",),
+        time_mentions=("6月",),
+        time_intent=TimeIntentDraft(
+            kind=TimeIntentKind.ABSOLUTE_MONTH,
+            expression="6月",
+            month=6,
+        ),
+        analysis_goal=AnalysisGoal.EXPLAIN_CHANGE,
+        evidence_spans=(
+            SemanticEvidenceSpan(slot="query_shape", text="下降了"),
+            SemanticEvidenceSpan(slot="measure", text="销售额"),
+            SemanticEvidenceSpan(slot="time", text="六月份"),
+        ),
+    )
+    repaired = invalid.model_copy(
+        update={
+            "time_mentions": ("六月份",),
+            "time_intent": TimeIntentDraft(
+                kind=TimeIntentKind.ABSOLUTE_MONTH,
+                expression="六月份",
+                month=6,
+            ),
+        }
+    )
+    provider = _QueueProvider(invalid, repaired, _accept())
+
+    result = await LLMSemanticInterpreter(provider).interpret(
+        "为什么六月份销售额下降了？"
+    )
+
+    assert result.time_mentions == ("六月份",)
+    assert result.time_intent is not None
+    assert result.time_intent.expression == "六月份"
+    repair_prompt = provider.calls[1][0].messages[0]["content"]
+    assert "Validation code: semantic_mention_not_verbatim" in repair_prompt
+    assert 'slot="time", text="6月"' in repair_prompt
+    assert "time_mentions, time_intent.expression" in repair_prompt
+
+
+@pytest.mark.asyncio
 async def test_report_mode_is_forced_without_creating_template_authority() -> None:
     provider = _QueueProvider(
         SemanticFrame(

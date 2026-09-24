@@ -105,7 +105,7 @@ class DisplayTranslator(Protocol):
 
 
 class BoundedLLMDisplayTranslator:
-    """Translate labels only for code-owned runtime object identities."""
+    """Translate labels only for code-owned runtime object/member identities."""
 
     def __init__(self, provider: LLMProvider):
         self._provider = provider
@@ -129,7 +129,8 @@ class BoundedLLMDisplayTranslator:
                 {
                     "role": "system",
                     "content": (
-                        "你只负责把给定 runtime 对象的显示标签翻译为目标 locale。"
+                        "你只负责把给定、已验证的 runtime 对象或成员值的显示标签"
+                        "翻译为目标 locale。"
                         "不得创建、删除、合并或重命名 object_identity，不得输出 DAX、"
                         "QueryPlan、事实或资源操作。只输出 JSON："
                         '{"translations":[{"object_identity":"候选ID",'
@@ -329,23 +330,89 @@ class DisplayLocalizationService:
                 )
         return tuple(resolved[item.object_id] for item in objects)
 
-    def resolve_member_labels(
+    async def resolve_member_labels(
         self,
         field_values: dict[str, set[str]],
         *,
         locale: str,
         table_hints: dict[str, str] | None = None,
     ) -> dict[tuple[str, str], str]:
-        """Display glossary aliases only for values observed in verified results."""
+        """Localize only member values observed in verified results or filters."""
         if not locale.casefold().startswith("zh"):
             return {}
         labels: dict[tuple[str, str], str] = {}
+        unresolved: list[tuple[CatalogObject, str, str]] = []
         for field, values in field_values.items():
             item = self._resolve_runtime_object(field, table_hints=table_hints)
             for alias, canonical in item.member_aliases.items():
                 if canonical in values and _contains_cjk(alias):
                     labels.setdefault((item.canonical_name, canonical), alias)
+            for canonical in sorted(values):
+                key = (item.canonical_name, canonical)
+                if key in labels or _contains_cjk(canonical):
+                    continue
+                identity = self._member_identity(item.object_id, canonical)
+                binding = (
+                    self.registry.get(
+                        semantic_model_key=self.catalog.semantic_model_key,
+                        schema_identity=self.schema_identity,
+                        object_identity=identity,
+                        locale=locale,
+                    )
+                    if self.registry is not None
+                    else None
+                )
+                if binding is not None:
+                    labels[key] = binding.display_name
+                else:
+                    unresolved.append((item, canonical, identity))
+
+        if unresolved and self.translator is not None:
+            candidates = tuple(
+                DisplayTranslationCandidate(
+                    object_identity=identity,
+                    object_type=item.object_type,
+                    canonical_name=canonical,
+                    table_name=item.table_name,
+                )
+                for item, canonical, identity in unresolved
+            )
+            translations = await self.translator.translate(candidates, locale)
+            allowed = {item.object_identity for item in candidates}
+            if not isinstance(translations, dict) or any(
+                identity not in allowed
+                or not isinstance(display, str)
+                or not display.strip()
+                or len(display.strip()) > 96
+                for identity, display in translations.items()
+            ):
+                raise DisplayLocalizationError("display_translation_unbounded")
+            for item, canonical, identity in unresolved:
+                display = translations.get(identity)
+                if display is None:
+                    continue
+                labels[(item.canonical_name, canonical)] = display.strip()
+                if self.registry is not None:
+                    self.registry.put(
+                        DisplayLocalization(
+                            semantic_model_key=self.catalog.semantic_model_key,
+                            object_identity=identity,
+                            object_type=item.object_type,
+                            canonical_name=canonical,
+                            locale=locale,
+                            display_name=display.strip(),
+                            source=DisplayLocalizationSource.BOUNDED_TRANSLATION,
+                            schema_identity=self.schema_identity,
+                            data_type=item.data_type,
+                            format_kind=PresentationFormatKind.TEXT,
+                        )
+                    )
         return labels
+
+    @staticmethod
+    def _member_identity(field_identity: str, canonical: str) -> str:
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return f"member:{field_identity}:{digest}"
 
 
     def binding_for_registry(

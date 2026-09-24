@@ -705,20 +705,40 @@ class TestMemberAndTimeGrounding:
         assert outcome.clarification_reason == ClarificationReason.MEMBER_NO_MATCH
 
     @pytest.mark.asyncio
-    async def test_measure_selector_preserves_explicit_compound_quantity_meaning(self):
-        provider = _SelectionProvider("measure:Sales:Total Quantity")
+    @pytest.mark.parametrize(
+        ("phrase", "candidate_id", "outcome", "expected"),
+        [
+            ("销量", "measure:Sales:Total Quantity", "RESOLVED", "Total Quantity"),
+            ("销售", None, "AMBIGUOUS", None),
+            ("销售数量", "measure:Sales:Total Quantity", "RESOLVED", "Total Quantity"),
+            ("sales", "measure:Sales:Total Sales", "RESOLVED", "Total Sales"),
+        ],
+    )
+    async def test_measure_selector_uses_generic_measurement_family_contract(
+        self, phrase, candidate_id, outcome, expected
+    ):
+        provider = _SelectionProvider(candidate_id, outcome=outcome)
         selector = BoundedLLMObjectSelector(provider)
 
-        await selector.select(
-            "销量",
-            "销量最大的三款产品",
+        result = await selector.select(
+            phrase,
+            phrase,
             tuple(_catalog().by_type(SemanticObjectType.MEASURE)),
             role="measure",
         )
 
         prompt = provider.requests[0].messages[0]["content"]
         assert "in every language" in prompt
-        assert "compound metric noun" in prompt
+        assert "lexicalized metric noun" in prompt
+        assert "one lexical item or an explicit compound" in prompt
+        assert "Do not require a literal unit word" in prompt
+        assert "does not make it AMBIGUOUS" in prompt
+        assert result.status is GroundingStatus(outcome)
+        assert (
+            result.canonical_object.canonical_name
+            if result.canonical_object is not None
+            else None
+        ) == expected
 
     @pytest.mark.asyncio
     async def test_measure_selector_does_not_export_english_default_across_languages(self):
@@ -737,6 +757,56 @@ class TestMemberAndTimeGrounding:
         assert "only when the user's literal metric phrase is English" in prompt
         assert "never transfer the English default" in prompt
         assert "bare activity remains AMBIGUOUS" in prompt
+
+    @pytest.mark.asyncio
+    async def test_explicit_measure_replacement_gets_one_family_review(self):
+        class _ReviewProvider(LLMProvider):
+            provider_name = "measurement-family-review"
+            is_mock = False
+
+            def __init__(self):
+                self.requests = []
+
+            async def generate(self, request, output_type):
+                self.requests.append(request)
+                selection = (
+                    CandidateSelection(
+                        outcome="AMBIGUOUS",
+                        candidate_id=None,
+                        matched_phrase=None,
+                    )
+                    if len(self.requests) == 1
+                    else CandidateSelection(
+                        outcome="RESOLVED",
+                        candidate_id="measure:Sales:Total Quantity",
+                        matched_phrase="销量",
+                    )
+                )
+                return LLMResponse(
+                    content="{}",
+                    structured=selection,
+                    model="measurement-family-review",
+                )
+
+        provider = _ReviewProvider()
+        result = await BoundedLLMObjectSelector(provider).select(
+            "销量",
+            "换成销量。",
+            tuple(_catalog().by_type(SemanticObjectType.MEASURE)),
+            role="measure",
+            selection_constraint=(
+                "SemanticFrame proves an explicit current-turn measure replacement"
+            ),
+        )
+
+        assert result.status is GroundingStatus.RESOLVED
+        assert result.canonical_object is not None
+        assert result.canonical_object.canonical_name == "Total Quantity"
+        assert result.method == "bounded_llm_measurement_family_review"
+        assert len(provider.requests) == 2
+        assert "correction of the provisional decision, not a vote" in (
+            provider.requests[1].messages[0]["content"]
+        )
 
     @pytest.mark.asyncio
     async def test_structural_selection_accepts_smaller_validated_evidence_span(self):
@@ -893,6 +963,133 @@ class TestMemberAndTimeGrounding:
         assert outcome.clarification_question == "请明确是哪一年的6月。"
         assert outcome.delta is not None
         assert outcome.delta.time_range is None
+
+    @pytest.mark.asyncio
+    async def test_grouped_follow_up_keeps_committed_explicit_month(self):
+        glossary = _glossary()
+        glossary["fields"]["Category"]["aliases"].append("地区")
+        grounding = SemanticGroundingService(_catalog(glossary))
+
+        async def no_lookup(*_):
+            raise AssertionError("this sequence has no member lookup")
+
+        first_frame = SemanticFrame(
+            mode=SemanticInterpretationMode.DATA,
+            relation=TurnRelation.FRESH_QUESTION,
+            query_shape=QueryShape.SCALAR,
+            measure_mentions=("销售额",),
+            time_mentions=("2025年5月",),
+            time_intent=TimeIntentDraft(
+                kind=TimeIntentKind.ABSOLUTE_MONTH,
+                expression="2025年5月",
+                year=2025,
+                month=5,
+            ),
+        )
+        first = await grounding.ground_frame(
+            "2025年5月销售额？", first_frame, None, no_lookup
+        )
+        assert first.status is GroundingStatus.RESOLVED
+        first_plan = StateTransitionService().merge(
+            _draft(query_shape=QueryShape.SCALAR),
+            first.delta,
+            None,
+            inheritance_mode=InheritanceMode.FRESH_QUESTION,
+        ).query_plan
+        committed = StructuredWorkMemory(
+            conversation_id="may-follow-up",
+            semantic_model_key="local_desktop_model",
+            state_status=MemoryStatus.COMMITTED,
+            measures=list(first_plan.measures),
+            dimensions=list(first_plan.dimensions),
+            time_range=first_plan.time_range,
+            last_query_plan=first_plan.model_dump(mode="json"),
+            memory_version=1,
+        )
+
+        follow_frame = SemanticFrame(
+            mode=SemanticInterpretationMode.DATA,
+            relation=TurnRelation.FOLLOW_UP,
+            query_shape=QueryShape.GROUPED,
+            measure_mentions=("销售额",),
+            dimension_mentions=("地区",),
+            changed_slots=("query_shape", "dimension"),
+            referenced_context_slots=("time", "time_range"),
+        )
+        follow = await grounding.ground_frame(
+            "那各地区的销售额分别是多少？",
+            follow_frame,
+            committed,
+            no_lookup,
+        )
+        assert follow.status is GroundingStatus.RESOLVED
+        decision = TurnInheritancePolicy.decide(
+            "那各地区的销售额分别是多少？",
+            _intent(turn_relation=TurnRelation.FOLLOW_UP),
+            follow.delta,
+            committed,
+        )
+        assert decision.mode is InheritanceMode.FOLLOW_UP
+        follow_plan = StateTransitionService().merge(
+            _draft(query_shape=QueryShape.GROUPED),
+            follow.delta,
+            committed,
+            inheritance_mode=decision.mode,
+        ).query_plan
+        assert follow_plan.measures == ["Total Sales"]
+        assert follow_plan.dimensions == ["Category"]
+        assert follow_plan.time_range is not None
+        assert (
+            follow_plan.time_range.start_date,
+            follow_plan.time_range.end_date,
+        ) == (date(2025, 5, 1), date(2025, 5, 31))
+
+        committed = StructuredWorkMemory(
+            conversation_id="may-follow-up",
+            semantic_model_key="local_desktop_model",
+            state_status=MemoryStatus.COMMITTED,
+            measures=list(follow_plan.measures),
+            dimensions=list(follow_plan.dimensions),
+            time_range=follow_plan.time_range,
+            last_query_plan=follow_plan.model_dump(mode="json"),
+            memory_version=2,
+        )
+        ranking_frame = SemanticFrame(
+            mode=SemanticInterpretationMode.DATA,
+            relation=TurnRelation.FOLLOW_UP,
+            query_shape=QueryShape.RANKING,
+            measure_mentions=("销售额",),
+            dimension_mentions=("地区",),
+            ranking_intent=RankingIntent(
+                direction="desc", top_n=3, evidence_span="前三个"
+            ),
+            changed_slots=("query_shape", "ranking", "sort", "top_n"),
+            referenced_context_slots=("time", "time_range"),
+        )
+        ranking = await grounding.ground_frame(
+            "销售额最高的前三个地区是哪几个？",
+            ranking_frame,
+            committed,
+            no_lookup,
+        )
+        assert ranking.status is GroundingStatus.RESOLVED
+        decision = TurnInheritancePolicy.decide(
+            "销售额最高的前三个地区是哪几个？",
+            _intent(turn_relation=TurnRelation.FOLLOW_UP),
+            ranking.delta,
+            committed,
+        )
+        assert decision.mode is InheritanceMode.FOLLOW_UP
+        ranking_plan = StateTransitionService().merge(
+            _draft(query_shape=QueryShape.RANKING),
+            ranking.delta,
+            committed,
+            inheritance_mode=decision.mode,
+        ).query_plan
+        assert ranking_plan.measures == ["Total Sales"]
+        assert ranking_plan.dimensions == ["Category"]
+        assert (ranking_plan.top_n, ranking_plan.sort) == (3, "desc")
+        assert ranking_plan.time_range == follow_plan.time_range
 
     @pytest.mark.parametrize(
         ("phrase", "expected_start", "expected_end"),

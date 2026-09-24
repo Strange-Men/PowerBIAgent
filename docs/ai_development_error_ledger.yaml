@@ -3,11 +3,46 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE；M5 FINAL=false
+# 最后更新：2026-09-24 | M5.10.6 LOCAL RELEASE CANDIDATE；M5 FINAL=false
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-5106-010
+  title: 同主题完整 ranking 请求的 relation 在 Real Understanding 中非确定性失真
+  category: ERR
+  first_detected_version: M5.10.6
+  symptom: 5-turn Real chain 的 Turn 3 偶发输出 fresh_question、空 changed/context slots，形成无时间范围的正确 ranking 外形并丢失 committed 2025-05；一次 continuity review 后仍可重复同一错误
+  local_evidence: 失败链最终 Frame 为 ranking / Total Sales / Region / Top3 desc、time_range=null；修复后 configured DeepSeek + Real Local MCP 完整链连续独立 3/3 PASS，三次 Turn 3 均 follow_up 且 time_range=2025-05，三次 Turn 5 均为 Total Quantity / Region=South / Top3 desc / 2025-05
+  authoritative_sources:
+  - title: M5.10.6 OPEN P1 semantic continuity 用户续接指令
+    reason: LLM 提出语义 Frame，deterministic code 必须在同一 Understanding 边界守住 relation 与 slot transformation 的一致性
+  root_cause: relation/changed/context slots 原先不是 structured schema 必填项；bounded committed context 裁掉了上一轮用户原文；一次 review 后 require_review 关闭，使第二个错误 fresh Frame 可绕过 continuity 检查
+  failed_attempts:
+  - 只扩充 continuity prompt 并允许模型 review 后再次确认 fresh，重复链仍复现 time_range 丢失
+  repair_attempt_count: 2
+  final_fix: relation/changed/context slots 设为必填；最近 committed 用户问题以有界输入进入 Understanding；同一边界用上一轮原文与当前 Frame 的 verbatim topic overlap、slot transformation 和 committed slot presence 证明 continuity，review 后重复 fresh 时确定性规范 relation/changed/referenced slots。显式 reset evidence、无共享主题与独立 fresh 请求保持 fresh；explicit measure replacement 首答 AMBIGUOUS 时仅做一次 bounded family review
+  regression_tests:
+  - backend/tests/unit/test_deepseek_intent_service.py
+  - backend/tests/unit/test_semantic_grounding.py
+  prohibited_patterns:
+  - 根据语法完整性默认 fresh_question
+  - 在 StateTransition、Planner 或 DAX 层补救 Understanding relation
+  - 针对 Region、Total Sales、Top3、2025-05 或人工问句硬编码
+  - 用投票、无限 retry 或扩大候选集掩盖模型非确定性
+  prevention_rules:
+  - 同主题 verbatim evidence 与 partial slot transformation 证明 continuity 时，第二次概率输出不得否决 deterministic invariant
+  - explicit reset、topic switch 与 fresh negative cases 必须与 continuity positives 同时回归
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-23'
+    action: discovered_and_real_reproduced
+    version: M5.10.6
+  - date: '2026-09-24'
+    action: deterministic_invariant_and_real_stability_passed
+    version: M5.10.6
 - id: ERR-5106-009
   title: 人工验收 follow-up、yearless month、Report output 与 member display 集成合同不一致
   category: ERR

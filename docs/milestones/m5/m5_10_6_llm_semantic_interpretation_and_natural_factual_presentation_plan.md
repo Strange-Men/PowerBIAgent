@@ -13,6 +13,29 @@
 - Current product version: `M5.10.6`; keep it unchanged throughout this redesign.
 - Semantic Layer FINAL ACCEPTANCE follows this milestone; `M5 FINAL=false`.
 
+## Multi-turn semantic continuity closure — 2026-09-24
+
+- Failure evidence: the complete same-topic ranking turn intermittently produced
+  `fresh_question` with empty changed/context slots after one continuity review,
+  dropping the committed 2025-05 scope. Focused fixtures had supplied stable Frames
+  and therefore did not expose the Real structured-output variance.
+- Root cause: relation fields were originally optional, the bounded committed input
+  omitted the previous user request, and the one-review implementation accepted the
+  second probabilistic `fresh_question` without a deterministic consistency check.
+- Fix: relation/changed/context slots are schema-required. The bounded committed input
+  includes the latest committed user request, and the existing Understanding boundary
+  checks verbatim topic continuity plus declared slot transformation. A repeated
+  inconsistent fresh Frame is normalized to `follow_up` with derived changed slots and
+  only compatible omitted context slots. Explicit reset evidence and unrelated topic
+  negatives remain fresh; no downstream state repair or parallel classifier was added.
+- The existing bounded measure selector performs one correction review only when an
+  explicit current-turn measure replacement was first classified AMBIGUOUS. Candidate
+  scope is unchanged and truly generic activity wording remains ambiguous.
+- Evidence: focused continuity/fresh/context/selector/presentation regression `28
+  passed`; configured DeepSeek + Real Local MCP exact 5-turn chain completed `3/3`
+  consecutive independent runs. Every Turn 3 retained 2025-05 and every Turn 5 bound
+  `Total Quantity` while preserving Region=South and Top3 desc.
+
 ## Targeted manual-acceptance integration closure — 2026-09-23
 
 - Pending clarification seeds committed canonical state only for slots explicitly

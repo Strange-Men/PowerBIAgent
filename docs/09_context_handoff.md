@@ -1,7 +1,13 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-09-23
+> **最后更新：** 2026-09-24
+
+## M5.10.6 多轮 semantic continuity 最终收口 — 2026-09-24
+
+人工 5-turn Real chain 的 Turn 3 曾偶发把同主题完整 ranking 句判为 `fresh_question` 并丢失 committed 2025-05。实际请求已携带 canonical committed scope，但 Understanding 的 bounded context 未携带上一轮用户原文；首次错误 Frame 触发一次 review 后，第二个相同错误 Frame 又因 review gate 关闭而被接受。当前 relation、changed slots 与 referenced slots 已成为 required structured fields；最近 committed 用户问题以 1000 字符上限进入同一 Understanding 边界。若当前 Frame 与上一轮有 verbatim 业务主题重合、表达 partial slot transformation 且未给出显式 reset relation evidence，第二次仍为 fresh 会被 deterministic consistency invariant 规范为 `follow_up`，并只声明当前 changed slots 与兼容的 omitted committed slots。无共享主题、显式 reset 与独立 scalar fresh negative cases 均保持清空旧 state。
+
+直接相关 focused/negative/context/selector/presentation 回归 `28 passed`。configured DeepSeek + Real Local MCP 的同一 5-turn chain 已连续独立 `3/3 PASS`：Turn 3 均为 `follow_up` 且最终 scope 为 2025-05 Region Top3；Turn 5 均为 `Total Quantity`，保留 Region=South、Top3 desc 与 2025-05。未新增 relation classifier、Planner、Grounding、Memory、QueryShape 或下游 state 补救；commit/push 与用户人工验收仍待完成，M5 FINAL=false。
 
 ## M5.10.6 人工验收集成缺陷定点收口 — 2026-09-23
 

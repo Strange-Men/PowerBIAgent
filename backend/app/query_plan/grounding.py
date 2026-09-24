@@ -471,10 +471,15 @@ class BoundedLLMObjectSelector:
                 "or items sold. That convention applies only when the user's literal metric phrase is English; "
                 "never transfer the English default to another language's bare activity noun. When that language "
                 "distinguishes the activity from amount and quantity, the bare activity remains AMBIGUOUS. "
-                "Apply the same measurement distinction in every language: a conventional "
-                "compound metric noun whose semantic head explicitly denotes quantity, volume, units, or "
-                "count is an explicit quantity request even when its modifier names the business activity. "
-                "Do not downgrade that compound metric noun to a generic activity. Vague best/performance "
+                "Apply the same measurement distinction in every language: a lexicalized metric noun whose "
+                "ordinary language meaning is quantity, volume, units, or item count is an explicit quantity "
+                "request, whether it is written as one lexical item or an explicit compound whose semantic "
+                "head denotes that measurement family. Do not downgrade such a metric noun to a generic "
+                "activity. First interpret the phrase's ordinary translated measurement family, then bind the "
+                "unique candidate in that family. Do not require a literal unit word, compound morphology, or "
+                "canonical-name token. When the phrase denotes the quantity family and exactly one candidate "
+                "measures item quantity, return that candidate as RESOLVED; the presence of monetary or event-count "
+                "measures for the same activity does not make it AMBIGUOUS. Vague best/performance "
                 "without a metric is unresolved."
             ),
             "dimension": (
@@ -539,6 +544,47 @@ class BoundedLLMObjectSelector:
             return ObjectGroundingResult(status=GroundingStatus.UNRESOLVED,
                 role=role, phrase=phrase, method=f"bounded_llm_unavailable_{exc.error_category.value}")
         selection = response.structured
+        selection_method = "bounded_llm"
+        if (
+            isinstance(selection, CandidateSelection)
+            and selection.outcome == "AMBIGUOUS"
+            and role == "measure"
+            and bool(selection_constraint)
+        ):
+            review_messages = [
+                {
+                    **messages[0],
+                    "content": (
+                        messages[0]["content"]
+                        + " The first bounded decision returned AMBIGUOUS for a "
+                        + "code-proven current measure replacement. Re-evaluate the "
+                        + "phrase's ordinary translated measurement family once. "
+                        + "This is a correction of the provisional decision, not a "
+                        + "vote. If a lexicalized metric denotes quantity, volume, "
+                        + "units, or item count and exactly one candidate measures "
+                        + "that family, return RESOLVED for that candidate even when "
+                        + "money or event-count candidates concern the same activity. "
+                        + "Keep AMBIGUOUS when the phrase is only a generic activity "
+                        + "or multiple candidates in the same requested family fit."
+                    ),
+                },
+                messages[1],
+            ]
+            try:
+                reviewed = await self._provider.generate(
+                    LLMRequest(
+                        messages=review_messages,
+                        task=LLMTask.SEMANTIC_SELECTION,
+                    ),
+                    CandidateSelection,
+                )
+            except LLMProviderError:
+                reviewed = None
+            if reviewed is not None and isinstance(
+                reviewed.structured, CandidateSelection
+            ):
+                selection = reviewed.structured
+                selection_method = "bounded_llm_measurement_family_review"
         if not isinstance(selection, CandidateSelection):
             return ObjectGroundingResult(
                 status=GroundingStatus.UNRESOLVED,
@@ -585,14 +631,14 @@ class BoundedLLMObjectSelector:
                 phrase=matched_phrase,
                 canonical_object=selected,
                 candidate_ids=tuple(candidate_map),
-                method="bounded_llm",
+                method=selection_method,
             )
         return ObjectGroundingResult(
             status=GroundingStatus(selection.outcome),
             role=role,
             phrase=phrase,
             candidate_ids=tuple(candidate_map),
-            method="bounded_llm",
+            method=selection_method,
         )
 
 

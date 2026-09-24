@@ -1776,7 +1776,7 @@ class LLMTurnService:
                                 str(value) for value in values if value is not None
                             )
                         try:
-                            member_display_values = localization.resolve_member_labels(
+                            member_display_values = await localization.resolve_member_labels(
                                 field_values,
                                 locale="zh-CN",
                                 table_hints=query_plan.dimension_tables,

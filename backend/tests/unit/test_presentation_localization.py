@@ -122,7 +122,7 @@ async def test_verified_member_aliases_localize_answer_and_table_only() -> None:
     bindings = await localization.resolve_fields(
         result.columns, locale="zh-CN", table_hints=plan.dimension_tables
     )
-    labels = localization.resolve_member_labels(
+    labels = await localization.resolve_member_labels(
         {"Region": {"South", "North"}}, locale="zh-CN",
         table_hints=plan.dimension_tables,
     )
@@ -141,6 +141,54 @@ async def test_verified_member_aliases_localize_answer_and_table_only() -> None:
     assert localize_member_text("区域South和区域North", labels) == "区域南区和区域北区"
     assert presentation.datasets[0].rows == result.rows
     assert [row[0] for row in presentation.datasets[0].formatted_rows] == ["南区", "北区"]
+
+
+@pytest.mark.asyncio
+async def test_verified_runtime_members_use_bounded_cached_display_translation(
+    tmp_path: Path,
+) -> None:
+    class _VerifiedMemberTranslator:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def translate(self, candidates, locale):
+            self.calls += 1
+            assert locale == "zh-CN"
+            expected = {"South": "南区", "North": "北区"}
+            return {
+                item.object_identity: expected[item.canonical_name]
+                for item in candidates
+            }
+
+    region = _object("field:Sales:Region", "Region", table_name="Sales")
+    catalog = _catalog(region)
+    registry = JsonDisplayLocalizationRegistry(tmp_path / "member-display.json")
+    translator = _VerifiedMemberTranslator()
+    values = {"Region": {"South", "North"}}
+
+    labels = await DisplayLocalizationService(
+        catalog,
+        registry=registry,
+        translator=translator,
+    ).resolve_member_labels(
+        values,
+        locale="zh-CN",
+        table_hints={"Region": "Sales"},
+    )
+    cached = await DisplayLocalizationService(
+        catalog,
+        registry=registry,
+        translator=_Translator({}),
+    ).resolve_member_labels(
+        values,
+        locale="zh-CN",
+        table_hints={"Region": "Sales"},
+    )
+
+    assert labels == {("Region", "South"): "南区", ("Region", "North"): "北区"}
+    assert cached == labels
+    assert translator.calls == 1
+    assert values == {"Region": {"South", "North"}}
 
 
 @pytest.mark.parametrize(
