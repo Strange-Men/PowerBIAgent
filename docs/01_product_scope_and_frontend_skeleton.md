@@ -1,7 +1,7 @@
 # 01 — 产品范围与前端骨架
 
 > **状态：** M5.8.6 COMPLETE；React 前端、SQLite 资源生命周期、DeepSeek/Kimi 双模型目录与 Report Template Required 已实现。
-> **当前边界：** M5.10.2 Executive Report Product Refinement & Hardening 的实现/视觉工作已完成；随后人工验收重新打开 semantic/state P0，当前为 M5.10.3 — 人工验收后语义安全收口。专业模板保持 AVAILABLE，主区使用 presentation-only projection。M5.8.5 correctness 与 M5.9.2 runtime 的 authority/architecture contract 冻结；M5.10.4+ NOT STARTED，M5 FINAL=false。
+> **当前边界：** 当前为 M5.10.6 最终 presentation residual FIX；remote baseline `b1063ed` / CI `35942794552` success。专业模板保持 AVAILABLE，主区使用 presentation-only projection；canonical member 与 zh-CN display label 分离。M5.10.7/8 NOT STARTED，最终人工 spot-check PENDING，M5 FINAL=false。
 > **视觉参考：** `docs/assets/frontend/整体01.png`（已有对话与组合回答态）、`docs/assets/frontend/整体02.png`（新聊天欢迎态与菜单展开态）
 
 ---
@@ -285,7 +285,7 @@ ConversationSession {
 |---------|---------|-------|
 | `POST /api/v1/chat` | ✅ 已实现 | 对话主交互 |
 | `GET /api/v1/llm-profiles` | ✅ M5.8 | 动态加载 DeepSeek/Kimi 安全公开目录 |
-| `GET /api/v1/report-templates` | ✅ M5.7.2 | 动态加载 backend-owned Template Registry；当前仅“简易模板” |
+| `GET /api/v1/report-templates` | ✅ M5.10.2 | 动态加载 backend-owned Template Registry；当前提供“简易模板”和“专业销售经营分析模板” |
 | `GET /api/reports` | ✅ M5.4.1 | Settings 独立分页全部 active/archived reports |
 | `GET /api/reports/{report_id}` | ✅ 已实现 | 查看报表 |
 | `GET /api/reports/{report_id}/download` | ✅ 已实现 | 下载 HTML |
@@ -306,11 +306,11 @@ ConversationSession {
 
 ## 四、产品边界
 
-### 当前 M5.9 实现边界
+### 当前 M5.10.6 实现边界
 
-- 只进行 request-local measurement、Local MCP worker pool / bounded queue、deadline/cancellation/backpressure、transient fault resilience 与最小 transport/repository/telemetry boundary 整理。
-- 不改前端业务能力、QuestionRouter、Grounding、Canonical QueryPlan、Deterministic DAX、QueryResult、VerifiedFactSet、Report template/renderer 或 Memory/Snapshot authority。
-- Remote MCP、Entra、PostgreSQL、Deployment 与第二模板继续 Deferred。
+- 当前只收口 zh-CN member display localization 与 stale current-state 文档。
+- canonical member、Grounding、CanonicalQueryPlan、Deterministic DAX、QueryResult、VerifiedFactSet、Memory 与 Report authority 不变。
+- Remote MCP、Entra、PostgreSQL 与 Deployment 继续 Deferred；M5.10.7/8 不提前启动。
 
 ### 后续轮次边界
 
@@ -318,4 +318,4 @@ ConversationSession {
 
 ---
 
-*最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*

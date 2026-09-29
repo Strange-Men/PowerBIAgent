@@ -1,10 +1,10 @@
 # 00 — 产品需求文档 (PRD)
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
-> **修订版本：** v2.3
-> **修订日期：** 2026-09-16
+> **修订版本：** v2.4
+> **修订日期：** 2026-09-29
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **修订范围：** M5.10.2 implementation/report visual work 已完成；随后人工验收重新打开 semantic/state P0。当前为 M5.10.3 — 人工验收后语义安全收口；M5.8.5 correctness 与 M5.9.2 runtime 的 authority/architecture contract 冻结；M5.10.4+ NOT STARTED，M5 FINAL=false
+> **修订范围：** M5.10.3—M5.10.5 已完成；M5.10.6 的 Understanding、事实表达、时间/上下文、Report 集成与 semantic compatibility 已收口。最新已验证 remote baseline 为 `b1063ed` / CI `35942794552` success，只处理 zh-CN member display residual；M5.10.7/8 NOT STARTED，最终人工 spot-check PENDING，M5 FINAL=false
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -307,7 +307,10 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 26. **M5.10 复杂报表合同与专业销售模板基础** ✅ COMPLETE — Reading Context / immutable snapshot 与共享 Sales requirements 已建立
 27. **M5.10.1 Professional Sales Renderer & Real Visual Acceptance** ✅ 本地收口完成 — 独立固定 Renderer、双模板公开显式选择、Simple/Executive factual parity、Simple/Rich PBIX 与真实浏览器验收
 28. **M5.10.2 Executive Report Product Refinement & Hardening** ✅ 本地产品收口 — Report Request/FULL_AVAILABLE、friendly/canonical 分离、四类时间 provenance、失败/取消补偿、双模板 lifecycle/concurrency/security 与 Rich/Simple PBIX/真实浏览器验收；发布以当时 main exact-SHA CI success 为证据；该历史完成证据不覆盖 post-manual reopen，M5 FINAL=false
-29. **M5.10.3 — 人工验收后语义安全收口** 🟡 IMPLEMENTATION READY — 三类 wrong-question execution P0 已完成最小修复与自动/Real Local MCP scoped acceptance；DeepSeek Real/用户最终人工验收 PENDING。不能安全闭合时 clarification/no-match/fail closed；M5.10.4+ 不启动，M5 FINAL=false
+29. **M5.10.3 — 人工验收后语义安全收口** ✅ COMPLETE — Zero Wrong-Question Execution；用户人工验收通过
+30. **M5.10.4 — 语言与 QueryShape 收口** ✅ COMPLETE — bounded 开放语言解释与 QueryShape reconciliation
+31. **M5.10.5 — 时间语义、事实防火墙与安全基线** ✅ COMPLETE — `9dfbf2f` / CI `35088162355` success
+32. **M5.10.6 — LLM 语义理解与自然事实表达重构** 🟡 最终 presentation residual FIX — latest verified remote `b1063ed` / CI `35942794552` success；M5.10.7/8 NOT STARTED，最终人工 spot-check PENDING，M5 FINAL=false
 
 ## 十二、MVP 暂不包含
 
@@ -330,14 +333,14 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 
 | 项目 | 修正/固化内容 |
 |------|--------------|
-| Agent 架构 | 使用成熟框架支持的单 Agent（非 LangGraph、非多 Agent、非手写 Runtime）|
+| Agent 架构 | 使用确定性 TurnPipeline 控制面；不使用 LangGraph、多 Agent 或自主 Agent loop |
 | 意图识别 | Agent 必须包含独立可测试的意图识别模块 |
-| LLM | 真实 LLM 只有 DeepSeek；必须提供 Mock LLM |
+| LLM | 支持 DeepSeek 与 Kimi K2.6 的 OpenAI-compatible Provider；必须提供 Mock LLM |
 | 记忆系统 | 核心卖点，必须包含结构化工作记忆和可靠提交机制 |
 | Power BI MCP | 后端统一接入，网页用户不配置 MCP |
 | 报表 | M2 ReportSpec 不得越过 VerifiedFactSet；M3 再实现固定模板 HTML 正式渲染 |
 | Harness | MVP 轻量控制面 |
-| 前端 | 等待后端跑通后正式开发 |
+| 前端 | React + Vite 正式前端已实现，并消费 backend-owned 模型/模板目录与 presentation 契约 |
 | Conda | `D:\Conda`，环境名 `PBIAgent`，Python 3.11 |
 
 ## 十四、验收标准
@@ -382,4 +385,4 @@ MVP 达到以下条件即可视为成功：
 
 M5.10 已纳入正式路线：用户可明确选择“简易模板”或“销售模板”。销售模板可以包含 sales-specific section，但只消费 runtime schema 与 VerifiedFactSet 已证明的事实；缺少 Forecast/Goal/Pipeline 时必须用当前模型真实支持的销售 section 替代，禁止伪造。任何模板均不允许 LLM 临场生成 HTML/CSS/SVG。
 
-*修订日期：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；M5 FINAL=false*
+*修订日期：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*

@@ -207,10 +207,10 @@ M5.3.2 使用 `GET /api/v1/semantic-models` 读取后端对当前所有 Power BI
 | M5.5 | Semantic correctness；不改前端视觉/资源 UX | ✅ COMPLETE |
 | M5.6 | Presentation/Localization/Resource UX truth | ✅ COMPLETE |
 | M5.7 | 简易报表视觉 + Report Template Required + 人工视觉验收 | ✅ COMPLETE |
-| M5.8 | OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 scoped model selection | 🚧 IN PROGRESS |
-| M5.9 | MCP performance/resilience、并发与压力验证 | ⏳ NOT STARTED |
-| M5.10 | 固定专业销售模板与“简易模板/销售模板”显式选择；只有全部门禁完成后才允许 M5 FINAL | ⏳ NOT STARTED |
+| M5.8 | OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 scoped model selection | ✅ COMPLETE |
+| M5.9 | MCP performance/resilience、并发与压力验证 | ✅ COMPLETE |
+| M5.10 | 固定专业销售模板与“简易模板/销售模板”显式选择；当前 M5.10.6 最终 presentation residual FIX | 🟡 ACTIVE；M5 FINAL=false |
 
 ---
 
-*最后更新：2026-08-26 | M5.7 COMPLETE — M5.8—M5.10 NOT STARTED；M5 FINAL 尚未成立*
+*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*

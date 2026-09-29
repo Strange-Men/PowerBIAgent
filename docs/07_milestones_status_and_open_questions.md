@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** 当前产品版本/Settings.version=M5.10.6。重开验收的语义 residual 与 Real multi-stage request SLA mismatch 已本地关闭：overall SLA 120→180 秒，child LLM/MCP/render 120 秒与 DAX 30 秒不变；最终 Real Stress 72 unique / 24 high-risk×3 / 130 turns 为 130/130，Critical Real 21/21。fresh Semantic Compatibility 807、backend 2804/1 及全部本地 automated/governance/drift gate 已通过；当前为 LOCAL RELEASE CANDIDATE，只待提交、push 与新 exact-SHA CI；main-only；M5 FINAL=false。
+> **状态：** 当前产品版本/Settings.version=M5.10.6。最新已验证远程基线 `main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9` / exact-SHA CI Run `35942794552` completed/success；Semantic Compatibility 817/817、backend 2830/2830、Golden 11/11、frontend 92/92 与全部正式 gate PASS。Final Real Stress 130/130、Critical Real 21/21 保留为独立 Local Real 证据。当前只收口 zh-CN member display residual 与 stale current-state 文档；M5.10.7/8 NOT STARTED，最终人工 spot-check PENDING，M5 FINAL=false。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -62,7 +62,7 @@
 | **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **✅ COMPLETE；用户人工验收通过** |
 | **M5.10.4** | **语言与 QueryShape 收口** | **✅ COMPLETE；DeepSeek + Real Local MCP 14/14** |
 | **M5.10.5** | **时间语义、事实防火墙与安全基线** | **✅ COMPLETE；`9dfbf2f` / CI `35088162355` success** |
-| **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **🟡 LOCAL RELEASE CANDIDATE；Real 130/130 + 21/21；all local gates PASS** |
+| **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **🟡 最终 presentation residual FIX；`b1063ed` / CI `35942794552` success；人工 spot-check PENDING** |
 | **M5.10.7** | **模板兼容与错误 UX 收口** | **⏳ NOT STARTED** |
 | **M5.10.8** | **MVP 最终 Real E2E / 压力 / mutation / 历史 / exact-SHA 收口** | **⏳ NOT STARTED** |
 
@@ -114,7 +114,7 @@ SemanticCatalog/Grounding 在当前 runtime candidates 内绑定 canonical objec
 
 Fresh local automated 与 Local Real 数字保留为已发布 FIX 的历史本地证据：backend `2764 passed, 1 skipped`；Semantic Compatibility `801 passed / 122 production files`；M5.9.4 formal `51,200/51,200`；Golden `11 passed, 1 manual-real skipped`；frontend `91 passed` + typecheck/lint/production build；configured DeepSeek + Real Local MCP `21/21 PASS`。该 FIX 已提交/push 为 `6b9abd890d58bed5768687733d2c1172532850ec`，GitHub Actions Run `35496889792` exact-SHA completed/success。
 
-随后最新人工验收发现四类 residual：`South` literal runtime member 可失败；English wrapper + 中文 member 可误报筛选字段多匹配；`Total Sales` / `South` 等 canonical technical name 可进入普通用户答案；无 location/search/weather/finance/news authority 时 General LLM 可编造外部当前事实。Final Acceptance 因此重新打开。当前工作先固化 Final Acceptance Residual Corpus，再运行不少于 72 unique / 120 Real executions 的 Real Language Stress，并对 24 个 high-risk case 各3次重复；未发生的新 stress/commit/CI 不得预写为 PASS。M5.10.7/8 NOT STARTED，M5 FINAL=false。
+随后人工验收发现的 literal member、cross-language member、canonical presentation leakage 与 General 外部当前事实 residual 已完成 failure-first、Real Stress 与兼容性收口。当前最后 residual 是 runtime-verified English canonical members 在 zh-CN summary/table/chart 中缺少 display label；只允许 presentation-only 修复，不改变 canonical identity、DAX、VerifiedFactSet 或 Memory。M5.10.7/8 NOT STARTED，最终人工 spot-check PENDING，M5 FINAL=false。
 
 ## M5 重建决策与历史状态
 
@@ -240,7 +240,7 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 | Remote MCP 管理员与授权条件 | 重新批准 Remote 后 |
 | mixed Chinese-English、全面 paraphrase 与 QueryShape 语言优化 | M5.10.4 |
 | M5.10.5 时间/对话边界/numeric firewall | COMPLETE；`9dfbf2f` / Run `35088162355` success |
-| M5.10.6 Final Acceptance Residual + Real Language Stress | residual CLOSED LOCAL；72 unique / 24 high-risk×3 / 130 turns 为 130/130；Critical Real 21/21；remote exact-SHA pending |
+| M5.10.6 Final Acceptance Residual + Real Language Stress | residual CLOSED；72 unique / 24 high-risk×3 / 130 turns 为 130/130；Critical Real 21/21；`b1063ed` / CI `35942794552` success；zh-CN member display final FIX active |
 | template × model compatibility、frontend generic error UX | M5.10.7 |
 | Final MVP Real E2E / stress / mutation / historical / exact-SHA closure | M5.10.7 |
 | Settings UX、full-width UI、same-name PBIX、新业务指标/模板、Remote MCP、Entra、PostgreSQL、Deployment | M5.10.4+ 或后续独立批准 |
@@ -344,9 +344,9 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - Real Rich PBIX 四轮 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢` 完成 slot-level KEEP/REPLACE；Top3/descending、time filter/grouping 与 prediction/delete capability boundary 正确。
 - Sales、Education、Inventory、未知 opaque holdout 与 display/table rename、相似字段、glossary alias 删除、member change、unknown/ambiguous member mutation 全部通过 deterministic oracle；生产 semantic 代码未引入 sales-specific field/member hardcode。
 - Backend full `1823 passed, 1 skipped`；frontend `69 passed` 且 typecheck/lint/build PASS；Golden `11 passed, 1 manual-real skipped`；Architecture `118`、Repository Safety `296`、Error Ledger `32`、Documentation/Artifact Governance、compileall 与 Local MCP readonly smoke PASS。
-- Real API 与 Browser 人工验收通过；unknown member 可见 clarification，South 与同会话 Top3 正确完成，automation-owned acceptance residual=0。M5.6 与 M5.7 已完成；M5.8—M5.10 未开始。
+- Real API 与 Browser 人工验收通过；unknown member 可见 clarification，South 与同会话 Top3 正确完成，automation-owned acceptance residual=0。该历史验收时 M5.6 与 M5.7 已完成，M5.8—M5.10 尚未开始。
 - M5.7.1 Semantic Compatibility Gate `302 passed`；backend full `1901 passed, 1 skipped`；frontend `80 passed` 且 build PASS；Golden `11 passed, 1 manual-real skipped`；Sales/Education/Inventory/unknown holdout、schema mutation 与 Rich PBIX Real/manual 均通过，automation-owned DB/artifact residual=0。
-- M5.7.2 将 Template Gate 固定在 Intent 后并证明 missing/unknown/stale 时 ZERO schema/DAX/report downstream；建立 Template/Renderer Registry、后端只读模板目录与前端显式选择。简易模板完成 4 KPI、趋势、区域/品类、Top 产品、关键明细、footer 及 Y 轴/grid/15 月/小屏跨年 tick 收口；Semantic Compatibility `304 passed`、backend `1918 passed, 1 skipped`、frontend `83 passed`、Golden `11 passed, 1 manual-real skipped`，automation-owned residual=0。M5.8—M5.10 未开始。
+- M5.7.2 将 Template Gate 固定在 Intent 后并证明 missing/unknown/stale 时 ZERO schema/DAX/report downstream；建立 Template/Renderer Registry、后端只读模板目录与前端显式选择。简易模板完成 4 KPI、趋势、区域/品类、Top 产品、关键明细、footer 及 Y 轴/grid/15 月/小屏跨年 tick 收口；Semantic Compatibility `304 passed`、backend `1918 passed, 1 skipped`、frontend `83 passed`、Golden `11 passed, 1 manual-real skipped`，automation-owned residual=0。该历史阶段结束时 M5.8—M5.10 尚未开始。
 
 ### M5.8 完成合同（COMPLETE）
 
@@ -356,6 +356,6 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - `configuration/authentication/rate_limit/timeout/connection/request/service/response_validation` 使用 provider-independent taxonomy；trace 只记录 public profile/model、task、usage、error class，禁止 Key、Authorization、Secret query 与原始敏感响应。
 - DeepSeek/Kimi 必须共享永久 Semantic Compatibility Gate；malformed/invalid structured output 最终受控失败，ZERO incorrect Memory/fact commit；禁止 silent fallback、auto-routing、ensemble。
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
-- M5.8.2—M5.10.5 已完成各自定义的本地实现与自动/Real 验收；M5.10.5 FIX `9dfbf2f` 的 exact-SHA CI Run `35088162355` success。M5.10.6 Understanding FIX 已发布为 `6b9abd8`，Run `35496889792` success；其后重新打开的人工 residual 已完成本地 Real/core automated 收口，当前只待治理/drift 与本轮新 remote release evidence。M5.8.5 factual correctness 与 M5.9.2 runtime 的 architecture/authority boundary 冻结；M5.10.7/8 NOT STARTED；M5 FINAL=false。
+- M5.8.2—M5.10.5 已完成各自定义的实现与验收；M5.10.5 FIX `9dfbf2f` / Run `35088162355`、M5.10.6 Understanding FIX `6b9abd8` / Run `35496889792` 均保留为历史发布证据。当前权威 remote baseline 是 `b1063ed` / Run `35942794552` success；当前只处理 zh-CN member display residual。M5.8.5 factual correctness 与 M5.9.2 runtime 的 architecture/authority boundary 冻结；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false。
 
-*最后更新：2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE；Real Stress 130/130、Critical Real 21/21、all local gates PASS；new commit/CI pending；M5.10.7/8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*

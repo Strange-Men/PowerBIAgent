@@ -170,7 +170,6 @@ from backend.app.presentation.builder import StructuredPresentationBuilder
 from backend.app.presentation.localization import (
     BoundedLLMDisplayTranslator,
     DisplayLocalization,
-    DisplayLocalizationError,
     DisplayLocalizationService,
     JsonDisplayLocalizationRegistry,
     localize_member_text,
@@ -228,6 +227,7 @@ class LLMTurnService:
         report_repository: ReportRepository | None = None,
         snapshot_store: Optional[SnapshotRepository] = None,  # M4.1
         llm_registry: LLMProviderRegistry | None = None,
+        display_llm_registry: LLMProviderRegistry | None = None,
     ):
         # The compatibility ``llm_provider`` path keeps older focused tests and
         # embeddings working, while production wiring always injects the
@@ -249,6 +249,10 @@ class LLMTurnService:
             llm_registry = LLMProviderRegistry()
             llm_registry.register(compatibility_profile, llm_provider)
         self.llm_registry = llm_registry
+        # Display translation is an optional presentation concern. Production
+        # supplies a separate provider registry so its calls cannot alter the
+        # selected semantic provider's scripted/counted task sequence.
+        self.display_llm_registry = display_llm_registry
         self.powerbi = powerbi_adapter
         self.report_renderer = report_renderer
         self._report_repository = report_repository
@@ -266,6 +270,22 @@ class LLMTurnService:
             snapshot_store=snapshot_store,
             report_repository=report_repository,
         )
+
+    def _display_translator(
+        self,
+        llm_snapshot: LLMProviderSnapshot,
+    ) -> BoundedLLMDisplayTranslator | None:
+        if self.display_llm_registry is None:
+            return None
+        try:
+            display_snapshot = self.display_llm_registry.get(
+                llm_snapshot.profile.profile_key
+            )
+        except Exception:
+            return None
+        if display_snapshot.provider is llm_snapshot.provider:
+            return None
+        return BoundedLLMDisplayTranslator(display_snapshot.provider)
 
     def _build_tool_gateway(self) -> ToolGateway:
         """构建 ToolGateway — M1.6.3 使用共享入口，与 Mock 路径完全一致"""
@@ -1732,10 +1752,11 @@ class LLMTurnService:
                         registry = JsonDisplayLocalizationRegistry(
                             self.settings.presentation_localization_registry_path
                         )
+                        display_translator = self._display_translator(llm_snapshot)
                         localization = DisplayLocalizationService(
                             catalog,
                             registry=registry,
-                            translator=BoundedLLMDisplayTranslator(observed),
+                            translator=display_translator,
                         )
                         try:
                             resolved = await localization.resolve_fields(
@@ -1743,7 +1764,7 @@ class LLMTurnService:
                                 locale="zh-CN",
                                 table_hints=query_plan.dimension_tables,
                             )
-                        except DisplayLocalizationError as exc:
+                        except Exception as exc:
                             trace.record(
                                 "presentation_localization_fallback",
                                 trace_id=trace_id,
@@ -1782,12 +1803,13 @@ class LLMTurnService:
                             member_display_values = await DisplayLocalizationService(
                                 catalog,
                                 registry=registry,
+                                translator=display_translator,
                             ).resolve_member_labels(
                                 field_values,
                                 locale="zh-CN",
                                 table_hints=query_plan.dimension_tables,
                             )
-                        except DisplayLocalizationError:
+                        except Exception:
                             member_display_values = {}
                         user_facing_filter_values = {
                             **{

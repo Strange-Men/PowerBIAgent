@@ -1,7 +1,7 @@
 # 06 — 安全、Git 与开发规范
 
 > **状态：** M5.8.6 COMPLETE；Secret、仓库、artifact、main-only 开发与 exact-SHA CI 治理均已固化。
-> **当前轮次：** M5.10 complex report foundation；专业 Renderer/Remote MCP 未实现，M5.10.1 NOT STARTED。M5.8.5 correctness 与 M5.9.2 runtime 冻结，M5 FINAL=false。
+> **当前轮次：** M5.10.6 最终 presentation residual FIX；latest verified remote `b1063ed` / CI `35942794552` success。专业 Renderer 已实现；Remote MCP 仍 Deferred。M5.8.5 correctness 与 M5.9.2 runtime 冻结，M5.10.7/8 NOT STARTED，M5 FINAL=false。
 
 ---
 
@@ -232,4 +232,4 @@ Tag 名称的描述部分必须全部使用中文，禁止使用英文描述。
 
 ---
 
-*创建日期：2026-07-31 | 最后更新：2026-09-07 M5.8.6 治理 current-state 收口；M5.9 COMPLETE*
+*创建日期：2026-07-31 | 最后更新：2026-09-29 latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5 FINAL=false*

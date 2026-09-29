@@ -1,5 +1,9 @@
 # M5.10.3 — 人工验收后语义安全收口
 
+> **Historical milestone record.** The status, baseline and pending items below
+> describe M5.10.3 at that time. Current repository status is maintained in
+> `AGENTS.md` and `docs/09_context_handoff.md`.
+
 ## Status and baseline
 
 - Status: IMPLEMENTATION READY; DeepSeek Real E2E BLOCKED and user manual acceptance PENDING.

@@ -45,7 +45,7 @@
 
 当前开发最重要的 active 决策为 ADR-005—ADR-019；ADR-019 固化所有复杂模板的 Reading Context、metric/filter/exception/freshness authority、共享 Sales fact path 与 Local/Remote source boundary。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
 
-**当前正式基线：** M5.10—M5.10.2 的复杂报表合同、专业 Renderer 与视觉收口已完成；M5.10.2 后人工验收重新打开 semantic/state P0，当前阶段为 M5.10.3 — 人工验收后语义安全收口。ADR-014/015/016/018 的 authority invariant 继续有效；“frozen”表示 authority/architecture contract 不变，不表示实现不可进行 invariant-preserving bug fix。M5.10.4+ NOT STARTED，M5 FINAL=false。
+**当前正式基线：** `main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9` / exact-SHA CI Run `35942794552` completed/success。当前阶段为 M5.10.6 最终 presentation residual FIX；ADR-014/015/016/018/019 的 authority invariant 继续有效，display localization 只能投影 verified canonical identity。“frozen”表示 authority/architecture contract 不变，不妨碍 invariant-preserving bug fix。M5.10.7/8 NOT STARTED，最终人工 spot-check PENDING，M5 FINAL=false。
 
 ## ADR 详情
 
@@ -121,4 +121,4 @@ Execution、Tooling、Context、Lifecycle、Observability、Verification、Gover
 
 ---
 
-*最后更新：2026-09-16 | M5.10.3 — 人工验收后语义安全收口；DeepSeek Real BLOCKED / 用户最终人工验收 PENDING；ADR-005—019 active；M5.10.4+ NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；ADR-005—019 active；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；M5 FINAL=false*

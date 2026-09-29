@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** Settings.version=M5.10.6。重开验收的语义 residual 与独立 SLA root 已完成本地收口。trace 将旧 120 秒失败证明为合法 bounded 多阶段调用累计超时，overall request SLA 最小调整为 180 秒；LLM/provider、MCP、render 120 秒与 DAX 30 秒不变。最终 configured DeepSeek + Real Local MCP Stress 72 unique / 24 high-risk×3 / 130 turns 为 130/130，Critical Real 21/21；fresh Semantic Compatibility 807、backend 2804/1 及全部本地 automated/governance/drift gate 已通过。当前为 LOCAL RELEASE CANDIDATE，只待提交、push、新 exact-SHA CI 与 remote audit；M5.10.7/8 NOT STARTED；main 是唯一活动开发线；M5 FINAL=false。
+> **状态：** Settings.version=M5.10.6。latest verified remote baseline 为 `main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9` / exact-SHA CI Run `35942794552` completed/success；Semantic Compatibility 817/817、backend 2830/2830、Golden 11/11、frontend 92/92 与全部正式 gate PASS。Final Real Stress 130/130、Critical Real 21/21 为独立 Local Real 证据。当前只收口 zh-CN member display residual 与 stale current-state 文档；M5.10.7/8 NOT STARTED；main 是唯一活动开发线；最终人工 spot-check PENDING；M5 FINAL=false。
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -62,7 +62,7 @@
 | **M5.10.3** | **人工验收后语义安全收口：P0 semantic/state safety，Zero Wrong-Question Execution** | **✅ COMPLETE；用户人工验收通过** |
 | **M5.10.4** | **语言与 QueryShape 收口** | **✅ COMPLETE；DeepSeek + Real Local MCP 14/14** |
 | **M5.10.5** | **时间语义、事实防火墙与安全基线** | **✅ COMPLETE；`9dfbf2f` / CI `35088162355` success** |
-| **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **🟡 LOCAL RELEASE CANDIDATE；Real 130/130 + 21/21；all local gates PASS** |
+| **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **🟡 最终 presentation residual FIX；`b1063ed` / CI `35942794552` success；人工 spot-check PENDING** |
 | **M5.10.7** | **模板兼容与错误 UX 收口** | **⏳ NOT STARTED** |
 | **M5.10.8** | **MVP 最终 Real E2E / 压力 / mutation / 历史 / exact-SHA 收口** | **⏳ NOT STARTED** |
 
@@ -92,7 +92,7 @@ DeepSeek-only Real 完成 108/108：104 completed、4 clarification + ZERO DAX/M
 
 filter/time 只由 CanonicalQueryPlan 与 VerifiedFactSet 一致证据投影。Metric Definition 的 tax/comparison basis 未声明时保持 UNKNOWN；当前无正式 anomaly rule 时为 CANNOT_DETERMINE；Local MCP 无权威 refresh metadata 时 `data_updated_at=None/UNKNOWN`，不得用 generated/query time 冒充。Remote MCP 只保留 source-kind boundary。
 
-M5.10.2 已完成当时定义的正常产品功能与报表视觉收口；post-manual acceptance 随后证明语义安全实现仍存在 P0。历史 PASS 不回写为失败，但不能覆盖新 evidence。当前 M5.10.3 只关闭 QueryShape/semantic obligation 静默降级、历史 same-field filter 污染以及 correction/pending state 泄漏，目标是 Zero Wrong-Question Execution；不做全面语言优化、时间展示、模板兼容或最终发布收口。
+M5.10.2 已完成当时定义的正常产品功能与报表视觉收口；post-manual acceptance 随后证明语义安全实现仍存在 P0。历史 PASS 不回写为失败，但不能覆盖新 evidence。当时 M5.10.3 只关闭 QueryShape/semantic obligation 静默降级、历史 same-field filter 污染以及 correction/pending state 泄漏，目标是 Zero Wrong-Question Execution；不做全面语言优化、时间展示、模板兼容或最终发布收口。
 
 Manual Visual Fidelity FIX 将专业模板从 generic adaptive card presentation 收紧为 repository-owned fixed dashboard contract。`02`/`03` 参考图现分别约束 P1 layout 与 visual language；Executive 固定 branded header、四 KPI template assets、full-width trend、12-column 三栏 structure、独立 customer ranking table 与 low-weight audit。aware time 展示为北京时间但 canonical UTC 不变；generic currency 不猜 CNY；rank 为整数。事实、DAX、Semantic、VerifiedFactSet 与 M5.9.2 runtime 均未改变。
 
@@ -103,8 +103,8 @@ Fresh local evidence：report/template/API focused 96 PASS；backend 2650 PASS /
 - **M5.10.3 — 人工验收后语义安全收口：** COMPLETE / 用户人工验收通过。任何明确 ranking/grouping/filter/correction/time/member-set obligation 若未进入最终 CanonicalQueryPlan，必须在 DAX 前 clarification/fail closed；同字段由历史 filter 切换为当前 grouping/ranking 时不得继承未重述旧 member；correction 优先作用于 compatible pending delta，再考虑 committed Memory。
 - **M5.10.4 — 语言与 QueryShape 收口：** COMPLETE。现有 QueryPlan LLM draft 在八种既有 QueryShape 与当前 runtime candidate 内解释 paraphrase、中英混合和语序；Router 高置信 evidence 优先，SCALAR/None 仅为 fallback，Grounding/Completeness 继续拥有 canonical 与执行安全。configured DeepSeek + Real Local MCP、跨域/stress/full gates 均通过。
 - **M5.10.5 — 时间语义、事实防火墙与安全基线：** COMPLETE。`9dfbf2f` / exact-SHA CI `35088162355` success；人工测试确认安全主体有效，并把 technical-scope leakage、开放聊天、capability wording 与真实数据 horizon 缺口移交 M5.10.6。
-- **M5.10.6 — LLM 语义理解与自然事实表达重构：** Understanding Layer FIX 已以 `6b9abd8` 发布，Run `35496889792` exact-SHA success。但 21-case Real 未充分覆盖 literal runtime member、English wrapper + Chinese member、canonical presentation leakage、General 外部当前事实与 repeated nondeterminism；最新人工验收已重新打开 Final Acceptance。当前先固化 residual RED，再建立 72+ unique / 120+ executions 的 configured DeepSeek + Real Local MCP 压力验收，不允许用同一 LLM 自评或用 phrase/PBIX hardcode 修复。
-- **M5.10.6 当前 final local evidence：** declarative corpus 固定为 72 unique / 24 high-risk，最终 130-turn run 为 130/130，584 LLM calls、395 MCP/tool executions、138 witnesses；所有 semantic/factual/Memory/leakage/stability/timeout 指标与 business/temp residual 为 0，request p50/p95/max=11.087/53.160/87.251 秒，max single LLM=83.397 秒。Critical Real 21/21、20 witnesses；fresh Semantic Compatibility `807 passed / 122 production files`、backend `2804 passed, 1 skipped`，frontend、Golden、Architecture、Repository Safety、Error Ledger、Documentation/Artifact Governance、compileall、version consistency 与 diff-check 均 PASS。旧 120 秒 overall SLA 由 trace 证明不足并最小提高为 180 秒，child timeouts 未改变；240 秒无合法累计 latency 证据，不采用。只待 remote release evidence。
+- **M5.10.6 — LLM 语义理解与自然事实表达重构：** Understanding、旧 semantic authority cleanup、natural factual presentation、external fact firewall、time/context continuity、Pending↔committed inheritance、yearless month clarification、selected-template Report integration、template lifecycle、multi-turn relation consistency 与 CI semantic compatibility regression 已收口。当前最后 residual 是 zh-CN member display localization；只允许 display projection，不改 canonical authority。
+- **M5.10.6 当前证据：** declarative corpus 72 unique / 24 high-risk，最终 130-turn run 130/130，Critical Real 21/21；latest verified remote `b1063ed` / Run `35942794552` success，Semantic Compatibility 817/817、backend 2830/2830、frontend 92/92、Golden 11/11，Security/Architecture/Docs/typecheck/lint/build/diff-check PASS。旧 120 秒 overall SLA 的历史 trace 与 180 秒修复保持有效。本 changeset 收口 final presentation residual；发布后只等待自动 CI 与用户最终人工 spot-check。
 - **M5.10.7 — 模板兼容与错误 UX 收口：** template × model compatibility、frontend generic error UX 及相邻兼容问题；本轮不启动。
 - **M5.10.8 — MVP 最终收口：** Final Real E2E、stress、mutation、historical 与 exact-SHA closure；只有该阶段和用户人工验收完成后才允许评估 `M5 FINAL=true`。
 
@@ -133,7 +133,7 @@ M5.10.6 FIX 已发布证据：Acceptance Failure Corpus baseline 连续两次 `1
 
 必须覆盖“火星区”无匹配不得 fallback 全国、“华南/华南区/南区”由 runtime member authority 证明、“大概多少”不误判 prediction、readonly capability 近义表达不依赖无限 regex、TopN 不因非必要 LLM failure 失效，以及 `2025年5月销售额 → 那南区呢 → 换成去年 → 前三个产品呢` 的 slot 继承/替换。禁止 Localization、Report Visual、MCP performance optimization 与 Resource UI 大改。
 
-状态为 COMPLETE。S1 docs/contracts → S2 failure reproducers → S3 capability → S4 object/member → S5 multi-turn → S6 ranking → S7 temporal → S8 cross-domain/schema mutation → S9 focused → S10 full gates → S11 Real/manual 已顺序通过；S12 只执行最终文档、白名单 commit 与 push。M5.6 与 M5.7 已完成；M5.8—M5.10 未开始。
+状态为 COMPLETE。S1 docs/contracts → S2 failure reproducers → S3 capability → S4 object/member → S5 multi-turn → S6 ranking → S7 temporal → S8 cross-domain/schema mutation → S9 focused → S10 full gates → S11 Real/manual 已顺序通过；S12 只执行最终文档、白名单 commit 与 push。该历史阶段结束时 M5.6 与 M5.7 已完成，M5.8—M5.10 尚未开始。
 
 ### 新 M5.6 — Presentation, localization and resource UX truth
 
@@ -483,7 +483,7 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 
 - 不使用 LangGraph、多 Agent 或 PydanticAI。
 - 不复制 Pipeline/Service，不绕过 TurnPipeline、ToolGateway、PowerBIAdapter、Independent Layer 3、VerifiedFactSet 或 Memory/Snapshot。
-- M5.5—M5.10.5 已完成；M5.10.6 Understanding FIX 已发布并通过 exact-SHA CI，但最新人工 residual 使 Final Acceptance 重新打开；M5.8.5 factual authority 与 M5.9.2 runtime frozen；M5.10.7/8 仍不得提前进入。
+- M5.5—M5.10.5 已完成；M5.10.6 latest verified remote `b1063ed` / CI `35942794552` success，当前仅剩 presentation-only zh-CN member display FIX 与用户最终人工 spot-check；M5.8.5 factual authority 与 M5.9.2 runtime frozen；M5.10.7/8 仍不得提前进入。
 - 一个 milestone 不得同时大规模修改 Semantic、MCP、LLM Provider、Presentation、Report、Resource lifecycle；只有 M5.10 全部门禁完成后才允许宣告 M5 FINAL。
 - 当前报表针对各 PBIX 全量数据；不新增动态月份、Category filter、comparison、用户自由 ReportDataPlan 或任意 DAX。
 - M3 不做 PDF、自由 HTML、用户模板、JavaScript、复杂图表框架、React UI 或 Remote MCP。
@@ -498,4 +498,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE；Real Stress 130/130、Critical Real 21/21、all local gates PASS；new commit/CI pending；M5.10.7/8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*

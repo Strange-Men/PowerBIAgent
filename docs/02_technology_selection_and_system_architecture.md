@@ -1,8 +1,8 @@
 # 02 — 技术选型与系统架构
 
-> **状态：** M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（COMPLETE，`179dd24` / CI #52 success）。离线、2h soak、Real PBIX 1/2/4 worker、full gates 与 residual=0 已通过。M5.8.6 COMPLETE；main 是唯一活动开发线。
-> **当前版本：** M5.9
-> **关联 ADR：** ADR-001（已废弃）、ADR-002—ADR-016；当前以 ADR-005—ADR-016 为准
+> **状态：** M5.9 runtime architecture 已 COMPLETE（`179dd24` / CI #52 success）；当前为 M5.10.6 最终 presentation residual FIX，remote baseline `b1063ed` / CI `35942794552` success。M5.10.7/8 NOT STARTED，main 是唯一活动开发线，M5 FINAL=false。
+> **当前版本：** M5.10.6
+> **关联 ADR：** ADR-001（已废弃）、ADR-002—ADR-019；当前以 ADR-005—ADR-019 为准
 
 ---
 
@@ -153,4 +153,4 @@ M1.5 全链路验收后，动态复验证实以下问题：
 
 ---
 
-*最后更新：2026-09-03 | M5.8.6 主线发布与治理收口完成；ADR-010—ADR-016 已正式接受；历史分层由 ADR-005—ADR-016 supersede*
+*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；ADR-005—019 active；M5.10.7/8 NOT STARTED；M5 FINAL=false*

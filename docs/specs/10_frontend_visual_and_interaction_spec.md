@@ -1,7 +1,7 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.7 简易报表视觉与模板必选（COMPLETE）
-> **目标阶段：** M5.7 已完成简易报表可读性、显式模板选择与 Report Template Required Gate；M5.8—M5.10 未开始
+> **状态：** M5.7 简易报表视觉与模板必选已 COMPLETE；M5.10.1/2 专业模板与产品 hardening 也已完成。当前为 M5.10.6 最终 presentation residual FIX。
+> **当前边界：** remote baseline `b1063ed` / CI `35942794552` success；本轮只修 zh-CN member display projection，不改变 canonical facts、QueryPlan、DAX、VerifiedFactSet 或 Memory。M5.10.7/8 NOT STARTED，M5 FINAL=false。
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -16,7 +16,7 @@
 
 ## 二、当前阶段与实施边界
 
-**当前阶段：** M5.4 已将请求与 UI 状态收口到 conversation scope；M5.4.1 已把依赖 Recent 第一页的轻量资源面板修复为独立分页的 Settings Hub。M0–M5 factual authority 保持不变；没有真实 presentation block 时不伪造前端表格或图表。
+**当前阶段：** M5.10.6 最终 presentation residual FIX。M5.4 的 conversation-scoped UI state、M5.4.1 Settings Hub、M5.7 Template Required 与 M5.10.1/2 双模板展示合同继续有效；没有真实 presentation block 时不伪造前端表格或图表。zh-CN display label 只投影 verified canonical member，内部 audit 与事实证据保留 canonical identity。
 
 ### 2.1 重建线后续边界
 
@@ -515,4 +515,4 @@ shell、body、content 与 list 都必须声明 `min-height: 0`/overflow respons
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-08-26 | M5.7 COMPLETE — 简易模板与 Template Required Gate*
+*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；M5 FINAL=false*

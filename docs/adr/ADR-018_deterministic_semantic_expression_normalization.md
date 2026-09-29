@@ -22,4 +22,4 @@ M5.8.5 已建立 obligation coverage 与 canonical shape completeness，但自�
 
 ## 后果与验收
 
-更严格的显式义务可能增加澄清，但不会扩大查询范围。实现必须先保留 production-path failure reproducer，再做通用最小修复；跨 Sales/Retail、Education、Inventory/Operations 与未知 holdout 验证不得写死具体业务字段或 member。M5.9.4 已以 51,200-case deterministic stress 与 DeepSeek-only 108-case 双 PBIX Real 验证该决策，并补齐通用 grouping、relative/yearless time、TopN、entity-list、member-set connector、turn relation 与单 temporal axis 约束；unknown/known+unknown 仍 ZERO DAX。发布以当前 main exact-SHA CI success 为证据；M5.10 NOT STARTED，M5 FINAL=false。
+更严格的显式义务可能增加澄清，但不会扩大查询范围。实现必须先保留 production-path failure reproducer，再做通用最小修复；跨 Sales/Retail、Education、Inventory/Operations 与未知 holdout 验证不得写死具体业务字段或 member。M5.9.4 已以 51,200-case deterministic stress 与 DeepSeek-only 108-case 双 PBIX Real 验证该决策，并补齐通用 grouping、relative/yearless time、TopN、entity-list、member-set connector、turn relation 与单 temporal axis 约束；unknown/known+unknown 仍 ZERO DAX。发布以该阶段 main exact-SHA CI success 为证据；M5.10 当时 NOT STARTED，M5 FINAL=false。

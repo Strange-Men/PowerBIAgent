@@ -2,16 +2,39 @@
 
 ## Status and baseline
 
-- Status: LOCAL RELEASE CANDIDATE. All reopened semantic residuals and the
-  independent Real multi-stage request SLA mismatch are locally closed. Final
-  Stress is 130/130, Critical Real is 21/21 and all local gates pass; commit/push,
-  exact-SHA CI and remote audit remain.
-- Current baseline: `main@6b9abd890d58bed5768687733d2c1172532850ec`;
-  exact-SHA CI Run `35496889792` completed/success for the prior published FIX.
+- Status: final zh-CN member display presentation residual FIX. All semantic,
+  continuity, report and CI compatibility residuals are closed; final user manual
+  spot-check remains. M5.10.7/8 are not started.
+- Latest verified remote baseline: `main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9`;
+  exact-SHA CI Run `35942794552` completed/success with Semantic Compatibility
+  817/817, backend 2830/2830, Golden 11/11 and frontend 92/92.
+- Prior published FIX baseline: `main@6b9abd890d58bed5768687733d2c1172532850ec`;
+  exact-SHA CI Run `35496889792` completed/success. This remains historical evidence.
 - Original implementation baseline: `main@9dfbf2f72bad299e41a138e9072a11caf8c678a7`.
 - M5.10.5 exact-SHA CI: GitHub Actions Run `35088162355` success.
 - Current product version: `M5.10.6`; keep it unchanged throughout this redesign.
 - Semantic Layer FINAL ACCEPTANCE follows this milestone; `M5 FINAL=false`.
+
+## Final zh-CN member display residual — 2026-09-29
+
+- The formal answer path correctly preferred verified aliases and the model-scoped
+  localization registry after the CI compatibility fix, but real runtime members
+  `South/North/East/West` had neither aliases nor member registry entries. The safe
+  miss fallback therefore exposed canonical labels in Chinese summary, table and chart.
+- The core semantic provider sequence remains unchanged. Optional bounded display
+  translation now uses a separate application-scoped provider instance, records
+  verified labels in the existing model-scoped registry, and fails soft on provider,
+  translation or registry errors. QueryPlan, DAX, QueryResult, VerifiedFactSet and
+  Memory keep canonical runtime identities.
+- Summary, table and chart consume the same formatted display dataset. Focused
+  presentation/application regression passed 22/22, including canonical-state
+  preservation, translator failure and core-provider call isolation.
+- Previously closed M5.10.6 scope includes the single Understanding boundary,
+  SemanticFrame contract, runtime Grounding authority, natural factual presentation,
+  external fact firewall, runtime member grounding, time/context continuity,
+  Pending-to-committed inheritance, yearless-month clarification, selected-template
+  report integration and lifecycle, deterministic multi-turn relation consistency,
+  and CI semantic compatibility regression closure.
 
 ## Multi-turn semantic continuity closure — 2026-09-24
 
@@ -54,11 +77,13 @@
   report service path with 9 real query executions and a non-null
   `sales_executive_report` artifact.
 - Frontend template selection persists through ordinary turns and failures and is
-  consumed only by a completed report. Chinese presentation uses model-scoped verified
-  member aliases for summary/table/chart display while canonical values remain intact.
+  consumed only by a completed report. When present, model-scoped verified member
+  aliases localize summary/table/chart display while canonical values remain intact;
+  later manual acceptance identified the missing-alias registry residual recorded above.
 - Focused evidence: backend `52 passed`; frontend targeted `13 passed`; frontend
-  typecheck and targeted Python compilation passed. Commit/push and user manual
-  acceptance remain; M5.10.7/8 are not started and `M5 FINAL=false`.
+  typecheck and targeted Python compilation passed. This integration closure was
+  subsequently published; final user manual spot-check remains, M5.10.7/8 are not
+  started and `M5 FINAL=false`.
 
 ## Final acceptance reopening — 2026-09-20
 
@@ -145,7 +170,9 @@ failed round the status is OPEN P0/P1, not prompt-tuning continuation.
   independent DATA/REPORT evidence; complete fresh requests cannot be normalized by
   changed slots alone. Member display in the formal answer path uses verified aliases
   or the model-scoped registry and safely retains canonical display on a miss; optional
-  translation failures cannot fail a proved result.
+  translation failures cannot fail a proved result. This step restored provider call
+  compatibility; the later real-member registry miss is the separate presentation
+  residual closed on 2026-09-29.
 - Focused continuity passed 9/9, presentation localization 19/19, the exact failed CI
   nodes 16/16, and the complete Semantic Compatibility Gate 817/817. No Real stress or
   repeated 5-turn run was performed for this compatibility-only forward fix.
@@ -313,4 +340,4 @@ Local automated, Local Real and Remote CI are reported separately.
 
 ---
 
-*Updated: 2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE | Real Stress 130/130 and Critical Real 21/21 | all local gates PASS | new commit/CI pending | M5.10.7/8 NOT STARTED | M5 FINAL=false*
+*Updated: 2026-09-29 | M5.10.6 final zh-CN member display residual FIX | latest verified remote `b1063ed` / Run `35942794552` success | Real Stress 130/130 and Critical Real 21/21 | M5.10.7/8 NOT STARTED | final user spot-check pending | M5 FINAL=false*

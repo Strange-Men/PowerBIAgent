@@ -1,27 +1,37 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-09-24
+> **最后更新：** 2026-09-29
 
-## M5.10.6 CI 语义兼容性回归收口 — 2026-09-24
+## 当前阶段 — M5.10.6 FIX — 中文成员展示与文档治理最终收口
+
+最新已验证 remote baseline 为 `main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9`，GitHub Actions Run `35942794552` 对该 exact SHA completed/success：Security、Architecture、Documentation Governance、Semantic Compatibility `817/817`、backend `2830/2830`、Golden `11/11`、frontend `92/92`、typecheck、lint、build 与 diff-check 全部通过。Settings.version 保持 M5.10.6；M5.10.7/8 NOT STARTED，`M5 FINAL=false`。
+
+当前唯一 production residual 是 zh-CN 展示层在真实 runtime member 没有 verified alias 且 model-scoped registry 没有 member 条目时，安全 fallback 会直接显示 canonical `South/North/East/West`。本轮保持 QueryPlan、DAX、QueryResult、VerifiedFactSet 与 Memory 中的 canonical identity 不变；可选 bounded display translation 改由独立 presentation provider 实例执行并写入既有 model-scoped registry，任何 provider/translation/registry 失败都 fail-soft 到 canonical display，不进入核心 semantic provider call sequence。summary、table 与 chart 共用同一 formatted dataset label；focused presentation/application regression `22/22 PASS`。
+
+当前下一步仅为完成本轮 documentation governance、targeted compilation 与 diff-check，白名单提交并 push main，记录自动启动的 exact-SHA CI，然后由用户执行最终人工 spot-check。不得进入 M5.10.7/8，也不得提前声明 M5.10.6 COMPLETE 或 `M5 FINAL=true`。
+
+## 历史记录 — M5.10.6 CI 语义兼容性回归收口 — 2026-09-24
 
 `main@598ce62eb1473b9a80d93068d2c850c32b7622bf` 的 Actions Run `35936941063` 在 Semantic Compatibility Gate 产生 16 failures，而父提交 Gate success。共同根因来自上一轮跨切面集成：最近业务问题被无条件放入 GENERAL/fresh Understanding prompt；`changed_slots` 可循环证明自身是 continuation；成员展示本地化会向核心 scripted business provider 追加 `DISPLAY_TRANSLATION` 调用并把成功 DAX 请求变成 `response_failed`。
 
-当前 previous user wording 只在首个 DATA/REPORT Frame 已由 verbatim topic overlap 或自洽 partial slot transformation 证明需要 continuity review 时进入第二次有界 prompt；GENERAL、显式 reset、unrelated/fresh 初始请求均看不到旧业务原文。完整 fresh query 的 changed slots 不是 continuity 证据。正式 answer path 的成员标签只读 verified alias/model-scoped registry，miss 时安全保留 canonical display；可选 translator 的异常 fail-soft。原 16 个节点 `16/16 PASS`，continuity focused `9/9`、presentation localization `19/19`，完整 Semantic Compatibility `817/817 PASS`。上一轮 Real 5-turn `3/3` 证据未重跑，relation structured contract、Turn 3 2025-05 inheritance 与 Turn 5 `Total Quantity / South / Top3 / 2025-05` 实现保持不变。待 whitelist commit/push 与新 exact-SHA CI；M5 FINAL=false。
+previous user wording 只在首个 DATA/REPORT Frame 已由 verbatim topic overlap 或自洽 partial slot transformation 证明需要 continuity review 时进入第二次有界 prompt；GENERAL、显式 reset、unrelated/fresh 初始请求均看不到旧业务原文。完整 fresh query 的 changed slots 不是 continuity 证据。正式 answer path 的成员标签只读 verified alias/model-scoped registry，miss 时安全保留 canonical display；可选 translator 的异常 fail-soft。原 16 个节点 `16/16 PASS`，continuity focused `9/9`、presentation localization `19/19`，完整 Semantic Compatibility `817/817 PASS`。上一轮 Real 5-turn `3/3` 证据未重跑，relation structured contract、Turn 3 2025-05 inheritance 与 Turn 5 `Total Quantity / South / Top3 / 2025-05` 实现保持不变。该 forward-fix 后续以 `b1063ed` / Run `35942794552` 发布并通过 exact-SHA CI；此处保留 `598ce62` / Run `35936941063` 作为 regression 历史证据。
 
-## M5.10.6 多轮 semantic continuity 最终收口 — 2026-09-24
+## 历史记录 — M5.10.6 多轮 semantic continuity 最终收口 — 2026-09-24
 
 人工 5-turn Real chain 的 Turn 3 曾偶发把同主题完整 ranking 句判为 `fresh_question` 并丢失 committed 2025-05。实际请求已携带 canonical committed scope，但 Understanding 的 bounded context 未携带上一轮用户原文；首次错误 Frame 触发一次 review 后，第二个相同错误 Frame 又因 review gate 关闭而被接受。当前 relation、changed slots 与 referenced slots 已成为 required structured fields；最近 committed 用户问题仅在独立 DATA/REPORT continuity evidence 触发 review 后以 1000 字符上限进入第二次 Understanding 调用。若当前 Frame 与上一轮有 verbatim 业务主题重合、表达 partial slot transformation 且未给出显式 reset relation evidence，第二次仍为 fresh 会被 deterministic consistency invariant 规范为 `follow_up`，并只声明当前 changed slots 与兼容的 omitted committed slots。无共享主题、显式 reset 与独立 scalar fresh negative cases 均保持清空旧 state。
 
-直接相关 focused/negative/context/selector/presentation 回归 `28 passed`。configured DeepSeek + Real Local MCP 的同一 5-turn chain 已连续独立 `3/3 PASS`：Turn 3 均为 `follow_up` 且最终 scope 为 2025-05 Region Top3；Turn 5 均为 `Total Quantity`，保留 Region=South、Top3 desc 与 2025-05。未新增 relation classifier、Planner、Grounding、Memory、QueryShape 或下游 state 补救；commit/push 与用户人工验收仍待完成，M5 FINAL=false。
+直接相关 focused/negative/context/selector/presentation 回归 `28 passed`。configured DeepSeek + Real Local MCP 的同一 5-turn chain 已连续独立 `3/3 PASS`：Turn 3 均为 `follow_up` 且最终 scope 为 2025-05 Region Top3；Turn 5 均为 `Total Quantity`，保留 Region=South、Top3 desc 与 2025-05。未新增 relation classifier、Planner、Grounding、Memory、QueryShape 或下游 state 补救；该实现已在后续 `b1063ed` 发布并通过 exact-SHA CI，最终用户人工 spot-check 仍待执行，M5 FINAL=false。
 
-## M5.10.6 人工验收集成缺陷定点收口 — 2026-09-23
+## 历史记录 — M5.10.6 人工验收集成缺陷定点收口 — 2026-09-23
 
-当前 implementation 已关闭四类人工验收 residual：Pending merge 只继承当前 frame 明确引用且未 changed 的 committed canonical slots；yearless month 作为不完整语言 draft，仅以兼容 committed year 确定性解析；模板选择只在 report completed 后消费；中文 presentation 从 model-scoped verified member alias 显示南区/北区，canonical execution、VerifiedFactSet 与 Memory 仍为 South/North。
+当时 implementation 关闭四类人工验收 residual：Pending merge 只继承当前 frame 明确引用且未 changed 的 committed canonical slots；yearless month 作为不完整语言 draft，仅以兼容 committed year 确定性解析；模板选择只在 report completed 后消费；已有 model-scoped verified member alias 可供中文 presentation 使用，canonical execution、VerifiedFactSet 与 Memory 仍为 South/North。后续人工验收发现真实 runtime member 可能没有 alias/registry 条目，因此该条只代表已有 alias 命中的历史覆盖，当前 display residual 以上方当前阶段为准。
 
-Report pre-fix Real diagnosis 为 `validation_failed / SemanticInterpretationError`，trace `5a9ff42a-2382-4c3b-8c90-287b4987c299`，2 LLM calls、ZERO MCP/report calls。根因是纯 REPORT output frame 被 DATA query 的 shape/unresolved 结构校验误拒。最小修复只允许无 data slots 的 REPORT frame 进入既有 selected template → ReportPlan 链，DATA fail-closed 规则不变。Post-fix configured DeepSeek + Real Local MCP 服务完成 `sales_executive_report`，执行 9 个真实 MCP 查询并生成 artifact。Focused backend `52 passed`，frontend targeted `13 passed`，typecheck 与 targeted py_compile PASS；commit/push 与用户人工验收待本轮完成。M5.10.7/8 NOT STARTED，M5 FINAL=false。
+Report pre-fix Real diagnosis 为 `validation_failed / SemanticInterpretationError`，trace `5a9ff42a-2382-4c3b-8c90-287b4987c299`，2 LLM calls、ZERO MCP/report calls。根因是纯 REPORT output frame 被 DATA query 的 shape/unresolved 结构校验误拒。最小修复只允许无 data slots 的 REPORT frame 进入既有 selected template → ReportPlan 链，DATA fail-closed 规则不变。Post-fix configured DeepSeek + Real Local MCP 服务完成 `sales_executive_report`，执行 9 个真实 MCP 查询并生成 artifact。Focused backend `52 passed`，frontend targeted `13 passed`，typecheck 与 targeted py_compile PASS；实现已在后续提交发布。M5.10.7/8 NOT STARTED，M5 FINAL=false。
 
-## 当前阶段 — M5.10.6 FIX — LOCAL RELEASE CANDIDATE
+## 历史阶段 — M5.10.6 FIX — LOCAL RELEASE CANDIDATE
+
+以下段落保留 `b1063ed` 发布前的本地候选证据；当前状态与下一步以上方 2026-09-29 当前阶段为准。
 
 本轮正式基线为 `main@6b9abd890d58bed5768687733d2c1172532850ec`；GitHub Actions Run `35496889792` 对该旧 FIX exact SHA completed/success。Settings.version 保持 M5.10.6。最新人工 residual 已重新进入 failure-first、Real stress 与 final gate 流程；当前 production worktree 是本地 release candidate，尚未 commit/push，不得把旧 CI 冒充本轮 remote evidence。
 
@@ -97,7 +107,7 @@ Visual Fidelity FIX 从 clean `main@2db9a43ebc1e92ec89370849abe6d3e52de402c3` �
 
 report artifact 在 memory commit failure 与 cancellation 时通过正式 repository API shielded compensation，query/assembly/render/persist 取消均无 orphan；Simple+Simple、Executive+Executive、Simple+Executive 异会话并发保持 template/model/artifact identity 隔离。两模板的 create/link/history/rename/archive/restore/delete/tombstone 生命周期均复用既有 namespace/persistence contract。真实和浏览器临时资源均已按 automation ownership 精确清理，Local MCP session/worker residual=0。
 
-M5.10 foundation、M5.10.1 fixed Renderer、M5.8.5 factual authority、M5.9.2 runtime architecture 与既有 persistence architecture 保持冻结；未实现 Remote MCP transport/auth、Entra、PostgreSQL、Deployment、YoY/MoM/Forecast/Target/Budget/Map/AI insight。该段只记录 M5.10.2 当时的 implementation completion；post-manual P0 与当前阶段以上文 M5.10.3 为准。M5 FINAL=false。
+M5.10 foundation、M5.10.1 fixed Renderer、M5.8.5 factual authority、M5.9.2 runtime architecture 与既有 persistence architecture 保持冻结；未实现 Remote MCP transport/auth、Entra、PostgreSQL、Deployment、YoY/MoM/Forecast/Target/Budget/Map/AI insight。该段只记录 M5.10.2 当时的 implementation completion；后续 post-manual P0 closure 由上方历史阶段记录，仓库当前状态以文件首节为准。M5 FINAL=false。
 
 Fresh local evidence：FIX focused 35 PASS，完整 report/renderer/product 组合回归 144 PASS；Semantic Compatibility 775 PASS / 123 production files；backend 2732 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 91 PASS + typecheck/lint/build；Repository Safety 398、AI Error Ledger 86、Architecture 140、Documentation/Artifact Governance、compileall 与 diff-check PASS。Real Rich 9/9、Simple 4 available + 5 unavailable-with-reason，Rich/Simple 各自 Simple/Executive fact parity=true；fixture Chrome 76/76、real Chrome 4/4，13 项 mutation、1440/430 七项 reference checklist 与 artifact/session/worker residual=0 均通过。
 
@@ -113,7 +123,7 @@ P2 参考图已从双扩展名纯重命名为 `03_sales_executive_visual_style.p
 
 Fresh local evidence：report/template/API focused 96 PASS；四项 mutation sanity 均产生预期 failure 并恢复；Semantic Compatibility 775 PASS / 121 production backend files；backend 2650 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 91 PASS + typecheck/lint/build；Repository Safety 390、AI Error Ledger 82、Architecture 138、Documentation/Artifact Governance、compileall 与 staged diff-check PASS。18 fixture renderer p50 1.447ms、max 4.483ms、最大 HTML 30,801 bytes；Rich/Simple PBIX 关闭后 session residual 与 active worker 均为 0。
 
-## 当前阶段 — M5.9.5 Sidebar UI Geometry Final Closure（COMPLETE，2026-09-10）
+## 历史阶段 — M5.9.5 Sidebar UI Geometry Final Closure（COMPLETE，2026-09-10）
 
 起始基线为 clean `main@a1a3fc8ab25c0b866e1b252a03bbfe65d5d87429`，Settings.version=M5.9.5。独立启动当前仓库 Vite server 后，浏览器明确加载 `/@vite/client` 与 `/src/main.tsx`，DOM 存在 `.conversation-item-icon` 且当前 CSS 命中。ready/failed MessageSquare 在 1—80 字、current/hover 下均为 16×16，原“长标题越长图标越小”在 exact-main 无法复现，结论为 stale frontend/runtime mismatch；真实 processing 行则复现整体 SVG rotation 使 `getBoundingClientRect()` 在约 18.56—21.48px 间变化。
 
@@ -121,7 +131,7 @@ conversation clickable content 现固定为 `16px minmax(0, 1fr) auto` grid，�
 
 本轮只修改三个 Sidebar 前端文件及版本治理元数据；`backend/app/config/settings.py` 仅更新 frozen version 字符串，无 backend 业务逻辑、语义、Grounding、DAX、Memory、runtime、API、测试、schema、migration 或 dependency 变化。M5.9.4 保持 COMPLETE，M5.10 NOT STARTED，M5 FINAL=false。发布以当前 main exact-SHA PowerBIAgent Validation / Full Validation (Windows) completed/success、clean local main==origin/main 与 residual=0 为证据。
 
-## 当前阶段 — M5.9.4 Business Language Stress 与泛化验收（COMPLETE，2026-09-10）
+## 历史阶段 — M5.9.4 Business Language Stress 与泛化验收（COMPLETE，2026-09-10）
 
 起始基线为 clean `main@ef1033ac3c5469adf4d1477aefb66bf1ee55949b`。Settings.version=M5.9.4。固定 seed `59420260909` 的可复用 pairwise/bounded t-way Harness 已完成 51,200/51,200：四域各 12,800、八 shape 各 6,400；3,438 metamorphic groups、50,746 variants、20,438 unknown/ambiguous cases，所有 failure/canonical mismatch/silent modifier loss/incorrect DAX/ZERO-DAX/cross-model bleed 指标为 0。Harness 包含安全 descriptor、deterministic shrinker、Router/time/relation、Canonical Shape、DAX/Layer3、Result Inspection/VerifiedFactSet/scope 验证。
 
@@ -129,7 +139,7 @@ conversation clickable content 现固定为 `16px minmax(0, 1fr) auto` grid，�
 
 Fresh local gates：stress-focused 52 PASS；Semantic Compatibility 774 PASS；backend 2596 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 90 PASS + typecheck/lint/build；Repository Safety 372、AI Error Ledger 81、Architecture 135、Documentation/Artifact Governance、compileall 与 diff-check PASS。
 
-## 当前阶段 — M5.9.3 Business Semantic Parsing Correctness Closure（COMPLETE，2026-09-08）
+## 历史阶段 — M5.9.3 Business Semantic Parsing Correctness Closure（COMPLETE，2026-09-08）
 
 正式基线为 clean `main@b43f5268d288cab2864b2f7dbff04d4075950727`，local main 与 origin/main 一致，M5.9.2 COMPLETE。M5.9.3 已收口 GROUPED/MEMBER_SET shape 冲突、显式月范围 normalization 与端点 obligation、time/ranking/filter/grouping completeness、grouping→filter firewall、deterministic clarification reason、中文 TopN、Sidebar conversation icon geometry 与邻近 regression；M5.9.2 worker pool/retry/cancellation/singleflight、M5.8.5 factual authority 与 M5.10 report scope 均未修改。
 
@@ -139,7 +149,7 @@ M5.9.4 仅已固化为 PLANNED / NOT STARTED，负责后续 covering-array/prope
 
 Fresh local evidence：focused semantic 253 PASS、Router + M5.9.3 matrix 154 PASS、production-path API 8 PASS、frozen runtime 128 PASS；Repository Safety 367、AI Error Ledger 67、Architecture 135、Documentation/Artifact Governance PASS；Semantic Compatibility 773 PASS；backend 2566 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 90 PASS + typecheck/lint/build；compileall 与 diff-check PASS。相对 M5.9.2 backend 2448 PASS，当前为 2566 PASS，新增/收集差异已由 full suite 验证。
 
-## 当前阶段 — M5.9.2 Runtime Edge Final Closure（2026-09-08）
+## 历史阶段 — M5.9.2 Runtime Edge Final Closure（2026-09-08）
 
 M5.9.2 对 M5.9/M5.9.1 runtime edge 做最后专项审计。deterministic reproducer 确认：queued 或已 dispatch caller 取消时，旧 caller-side `finally` 会过早释放 global/per-request admission；前者可因 canceled item 尚占物理 queue 而泄漏 raw `asyncio.QueueFull`，后者会让尚在 drain 的 operation 脱离 configured bound。现以 enqueue success 作为 ownership 转移点，由 work item 持有 capacity 并由 worker 在 skip/完成/失败时幂等释放；caller cancellation 仅取消 future，底层只读 operation 可安全 drain 且仍计入 bound。
 
@@ -159,7 +169,7 @@ M5.8.5 correctness authority、M5.9 worker-pool 总体架构保持冻结。发�
 
 Fresh local evidence：focused worker/Power BI/deadline/transaction 137 PASS；1/2/4 worker 短 concurrency/soak errors=0、session residual=0；Repository Safety 361、AI Error Ledger 61、Architecture 133、Documentation/Artifact Governance PASS；Semantic Compatibility 743 PASS；backend 2434 PASS / 1 manual-real SKIP；Golden 11 PASS / 1 manual-real SKIP；frontend 87 PASS + typecheck/lint/build；compileall、diff-check PASS。
 
-## 当前阶段 — M5.9（2026-09-07）
+## 历史阶段 — M5.9（2026-09-07）
 
 **M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime（COMPLETE）。** 基线为 main `e8a79c3edcd7f648600bd4aa271d084d65cb62a1`，其 PowerBIAgent Validation #51 / Full Validation (Windows) 已核验 exact-SHA completed/success。M5.8.6 遗留 current-state 文档已收口；Settings.version=M5.9。离线 1/2/4/8 worker、100-way stress、fault matrix、2h soak 与 Rich PBIX 1/2/4 worker Real acceptance 已通过；backend 2425 PASS / 1 manual-real SKIP，Semantic Compatibility 743 PASS，frontend 87 PASS + typecheck/lint/build，Golden 11 PASS / 1 manual-real SKIP，全部治理 Gate、compileall、diff-check 与 residual=0 通过。Real smoke 原阻塞根因是 raw adapter catalog 在正式 discovery service probe 前按合同没有 `selectable=true`，harness 现按唯一 exact available/connected model 选择后执行 compatibility probe；production discovery/authority 未变。14 个本轮早期 automation 目录经用户批准的 exact-path ACL 恢复后删除，Artifact Governance PASS。主实现 `179dd24f704d1f2059b37f5e7a6a0bb1ef87218f` 的 PowerBIAgent Validation #52 / Full Validation (Windows) exact-SHA completed/success。M5.8.5 correctness 冻结，M5.10 NOT STARTED，M5 FINAL=false。
 
@@ -185,7 +195,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 性能只记录：单轮外部 Provider 冷启动曾约 56s，Kimi 个别 grounding 长尾超过 100s；未宣称 M5.8.5 性能提升。应用可从 repo root 正常加载本地配置；没有读取、打印或修改 `.env`。Settings.version=M5.8.5。发布以本提交 exact-SHA PowerBIAgent Validation completed/success、local SHA==origin SHA 与 clean working tree 为最终证据。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
-## M5.8.4 当前阶段（2026-09-02）
+## M5.8.4 历史阶段（2026-09-02）
 
 **M5.8.4 — 现有语义链跨语言与通用模型理解优化。** 基线 `m5/rebuild` / `b86662ee00e52e318e09a4c02702cce8feeaab6f`；其 [PowerBIAgent Validation](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33351533445) 已核验 completed/success，M5.8.3 COMPLETE。
 
@@ -261,7 +271,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 | **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **✅ COMPLETE；用户人工验收通过** |
 | **M5.10.4** | **语言理解与 QueryShape 收口** | **✅ COMPLETE；DeepSeek + Real Local MCP 14/14** |
 | **M5.10.5** | **时间语义、事实防火墙与安全基线** | **✅ COMPLETE；`9dfbf2f` / CI `35088162355` success** |
-| **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **🟡 LOCAL RELEASE CANDIDATE；Real 130/130 + 21/21；all local gates PASS** |
+| **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **🟡 最终 zh-CN member display residual FIX；`b1063ed` / Run `35942794552` success；用户 spot-check 待执行** |
 | **M5.10.7—M5.10.8** | **模板/错误 UX → MVP 最终收口** | **⏳ NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING** |
 
 ### M5.7 completed contract
@@ -607,7 +617,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-M5.10.6 本地 Real 与 core automated 已通过。下一步仅完成剩余 governance/drift/diff gate，核对 remote main 未前进后按白名单 staging，使用固定提交名 commit/push，再等待并审计该 exact SHA 的 CI。任何 gate 失败只允许同根因 minimal forward-fix；不得进入 M5.10.7/8。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+完成当前 zh-CN member display focused regression、targeted compilation、Documentation Governance 与 diff-check 后，核对 remote main 未前进，按白名单 staging，使用 `M5.10.6_FIX_中文成员展示与文档治理最终收口` commit/push。仅记录自动启动的 exact-SHA CI，不主动运行 Real Stress 或额外 workflow；随后由用户执行最终人工 spot-check。不得进入 M5.10.7/8。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -656,4 +666,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE；Real Stress 130/130、Critical Real 21/21、all local gates PASS；new commit/CI pending；M5.10.7/8 NOT STARTED；m5/rebuild 冻结；main-only；M5 FINAL=false*
+*最后更新：2026-09-29 | M5.10.6 最终 zh-CN member display residual FIX；latest verified remote `b1063ed` / Run `35942794552` success；Real Stress 130/130、Critical Real 21/21；M5.10.7/8 NOT STARTED；main-only；M5 FINAL=false*

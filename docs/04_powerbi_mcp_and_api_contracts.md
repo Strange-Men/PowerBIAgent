@@ -207,4 +207,4 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-*最后更新：2026-09-07 | M5.8.6 current-state/API/registry 收口；M5.9 COMPLETE*
+*最后更新：2026-09-29 | API/MCP authority contract 不变；latest verified remote `b1063ed` / CI `35942794552` success；当前为 M5.10.6 最终 presentation residual FIX；M5 FINAL=false*

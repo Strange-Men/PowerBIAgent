@@ -38,23 +38,25 @@
 
 ## 当前开发入口
 
-- Baseline：`main@6b9abd890d58bed5768687733d2c1172532850ec`。
-- M5.10.5 COMPLETE；exact-SHA CI Run `35088162355` success。
+- 最新已验证 Baseline：`main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9`；exact-SHA CI Run
+  `35942794552` completed/success。
+- M5.10.5 COMPLETE；其发布证据 `9dfbf2f` / Run `35088162355` 保留为历史记录。
 - 当前：`M5.10.6 — LLM 语义理解与自然事实表达重构`；专项计划：
   `docs/milestones/m5/m5_10_6_llm_semantic_interpretation_and_natural_factual_presentation_plan.md`。
 - Final Real Stress 72 unique / 24 high-risk×3 / 130 turns 已 130/130；Critical Real 21/21。
-  fresh Semantic Compatibility 807 与 backend 2804/1 已通过；其余治理/drift gate、whitelist
-  commit/push、exact-SHA CI 与 remote audit 尚待完成。
+  最新 remote 为 Semantic Compatibility 817/817、backend 2830/2830、Golden 11/11、frontend
+  92/92 及全部正式 gate PASS。当前只处理 zh-CN member display 与 stale current-state 文档，
+  完成后等待用户最终人工 spot-check。
 - 下一步仅为 M5.10.7 模板兼容与错误 UX，随后 M5.10.8 最终收口；二者均 NOT STARTED。
 - Settings.version 固定为 M5.10.6；不得升级 M5.10.7。
-- Semantic Layer FINAL ACCEPTANCE 在 M5.10.6 后进行；`M5 FINAL=false`。
+- 用户最终人工 spot-check 尚未确认；`M5 FINAL=false`。
 
 ## Git contract
 
 - 正式流程：Spec → RED reproducer → regression → minimal implementation → focused/cross-domain/
   full gates → Real DeepSeek + Local MCP → whitelist staging → commit → push main → exact-SHA CI
   → remote audit。
-- Commit：`M5.10.6_FIX_真实LLM压力验收与人工残留收口`；不打 Tag，不自动进入 M5.10.7。
+- Commit：`M5.10.6_FIX_中文成员展示与文档治理最终收口`；不打 Tag，不自动进入 M5.10.7。
 - 禁止 `git add .` / `git add -A`、force、rebase、history rewrite、reset hard、clean、branch
   deletion。Push 前再次核对 remote main；若已前进则停止。
 - CI 失败只做 failure reproducer 驱动的 minimal forward-fix；同根因最多两轮。
@@ -66,4 +68,4 @@
 
 ---
 
-*最后更新：2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE；Real Stress 130/130；Critical Real 21/21；all local gates PASS；Remote exact-SHA CI PENDING；M5.10.7/8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*

@@ -148,4 +148,4 @@
 
 ---
 
-*最后更新：2026-09-16 | 北极星与 authority 不变；M5.10.3 — 人工验收后语义安全收口已进入发布候选阶段，DeepSeek Real/用户最终人工验收 PENDING；M5.10.4+ NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-29 | 北极星与 authority 不变；当前为 M5.10.6 最终 presentation residual FIX；latest verified remote `b1063ed` / CI `35942794552` success；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*

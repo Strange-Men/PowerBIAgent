@@ -1647,6 +1647,75 @@ class _M5105TimeAdapter(_M571RichTemporalAdapter):
         )
 
 
+class _EnglishRegionPresentationAdapter(_M533MultiTurnAdapter):
+    async def get_column_members(self, request: ColumnMembersRequest):
+        return ColumnMembersResult(
+            semantic_model_key=request.semantic_model_key,
+            table_name=request.table_name,
+            field_name=request.field_name,
+            values=["South", "North", "East", "West"],
+            source_mode="real",
+        )
+
+    async def execute_dax(self, request: DAXRequest) -> QueryResult:
+        self.dax_calls += 1
+        if "SUMMARIZECOLUMNS(\n    'Sales'[Region]" in request.dax:
+            return QueryResult(
+                result_id=f"qr-{request.request_id}",
+                semantic_model_key=request.semantic_model_key,
+                columns=["Sales[Region]", "[Total Sales]"],
+                rows=[["South", 100], ["North", 80], ["East", 60]],
+                row_count=3,
+                source_mode="real",
+                request_id=request.request_id,
+            )
+        return await super().execute_dax(request)
+
+
+class _MemberDisplayProvider(LLMProvider):
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[LLMRequest] = []
+
+    @property
+    def provider_name(self) -> str:
+        return "deepseek-display"
+
+    @property
+    def is_mock(self) -> bool:
+        return False
+
+    async def generate(self, request: LLMRequest, output_type: type[BaseModel]):
+        self.calls.append(request)
+        assert request.task is LLMTask.DISPLAY_TRANSLATION
+        if self.fail:
+            raise LLMServiceError(
+                "display translation unavailable",
+                provider=self.provider_name,
+                error_code="display_unavailable",
+            )
+        content = request.messages[-1]["content"]
+        labels = {
+            "South": "南区",
+            "North": "北区",
+            "East": "东区",
+            "West": "西区",
+        }
+        translations = []
+        for identity, canonical in re.findall(
+            r"object_identity=([^;]+); object_type=[^;]+; "
+            r"canonical_name=([^;]+);",
+            content,
+        ):
+            if canonical in labels:
+                translations.append({
+                    "object_identity": identity,
+                    "display_name": labels[canonical],
+                })
+        structured = output_type.model_validate({"translations": translations})
+        return LLMResponse(content="{}", structured=structured)
+
+
 class _M571AmbiguousTemporalAdapter(_M533MultiTurnAdapter):
     async def get_semantic_model_schema(self, semantic_model_key: str):
         self.schema_calls += 1
@@ -2098,6 +2167,50 @@ def _patch_m533_multi_turn_composition(
         deepseek_api_key="test-key-not-real",
     )
     return main_module.create_app(settings=settings), provider
+
+
+def _patch_member_display_composition(
+    monkeypatch,
+    tmp_path,
+    *,
+    fail: bool = False,
+):
+    import backend.app.llm.factory as llm_factory
+    import backend.app.main as main_module
+
+    core_provider = _M533MultiTurnProvider()
+    core_provider.active = "top_region"
+    display_provider = _MemberDisplayProvider(fail=fail)
+    core_registry = LLMProviderRegistry()
+    core_registry.register(_deepseek_test_profile(), core_provider)
+    display_registry = LLMProviderRegistry()
+    display_registry.register(_deepseek_test_profile(), display_provider)
+    registries = iter((core_registry, display_registry))
+    monkeypatch.setattr(
+        llm_factory,
+        "build_llm_registry",
+        lambda settings: next(registries),
+    )
+    _patch_fake_runtime_glossary(monkeypatch)
+    monkeypatch.setattr(
+        main_module,
+        "LocalMCPPowerBIAdapter",
+        _EnglishRegionPresentationAdapter,
+    )
+    settings = Settings(
+        _env_file=None,
+        llm_mode=LLMMode.DEEPSEEK,
+        powerbi_mode=PowerBIMode.LOCAL_MCP,
+        deepseek_api_key="test-key-not-real",
+        presentation_localization_registry_path=str(
+            tmp_path / "display-localizations.json"
+        ),
+    )
+    return (
+        main_module.create_app(settings=settings),
+        core_provider,
+        display_provider,
+    )
 
 
 def _patch_m56_monthly_trend_composition(monkeypatch):
@@ -4280,3 +4393,89 @@ class TestM58RequestScopedProfileSelection:
         assert memory.llm_provider == "kimi-k2.6"
         assert "provider" not in memory.last_query_plan
         assert deepseek.calls and kimi.calls
+
+
+@pytest.mark.asyncio
+async def test_isolated_member_display_provider_localizes_summary_table_and_chart(
+    monkeypatch,
+    tmp_path,
+):
+    app, core_provider, display_provider = _patch_member_display_composition(
+        monkeypatch,
+        tmp_path,
+    )
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post("/api/v1/chat", json={
+                "message": "销售额最高的前3个区域是哪几个？",
+                "conversation_id": "member-display-localized",
+                "request_id": "member-display-localized-request",
+                "semantic_model_key": "local_desktop_model",
+            })
+
+    body = response.json()
+    assert response.status_code == 200, body
+    assert body["terminal_state"] == "completed", json.dumps(
+        body, ensure_ascii=False, indent=2
+    )
+    assert "South" not in body["answer"]
+    assert "North" not in body["answer"]
+    assert "区域South" not in body["answer"]
+    assert "区域North" not in body["answer"]
+    assert "南区" in body["answer"]
+    assert "北区" in body["answer"]
+    dataset = body["presentation"]["datasets"][0]
+    assert dataset["rows"] == [["South", 100.0], ["North", 80.0], ["East", 60.0]]
+    assert [row[0] for row in dataset["formatted_rows"]] == ["南区", "北区", "东区"]
+    chart = next(
+        block for block in body["presentation"]["blocks"]
+        if block["type"] == "chart"
+    )
+    assert chart["data_reference"] == dataset["result_id"]
+    assert all(
+        call.task is not LLMTask.DISPLAY_TRANSLATION
+        for call in core_provider.calls
+    )
+    assert [call.task for call in display_provider.calls] == [
+        LLMTask.DISPLAY_TRANSLATION
+    ]
+
+
+@pytest.mark.asyncio
+async def test_display_provider_failure_keeps_business_answer_completed(
+    monkeypatch,
+    tmp_path,
+):
+    app, core_provider, display_provider = _patch_member_display_composition(
+        monkeypatch,
+        tmp_path,
+        fail=True,
+    )
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post("/api/v1/chat", json={
+                "message": "销售额最高的前3个区域是哪几个？",
+                "conversation_id": "member-display-fail-soft",
+                "request_id": "member-display-fail-soft-request",
+                "semantic_model_key": "local_desktop_model",
+            })
+
+    body = response.json()
+    assert response.status_code == 200, body
+    assert body["terminal_state"] == "completed", json.dumps(
+        body, ensure_ascii=False, indent=2
+    )
+    assert body["response_type"] == "answer"
+    assert body["memory_commit"] is True
+    assert body["presentation"]["datasets"][0]["rows"][0][0] == "South"
+    assert all(
+        call.task is not LLMTask.DISPLAY_TRANSLATION
+        for call in core_provider.calls
+    )
+    assert [call.task for call in display_provider.calls] == [
+        LLMTask.DISPLAY_TRANSLATION
+    ]

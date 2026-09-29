@@ -140,7 +140,9 @@ async def lifespan(app: FastAPI):
     from backend.app.llm.factory import build_llm_registry
 
     llm_registry = build_llm_registry(settings)
+    display_llm_registry = build_llm_registry(settings)
     app.state.llm_provider_registry = llm_registry
+    app.state.display_llm_provider_registry = display_llm_registry
 
     # 初始化持久化仓库 — must create before report_repository
     (
@@ -230,6 +232,7 @@ async def lifespan(app: FastAPI):
                 snapshot_store=snapshot_store,
                 llm_provider=None,
                 llm_registry=llm_registry,
+                display_llm_registry=display_llm_registry,
                 powerbi_adapter=powerbi_adapter,
                 report_renderer=build_report_dispatcher(
                     SalesReportRenderer(), ExecutiveSalesReportRenderer()
@@ -262,6 +265,11 @@ async def lifespan(app: FastAPI):
         await llm_registry.aclose()
     except Exception:
         pass
+    if display_llm_registry is not llm_registry:
+        try:
+            await display_llm_registry.aclose()
+        except Exception:
+            pass
 
     # shutdown — dispose SQLite engine（如有）
     if _engine is not None:
@@ -275,6 +283,7 @@ async def lifespan(app: FastAPI):
     app.state.semantic_model_discovery_service = None
     app.state.report_template_registry = None
     app.state.llm_provider_registry = None
+    app.state.display_llm_provider_registry = None
     app.state.settings = None
     app.state._persistence_engine = None
 

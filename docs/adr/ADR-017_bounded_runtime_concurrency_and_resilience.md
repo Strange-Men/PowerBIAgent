@@ -28,7 +28,7 @@ M5.8.1 已让 Local MCP stdio session 由应用持有并复用，也建立了短
 
 有界队列会在过载时返回受控 `local_mcp_overloaded`，而不是无限等待或耗尽资源。跨 worker completion 可以重排，但 FIFO dispatch 与调用方的输入顺序恢复合同保持确定。性能收益不得通过跳过真实 business DAX、降低 correctness gate、缓存 QueryResult/VerifiedFactSet/CanonicalQueryPlan 或扩大 timeout 获得。
 
-M5.9.1 对 shutdown/enqueue 线性化与 retry ownership 的专项审计以 deterministic reproducer、exact call-count 回归、full gates、residual=0、clean main 与当前 main exact-SHA Full Validation (Windows) success 为发布证据。M5.10 NOT STARTED，M5 FINAL=false。
+M5.9.1 对 shutdown/enqueue 线性化与 retry ownership 的专项审计以 deterministic reproducer、exact call-count 回归、full gates、residual=0、clean main 与该阶段 main exact-SHA Full Validation (Windows) success 为发布证据。M5.10 当时 NOT STARTED，M5 FINAL=false。
 
 ## M5.9.2 Runtime Edge Final Closure
 

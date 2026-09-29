@@ -5,19 +5,20 @@
 
 ## 当前开发入口
 
-- 当前版本：**M5.10.6**（Real LLM Stress 与人工 residual final local release candidate）。
-- 本轮正式基线：`main@6b9abd890d58bed5768687733d2c1172532850ec`。
+- 当前版本：**M5.10.6**（最终 presentation residual FIX；Settings.version 不变）。
+- 最新已验证远程基线：`main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9`；
+  exact-SHA CI Run `35942794552` completed/success。
 - `M5.10.5 — 时间语义、事实防火墙与安全基线` 已 COMPLETE；exact-SHA CI
   Run `35088162355` success。人工测试确认事实安全主体有效，同时暴露自然回答、
   default-open conversation、capability wording 与 available data horizon 缺口。
-- 当前阶段：`M5.10.6 — LLM 语义理解与自然事实表达重构`。Final Real Stress
-  72 unique / 24 high-risk×3 / 130 turns 已 130/130，Critical Real 21/21；fresh Semantic
-  Compatibility 807 与 backend 2804/1 已通过。overall request SLA 从 120 秒 evidence-driven
-  调整为 180 秒，LLM/MCP/render 120 秒与 DAX 30 秒不变。治理/drift 门禁、whitelist
-  commit/push、exact-SHA CI 与 final remote audit 尚未完成。
+- 当前阶段：`M5.10.6 — LLM 语义理解与自然事实表达重构` 的最终中文成员展示残留修复。
+  Final Real Stress 72 unique / 24 high-risk×3 / 130 turns 已 130/130，Critical Real 21/21；
+  最新 remote automated 为 Semantic Compatibility 817/817、backend 2830/2830、Golden
+  11/11、frontend 92/92，Security/Architecture/Docs/typecheck/lint/build/diff-check 均 PASS。
+  本 changeset 收口 zh-CN member display 与文档治理；发布后只等待自动 CI 与用户最终人工 spot-check。
 - `M5.10.7 — 模板兼容与错误 UX 收口`、`M5.10.8 — MVP 最终 Real E2E / stress /
   mutation / historical / exact-SHA 收口` 均未启动。
-- Semantic Layer 最终人工验收在 M5.10.6 完成后进行；`M5 FINAL=false`。
+- 用户最终人工 spot-check 尚未确认；`M5 FINAL=false`。
 
 ## Authority boundary
 
@@ -71,7 +72,7 @@
 
 - `main` 是唯一活动开发线；流程固定为 failure-first → minimal implementation → fresh gates
   → Real → 白名单 staging → commit → push main → exact-SHA CI → remote audit。
-- 当前提交名固定为：`M5.10.6_FIX_真实LLM压力验收与人工残留收口`；不打 Tag。
+- 当前提交名固定为：`M5.10.6_FIX_中文成员展示与文档治理最终收口`；不打 Tag。
 - 禁止 `git add .`、`git add -A`、force push、rebase、history rewrite、`reset --hard`、
   `clean`、branch deletion。remote main 已前进则停止。
 - CI 失败只允许 forward-fix；同一 root cause 最多两轮。禁止降低 validator、删除 negative
@@ -81,4 +82,4 @@
 
 ---
 
-*最后更新：2026-09-23 | M5.10.6 LOCAL RELEASE CANDIDATE；Real Stress 130/130；Critical Real 21/21；all local gates PASS；Remote exact-SHA CI PENDING；M5.10.7/8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*

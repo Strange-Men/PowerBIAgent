@@ -13,6 +13,7 @@ from backend.app.presentation.formatter import (
     PresentationFormatter,
 )
 from backend.app.presentation.localization import (
+    BoundedLLMDisplayTranslator,
     DisplayLocalization,
     DisplayLocalizationError,
     DisplayLocalizationService,
@@ -118,6 +119,8 @@ async def test_verified_member_aliases_localize_answer_and_table_only() -> None:
         rows=[["South", 10], ["North", 8]], row_count=2,
     )
     facts = VerifiedFactSetBuilder().build(plan, result)
+    plan_before = plan.model_dump(mode="json")
+    facts_before = facts.model_dump(mode="json")
     localization = DisplayLocalizationService(catalog)
     bindings = await localization.resolve_fields(
         result.columns, locale="zh-CN", table_hints=plan.dimension_tables
@@ -141,6 +144,30 @@ async def test_verified_member_aliases_localize_answer_and_table_only() -> None:
     assert localize_member_text("区域South和区域North", labels) == "区域南区和区域北区"
     assert presentation.datasets[0].rows == result.rows
     assert [row[0] for row in presentation.datasets[0].formatted_rows] == ["南区", "北区"]
+    chart = next(block for block in presentation.blocks if block.type == "chart")
+    assert chart.data_reference == presentation.datasets[0].result_id
+    assert plan.model_dump(mode="json") == plan_before
+    assert facts.model_dump(mode="json") == facts_before
+
+
+@pytest.mark.asyncio
+async def test_bounded_member_translation_failure_is_fail_soft() -> None:
+    class _FailingProvider:
+        async def generate(self, request, output_type):
+            raise AssertionError("display provider unavailable")
+
+    candidate = DisplayTranslationCandidate(
+        object_identity="member:field:Sales:Region:test",
+        object_type=SemanticObjectType.FIELD,
+        canonical_name="South",
+        table_name="Sales",
+    )
+
+    translations = await BoundedLLMDisplayTranslator(
+        _FailingProvider()  # type: ignore[arg-type]
+    ).translate((candidate,), "zh-CN")
+
+    assert translations == {}
 
 
 @pytest.mark.asyncio
