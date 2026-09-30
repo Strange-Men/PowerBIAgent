@@ -4,7 +4,7 @@
 
 ## 当前开发入口
 
-Settings.version=M5.10.9；M5.10.9 RELEASE CANDIDATE；M5 FINAL=false。M5.10.8 与 FIX COMPLETE。
+Settings.version=M5.10.9；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。M5.10.8 与 FIX COMPLETE。
 前置绿色基线 main@409fd521 / CI 36665958820；本轮 two-phase closure，最终 baseline 依当前 SHA CI + remote audit 生效，不预填当前提交 SHA。
 
 ## Cold Start

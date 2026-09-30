@@ -151,7 +151,7 @@
 
 ## 十八、Core Kernel 与 Enterprise Productionization
 
-M5.10.9 RELEASE CANDIDATE；M5 FINAL=false。M5 提供可长期复用的 Core Analysis Kernel，M6+ 负责 enterprise productionization；产品使命与事实 authority 不变。
+M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。M5 提供可长期复用的 Core Analysis Kernel，M6+ 负责 enterprise productionization；产品使命与事实 authority 不变。
 
 TurnPipeline、QuestionRouter、SemanticFrame、Grounding、StateTransition、CanonicalQueryPlan、
 DeterministicDAXBuilder、DAXSafety、ResultInspection、VerifiedFactSet、ReportPlanner、ReportSpec、
@@ -164,4 +164,4 @@ failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner 
 M6 生产级后端 P0 identity/auth/namespace/ownership/IDOR/token/RLS/OLS/fail-closed 优先，P1 分布式/持久化/恢复/部署风险与路线由 docs/08、docs/09 定义。本轮不实现。
 当前状态仅见 docs/07，路线仅见 docs/08，Cold Start Handoff 仅见 docs/09；本文件不另设 current-state authority。
 
-*最后更新：2026-09-30 | Settings.version=M5.10.9；M5.10.9 RELEASE CANDIDATE；M5 FINAL=false；当前状态以 07/08/09 为准*
+*最后更新：2026-09-30 | Settings.version=M5.10.9；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以 07/08/09 为准*

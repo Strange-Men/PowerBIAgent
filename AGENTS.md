@@ -6,7 +6,7 @@
 ## 当前开发入口
 
 - 当前版本：**M5.10.9**（Documentation Governance & M5 Final Seal）。
-- M5.10.9 RELEASE CANDIDATE；M5 FINAL=false；M5.10.8 与 FIX COMPLETE。当前只做治理、version 与 12px CSS polish，不做 M6 implementation。
+- M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；M5.10.8 与 FIX COMPLETE。当前只做治理、version 与 12px CSS polish，不做 M6 implementation。
 - 07 是当前状态，08 是当前/未来路线，09 是唯一开发交接；根入口不重复保存浮动 SHA/CI。
 - 前置绿色基线 main@409fd521 / CI 36665958820；本阶段 final baseline 必须按当前 checkout exact-SHA CI 和 remote audit 解析。
 
@@ -85,4 +85,4 @@ failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner 
 
 生产级后端风险优先于功能数量；M6 开始前按 09 重新验证 Microsoft 官方能力，ADR-006 已 SUPERSEDED。Token 只允许 Auth / Transport boundary；tenant/principal/ownership 与 RLS/OLS 必须先证明。
 
-*最后更新：2026-09-30 | M5.10.9 RELEASE CANDIDATE；M5 FINAL=false；当前状态以 07/08/09 为准*
+*最后更新：2026-09-30 | M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以 07/08/09 为准*

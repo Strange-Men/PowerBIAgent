@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.10.9 — Documentation Governance & M5 Final Seal**。M5.10.9 RELEASE CANDIDATE；M5 FINAL=false。
+当前版本：**M5.10.9 — Documentation Governance & M5 Final Seal**。M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 
 M5 提供后续企业生产化复用的 Core Analysis Kernel；冻结 authority/contract/architecture boundary，允许 failure-first minimal correctness forward-fix。下一阶段 M6 — Cloud Consumption & Enterprise Identity。
 当前状态、路线、交接分别只见 [07](docs/07_milestones_status_and_open_questions.md)、[08](docs/08_development_roadmap.md)、[09](docs/09_context_handoff.md)。
@@ -355,4 +355,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-30 | M5.10.9 RELEASE CANDIDATE；M5 FINAL=false；当前状态以 07/08/09 为准*
+*最后更新：2026-09-30 | M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以 07/08/09 为准*

@@ -1,6 +1,6 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-> Settings.version=M5.10.9；M5.10.9 RELEASE CANDIDATE；M5 FINAL=false。
+> Settings.version=M5.10.9；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一开发交接 authority；当前项目状态见 [07](07_milestones_status_and_open_questions.md)，路线见 [08](08_development_roadmap.md)。
 
 ## 当前阶段 — M5.10.9 — Documentation Governance & M5 Final Seal
@@ -28,7 +28,10 @@ M5.10.8 COMPLETE；M5.10.8 FIX COMPLETE。本轮只治理/冻结，Core 无业�
 [exact-SHA CI Run 36665958820](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36665958820)
 completed/success，2026-09-30 fresh REST + fetch 核验。M5.10.8 发布基线
 `ef5a4c8ead7c05576360d3070ecf0e286e841dc5` / Run `36661689674` 也已核验 success。
-本阶段候选/最终 SHA 不预填；以当前 checkout 的 `git rev-parse HEAD`、该 exact SHA 的
+Phase A 已验证绿色候选：`main@a98f0fcaa8935aa3f371b6b2d6bdf0057b582d6d`，
+[exact-SHA CI Run 36677238767](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36677238767)
+completed/success。最终 seal 的自身 SHA 不写入自身提交；
+以当前 checkout 的 `git rev-parse HEAD`、该 exact SHA 的
 PowerBIAgent Validation / Full Validation (Windows) completed/success、fetch 后 HEAD==origin/main
 与 clean worktree 联合解析发布基线。文档中的 final marker 只有在最终 SHA CI 绿色后成为有效 seal。
 

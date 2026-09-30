@@ -4,7 +4,7 @@
 
 ## [M5.10.9] — 2026-09-30（Documentation Governance & M5 Final Seal）
 
-M5.10.9 RELEASE CANDIDATE；M5 FINAL=false。Settings.version=M5.10.9；M5.10.8 COMPLETE；M5.10.8 FIX COMPLETE。
+M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。Settings.version=M5.10.9；M5.10.8 COMPLETE；M5.10.8 FIX COMPLETE。
 
 - 重建 07 当前状态 / 08 当前及未来路线 / 09 Cold Start Handoff 唯一 authority；root 入口同步并指向三文件，旧状态原文以 Historical archive 保存。
 - 明确 M5 Core Analysis Kernel 冻结边界、M6 production identity/ownership/token/RLS-OLS 与 P1 baseline、Data/Control Plane 和 M7 report snapshot/version、M8 pilot、M9 approval authoring 路线；本轮未实现 M6。
@@ -1336,4 +1336,4 @@ M5.10.9 RELEASE CANDIDATE；M5 FINAL=false。Settings.version=M5.10.9；M5.10.8 
 
 ---
 
-*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-30 | M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以 07/08/09 为准*

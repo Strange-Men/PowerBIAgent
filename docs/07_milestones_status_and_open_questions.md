@@ -1,19 +1,22 @@
 # 07 — 当前项目状态
 
-> **状态：** Settings.version=M5.10.9；M5.10.9 RELEASE CANDIDATE；M5 FINAL=false。
+> **状态：** Settings.version=M5.10.9；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一当前项目状态 authority；路线见 [08](08_development_roadmap.md)，开发交接见 [09](09_context_handoff.md)。
 
 ## 当前阶段
 
 M5.10.8 COMPLETE；M5.10.8 FIX COMPLETE。用户已完成前阶段人工 UI Smoke，并指出唯一遗留
-empty-state 字体过大。本轮治理候选只改文档、version、12px CSS 与最小治理回归，不做业务功能。
-M5 Core Analysis Kernel 的冻结边界已确定；最终 FROZEN/READY seal 等候两阶段 exact-SHA CI。
+empty-state 字体过大。本轮只改文档、version、12px CSS 与最小治理回归，不做业务功能。
+M5 Core Analysis Kernel 与 Local MVP baseline 已冻结；下一阶段为 M6 productionization。
 
 上一阶段最终绿色基线：`main@409fd521b4b503b6e8e56846806e099cd98e7a5b`，
 [exact-SHA CI Run 36665958820](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36665958820)
 completed/success，2026-09-30 fresh REST + fetch 核验。M5.10.8 发布基线
 `ef5a4c8ead7c05576360d3070ecf0e286e841dc5` / Run `36661689674` 也已核验 success。
-本阶段候选/最终 SHA 不预填；以当前 checkout 的 `git rev-parse HEAD`、该 exact SHA 的
+Phase A 已验证绿色候选：`main@a98f0fcaa8935aa3f371b6b2d6bdf0057b582d6d`，
+[exact-SHA CI Run 36677238767](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36677238767)
+completed/success。最终 seal 的自身 SHA 不写入自身提交；
+以当前 checkout 的 `git rev-parse HEAD`、该 exact SHA 的
 PowerBIAgent Validation / Full Validation (Windows) completed/success、fetch 后 HEAD==origin/main
 与 clean worktree 联合解析发布基线。文档中的 final marker 只有在最终 SHA CI 绿色后成为有效 seal。
 

@@ -1,13 +1,13 @@
 # 08 — 当前及未来开发路线
 
-> **状态：** Settings.version=M5.10.9；M5.10.9 RELEASE CANDIDATE；M5 FINAL=false。
+> **状态：** Settings.version=M5.10.9；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一路线 authority；状态见 [07](07_milestones_status_and_open_questions.md)，实施入口见 [09](09_context_handoff.md)。
 
 ## 路线总览
 
 | Milestone | 定位 | 当前路线 |
 |---|---|---|
-| M5 | Core Analysis Kernel | 冻结边界确定，最终 seal 按本阶段两次 exact-SHA CI 生效 |
+| M5 | Core Analysis Kernel | FROZEN；保留 failure-first correctness forward-fix |
 | M6 | Cloud Consumption & Enterprise Identity | 下一阶段；只规划，未实现 |
 | M7 | Freshness & Report Lifecycle | 后续规划 |
 | M8 | Enterprise Pilot Platform | 后续规划 |
