@@ -1,6 +1,6 @@
 # M5.10.9 FIX — Document Semantic Consistency & M6 Handoff Closure
 
-> 2026-09-30；post-final documentation forward-fix；REMOTE CI PENDING。
+> 2026-09-30；post-final documentation forward-fix；M5.10.9 FIX COMPLETE。
 > M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN。
 > 本文件只记录本次 audit / 分层 evidence / closure；current state、路线、handoff 分别见 07/08/09。
 
@@ -45,7 +45,8 @@ focused allowlist 覆盖 AGENTS/CLAUDE/09 施工指令、00/01 单模板、PRD �
 frontend 两个短 policy anchors；不要求全文一字不差，也不证明每句文档语义。
 明确 Historical heading 的 section/child headings 排除；同级恢复 current 检查。
 archive/milestone 不进入 semantic allowlist；旧 CHANGELOG 与 ADR-006 历史正文保留。
-Error Ledger：ERR-5109-002（marker consistency ≠ semantic truth）。
+Error Ledger：ERR-5109-002（marker consistency ≠ semantic truth）；候选 exact-SHA CI success 后
+以实际候选 commit 记录 resolved，M6 legacy prerequisite 仍保留。
 
 ## RemoteMCP legacy / M6 handoff
 
@@ -82,12 +83,18 @@ test_generator_covers_51200_safe_reproducible_cases 与 test_stress_report_has_z
 大型 stress、51,200-case、130-turn、provider matrix、browser full acceptance 或 Desktop Real query。
 远程 CI 仍执行仓库原有 required suite，不能把 Remote CI 视为 Local Real evidence。
 
-## Two-phase FIX closure — pending
+## Two-phase FIX closure
 
 M5 FINAL=true 从开始到结束保持。Phase A commit：
-`M5.10.9_FIX_文档语义一致性与M6交接候选`；push main 后等待 exact-SHA CI success。
+`M5.10.9_FIX_文档语义一致性与M6交接候选`；SHA
+`9196bb7e52fbc8869daff7233518ac896bc813ca` /
+[Run 36686978579](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36686978579)
+completed/success；required Full Validation (Windows)、commit check-run 与全部 steps success。
+fetch 后 HEAD==origin/main、worktree clean。两次普通 fetch 曾遇到 GitHub 443 连接超时；
+ls-remote 证实 remote 未前进，单次命令 HTTP/1.1 fetch origin main 恢复，未修改 Git 全局配置或代码。
 Phase B 仅作小型 status/evidence marker patch：
 `M5.10.9_FIX_文档语义一致性与M6交接收口`；再等待最终 exact-SHA CI / required check success。
-最终 fetch 后 HEAD==origin/main 与 worktree clean，人工复核关键文档后才宣告 FIX COMPLETE。
+最终 FIX COMPLETE marker 仅在最终 exact-SHA CI completed/success、required checks 全绿、
+fetch 后 HEAD==origin/main 与 worktree clean、人工关键文档审计成立后有效。
 自身 SHA 不写入自身提交；最终精确 SHA/Run 在交付中记录，09 提供可重现解析步骤。
 完成本次 FIX 后停止；可进入下一轮独立 M6 Cold Start / Research / Planning，M6 implementation 尚未开始。

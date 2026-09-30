@@ -1,11 +1,11 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-> Settings.version=M5.10.9；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> Settings.version=M5.10.9；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一开发交接 authority；当前项目状态见 [07](07_milestones_status_and_open_questions.md)，路线见 [08](08_development_roadmap.md)。
 
 ## 当前阶段 — Current Baseline / Next Milestone
 
-- Current Baseline：M5.10.9 + M5.10.9 FIX（documentation forward-fix；REMOTE CI PENDING）。
+- Current Baseline：M5.10.9 + M5.10.9 FIX COMPLETE（documentation forward-fix）。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
 - NEXT = M6 — Cloud Consumption & Enterprise Identity。
 - M6 Status：NOT IMPLEMENTED；READY FOR RESEARCH / DESIGN / USER-APPROVED PATCHES。
@@ -32,6 +32,9 @@ M5 Final baseline 已成立；post-final 文档修复不重新开启 M5 功能�
 既有 M5 Final baseline：`86aaaec7d2172c041e97392c3de03adcca77ca1b` /
 [exact-SHA CI 36678384015](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36678384015)
 completed/success，2026-09-30 fresh REST + fetch 核验。M5 FINAL=true 持续有效。
+FIX 候选 `9196bb7e52fbc8869daff7233518ac896bc813ca` /
+[exact-SHA CI 36686978579](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36686978579)
+completed/success，required Full Validation (Windows) 与全部 steps 已核验全绿。
 最新 FIX 自身 SHA 不写入自身提交；以当前 checkout 的 `git rev-parse HEAD`、该 exact SHA 的
 PowerBIAgent Validation / Full Validation (Windows) completed/success、fetch 后 HEAD==origin/main
 与 clean worktree 联合解析最新发布基线。FIX COMPLETE 须有最终 FIX exact-SHA CI 和 remote audit。

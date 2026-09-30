@@ -37,12 +37,17 @@ entries:
   - M6 从官方能力验证、P0 identity/auth/RLS-OLS/ownership/token/cache 与 accepted contract 开始，每个 patch scope 需用户批准
   - post-final forward-fix 保持 M5 FINAL=true，FIX candidate 与 complete 分别验证 exact-SHA CI / remote audit
   related_adr: ADR-005
-  related_commits: []
-  status: monitoring
+  related_commits:
+  - 9196bb7e52fbc8869daff7233518ac896bc813ca
+  status: resolved
   events:
   - date: '2026-09-30'
     action: current_semantic_drift_reproduced_and_forward_fix_added
     version: M5.10.9
+  - date: '2026-09-30'
+    action: resolved
+    version: M5.10.9
+    commit: 9196bb7e52fbc8869daff7233518ac896bc813ca
 - id: ERR-5109-001
   title: 多份历史与根入口同时声明 current state 导致里程碑漂移
   category: ERR
