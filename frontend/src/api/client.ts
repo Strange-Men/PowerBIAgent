@@ -17,22 +17,32 @@ import type {
   SemanticModelCatalog,
   ReportTemplateCatalog,
   LLMProfileCatalog,
+  FailureInfo,
 } from '../types'
+import { publicFailureMessage } from '../failure'
 
 interface ErrorPayload {
   detail?: unknown
   error_type?: unknown
+  failure?: unknown
 }
 
 export class ApiError extends Error {
   readonly status: number
   readonly errorType?: string
+  readonly failure?: FailureInfo
 
-  constructor(message: string, status: number, errorType?: string) {
+  constructor(
+    message: string,
+    status: number,
+    errorType?: string,
+    failure?: FailureInfo,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.errorType = errorType
+    this.failure = failure
   }
 }
 
@@ -81,20 +91,51 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
         : typeof nested?.error_type === 'string'
           ? nested.error_type
           : undefined
-    const detailType =
-      typeof payload.detail === 'string' && payload.detail.includes('_')
-        ? payload.detail
-        : undefined
-    const effectiveErrorType = errorType || detailType
+    const failure = parseFailure(payload.failure) || parseFailure(nested?.failure)
     throw new ApiError(
-      friendlyHttpError(response.status, effectiveErrorType),
+      failure
+        ? publicFailureMessage(failure)
+        : friendlyHttpError(response.status, errorType),
       response.status,
-      effectiveErrorType,
+      errorType,
+      failure,
     )
   }
 
   return (await response.json()) as T
 }
+
+function parseFailure(value: unknown): FailureInfo | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const candidate = value as Partial<FailureInfo>
+  if (
+    !PUBLIC_FAILURE_CODES.has(String(candidate.code)) ||
+    !FAILURE_STAGES.has(String(candidate.stage)) ||
+    typeof candidate.retryable !== 'boolean' ||
+    !FAILURE_RECOVERY_ACTIONS.has(String(candidate.recovery_action))
+  ) return undefined
+  return candidate as FailureInfo
+}
+
+const PUBLIC_FAILURE_CODES = new Set([
+  'REPORT_TEMPLATE_INCOMPATIBLE', 'REPORT_TEMPLATE_UNAVAILABLE',
+  'REPORT_DATA_UNAVAILABLE', 'REPORT_EXECUTION_FAILED',
+  'REPORT_RENDER_FAILED', 'POWERBI_CONNECTION_LOST',
+  'SEMANTIC_MODEL_STALE', 'LLM_SERVICE_UNAVAILABLE', 'REQUEST_TIMEOUT',
+  'VALIDATION_FAILED', 'INTERNAL_FAILURE',
+])
+
+const FAILURE_STAGES = new Set([
+  'report_scope', 'report_plan', 'report_query_validation',
+  'report_dax_execution', 'sales_report_data_assembly', 'sales_report_spec',
+  'report_render_store', 'memory_commit', 'understanding', 'grounding',
+  'answer_generation', 'tool_execution', 'provider', 'internal',
+])
+
+const FAILURE_RECOVERY_ACTIONS = new Set([
+  'retry', 'refresh_semantic_models', 'reselect_semantic_model',
+  'reselect_report_template', 'edit_request', 'none',
+])
 
 function friendlyHttpError(status: number, errorType?: string): string {
   if (errorType === 'llm_profile_unknown' || errorType === 'llm_profile_unavailable') {
@@ -120,8 +161,11 @@ export async function discoverSemanticModels(): Promise<SemanticModelCatalog> {
   return requestJson<SemanticModelCatalog>('/api/v1/semantic-models')
 }
 
-export async function discoverReportTemplates(): Promise<ReportTemplateCatalog> {
-  return requestJson<ReportTemplateCatalog>('/api/v1/report-templates')
+export async function discoverReportTemplates(
+  semanticModelKey: string,
+): Promise<ReportTemplateCatalog> {
+  const query = queryString({ semantic_model_key: semanticModelKey })
+  return requestJson<ReportTemplateCatalog>(`/api/v1/report-templates?${query}`)
 }
 
 export async function discoverLLMProfiles(): Promise<LLMProfileCatalog> {

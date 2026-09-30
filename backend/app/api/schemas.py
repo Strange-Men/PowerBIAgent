@@ -21,6 +21,7 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from backend.app.presentation.models import PresentationEnvelope
+from backend.app.schemas.failure_contracts import FailureInfo
 
 
 class ChatRequest(BaseModel):
@@ -107,6 +108,7 @@ class ChatResponse(BaseModel):
         description="unsupported 场景的拒绝原因",
     )
     error_type: Optional[str] = None
+    failure: Optional[FailureInfo] = None
     tool_sequence: list[str] = Field(default_factory=list)
     memory_commit: bool = False
     trace_id: str = ""
@@ -187,3 +189,4 @@ class ErrorResponse(BaseModel):
     detail: str
     error_type: Optional[str] = None
     request_id: Optional[str] = None
+    failure: Optional[FailureInfo] = None

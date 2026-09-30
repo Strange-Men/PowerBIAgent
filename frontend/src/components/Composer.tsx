@@ -56,6 +56,7 @@ export function Composer({
     !sending &&
     semanticModel?.compatible === true &&
     semanticModel.selectable !== false &&
+    !(reportTemplate && loadingReportTemplates) &&
     llmProfile?.available === true
 
   useEffect(() => {
@@ -89,8 +90,9 @@ export function Composer({
       !content ||
       sending ||
       !semanticModel?.compatible ||
-      semanticModel.selectable === false
-      || !llmProfile?.available
+      semanticModel.selectable === false ||
+      Boolean(reportTemplate && loadingReportTemplates) ||
+      !llmProfile?.available
     ) return
     setValue('')
     setAddMenuOpen(false)
@@ -164,7 +166,9 @@ export function Composer({
                 className="menu-option"
                 key={option.key}
                 type="button"
+                disabled={!option.compatible || option.selectable === false}
                 onClick={() => {
+                  if (!option.compatible || option.selectable === false) return
                   onReportTemplateChange(
                     reportTemplate?.key === option.key ? null : option,
                   )

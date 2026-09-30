@@ -21,7 +21,7 @@ from backend.app.api.dependencies import (
     get_mock_turn_service,
     get_conversation_history_service,
     get_report_repository,
-    get_report_template_registry,
+    get_report_template_compatibility_service,
     get_llm_provider_registry,
     get_semantic_model_discovery_service,
     get_settings_dep,
@@ -35,6 +35,13 @@ from backend.app.application.conversation_history_service import (
 )
 from backend.app.application.semantic_model_discovery_service import (
     SemanticModelDiscoveryService,
+)
+from backend.app.application.report_template_compatibility_service import (
+    ReportTemplateCompatibilityService,
+)
+from backend.app.application.failure_contract import (
+    FailureStage,
+    map_public_failure,
 )
 from backend.app.conversation.models import (
     ConversationArchiveResult,
@@ -94,10 +101,7 @@ from backend.app.report.resources import (
     ReportRestoreResult,
     ReportStorageError,
 )
-from backend.app.report.registry import (
-    ReportTemplateCatalogResponse,
-    ReportTemplateRegistry,
-)
+from backend.app.report.registry import ReportTemplateCatalogResponse
 
 router = APIRouter()
 
@@ -111,7 +115,7 @@ def _llm_error_content(
     settings: Settings,
     registry: LLMProviderRegistry,
     error: Exception | None = None,
-) -> dict[str, str]:
+) -> dict[str, object]:
     """Build a credential-free provider error envelope for one frozen turn."""
 
     provider_key = str(getattr(error, "provider", "") or "").strip()
@@ -125,6 +129,11 @@ def _llm_error_content(
     category_value = getattr(category, "value", "")
     if isinstance(error, (LLMProfileNotFoundError, LLMProfileUnavailableError)):
         category_value = "configuration"
+    failure = map_public_failure(
+        terminal_state="provider_failed",
+        stage=FailureStage.PROVIDER,
+        error_type=error_type,
+    )
     return {
         "detail": detail,
         "error_type": error_type,
@@ -136,6 +145,7 @@ def _llm_error_content(
         ),
         "llm_error_category": category_value,
         "llm_error_class": type(error).__name__ if error is not None else "",
+        "failure": failure.model_dump(mode="json"),
     }
 
 
@@ -174,10 +184,13 @@ async def discover_semantic_models(
     response_model=ReportTemplateCatalogResponse,
 )
 async def discover_report_templates(
-    registry: ReportTemplateRegistry = Depends(get_report_template_registry),
+    semantic_model_key: str = Query(min_length=1, max_length=512),
+    service: ReportTemplateCompatibilityService = Depends(
+        get_report_template_compatibility_service
+    ),
 ):
-    """Return the backend-owned set of currently selectable templates."""
-    return registry.public_catalog()
+    """Return schema-aware eligibility for every registered template."""
+    return await service.discover(semantic_model_key)
 
 
 @router.get("/api/reports", response_model=ReportResourcePage)
@@ -682,12 +695,18 @@ async def chat(
             },
         )
     except TimeoutError:
+        failure = map_public_failure(
+            terminal_state="provider_failed",
+            stage=FailureStage.PROVIDER,
+            error_type="request_deadline_exceeded",
+        )
         return JSONResponse(
             status_code=504,
             content={
                 "detail": "Request deadline exceeded.",
                 "error_type": "request_deadline_exceeded",
                 "request_id": body.request_id or "",
+                "failure": failure.model_dump(mode="json"),
             },
         )
     except LLMAuthenticationError as e:
@@ -929,6 +948,7 @@ async def chat(
         clarification_question=result.get("clarification_question"),
         unsupported_reason=result.get("unsupported_reason"),
         error_type=result.get("error_type"),
+        failure=result.get("failure"),
         tool_sequence=result.get("tool_sequence", []),
         memory_commit=result.get("memory_commit", False),
         trace_id=result.get("trace_id", ""),

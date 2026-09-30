@@ -3,6 +3,22 @@ import { describe, expect, it } from 'vitest'
 import { AssistantMessage } from './AssistantMessage'
 
 describe('AssistantMessage dynamic rendering', () => {
+  it('announces errors assertively and clarifications politely', () => {
+    const { rerender } = render(
+      <AssistantMessage
+        message={{ id: 'error-a11y', role: 'assistant', kind: 'error', content: '连接中断。' }}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveAttribute('aria-live', 'assertive')
+
+    rerender(
+      <AssistantMessage
+        message={{ id: 'clarification-a11y', role: 'assistant', kind: 'clarification', content: '请选择年份。' }}
+      />,
+    )
+    expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite')
+  })
+
   it('renders verified metric, table, and bar blocks from one referenced dataset', () => {
     render(
       <AssistantMessage

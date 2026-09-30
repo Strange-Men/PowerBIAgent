@@ -75,6 +75,11 @@ from backend.app.query_plan.template_catalog import (
 )
 from backend.app.presentation.models import PresentationEnvelope
 from backend.app.schemas.data_contracts import UserContext
+from backend.app.application.failure_contract import (
+    FailureInfo,
+    FailureStage,
+    map_public_failure,
+)
 
 
 # _do_execute 回调签名
@@ -532,6 +537,8 @@ class TurnPipeline:
         intent: str = "",
         response_type: str = "",
         error_type: Optional[str] = None,
+        failure_stage: FailureStage | str | None = None,
+        failure: FailureInfo | None = None,
         trace: Optional[TraceRecorder] = None,
         trace_id: str = "",
         is_mock: bool = False,
@@ -552,6 +559,14 @@ class TurnPipeline:
         if trace is not None:
             tool_sequence = trace.get_tool_sequence()
 
+        public_failure = failure
+        if public_failure is None and error_type is not None:
+            public_failure = map_public_failure(
+                terminal_state=terminal_state,
+                stage=failure_stage,
+                error_type=error_type,
+            )
+
         result: dict[str, Any] = {
             "request_id": request_id,
             "conversation_id": conversation_id,
@@ -559,6 +574,11 @@ class TurnPipeline:
             "intent": intent,
             "response_type": response_type,
             "error_type": error_type,
+            "failure": (
+                public_failure.model_dump(mode="json")
+                if public_failure is not None
+                else None
+            ),
             "tool_sequence": tool_sequence,
             "memory_commit": (
                 terminal_state == "completed"
@@ -695,6 +715,11 @@ class TurnPipeline:
             "clarification_question": snapshot.clarification_question,
             "unsupported_reason": snapshot.unsupported_reason,
             "error_type": snapshot.error_type,
+            "failure": (
+                snapshot.failure.model_dump(mode="json")
+                if snapshot.failure is not None
+                else None
+            ),
             "tool_sequence": [],
             "memory_commit": False,
             "final_memory_version": snapshot.final_memory_version,
@@ -749,6 +774,7 @@ class TurnPipeline:
             clarification_question=result.get("clarification_question"),
             unsupported_reason=result.get("unsupported_reason"),
             error_type=result.get("error_type"),
+            failure=result.get("failure"),
             tool_sequence=result.get("tool_sequence", []),
             memory_commit=result.get("memory_commit", False),
             final_memory_version=result.get("final_memory_version"),

@@ -404,6 +404,12 @@ class TestLLMTimeoutError:
         assert response.status_code == 504
         data = response.json()
         assert data["error_type"] == "llm_timeout"
+        assert data["failure"] == {
+            "code": "REQUEST_TIMEOUT",
+            "stage": "provider",
+            "retryable": True,
+            "recovery_action": "retry",
+        }
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -431,6 +437,8 @@ class TestLLMConnectionError:
         assert response.status_code == 502
         data = response.json()
         assert data["error_type"] == "llm_connection_failed"
+        assert data["failure"]["code"] == "LLM_SERVICE_UNAVAILABLE"
+        assert data["failure"]["stage"] == "provider"
 
 
 # ═════════════════════════════════════════════════════════════════════════════

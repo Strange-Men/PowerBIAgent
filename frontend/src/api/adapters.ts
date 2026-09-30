@@ -4,11 +4,13 @@ import type {
   ConversationHistoryItem,
   ReportResource,
 } from '../types'
+import { publicFailureMessage } from '../failure'
 
 const EMPTY_TEXT = '暂无符合条件的数据。你可以调整问题或筛选条件后再试。'
 const ERROR_TEXT = '当前请求无法完成，请检查问题或稍后重试。'
 
 function friendlyBusinessError(response: ChatResponse): string {
+  if (response.failure) return publicFailureMessage(response.failure)
   const errorType = response.error_type || ''
   if (
     errorType === 'stale_instance' ||
@@ -16,8 +18,8 @@ function friendlyBusinessError(response: ChatResponse): string {
   ) {
     return '当前选择的数据模型已关闭或失效，请刷新模型列表后重新选择。'
   }
-  if (errorType.startsWith('deepseek_') || errorType.startsWith('LLM')) {
-    return '语言分析服务暂不可用，请稍后重试。'
+  if (errorType === 'deepseek_connection_failed' || errorType === 'LLMConnectionError') {
+    return 'AI 分析服务暂不可用，请稍后重试。'
   }
   if (
     response.powerbi_mode === 'local_mcp' &&
@@ -25,14 +27,10 @@ function friendlyBusinessError(response: ChatResponse): string {
   ) {
     return 'Power BI Desktop 连接已中断，请确认 Desktop 和数据模型仍处于打开状态。'
   }
-  if (errorType === 'ToolPolicyDeniedError' || errorType.includes('model')) {
+  if (errorType === 'ToolPolicyDeniedError') {
     return '当前选择的数据模型不可用，请重新选择已连接模型。'
   }
-  if (
-    errorType.includes('semantic') ||
-    errorType.includes('grounding') ||
-    errorType.includes('validation')
-  ) {
+  if (errorType === 'SemanticInterpretationError') {
     return '当前数据模型无法支持这个问题，请调整问法或选择其他模型。'
   }
   return ERROR_TEXT
@@ -92,6 +90,7 @@ export function historyItemToMessage(item: ConversationHistoryItem): AssistantMe
     clarification_question: item.clarification_question,
     unsupported_reason: item.unsupported_reason,
     error_type: item.error_type,
+    failure: item.failure,
     source_mode: '',
     idempotent_replay: false,
   }

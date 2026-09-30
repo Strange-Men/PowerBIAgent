@@ -429,6 +429,7 @@ class LLMTurnService:
                 },
                 memory_commit=False,
                 error_type=type(exc).__name__,
+                failure_stage="understanding",
             )
         usage = collector.summary()
         trace.record(
@@ -1587,7 +1588,8 @@ class LLMTurnService:
                 ToolNotRegisteredError, ToolOutputValidationError) as e:
             return await self._fail_result(
                 memory, effective_req_id, effective_conv_id, controller, trace,
-                terminal_state=TurnState.TOOL_FAILED, error_type=type(e).__name__,
+                terminal_state=TurnState.TOOL_FAILED,
+                error_type=getattr(e, "error_type", type(e).__name__),
                 reason=str(e), stage="dax_execution", trace_id=trace_id,
                 collector=collector,
             )
@@ -1928,7 +1930,8 @@ class LLMTurnService:
             except Exception as e:
                 return await self._fail_result(
                     memory, effective_req_id, effective_conv_id, controller, trace,
-                    terminal_state=TurnState.RESPONSE_FAILED, error_type=type(e).__name__,
+                    terminal_state=TurnState.RESPONSE_FAILED,
+                    error_type=getattr(e, "error_type", type(e).__name__),
                     reason=str(e), stage="answer_generation", trace_id=trace_id,
                     collector=collector,
                 )
@@ -2094,6 +2097,7 @@ class LLMTurnService:
             return self._build_result(
                 effective_req_id, effective_conv_id, terminal_state,
                 intent=intent.intent.value, error_type=commit_error,
+                failure_stage="memory_commit",
                 trace=trace, trace_id=trace_id, is_mock=False,
                 source_mode=self._source_mode, collector=collector,
             )
@@ -2463,7 +2467,7 @@ class LLMTurnService:
                 controller,
                 trace,
                 terminal_state=TurnState.TOOL_FAILED,
-                error_type=type(exc).__name__,
+                error_type=getattr(exc, "error_type", type(exc).__name__),
                 reason=str(exc),
                 stage="report_dax_execution",
                 trace_id=trace_id,
@@ -2740,7 +2744,7 @@ class LLMTurnService:
                 controller,
                 trace,
                 terminal_state=TurnState.RESPONSE_FAILED,
-                error_type=type(exc).__name__,
+                error_type=getattr(exc, "error_type", type(exc).__name__),
                 reason=str(exc),
                 stage="report_render_store",
                 trace_id=trace_id,
@@ -2824,6 +2828,7 @@ class LLMTurnService:
                     if compensation_error is not None
                     else commit_error
                 ),
+                failure_stage="memory_commit",
                 trace=trace,
                 trace_id=trace_id,
                 is_mock=False,
@@ -3130,6 +3135,7 @@ class LLMTurnService:
             request_id, conversation_id, terminal_state.value,
             intent=memory.current_intent or "",
             error_type=error_type,
+            failure_stage=stage,
             trace=trace, trace_id=trace_id, is_mock=False,
             source_mode=self._source_mode, collector=collector,
         )
@@ -3144,6 +3150,7 @@ class LLMTurnService:
         intent: str = "",
         response_type: str = "",
         error_type: Optional[str] = None,
+        failure_stage: str | None = None,
         trace: Optional[TraceRecorder] = None,
         trace_id: str = "",
         is_mock: bool = False,
@@ -3180,6 +3187,7 @@ class LLMTurnService:
             intent=intent,
             response_type=response_type,
             error_type=error_type,
+            failure_stage=failure_stage,
             trace=trace,
             trace_id=trace_id,
             is_mock=is_mock,

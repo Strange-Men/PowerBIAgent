@@ -5,27 +5,24 @@
 
 ## 当前开发入口
 
-- 当前版本：**M5.10.6**（最终 presentation residual FIX；Settings.version 不变）。
-- 最新已验证远程基线：`main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9`；
-  exact-SHA CI Run `35942794552` completed/success。
+- 当前版本：**M5.10.7**（模板兼容与可恢复错误体验收口）。
+- 最新已验证远程基线：`main@bec4661257530b3d896d189922583bffec211ba7`；
+  exact-SHA CI Run `36548907575` completed/success。
 - `M5.10.5 — 时间语义、事实防火墙与安全基线` 已 COMPLETE；exact-SHA CI
   Run `35088162355` success。人工测试确认事实安全主体有效，同时暴露自然回答、
   default-open conversation、capability wording 与 available data horizon 缺口。
-- 当前阶段：`M5.10.6 — LLM 语义理解与自然事实表达重构` 的最终中文成员展示残留修复。
-  Final Real Stress 72 unique / 24 high-risk×3 / 130 turns 已 130/130，Critical Real 21/21；
-  最新 remote automated 为 Semantic Compatibility 817/817、backend 2830/2830、Golden
-  11/11、frontend 92/92，Security/Architecture/Docs/typecheck/lint/build/diff-check 均 PASS。
-  本 changeset 收口 zh-CN member display 与文档治理；发布后只等待自动 CI 与用户最终人工 spot-check。
-- `M5.10.7 — 模板兼容与错误 UX 收口`、`M5.10.8 — MVP 最终 Real E2E / stress /
-  mutation / historical / exact-SHA 收口` 均未启动。
-- 用户最终人工 spot-check 尚未确认；`M5 FINAL=false`。
+- `M5.10.6 — LLM 语义理解与自然事实表达重构` 已由用户人工 spot-check 确认 PASS，状态 COMPLETE。
+- 当前阶段：`M5.10.7 — Schema-aware Template Eligibility + Typed Failure + Recovery UX`。
+  implementation 与限定 Local Real 已完成，等待用户最终人工验收；新的 exact-SHA CI 由 push 自动启动后记录。
+- `M5.10.8 — MVP 最终 Real E2E / stress / mutation / historical / exact-SHA 收口` 未启动。
+- 用户 M5.10.7 人工验收尚未确认；`M5 FINAL=false`。
 
 ## Authority boundary
 
 1. `TurnPipeline` 是唯一确定性控制面；Mock 与 Real 共用执行骨架。
 2. Power BI 只能经 `ToolGateway → PowerBIAdapter`；Local/Remote 只替换 Adapter 后的
    Provider。Real 失败不得静默回退 Mock。
-3. M5.10.6 的原则是 **LLM understands. Runtime proves.** LLM 可解释开放语言并输出
+3. M5.10.6+ 的原则是 **LLM understands. Runtime proves.** LLM 可解释开放语言并输出
    bounded candidate/draft，但不拥有 canonical object/member/date、DAX、QueryResult、
    coverage、available horizon、numeric fact、business Memory 或 report fact authority。
 4. Runtime `SemanticCatalog` 与 `Grounding` 证明业务对象、成员和 canonical identity；
@@ -49,7 +46,7 @@
     Memory。模型切换不得继承旧模型业务上下文。
 12. 禁止第二 Planner/Grounding/Memory、Agent、LangGraph、RAG/vector DB、ontology server、
     migration、MCP runtime/Provider rewrite、LLM DAX、任意代码、写/删/更新、Forecast/Target/
-    Budget、新 YoY/MoM capability、报表视觉重构及 M5.10.7/8 工作。
+    Budget、新 YoY/MoM capability、报表视觉重构及 M5.10.8 工作。
 
 ## 固定 Cold Start
 
@@ -72,7 +69,7 @@
 
 - `main` 是唯一活动开发线；流程固定为 failure-first → minimal implementation → fresh gates
   → Real → 白名单 staging → commit → push main → exact-SHA CI → remote audit。
-- 当前提交名固定为：`M5.10.6_FIX_中文成员展示与文档治理最终收口`；不打 Tag。
+- 当前提交名固定为：`M5.10.7_报表兼容与可恢复错误体验收口`；不打 Tag。
 - 禁止 `git add .`、`git add -A`、force push、rebase、history rewrite、`reset --hard`、
   `clean`、branch deletion。remote main 已前进则停止。
 - CI 失败只允许 forward-fix；同一 root cause 最多两轮。禁止降低 validator、删除 negative
@@ -82,4 +79,4 @@
 
 ---
 
-*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*
+*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*

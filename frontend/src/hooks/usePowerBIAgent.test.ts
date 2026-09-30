@@ -30,23 +30,35 @@ describe('semantic-model discovery errors', () => {
 })
 
 describe('report-template catalog selection', () => {
-  it('maps only backend-available descriptors and carries no default selection', () => {
+  it('consumes backend compatibility metadata and keeps partial templates selectable', () => {
     const items: ReportTemplateOption[] = [
       {
         template_key: 'sales_report',
         display_name: '简易模板',
         description: '适合快速查看关键指标、趋势与分类明细',
         availability: 'available',
+        compatibility_status: 'partial',
+        selectable: true,
+        available_section_count: 4,
+        total_section_count: 9,
       },
       {
         template_key: 'sales_executive_report',
         display_name: '专业销售经营分析模板',
         description: '适合管理层阅读的专业销售经营分析与审计上下文',
         availability: 'available',
+        compatibility_status: 'incompatible',
+        selectable: false,
+        available_section_count: 0,
+        total_section_count: 9,
       },
       {
         template_key: 'stale', display_name: '旧模板', description: '不可用',
         availability: 'unavailable',
+        compatibility_status: 'unavailable',
+        selectable: false,
+        available_section_count: 0,
+        total_section_count: 0,
       },
     ]
 
@@ -54,18 +66,26 @@ describe('report-template catalog selection', () => {
       {
         key: 'sales_report',
         label: '简易模板',
-        description: '适合快速查看关键指标、趋势与分类明细',
+        description: '适合快速查看关键指标、趋势与分类明细；部分内容将根据当前数据能力生成。',
         compatible: true,
         selectable: true,
-        compatibilityStatus: 'compatible',
+        compatibilityStatus: 'partial',
       },
       {
         key: 'sales_executive_report',
         label: '专业销售经营分析模板',
-        description: '适合管理层阅读的专业销售经营分析与审计上下文',
-        compatible: true,
-        selectable: true,
-        compatibilityStatus: 'compatible',
+        description: '当前数据模型缺少生成该模板所需的数据能力。',
+        compatible: false,
+        selectable: false,
+        compatibilityStatus: 'incompatible',
+      },
+      {
+        key: 'stale',
+        label: '旧模板',
+        description: '当前报表模板暂不可用。',
+        compatible: false,
+        selectable: false,
+        compatibilityStatus: 'unavailable',
       },
     ])
   })

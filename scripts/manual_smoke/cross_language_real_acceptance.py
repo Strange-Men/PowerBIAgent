@@ -564,7 +564,7 @@ async def run(args, root, provider_failures, provider_timings):
                                 "result_id", "request_id"}),
                             "verified_fact_set": witness["facts"].model_dump(mode="json")}
                     emitted = summary
-                    if args.phase in {"m5106", "m5106stress"}:
+                    if args.phase in {"m5106", "m5106stress", "m5107"}:
                         emitted = {
                             "case": label,
                             "pass": bool(summary["pass"]),
@@ -1291,6 +1291,153 @@ async def run(args, root, provider_failures, provider_timings):
                         and "实际数据覆盖：" in html
                         and report.get("content_hash")
                         == hashlib.sha256(html.encode("utf-8")).hexdigest()
+                    )
+
+                elif args.phase == "m5107":
+                    def mark(condition):
+                        summaries[-1]["pass"] &= bool(condition)
+
+                    catalog_witness_count = len(witnesses)
+                    catalog_response = await client.get(
+                        "/api/v1/report-templates",
+                        params={"semantic_model_key": key},
+                    )
+                    catalog_items = {
+                        item["template_key"]: item
+                        for item in catalog_response.json().get("items", [])
+                    }
+                    required_templates = (
+                        "sales_report",
+                        "sales_executive_report",
+                    )
+                    catalog_pass = bool(
+                        catalog_response.status_code == 200
+                        and len(witnesses) == catalog_witness_count
+                        and all(
+                            catalog_items.get(template, {}).get("selectable")
+                            and catalog_items[template].get("compatibility_status")
+                            in {"compatible", "partial"}
+                            for template in required_templates
+                        )
+                    )
+                    summaries.append({
+                        "case": "m5107_schema_aware_catalog",
+                        "pass": catalog_pass,
+                        "http": catalog_response.status_code,
+                        "terminal": "completed" if catalog_response.status_code == 200 else "failed",
+                        "profile": "runtime",
+                        "dax_executed": False,
+                    })
+                    print(json.dumps({
+                        "case": "m5107_schema_aware_catalog",
+                        "pass": catalog_pass,
+                        "http": catalog_response.status_code,
+                        "dax_executed": False,
+                        "templates": {
+                            template: {
+                                "compatibility_status": catalog_items.get(template, {}).get(
+                                    "compatibility_status"
+                                ),
+                                "selectable": catalog_items.get(template, {}).get("selectable"),
+                            }
+                            for template in required_templates
+                        },
+                    }, ensure_ascii=False), flush=True)
+
+                    for profile in tuple(dict.fromkeys((args.profile, "kimi-k2.6"))):
+                        for template in required_templates:
+                            witness_count = len(witnesses)
+                            body, _ = await post(
+                                f"m5107_report_{profile}_{template}",
+                                "生成销售报表",
+                                profile=profile,
+                                template=template,
+                            )
+                            report = body.get("report") or {}
+                            audit = body.get("execution_audit") or {}
+                            mark(
+                                body.get("terminal_state") == "completed"
+                                and body.get("intent") == "report_generation"
+                                and body.get("response_type") == "report"
+                                and bool(body.get("memory_commit"))
+                                and report.get("template_key") == template
+                                and bool(report.get("report_id"))
+                                and bool(report.get("html"))
+                                and report.get("content_hash")
+                                == hashlib.sha256(
+                                    report["html"].encode("utf-8")
+                                ).hexdigest()
+                                and audit.get("source_mode") == "real"
+                                and bool(audit.get("canonical_query_plans"))
+                                and audit.get("llm_dax_call_count") == 0
+                                and len(witnesses) > witness_count
+                            )
+
+                    smoke_conversation = str(uuid.uuid4())
+                    first, first_plan = await post(
+                        "m5107_smoke_may_sales",
+                        "2025年5月销售额",
+                        "scalar",
+                        conversation=smoke_conversation,
+                    )
+                    mark(
+                        first_plan.get("measures") == ["Total Sales"]
+                        and first_plan.get("time_range")
+                        == {
+                            "date_field": "Date",
+                            "start_date": "2025-05-01",
+                            "end_date": "2025-05-31",
+                            "mode": "explicit_range",
+                            "grain": "month",
+                        }
+                        and first.get("memory_commit")
+                    )
+                    second, second_plan = await post(
+                        "m5107_smoke_south_sales",
+                        "南区销售额",
+                        "scalar",
+                        conversation=smoke_conversation,
+                    )
+                    mark(
+                        second_plan.get("measures") == ["Total Sales"]
+                        and second_plan.get("filters")
+                        == [{"field": "Region", "operator": "eq", "value": "South"}]
+                        and second_plan.get("time_range") == first_plan.get("time_range")
+                        and second.get("memory_commit")
+                    )
+                    third, third_plan = await post(
+                        "m5107_smoke_quantity_followup",
+                        "换成销量",
+                        "scalar",
+                        conversation=smoke_conversation,
+                    )
+                    mark(
+                        third_plan.get("measures") == ["Total Quantity"]
+                        and third_plan.get("filters") == second_plan.get("filters")
+                        and third_plan.get("time_range") == first_plan.get("time_range")
+                        and third.get("memory_commit")
+                    )
+
+                    before_unknown_witnesses = len(witnesses)
+                    before_unknown_memory = await service.pipeline.get_latest_committed_memory(
+                        smoke_conversation,
+                        RuntimeDataMode.REAL,
+                    )
+                    unknown, _ = await post(
+                        "m5107_smoke_unknown_member",
+                        "火星区销售额",
+                        conversation=smoke_conversation,
+                        blocked=True,
+                    )
+                    after_unknown_memory = await service.pipeline.get_latest_committed_memory(
+                        smoke_conversation,
+                        RuntimeDataMode.REAL,
+                    )
+                    mark(
+                        unknown.get("terminal_state") == "clarification_required"
+                        and not unknown.get("memory_commit")
+                        and len(witnesses) == before_unknown_witnesses
+                        and before_unknown_memory == after_unknown_memory
                     )
 
                 elif args.phase == "m5106":
@@ -2140,7 +2287,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model")
     parser.add_argument("--profile", default="deepseek")
-    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104", "m5105", "m5106", "m5106stress"), default="focused")
+    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104", "m5105", "m5106", "m5106stress", "m5107"), default="focused")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--case", action="append", help="Run selected focused cases while diagnosing a failure")
     parser.add_argument("--compare-profiles", action="store_true")

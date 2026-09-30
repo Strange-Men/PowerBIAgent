@@ -134,16 +134,26 @@ export function catalogOptions(items: SemanticModelOption[]): CatalogOption[] {
 export function reportTemplateCatalogOptions(
   items: ReportTemplateOption[],
 ): CatalogOption[] {
-  return items
-    .filter((item) => item.availability === 'available')
-    .map((item) => ({
+  return items.map((item) => {
+    const status = item.compatibility_status
+    const compatible = status === 'compatible' || status === 'partial'
+    const description =
+      status === 'partial'
+        ? `${item.description}；部分内容将根据当前数据能力生成。`
+        : status === 'incompatible'
+          ? '当前数据模型缺少生成该模板所需的数据能力。'
+          : status === 'unavailable'
+            ? '当前报表模板暂不可用。'
+            : item.description
+    return {
       key: item.template_key,
       label: item.display_name,
-      description: item.description,
-      compatible: true,
-      selectable: true,
-      compatibilityStatus: 'compatible',
-    }))
+      description,
+      compatible,
+      selectable: item.selectable,
+      compatibilityStatus: status,
+    }
+  })
 }
 
 export function reconcileSemanticModelSelection(
@@ -270,6 +280,8 @@ export function usePowerBIAgent() {
   const [reportTemplateOptions, setReportTemplateOptions] = useState<CatalogOption[]>([])
   const [loadingReportTemplates, setLoadingReportTemplates] = useState(true)
   const [reportTemplateError, setReportTemplateError] = useState<string | null>(null)
+  const reportTemplateGenerationRef = useRef(0)
+  const reportTemplateModelKeyRef = useRef<string | null>(null)
   const [llmProfileOptions, setLLMProfileOptions] = useState<LLMProfileOption[]>([])
   const [selectedLLMProfile, setSelectedLLMProfileState] =
     useState<LLMProfileOption | null>(null)
@@ -395,26 +407,34 @@ export function usePowerBIAgent() {
     }
   }, [refreshSidebar])
 
-  const refreshReportTemplates = useCallback(async () => {
+  const refreshReportTemplates = useCallback(async (semanticModelKey: string) => {
+    const generation = ++reportTemplateGenerationRef.current
     setLoadingReportTemplates(true)
+    reportTemplateModelKeyRef.current = null
     try {
-      const catalog = await discoverReportTemplates()
+      const catalog = await discoverReportTemplates(semanticModelKey)
+      if (generation !== reportTemplateGenerationRef.current) return
       const options = reportTemplateCatalogOptions(catalog.items)
       const current = selectedReportTemplateRef.current
-      const selected = current
+      const matched = current
         ? options.find((item) => item.key === current.key) || null
+        : null
+      const selected = matched?.compatible && matched.selectable !== false
+        ? matched
         : null
       selectedReportTemplateRef.current = selected
       setSelectedReportTemplateState(selected)
       setReportTemplateOptions(options)
+      reportTemplateModelKeyRef.current = semanticModelKey
       setReportTemplateError(
         current && !selected
-          ? '当前选择的报表模板已失效，请重新选择。'
+          ? '当前报表模板不适用于新选择的数据模型，请重新选择。'
           : options.length === 0
             ? '当前没有可用报表模板。'
             : null,
       )
     } catch (error) {
+      if (generation !== reportTemplateGenerationRef.current) return
       selectedReportTemplateRef.current = null
       setSelectedReportTemplateState(null)
       setReportTemplateOptions([])
@@ -422,7 +442,9 @@ export function usePowerBIAgent() {
         error instanceof Error ? error.message : '暂时无法获取报表模板。',
       )
     } finally {
-      setLoadingReportTemplates(false)
+      if (generation === reportTemplateGenerationRef.current) {
+        setLoadingReportTemplates(false)
+      }
     }
   }, [])
 
@@ -470,7 +492,6 @@ export function usePowerBIAgent() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshSemanticModels()
-      void refreshReportTemplates()
       void refreshLLMProfiles()
     }, 0)
     return () => {
@@ -478,7 +499,20 @@ export function usePowerBIAgent() {
       historyGenerationRef.current += 1
       historyAbortRef.current?.abort()
     }
-  }, [refreshLLMProfiles, refreshReportTemplates, refreshSemanticModels])
+  }, [refreshLLMProfiles, refreshSemanticModels])
+
+  useEffect(() => {
+    const key = selectedSemanticModel?.key
+    if (!key) {
+      if (loadingSemanticModels) return
+      reportTemplateGenerationRef.current += 1
+      reportTemplateModelKeyRef.current = null
+      setReportTemplateOptions([])
+      setLoadingReportTemplates(false)
+      return
+    }
+    void refreshReportTemplates(key)
+  }, [loadingSemanticModels, refreshReportTemplates, selectedSemanticModel?.key])
 
   const selectSemanticModel = useCallback(
     (option: CatalogOption) => {
@@ -489,10 +523,11 @@ export function usePowerBIAgent() {
       if (changed) {
         cancelHistoryRequest()
         activate(null)
-        setSelectedReportTemplate(null)
+        reportTemplateModelKeyRef.current = null
+        setLoadingReportTemplates(true)
       }
     },
-    [activate, cancelHistoryRequest, setSelectedReportTemplate],
+    [activate, cancelHistoryRequest],
   )
 
   const startNewChat = useCallback(() => {
@@ -535,6 +570,14 @@ export function usePowerBIAgent() {
 
       const id = newId()
       const template = selectedReportTemplateRef.current
+      if (
+        template &&
+        (
+          !template.compatible ||
+          template.selectable === false ||
+          reportTemplateModelKeyRef.current !== model.key
+        )
+      ) return
       runningConversationIdsRef.current.add(conversationId)
       updateSession(conversationId, (session) => ({
         ...session,
@@ -567,6 +610,7 @@ export function usePowerBIAgent() {
         if (response.conversation_id !== conversationId) {
           throw new Error('服务返回了不匹配的对话身份，已停止写入。')
         }
+        const responseFailed = Boolean(response.failure || response.error_type)
         updateSession(conversationId, (session) => ({
           ...session,
           serverConversationId: response.conversation_id,
@@ -575,8 +619,8 @@ export function usePowerBIAgent() {
             (request) => request !== id,
           ),
           sending: false,
-          error: response.error_type ? '当前请求未完成。' : null,
-          status: response.error_type ? 'failed' : 'ready',
+          error: responseFailed ? '当前请求未完成。' : null,
+          status: responseFailed ? 'failed' : 'ready',
           updatedAt: localResourceNow(),
         }))
         if (
@@ -588,14 +632,22 @@ export function usePowerBIAgent() {
         ) {
           setSelectedReportTemplate(null)
         }
-        if (
-          response.error_type === 'stale_instance' ||
-          response.error_type === 'DESKTOP_STALE_INSTANCE'
-        ) {
+        if (response.failure?.code === 'SEMANTIC_MODEL_STALE') {
           selectedSemanticModelRef.current = null
           setSelectedSemanticModel(null)
           setSemanticModelError(
             '当前选择的数据模型已关闭或失效，请刷新后重新选择。',
+          )
+        }
+        if (
+          response.failure?.code === 'REPORT_TEMPLATE_INCOMPATIBLE' ||
+          response.failure?.code === 'REPORT_TEMPLATE_UNAVAILABLE'
+        ) {
+          setSelectedReportTemplate(null)
+          setReportTemplateError(
+            response.failure.code === 'REPORT_TEMPLATE_INCOMPATIBLE'
+              ? '当前报表模板不适用于新选择的数据模型，请重新选择。'
+              : '当前报表模板已失效，请重新选择。',
           )
         }
         await refreshSidebar(
@@ -604,6 +656,28 @@ export function usePowerBIAgent() {
             : effectiveRuntimeMode,
         )
       } catch (error) {
+        if (
+          error instanceof ApiError &&
+          error.failure?.code === 'SEMANTIC_MODEL_STALE'
+        ) {
+          selectedSemanticModelRef.current = null
+          setSelectedSemanticModel(null)
+          setSemanticModelError(
+            '当前选择的数据模型已关闭或失效，请刷新后重新选择。',
+          )
+        }
+        if (
+          error instanceof ApiError &&
+          (error.failure?.code === 'REPORT_TEMPLATE_INCOMPATIBLE' ||
+            error.failure?.code === 'REPORT_TEMPLATE_UNAVAILABLE')
+        ) {
+          setSelectedReportTemplate(null)
+          setReportTemplateError(
+            error.failure.code === 'REPORT_TEMPLATE_INCOMPATIBLE'
+              ? '当前报表模板不适用于新选择的数据模型，请重新选择。'
+              : '当前报表模板已失效，请重新选择。',
+          )
+        }
         if (
           error instanceof ApiError &&
           (error.errorType === 'llm_profile_unknown' ||

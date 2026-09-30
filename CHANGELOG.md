@@ -2,6 +2,19 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.10.7] — 2026-09-30（模板兼容与可恢复错误体验收口；M5 FINAL=false）
+
+- **前置状态：** 用户已确认 M5.10.6 最终人工 spot-check PASS，M5.10.6 COMPLETE。最新已验证 remote baseline 为 `main@bec4661257530b3d896d189922583bffec211ba7` / exact-SHA CI Run `36548907575` completed/success。
+- **Schema-aware template eligibility：** `GET /api/v1/report-templates` 现在要求 `semantic_model_key`，只经 `ToolGateway → PowerBIAdapter` 读取 runtime schema，并复用既有 Registry、ReportContractValidator 与 section capability engine。目录公开 `compatible/partial/incompatible/unavailable`、selectable 与 section count；发现阶段不执行 DAX、不调用 LLM、不生成 ReportPlan。
+- **模型切换与模板选择：** 前端按当前模型重新获取模板目录；`partial` 可选，`incompatible/unavailable` 可见但禁用。兼容选择可保留，不兼容选择被清空并给出明确提示；generation/model-key guard 阻止旧模型晚到响应覆盖当前状态或把 stale template 随消息发送。
+- **Typed failure contract：** 新增稳定 `FailureInfo(code, stage, retryable, recovery_action)`，由单一 backend mapper 投影 timeout、Power BI disconnect、stale model、LLM provider、report template/data/execution/render、validation 与 internal failure。Snapshot/history 保留同一 contract；公开 DTO 不复制 raw exception、trace 或 provider diagnostic。
+- **Recovery UX：** 前端以 `failure.code` 为主控制面映射固定安全中文提示；legacy `error_type` 仅做 exact fallback，不再用 prefix/substring 猜测。执行/渲染失败保留模型与模板以便重试，模板失效清空模板，模型 stale 清空模型；error 使用 assertive alert，clarification/unsupported 使用 polite status。
+- **Failure-first 与 focused gates：** template full/partial/none/unavailable、ZERO DAX、render/disconnect/stale/provider/timeout、history、模型切换 stale response、disabled option 与 ARIA 均有定点回归。按任务边界只运行相关 backend/frontend、typecheck、py_compile、治理与 diff-check，不运行 full suite 或大规模 stress。
+- **Local Real：** 当前 Rich Sales PBIX 的两模板 schema eligibility 均为 compatible 且目录 ZERO DAX。DeepSeek 两模板直接通过；Kimi 首轮因“完整”措辞触发 `semantic_coverage_incomplete` 并在 Tool 前 fail closed，第二轮以明确“生成销售报表”仅重跑两个失败单元并通过。M5.10.6 小型 smoke 覆盖 2025-05、South、quantity continuity 与 unknown member ZERO DAX/Memory mutation；全部临时资源 residual=0。
+- **边界：** QueryShape、semantic/Grounding/Memory、deterministic DAX、VerifiedFactSet、MCP runtime、Provider architecture、报表内容/视觉与 persistence schema 均未扩展；无 migration、无新模板、无 Tag。M5.10.7 IMPLEMENTATION COMPLETE / READY FOR USER MANUAL ACCEPTANCE；M5.10.8 NOT STARTED，M5 FINAL=false。
+
+**Settings.version:** M5.10.7
+
 ## [M5.10.6] — 2026-09-29（最终 presentation residual FIX；M5 FINAL=false）
 
 - **最新已验证 remote baseline：** `main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9` 的 GitHub Actions Run `35942794552` completed/success；Semantic Compatibility 817/817、backend 2830/2830、Golden 11/11、frontend 92/92，Security/Architecture/Docs/typecheck/lint/build/diff-check 均 PASS。旧 SHA/Run 与当时 PASS/FAIL 继续作为历史证据保留。
@@ -1297,4 +1310,4 @@
 
 ---
 
-*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*
+*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*

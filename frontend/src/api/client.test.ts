@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  ApiError,
   archiveConversation,
   archiveReport,
   deleteConversation,
@@ -25,6 +26,40 @@ afterEach(() => {
 })
 
 describe('API namespace and chat mapping', () => {
+  it('accepts only the bounded typed failure contract from HTTP errors', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: 'raw internal detail must not drive the UI',
+          error_type: 'opaque_internal_error',
+          failure: {
+            code: 'REQUEST_TIMEOUT',
+            stage: 'provider',
+            retryable: true,
+            recovery_action: 'retry',
+          },
+        }),
+        { status: 504, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(sendChat({
+      message: '查询销售额',
+      request_id: 'typed-failure',
+      semantic_model_key: 'local:model',
+    })).rejects.toMatchObject({
+      name: 'ApiError',
+      message: '本次分析超时，请重试。',
+      failure: {
+        code: 'REQUEST_TIMEOUT',
+        stage: 'provider',
+        retryable: true,
+        recovery_action: 'retry',
+      },
+    } satisfies Partial<ApiError>)
+  })
+
   it('loads the backend-owned public LLM profile catalog', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ items: [] }), {
@@ -229,10 +264,10 @@ describe('API namespace and chat mapping', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    await discoverReportTemplates()
+    await discoverReportTemplates('local:model')
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/report-templates',
+      '/api/v1/report-templates?semantic_model_key=local%3Amodel',
       expect.objectContaining({ headers: expect.any(Object) }),
     )
   })

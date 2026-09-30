@@ -16,9 +16,18 @@ export function AssistantMessage({ message }: AssistantMessageProps) {
         : message.kind === 'unsupported'
           ? Info
           : null
+  const liveRegion =
+    message.kind === 'error'
+      ? { role: 'alert', 'aria-live': 'assertive' as const }
+      : message.kind === 'clarification' || message.kind === 'unsupported'
+        ? { role: 'status', 'aria-live': 'polite' as const }
+        : {}
 
   return (
-    <article className={`assistant-message assistant-${message.kind}`}>
+    <article
+      className={`assistant-message assistant-${message.kind}`}
+      {...liveRegion}
+    >
       {StatusIcon ? (
         <div className="assistant-status-icon" aria-hidden="true">
           <StatusIcon size={18} />

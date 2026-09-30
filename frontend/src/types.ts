@@ -1,5 +1,49 @@
 export type RuntimeMode = 'mock' | 'real'
 
+export type PublicFailureCode =
+  | 'REPORT_TEMPLATE_INCOMPATIBLE'
+  | 'REPORT_TEMPLATE_UNAVAILABLE'
+  | 'REPORT_DATA_UNAVAILABLE'
+  | 'REPORT_EXECUTION_FAILED'
+  | 'REPORT_RENDER_FAILED'
+  | 'POWERBI_CONNECTION_LOST'
+  | 'SEMANTIC_MODEL_STALE'
+  | 'LLM_SERVICE_UNAVAILABLE'
+  | 'REQUEST_TIMEOUT'
+  | 'VALIDATION_FAILED'
+  | 'INTERNAL_FAILURE'
+
+export type FailureStage =
+  | 'report_scope'
+  | 'report_plan'
+  | 'report_query_validation'
+  | 'report_dax_execution'
+  | 'sales_report_data_assembly'
+  | 'sales_report_spec'
+  | 'report_render_store'
+  | 'memory_commit'
+  | 'understanding'
+  | 'grounding'
+  | 'answer_generation'
+  | 'tool_execution'
+  | 'provider'
+  | 'internal'
+
+export type FailureRecoveryAction =
+  | 'retry'
+  | 'refresh_semantic_models'
+  | 'reselect_semantic_model'
+  | 'reselect_report_template'
+  | 'edit_request'
+  | 'none'
+
+export interface FailureInfo {
+  code: PublicFailureCode
+  stage: FailureStage
+  retryable: boolean
+  recovery_action: FailureRecoveryAction
+}
+
 export interface ChatRequest {
   message: string
   conversation_id?: string
@@ -86,6 +130,7 @@ export interface ChatResponse {
   clarification_question: string | null
   unsupported_reason: string | null
   error_type: string | null
+  failure?: FailureInfo | null
   source_mode: RuntimeMode | ''
   llm_mode?: string
   powerbi_mode?: string
@@ -151,6 +196,11 @@ export interface ReportTemplateOption {
   display_name: string
   description: string
   availability: 'available' | 'unavailable'
+  compatibility_status: 'compatible' | 'partial' | 'incompatible' | 'unavailable'
+  selectable: boolean
+  available_section_count: number
+  total_section_count: number
+  reason_code?: string | null
 }
 
 export interface ReportTemplateCatalog {
@@ -212,6 +262,7 @@ export interface ConversationHistoryItem {
   clarification_question: string | null
   unsupported_reason: string | null
   error_type: string | null
+  failure?: FailureInfo | null
 }
 
 export interface ConversationHistoryPage {
@@ -309,5 +360,5 @@ export interface CatalogOption {
   compatible: boolean
   selectable?: boolean
   schemaDrift?: boolean
-  compatibilityStatus?: 'compatible' | 'incompatible' | 'unavailable'
+  compatibilityStatus?: 'compatible' | 'partial' | 'incompatible' | 'unavailable'
 }

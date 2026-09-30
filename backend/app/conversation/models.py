@@ -12,6 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.app.schemas.failure_contracts import FailureInfo
+
 from backend.app.memory.models import RuntimeDataMode
 from backend.app.presentation.models import PresentationEnvelope
 
@@ -80,6 +82,7 @@ class ConversationHistoryItem(BaseModel):
     clarification_question: str | None = None
     unsupported_reason: str | None = None
     error_type: str | None = None
+    failure: FailureInfo | None = None
     memory_commit: bool
     final_memory_version: int | None = None
     memory: CommittedMemorySummary | None = None

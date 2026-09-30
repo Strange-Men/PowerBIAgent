@@ -505,6 +505,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             clarification_question=snapshot.clarification_question,
             unsupported_reason=snapshot.unsupported_reason,
             error_type=snapshot.error_type,
+            failure=snapshot.failure,
             memory_commit=snapshot.memory_commit,
             final_memory_version=snapshot.final_memory_version,
             memory=memory_summary,

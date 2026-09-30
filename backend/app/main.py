@@ -27,6 +27,9 @@ from backend.app.application.conversation_history_service import ConversationHis
 from backend.app.application.semantic_model_discovery_service import (
     SemanticModelDiscoveryService,
 )
+from backend.app.application.report_template_compatibility_service import (
+    ReportTemplateCompatibilityService,
+)
 from backend.app.config.settings import (
     LLMMode,
     PersistenceBackend,
@@ -198,6 +201,15 @@ async def lifespan(app: FastAPI):
         if powerbi_adapter is not None
         else None
     )
+    app.state.report_template_compatibility_service = (
+        ReportTemplateCompatibilityService(
+            powerbi_adapter,
+            settings,
+            registry=DEFAULT_REPORT_TEMPLATE_REGISTRY,
+        )
+        if powerbi_adapter is not None
+        else None
+    )
 
     if settings.llm_mode == LLMMode.MOCK and settings.powerbi_mode == PowerBIMode.MOCK:
         # Mock + Mock: 原有 MockTurnService
@@ -281,6 +293,7 @@ async def lifespan(app: FastAPI):
     app.state.report_repository = None
     app.state.conversation_history_service = None
     app.state.semantic_model_discovery_service = None
+    app.state.report_template_compatibility_service = None
     app.state.report_template_registry = None
     app.state.llm_provider_registry = None
     app.state.display_llm_provider_registry = None

@@ -62,6 +62,7 @@
 | `docs/milestones/m5/m5_10_1_professional_sales_renderer_and_visual_acceptance_plan.md` | M5.10.1 Professional Renderer、事实 parity、Real PBIX/Browser 与 mutation evidence | M5.10.1 |
 | `docs/milestones/m5/m5_10_2_executive_report_product_refinement_and_hardening_plan.md` | M5.10.2 报表路由、FULL_AVAILABLE、presentation/time provenance、产品视觉与 lifecycle hardening | M5.10.2 |
 | `docs/milestones/m5/m5_10_3_post_manual_semantic_safety_closure_plan.md` | 人工验收后 P0、Zero Wrong-Question Execution、shape/state/correction regression 与验收合同 | M5.10.3 |
+| `docs/milestones/m5/m5_10_7_report_compatibility_and_recovery_ux_plan.md` | schema-aware template eligibility、typed failure 与 recovery UX 收口合同 | M5.10.7 |
 | `docs/assets/reports/README.md` | 三张报表参考图片的 P0/P1/P2 authority 边界 | M5.10+ |
 | `docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md` | M2 Local Demo / Remote Production 专项计划 | M2 Provider、Smoke、Remote 证据任务 |
 | `docs/adr/ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md` | TurnPipeline / ToolGateway 总体决策 | 控制面与工具边界 |
@@ -112,4 +113,4 @@
 
 ---
 
-*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*
+*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*

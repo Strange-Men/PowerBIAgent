@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.10.6 — LLM 语义理解与自然事实表达重构**。最新已验证远程基线为 `main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9`，exact-SHA CI Run `35942794552` completed/success：Semantic Compatibility 817/817、backend 2830/2830、Golden 11/11、frontend 92/92，Security、Architecture、Docs Governance、typecheck、lint、build 与 diff-check 均 PASS。Final Real Stress 130/130 与 Critical Real 21/21 保留为独立 Local Real 证据。当前只收口 zh-CN member display residual 与 stale current-state 文档，随后由用户执行最终人工 spot-check。M5.10.7/8 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.10.7 — Schema-aware Template Eligibility + Typed Failure + Recovery UX**。最新已验证远程基线为 `main@bec4661257530b3d896d189922583bffec211ba7`，exact-SHA CI Run `36548907575` completed/success；用户已确认 M5.10.6 最终人工 spot-check PASS，M5.10.6 COMPLETE。M5.10.7 implementation 与限定 Local Real 已完成，等待用户人工验收及本提交自动 exact-SHA CI；M5.10.8 NOT STARTED，M5 FINAL=false。
 
 ## 项目概览
 
@@ -21,7 +21,7 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 - Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界；requested query scope 只由实际执行的 CanonicalQueryPlan 投影，observed data coverage 只由返回 rows 证明，空 rows 明确表示“当前查询范围未返回数据”而不是 0。
 - veto-only Understanding Coverage、runtime Grounding、StateTransition 后的 Canonical Shape Completeness，以及 QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection 构成 fail-closed 设计；任何无证据 shape、未知对象/成员、不完整排名或模糊时间范围仍在 DAX 前澄清。旧 Intent/QueryPlan/TurnRelation 自然语言 authority 已从 production 主链删除。
-- `sales_report`（简易模板）与 `sales_executive_report`（专业销售经营分析模板）均由后端目录公开，报表请求必须显式选择；二者分别绑定独立固定 Renderer，禁止 fallback 或 LLM 临场生成 HTML/CSS/SVG。
+- `sales_report`（简易模板）与 `sales_executive_report`（专业销售经营分析模板）均由后端目录公开；目录按当前 runtime schema 返回 `compatible/partial/incompatible/unavailable`，只允许显式选择可用模板。二者分别绑定独立固定 Renderer，禁止 fallback 或 LLM 临场生成 HTML/CSS/SVG。
 - COMPLEX 模板在 Renderer 前必须具备标题、分析期间、实际筛选、observed coverage、指标口径、异常状态、模型/来源、数据新鲜度和生成时间；当前轮明确时间进入全部固定子查询，多查询 coverage 保守汇总；`data_updated_at`、`queried_at`、`snapshot_at`、`generated_at` 不得互相代替。
 - 结构化多轮 Memory 只补当前轮真正省略的兼容槽；fresh/follow-up/replace 分离，当前明确表达始终优先；歧义、失败、unsupported 和 clarification 不污染已提交状态。
 - SQLite 提供重启恢复、结构化历史/搜索、可恢复归档、永久删除、独立 report 删除与崩溃后删除重试。
@@ -75,6 +75,7 @@ LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI
 | 多模型 LLM | DeepSeek 与 Kimi K2.6 共享 OpenAI-compatible Provider；每轮按公开 profile key 冻结 provider/model snapshot，无全局 mutable default、自动路由或失败 fallback |
 | 本地 Power BI | DeepSeek/Kimi + 只读 Local Modeling MCP + Power BI Desktop；可同时安全枚举多个 PBIX，由前端单选后使用 opaque key 精确绑定；每次 schema/member/DAX 都重新枚举并只连接唯一匹配实例，stale/ambiguous identity fail closed；Real DAX/事实的 LLM 权限为 0 |
 | React 网页前端 | 完整历史恢复、已归档入口/恢复、独立 report 删除、A/B history stale-response 防护，以及文字/指标/表格/柱状图/折线图/报表附件动态渲染 |
+| 可恢复错误 UX | 后端公开稳定 `FailureInfo(code/stage/retryable/recovery_action)`；前端按 typed code 映射安全中文恢复提示，模型/模板失效与可重试执行/渲染失败采用不同恢复动作，并为 error/status 提供明确 ARIA 语义 |
 
 Local MCP 实机基线固定为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，并通过只读 schema + DAX 单行 capability probe 校验协议能力。Remote MCP 继续延期。M5.3.3 不改变 M0–M5 factual authority。
 
@@ -363,8 +364,9 @@ python -m alembic upgrade head
 | M5.10.3 | COMPLETE — Zero Wrong-Question Execution；用户人工验收通过 |
 | M5.10.4 | COMPLETE — bounded 开放语言解释与 QueryShape reconciliation；DeepSeek + Real Local MCP 14/14，residual=0 |
 | M5.10.5 | COMPLETE — `9dfbf2f` / CI `35088162355` success；确定性时间、事实防火墙与安全基线 |
-| M5.10.6 | 最终 presentation residual FIX — latest verified remote `b1063ed` / CI `35942794552` success；Real Stress 130/130、Critical Real 21/21；zh-CN member display 收口后等待用户最终人工 spot-check |
-| M5.10.7—M5.10.8 | NOT STARTED — 模板兼容/错误 UX、MVP 最终收口；不得由本轮提前进入 |
+| M5.10.6 | COMPLETE — `bec4661` / CI `36548907575` success；Real Stress 130/130、Critical Real 21/21；用户最终人工 spot-check PASS |
+| M5.10.7 | IMPLEMENTATION COMPLETE / READY FOR USER MANUAL ACCEPTANCE — schema-aware template eligibility、typed failure、recovery UX 与限定 Real matrix 已收口；新 exact-SHA CI 自动启动后记录 |
+| M5.10.8 | NOT STARTED — MVP 最终 Real E2E / stress / mutation / historical / exact-SHA 收口 |
 
 逐版本变更见 [变更记录](CHANGELOG.md)。
 
@@ -393,4 +395,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*
+*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*

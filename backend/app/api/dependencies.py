@@ -18,6 +18,9 @@ from backend.app.application.conversation_history_service import ConversationHis
 from backend.app.application.semantic_model_discovery_service import (
     SemanticModelDiscoveryService,
 )
+from backend.app.application.report_template_compatibility_service import (
+    ReportTemplateCompatibilityService,
+)
 from backend.app.config.settings import Settings, get_settings
 from backend.app.report.resources import ReportRepository
 from backend.app.report.registry import ReportTemplateRegistry
@@ -111,5 +114,21 @@ def get_semantic_model_discovery_service(
         raise HTTPException(
             status_code=503,
             detail={"error_type": "semantic_model_discovery_unavailable"},
+        )
+    return service
+
+
+def get_report_template_compatibility_service(
+    request: Request,
+) -> ReportTemplateCompatibilityService:
+    service = getattr(
+        request.app.state, "report_template_compatibility_service", None
+    )
+    if service is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=503,
+            detail={"error_type": "report_template_compatibility_unavailable"},
         )
     return service

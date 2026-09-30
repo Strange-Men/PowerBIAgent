@@ -1,15 +1,19 @@
 # 09 — 当前上下文交接
 
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
-> **最后更新：** 2026-09-29
+> **最后更新：** 2026-09-30
 
-## 当前阶段 — M5.10.6 FIX — 中文成员展示与文档治理最终收口
+## 当前阶段 — M5.10.7 — Schema-aware Template Eligibility + Typed Failure + Recovery UX
 
-最新已验证 remote baseline 为 `main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9`，GitHub Actions Run `35942794552` 对该 exact SHA completed/success：Security、Architecture、Documentation Governance、Semantic Compatibility `817/817`、backend `2830/2830`、Golden `11/11`、frontend `92/92`、typecheck、lint、build 与 diff-check 全部通过。Settings.version 保持 M5.10.6；M5.10.7/8 NOT STARTED，`M5 FINAL=false`。
+最新已验证 remote baseline 为 `main@bec4661257530b3d896d189922583bffec211ba7`，GitHub Actions Run `36548907575` 对该 exact SHA completed/success。用户已确认 M5.10.6 最终人工 spot-check PASS，M5.10.6 COMPLETE。Settings.version=M5.10.7；M5.10.7 implementation complete / ready for user manual acceptance；M5.10.8 NOT STARTED，`M5 FINAL=false`。
 
-当前唯一 production residual 是 zh-CN 展示层在真实 runtime member 没有 verified alias 且 model-scoped registry 没有 member 条目时，安全 fallback 会直接显示 canonical `South/North/East/West`。本轮保持 QueryPlan、DAX、QueryResult、VerifiedFactSet 与 Memory 中的 canonical identity 不变；可选 bounded display translation 改由独立 presentation provider 实例执行并写入既有 model-scoped registry，任何 provider/translation/registry 失败都 fail-soft 到 canonical display，不进入核心 semantic provider call sequence。summary、table 与 chart 共用同一 formatted dataset label；focused presentation/application regression `22/22 PASS`。
+本阶段新增 read-only schema-aware template compatibility service：只经 `ToolGateway → PowerBIAdapter` 读取当前模型 schema，复用 `ReportTemplateRegistry`、`ReportContractValidator` 与 section capability engine，返回 `compatible/partial/incompatible/unavailable`、selectable 与 section count。目录发现 ZERO DAX、ZERO LLM、ZERO ReportPlan。前端在模型切换后重新获取目录，generation/model-key guard 阻止 stale response 与 stale template send；compatible/partial 选择可保留，incompatible/unavailable 可见但禁用。
 
-当前下一步仅为完成本轮 documentation governance、targeted compilation 与 diff-check，白名单提交并 push main，记录自动启动的 exact-SHA CI，然后由用户执行最终人工 spot-check。不得进入 M5.10.7/8，也不得提前声明 M5.10.6 COMPLETE 或 `M5 FINAL=true`。
+后端公开稳定 `FailureInfo(code, stage, retryable, recovery_action)`，由单一 mapper 覆盖 report、Power BI、stale model、provider、timeout、validation 与 internal failure；raw exception/trace/provider diagnostic 不进入用户文案。Snapshot/history 传播同一 contract。前端以 typed code 为主映射安全中文恢复提示，legacy `error_type` 仅 exact fallback；执行/渲染失败保留模型与模板，模板失效清模板，模型 stale 清模型，并提供明确 ARIA alert/status。
+
+Failure-first 与 focused backend/frontend/typecheck/py_compile 已通过。Local Real 在当前 Rich Sales PBIX 上证明两个模板均 compatible/selectable 且目录 ZERO DAX；DeepSeek 两模板直接成功，Kimi 首轮因“完整”措辞在 Tool 前安全 fail closed，第二轮仅以明确“生成销售报表”重跑两个失败单元并成功。M5.10.6 smoke 覆盖 2025-05、South、quantity continuity 与 unknown member ZERO DAX/Memory mutation，temporary residual=0。当前下一步是完成治理 gate、白名单 commit/push main，并只记录自动启动的 exact-SHA CI Run ID/head SHA；随后等待用户 M5.10.7 人工验收。不得进入 M5.10.8 或声明 `M5 FINAL=true`。
+
+完整专项合同见 [M5.10.7 计划](milestones/m5/m5_10_7_report_compatibility_and_recovery_ux_plan.md)。
 
 ## 历史记录 — M5.10.6 CI 语义兼容性回归收口 — 2026-09-24
 
@@ -271,8 +275,9 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 | **M5.10.3** | **人工验收后语义安全收口 / Zero Wrong-Question Execution** | **✅ COMPLETE；用户人工验收通过** |
 | **M5.10.4** | **语言理解与 QueryShape 收口** | **✅ COMPLETE；DeepSeek + Real Local MCP 14/14** |
 | **M5.10.5** | **时间语义、事实防火墙与安全基线** | **✅ COMPLETE；`9dfbf2f` / CI `35088162355` success** |
-| **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **🟡 最终 zh-CN member display residual FIX；`b1063ed` / Run `35942794552` success；用户 spot-check 待执行** |
-| **M5.10.7—M5.10.8** | **模板/错误 UX → MVP 最终收口** | **⏳ NOT STARTED；Semantic Layer FINAL ACCEPTANCE PENDING** |
+| **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **✅ COMPLETE；`bec4661` / Run `36548907575` success；用户 spot-check PASS** |
+| **M5.10.7** | **模板兼容与错误 UX 收口** | **🟡 IMPLEMENTATION COMPLETE；READY FOR USER MANUAL ACCEPTANCE** |
+| **M5.10.8** | **MVP 最终收口** | **⏳ NOT STARTED；M5 FINAL=false** |
 
 ### M5.7 completed contract
 
@@ -617,7 +622,7 @@ fresh 证据：M5.8.5 targeted 475 PASS；domain-independent stress 2,304 logica
 
 ## 下一步
 
-完成当前 zh-CN member display focused regression、targeted compilation、Documentation Governance 与 diff-check 后，核对 remote main 未前进，按白名单 staging，使用 `M5.10.6_FIX_中文成员展示与文档治理最终收口` commit/push。仅记录自动启动的 exact-SHA CI，不主动运行 Real Stress 或额外 workflow；随后由用户执行最终人工 spot-check。不得进入 M5.10.7/8。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
+完成 M5.10.7 focused regression、targeted compilation、Documentation Governance 与 diff-check 后，核对 remote main 未前进，按白名单 staging，使用 `M5.10.7_报表兼容与可恢复错误体验收口` commit/push。仅记录自动启动的 exact-SHA CI Run ID/head SHA，不主动运行完整 backend/frontend suite、Real Stress 或额外 workflow；随后由用户执行 M5.10.7 人工验收。不得进入 M5.10.8。Remote MCP / Entra Auth / PostgreSQL / Deployment 属于后续生产化阶段。M5 FINAL=false。
 
 ## 关键命令
 
@@ -666,4 +671,4 @@ npm run dev
 
 ---
 
-*最后更新：2026-09-29 | M5.10.6 最终 zh-CN member display residual FIX；latest verified remote `b1063ed` / Run `35942794552` success；Real Stress 130/130、Critical Real 21/21；M5.10.7/8 NOT STARTED；main-only；M5 FINAL=false*
+*最后更新：2026-09-30 | latest verified remote `bec4661` / Run `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；main-only；M5 FINAL=false*

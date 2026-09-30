@@ -430,7 +430,10 @@ class TestChatReportGeneration:
 class TestReportTemplateCatalog:
     @pytest.mark.asyncio
     async def test_catalog_exposes_only_backend_registered_available_templates(self, client):
-        response = await client.get("/api/v1/report-templates")
+        response = await client.get(
+            "/api/v1/report-templates",
+            params={"semantic_model_key": "mock_sales_model"},
+        )
 
         assert response.status_code == 200
         assert response.json() == {
@@ -440,12 +443,22 @@ class TestReportTemplateCatalog:
                     "display_name": "简易模板",
                     "description": "适合快速查看关键指标、趋势与分类明细",
                     "availability": "available",
+                    "compatibility_status": "incompatible",
+                    "selectable": False,
+                    "available_section_count": 0,
+                    "total_section_count": 9,
+                    "reason_code": "report_no_resolved_sections",
                 },
                 {
                     "template_key": "sales_executive_report",
                     "display_name": "专业销售经营分析模板",
                     "description": "适合管理层阅读的专业销售经营分析与审计上下文",
                     "availability": "available",
+                    "compatibility_status": "incompatible",
+                    "selectable": False,
+                    "available_section_count": 0,
+                    "total_section_count": 9,
+                    "reason_code": "report_no_resolved_sections",
                 }
             ]
         }
@@ -3509,6 +3522,12 @@ class TestM24DeepSeekLocalChat:
             assert response.status_code == 200
             assert data["terminal_state"] == "tool_failed"
             assert data["source_mode"] == "real"
+            assert data["failure"] == {
+                "code": "POWERBI_CONNECTION_LOST",
+                "stage": "tool_execution",
+                "retryable": True,
+                "recovery_action": "refresh_semantic_models",
+            }
             assert adapter.schema_calls == 1
             assert adapter.dax_calls == 0
             assert len(provider.calls) == 2

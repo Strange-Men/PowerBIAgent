@@ -14,11 +14,18 @@ const api = vi.hoisted(() => {
   class ApiError extends Error {
     readonly status: number
     readonly errorType?: string
+    readonly failure?: { code: string }
 
-    constructor(message: string, status: number, errorType?: string) {
+    constructor(
+      message: string,
+      status: number,
+      errorType?: string,
+      failure?: { code: string },
+    ) {
       super(message)
       this.status = status
       this.errorType = errorType
+      this.failure = failure
     }
   }
 
@@ -158,6 +165,10 @@ beforeEach(() => {
       display_name: '简易模板',
       description: '适合快速查看关键指标、趋势与分类明细',
       availability: 'available',
+      compatibility_status: 'compatible',
+      selectable: true,
+      available_section_count: 9,
+      total_section_count: 9,
     }],
   })
   api.discoverLLMProfiles.mockResolvedValue({
@@ -499,6 +510,53 @@ describe('conversation-owned chat concurrency', () => {
 })
 
 describe('report presentation synchronization', () => {
+  it('refetches compatibility and clears a template invalidated by a model switch', async () => {
+    api.discoverSemanticModels.mockResolvedValue({
+      runtime_mode: 'real',
+      items: [
+        {
+          key: 'local:model', display_name: 'Rich', source: 'local_desktop',
+          type: 'semantic_model', available: true, connected: true,
+          agent_compatible: true, selectable: true, compatibility_status: 'compatible',
+        },
+        {
+          key: 'local:other', display_name: 'Other', source: 'local_desktop',
+          type: 'semantic_model', available: true, connected: true,
+          agent_compatible: true, selectable: true, compatibility_status: 'compatible',
+        },
+      ],
+      error_type: null,
+    })
+    api.discoverReportTemplates.mockImplementation(async (modelKey: string) => ({
+      items: [{
+        template_key: 'sales_report', display_name: '简易模板', description: '报表模板',
+        availability: 'available',
+        compatibility_status: modelKey === 'local:model' ? 'partial' : 'incompatible',
+        selectable: modelKey === 'local:model',
+        available_section_count: modelKey === 'local:model' ? 4 : 0,
+        total_section_count: 9,
+      }],
+    }))
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(result.current.loadingReportTemplates).toBe(false))
+    act(() => {
+      result.current.setSelectedReportTemplate(result.current.reportTemplateOptions[0])
+      result.current.setSelectedSemanticModel(result.current.semanticModelOptions[1])
+    })
+
+    await waitFor(() => expect(result.current.loadingReportTemplates).toBe(false))
+    expect(api.discoverReportTemplates).toHaveBeenLastCalledWith('local:other')
+    expect(result.current.selectedReportTemplate).toBeNull()
+    expect(result.current.reportTemplateError).toBe(
+      '当前报表模板不适用于新选择的数据模型，请重新选择。',
+    )
+    expect(result.current.reportTemplateOptions[0]).toMatchObject({
+      compatible: false,
+      selectable: false,
+      compatibilityStatus: 'incompatible',
+    })
+  })
+
   it('keeps the exact template through ordinary and failed turns until a report completes', async () => {
     api.sendChat.mockImplementation((body: ChatRequest) => {
       if (body.message === 'failed report') {
@@ -543,6 +601,29 @@ describe('report presentation synchronization', () => {
     expect(api.sendChat.mock.calls.map(([body]) => body.report_template_key)).toEqual([
       'sales_report', 'sales_report', 'sales_report',
     ])
+  })
+
+  it('uses typed HTTP template failures to clear only the invalid template', async () => {
+    api.sendChat.mockRejectedValue(new api.ApiError(
+      '当前数据模型不支持这个报表模板，请选择其他模板或数据模型。',
+      409,
+      'opaque_report_error',
+      { code: 'REPORT_TEMPLATE_INCOMPATIBLE' },
+    ))
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(result.current.loadingReportTemplates).toBe(false))
+    act(() => {
+      result.current.startNewChat()
+      result.current.setSelectedReportTemplate(result.current.reportTemplateOptions[0])
+    })
+
+    await act(async () => { await result.current.submitMessage('生成销售报表') })
+
+    expect(result.current.selectedReportTemplate).toBeNull()
+    expect(result.current.selectedSemanticModel?.key).toBe('local:model')
+    expect(result.current.reportTemplateError).toBe(
+      '当前报表模板不适用于新选择的数据模型，请重新选择。',
+    )
   })
 
   it('keeps rename and delete tombstone synchronized with the active report card', async () => {

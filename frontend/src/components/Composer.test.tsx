@@ -167,6 +167,76 @@ describe('Composer menus and sending', () => {
     expect(onReportTemplateChange).toHaveBeenCalledWith(executiveReportTemplate)
   })
 
+  it('keeps partial templates selectable and incompatible templates visible but disabled', () => {
+    const onReportTemplateChange = vi.fn()
+    const partial = {
+      ...reportTemplate,
+      compatibilityStatus: 'partial' as const,
+      description: '部分内容将根据当前数据能力生成。',
+    }
+    const incompatible = {
+      ...executiveReportTemplate,
+      compatible: false,
+      selectable: false,
+      compatibilityStatus: 'incompatible' as const,
+      description: '当前数据模型缺少生成该模板所需的数据能力。',
+    }
+    render(
+      <Composer
+        {...llmProps}
+        sending={false}
+        semanticModel={semanticModel}
+        semanticModelOptions={[semanticModel]}
+        loadingSemanticModels={false}
+        semanticModelError={null}
+        reportTemplate={null}
+        reportTemplateOptions={[partial, incompatible]}
+        loadingReportTemplates={false}
+        reportTemplateError={null}
+        onSemanticModelChange={vi.fn()}
+        onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
+        onReportTemplateChange={onReportTemplateChange}
+        onSend={vi.fn().mockResolvedValue(undefined)}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '打开数据与报表选项' }))
+    const partialButton = screen.getByRole('button', { name: /简易模板/ })
+    const incompatibleButton = screen.getByRole('button', { name: /专业销售经营分析模板/ })
+    expect(partialButton).toBeEnabled()
+    expect(incompatibleButton).toBeDisabled()
+    fireEvent.click(partialButton)
+    expect(onReportTemplateChange).toHaveBeenCalledWith(partial)
+  })
+
+  it('prevents sending a selected template while model compatibility is reloading', () => {
+    const onSend = vi.fn().mockResolvedValue(undefined)
+    render(
+      <Composer
+        {...llmProps}
+        sending={false}
+        semanticModel={semanticModel}
+        semanticModelOptions={[semanticModel]}
+        loadingSemanticModels={false}
+        semanticModelError={null}
+        reportTemplate={reportTemplate}
+        reportTemplateOptions={[reportTemplate]}
+        loadingReportTemplates
+        reportTemplateError={null}
+        onSemanticModelChange={vi.fn()}
+        onRefreshSemanticModels={vi.fn().mockResolvedValue(undefined)}
+        onReportTemplateChange={vi.fn()}
+        onSend={onSend}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText('询问你的 Power BI 数据'), {
+      target: { value: '生成销售报表' },
+    })
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
   it('allows a selected template to be cleared without creating a no-template mode', () => {
     const onReportTemplateChange = vi.fn()
     render(

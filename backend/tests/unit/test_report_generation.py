@@ -1782,6 +1782,13 @@ async def test_professional_report_precommit_failure_atomicity(
     assert await memory.get_latest_committed(
         f"conv-failure-{failure_stage}", RuntimeDataMode.REAL
     ) is None
+    if failure_stage in {"renderer", "artifact_write"}:
+        assert result["failure"] == {
+            "code": "REPORT_RENDER_FAILED",
+            "stage": "report_render_store",
+            "retryable": True,
+            "recovery_action": "retry",
+        }
 
 
 @pytest.mark.asyncio

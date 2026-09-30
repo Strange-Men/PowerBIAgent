@@ -1,7 +1,7 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.7 简易报表视觉与模板必选已 COMPLETE；M5.10.1/2 专业模板与产品 hardening 也已完成。当前为 M5.10.6 最终 presentation residual FIX。
-> **当前边界：** remote baseline `b1063ed` / CI `35942794552` success；本轮只修 zh-CN member display projection，不改变 canonical facts、QueryPlan、DAX、VerifiedFactSet 或 Memory。M5.10.7/8 NOT STARTED，M5 FINAL=false。
+> **状态：** M5.10.6 已 COMPLETE；当前为 M5.10.7 schema-aware template eligibility、typed failure 与 recovery UX 收口。
+> **当前边界：** latest verified remote baseline `bec4661` / CI `36548907575` success；不改变 canonical facts、QueryPlan、DAX、VerifiedFactSet、Memory 或固定 Renderer 视觉。M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED，M5 FINAL=false。
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -16,7 +16,7 @@
 
 ## 二、当前阶段与实施边界
 
-**当前阶段：** M5.10.6 最终 presentation residual FIX。M5.4 的 conversation-scoped UI state、M5.4.1 Settings Hub、M5.7 Template Required 与 M5.10.1/2 双模板展示合同继续有效；没有真实 presentation block 时不伪造前端表格或图表。zh-CN display label 只投影 verified canonical member，内部 audit 与事实证据保留 canonical identity。
+**当前阶段：** M5.10.7。M5.4 的 conversation-scoped UI state、M5.4.1 Settings Hub、M5.7 Template Required、M5.10.1/2 双模板展示合同与 M5.10.6 factual authority 继续有效；没有真实 presentation block 时不伪造前端表格或图表。模板 eligibility 来自当前模型的 backend schema-aware catalog，错误恢复只消费 typed public failure。
 
 ### 2.1 重建线后续边界
 
@@ -163,7 +163,7 @@
 | 用户要求生成报表且后端生成 ReportArtifact | 才显示报表附件卡片 |
 | clarification | 文字（clarification_question） |
 | unsupported | 文字（unsupported_reason） |
-| error | 文字（error_type + answer） |
+| error | 固定安全文字（`failure.code` 为主；legacy `error_type` 仅 exact fallback） |
 | empty | 文字说明，不生成假表格/假图表 |
 
 **安全约束：**
@@ -324,13 +324,16 @@
 
 - 映射为 chat request 的 `report_template_key`
 - 实际内容来自已登记模板白名单
-- 当前无独立 `/api/report-templates` 端点；前端集中 catalog 只登记 `sales_report`（“简易模板”）
+- 通过 `GET /api/v1/report-templates?semantic_model_key=...` 获取当前模型下的 schema-aware catalog；目录发现不执行 DAX、不调用 LLM、不生成 ReportPlan
+- `sales_report`（简易模板）与 `sales_executive_report`（专业模板）均由 Registry 登记；每项公开 `compatible/partial/incompatible/unavailable`、selectable 与 section count
 - 不显示“不使用模板”，也不设置隐式 default；任何报表请求必须先显式选择模板
 - 未选择模板时，用户提出 report intent 仍由后端识别，但前端必须清晰提示“生成报表前请选择模板”，不得补发默认 key
 - 普通问答、多轮和 report intent 仍由后端自动识别；但 report intent 缺少显式模板时只能返回 template-required，不得选择默认模板
 - 用户主动选择的 template override 是单次请求意图，发送后回到未选择状态，避免变成粘性的“报表模式”
 - 当前选中项应有清晰视觉状态
-- 未实现或不适用于当前模型的模板必须禁用或隐藏
+- `partial` 可选择；`incompatible/unavailable` 保持可见但必须禁用并说明不可用
+- 模型切换后重新请求目录：若旧模板在新模型仍 `compatible/partial` 则保留，否则清空并提示重新选择；旧模型晚到响应不得覆盖当前模型目录
+- 目录确认完成前不得随 chat request 发送旧 `report_template_key`
 
 ### 13.3 规则
 
@@ -377,9 +380,11 @@
 ### 15.3 错误状态
 
 - 作为普通对话反馈显示（非弹窗）
-- 给出简洁错误描述
-- 提供可重试提示（如适用）
-- **不展示**：完整异常堆栈、Trace 详情、内部错误代码
+- 后端 `FailureInfo(code, stage, retryable, recovery_action)` 是恢复控制面；前端只按 bounded `failure.code` 映射简洁、安全、可操作的中文文案
+- `REPORT_EXECUTION_FAILED` / `REPORT_RENDER_FAILED` 保留当前模型与模板并允许直接重试；`REPORT_TEMPLATE_INCOMPATIBLE/UNAVAILABLE` 清空模板；`SEMANTIC_MODEL_STALE` 清空模型并刷新目录
+- legacy `error_type` 仅允许显式 exact mapping；禁止 `startswith`、`includes` 或解析 answer/exception message 猜测错误类别
+- 失败消息使用 `role="alert"` / assertive live region；clarification 与 unsupported 使用 `role="status"` / polite live region
+- **不展示**：完整异常堆栈、Trace 详情、内部 diagnostic、provider 原始响应或任意 raw exception message
 
 ### 15.4 禁用状态
 
@@ -515,4 +520,4 @@ shell、body、content 与 list 都必须声明 `min-height: 0`/overflow respons
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*

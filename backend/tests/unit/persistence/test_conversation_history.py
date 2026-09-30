@@ -22,6 +22,12 @@ from backend.app.application.conversation_history_service import (
     ConversationHistoryService,
     InvalidConversationCursorError,
 )
+from backend.app.application.failure_contract import (
+    FailureInfo,
+    FailureRecoveryAction,
+    FailureStage,
+    PublicFailureCode,
+)
 from backend.app.config.settings import PersistenceBackend, Settings
 from backend.app.conversation.models import ConversationNotFoundError
 from backend.app.memory.models import MemoryStatus, RuntimeDataMode, StructuredWorkMemory
@@ -1077,6 +1083,14 @@ class TestArchiveDeleteAndErrors:
                 "terminal_state": "tool_failed",
                 "response_type": "",
                 "error_type": "powerbi_query_failed",
+                "failure": FailureInfo(
+                    code=PublicFailureCode.POWERBI_CONNECTION_LOST,
+                    stage=FailureStage.TOOL_EXECUTION,
+                    retryable=True,
+                    recovery_action=(
+                        FailureRecoveryAction.REFRESH_SEMANTIC_MODELS
+                    ),
+                ),
                 "memory_commit": False,
             }
         )
@@ -1093,6 +1107,13 @@ class TestArchiveDeleteAndErrors:
             history_env.repository
         ).get_history(RuntimeDataMode.REAL, "failed-snapshot", limit=20)
         assert history.items[0].memory_commit is False
+        assert history.items[0].failure is not None
+        assert history.items[0].failure.code == (
+            PublicFailureCode.POWERBI_CONNECTION_LOST
+        )
+        assert history.items[0].failure.recovery_action == (
+            FailureRecoveryAction.REFRESH_SEMANTIC_MODELS
+        )
 
     @pytest.mark.asyncio
     async def test_archive_and_delete_affect_one_namespace_only(

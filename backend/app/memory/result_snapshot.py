@@ -25,6 +25,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, model_validator
 
 from backend.app.presentation.models import PresentationEnvelope
+from backend.app.schemas.failure_contracts import FailureInfo
 
 
 class ReportResultSnapshot(BaseModel):
@@ -86,6 +87,10 @@ class TurnResultSnapshot(BaseModel):
 
     # ── 失败响应 ──
     error_type: Optional[str] = Field(default=None, description="错误类型")
+    failure: Optional[FailureInfo] = Field(
+        default=None,
+        description="稳定、低基数且不含内部诊断的公开失败元数据",
+    )
 
     # ── 元数据 ──
     tool_sequence: list[str] = Field(default_factory=list, description="工具调用序列")

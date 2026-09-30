@@ -14,6 +14,7 @@ function response(overrides: Partial<ChatResponse> = {}): ChatResponse {
     clarification_question: null,
     unsupported_reason: null,
     error_type: null,
+    failure: null,
     source_mode: 'real',
     idempotent_replay: false,
     ...overrides,
@@ -135,8 +136,28 @@ describe('chatResponseToMessage', () => {
         error_type: 'LLMConnectionError',
       }),
     )
-    expect(message.content).toContain('语言分析服务暂不可用')
+    expect(message.content).toContain('AI 分析服务暂不可用')
     expect(message.content).not.toContain('LLMConnectionError')
+  })
+
+  it('uses the bounded public failure code instead of parsing legacy error substrings', () => {
+    const message = chatResponseToMessage(
+      response({
+        terminal_state: 'tool_failed',
+        response_type: 'error',
+        answer: null,
+        error_type: 'TotallyUnknownPythonError',
+        failure: {
+          code: 'REPORT_RENDER_FAILED',
+          stage: 'report_render_store',
+          retryable: true,
+          recovery_action: 'retry',
+        },
+      }),
+    )
+
+    expect(message.content).toBe('数据查询已完成，但报表生成失败，请重试生成报表。')
+    expect(message.content).not.toContain('TotallyUnknownPythonError')
   })
 })
 
@@ -204,5 +225,34 @@ describe('history transcript projection', () => {
       deleted,
     )
     expect(isUsableReport(deleted)).toBe(false)
+  })
+
+  it('restores the same typed Power BI recovery message from history', () => {
+    const messages = historyItemToMessages({
+      request_id: 'req-failed-history',
+      created_at: '2026-09-29T10:00:00',
+      terminal_state: 'tool_failed',
+      response_type: 'error',
+      intent: 'data_question',
+      user_message: '查询销售额',
+      answer: null,
+      report: null,
+      clarification_question: null,
+      unsupported_reason: null,
+      error_type: 'opaque_provider_error',
+      failure: {
+        code: 'POWERBI_CONNECTION_LOST',
+        stage: 'tool_execution',
+        retryable: true,
+        recovery_action: 'refresh_semantic_models',
+      },
+    })
+
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      kind: 'error',
+      content: 'Power BI Desktop 连接已中断，请重新打开数据模型并刷新。',
+      restored: true,
+    })
   })
 })

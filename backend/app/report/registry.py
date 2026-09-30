@@ -16,6 +16,13 @@ class ReportTemplateAvailability(str, Enum):
     UNAVAILABLE = "unavailable"
 
 
+class ReportTemplateCompatibilityStatus(str, Enum):
+    COMPATIBLE = "compatible"
+    PARTIAL = "partial"
+    INCOMPATIBLE = "incompatible"
+    UNAVAILABLE = "unavailable"
+
+
 class ReportTemplateDescriptor(BaseModel):
     template_key: str = Field(min_length=1)
     display_name: str = Field(min_length=1)
@@ -33,6 +40,11 @@ class ReportTemplateCatalogItem(BaseModel):
     display_name: str
     description: str
     availability: ReportTemplateAvailability
+    compatibility_status: ReportTemplateCompatibilityStatus
+    selectable: bool
+    available_section_count: int = Field(ge=0)
+    total_section_count: int = Field(ge=0)
+    reason_code: str | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -88,9 +100,15 @@ class ReportTemplateRegistry:
                     display_name=item.display_name,
                     description=item.description,
                     availability=item.availability,
+                    compatibility_status=(
+                        ReportTemplateCompatibilityStatus.UNAVAILABLE
+                    ),
+                    selectable=False,
+                    available_section_count=0,
+                    total_section_count=0,
+                    reason_code="semantic_model_required",
                 )
                 for item in self._descriptors
-                if item.availability == ReportTemplateAvailability.AVAILABLE
             ]
         )
 

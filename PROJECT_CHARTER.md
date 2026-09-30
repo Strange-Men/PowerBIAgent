@@ -148,4 +148,4 @@
 
 ---
 
-*最后更新：2026-09-29 | 北极星与 authority 不变；当前为 M5.10.6 最终 presentation residual FIX；latest verified remote `b1063ed` / CI `35942794552` success；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*
+*最后更新：2026-09-30 | 北极星与 authority 不变；latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*
