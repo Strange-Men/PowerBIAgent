@@ -564,6 +564,14 @@ async def run(args, root, provider_failures, provider_timings):
                                 "result_id", "request_id"}),
                             "verified_fact_set": witness["facts"].model_dump(mode="json")}
                     emitted = summary
+                    if args.phase == "m5108":
+                        emitted = {
+                            name: summary[name]
+                            for name in (
+                                "case", "pass", "http", "terminal", "error",
+                                "dax_executed", "llm_call_count", "tool_call_count",
+                            )
+                        }
                     if args.phase in {"m5106", "m5106stress", "m5107"}:
                         emitted = {
                             "case": label,
@@ -1292,6 +1300,89 @@ async def run(args, root, provider_failures, provider_timings):
                         and report.get("content_hash")
                         == hashlib.sha256(html.encode("utf-8")).hexdigest()
                     )
+
+                elif args.phase == "m5108":
+                    # Reuse the real chain and owned teardown; retain facts only
+                    # in memory and print pass/count evidence, never business rows.
+                    if not args.case or "sales" in args.case:
+                        body, plan = await post("sales", "总销售额是多少", "scalar")
+                        audit = body.get("execution_audit") or {}
+                        summaries[-1]["pass"] &= bool(
+                            body.get("answer") and audit.get("factual_validation_pass")
+                            and audit.get("deterministic_dax")
+                            and plan.get("filters") == [] and plan.get("time_range") is None
+                        )
+
+                    if not args.case or "m5108_report" in args.case:
+                        render_tool = service.tool_gateway._tools["render_report"]
+                        original_render = render_tool.handler
+                        rendered_specs = []
+
+                        async def observe_render(spec):
+                            rendered_specs.append(spec)
+                            return await original_render(spec)
+
+                        render_tool.handler = observe_render
+                        try:
+                            body, _ = await post(
+                                "m5108_report", "生成销售报表",
+                                template="sales_executive_report",
+                            )
+                        finally:
+                            render_tool.handler = original_render
+                        report = body.get("report") or {}
+                        audit = body.get("execution_audit") or {}
+                        plans = audit.get("canonical_query_plans") or {}
+                        result_ids = audit.get("query_result_ids") or []
+                        fact_ids = audit.get("verified_fact_set_ids") or []
+                        # Match every actual result to its plan with rebuilt fact IDs.
+                        pairs_verified = bool(plans and result_ids and len(result_ids) == len(fact_ids))
+                        for result_id, fact_id in zip(result_ids, fact_ids):
+                            witness = witnesses.get(result_id)
+                            matches = [candidate for requirement, candidate in plans.items()
+                                if witness and audit.get("dax_fingerprints", {}).get(requirement)
+                                == hashlib.sha256(witness["dax"].encode("utf-8")).hexdigest()]
+                            pairs_verified &= bool(len(matches) == 1 and witness
+                                and VerifiedFactSetBuilder().build(
+                                    CanonicalQueryPlan.model_validate(matches[0]), witness["result"]
+                                ).fact_set_id == fact_id)
+                        html = report.get("html") or ""
+                        artifact_verified = False
+                        if report.get("report_id"):
+                            view = await client.get(report["view_reference"], params={"source_mode": "real"})
+                            download = await client.get(report["download_reference"], params={"source_mode": "real"})
+                            artifact_verified = bool(
+                                view.status_code == download.status_code == 200
+                                and view.content == download.content == html.encode("utf-8")
+                                and report.get("content_hash") == hashlib.sha256(view.content).hexdigest()
+                                and "text/html" in view.headers.get("content-type", "")
+                            )
+                        spec = rendered_specs[0] if len(rendered_specs) == 1 else None
+                        summaries[-1]["pass"] &= bool(
+                            body.get("intent") == "report_generation"
+                            and body.get("response_type") == "report" and body.get("memory_commit")
+                            and report.get("template_key") == "sales_executive_report"
+                            and audit.get("source_mode") == "real" and audit.get("layer3_pass")
+                            and audit.get("factual_validation_pass") and audit.get("llm_dax_call_count") == 0
+                            and pairs_verified and artifact_verified
+                            and spec and spec.reading_context and spec.data_snapshot
+                            and spec.kpis and spec.charts and spec.tables
+                            and "<svg" in html and "<table" in html
+                            and "<script" not in html.lower()
+                            and (body.get("presentation") or {}).get("blocks")
+                        )
+                        print(json.dumps({"case": "m5108_report_artifact", "pass": bool(summaries[-1]["pass"]),
+                            "query_fact_pairs_verified": bool(pairs_verified),
+                            "http_view_download_verified": artifact_verified,
+                            "manual_browser_smoke": "pending_user"}), flush=True)
+
+                    if not args.case or "m5108_kimi_provider" in args.case:
+                        witness_count = len(witnesses)
+                        general, _ = await post("m5108_kimi_provider", "你好", profile="kimi-k2.6")
+                        summaries[-1]["pass"] &= bool(
+                            general.get("answer") and not general.get("memory_commit")
+                            and general.get("tool_sequence") == [] and len(witnesses) == witness_count
+                        )
 
                 elif args.phase == "m5107":
                     def mark(condition):
@@ -2287,7 +2378,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model")
     parser.add_argument("--profile", default="deepseek")
-    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104", "m5105", "m5106", "m5106stress", "m5107"), default="focused")
+    parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104", "m5105", "m5106", "m5106stress", "m5107", "m5108"), default="focused")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--case", action="append", help="Run selected focused cases while diagnosing a failure")
     parser.add_argument("--compare-profiles", action="store_true")
@@ -2299,6 +2390,10 @@ def main():
     parser.add_argument("--stress-summary-only", action="store_true", help="Suppress passing per-case stress output while retaining failures and final metrics")
     parser.add_argument("--stress-stop-on-transient", action="store_true", help="Stop after the first classified provider/deadline transient for bounded latency diagnosis")
     args = parser.parse_args()
+    if args.phase == "m5108" and args.case and not set(args.case) <= {
+        "sales", "m5108_report", "m5108_kimi_provider",
+    }:
+        parser.error("m5108 only supports sales, m5108_report, m5108_kimi_provider")
     with owned_acceptance_tempdir(prefix="powerbiagent-context-real-") as root:
         provider_failures = {}
         provider_timings = {}

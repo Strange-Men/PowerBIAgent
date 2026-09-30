@@ -329,6 +329,13 @@ export function usePowerBIAgent() {
     [],
   )
 
+  const clearReportTemplateCatalog = useCallback(() => {
+    reportTemplateGenerationRef.current += 1
+    reportTemplateModelKeyRef.current = null
+    setReportTemplateOptions([])
+    setLoadingReportTemplates(false)
+  }, [])
+
   const cancelHistoryRequest = useCallback(
     (conversationId?: string) => {
       if (
@@ -386,6 +393,7 @@ export function usePowerBIAgent() {
       setSemanticModelOptions(options)
       selectedSemanticModelRef.current = reconciled.selected
       setSelectedSemanticModel(reconciled.selected)
+      if (!reconciled.selected) clearReportTemplateCatalog()
       setSemanticModelError(
         (reconciled.stale
           ? '当前选择的数据模型已关闭或失效，请刷新后重新选择。'
@@ -397,6 +405,7 @@ export function usePowerBIAgent() {
       setSemanticModelOptions([])
       selectedSemanticModelRef.current = null
       setSelectedSemanticModel(null)
+      clearReportTemplateCatalog()
       setSemanticModelError(
         error instanceof Error ? error.message : '暂时无法获取可用数据模型。',
       )
@@ -405,7 +414,7 @@ export function usePowerBIAgent() {
       semanticModelsLoadedRef.current = true
       setLoadingSemanticModels(false)
     }
-  }, [refreshSidebar])
+  }, [clearReportTemplateCatalog, refreshSidebar])
 
   const refreshReportTemplates = useCallback(async (semanticModelKey: string) => {
     const generation = ++reportTemplateGenerationRef.current
@@ -503,15 +512,14 @@ export function usePowerBIAgent() {
 
   useEffect(() => {
     const key = selectedSemanticModel?.key
-    if (!key) {
-      if (loadingSemanticModels) return
+    if (!key) return
+    const timer = window.setTimeout(() => {
+      void refreshReportTemplates(key)
+    }, 0)
+    return () => {
+      window.clearTimeout(timer)
       reportTemplateGenerationRef.current += 1
-      reportTemplateModelKeyRef.current = null
-      setReportTemplateOptions([])
-      setLoadingReportTemplates(false)
-      return
     }
-    void refreshReportTemplates(key)
   }, [loadingSemanticModels, refreshReportTemplates, selectedSemanticModel?.key])
 
   const selectSemanticModel = useCallback(
@@ -635,6 +643,7 @@ export function usePowerBIAgent() {
         if (response.failure?.code === 'SEMANTIC_MODEL_STALE') {
           selectedSemanticModelRef.current = null
           setSelectedSemanticModel(null)
+          clearReportTemplateCatalog()
           setSemanticModelError(
             '当前选择的数据模型已关闭或失效，请刷新后重新选择。',
           )
@@ -662,6 +671,7 @@ export function usePowerBIAgent() {
         ) {
           selectedSemanticModelRef.current = null
           setSelectedSemanticModel(null)
+          clearReportTemplateCatalog()
           setSemanticModelError(
             '当前选择的数据模型已关闭或失效，请刷新后重新选择。',
           )
@@ -740,6 +750,7 @@ export function usePowerBIAgent() {
     },
     [
       activate,
+      clearReportTemplateCatalog,
       effectiveRuntimeMode,
       refreshSidebar,
       replaceSessions,

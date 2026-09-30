@@ -38,21 +38,15 @@
 
 ## 当前开发入口
 
-- 最新已验证 Baseline：`main@bec4661257530b3d896d189922583bffec211ba7`；exact-SHA CI Run
-  `36548907575` completed/success。
-- M5.10.5 COMPLETE；其发布证据 `9dfbf2f` / Run `35088162355` 保留为历史记录。
-- M5.10.6 最终人工 spot-check 已由用户确认 PASS，M5.10.6 COMPLETE。
-- 当前：`M5.10.7 — Schema-aware Template Eligibility + Typed Failure + Recovery UX`；专项计划：
-  `docs/milestones/m5/m5_10_7_report_compatibility_and_recovery_ux_plan.md`。
-- M5.10.7 implementation 与限定 Local Real 已完成，等待用户人工验收及本提交自动 exact-SHA CI。
-- Settings.version=M5.10.7；M5.10.8 NOT STARTED；`M5 FINAL=false`。
+- Settings.version=M5.10.8；M5.10.8 LOCAL TEST SEAL PASS；待本提交自动 exact-SHA CI 与 remote audit。起始 main@189edc6a37966955eb5f0069af6be6835c6a358e 的 exact-SHA CI Run 36654396932 因 frontend lint 失败；本轮已复现并做最小修复，最终 Local/Real/Remote evidence 见 M5.10.8 专项记录。人工 UI smoke 留给用户；M5 FINAL=false；不进入 M6。
+- 专项记录：`docs/milestones/m5/m5_10_8_mvp_final_test_seal.md`。
 
 ## Git contract
 
 - 正式流程：Spec → RED reproducer → regression → minimal implementation → focused/cross-domain/
   full gates → Real DeepSeek + Local MCP → whitelist staging → commit → push main → exact-SHA CI
   → remote audit。
-- Commit：`M5.10.7_报表兼容与可恢复错误体验收口`；不打 Tag，不自动进入 M5.10.8。
+- Commit：`M5.10.8_MVP最终测试收口`；不打 Tag，不自动进入 M5.10.9。
 - 禁止 `git add .` / `git add -A`、force、rebase、history rewrite、reset hard、clean、branch
   deletion。Push 前再次核对 remote main；若已前进则停止。
 - CI 失败只做 failure reproducer 驱动的 minimal forward-fix；同根因最多两轮。
@@ -64,4 +58,4 @@
 
 ---
 
-*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-30 | M5.10.8 LOCAL TEST SEAL PASS / REMOTE CI PENDING；M5 FINAL=false*

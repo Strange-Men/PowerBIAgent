@@ -510,6 +510,33 @@ describe('conversation-owned chat concurrency', () => {
 })
 
 describe('report presentation synchronization', () => {
+  it('finishes catalog loading without querying templates when no model is available', async () => {
+    api.discoverSemanticModels.mockResolvedValue({
+      runtime_mode: 'real', items: [], error_type: null,
+    })
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(result.current.loadingSemanticModels).toBe(false))
+    expect(result.current.loadingReportTemplates).toBe(false)
+    expect(result.current.reportTemplateOptions).toEqual([])
+    expect(api.discoverReportTemplates).not.toHaveBeenCalled()
+  })
+
+  it('ignores an in-flight template response after model discovery loses the selection', async () => {
+    const pending = deferred<{ items: [] }>()
+    api.discoverReportTemplates.mockReturnValue(pending.promise)
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(api.discoverReportTemplates).toHaveBeenCalled())
+    api.discoverSemanticModels.mockResolvedValue({
+      runtime_mode: 'real', items: [], error_type: null,
+    })
+    await act(async () => { await result.current.refreshSemanticModels() })
+    await act(async () => { pending.resolve({ items: [] }) })
+    expect(result.current.selectedSemanticModel).toBeNull()
+    expect(result.current.loadingReportTemplates).toBe(false)
+    expect(result.current.reportTemplateOptions).toEqual([])
+    expect(result.current.reportTemplateError).toBeNull()
+  })
+
   it('refetches compatibility and clears a template invalidated by a model switch', async () => {
     api.discoverSemanticModels.mockResolvedValue({
       runtime_mode: 'real',

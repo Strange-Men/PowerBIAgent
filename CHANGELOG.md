@@ -2,6 +2,14 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.10.8] — 2026-09-30（MVP Final Test Seal；M5 FINAL=false）
+
+- 复现 M5.10.7 exact-SHA CI 的 frontend `react-hooks/set-state-in-effect` failure；最小修复模板目录清理/异步获取生命周期，保持 lint 规则与全部业务 contract。
+- 限定 focused regression、现有 required checks 和 Real Data/Report/provider smoke；本地不重跑 51,200 两个大型节点，不删除测试或改变 CI matrix。
+- 分层证据、验收脚本配对修正与人工 UI 清单见 `docs/milestones/m5/m5_10_8_mvp_final_test_seal.md`。Local automated/Real 已通过，状态尚待本提交自动 exact-SHA CI/Remote audit，不预填当前提交 SHA/CI。
+
+**Settings.version:** M5.10.8
+
 ## [M5.10.7] — 2026-09-30（模板兼容与可恢复错误体验收口；M5 FINAL=false）
 
 - **前置状态：** 用户已确认 M5.10.6 最终人工 spot-check PASS，M5.10.6 COMPLETE。最新已验证 remote baseline 为 `main@bec4661257530b3d896d189922583bffec211ba7` / exact-SHA CI Run `36548907575` completed/success。

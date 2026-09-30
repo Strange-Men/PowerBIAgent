@@ -1,6 +1,6 @@
 # 07 — 里程碑状态与待确认事项
 
-> **状态：** 当前产品版本/Settings.version=M5.10.7。最新已验证远程基线 `main@bec4661257530b3d896d189922583bffec211ba7` / exact-SHA CI Run `36548907575` completed/success；用户已确认 M5.10.6 最终人工 spot-check PASS，M5.10.6 COMPLETE。M5.10.7 implementation 与限定 Local Real 已完成，等待用户人工验收及本提交自动 exact-SHA CI；M5.10.8 NOT STARTED，M5 FINAL=false。
+> **状态：** Settings.version=M5.10.8；M5.10.8 LOCAL TEST SEAL PASS；待本提交自动 exact-SHA CI 与 remote audit。起始 main@189edc6a37966955eb5f0069af6be6835c6a358e 的 exact-SHA CI Run 36654396932 因 frontend lint 失败；本轮已复现并做最小修复，最终 Local/Real/Remote evidence 见 M5.10.8 专项记录。人工 UI smoke 留给用户；M5 FINAL=false；不进入 M6。
 > 详细历史见 `CHANGELOG.md`、`docs/08_development_roadmap.md` 与 Git。
 
 ## 里程碑总览
@@ -64,7 +64,7 @@
 | **M5.10.5** | **时间语义、事实防火墙与安全基线** | **✅ COMPLETE；`9dfbf2f` / CI `35088162355` success** |
 | **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **✅ COMPLETE；`bec4661` / CI `36548907575` success；用户人工 spot-check PASS** |
 | **M5.10.7** | **模板兼容与错误 UX 收口** | **🟡 IMPLEMENTATION COMPLETE；READY FOR USER MANUAL ACCEPTANCE** |
-| **M5.10.8** | **MVP 最终 Real E2E / 压力 / mutation / 历史 / exact-SHA 收口** | **⏳ NOT STARTED** |
+| **M5.10.8** | **MVP Final Test Seal（小修、focused regression、极少量 Real、exact-SHA CI）** | **🟡 LOCAL TEST SEAL PASS / REMOTE CI PENDING** |
 
 ## M5.10 — 复杂报表合同与专业销售模板基础
 
@@ -364,4 +364,4 @@ TopN 对外只使用 `result_position` / QueryResult order，不声明严格 bus
 - Rich PBIX 双模型同题集的 canonical plan 与规范化 QueryResult 一致；unknown/unsupported fail closed、`sales_report` 固定链、并发 conversation 隔离、mid-conversation profile switch、profile mismatch=0、DAX/Answer LLM 调用为 0 与 residual=0 均通过。Fresh Semantic Compatibility `306 passed`、backend `1940 passed, 1 skipped`、frontend `86 passed`、Golden `11 passed, 1 manual-real skipped`，全部治理与 compileall PASS。
 - M5.8.2—M5.10.6 已完成各自定义的实现与验收；M5.10.5 FIX `9dfbf2f` / Run `35088162355`、M5.10.6 Understanding FIX `6b9abd8` / Run `35496889792` 均保留为历史发布证据。当前权威 remote baseline 是 `bec4661` / Run `36548907575` success；用户已确认 M5.10.6 人工 spot-check PASS。M5.8.5 factual correctness 与 M5.9.2 runtime 的 architecture/authority boundary 冻结；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false。
 
-*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-30 | M5.10.8 LOCAL TEST SEAL PASS / REMOTE CI PENDING；分层 evidence 见专项记录；M5 FINAL=false*

@@ -1,6 +1,6 @@
 # 08 — 开发路线
 
-> **状态：** Settings.version=M5.10.7。latest verified remote baseline 为 `main@bec4661257530b3d896d189922583bffec211ba7` / exact-SHA CI Run `36548907575` completed/success；用户已确认 M5.10.6 最终人工 spot-check PASS，M5.10.6 COMPLETE。M5.10.7 implementation 与限定 Local Real 已完成，等待用户人工验收及本提交自动 exact-SHA CI；main 是唯一活动开发线；M5.10.8 NOT STARTED；M5 FINAL=false。
+> **状态：** Settings.version=M5.10.8；M5.10.8 LOCAL TEST SEAL PASS；待本提交自动 exact-SHA CI 与 remote audit。起始 main@189edc6a37966955eb5f0069af6be6835c6a358e 的 exact-SHA CI Run 36654396932 因 frontend lint 失败；本轮已复现并做最小修复，最终 Local/Real/Remote evidence 见 M5.10.8 专项记录。人工 UI smoke 留给用户；M5 FINAL=false；不进入 M6。
 > **用途：** 只记录当前路线、阶段边界和已封板摘要；逐版本历史见 `CHANGELOG.md`、Git 与 archive。
 
 ## 路线总览
@@ -64,7 +64,7 @@
 | **M5.10.5** | **时间语义、事实防火墙与安全基线** | **✅ COMPLETE；`9dfbf2f` / CI `35088162355` success** |
 | **M5.10.6** | **LLM 语义理解与自然事实表达重构** | **✅ COMPLETE；`bec4661` / CI `36548907575` success；用户人工 spot-check PASS** |
 | **M5.10.7** | **模板兼容与错误 UX 收口** | **🟡 IMPLEMENTATION COMPLETE；READY FOR USER MANUAL ACCEPTANCE** |
-| **M5.10.8** | **MVP 最终 Real E2E / 压力 / mutation / 历史 / exact-SHA 收口** | **⏳ NOT STARTED** |
+| **M5.10.8** | **MVP Final Test Seal（小修、focused regression、极少量 Real、exact-SHA CI）** | **🟡 LOCAL TEST SEAL PASS / REMOTE CI PENDING** |
 
 ### M5.9.3 — 业务语义解析正确性收口
 
@@ -106,7 +106,7 @@ Fresh local evidence：report/template/API focused 96 PASS；backend 2650 PASS /
 - **M5.10.6 — LLM 语义理解与自然事实表达重构：** Understanding、旧 semantic authority cleanup、natural factual presentation、external fact firewall、time/context continuity、Pending↔committed inheritance、yearless month clarification、selected-template Report integration、template lifecycle、multi-turn relation consistency、CI semantic compatibility 与 zh-CN member display localization 均已收口；用户人工 spot-check PASS，状态 COMPLETE。
 - **M5.10.6 最终证据：** declarative corpus 72 unique / 24 high-risk，最终 130-turn run 130/130，Critical Real 21/21；latest verified remote `bec4661` / Run `36548907575` success。旧 120 秒 overall SLA 的历史 trace 与 180 秒修复保持有效。
 - **M5.10.7 — 模板兼容与错误 UX 收口：** schema-aware template eligibility、模型切换 stale-response guard、typed failure DTO/backend mapping、history recovery 与前端安全恢复动作已实现；限定 2 模板 × DeepSeek/Kimi Real 与 M5.10.6 smoke 已通过。当前为 IMPLEMENTATION COMPLETE / READY FOR USER MANUAL ACCEPTANCE。
-- **M5.10.8 — MVP 最终收口：** Final Real E2E、stress、mutation、historical 与 exact-SHA closure；只有该阶段和用户人工验收完成后才允许评估 `M5 FINAL=true`。
+- **M5.10.8 — MVP Final Test Seal：** 按用户当前明确指令只做小修、关键 focused regression、极少量 Real 与现有 required checks/exact-SHA CI，不重跑大型压力集。完成后 READY FOR M5.10.9 Documentation Governance & MVP Final Seal；M5 FINAL 仍须后续治理与用户人工验收。
 
 Frozen 只表示既有 authority boundary / architecture contract 不变，不表示 implementation bug-free。M5.10.3—M5.10.5 只在 QuestionRouter、既有 LLM draft、Grounding/Completeness、StateTransition/TurnRelation、VerifiedFactSet projection 与 report reading context 的现有单一链内做最小 correctness 修复；禁止第二 Planner/Grounding/Memory、runtime worker 改造、事实 authority 变化或 report renderer 视觉修改。
 
@@ -498,4 +498,4 @@ LLM 对 template canonical authority、查询集合、CanonicalQueryPlan factual
 - Sales/Education/Inventory、未知 holdout、schema mutation、backend/frontend/golden/governance、Local MCP readonly smoke 与 Real Browser/manual acceptance 全部通过；acceptance residual=0。
 - 无 Localization、Presentation redesign、Resource UX、Report Visual、MCP performance/cache/session worker、M5.10 或 Remote MCP 实现。
 
-*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-30 | M5.10.8 LOCAL TEST SEAL PASS / REMOTE CI PENDING；分层 evidence 见专项记录；M5 FINAL=false*

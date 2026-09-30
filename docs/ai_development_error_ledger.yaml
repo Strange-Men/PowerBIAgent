@@ -8,6 +8,35 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-5108-001
+  title: 模板目录 effect 同步状态更新导致 frontend lint 发布门失败
+  category: ERR
+  first_detected_version: M5.10.8
+  symptom: M5.10.7 exact-SHA CI Run 36654396932 仅 frontend lint failure；本地 npm run lint 复现 react-hooks/set-state-in-effect
+  local_evidence: 修改前 1 error；目录状态清理迁回模型失效事件，获取使用可取消异步启动后 lint 零错误零 warning；frontend focused 69 passed
+  authoritative_sources:
+  - title: M5.10.8 MVP Final Test Seal 用户指令
+    reason: frontend lint regression 必须最小正确修复，不降低规则或扩大 ignore
+  root_cause: 未选模型时的目录清理及目录获取启动在 effect 中同步 setState，触发 React hooks lint contract
+  failed_attempts:
+  - 仅迁移目录清理后，lint 继续识别 effect 中目录获取函数的同步 loading state update；需同时处理启动生命周期
+  repair_attempt_count: 2
+  final_fix: 模型失效事件同步清理目录并失效旧 generation；effect 可取消异步启动获取，cleanup 拒绝晚到响应；保持模板发送 model-key guard
+  regression_tests:
+  - frontend/src/hooks/usePowerBIAgent.race.test.tsx
+  prohibited_patterns:
+  - 禁用 react-hooks/set-state-in-effect 或扩大 ignore
+  - 为 lint 放宽模板兼容性与 stale response 防护
+  prevention_rules:
+  - 真实目录状态更新属于模型事件或异步结果；effect 必须具有取消与晚到响应防护
+  - 发布前运行 frontend lint，不以 focused tests 或 typecheck 代替
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-30'
+    action: exact_sha_lint_failure_reproduced_and_fixed
+    version: M5.10.8
 - id: ERR-5106-011
   title: Continuity 修复扩大上下文与 display provider 调用导致 Semantic Compatibility 回归
   category: ERR

@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.10.7 — Schema-aware Template Eligibility + Typed Failure + Recovery UX**。最新已验证远程基线为 `main@bec4661257530b3d896d189922583bffec211ba7`，exact-SHA CI Run `36548907575` completed/success；用户已确认 M5.10.6 最终人工 spot-check PASS，M5.10.6 COMPLETE。M5.10.7 implementation 与限定 Local Real 已完成，等待用户人工验收及本提交自动 exact-SHA CI；M5.10.8 NOT STARTED，M5 FINAL=false。
+当前版本：**M5.10.8 — MVP Final Test Seal**。Settings.version=M5.10.8；M5.10.8 LOCAL TEST SEAL PASS；待本提交自动 exact-SHA CI 与 remote audit。起始 main@189edc6a37966955eb5f0069af6be6835c6a358e 的 exact-SHA CI Run 36654396932 因 frontend lint 失败；本轮已复现并做最小修复，最终 Local/Real/Remote evidence 见 M5.10.8 专项记录。人工 UI smoke 留给用户；M5 FINAL=false；不进入 M6。
 
 ## 项目概览
 

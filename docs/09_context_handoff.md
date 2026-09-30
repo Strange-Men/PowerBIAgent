@@ -3,7 +3,15 @@
 > **当前状态入口。** 从根目录 `AGENTS.md` 开始；本文件只回答"现在是什么、下一步做什么"。历史变更见 `CHANGELOG.md` 与 Git。
 > **最后更新：** 2026-09-30
 
-## 当前阶段 — M5.10.7 — Schema-aware Template Eligibility + Typed Failure + Recovery UX
+## 当前阶段 — M5.10.8 — MVP Final Test Seal
+
+Settings.version=M5.10.8；M5.10.8 LOCAL TEST SEAL PASS；待本提交自动 exact-SHA CI 与 remote audit。起始 main@189edc6a37966955eb5f0069af6be6835c6a358e 的 exact-SHA CI Run 36654396932 因 frontend lint 失败；本轮已复现并做最小修复，最终 Local/Real/Remote evidence 见 M5.10.8 专项记录。人工 UI smoke 留给用户；M5 FINAL=false；不进入 M6。
+
+本轮只修 frontend 模板目录 effect 同步 setState 的 lint regression；目录清理改在模型失效事件中执行，异步获取可取消且仍由 generation/model-key 防护。沿用现有 Real acceptance ownership/teardown，只追加小型 m5108 phase，不引入第二 Harness、Planner 或业务 authority。
+
+完整证据与后续步骤见 [M5.10.8 专项记录](milestones/m5/m5_10_8_mvp_final_test_seal.md)。M5.10.7 人工验收尚未取得新的确认，不能宣称 M5 FINAL=true；全面文档治理留给 M5.10.9。
+
+## 历史阶段 — M5.10.7 — Schema-aware Template Eligibility + Typed Failure + Recovery UX
 
 最新已验证 remote baseline 为 `main@bec4661257530b3d896d189922583bffec211ba7`，GitHub Actions Run `36548907575` 对该 exact SHA completed/success。用户已确认 M5.10.6 最终人工 spot-check PASS，M5.10.6 COMPLETE。Settings.version=M5.10.7；M5.10.7 implementation complete / ready for user manual acceptance；M5.10.8 NOT STARTED，`M5 FINAL=false`。
 

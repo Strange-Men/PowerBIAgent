@@ -5,17 +5,12 @@
 
 ## 当前开发入口
 
-- 当前版本：**M5.10.7**（模板兼容与可恢复错误体验收口）。
-- 最新已验证远程基线：`main@bec4661257530b3d896d189922583bffec211ba7`；
-  exact-SHA CI Run `36548907575` completed/success。
-- `M5.10.5 — 时间语义、事实防火墙与安全基线` 已 COMPLETE；exact-SHA CI
-  Run `35088162355` success。人工测试确认事实安全主体有效，同时暴露自然回答、
-  default-open conversation、capability wording 与 available data horizon 缺口。
-- `M5.10.6 — LLM 语义理解与自然事实表达重构` 已由用户人工 spot-check 确认 PASS，状态 COMPLETE。
-- 当前阶段：`M5.10.7 — Schema-aware Template Eligibility + Typed Failure + Recovery UX`。
-  implementation 与限定 Local Real 已完成，等待用户最终人工验收；新的 exact-SHA CI 由 push 自动启动后记录。
-- `M5.10.8 — MVP 最终 Real E2E / stress / mutation / historical / exact-SHA 收口` 未启动。
-- 用户 M5.10.7 人工验收尚未确认；`M5 FINAL=false`。
+- 当前版本：**M5.10.8**（MVP Final Test Seal）。
+- 起始 main：`189edc6a37966955eb5f0069af6be6835c6a358e`；exact-SHA CI Run `36654396932` frontend lint failure。
+- 最近已验证绿色远程基线仍为 `bec4661` / CI `36548907575` success。
+- 用户当前明确授权 M5.10.8；只做最小修复、关键 focused regression、极少量 Real 与现有 required checks。
+- 状态与分层测试证据见 `docs/milestones/m5/m5_10_8_mvp_final_test_seal.md`；人工 UI smoke 由用户完成。
+- 下一阶段为 M5.10.9 Documentation Governance & MVP Final Seal；本轮不实施该阶段，不进入 M6，`M5 FINAL=false`。
 
 ## Authority boundary
 
@@ -46,7 +41,7 @@
     Memory。模型切换不得继承旧模型业务上下文。
 12. 禁止第二 Planner/Grounding/Memory、Agent、LangGraph、RAG/vector DB、ontology server、
     migration、MCP runtime/Provider rewrite、LLM DAX、任意代码、写/删/更新、Forecast/Target/
-    Budget、新 YoY/MoM capability、报表视觉重构及 M5.10.8 工作。
+    Budget、新 YoY/MoM capability、报表视觉重构、M5.10.9 全面文档治理及 M6 工作。
 
 ## 固定 Cold Start
 
@@ -69,7 +64,7 @@
 
 - `main` 是唯一活动开发线；流程固定为 failure-first → minimal implementation → fresh gates
   → Real → 白名单 staging → commit → push main → exact-SHA CI → remote audit。
-- 当前提交名固定为：`M5.10.7_报表兼容与可恢复错误体验收口`；不打 Tag。
+- 当前提交名固定为：`M5.10.8_MVP最终测试收口`；不打 Tag。
 - 禁止 `git add .`、`git add -A`、force push、rebase、history rewrite、`reset --hard`、
   `clean`、branch deletion。remote main 已前进则停止。
 - CI 失败只允许 forward-fix；同一 root cause 最多两轮。禁止降低 validator、删除 negative
@@ -79,4 +74,4 @@
 
 ---
 
-*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-30 | M5.10.8 LOCAL TEST SEAL PASS / REMOTE CI PENDING；分层 evidence 见专项记录；M5 FINAL=false*
