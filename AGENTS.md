@@ -1,14 +1,18 @@
 # AGENTS.md — PowerBIAgent 仓库入口
 
-> Claude、Codex 与其他代码 Agent 修改文件前必须先读本文件。当前状态见
-> `docs/09_context_handoff.md`，路线见 `docs/08_development_roadmap.md`。
+> Claude、Codex 与其他代码 Agent 修改文件前必须先读本文件。
+> 当前状态见 `docs/07_milestones_status_and_open_questions.md`；路线见
+> `docs/08_development_roadmap.md`；下一开发者交接见 `docs/09_context_handoff.md`。
 
 ## 当前开发入口
 
 - 当前版本：**M5.10.9**（Documentation Governance & M5 Final Seal）。
-- M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；M5.10.8 与 FIX COMPLETE。当前只做治理、version 与 12px CSS polish，不做 M6 implementation。
+- M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；M5.10.8 与 FIX COMPLETE。
+- 下一正式 milestone：M6 — Cloud Consumption & Enterprise Identity；尚未实现，可进入研究/设计。
+  每个 implementation patch 必须有用户明确批准的具体 scope、fresh Cold Start、Microsoft 官方
+  能力重新验证与先完成的 P0 security boundary 设计/验证；未满足前不得直接写 M6 Cloud code。
 - 07 是当前状态，08 是当前/未来路线，09 是唯一开发交接；根入口不重复保存浮动 SHA/CI。
-- 前置绿色基线 main@409fd521 / CI 36665958820；本阶段 final baseline 必须按当前 checkout exact-SHA CI 和 remote audit 解析。
+- 发布基线按 09 的当前 checkout exact-SHA CI 和 remote audit 解析，不继承旧阶段 CI。
 
 ## Authority boundary
 
@@ -38,8 +42,9 @@
 11. PendingClarification 与 committed Memory 分离；general turn 不消费、不改写业务 pending 或
     Memory。模型切换不得继承旧模型业务上下文。
 12. 禁止第二 Planner/Grounding/Memory、Agent、LangGraph、RAG/vector DB、ontology server、
-    migration、MCP runtime/Provider rewrite、LLM DAX、任意代码、写/删/更新、Forecast/Target/
-    Budget、新 YoY/MoM capability、报表视觉重构；本轮不进入 M6 implementation。
+    LLM DAX、LLM 任意代码、未经审批的生产写/删/更新。migration、MCP runtime/Provider 扩展、
+    Forecast/Target/Budget、新 YoY/MoM capability 与报表视觉变更只能按独立获批 scope 和正式合同实施，
+    不得由 M6 READY 自动授权或绕过 Frozen Core。
 
 ## 固定 Cold Start
 
@@ -61,8 +66,8 @@
 ## Git contract
 
 - `main` 是唯一活动开发线；流程固定为 failure-first → minimal implementation → fresh gates
-  → Real → 白名单 staging → commit → push main → exact-SHA CI → remote audit。
-- 本轮两阶段：`M5.10.9_文档治理与最终封板候选` → exact-SHA CI success → `M5.10.9_M5最终封板` → 最终 exact-SHA CI / remote audit；不打 Tag。
+  → 必要且有界 Real → 白名单 staging → 中文 commit → push main → exact-SHA CI → remote audit。
+  具体提交与 closure 步骤遵循当前用户批准的任务；不自动打 Tag。
 - 禁止 `git add .`、`git add -A`、force push、rebase、history rewrite、`reset --hard`、
   `clean`、branch deletion。remote main 已前进则停止。
 - CI 失败只允许 forward-fix；同一 root cause 最多两轮，P1 不因每次失败都停止；上限仍失败、新根因、边界扩大或 architecture risk 才停止重新评估。禁止降低 validator、删除 negative

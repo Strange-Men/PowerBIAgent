@@ -170,11 +170,12 @@
 
 #### 报表模板
 - 映射为 chat request 的 `report_template_key`
-- 前端通过只读 `GET /api/v1/report-templates` 消费 backend-owned Template Registry；当前唯一公开模板为 `sales_report / 简易模板`
+- 前端通过只读 `GET /api/v1/report-templates?semantic_model_key=...` 消费 backend-owned、model-aware eligible catalog。Registry 登记 `sales_report`（简易销售分析模板）与 `sales_executive_report`（专业销售经营分析模板）
+- 先 semantic model domain eligibility，再 schema capability validation；Sales 可展示 eligible Sales templates，Logistics 当前无适配模板时显示 empty state，Unknown domain fail closed / empty catalog。域不匹配模板不返回用户目录；域匹配后 `compatible/partial` 可选，`incompatible/unavailable` 可见但禁用
 - `report_template_key` 是报表请求的显式必选字段；未选择模板时不发送隐式 default，report intent 由后端返回 template-required
 - 菜单不提供“不使用模板”；未选择不等于“普通问答模式”，问答/多轮/报表仍由后端 intent 自动识别，但 report intent 缺少显式模板时必须返回 template-required，禁止自动选择默认模板
 - 当前选中项应有清晰状态
-- 未实现或不适用于当前模型的模板必须禁用或隐藏
+- eligible items=[] 时显示“当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。”；问答保持可用，前端不生成模板或恢复 stale selection
 
 规则：
 - 数据模型和报表模板不能混成一个无分类列表
@@ -260,7 +261,7 @@ ConversationSession {
 
 **前端不得自行创造：** KPI 卡片、表格数据、图表数据、趋势、排名、HTML 报表、事实结论。
 
-### 2.12 前端开发策略
+### 2.12 Historical — 前端阶段开发策略
 
 1. **M0.1—M4：** 仅确认骨架和视觉规范，不创建 React 项目
 2. **M5.0：** ✅ 文档校准、页面结构、交互边界、动态回答原则、UI ↔ 后端能力映射
@@ -284,7 +285,7 @@ ConversationSession {
 |---------|---------|-------|
 | `POST /api/v1/chat` | ✅ 已实现 | 对话主交互 |
 | `GET /api/v1/llm-profiles` | ✅ M5.8 | 动态加载 DeepSeek/Kimi 安全公开目录 |
-| `GET /api/v1/report-templates` | ✅ M5.10.2 | 动态加载 backend-owned Template Registry；当前提供“简易模板”和“专业销售经营分析模板” |
+| `GET /api/v1/report-templates` | ✅ M5.10.8 FIX | 动态加载 model-aware eligible catalog；登记“简易销售分析模板”与“专业销售经营分析模板”，实际显示项由 domain eligibility + schema capability validation 决定 |
 | `GET /api/reports` | ✅ M5.4.1 | Settings 独立分页全部 active/archived reports |
 | `GET /api/reports/{report_id}` | ✅ 已实现 | 查看报表 |
 | `GET /api/reports/{report_id}/download` | ✅ 已实现 | 下载 HTML |

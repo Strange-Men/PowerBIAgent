@@ -113,7 +113,7 @@ Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code�
 
 ### ADR-019 — Complex Report Reading Context and Template Authority
 
-正式正文见 [ADR-019 独立文件](ADR-019_complex_report_reading_context_and_template_authority.md)。核心决策：COMPLEX 模板在 Renderer 前必须拥有完整 ReadingContext 与 immutable data snapshot；scope 只来自 canonical + verified evidence；指标口径、数据刷新和异常状态不得猜测；专业销售模板保持 unavailable，两个销售模板共享同一 query requirement authority。
+正式正文见 [ADR-019 独立文件](ADR-019_complex_report_reading_context_and_template_authority.md)。核心决策：COMPLEX 模板在 Renderer 前必须拥有完整 ReadingContext 与 immutable data snapshot；scope 只来自 canonical + verified evidence；指标口径、数据刷新和异常状态不得猜测；`sales_report` 与 `sales_executive_report` 共享 `SALES_QUERY_REQUIREMENTS` 与同一 factual path，模板仅改变 presentation。
 
 ### ADR-004 — Harness 方案：轻量 ETCLOVG 控制面
 

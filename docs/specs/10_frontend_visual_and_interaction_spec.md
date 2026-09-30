@@ -1,7 +1,6 @@
 # 10 — 前端视觉与交互规范
 
 > **文档职责：** 长期合同与历史实施记录；当前项目状态、路线、交接仅见 docs/07、08、09。
-> **文档职责：** 长期合同与历史实施记录；当前项目状态、路线、交接仅见 docs/07、08、09。
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -324,14 +323,26 @@
 
 - 映射为 chat request 的 `report_template_key`
 - 实际内容来自已登记模板白名单
-- 通过 `GET /api/v1/report-templates?semantic_model_key=...` 获取当前模型下的 schema-aware catalog；目录发现不执行 DAX、不调用 LLM、不生成 ReportPlan
-- `sales_report`（简易模板）与 `sales_executive_report`（专业模板）均由 Registry 登记；每项公开 `compatible/partial/incompatible/unavailable`、selectable 与 section count
+- 通过 `GET /api/v1/report-templates?semantic_model_key=...` 获取当前模型的 backend-owned、model-aware eligible catalog；目录发现不执行 DAX、不调用 LLM、不生成 ReportPlan
+- `sales_report`（简易销售分析模板）与 `sales_executive_report`（专业销售经营分析模板）由 Registry 登记；实际用户目录按下列两层规则投影，前端只展示 backend items
+
+| Eligibility | Policy | 当前合同 |
+|---|---|---|
+| domain-ineligible | not_returned | 业务域不匹配：不进入用户目录，不展示灰项 |
+| domain-matched | capability_validation | 仅域匹配模板进入现有 Contract / Capability validation |
+
+Layer 1 — Domain Eligibility：runtime canonical metadata 证明 semantic model profile；domain-ineligible ≠ incompatible UI item。域不匹配不能作为普通 disabled/incompatible item 暴露给用户。
+
+Layer 2 — Capability Validation：域匹配后保留 `compatible/partial/incompatible/unavailable`、selectable 与 section count；`compatible/partial` 可选择，`incompatible/unavailable` 可见但禁用并说明不可用。这是当前实现合同，不因域资格筛选而改变。
+
+eligible items=[] 时显示“当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。”，样式为 12px、line-height: 1.5、#777；数据问答仍可用。schema failure 使用独立重试提示，不冒充合法空目录。
+
 - 不显示“不使用模板”，也不设置隐式 default；任何报表请求必须先显式选择模板
 - 未选择模板时，用户提出 report intent 仍由后端识别，但前端必须清晰提示“生成报表前请选择模板”，不得补发默认 key
 - 普通问答、多轮和 report intent 仍由后端自动识别；但 report intent 缺少显式模板时只能返回 template-required，不得选择默认模板
-- 用户主动选择的 template override 是单次请求意图，发送后回到未选择状态，避免变成粘性的“报表模式”
+- 用户主动选择的 template override 是单次报表意图；仅 completed report 后回到未选择状态。普通数据问答不消费选择，执行/渲染失败保留选择以便重试
 - 当前选中项应有清晰视觉状态
-- `partial` 可选择；`incompatible/unavailable` 保持可见但必须禁用并说明不可用
+- 上述可见但禁用规则仅适用于 domain-matched 项；domain-ineligible 不返回目录
 - 模型切换后重新请求目录：若旧模板在新模型仍 `compatible/partial` 则保留，否则清空并提示重新选择；旧模型晚到响应不得覆盖当前模型目录
 - 目录确认完成前不得随 chat request 发送旧 `report_template_key`
 
@@ -352,15 +363,15 @@
 ### 14.2 交互
 
 - 点击 pill 打开下拉卡片
-- 卡片中只显示 **DeepSeek**
-- 单选，默认选中，有选中状态
+- 卡片通过后端安全 `GET /api/v1/llm-profiles` 目录显示 **DeepSeek** 与 **Kimi K2.6**
+- 单选，有选中状态；每轮显式 profile key 冻结为 snapshot，不自动路由或失败 fallback
 
 ### 14.3 真实产品边界
 
-> **当前 MVP 正式用户模型只有 DeepSeek。**
+> **当前用户模型为后端目录中已配置的 DeepSeek / Kimi K2.6。**
 > **不展示 Mock**（仅用于开发和测试）。
 > **不展示 GPT-5.6** 或任何未真实接入模型。
-> 不承诺当前多模型能力。
+> unknown/stale/unavailable profile fail closed；不暴露 Key 或 base URL。
 > 保留未来增加模型的 UI 扩展空间（如卡片结构支持滚动列表）。
 
 ## 十五、状态规范

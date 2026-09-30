@@ -6,6 +6,15 @@
 
 M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。Settings.version=M5.10.9；M5.10.8 COMPLETE；M5.10.8 FIX COMPLETE。
 
+### Post-final M5.10.9 FIX — 文档语义一致性与 M6 交接（REMOTE CI PENDING）
+
+- 校正当前 PRD/前端合同的八种 QueryShape、双 Sales 模板名称与 model-aware eligible catalog；域不匹配不返回目录，域匹配后保留 capability/disabled 合同。
+- AGENTS/CLAUDE/07/08/09 从已完成的封板施工流程转为 NEXT=M6 prerequisite handoff；M6 未实现，每个 patch 需官方 contract/P0 验证与用户具体 scope 授权。
+- 修复 06 页脚、ADR-019 索引与重复 header；RemoteMCP 仅改 docstring，旧 endpoint/default/异常措辞风险进入 M6 technical debt。无 runtime behavior / Frozen Core 变化。
+- focused semantic governance + positive/negative/history regressions、ERR-5109-002 与分层证据见 [FIX evidence](docs/milestones/m5/m5_10_9_fix_document_semantic_consistency_and_m6_handoff.md)。M5 FINAL=true 持续有效；FIX 按两阶段 exact-SHA CI 收口。
+
+### 原 M5.10.9 封板历史
+
 - 重建 07 当前状态 / 08 当前及未来路线 / 09 Cold Start Handoff 唯一 authority；root 入口同步并指向三文件，旧状态原文以 Historical archive 保存。
 - 明确 M5 Core Analysis Kernel 冻结边界、M6 production identity/ownership/token/RLS-OLS 与 P1 baseline、Data/Control Plane 和 M7 report snapshot/version、M8 pilot、M9 approval authoring 路线；本轮未实现 M6。
 - ADR-006 标记 SUPERSEDED，历史 endpoint/auth/SDK 不作为稳定 production contract；实施 Cloud 前重验官方能力。

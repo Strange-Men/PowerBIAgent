@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic documentation topology and version governance gate."""
+"""Deterministic documentation topology, version and focused semantic governance."""
 
 from __future__ import annotations
 
@@ -184,6 +184,7 @@ def run_checks(root: Path = REPO_ROOT) -> list[str]:
         *check_relative_markdown_links(root),
         *check_version_consistency(root),
         *check_m5_seal_consistency(root),
+        *check_current_semantics(root),
     ]
 
 
@@ -218,6 +219,84 @@ def check_m5_seal_consistency(root: Path) -> list[str]:
             "M6 PRODUCTIONIZATION READY",
         )):
             errors.append(f"m5_final_boundary_missing:{relative}")
+    return errors
+
+
+def current_markdown(text: str) -> str:
+    """Exclude explicitly Historical sections, including their child headings."""
+    lines: list[str] = []
+    historical_level: int | None = None
+    for line in text.splitlines():
+        heading = re.match(r"^(#{1,6})\s+(.+)", line)
+        if heading:
+            level, title = len(heading.group(1)), heading.group(2)
+            if historical_level is not None and level <= historical_level:
+                historical_level = None
+            if historical_level is None and re.search(r"\bHistorical\b", title, re.I):
+                historical_level = level
+        if historical_level is None:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def check_current_semantics(root: Path) -> list[str]:
+    """Check a small current-contract allowlist, never archive/milestone history.
+
+    These invariants complement manual review; they do not prove every sentence.
+    Eligibility uses two small policy anchors so surrounding prose remains free.
+    """
+    def read(relative: str) -> str:
+        path = root / relative
+        return current_markdown(path.read_text(encoding="utf-8")) if path.is_file() else ""
+
+    errors: list[str] = []
+    state = read("docs/07_milestones_status_and_open_questions.md")
+    if "M5 FINAL=true" in state and "M6 PRODUCTIONIZATION READY" in state:
+        stale_instruction = re.compile(
+            r"(?:本轮|当前只做)[^。\n]*(?:不进入|不启动|不自动开始|不做|不实现|禁止)[^。\n]*M6"
+            r"|最终条件成立[^。\n]*不启动\s*M6"
+            r"|M5\.10\.9_文档治理与最终封板候选"
+            r"|当前阶段[^\n]*M5\.10\.9[^\n]*Documentation Governance",
+            re.I,
+        )
+        for relative in ("AGENTS.md", "CLAUDE.md", "docs/09_context_handoff.md"):
+            if stale_instruction.search(read(relative)):
+                errors.append(f"semantic_stale_m5_instruction:{relative}")
+
+    single_template = re.compile(
+        r"(?:当前|current)[^。\n]*(?:只有|唯一公开模板(?:为)?|仅|only)\s*`?(?:sales_report\b|简易模板)",
+        re.I,
+    )
+    for relative in ("docs/00_product_requirements_document.md", "docs/01_product_scope_and_frontend_skeleton.md"):
+        if single_template.search(read(relative)):
+            errors.append(f"semantic_single_template_catalog:{relative}")
+
+    prd = "docs/00_product_requirements_document.md"
+    if not all(re.search(r"\b" + shape + r"\b", read(prd)) for shape in (
+        "SCALAR", "ENTITY_LIST", "GROUPED", "RANKING", "MEMBER_SET",
+        "FILTERED_AGGREGATION", "TREND", "BOUNDED_TREND",
+    )):
+        errors.append(f"semantic_query_shapes:{prd}")
+
+    adr = "docs/adr/README.md"
+    summary = re.search(r"^### ADR-019\b.*?(?=^### |\Z)", read(adr), re.M | re.S)
+    if summary and re.search(
+        r"(?:专业销售[^。\n]*模板|sales_executive_report)[^。\n]*(?:保持|仍|remains)\s*`?unavailable",
+        summary.group(), re.I,
+    ):
+        errors.append(f"semantic_adr019_availability:{adr}")
+
+    frontend = "docs/specs/10_frontend_visual_and_interaction_spec.md"
+    policy_rows = {}
+    for line in read(frontend).splitlines():
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        if len(cells) >= 2 and cells[0] in {"domain-ineligible", "domain-matched"}:
+            policy_rows.setdefault(cells[0], []).append(cells[1])
+    if policy_rows != {
+        "domain-ineligible": ["not_returned"],
+        "domain-matched": ["capability_validation"],
+    }:
+        errors.append(f"semantic_domain_eligibility:{frontend}")
     return errors
 
 

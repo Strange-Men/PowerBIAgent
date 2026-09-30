@@ -8,13 +8,14 @@
 | Milestone | 定位 | 当前路线 |
 |---|---|---|
 | M5 | Core Analysis Kernel | FROZEN；保留 failure-first correctness forward-fix |
-| M6 | Cloud Consumption & Enterprise Identity | 下一阶段；只规划，未实现 |
+| M6 | Cloud Consumption & Enterprise Identity | NEXT；研究/设计与获批 scope 实施 ready，未实现 |
 | M7 | Freshness & Report Lifecycle | 后续规划 |
 | M8 | Enterprise Pilot Platform | 后续规划 |
 | M9 | Advanced Analytics & Controlled Authoring | 后续规划 |
 
 M0—M4 已封板；M5.10.8 与 FIX COMPLETE。M5 小阶段历史移交 CHANGELOG / milestone docs / Git，
-旧路线原文见 [Historical snapshot](archive/m5_pre_final_08_development_roadmap.md)。本轮不进入 M6。
+旧路线原文见 [Historical snapshot](archive/m5_pre_final_08_development_roadmap.md)。
+M6 每个 implementation patch 必须另行获批，并满足 09 的官方能力与 P0 安全前置条件。
 
 ## M5 — Core Analysis Kernel
 
@@ -45,14 +46,14 @@ SemanticFrame → Grounding → CanonicalQueryPlan → Deterministic DAX
 官方来源、endpoint、auth、tenant/identity、capability/tool schema、RLS/OLS 与 fail-closed probe
 证据。Fabric IQ MCP 是需要评估的默认方向之一，尚未确认其适用性或 production contract。
 ADR-006 已 SUPERSEDED；历史 Power BI Consumption MCP endpoint、SDK 版本、认证假设不得直接
-当成当前稳定合同。本轮没有验证或实现 Cloud MCP / Entra。
+当成当前稳定合同。Cloud MCP / Entra 尚未实现，官方 production contract 尚待验证。
 
 | 未来职责 | 范围 |
 |---|---|
 | PowerBIDataPlane | discover、schema、member/value search、query、execute deterministic DAX |
 | PowerBIControlPlane | refresh、refresh history、workspace metadata、report resource metadata、embed metadata、lifecycle |
 
-refresh API 不得塞入 execute_dax adapter。以上为 M6 架构方向，尚无本轮代码实现。
+refresh API 不得塞入 execute_dax adapter。以上为 M6 架构方向，尚未实现。
 
 ### Production risk baseline
 

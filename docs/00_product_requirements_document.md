@@ -23,11 +23,11 @@ Power BI 数据分析 Agent MVP（PowerBIAgent）
 
 完成一套可运行、可验证的 MVP，证明以下链路可行：
 
-当前 M0—M5.8.6 已验证的主链为：
+当前 M5 Frozen 实现主链为：
 
 ```text
 Natural Language
-→ Intent（语言 weak signal）
+→ SemanticFrame（唯一 bounded language understanding draft）
 → Runtime Schema / Semantic Catalog
 → Semantic Grounding
 → deterministic StateTransition
@@ -63,7 +63,7 @@ PowerBIAgent 的产品目标是面向不同 Power BI 业务语义模型的数据
 
 Agent 查询真实数据，返回文字结论和数据表格。
 
-> **当前已封板的数据问答能力边界：** 已验证 grammar 仅包含 Measure、Dimension、`EQ` Filter、可确定解析的 TimeRange、single-measure Sort/TopN。系统可安全处理“总销售额是多少”“按 Category 看销售额”“销售额最高的前 3 个 Product”等受限问题；TopN 只表达 QueryResult 顺序，不制造严格 business rank。“同比/环比”“哪个区域下降最多”、非 `EQ` Filter、任意 DAX、因果分析与通用趋势推断仍未实现。
+> **当前已封板的数据问答能力边界：** 八种 QueryShape 为 `SCALAR`、`ENTITY_LIST`、`GROUPED`、`RANKING`、`MEMBER_SET`、`FILTERED_AGGREGATION`、`TREND`、`BOUNDED_TREND`。支持 dimension-only 实体列表、runtime-validated 同字段成员集合（`IN_SET`）、筛选聚合、single-measure Sort/TopN（含 Top1）及有确定时间维度/边界的趋势；筛选仅限 `EQ` 与已验证 `IN_SET`，canonical 对象、成员和 TimeRange 必须由 runtime 证明，缺失或歧义在 DAX 前澄清。TopN 表达已验证结果顺序，不制造未经证明的业务名次。同比/环比、Forecast、任意比较/“哪个区域下降最多”、因果分析、任意 DAX 与任意筛选运算符均未实现；现有趋势不等于通用趋势推断。依据 ADR-014、当前 CanonicalQueryPlan/DeterministicDAXBuilder 与邻近测试。
 
 ### 5.2 多轮追问
 
@@ -79,7 +79,9 @@ Agent 查询真实数据，返回文字结论和数据表格。
 
 ### 5.3 报表生成
 
-普通问答、多轮分析和报表生成由后端 intent 自动识别，前端不预先决定“问答还是报表”。前端模板选择器只提供 template choice，不增加 Chat/Report 模式切换，也不自行判断 intent。任何报表生成请求必须显式携带 registry-valid `report_template_key`；未选择、unknown 或 stale template 时返回 clarification/template-required 终态，并在 ReportData assembly、ReportSpec、Renderer 与 HTML artifact 前 fail closed。禁止默认 `sales_report`、自动猜模板或 fallback 第一项。当前 production catalog 只有 `sales_report`，产品展示名为“简易模板”。
+普通问答、多轮分析和报表生成由后端 intent 自动识别，前端不预先决定“问答还是报表”。前端模板选择器只提供 template choice，不增加 Chat/Report 模式切换，也不自行判断 intent。任何报表生成请求必须显式携带 registry-valid `report_template_key`；未选择、unknown 或 stale template 时返回 clarification/template-required 终态，并在 ReportData assembly、ReportSpec、Renderer 与 HTML artifact 前 fail closed。禁止默认 `sales_report`、自动猜模板或 fallback 第一项。
+
+当前 Registry 登记 `sales_report`（简易销售分析模板）与 `sales_executive_report`（专业销售经营分析模板）。用户目录是 backend-owned、registry-owned、semantic model aware 的 eligible catalog：先由 runtime canonical metadata 证明 domain eligibility，再复用 schema / capability validation。Sales 模型可返回两个 Sales 模板并保留 `compatible/partial/incompatible/unavailable` 与 selectable；域匹配的 incompatible/unavailable 条目可见但禁用。Logistics 当前没有适配模板时返回 empty catalog，数据问答仍可用；Unknown domain fail closed / empty eligible catalog。域不匹配模板不进入用户目录，不展示销售灰项，不承诺所有模型都能看到两个模板。
 
 ## 六、前端设计
 
@@ -139,7 +141,7 @@ React + Vite
 ### 输入框组件
 
 1. **"+"按钮** — 点击弹出选择菜单，分为"数据模型"和"报表模板"两个分组
-2. **模型选择菜单** — 圆角框设计。MVP 阶段仅 DeepSeek 为正式用户模型。Mock 仅用于开发和测试，不作为正式用户模型展示。GPT-5.6 等未来模型未真实接入前应隐藏或明确禁用
+2. **模型选择菜单** — 圆角框设计。通过后端安全 profile 目录显示 DeepSeek 与 Kimi K2.6，逐轮显式选择并冻结 snapshot。Mock 仅用于开发和测试，不作为正式用户模型展示；未真实接入的模型隐藏或禁用，不自动路由或失败 fallback
 3. **文本输入区域** — 用户输入自然语言问题
 4. **发送按钮** — 黑色圆形，提交问题
 
@@ -177,7 +179,7 @@ FastAPI
 
 ### Agent 架构
 
-**使用成熟框架支持的单 Agent。**
+**采用唯一确定性 TurnPipeline 与受控 LLM 调用（ADR-005；原框架方案已 superseded）。**
 - **不使用 LangGraph**
 - **不使用多 Agent**
 - **不从零手写复杂 Agent Runtime**
@@ -194,11 +196,11 @@ FastAPI
 7. **展示投影模块** — M5.3 已实现 QueryResult/VerifiedFactSet 直接来源的 `presentation` contract，以及 text/metric/table/bar/line/report attachment 动态块；只拥有 UI projection 权限
 8. **资源生命周期模块** — M5.3.3 将 archive/restore/conversation delete 与独立 report delete 分离；report delete 是用户显式资源 API，不是 Agent tool，LLM 无调用权限
 
-### 单 Agent 执行流程
+### 确定性执行流程
 
 ```
 接收用户请求并读取 last successful committed state
-→ Intent 分类与语言 weak signal
+→ QuestionRouter capability/safety preflight + SemanticFrame bounded language draft
 → ToolGateway 获取 runtime schema / bounded members
 → Semantic Grounding；歧义或未解析时 clarification / fail closed
 → deterministic StateTransition 形成 Canonical QueryPlan
@@ -260,7 +262,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 | `GET /health` | 检查当前运行模式的配置就绪状态；不把它描述为 Desktop 实时在线探测 |
 | `GET /api/v1/llm-profiles` | ✅ M5.8；返回 DeepSeek/Kimi 的安全公开 profile 目录，不返回 Key 或 base URL |
 | `GET /api/v1/semantic-models` | ✅ M5.3.2 多模型只读 discovery；逐实例返回 safe catalog 与 compatibility，不返回 connection string、PID、端口、raw fingerprint 或 MCP payload |
-| `GET /api/v1/report-templates` | ✅ M5.7.2；返回 backend-owned Template Registry，当前仅 `sales_report / 简易模板` |
+| `GET /api/v1/report-templates` | ✅ backend-owned、model-aware、registry-owned eligible template catalog；需 `semantic_model_key`，先 domain eligibility 再 schema/capability validation；登记 Sales 模板 `sales_report`（简易销售分析模板）、`sales_executive_report`（专业销售经营分析模板），非适配域可返回空目录 |
 | `POST /api/v1/chat` | ✅ 已实现；Mock、DeepSeek/Kimi 与 Mock/Local MCP 组合共用正式 TurnPipeline |
 | `GET /api/reports` | ✅ M5.4.1；按 source namespace 分页管理 active/archived reports |
 | `GET /api/reports/{report_id}` | ✅ 已实现；查看 repository-owned 静态 HTML |

@@ -3,10 +3,15 @@
 > Settings.version=M5.10.9；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一开发交接 authority；当前项目状态见 [07](07_milestones_status_and_open_questions.md)，路线见 [08](08_development_roadmap.md)。
 
-## 当前阶段 — M5.10.9 — Documentation Governance & M5 Final Seal
+## 当前阶段 — Current Baseline / Next Milestone
 
-M5.10.8 COMPLETE；M5.10.8 FIX COMPLETE。本轮只治理/冻结，Core 无业务实现变化。
-下一阶段：M6 — Cloud Consumption & Enterprise Identity；本轮结束后停止，不自动开始 M6。
+- Current Baseline：M5.10.9 + M5.10.9 FIX（documentation forward-fix；REMOTE CI PENDING）。
+- M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
+- NEXT = M6 — Cloud Consumption & Enterprise Identity。
+- M6 Status：NOT IMPLEMENTED；READY FOR RESEARCH / DESIGN / USER-APPROVED PATCHES。
+
+下一开发者可进入 M6 研究/设计，完成下列 prerequisite 并取得具体 patch scope 授权后才实施。
+M5 Final baseline 已成立；post-final 文档修复不重新开启 M5 功能开发，也不解冻 Core。
 
 ## Mandatory Cold Start
 
@@ -24,20 +29,13 @@ M5.10.8 COMPLETE；M5.10.8 FIX COMPLETE。本轮只治理/冻结，Core 无业�
 
 ## 最终 baseline 解析
 
-上一阶段最终绿色基线：`main@409fd521b4b503b6e8e56846806e099cd98e7a5b`，
-[exact-SHA CI Run 36665958820](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36665958820)
-completed/success，2026-09-30 fresh REST + fetch 核验。M5.10.8 发布基线
-`ef5a4c8ead7c05576360d3070ecf0e286e841dc5` / Run `36661689674` 也已核验 success。
-Phase A 已验证绿色候选：`main@a98f0fcaa8935aa3f371b6b2d6bdf0057b582d6d`，
-[exact-SHA CI Run 36677238767](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36677238767)
-completed/success。最终 seal 的自身 SHA 不写入自身提交；
-以当前 checkout 的 `git rev-parse HEAD`、该 exact SHA 的
+既有 M5 Final baseline：`86aaaec7d2172c041e97392c3de03adcca77ca1b` /
+[exact-SHA CI 36678384015](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36678384015)
+completed/success，2026-09-30 fresh REST + fetch 核验。M5 FINAL=true 持续有效。
+最新 FIX 自身 SHA 不写入自身提交；以当前 checkout 的 `git rev-parse HEAD`、该 exact SHA 的
 PowerBIAgent Validation / Full Validation (Windows) completed/success、fetch 后 HEAD==origin/main
-与 clean worktree 联合解析发布基线。文档中的 final marker 只有在最终 SHA CI 绿色后成为有效 seal。
-
-Phase A commit：M5.10.9_文档治理与最终封板候选。保持 FINAL=false；候选 exact-SHA CI 全绿后才
-做 very small marker patch。Phase B：M5.10.9_M5最终封板，最终 exact-SHA CI 再全绿后 remote audit。
-可直接运行 git log -8 --oneline 查 seal 中文提交，并按该 SHA 查询 Actions；禁止假定祖先 CI 覆盖当前 SHA。
+与 clean worktree 联合解析最新发布基线。FIX COMPLETE 须有最终 FIX exact-SHA CI 和 remote audit。
+运行 git log -8 --oneline 查当前中文提交，并按该 SHA 查询 Actions；祖先 CI 不覆盖当前 SHA。
 
 ## M5 Frozen Core
 
@@ -73,17 +71,39 @@ SemanticFrame → Grounding → CanonicalQueryPlan → Deterministic DAX
 官方来源、endpoint、auth、tenant/identity、capability/tool schema、RLS/OLS 与 fail-closed probe
 证据。Fabric IQ MCP 是需要评估的默认方向之一，尚未确认其适用性或 production contract。
 ADR-006 已 SUPERSEDED；历史 Power BI Consumption MCP endpoint、SDK 版本、认证假设不得直接
-当成当前稳定合同。本轮没有验证或实现 Cloud MCP / Entra。
+当成当前稳定合同。Cloud MCP / Entra 尚未实现；本次文档 FIX 不验证 endpoint 或 production contract。
 
-先完成外部能力/授权/RLS-OLS验证和 threat model、resource identity、ownership、token lifecycle
-设计，随后形成 accepted implementation scope。未完成这些证据前不得开发或部署 Cloud consumption。
+### M6 prerequisite 顺序
+
+1. Fresh Cold Start。
+2. External Microsoft capability verification（官方能力、endpoint、tool schema 与日期证据）。
+3. Auth / identity / RLS-OLS evidence（包括拒绝与 fail-closed probe）。
+4. Threat model。
+5. Tenant / principal / resource identity。
+6. Ownership / IDOR。
+7. Token lifecycle。
+8. Cache isolation。
+9. Accepted implementation contract。
+10. 用户明确批准具体 patch scope。
+11. 才开始 production implementation。
+
+未完成上述 prerequisite 或未获用户授权前，禁止直接实现 M6 production path。
+
+### M6 first-step technical debt — RemoteMCP legacy skeleton（P0 prerequisite）
+
+`backend/app/powerbi/remote_mcp.py` 是 legacy deferred skeleton。ADR-006 已 SUPERSEDED；
+旧 endpoint、constructor defaults 与 NotImplemented message 中的 ADR-006 wording 均不是
+M6 production contract。不得看到 skeleton 就直接实现。先按上列顺序验证 endpoint/auth/
+identity/tool schema/RLS-OLS，再以 accepted contract 与获批 scope 决定后续 Adapter 实施。
+本次仅校正模块 docstring 适用性；server_url default、异常消息、class/method behavior、
+transport/auth、provider selection 与 Settings 均保留。风险与回归记录见 FIX evidence / Error Ledger。
 
 | 未来职责 | 范围 |
 |---|---|
 | PowerBIDataPlane | discover、schema、member/value search、query、execute deterministic DAX |
 | PowerBIControlPlane | refresh、refresh history、workspace metadata、report resource metadata、embed metadata、lifecycle |
 
-refresh API 不得塞入 execute_dax adapter。以上为 M6 架构方向，尚无本轮代码实现。
+refresh API 不得塞入 execute_dax adapter。以上为 M6 架构方向，尚未实现。
 
 ## Production Backend — P0
 
@@ -110,8 +130,9 @@ PostgreSQL / Blob / Redis 均尚未实现，不能把本地 SQLite + filesystem 
 
 禁止第二 Planner/Grounding/Memory、Agent、LangGraph、RAG/vector DB、ontology server、LLM DAX、
 任意代码/自由 HTML、直接生产写操作、无审批 authoring、自动 Real→Mock fallback、silent report overwrite。
-本轮禁止新物流模板/分析能力/LLM判断/事实链与 eligibility 变化、RemoteMCP rewrite，以及
-Entra/Fabric IQ/PostgreSQL/Blob/Redis/migration/M6 implementation。后续事项只在获批 scope 中扩展。
+Entra/Fabric IQ/PostgreSQL/Blob/Redis/migration 与新模板/分析能力只能在各自获批 scope、正式合同
+及适用安全前置条件完成后扩展；M6 READY 不构成 implementation 授权。不得绕过 Frozen Core、
+共享事实链、eligibility 或 Token boundary。
 当前报告是 historical snapshot；M7 规划 Recipe + Artifact versions，不能用刷新覆盖历史证据。
 
 ## 测试 / CI / release 与 debugging
@@ -130,13 +151,10 @@ Local automated、Local Real、Remote exact-SHA CI 分层记录；历史 PASS �
 不读取/输出/提交 .env、Secret、Token、PBIX、DB、真实业务数据、完整真实 prompt/response/trace dump。
 临时资源必须标明 ownership 并 finally teardown，不自动删除用户或 ownership 不明资源。
 
-本轮 Local normal backend required suite 只按用户授权 deselect test_business_language_stress.py 中
-test_generator_covers_51200_safe_reproducible_cases、test_stress_report_has_zero_generated_failures。
-测试节点与 CI full matrix 未修改；不重复大型 Real/stress/provider matrix。
-检查：Documentation Governance、Version Consistency、Architecture、Repository Safety、Error Ledger、
-Artifact Governance、Semantic Compatibility、Golden、backend normal suite、frontend tests/lint/typecheck/build。
-CSS Browser Smoke 使用真实 Logistics 目录，核对无 Sales templates、文案、12px/1.5、可发送与零 console
-warning/error；不新增 Playwright/Selenium、不重跑 Report Real E2E。
+测试按当前 patch 风险与用户 scope 选择；CI required matrix 保持完整。基础检查包含 Documentation
+Governance、Version Consistency、Architecture、Repository Safety、Error Ledger、Artifact Governance、
+Semantic Compatibility、Golden、backend suite、frontend tests/lint/typecheck/build。
+Local Real / Browser / stress 只在适用且获批时运行，分层记录；历史数字不代替 fresh evidence。
 
 ```powershell
 D:\Conda\envs\PBIAgent\python.exe scripts/check_documentation_governance.py
@@ -148,5 +166,6 @@ D:\Conda\envs\PBIAgent\python.exe scripts/check_semantic_compatibility.py
 D:\Conda\envs\PBIAgent\python.exe -m backend.app.harness.cases
 ```
 
-本阶段 evidence 见 [M5.10.9](milestones/m5/m5_10_9_documentation_governance_and_final_seal.md)。旧长交接见
+post-final evidence 见 [M5.10.9 FIX](milestones/m5/m5_10_9_fix_document_semantic_consistency_and_m6_handoff.md)；
+原封板记录见 [M5.10.9](milestones/m5/m5_10_9_documentation_governance_and_final_seal.md)。旧长交接见
 [Historical snapshot](archive/m5_pre_final_09_context_handoff.md)，仅作历史，不能继承旧 pending/current state。

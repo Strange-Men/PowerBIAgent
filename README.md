@@ -24,7 +24,7 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 - Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界；requested query scope 只由实际执行的 CanonicalQueryPlan 投影，observed data coverage 只由返回 rows 证明，空 rows 明确表示“当前查询范围未返回数据”而不是 0。
 - veto-only Understanding Coverage、runtime Grounding、StateTransition 后的 Canonical Shape Completeness，以及 QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection 构成 fail-closed 设计；任何无证据 shape、未知对象/成员、不完整排名或模糊时间范围仍在 DAX 前澄清。旧 Intent/QueryPlan/TurnRelation 自然语言 authority 已从 production 主链删除。
-- `sales_report`（简易销售分析模板）与 `sales_executive_report`（专业销售经营分析模板）均由后端目录公开；目录按当前 runtime schema 返回 `compatible/partial/incompatible/unavailable`，只允许显式选择可用模板。二者分别绑定独立固定 Renderer，禁止 fallback 或 LLM 临场生成 HTML/CSS/SVG。
+- Registry 登记 `sales_report`（简易销售分析模板）与 `sales_executive_report`（专业销售经营分析模板）；后端目录先按当前 semantic model 的 domain eligibility 筛选，再按 runtime schema 返回 `compatible/partial/incompatible/unavailable`，只允许显式选择可用模板。域不匹配不返回目录；Logistics 当前无适配模板仍可问数。二者分别绑定独立固定 Renderer，禁止 fallback 或 LLM 临场生成 HTML/CSS/SVG。
 - COMPLEX 模板在 Renderer 前必须具备标题、分析期间、实际筛选、observed coverage、指标口径、异常状态、模型/来源、数据新鲜度和生成时间；当前轮明确时间进入全部固定子查询，多查询 coverage 保守汇总；`data_updated_at`、`queried_at`、`snapshot_at`、`generated_at` 不得互相代替。
 - 结构化多轮 Memory 只补当前轮真正省略的兼容槽；fresh/follow-up/replace 分离，当前明确表达始终优先；歧义、失败、unsupported 和 clarification 不污染已提交状态。
 - SQLite 提供重启恢复、结构化历史/搜索、可恢复归档、永久删除、独立 report 删除与崩溃后删除重试。

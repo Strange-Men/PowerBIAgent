@@ -1,7 +1,10 @@
-"""Deferred Remote MCP Power BI Adapter skeleton.
+"""Legacy deferred Remote MCP Power BI Adapter skeleton.
 
-ADR-006 remains the accepted production route. ADR-007 selects Local MCP for
-the current Demo only, so Remote OAuth and transport stay unimplemented here.
+ADR-006 is SUPERSEDED. The historical endpoint, constructor defaults and
+ADR-006 exception wording below are not a production contract. Endpoint,
+auth, identity and RLS/OLS must be revalidated against Microsoft official
+capabilities before a user-approved M6 implementation. OAuth and transport
+remain unimplemented; this applicability correction changes no behavior.
 """
 
 from backend.app.powerbi.base import PowerBIAdapter

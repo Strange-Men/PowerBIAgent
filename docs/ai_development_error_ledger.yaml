@@ -8,6 +8,41 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-5109-002
+  title: Final marker 一致不等于 current semantic truth 一致
+  category: ERR
+  first_detected_version: M5.10.9
+  symptom: M5 FINAL markers 一致且 exact-SHA CI green，但 current PRD/spec/handoff 残留旧能力、单模板事实、专业模板 unavailable 与施工期 M6 prohibition
+  local_evidence: fresh clean main@86aaaec7 与 CI 36678384015 success；文档修改前 focused semantic gate 拒绝 8 项真实漂移，其他 28 项回归通过
+  authoritative_sources:
+  - title: M5.10.9 FIX documentation semantic consistency 用户指令
+    reason: M5 FINAL=true 持续有效；current fact 必须按 runtime 与 tests 校正，09 转为 M6 prerequisite handoff
+  - title: ADR-014 / ADR-019 与 M5.10.8 FIX 实现及邻近 tests
+    reason: 八种 QueryShape、共享 Sales factual path、domain eligibility 先于 capability validation，域不匹配不返回目录
+  root_cause: Documentation Governance Gate 只验证 topology/version/seal markers，没有覆盖跨 current authority 的少量高价值 semantic invariants；完成 milestone 后未转换施工命令生命周期
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: current docs cleanup、focused semantic invariants、Historical section 与 archive/milestone exclusion、M6 handoff lifecycle conversion；RemoteMCP 仅校正 docstring，旧 endpoint/default/ADR wording 风险列为 M6 P0 prerequisite
+  regression_tests:
+  - backend/tests/unit/test_documentation_governance.py
+  prohibited_patterns:
+  - 仅因 FINAL marker 一致便宣称所有文档语义正确
+  - 为消灭 keyword 改写 Historical archive 或历史决策正文
+  - 当前产品事实同时保存两个冲突版本
+  - milestone 完成后继续保留施工期本轮禁止下一阶段作为全局规则
+  - 将 RemoteMCP legacy skeleton 的 endpoint、constructor defaults 或 ADR-006 异常措辞当作 production contract
+  prevention_rules:
+  - focused semantic gate 只检查 current-authority / contract allowlist，明确 Historical sections 不参与
+  - 域不匹配不返回用户目录，域匹配后保留现有 capability validation / disabled UX 合同
+  - M6 从官方能力验证、P0 identity/auth/RLS-OLS/ownership/token/cache 与 accepted contract 开始，每个 patch scope 需用户批准
+  - post-final forward-fix 保持 M5 FINAL=true，FIX candidate 与 complete 分别验证 exact-SHA CI / remote audit
+  related_adr: ADR-005
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-30'
+    action: current_semantic_drift_reproduced_and_forward_fix_added
+    version: M5.10.9
 - id: ERR-5109-001
   title: 多份历史与根入口同时声明 current state 导致里程碑漂移
   category: ERR

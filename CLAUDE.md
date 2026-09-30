@@ -5,7 +5,8 @@
 ## 当前开发入口
 
 Settings.version=M5.10.9；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。M5.10.8 与 FIX COMPLETE。
-前置绿色基线 main@409fd521 / CI 36665958820；本轮 two-phase closure，最终 baseline 依当前 SHA CI + remote audit 生效，不预填当前提交 SHA。
+下一正式 milestone 为 M6 — Cloud Consumption & Enterprise Identity，尚未实现。
+发布 baseline 按 09 的当前 exact-SHA CI + remote audit 解析，不继承已完成阶段的施工流程。
 
 ## Cold Start
 
@@ -37,7 +38,9 @@ Report 只消费共享事实；八种 QueryShape 和 fixed Renderer authority �
 生产级后端风险优先于功能数量。Auth/Entra、tenant/principal、ownership/IDOR、Token lifecycle、
 RLS/OLS、cross-user cache、fail-closed 为 P0；生产 persistence/恢复/部署为 P1。详见 09。
 Token 只留 Auth / Transport，不进入 UserContext/Memory/Trace/Conversation persistence。
-本轮不实现 Cloud/Entra/存储/migration/M6。ADR-006 SUPERSEDED，实施前重查 Microsoft 官方 contract。
+可进入 M6 研究/设计；每个 implementation patch 必须单独取得用户批准的具体 scope。
+先 fresh Cold Start、重查 Microsoft 官方能力、完成 P0 边界设计/验证并形成 accepted contract，
+再实施 production path。ADR-006 SUPERSEDED；RemoteMCP legacy skeleton 不证明 endpoint/auth 合同。
 
 ## Git / debugging contract
 
@@ -55,7 +58,6 @@ Local automated、Local Real、Remote exact-SHA CI 分层记录；历史 PASS �
 不读取/输出/提交 .env、Secret、Token、PBIX、DB、真实业务数据、完整真实 prompt/response/trace dump。
 临时资源必须标明 ownership 并 finally teardown，不自动删除用户或 ownership 不明资源。
 
-本轮中文提交：M5.10.9_文档治理与最终封板候选 → exact-SHA CI success →
-M5.10.9_M5最终封板 → 最终 exact-SHA CI success + remote audit。current markers 必须八入口一致；
-两阶段 marker closure 是本轮明确授权例外，不用后续回填 commit 写入自身 SHA。
-staging 前运行 Repository Safety、cached diff 与 documentation gate。最终条件成立立即停止，不启动 M6。
+提交名称与收口阶段按当前任务授权；current release markers 必须一致。
+staging 前运行 Repository Safety、cached diff 与 documentation gate。自身 SHA 不写入自身提交；
+最终 exact-SHA CI + remote audit 成立后完成该获批任务，下一 patch 另按 scope 授权。

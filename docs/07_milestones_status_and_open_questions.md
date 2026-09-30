@@ -3,22 +3,24 @@
 > **状态：** Settings.version=M5.10.9；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一当前项目状态 authority；路线见 [08](08_development_roadmap.md)，开发交接见 [09](09_context_handoff.md)。
 
-## 当前阶段
+## 当前状态
 
-M5.10.8 COMPLETE；M5.10.8 FIX COMPLETE。用户已完成前阶段人工 UI Smoke，并指出唯一遗留
-empty-state 字体过大。本轮只改文档、version、12px CSS 与最小治理回归，不做业务功能。
-M5 Core Analysis Kernel 与 Local MVP baseline 已冻结；下一阶段为 M6 productionization。
+| 项目 | 状态 |
+|---|---|
+| Current Version | M5.10.9 |
+| Current Release State | M5 FINAL=true；既有 Final baseline 已成立 |
+| Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
+| Post-final | M5.10.9 FIX — documentation semantic consistency forward-fix；REMOTE CI PENDING |
+| Next | M6 — Cloud Consumption & Enterprise Identity |
+| Current implementation status | M6 NOT IMPLEMENTED |
+| Ready state | M6 planning / approved-scope implementation ready；前置条件见 09 |
 
-上一阶段最终绿色基线：`main@409fd521b4b503b6e8e56846806e099cd98e7a5b`，
-[exact-SHA CI Run 36665958820](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36665958820)
-completed/success，2026-09-30 fresh REST + fetch 核验。M5.10.8 发布基线
-`ef5a4c8ead7c05576360d3070ecf0e286e841dc5` / Run `36661689674` 也已核验 success。
-Phase A 已验证绿色候选：`main@a98f0fcaa8935aa3f371b6b2d6bdf0057b582d6d`，
-[exact-SHA CI Run 36677238767](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36677238767)
-completed/success。最终 seal 的自身 SHA 不写入自身提交；
-以当前 checkout 的 `git rev-parse HEAD`、该 exact SHA 的
-PowerBIAgent Validation / Full Validation (Windows) completed/success、fetch 后 HEAD==origin/main
-与 clean worktree 联合解析发布基线。文档中的 final marker 只有在最终 SHA CI 绿色后成为有效 seal。
+M5.10.8 与 FIX、M5.10.9 已完成。原 Final baseline：
+`86aaaec7d2172c041e97392c3de03adcca77ca1b` /
+[CI 36678384015](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36678384015)
+completed/success，2026-09-30 fresh REST + fetch 核验。
+post-final FIX 只校准文档与治理回归，M5 FINAL=true 持续有效。
+最新 FIX 发布基线按 09 的当前 exact-SHA CI / remote audit 解析，不用祖先 CI 代替。
 
 ## M5 Core Analysis Kernel 冻结边界
 
@@ -58,5 +60,6 @@ Local Modeling MCP Preview、LLM 长尾、无权威刷新时间、本地 single-
 M5.10.x 详细变更见 [CHANGELOG](../CHANGELOG.md)、[M5.10.8](milestones/m5/m5_10_8_mvp_final_test_seal.md)、
 [M5.10.8 FIX](milestones/m5/m5_10_8_fix_model_aware_report_template_catalog.md) 和
 [M5.10.9 evidence](milestones/m5/m5_10_9_documentation_governance_and_final_seal.md)。
+post-final 分层证据见 [M5.10.9 FIX](milestones/m5/m5_10_9_fix_document_semantic_consistency_and_m6_handoff.md)。
 旧状态长记录保留于 [Historical snapshot](archive/m5_pre_final_07_milestones_status_and_open_questions.md)。
 历史 milestone / ADR / archive 不另设当前状态。最终 seal 必须以最终 exact-SHA CI 为准。
