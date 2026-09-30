@@ -158,7 +158,7 @@ export function Composer({
             ) : null}
             {!loadingReportTemplates && reportTemplateOptions.length === 0 ? (
               <p className="menu-empty-state">
-                {reportTemplateError || '当前没有可用报表模板。'}
+                {reportTemplateError || '当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。'}
               </p>
             ) : null}
             {reportTemplateOptions.map((option) => (

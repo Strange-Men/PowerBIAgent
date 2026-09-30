@@ -429,38 +429,17 @@ class TestChatReportGeneration:
 
 class TestReportTemplateCatalog:
     @pytest.mark.asyncio
-    async def test_catalog_exposes_only_backend_registered_available_templates(self, client):
+    async def test_catalog_filters_schema_without_registered_domain_evidence(self, client):
         response = await client.get(
             "/api/v1/report-templates",
             params={"semantic_model_key": "mock_sales_model"},
         )
 
         assert response.status_code == 200
+        # Legacy mock fixture has TotalSales rather than a registered canonical
+        # Sales contract identity; its model display name cannot prove scope.
         assert response.json() == {
-            "items": [
-                {
-                    "template_key": "sales_report",
-                    "display_name": "简易模板",
-                    "description": "适合快速查看关键指标、趋势与分类明细",
-                    "availability": "available",
-                    "compatibility_status": "incompatible",
-                    "selectable": False,
-                    "available_section_count": 0,
-                    "total_section_count": 9,
-                    "reason_code": "report_no_resolved_sections",
-                },
-                {
-                    "template_key": "sales_executive_report",
-                    "display_name": "专业销售经营分析模板",
-                    "description": "适合管理层阅读的专业销售经营分析与审计上下文",
-                    "availability": "available",
-                    "compatibility_status": "incompatible",
-                    "selectable": False,
-                    "available_section_count": 0,
-                    "total_section_count": 9,
-                    "reason_code": "report_no_resolved_sections",
-                }
-            ]
+            "items": [], "reason_code": "no_eligible_report_template",
         }
 
 class TestChatClarification:

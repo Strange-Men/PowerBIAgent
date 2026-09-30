@@ -1304,6 +1304,31 @@ async def run(args, root, provider_failures, provider_timings):
                 elif args.phase == "m5108":
                     # Reuse the real chain and owned teardown; retain facts only
                     # in memory and print pass/count evidence, never business rows.
+                    if args.case and "m5108_catalog" in args.case:
+                        before = len(witnesses)
+                        sales_catalog = await client.get("/api/v1/report-templates", params={"semantic_model_key": key})
+                        sales_items = sales_catalog.json().get("items", [])
+                        sales_pass = bool(sales_catalog.status_code == 200
+                            and {item["template_key"] for item in sales_items} == {"sales_report", "sales_executive_report"}
+                            and all(item["selectable"] for item in sales_items)
+                            and next(item for item in sales_items if item["template_key"] == "sales_report")["display_name"] == "简易销售分析模板"
+                            and len(witnesses) == before)
+                        summaries.append({"case": "sales_catalog", "pass": sales_pass})
+                        print(json.dumps({"case": "sales_catalog", "pass": sales_pass, "dax_executed": False}), flush=True)
+                        others = [item for item in options if item["display_name"] == args.other_model]
+                        if len(others) != 1 or others[0]["key"] == key:
+                            raise RuntimeError("explicit_logistics_model_not_unique")
+                        other_key = others[0]["key"]
+                        logistics_catalog = await client.get("/api/v1/report-templates", params={"semantic_model_key": other_key})
+                        logistics_pass = bool(logistics_catalog.status_code == 200
+                            and logistics_catalog.json() == {"items": [], "reason_code": "no_eligible_report_template"}
+                            and len(witnesses) == before)
+                        summaries.append({"case": "logistics_catalog", "pass": logistics_pass})
+                        print(json.dumps({"case": "logistics_catalog", "pass": logistics_pass, "dax_executed": False}), flush=True)
+                        body, plan = await post("m5108_logistics", "Total Shipments是多少？", "scalar", model_key=other_key)
+                        summaries[-1]["pass"] &= bool(plan.get("measures") == ["Total Shipments"]
+                            and plan.get("semantic_model_key") == other_key
+                            and (body.get("execution_audit") or {}).get("factual_validation_pass"))
                     if not args.case or "sales" in args.case:
                         body, plan = await post("sales", "总销售额是多少", "scalar")
                         audit = body.get("execution_audit") or {}
@@ -2377,6 +2402,7 @@ def main():
     sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument("--model")
+    parser.add_argument("--other-model", help="Explicit second model for the focused catalog smoke")
     parser.add_argument("--profile", default="deepseek")
     parser.add_argument("--phase", choices=("inspect", "focused", "extended", "performance", "browser", "isolation", "m585", "m5104", "m5105", "m5106", "m5106stress", "m5107", "m5108"), default="focused")
     parser.add_argument("--port", type=int, default=8000)
@@ -2391,9 +2417,9 @@ def main():
     parser.add_argument("--stress-stop-on-transient", action="store_true", help="Stop after the first classified provider/deadline transient for bounded latency diagnosis")
     args = parser.parse_args()
     if args.phase == "m5108" and args.case and not set(args.case) <= {
-        "sales", "m5108_report", "m5108_kimi_provider",
+        "sales", "m5108_report", "m5108_kimi_provider", "m5108_catalog",
     }:
-        parser.error("m5108 only supports sales, m5108_report, m5108_kimi_provider")
+        parser.error("m5108 only supports sales, m5108_report, m5108_kimi_provider, m5108_catalog")
     with owned_acceptance_tempdir(prefix="powerbiagent-context-real-") as root:
         provider_failures = {}
         provider_timings = {}

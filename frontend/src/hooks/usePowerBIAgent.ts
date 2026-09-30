@@ -436,11 +436,15 @@ export function usePowerBIAgent() {
       setReportTemplateOptions(options)
       reportTemplateModelKeyRef.current = semanticModelKey
       setReportTemplateError(
-        current && !selected
-          ? '当前报表模板不适用于新选择的数据模型，请重新选择。'
-          : options.length === 0
-            ? '当前没有可用报表模板。'
-            : null,
+        catalog.reason_code === 'semantic_model_schema_unavailable'
+          ? '暂时无法获取当前数据模型的结构，请稍后重试。'
+          : catalog.reason_code === 'no_eligible_report_template'
+            ? '当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。'
+            : current && !selected
+              ? '当前报表模板不适用于新选择的数据模型，请重新选择。'
+              : options.length === 0
+                ? '当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。'
+                : null,
       )
     } catch (error) {
       if (generation !== reportTemplateGenerationRef.current) return

@@ -30,6 +30,7 @@ class ReportTemplateDescriptor(BaseModel):
     renderer_key: str = Field(min_length=1)
     availability: ReportTemplateAvailability
     tier: ReportTemplateTier = ReportTemplateTier.SIMPLE
+    domains: frozenset[str] = frozenset()
     aliases: tuple[str, ...] = ()
 
     model_config = ConfigDict(frozen=True)
@@ -51,6 +52,7 @@ class ReportTemplateCatalogItem(BaseModel):
 
 class ReportTemplateCatalogResponse(BaseModel):
     items: list[ReportTemplateCatalogItem]
+    reason_code: str | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -183,11 +185,12 @@ DEFAULT_REPORT_TEMPLATE_REGISTRY = ReportTemplateRegistry(
     (
         ReportTemplateDescriptor(
             template_key="sales_report",
-            display_name="简易模板",
-            description="适合快速查看关键指标、趋势与分类明细",
+            display_name="简易销售分析模板",
+            description="基于销售指标快速生成 KPI、趋势与分类分析",
             renderer_key="simple_report",
             availability=ReportTemplateAvailability.AVAILABLE,
             tier=ReportTemplateTier.SIMPLE,
+            domains=frozenset({"sales"}),
             aliases=("销售报表", "销售报告"),
         ),
         ReportTemplateDescriptor(
@@ -197,6 +200,7 @@ DEFAULT_REPORT_TEMPLATE_REGISTRY = ReportTemplateRegistry(
             renderer_key="executive_sales_report",
             availability=ReportTemplateAvailability.AVAILABLE,
             tier=ReportTemplateTier.COMPLEX,
+            domains=frozenset({"sales"}),
             aliases=("专业销售报表", "销售经营分析报表"),
         ),
     )

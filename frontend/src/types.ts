@@ -205,6 +205,7 @@ export interface ReportTemplateOption {
 
 export interface ReportTemplateCatalog {
   items: ReportTemplateOption[]
+  reason_code?: string | null
 }
 
 export interface ConversationFailureResult {

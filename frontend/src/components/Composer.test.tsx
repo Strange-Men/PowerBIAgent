@@ -91,6 +91,20 @@ function renderComposer(options: CatalogOption[] = [semanticModel]) {
 }
 
 describe('Composer menus and sending', () => {
+  it('shows model-specific empty templates while keeping data questions enabled', () => {
+    render(<Composer {...llmProps} sending={false}
+      semanticModel={semanticModel} semanticModelOptions={[semanticModel]}
+      loadingSemanticModels={false} semanticModelError={null}
+      reportTemplate={null} reportTemplateOptions={[]} loadingReportTemplates={false}
+      reportTemplateError={null} onSemanticModelChange={vi.fn()}
+      onRefreshSemanticModels={vi.fn()} onReportTemplateChange={vi.fn()} onSend={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: '打开数据与报表选项' }))
+    expect(screen.getByText('当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /销售分析模板/ })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('询问你的 Power BI 数据'), { target: { value: '运单数是多少？' } })
+    expect(screen.getByRole('button', { name: '发送' })).toBeEnabled()
+  })
+
   it('keeps a truly incompatible model visible and disables sending', () => {
     render(
       <Composer

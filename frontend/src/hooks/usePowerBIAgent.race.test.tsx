@@ -510,6 +510,47 @@ describe('conversation-owned chat concurrency', () => {
 })
 
 describe('report presentation synchronization', () => {
+  it('distinguishes schema failure from a normal empty template catalog', async () => {
+    api.discoverReportTemplates.mockResolvedValue({ items: [], reason_code: 'semantic_model_schema_unavailable' })
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(result.current.loadingReportTemplates).toBe(false))
+    expect(result.current.reportTemplateOptions).toEqual([])
+    expect(result.current.selectedReportTemplate).toBeNull()
+    expect(result.current.reportTemplateError).toBe('暂时无法获取当前数据模型的结构，请稍后重试。')
+  })
+
+  it('keeps the Logistics empty catalog after a late Sales response and allows Q&A', async () => {
+    const sales = deferred<{ items: object[] }>()
+    api.discoverSemanticModels.mockResolvedValue({
+      runtime_mode: 'real', error_type: null,
+      items: ['sales', 'logistics'].map((key) => ({
+        key, display_name: key, source: 'local_desktop', type: 'semantic_model',
+        available: true, connected: true, agent_compatible: true,
+        selectable: true, compatibility_status: 'compatible',
+      })),
+    })
+    api.discoverReportTemplates.mockImplementation((key: string) => key === 'sales'
+      ? sales.promise
+      : Promise.resolve({ items: [], reason_code: 'no_eligible_report_template' }))
+    api.sendChat.mockImplementation((body: ChatRequest) => Promise.resolve(response(body, 'verified answer')))
+    const { result } = renderHook(() => usePowerBIAgent())
+    await waitFor(() => expect(api.discoverReportTemplates).toHaveBeenCalledWith('sales'))
+    act(() => result.current.setSelectedSemanticModel(result.current.semanticModelOptions[1]))
+    await waitFor(() => expect(result.current.loadingReportTemplates).toBe(false))
+    expect(result.current.reportTemplateError).toBe('当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。')
+    await act(async () => { sales.resolve({ items: [{
+      template_key: 'sales_report', display_name: '简易销售分析模板', description: '销售',
+      availability: 'available', compatibility_status: 'compatible', selectable: true,
+      available_section_count: 9, total_section_count: 9,
+    }] }) })
+    expect(result.current.selectedSemanticModel?.key).toBe('logistics')
+    expect(result.current.reportTemplateOptions).toEqual([])
+    expect(result.current.selectedReportTemplate).toBeNull()
+    await act(async () => { await result.current.submitMessage('Total Shipments是多少？') })
+    expect(api.sendChat.mock.lastCall?.[0]).toMatchObject({ semantic_model_key: 'logistics' })
+    expect(api.sendChat.mock.lastCall?.[0].report_template_key).toBeUndefined()
+  })
+
   it('finishes catalog loading without querying templates when no model is available', async () => {
     api.discoverSemanticModels.mockResolvedValue({
       runtime_mode: 'real', items: [], error_type: null,

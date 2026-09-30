@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from backend.app.application.semantic_model_profile import build_semantic_model_profile
 from backend.app.config.settings import Settings
 from backend.app.harness.errors import (
     ToolExecutionError,
@@ -68,21 +69,27 @@ class ReportTemplateCompatibilityService:
                 context,
                 SchemaInput(semantic_model_key=semantic_model_key),
             )
+            profile = build_semantic_model_profile(schema)
+            if profile.semantic_model_key != semantic_model_key:
+                raise ValueError("semantic_model_profile_identity_mismatch")
         except (
             ToolTimeoutError,
             ToolExecutionError,
             ToolOutputValidationError,
             ToolPolicyDeniedError,
+            ValueError,
         ):
             return ReportTemplateCatalogResponse(
-                items=[
-                    self._unavailable(item, reason_code="semantic_model_schema_unavailable")
-                    for item in self._registry.descriptors
-                ]
+                items=[], reason_code="semantic_model_schema_unavailable",
             )
 
+        candidates = tuple(
+            item for item in self._registry.descriptors
+            if item.domains.intersection(profile.domains)
+        )
         return ReportTemplateCatalogResponse(
-            items=[self._project(item, schema) for item in self._registry.descriptors]
+            items=[self._project(item, schema) for item in candidates],
+            reason_code=None if candidates else "no_eligible_report_template",
         )
 
     def _project(
