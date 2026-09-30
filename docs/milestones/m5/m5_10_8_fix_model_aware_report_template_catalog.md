@@ -1,5 +1,9 @@
 # M5.10.8 FIX — 模型感知报表模板目录收口
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+> **Completed by：** 409fd521b4b503b6e8e56846806e099cd98e7a5b / CI 36665958820 completed/success；2026-09-30 M5.10.9 Cold Start fresh 核验。用户已完成 UI Smoke，empty-state 字体 residual 移交 M5.10.9。
+
+
 ## 范围与基线
 
 2026-09-30；LOCAL AUTOMATED / REAL / BROWSER PASS，REMOTE exact-SHA CI 待提交推送后审计。

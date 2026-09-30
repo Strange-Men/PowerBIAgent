@@ -1,5 +1,8 @@
 # M5.9 — Performance / Concurrency / Resilience / Cloud-Ready Runtime
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+
+
 状态：**COMPLETE**
 基线：`main@e8a79c3edcd7f648600bd4aa271d084d65cb62a1`（CI #51 exact-SHA success）
 架构：`ADR-017`；M5.8.5 correctness frozen；M5.10 NOT STARTED；M5 FINAL=false

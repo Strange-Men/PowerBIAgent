@@ -7,6 +7,9 @@
 
 ---
 
+> **2026-09-30 applicability：** Local Developer/Desktop Provider 与单链 Adapter 隔离决策保持 accepted。
+> 以下 ADR-006 accepted/return-to-Remote 关系为历史；ADR-006 现 SUPERSEDED，M6 Cloud contract 必须按 08/09 重新验证官方能力。
+
 ## 背景
 
 M2 Demo 的目标是先证明 PowerBIAgent 经既有控制面访问真实 Power BI，并为后续 Schema、DAX、QueryResult 与 DeepSeek 问答建立可运行路径。Remote MCP 当前受公司 Tenant setting、Entra App 与管理员权限前置条件阻塞；这些是外部治理条件，不是 ADR-006 架构失败。

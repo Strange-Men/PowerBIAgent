@@ -1,7 +1,6 @@
 # 01 — 产品范围与前端骨架
 
-> **状态：** M5.8.6 COMPLETE；React 前端、SQLite 资源生命周期、DeepSeek/Kimi 双模型目录与 Report Template Required 已实现。
-> **当前边界：** 当前为 M5.10.6 最终 presentation residual FIX；remote baseline `b1063ed` / CI `35942794552` success。专业模板保持 AVAILABLE，主区使用 presentation-only projection；canonical member 与 zh-CN display label 分离。M5.10.7/8 NOT STARTED，最终人工 spot-check PENDING，M5 FINAL=false。
+> **文档职责：** 长期产品/工程合同与历史实施记录；当前项目状态、路线、交接仅以 docs/07、08、09 为准。
 > **视觉参考：** `docs/assets/frontend/整体01.png`（已有对话与组合回答态）、`docs/assets/frontend/整体02.png`（新聊天欢迎态与菜单展开态）
 
 ---
@@ -306,7 +305,7 @@ ConversationSession {
 
 ## 四、产品边界
 
-### 当前 M5.10.6 实现边界
+### Historical — M5.10.6 实现边界
 
 - 当前只收口 zh-CN member display localization 与 stale current-state 文档。
 - canonical member、Grounding、CanonicalQueryPlan、Deterministic DAX、QueryResult、VerifiedFactSet、Memory 与 Report authority 不变。
@@ -318,4 +317,4 @@ ConversationSession {
 
 ---
 
-*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*
+*治理校准：2026-09-30 | 保留历史设计与证据；当前状态以 07/08/09 为准*

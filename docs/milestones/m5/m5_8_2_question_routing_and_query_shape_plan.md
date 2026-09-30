@@ -1,5 +1,8 @@
 # M5.8.2 — Question Routing 与通用 Query Shape 实施计划
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+
+
 > 状态：COMPLETE
 > 基线：`m5/rebuild` / `c1df1fabde56b2d271dbedf0315399301614b6f7`
 > 范围：自然语言能力路由、领域无关 Query Shape、最小必要澄清、基础算术、产品帮助、公开模型信息，以及受限 DAX shape 扩展。

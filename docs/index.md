@@ -4,19 +4,20 @@
 
 ## P0 — Cold Start
 
-每轮开发固定读取以下 7 个入口，再按任务追加当前相关 ADR：
+每轮开发按 AGENTS/09 的 Cold Start 顺序读取；07/08/09 是唯一 current-state authority，其他文件按职责提供产品合同、工程规则与历史证据：
 
 | 路径 | Owner / purpose |
 |---|---|
 | `AGENTS.md` | 仓库地图、架构铁律、Cold Start |
 | `PROJECT_CHARTER.md` | 项目使命、范围与不可静默改变的北极星 |
 | `CLAUDE.md` | 通用开发、修复、Secret、Git、Commit/Tag 规则 |
-| `docs/09_context_handoff.md` | 当前代码状态、限制、下一步与关键命令 |
-| `docs/08_development_roadmap.md` | M0—M5 路线、当前 Milestone 与阶段边界 |
+| `docs/07_milestones_status_and_open_questions.md` | 唯一当前项目状态 |
+| `docs/08_development_roadmap.md` | M5 冻结边界与 M6—M9 当前/未来路线 |
+| `docs/09_context_handoff.md` | 唯一下一开发者 Cold Start Handoff |
 | `docs/ai_development_error_ledger.yaml` | 机器可校验错误治理规则与当前相关条目 |
 | `docs/adr/README.md` | ADR 状态索引；继续读取本轮相关 accepted ADR |
 
-`docs/index.md` 是导航入口，不要求在已知固定 Cold Start 路径时重复读取。P0 固定文件数为 7；实际总数为 7 + 当前相关 ADR 数量。
+`docs/index.md` 是导航入口，不要求在已知固定 Cold Start 路径时重复读取。Cold Start 文件集合按 AGENTS/09 定义，不以旧固定数量漏读 07 或当前用户指定文件。
 
 ## P1 — 长期产品与工程基线
 
@@ -66,7 +67,7 @@
 | `docs/assets/reports/README.md` | 三张报表参考图片的 P0/P1/P2 authority 边界 | M5.10+ |
 | `docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md` | M2 Local Demo / Remote Production 专项计划 | M2 Provider、Smoke、Remote 证据任务 |
 | `docs/adr/ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md` | TurnPipeline / ToolGateway 总体决策 | 控制面与工具边界 |
-| `docs/adr/ADR-006_remote_powerbi_mcp_production_integration.md` | Remote MCP 生产化决策 | 仅重新获批 Remote 时 |
+| `docs/adr/ADR-006_remote_powerbi_mcp_production_integration.md` | SUPERSEDED Remote 历史决策 | 历史复核；M6 入口为 08/09 的官方重验要求 |
 | `docs/adr/ADR-007_local_mcp_demo_validation_path.md` | Local MCP Demo Provider 决策 | Local Provider/Smoke |
 | `docs/adr/ADR-008_business_semantic_catalog_and_grounding_authority.md` | Business Semantic authority | Grounding、Catalog、Member、Time、State |
 | `docs/adr/ADR-009_deterministic_query_execution_and_verified_fact_authority.md` | DAX/Layer3/Fact authority | 执行与外部事实边界 |
@@ -95,7 +96,7 @@
 | 产品范围或需求 | 00/01 + 相关 accepted ADR |
 | Intent、Grounding、Clarification、Memory | 03 + ADR-008/009 + 相关 Error Ledger |
 | DAX、Layer 3、VerifiedFactSet、Answer/Report factual boundary | 04/05 + ADR-009 |
-| Local MCP / Adapter / Smoke | 04/05 + M2 plan + ADR-006/007 |
+| Local MCP / Adapter / Smoke | 04/05 + M2 plan + ADR-007；ADR-006 仅历史 |
 | 安全、Git、CI、治理脚本 | 06 + CLAUDE + 相关 gate/test |
 | M3/M5 报表 | specs/11/14 + ADR-009/010/011/019 + 当前 report milestone 文档 |
 | M5 前端 | 01 + specs/10/11/12/13（获批后） |
@@ -113,4 +114,4 @@
 
 ---
 
-*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*
+*治理校准：2026-09-30 | 本文件是导航，current state 仅见 07/08/09*

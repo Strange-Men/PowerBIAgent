@@ -1,5 +1,8 @@
 # M5.10 — Complex Report Contract & Professional Sales Foundation
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+
+
 ## 目标与边界
 
 M5.10 固化复杂报表通用 Reading Context、第二个销售模板身份、共享 query requirements、freshness/metric/exception/source contracts。它不是专业视觉实现轮次，不实现 `sales_executive_report.html`、Executive Renderer、Remote MCP、YoY/MoM、Forecast、Target、Budget、Map、AI insight、PDF、JS dashboard 或交互筛选。

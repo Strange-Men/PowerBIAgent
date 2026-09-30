@@ -27,6 +27,11 @@ REQUIRED_PATHS = (
     "docs/09_context_handoff.md",
     "docs/00_product_requirements_document.md",
 )
+CURRENT_STATE_DOCUMENTS = (
+    "docs/07_milestones_status_and_open_questions.md",
+    "README.md", "PROJECT_CHARTER.md", "AGENTS.md", "CLAUDE.md", "CHANGELOG.md",
+    "docs/08_development_roadmap.md", "docs/09_context_handoff.md",
+)
 MOVED_DOCS = (
     (
         "docs/10_frontend_visual_and_interaction_spec.md",
@@ -178,7 +183,42 @@ def run_checks(root: Path = REPO_ROOT) -> list[str]:
         *check_deleted_path_references(root),
         *check_relative_markdown_links(root),
         *check_version_consistency(root),
+        *check_m5_seal_consistency(root),
     ]
+
+
+def check_m5_seal_consistency(root: Path) -> list[str]:
+    """Keep M5.10.9 release markers aligned without rewriting historical evidence."""
+    if current_version(root) != "M5.10.9":
+        return []
+    errors: list[str] = []
+    expected: tuple[str, str] | None = None
+    for relative in CURRENT_STATE_DOCUMENTS:
+        path = root / relative
+        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if relative == "CHANGELOG.md":
+            text = text.split("\n## [", 2)[0:2]
+            text = "\n## [".join(text)
+        candidate = "M5.10.9 RELEASE CANDIDATE" in text
+        complete = "M5.10.9 COMPLETE" in text
+        true_marker = "M5 FINAL=true" in text
+        false_marker = "M5 FINAL=false" in text
+        state = ("candidate", "false") if candidate and false_marker else (
+            ("complete", "true") if complete and true_marker else None
+        )
+        if candidate == complete or true_marker == false_marker or state is None:
+            errors.append(f"m5_seal_state_mismatch:{relative}")
+            continue
+        if expected is None:
+            expected = state
+        elif state != expected:
+            errors.append(f"m5_seal_state_mismatch:{relative}")
+        if complete and not all(marker in text for marker in (
+            "M5 CORE ANALYSIS KERNEL FROZEN", "LOCAL MVP BASELINE FROZEN",
+            "M6 PRODUCTIONIZATION READY",
+        )):
+            errors.append(f"m5_final_boundary_missing:{relative}")
+    return errors
 
 
 def main() -> int:

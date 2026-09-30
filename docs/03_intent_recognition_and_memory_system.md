@@ -1,9 +1,11 @@
 # 03 — 意图识别与记忆系统
 
-> **状态：** M5.8.6 COMPLETE；Intent/QuestionRouter 只提供能力分类与语言 weak signal，canonical semantics 由 ADR-008/014—016 的 Grounding、StateTransition 与 completeness gates 决定。
+> **文档职责：** 长期产品/工程合同与历史实施记录；当前项目状态、路线、交接仅以 docs/07、08、09 为准。
 > **关联 ADR：** ADR-002、ADR-005、ADR-008、ADR-009、ADR-012—ADR-016（ADR-001 已 superseded）
 
 ---
+
+> **适用性：** 以下旧 Intent/QueryPlan 语言模块描述是历史设计；M5.10.6 后唯一开放语言 authority 为 SemanticFrame，确定性 canonical/fact authority 保持。
 
 ## 一、意图识别
 
@@ -260,4 +262,4 @@ class IntentSpec(BaseModel):
 
 ---
 
-*最后更新：2026-09-07 | M5.8.6 / M5.9 COMPLETE；correctness/Memory authority 冻结*
+*治理校准：2026-09-30 | 保留历史设计与证据；当前状态以 07/08/09 为准*

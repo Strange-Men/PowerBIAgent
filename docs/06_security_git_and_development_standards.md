@@ -1,7 +1,6 @@
 # 06 — 安全、Git 与开发规范
 
-> **状态：** M5.8.6 COMPLETE；Secret、仓库、artifact、main-only 开发与 exact-SHA CI 治理均已固化。
-> **当前轮次：** M5.10.6 最终 presentation residual FIX；latest verified remote `b1063ed` / CI `35942794552` success。专业 Renderer 已实现；Remote MCP 仍 Deferred。M5.8.5 correctness 与 M5.9.2 runtime 冻结，M5.10.7/8 NOT STARTED，M5 FINAL=false。
+> **文档职责：** 长期产品/工程合同与历史实施记录；当前项目状态、路线、交接仅以 docs/07、08、09 为准。
 
 ---
 
@@ -215,7 +214,7 @@ Tag 名称的描述部分必须全部使用中文，禁止使用英文描述。
 3. docs/00_product_requirements_document.md（正式 PRD）
 4. 已确认 ADR
 5. 正式设计文档
-6. docs/09_context_handoff.md 中的当前状态
+6. docs/07 当前状态、docs/08 当前/未来路线、docs/09 Cold Start Handoff（唯一 current-state authority）
 7. `docs/archive/original/PRD.md`（仅作历史参考，不直接指导开发）
 8. Claude 的可逆默认假设
 

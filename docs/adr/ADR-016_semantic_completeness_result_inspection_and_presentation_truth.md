@@ -5,6 +5,8 @@
 - **决策者：** 用户明确批准 M5.8.5
 - **适用阶段：** M5.8.5；不启动 M5.9/M5.10
 
+> **历史适用性：** accepted correctness invariant 继续有效；文中 NOT STARTED/FINAL=false 为当时阶段边界，当前状态只见 docs/07、08、09。
+
 ## 背景
 
 M5.8.4 已能在现有 runtime Catalog 中跨语言绑定对象和成员，但仍缺少四个端到端 correctness invariant：当前输入中真正影响结果的语义修饰可能没有形成可审计的最终状态；不同 Query Shape 的完整槽位没有统一硬校验；Power BI 返回结果只经过结构校验，尚未验证 ranking/trend/distinct 的 canonical 语义；Answer 与 table/chart 没有共同的确定性 effective scope 与排序合同。

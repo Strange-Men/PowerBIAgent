@@ -1,5 +1,8 @@
 # M5.9.4 — Business Language Stress 与泛化验收
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+
+
 状态：**COMPLETE**（发布以当前 main exact-SHA CI success 为证据）
 
 基线：`main@ef1033ac3c5469adf4d1477aefb66bf1ee55949b`（M5.9.3 COMPLETE）

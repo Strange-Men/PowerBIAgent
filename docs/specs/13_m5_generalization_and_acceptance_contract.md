@@ -1,6 +1,6 @@
 # 13 — M5 重建、泛化与验收契约
 
-> **状态：** M5.5—M5.10.5 已完成；当前为 M5.10.6 最终 presentation residual FIX。latest verified remote `b1063ed` / CI `35942794552` success；M5.10.7/8 NOT STARTED，最终人工 spot-check PENDING，M5 FINAL=false
+> **文档职责：** 长期合同与历史实施记录；当前项目状态、路线、交接仅见 docs/07、08、09。
 > **适用范围：** M5.5—M5.10 长期合同；`m5/rebuild` 是历史重建/发布追溯分支，M5.8.6 后正式开发线为 `main`
 > **基线：** M5.4.1 commit `cab40b076f054a3ebdab0bf6d2b0354f4b2d49db`
 > **性质：** 长期工程与验收合同；M5.5 已按此合同完成，后续阶段继续受本合同约束
@@ -96,7 +96,7 @@ Answer 不得完整重复 table。展示层必须保持 canonical/display separa
 
 旧实验线曾观测到 Real latency 从几十秒到数分钟；schema/member/DAX 重复 session 有明显成本。persistent worker 是可参考思路，但 queue、backpressure、TTL、stale、异常恢复必须在 M5.9 独立压力验证。必须分别报告 cold 与 warm latency，禁止用 warm latency 冒充 cold latency。
 
-## 三、M5.5—M5.10 分阶段边界
+## 三、Historical — M5.5—M5.10 分阶段边界（已完成合同）
 
 ### M5.5 — Semantic correctness and capability boundary
 
@@ -277,7 +277,7 @@ VerifiedFactSet
 
 LLM 不拥有 HTML layout、factual、coverage 或 query authority，不得临场生成 HTML/CSS/SVG。专业销售模板只显示 runtime capability、registry 与 VerifiedFactSet 共同证明的 sales-specific section；没有 Forecast/Goal/Pipeline 等事实时禁止伪造、占位或以零值代替。
 
-人工验收后稳定化路线的当前权威划分为：M5.10.3 人工验收后语义安全收口（P0 wrong-question execution）；M5.10.4 语言与 QueryShape；M5.10.5 时间与事实呈现；M5.10.6 LLM Understanding、自然事实表达、时间/上下文、Report integration 与最终 presentation residual；M5.10.7 模板兼容与错误 UX；M5.10.8 MVP 最终 Real E2E/stress/mutation/historical/exact-SHA 收口。M5.10.7/8 不得提前实现；最终人工 spot-check 前保持 `M5 FINAL=false`。
+Historical — 当时人工验收后稳定化路线划分为：M5.10.3 人工验收后语义安全收口（P0 wrong-question execution）；M5.10.4 语言与 QueryShape；M5.10.5 时间与事实呈现；M5.10.6 LLM Understanding、自然事实表达、时间/上下文、Report integration 与最终 presentation residual；M5.10.7 模板兼容与错误 UX；M5.10.8 MVP 最终 Real E2E/stress/mutation/historical/exact-SHA 收口。M5.10.7/8 不得提前实现；最终人工 spot-check 前保持 `M5 FINAL=false`。
 
 “Frozen”在本合同中统一表示 authority boundary / architecture contract frozen。它不等于 implementation bug-free；production-path reproducer 证明实现违反 accepted invariant 时允许修复，但不得创建第二套 Planner、Grounding、Memory、runtime 或 factual authority。
 
@@ -399,4 +399,4 @@ M5.8.2 已完成 Question Router、八类通用 Query Shape、shape-specific cla
 
 ---
 
-*创建日期：2026-08-26 | 最后更新：2026-09-29 latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*
+*创建日期：2026-08-26 | 治理校准：2026-09-30；长期合同/历史 evidence，当前状态见 07/08/09*

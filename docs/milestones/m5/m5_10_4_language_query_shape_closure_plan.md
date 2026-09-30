@@ -1,5 +1,8 @@
 # M5.10.4 — 语言理解与 QueryShape 收口
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+
+
 ## Status and baseline
 
 - Status: COMPLETE — local automated + configured DeepSeek + Real Local MCP acceptance passed; exact-SHA CI is the release evidence.

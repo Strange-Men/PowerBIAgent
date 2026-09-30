@@ -1,5 +1,8 @@
 # M5.10.3 — 人工验收后语义安全收口
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+
+
 > **Historical milestone record.** The status, baseline and pending items below
 > describe M5.10.3 at that time. Current repository status is maintained in
 > `AGENTS.md` and `docs/09_context_handoff.md`.

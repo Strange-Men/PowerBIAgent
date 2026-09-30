@@ -1530,6 +1530,12 @@ input:focus-visible {
   background: #e8e8e8;
 }
 
+.menu-empty-state {
+  color: #777;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .local-catalog-note {
   margin: 8px 9px 3px;
   color: #999;

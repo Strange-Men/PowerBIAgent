@@ -1,5 +1,8 @@
 # M5.8.5 — Semantic Completeness + Result Inspection + Presentation Truth
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+
+
 状态：COMPLETE。基线 `m5/rebuild` / `ea0f65c3bbf31673728178f03d7487f72519e6a9`；M5.8.4 COMPLETE。本提交 exact-SHA CI 为发布证据。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 ## 已确认根因

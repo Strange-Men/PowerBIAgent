@@ -2,9 +2,9 @@
 
 > **原始 PRD 历史路径：** `docs/archive/original/PRD.md`；本文件是正式唯一 PRD。
 > **修订版本：** v2.4
-> **修订日期：** 2026-09-29
+> **修订日期：** 2026-09-29（需求基线；2026-09-30 治理校准，未新增业务需求）
 > **需求来源：** 用户原始 PRD + M0.1 开发准备 Prompt
-> **修订范围：** M5.10.3—M5.10.5 已完成；M5.10.6 的 Understanding、事实表达、时间/上下文、Report 集成与 semantic compatibility 已收口。最新已验证 remote baseline 为 `b1063ed` / CI `35942794552` success，只处理 zh-CN member display residual；M5.10.7/8 NOT STARTED，最终人工 spot-check PENDING，M5 FINAL=false
+> **文档职责：** 长期产品/工程合同与历史实施记录；当前项目状态、路线、交接仅以 docs/07、08、09 为准。
 > **当前确认状态：** 正式唯一 PRD；实现状态以 accepted ADR、08/09 与 fresh 验证为准
 
 ---
@@ -277,7 +277,7 @@ Agent 只能调用预先登记的 Power BI 和报表工具。
 | `POST /api/v1/conversations/{id}/restore` | ✅ M5.3.3；恢复逻辑归档，不重建业务状态 |
 | `DELETE /api/v1/conversations/{id}` | ✅ 已实现 |
 
-## 十一、MVP 开发阶段
+## 十一、Historical — MVP 开发阶段记录
 
 1. **M0 开发准备** ✅ 已完成 — 仓库、文档、Agent 架构设计、数据接入验证、项目骨架
 2. **M1 真实 DeepSeek 接入** ✅ 已完成并封板 — LLM Provider、Intent/QueryPlan 与统一 TurnPipeline；历史 LLM DAX/Answer 保留 Mock compatibility
@@ -370,7 +370,9 @@ MVP 达到以下条件即可视为成功：
 
 ## 十五、后续扩展方向
 
-当 MVP 验证成功并出现正式客户需求后，再考虑：
+以下是早期扩展方向的历史记录，当前 M6—M9 路线仅以 08 为准；“更复杂的 Agent 编排”设想受 ADR-005 与 charter 的禁止多 Agent 约束，不授权第二控制面。
+
+当时计划在 MVP 验证成功并出现正式客户需求后，再考虑：
 
 - 多个 LLM 模型切换
 - Microsoft 用户登录
@@ -383,6 +385,6 @@ MVP 达到以下条件即可视为成功：
 
 ---
 
-M5.10 已纳入正式路线：用户可明确选择“简易模板”或“销售模板”。销售模板可以包含 sales-specific section，但只消费 runtime schema 与 VerifiedFactSet 已证明的事实；缺少 Forecast/Goal/Pipeline 时必须用当前模型真实支持的销售 section 替代，禁止伪造。任何模板均不允许 LLM 临场生成 HTML/CSS/SVG。
+固定销售模板已实现为“简易销售分析模板”与“专业销售经营分析模板”；eligibility 来自当前模型的 backend-owned runtime 目录。销售模板可以包含 sales-specific section，但只消费 runtime schema 与 VerifiedFactSet 已证明的事实；缺少 Forecast/Goal/Pipeline 时必须用当前模型真实支持的销售 section 替代，禁止伪造。任何模板均不允许 LLM 临场生成 HTML/CSS/SVG。
 
-*修订日期：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；最终人工 spot-check PENDING；M5 FINAL=false*
+*治理校准：2026-09-30 | 正式需求基线；当前状态以 07/08/09 为准*

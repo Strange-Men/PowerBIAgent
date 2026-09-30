@@ -1,5 +1,9 @@
 # M5.10.8 — MVP Final Test Seal
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+> **Completed by：** ef5a4c8ead7c05576360d3070ecf0e286e841dc5 / CI 36661689674 completed/success；2026-09-30 M5.10.9 Cold Start fresh 核验。用户已完成前阶段 UI Smoke；唯一字体 residual 在 M5.10.9 收口，下面原始待验清单保留。
+
+
 ## 范围与状态
 
 LOCAL TEST SEAL PASS / REMOTE CI PENDING；M5 FINAL=false。用户 2026-09-30 当前指令覆盖旧路线的大型压力计划及“不得进入 M5.10.8”限制。仅完成小修、关键 focused regression、极少量 Real、既有 required checks 和 exact-SHA CI。M5.10.9 与 M6 未实施。

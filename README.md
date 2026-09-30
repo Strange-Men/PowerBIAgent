@@ -5,7 +5,10 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M5.10.8 — MVP Final Test Seal**。Settings.version=M5.10.8；M5.10.8 LOCAL TEST SEAL PASS；待本提交自动 exact-SHA CI 与 remote audit。起始 main@189edc6a37966955eb5f0069af6be6835c6a358e 的 exact-SHA CI Run 36654396932 因 frontend lint 失败；本轮已复现并做最小修复，最终 Local/Real/Remote evidence 见 M5.10.8 专项记录。人工 UI smoke 留给用户；M5 FINAL=false；不进入 M6。
+当前版本：**M5.10.9 — Documentation Governance & M5 Final Seal**。M5.10.9 RELEASE CANDIDATE；M5 FINAL=false。
+
+M5 提供后续企业生产化复用的 Core Analysis Kernel；冻结 authority/contract/architecture boundary，允许 failure-first minimal correctness forward-fix。下一阶段 M6 — Cloud Consumption & Enterprise Identity。
+当前状态、路线、交接分别只见 [07](docs/07_milestones_status_and_open_questions.md)、[08](docs/08_development_roadmap.md)、[09](docs/09_context_handoff.md)。
 
 ## 项目概览
 
@@ -21,7 +24,7 @@ PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用�
 - Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
 - `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界；requested query scope 只由实际执行的 CanonicalQueryPlan 投影，observed data coverage 只由返回 rows 证明，空 rows 明确表示“当前查询范围未返回数据”而不是 0。
 - veto-only Understanding Coverage、runtime Grounding、StateTransition 后的 Canonical Shape Completeness，以及 QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection 构成 fail-closed 设计；任何无证据 shape、未知对象/成员、不完整排名或模糊时间范围仍在 DAX 前澄清。旧 Intent/QueryPlan/TurnRelation 自然语言 authority 已从 production 主链删除。
-- `sales_report`（简易模板）与 `sales_executive_report`（专业销售经营分析模板）均由后端目录公开；目录按当前 runtime schema 返回 `compatible/partial/incompatible/unavailable`，只允许显式选择可用模板。二者分别绑定独立固定 Renderer，禁止 fallback 或 LLM 临场生成 HTML/CSS/SVG。
+- `sales_report`（简易销售分析模板）与 `sales_executive_report`（专业销售经营分析模板）均由后端目录公开；目录按当前 runtime schema 返回 `compatible/partial/incompatible/unavailable`，只允许显式选择可用模板。二者分别绑定独立固定 Renderer，禁止 fallback 或 LLM 临场生成 HTML/CSS/SVG。
 - COMPLEX 模板在 Renderer 前必须具备标题、分析期间、实际筛选、observed coverage、指标口径、异常状态、模型/来源、数据新鲜度和生成时间；当前轮明确时间进入全部固定子查询，多查询 coverage 保守汇总；`data_updated_at`、`queried_at`、`snapshot_at`、`generated_at` 不得互相代替。
 - 结构化多轮 Memory 只补当前轮真正省略的兼容槽；fresh/follow-up/replace 分离，当前明确表达始终优先；歧义、失败、unsupported 和 clarification 不污染已提交状态。
 - SQLite 提供重启恢复、结构化历史/搜索、可恢复归档、永久删除、独立 report 删除与崩溃后删除重试。
@@ -68,7 +71,7 @@ LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI
 |---|---|
 | 数据问答 | SCALAR、dimension-only ENTITY_LIST、GROUPED、RANKING/Top1、runtime-validated MEMBER_SET/`IN_SET`、FILTERED_AGGREGATION、TREND 与 BOUNDED_TREND；只澄清当前 shape 真正缺失的槽位 |
 | 非业务路由 | 自然问候、configured-timezone 日期时间、bounded 概念/产品能力说明、公开 LLM profile 信息、安全 Decimal 基础算术与明确 unsupported；ZERO schema/member/DAX/semantic Memory mutation |
-| 报表 | “简易模板” `sales_report` 与“专业销售经营分析模板” `sales_executive_report` 均可显式选择；两者共享 Sales requirements/事实 snapshot，使用各自固定安全静态 HTML Renderer 与资源查看/下载 |
+| 报表 | “简易销售分析模板” `sales_report` 与“专业销售经营分析模板” `sales_executive_report` 均可显式选择；两者共享 Sales requirements/事实 snapshot，使用各自固定安全静态 HTML Renderer 与资源查看/下载 |
 | 多轮 Memory | 当前明确表达 > bounded semantic draft > committed Memory；fresh 清除无关旧槽，follow-up/replace 只继承兼容省略项；模型切换清空旧语义上下文 |
 | 持久化与恢复 | SQLite Memory/Snapshot/报表 metadata；重启重放；不完整崩溃证据受控失败；持久化删除意图 |
 | 历史与搜索 | 仅 SQLite 支持最近会话、展示型 transcript、自动标题/重命名、有界搜索、archive/restore 与永久删除；旧会话只恢复真实已保存内容 |
@@ -273,7 +276,7 @@ Local MCP DAX 执行会验证实际 columns/rows/`rowCount` shape，并使用一
 | `POST` | `/api/v1/chat` | 非流式数据问答与报表生成 |
 | 字段 | `semantic_model_key` | 从发现目录选择 opaque 模型 key；必须精确绑定当前 Desktop 实例 |
 | 字段 | `llm_profile_key` | 本轮显式选择的公开 LLM profile；进入幂等指纹并在 turn 内冻结 |
-| 字段 | `report_template_key` | 报表请求必须显式提供的 registry-owned 模板 key；当前公开 `sales_report`（“简易模板”）与 `sales_executive_report`（“专业销售经营分析模板”），missing/invalid/stale 均在 ReportSpec/Renderer/artifact 前 fail closed |
+| 字段 | `report_template_key` | 报表请求必须显式提供的 registry-owned 模板 key；当前公开 `sales_report`（“简易销售分析模板”）与 `sales_executive_report`（“专业销售经营分析模板”），missing/invalid/stale 均在 ReportSpec/Renderer/artifact 前 fail closed |
 | `GET` | `/api/reports/{report_id}` | 查看 repository-owned HTML 报表 |
 | `GET` | `/api/reports/{report_id}/download` | 下载 UTF-8 HTML 报表 |
 | `GET` | `/api/v1/conversations` | 按 `runtime_mode` 查询最近会话 |
@@ -325,50 +328,7 @@ python -m alembic upgrade head
 
 ## 项目状态
 
-| 里程碑 | 状态 |
-|---|---|
-| M0–M3 | 已封板 |
-| M4 | 已最终验收 |
-| M4.4.2 | 已最终验收 — 事实与持久化边界最终收口 |
-| M5.0 | 已完成 — 前端设计与契约固化 |
-| M5.1 | 已完成 — React 前端实现与核心联调 |
-| M5.2 | 已完成 — 真实业务链路与前端逻辑收口 |
-| M5.2.1 | 已完成 — 模型能力边界与真实模式说明收口 |
-| M5.3 | 已完成 — 结构化结果、历史/标题/管理、响应式与视觉交互已收口；Rich PBIX Real 验收通过 |
-| M5.3.1 | 已完成 — 多 Desktop 实例连接前 fail closed；presentation 仅投影 verified 数据字段 |
-| M5.3.2 | 已完成 — 多 PBIX 安全枚举/单选/opaque 精确绑定、MCP capability probe、stale 与 truncation 防腐 |
-| M5.3.3 | 已完成 — 多轮继承语义、unsupported preflight、archive/restore、独立 report delete、A/B 防串窗与 Artifact Governance |
-| M5.4 | 已完成 — conversation-scoped state、client UUID pending session、异会话并发、用户卡片/资源管理、report tombstone/rename |
-| M5.4.1 | 已完成 — Settings 独立全量分页、准确 selection/batch 语义与 automation-owned resource cleanup |
-| M5.4.2 | 已完成 — 从 M5.4.1 `cab40b0` 建立重建线并固化分阶段开发与泛化验收；无生产功能变化 |
-| M5.5 | COMPLETE — Semantic correctness、runtime member、multi-turn、TopN、time 与 capability boundary |
-| M5.6 | COMPLETE — Presentation/Localization/Resource UX truth；共享 floating menu 与 Settings nested-scroll/action 可达性 |
-| M5.7 | COMPLETE — 简易报表视觉、响应式可读性、显式模板必选与人工视觉验收 |
-| M5.7.1 | COMPLETE — 统一语义可靠性、回归防火墙与高强度问答验收 |
-| M5.7.2 | COMPLETE — Report Template Gate 前移、Template/Renderer Registry、后端目录驱动的前端模板选择，以及简易模板视觉与信息架构最终收口 |
-| M5.8 | COMPLETE — OpenAI-compatible LLM Provider、DeepSeek/Kimi-K2.6 与 request/conversation-scoped model selection |
-| M5.8.1 | COMPLETE — 前置性能加速、Local MCP session reuse 与安全进程内 metadata/member cache |
-| M5.8.2 | COMPLETE — Question Router、通用 Query Shape、minimal clarification、dimension-only/Top1/member-set/bounded trend 与安全 calculator/help/system-info |
-| M5.8.3 | runtime metadata → immutable ModelSemanticContext → SemanticCatalog；COMPLETE（b86662e / CI success） |
-| M5.8.4 | COMPLETE；同一 runtime Catalog 内的跨语言对象/成员绑定与多轮保持；`3e3d8ac` / CI #46 exact-SHA completed/success |
-| M5.8.5 | COMPLETE；Semantic Coverage、Shape Completeness、Result Inspection、Query Scope/ordering 四个通用 invariant |
-| M5.8.6 | COMPLETE — M0-M5 主线发布与治理收口；main 已合并为新的正式基线；m5/frontend 已归档 |
-| M5.9 | COMPLETE（`179dd24` / CI #52 success）— 离线/2h soak、Real 1/2/4 worker、full gates 与 residual=0 已通过 |
-| M5.9.1 | Runtime Audit Closure — shutdown/enqueue race 与 retry ownership 已最小收口 |
-| M5.9.2 | Runtime Edge Final Closure — cancellation queue/admission 与 singleflight ownership 已最小收口；以当前 main exact-SHA CI success 为发布证据 |
-| M5.9.3 | Business Semantic Parsing Correctness Closure — grouping/member/time obligation、clarification reason 与 Sidebar icon geometry 已收口；以当前 main exact-SHA CI success 为发布证据 |
-| M5.9.4 | COMPLETE — 51,200 deterministic combinatorial stress + 108-case DeepSeek-only 双 PBIX Real；发布以当前 main exact-SHA CI success 为证据 |
-| M5.9.5 | COMPLETE — Sidebar conversation icon 统一 16×16 grid slot；1—80 字、三状态、current/hover 真实浏览器 geometry 与 mutation sanity 通过；发布以当前 main exact-SHA CI success 为证据 |
-| M5.10.1 | 本地收口完成 — 专业 Renderer、双模板公开显式选择、Simple/Executive parity、Simple/Rich PBIX 与真实浏览器视觉验收；发布以该阶段 exact-SHA CI success 为证据；M5.10.2 当时 NOT STARTED，M5 FINAL=false |
-| M5.10.2 | 本地产品收口完成 — Report Request/FULL_AVAILABLE、专业 presentation/视觉、时间 provenance、artifact compensation/cancellation、lifecycle/stale/concurrency/security/cloud-ready 硬化；Rich/Simple PBIX 与 DeepSeek-only exact phrase PASS；该历史完成证据不覆盖 post-manual reopen，M5 FINAL=false |
-| M5.10.3 | COMPLETE — Zero Wrong-Question Execution；用户人工验收通过 |
-| M5.10.4 | COMPLETE — bounded 开放语言解释与 QueryShape reconciliation；DeepSeek + Real Local MCP 14/14，residual=0 |
-| M5.10.5 | COMPLETE — `9dfbf2f` / CI `35088162355` success；确定性时间、事实防火墙与安全基线 |
-| M5.10.6 | COMPLETE — `bec4661` / CI `36548907575` success；Real Stress 130/130、Critical Real 21/21；用户最终人工 spot-check PASS |
-| M5.10.7 | IMPLEMENTATION COMPLETE / READY FOR USER MANUAL ACCEPTANCE — schema-aware template eligibility、typed failure、recovery UX 与限定 Real matrix 已收口；新 exact-SHA CI 自动启动后记录 |
-| M5.10.8 | NOT STARTED — MVP 最终 Real E2E / stress / mutation / historical / exact-SHA 收口 |
-
-逐版本变更见 [变更记录](CHANGELOG.md)。
+当前状态只见 [07](docs/07_milestones_status_and_open_questions.md)，M5 小阶段历史见 [变更记录](CHANGELOG.md) 与 milestone docs。下一阶段为 M6 — Cloud Consumption & Enterprise Identity。
 
 ## 文档导航
 
@@ -386,7 +346,7 @@ python -m alembic upgrade head
 - 本地单机 MVP；不支持多租户、复杂权限或 Power BI RLS。
 - Remote MCP 延期；不承诺生产级远程 Power BI 接入。
 - 不支持跨语义模型查询、任意 DAX、任意代码或任意 HTML。
-- 当前可用报表为“简易模板” `sales_report` 与“专业销售经营分析模板” `sales_executive_report`；报表请求必须显式选择，两个模板不得互相 fallback。
+- 当前可用报表为“简易销售分析模板” `sales_report` 与“专业销售经营分析模板” `sales_executive_report`；报表请求必须显式选择，两个模板不得互相 fallback。
 - Real Power BI 验收需要 Windows、Node.js 20+、Power BI Desktop 与本地人工 Smoke；CI 不验证 Desktop 在线链。
 - 当前结构化展示支持单值指标、多行表格，以及根据真实 QueryResult 字段引用生成的简单柱状图或折线图；不提供前端排序/筛选工作台、任意 ChartSpec 或前端推断数据。
 - `m5/rebuild` 已冻结为只读发布追溯分支，不接收 M5.9/M5.10 新开发。`m5/frontend` 上的 `a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）作为实验/审计历史由 `archive/m5-frontend-experimental-final` tag 永久保存；新线从 M5.4.1 `cab40b0` 重新开始，能力必须分阶段重新实现并重新验收。main 是唯一活动开发线。
@@ -395,4 +355,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*
+*最后更新：2026-09-30 | M5.10.9 RELEASE CANDIDATE；M5 FINAL=false；当前状态以 07/08/09 为准*

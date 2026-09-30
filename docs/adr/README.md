@@ -28,7 +28,7 @@
 | ADR-003 | Power BI MCP 认证与接入方案 | **partially superseded by ADR-006** | 2026-07-31 |
 | ADR-004 | Harness 方案：轻量 ETCLOVG 控制面 | accepted | 2026-07-31 |
 | ADR-005 | [确定性 TurnPipeline 与受控 LLM 调用架构](ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md) | accepted | 2026-08-04 |
-| ADR-006 | [真实 Power BI Remote MCP 生产接入架构](ADR-006_remote_powerbi_mcp_production_integration.md) | accepted | 2026-08-11 |
+| ADR-006 | [真实 Power BI Remote MCP 生产接入架构](ADR-006_remote_powerbi_mcp_production_integration.md) | **SUPERSEDED（M5.10.9 governance；Cloud 前重验官方能力）** | 2026-08-11 |
 | ADR-007 | [Demo 阶段使用 Local Power BI MCP 验证真实流程](ADR-007_local_mcp_demo_validation_path.md) | accepted | 2026-08-11 |
 | ADR-008 | [Business Semantic Catalog and Grounding Authority](ADR-008_business_semantic_catalog_and_grounding_authority.md) | accepted | 2026-08-13 |
 | ADR-009 | [Deterministic Query Execution and Verified Fact Authority](ADR-009_deterministic_query_execution_and_verified_fact_authority.md) | accepted | 2026-08-14 |
@@ -43,9 +43,9 @@
 | ADR-018 | [Deterministic Semantic Expression Normalization](ADR-018_deterministic_semantic_expression_normalization.md) | accepted | 2026-09-08 |
 | ADR-019 | [Complex Report Reading Context and Template Authority](ADR-019_complex_report_reading_context_and_template_authority.md) | accepted | 2026-09-11 |
 
-当前开发最重要的 active 决策为 ADR-005—ADR-019；ADR-019 固化所有复杂模板的 Reading Context、metric/filter/exception/freshness authority、共享 Sales fact path 与 Local/Remote source boundary。ADR-001 已 superseded；ADR-003 仅保留未被 ADR-006 替代的历史方向。
+当前 active 核心决策为 ADR-005、ADR-007—ADR-019（各自历史限制按后续 accepted 决策收紧）；ADR-006 SUPERSEDED，不作为当前 Cloud endpoint/auth contract。
 
-**当前正式基线：** `main@b1063edca9e9fbee1830df3c1071dcf5e3b3a1b9` / exact-SHA CI Run `35942794552` completed/success。当前阶段为 M5.10.6 最终 presentation residual FIX；ADR-014/015/016/018/019 的 authority invariant 继续有效，display localization 只能投影 verified canonical identity。“frozen”表示 authority/architecture contract 不变，不妨碍 invariant-preserving bug fix。M5.10.7/8 NOT STARTED，最终人工 spot-check PENDING，M5 FINAL=false。
+**索引职责：** 只保存 ADR 状态与适用性；current state、路线、handoff 仅见 docs/07、08、09。
 
 ## ADR 详情
 
@@ -67,13 +67,13 @@ Remote MCP、Entra App、PowerBIAdapter 隔离方向继续有效；Device Code�
 
 正式正文见 [ADR-005 独立文件](ADR-005_deterministic_turn_pipeline_and_controlled_llm_architecture.md)。核心决策：PydanticAI 已废弃；TurnPipeline 为确定性控制面；LLM 仅受控结构化生成；ToolGateway 是 Power BI / Renderer 唯一入口；Mock 与 DeepSeek 共用执行骨架。
 
-### ADR-006 — 真实 Power BI Remote MCP 生产接入架构
+### ADR-006 — 真实 Power BI Remote MCP 生产接入架构（SUPERSEDED）
 
-正式正文见 [ADR-006 独立文件](ADR-006_remote_powerbi_mcp_production_integration.md)。在 ADR-005 总体管线之下，固化官方 MCP Python Client、用户委托 OAuth、PowerBIAdapter 隔离、工具白名单、无静默回退及离线 CI / 人工 Smoke 边界。
+正式正文见 [ADR-006 独立文件](ADR-006_remote_powerbi_mcp_production_integration.md)。历史记录保留，endpoint/SDK/OAuth 不再作为当前默认路线。ToolGateway/Adapter/no-fallback invariant 仍有效；新 Cloud contract 需 M6 官方重验。
 
 ### ADR-007 — Demo 阶段使用 Local Power BI MCP 验证真实流程
 
-正式正文见 [ADR-007 独立文件](ADR-007_local_mcp_demo_validation_path.md)。管理员前置条件暂不可得时，Demo 先通过 Local MCP + Power BI Desktop 验证真实链路；ADR-006 Remote 生产化方案保持 accepted，Local / Remote 只替换 Adapter 后的 Provider。
+正式正文见 [ADR-007 独立文件](ADR-007_local_mcp_demo_validation_path.md)。管理员前置条件暂不可得时，Demo 先通过 Local MCP + Power BI Desktop 验证真实链路；Local / Cloud 只经 Adapter 扩展；ADR-006 的旧 Remote 路线现 SUPERSEDED，M6 前按 08/09 重验。
 
 ### ADR-008 — Business Semantic Catalog and Grounding Authority
 
@@ -121,4 +121,4 @@ Execution、Tooling、Context、Lifecycle、Observability、Verification、Gover
 
 ---
 
-*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；ADR-005—019 active；M5.10.6 最终 presentation residual FIX；M5.10.7/8 NOT STARTED；M5 FINAL=false*
+*治理校准：2026-09-30 | ADR-006 SUPERSEDED；其他 accepted authority 继续有效；当前状态见 07/08/09*

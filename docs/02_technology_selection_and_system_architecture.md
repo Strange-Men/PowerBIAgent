@@ -1,8 +1,7 @@
 # 02 — 技术选型与系统架构
 
-> **状态：** M5.9 runtime architecture 已 COMPLETE（`179dd24` / CI #52 success）；当前为 M5.10.6 最终 presentation residual FIX，remote baseline `b1063ed` / CI `35942794552` success。M5.10.7/8 NOT STARTED，main 是唯一活动开发线，M5 FINAL=false。
-> **当前版本：** M5.10.6
-> **关联 ADR：** ADR-001（已废弃）、ADR-002—ADR-019；当前以 ADR-005—ADR-019 为准
+> **文档职责：** 长期产品/工程合同与历史实施记录；当前项目状态、路线、交接仅以 docs/07、08、09 为准。
+> **关联 ADR：** ADR-001（已废弃）、ADR-002—ADR-019；当前以 ADR 索引中的 accepted 决策为准；ADR-006 SUPERSEDED
 
 ---
 
@@ -80,7 +79,7 @@
 | ADR-003 | Power BI MCP 认证与接入方案 | partially superseded by ADR-006 |
 | ADR-004 | Harness 方案：轻量 ETCLOVG 控制面 | accepted |
 | ADR-005 | 确定性TurnPipeline与受控LLM调用架构 | accepted（M1.6.1） |
-| ADR-006 | Remote Power BI MCP 生产接入 | accepted / Deferred implementation |
+| ADR-006 | Remote Power BI MCP 生产接入 | SUPERSEDED；M6 官方能力重验，见 08/09 |
 | ADR-007 | Local MCP Demo 验证路径 | accepted / active |
 | ADR-008 | Business Semantic Catalog and Grounding Authority | accepted / active |
 | ADR-009 | Deterministic Execution and Verified Fact Authority | accepted / active |
@@ -121,7 +120,7 @@ M1.5 全链路验收后，动态复验证实以下问题：
 | AI 真实性与对抗测试 | ⬜ M1.6.4 |
 | CI 与全量回归 | ⬜ M1.6.5 |
 
-### 当前代码实际状态（M1.6.3 基线）
+### Historical — 代码实际状态（M1.6.3 基线）
 
 - `TurnPipeline` 类统一 Mock 与 DeepSeek 执行骨架（`backend/app/application/turn_pipeline.py`）
 - `DeepSeekTurnService` 通过 ToolGateway 调用 Power BI 和 Renderer
@@ -153,4 +152,4 @@ M1.5 全链路验收后，动态复验证实以下问题：
 
 ---
 
-*最后更新：2026-09-29 | latest verified remote `b1063ed` / CI `35942794552` success；M5.10.6 最终 presentation residual FIX；ADR-005—019 active；M5.10.7/8 NOT STARTED；M5 FINAL=false*
+*治理校准：2026-09-30 | 保留历史设计与证据；当前状态以 07/08/09 为准*

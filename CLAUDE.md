@@ -1,61 +1,61 @@
 # CLAUDE.md — PowerBIAgent 通用开发协议
 
-> 本文件只保留 Cold Start、authority boundary、Git contract 与当前开发入口。当前状态和
-> 路线分别以 `docs/09_context_handoff.md`、`docs/08_development_roadmap.md` 为准。
-
-## Cold Start
-
-修改任何文件前：
-
-1. 执行 `git status`、`git branch --show-current`、`git rev-parse HEAD`，确认无未授权改动或
-   merge/rebase/cherry-pick/revert 中间状态。
-2. 按 `AGENTS.md` 的固定 Cold Start 顺序读取 P0、当前 ADR、专项计划、涉及的 production
-   code 与邻近 tests。
-3. 核对上一轮 commit、`origin/main`、09 handoff、`D:\Conda\envs\PBIAgent`。普通轮次没有
-   Tag 不构成阻塞。
-4. 用不超过 200 字复述目标/进度/允许与禁止范围，再用不超过 200 字列出命中的 Error
-   Ledger、ADR、漂移风险与禁止边界。
-5. 上一轮 commit 不存在、handoff 冲突、Error Ledger 不可读或 remote main 已前进时停止。
-
-## Authority boundary
-
-- `TurnPipeline` 是唯一控制面；`ToolGateway → PowerBIAdapter` 是唯一 Power BI 路径。
-- LLM 只拥有 bounded language interpretation 与 natural wording authority，不拥有 canonical
-  identity/member/date、DAX、business math、QueryResult、coverage/horizon、VerifiedFact、
-  factual Memory、report fact 或 HTML authority。
-- Runtime SemanticCatalog/Grounding、StateTransition/Completeness、Deterministic DAX/Layer 3、
-  Result Inspection/VerifiedFactSet 分别拥有业务语义绑定、canonical state、执行与外部事实
-  authority。歧义、未知或不完整必须 fail closed。
-- General lane current-message-only、no-tool、无业务状态；mixed request 取最高风险并进入严格
-  business pipeline。conversation false-negative 必须以 `requires_business_grounding` 升级，
-  不得猜组织数据。
-- Natural Answer 只能基于 VerifiedFactSet、verified user-facing scope 与真实 data availability，
-  并在发送前通过 `FactOutputValidator`；validator 不得降低。
-- `requested scope`、`observed coverage`、measure-aware `available data horizon` 独立。horizon
-  只能由真实数据或 canonical-derived deterministic auxiliary probe 证明，不能冒充 refresh time。
-- Report 只消费共享事实/availability；QueryShape 仍八种；禁止第二 Planner/Grounding/Memory、
-  新 Agent/RAG/DB/migration、LLM DAX、MCP/Provider rewrite、报表视觉重构与未来 milestone 工作。
+> 当前状态仅见 docs/07，路线仅见 docs/08，Cold Start Handoff 仅见 docs/09；本文件不另设 current-state authority。
 
 ## 当前开发入口
 
-- Settings.version=M5.10.8；M5.10.8 LOCAL TEST SEAL PASS；待本提交自动 exact-SHA CI 与 remote audit。起始 main@189edc6a37966955eb5f0069af6be6835c6a358e 的 exact-SHA CI Run 36654396932 因 frontend lint 失败；本轮已复现并做最小修复，最终 Local/Real/Remote evidence 见 M5.10.8 专项记录。人工 UI smoke 留给用户；M5 FINAL=false；不进入 M6。
-- 专项记录：`docs/milestones/m5/m5_10_8_mvp_final_test_seal.md`。
+Settings.version=M5.10.9；M5.10.9 RELEASE CANDIDATE；M5 FINAL=false。M5.10.8 与 FIX COMPLETE。
+前置绿色基线 main@409fd521 / CI 36665958820；本轮 two-phase closure，最终 baseline 依当前 SHA CI + remote audit 生效，不预填当前提交 SHA。
 
-## Git contract
+## Cold Start
 
-- 正式流程：Spec → RED reproducer → regression → minimal implementation → focused/cross-domain/
-  full gates → Real DeepSeek + Local MCP → whitelist staging → commit → push main → exact-SHA CI
-  → remote audit。
-- Commit：`M5.10.8_MVP最终测试收口`；不打 Tag，不自动进入 M5.10.9。
-- 禁止 `git add .` / `git add -A`、force、rebase、history rewrite、reset hard、clean、branch
-  deletion。Push 前再次核对 remote main；若已前进则停止。
-- CI 失败只做 failure reproducer 驱动的 minimal forward-fix；同根因最多两轮。
-- staging 前运行 repository safety，并检查 cached diff；不得读取/提交 `.env`、Secret、PBIX、
-  DB、真实业务数据、完整真实 prompt/response、trace dump。
-- Commit 前同步 README（仅当 current state 过期）、CHANGELOG、07/08/09、专项计划、Error
-  Ledger 与 Settings.version；当前 commit SHA/CI 不预填。Commit 后不得追加文档回填 commit。
-- Local automated、Local Real、Remote CI 证据严格分栏，禁止相互冒充。
+先 Git status/branch/HEAD/origin/log/fetch，核对 main、clean 与 exact baseline；remote main 前进即停止。
+按 AGENTS 与 docs/09 顺序读取 charter、07/08/09、Error Ledger、ADR index/相关 accepted ADR、
+当前任务及 production/邻近 tests。不得以历史 PASS、旧 endpoint 或聊天记忆替代 fresh 证据。
+简短 reality audit 后自动在授权范围继续；文档治理任务中的既有状态漂移由本轮修复，不因漂移重复求确认。
 
----
+## Frozen Core / authority boundary
 
-*最后更新：2026-09-30 | M5.10.8 LOCAL TEST SEAL PASS / REMOTE CI PENDING；M5 FINAL=false*
+TurnPipeline、QuestionRouter、SemanticFrame、Grounding、StateTransition、CanonicalQueryPlan、
+DeterministicDAXBuilder、DAXSafety、ResultInspection、VerifiedFactSet、ReportPlanner、ReportSpec、
+Renderer、Presentation、TypedFailure、LLM Provider Registry、Harness、ToolGateway。
+
+Frozen 表示已有 authority / contract / architecture boundary 不再随意重构，允许
+failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner / Grounding / Memory，
+禁止重设计 deterministic factual chain；M6 优先经 Adapter / Repository / Service 扩展，能扩展就不重构 Core。
+
+TurnPipeline 是唯一控制面，ToolGateway → PowerBIAdapter 是唯一 Power BI 路径。
+LLM understands. Runtime proves. LLM 不拥有 canonical identity/member/date、DAX、business math、
+QueryResult、coverage/horizon、VerifiedFact、factual Memory、report fact 或 HTML authority。
+General current-message-only/no-tool/ZERO business state；歧义/残缺 fail closed；Natural Answer
+基于 VerifiedFactSet/verified scope/真实 availability 并通过 FactOutputValidator，validator 不降低。
+requested scope/observed coverage/measure-aware horizon 独立，未知 refresh 明示 UNKNOWN。
+Report 只消费共享事实；八种 QueryShape 和 fixed Renderer authority 保持。
+
+## M6 交接
+
+生产级后端风险优先于功能数量。Auth/Entra、tenant/principal、ownership/IDOR、Token lifecycle、
+RLS/OLS、cross-user cache、fail-closed 为 P0；生产 persistence/恢复/部署为 P1。详见 09。
+Token 只留 Auth / Transport，不进入 UserContext/Memory/Trace/Conversation persistence。
+本轮不实现 Cloud/Entra/存储/migration/M6。ADR-006 SUPERSEDED，实施前重查 Microsoft 官方 contract。
+
+## Git / debugging contract
+
+main 是唯一活动开发线。流程为 failure-first → minimal implementation → fresh gates →
+必要且有界 Real → 白名单 staging → 中文 commit → push main → exact-SHA CI → remote audit。
+不得 git add . / git add -A、force push、rebase、history rewrite、reset --hard、clean、删除分支；
+push 前 fetch，remote main 已前进则停止，不覆盖用户变更。不打 Tag。
+
+同一 root cause 的 P1 不因每次失败都停止：保留 reproducer、更新证据，在已授权边界内最多两轮
+minimal forward-fix；达到上限仍失败，或出现新根因、修改边界扩大、architecture risk 时停止重新
+评估。不得降低 validator、删除 negative tests、改 expected 迎合错误、Mock Real 或隐藏 warning/error。
+新的额外修复轮次必须取得明确授权并记录到 Error Ledger。
+
+Local automated、Local Real、Remote exact-SHA CI 分层记录；历史 PASS 不替代 fresh evidence。
+不读取/输出/提交 .env、Secret、Token、PBIX、DB、真实业务数据、完整真实 prompt/response/trace dump。
+临时资源必须标明 ownership 并 finally teardown，不自动删除用户或 ownership 不明资源。
+
+本轮中文提交：M5.10.9_文档治理与最终封板候选 → exact-SHA CI success →
+M5.10.9_M5最终封板 → 最终 exact-SHA CI success + remote audit。current markers 必须八入口一致；
+两阶段 marker closure 是本轮明确授权例外，不用后续回填 commit 写入自身 SHA。
+staging 前运行 Repository Safety、cached diff 与 documentation gate。最终条件成立立即停止，不启动 M6。

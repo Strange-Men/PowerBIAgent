@@ -5,12 +5,10 @@
 
 ## 当前开发入口
 
-- 当前版本：**M5.10.8**（MVP Final Test Seal）。
-- 起始 main：`189edc6a37966955eb5f0069af6be6835c6a358e`；exact-SHA CI Run `36654396932` frontend lint failure。
-- 最近已验证绿色远程基线仍为 `bec4661` / CI `36548907575` success。
-- 用户当前明确授权 M5.10.8；只做最小修复、关键 focused regression、极少量 Real 与现有 required checks。
-- 状态与分层测试证据见 `docs/milestones/m5/m5_10_8_mvp_final_test_seal.md`；人工 UI smoke 由用户完成。
-- 下一阶段为 M5.10.9 Documentation Governance & MVP Final Seal；本轮不实施该阶段，不进入 M6，`M5 FINAL=false`。
+- 当前版本：**M5.10.9**（Documentation Governance & M5 Final Seal）。
+- M5.10.9 RELEASE CANDIDATE；M5 FINAL=false；M5.10.8 与 FIX COMPLETE。当前只做治理、version 与 12px CSS polish，不做 M6 implementation。
+- 07 是当前状态，08 是当前/未来路线，09 是唯一开发交接；根入口不重复保存浮动 SHA/CI。
+- 前置绿色基线 main@409fd521 / CI 36665958820；本阶段 final baseline 必须按当前 checkout exact-SHA CI 和 remote audit 解析。
 
 ## Authority boundary
 
@@ -41,7 +39,7 @@
     Memory。模型切换不得继承旧模型业务上下文。
 12. 禁止第二 Planner/Grounding/Memory、Agent、LangGraph、RAG/vector DB、ontology server、
     migration、MCP runtime/Provider rewrite、LLM DAX、任意代码、写/删/更新、Forecast/Target/
-    Budget、新 YoY/MoM capability、报表视觉重构、M5.10.9 全面文档治理及 M6 工作。
+    Budget、新 YoY/MoM capability、报表视觉重构；本轮不进入 M6 implementation。
 
 ## 固定 Cold Start
 
@@ -50,8 +48,8 @@
 1. `AGENTS.md`
 2. `PROJECT_CHARTER.md`
 3. `CLAUDE.md`
-4. `docs/09_context_handoff.md`
-5. `docs/08_development_roadmap.md`
+4. `docs/07_milestones_status_and_open_questions.md` → `docs/08_development_roadmap.md` → `docs/09_context_handoff.md`
+5. `README.md`、`CHANGELOG.md`（导航与历史摘要）
 6. `docs/ai_development_error_ledger.yaml` 的结构、有效规则与当前相关项
 7. `docs/adr/README.md` 与当前相关 accepted ADR
 8. 当前 Prompt 指定文档、涉及的 production code 与邻近 tests
@@ -64,14 +62,27 @@
 
 - `main` 是唯一活动开发线；流程固定为 failure-first → minimal implementation → fresh gates
   → Real → 白名单 staging → commit → push main → exact-SHA CI → remote audit。
-- 当前提交名固定为：`M5.10.8_MVP最终测试收口`；不打 Tag。
+- 本轮两阶段：`M5.10.9_文档治理与最终封板候选` → exact-SHA CI success → `M5.10.9_M5最终封板` → 最终 exact-SHA CI / remote audit；不打 Tag。
 - 禁止 `git add .`、`git add -A`、force push、rebase、history rewrite、`reset --hard`、
   `clean`、branch deletion。remote main 已前进则停止。
-- CI 失败只允许 forward-fix；同一 root cause 最多两轮。禁止降低 validator、删除 negative
+- CI 失败只允许 forward-fix；同一 root cause 最多两轮，P1 不因每次失败都停止；上限仍失败、新根因、边界扩大或 architecture risk 才停止重新评估。禁止降低 validator、删除 negative
   tests、修改 expected 迎合错误、Mock Real 或隐藏 warning/error。
 - 不读取、输出或提交 `.env`/Secret、真实业务数据、PBIX、DB、真实 prompt/response dump。
 - Local automated、Local Real DeepSeek + MCP、Remote exact-SHA CI 必须分层记录。
 
 ---
 
-*最后更新：2026-09-30 | M5.10.8 LOCAL TEST SEAL PASS / REMOTE CI PENDING；分层 evidence 见专项记录；M5 FINAL=false*
+
+## Frozen Core / M6 扩展纪律
+
+TurnPipeline、QuestionRouter、SemanticFrame、Grounding、StateTransition、CanonicalQueryPlan、
+DeterministicDAXBuilder、DAXSafety、ResultInspection、VerifiedFactSet、ReportPlanner、ReportSpec、
+Renderer、Presentation、TypedFailure、LLM Provider Registry、Harness、ToolGateway。
+
+Frozen 表示已有 authority / contract / architecture boundary 不再随意重构，允许
+failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner / Grounding / Memory，
+禁止重设计 deterministic factual chain；M6 优先经 Adapter / Repository / Service 扩展，能扩展就不重构 Core。
+
+生产级后端风险优先于功能数量；M6 开始前按 09 重新验证 Microsoft 官方能力，ADR-006 已 SUPERSEDED。Token 只允许 Auth / Transport boundary；tenant/principal/ownership 与 RLS/OLS 必须先证明。
+
+*最后更新：2026-09-30 | M5.10.9 RELEASE CANDIDATE；M5 FINAL=false；当前状态以 07/08/09 为准*

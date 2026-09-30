@@ -1,5 +1,9 @@
 # M5.10.7 — Schema-aware Template Eligibility + Typed Failure + Recovery UX
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+> **Completed by：** 后续 M5.10.8 + FIX release/用户 UI Smoke；原 189edc6 的 frontend lint failure 与当时 pending 不删除。
+
+
 ## 状态与范围
 
 M5.10.7 implementation 已完成，等待用户人工验收；`M5 FINAL=false`。本阶段只收口当前 Power BI 语义模型下的报表模板可用性，以及失败后的稳定恢复提示。M5.10.8、报表视觉重构、新模板、新 QueryShape、新业务数学、MCP/Provider 改写与数据库 migration 均不在范围内。

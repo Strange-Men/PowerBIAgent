@@ -1,5 +1,7 @@
 # MCP 驱动模型语义上下文与跨语言 Grounding
 
+> **Historical implementation evidence / active contract：** 既有 canonical/metadata/completeness 合同继续有效；以下里程碑 pending/current wording 为当时记录，当前状态只见 docs/07、08、09。
+
 M5.8.3 已在 `b86662e` 对应 CI success 后 COMPLETE。M5.8.4 于 2026-08-31 获批，发布状态与 fresh evidence 见 [当前计划](../milestones/m5/m5_8_4_cross_language_grounding_plan.md)。以下保留 M5.8.3 设计记录；跨语言扩展见本节及 ADR-015。
 
 ## M5.8.4 输入语言与 canonical 绑定合同

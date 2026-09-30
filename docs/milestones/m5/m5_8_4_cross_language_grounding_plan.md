@@ -1,5 +1,8 @@
 # M5.8.4 — 现有语义链跨语言与通用模型理解优化
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+
+
 状态：COMPLETE。主开发提交 `41b6e0b084ac5cbad3b76eb37fa15dd3b89c46a4`；CI 时间测试修复提交 `a9753103de6f19d0c95bd4a944d31ca363057d76` 的 [PowerBIAgent Validation #33457056546](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33457056546) completed/success；最终治理提交 `3e3d8ac1451df5260530b8114885806d75d75ebb` 的 [PowerBIAgent Validation #33580808379](https://github.com/Strange-Men/PowerBIAgent/actions/runs/33580808379) exact-SHA completed/success。首次 run #33455159267 的测试 reference date 漂移 failure 保留。M5.9/M5.10 NOT STARTED，M5 FINAL=false。
 
 ## A–E 后端复核

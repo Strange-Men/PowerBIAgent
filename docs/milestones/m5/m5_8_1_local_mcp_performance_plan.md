@@ -1,5 +1,8 @@
 # M5.8.1 — 前置性能加速与本地 MCP 会话复用
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+
+
 > 状态：COMPLETE
 > 基线：`m5/rebuild` / `117cafa0d0669d8f1d63c66cd9f87328ab54defa`
 > M5.8 已完成并冻结；M5 FINAL=false。

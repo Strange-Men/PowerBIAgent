@@ -1,5 +1,9 @@
 # 12 — M2 真实 Power BI MCP 统一接入计划
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+> **Remote 历史路线：** ADR-006 已 SUPERSEDED；旧 endpoint/SDK/auth 不能指导新 Cloud implementation，按 08/09 重验官方能力。
+
+
 > **状态：** M2.6.3 Deterministic Execution & Verified Facts 已完成开发分支候选
 > **官方资料查询日期：** 2026-08-11
 > **边界：** 当前 Demo 使用 Local MCP + Power BI Desktop；Remote MCP 作为 ADR-006 生产化路径延后。二者只能替换 PowerBIAdapter 后的 Provider。

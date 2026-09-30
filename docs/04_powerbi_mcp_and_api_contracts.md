@@ -1,6 +1,6 @@
 # 04 — Power BI MCP 与 API 契约
 
-> **状态：** M5.8.6 / M5.9 COMPLETE；Local MCP 是当前 Real 路径，Template/LLM/模型安全目录与 SQLite 资源 API 均已实现；M5.9 离线运行时、Real 1/2/4 worker、residual Gate 与 `179dd24` / CI #52 exact-SHA success 已通过。
+> **文档职责：** 长期产品/工程合同与历史实施记录；当前项目状态、路线、交接仅以 docs/07、08、09 为准。
 > **关联 ADR：** ADR-003（partially superseded）、ADR-005—ADR-017
 > **API 源码：** `backend/app/api/routes.py`、`backend/app/main.py`
 > **数据契约源码：** `backend/app/schemas/data_contracts.py`
@@ -23,11 +23,13 @@
 | `GET` | `/api/v1/conversations`、`/archived`、`/search`、`/{id}/history`、`/{id}/reports` | namespace-first recent/archived/search/transcript+structured history/report history | ✅ M4.3—M5.6；SQLite-only |
 | `PATCH/POST/DELETE` | `/api/v1/conversations/{id}`、`/{id}/archive`、`/{id}/restore`、`/{id}/failure` | 同 namespace rename/archive/restore/failure metadata/delete | ✅ M4.3—M5.6 |
 | `GET` | `/api/v1/semantic-models` | 经只读 ToolGateway → PowerBIAdapter → Local MCP 发现当前可连接 Desktop 模型；返回 safe catalog 与 runtime namespace | ✅ M5.2 最小只读 endpoint |
-| `GET` | `/api/v1/report-templates` | 返回 backend-owned 可选固定模板目录 | ✅ M5.7.2；当前仅 `sales_report / 简易模板` |
+| `GET` | `/api/v1/report-templates` | 按当前 semantic_model_key 的 runtime schema 返回 backend-owned eligible 模板目录 | ✅ Sales: sales_report / 简易销售分析模板 与 sales_executive_report；Logistics 空目录仍可问数 |
 
 > **注意：** `/api/v1/semantic-models` 只返回 backend-owned opaque key、display name、source/type、availability/connected 和 runtime namespace；不返回端口、connection string、process/file path、MCP raw payload 或 schema 业务 metadata。LLM/template 目录同样不返回 Secret 或内部 transport 配置。
 
 ---
+
+> **历史适用性：** 旧 M2 Remote 与 grammar 描述保留为历史；当前主链使用八种 QueryShape、唯一 SemanticFrame 和 deterministic DAX。Cloud 入口按 08/09 重验。
 
 ## 二、PowerBIAdapter 设计
 
@@ -74,18 +76,20 @@
 - M2 封板兼容 key 可以继续作为后端内部执行 identity，但前端不得硬编码或用固定“销售数据”别名冒充 discovery
 - 无 Desktop/无可连接模型时返回空 items 和安全状态；不回退 Mock、不返回连接细节
 
-## 三、OAuth 认证风险（ADR-003/ADR-006，Remote Deferred）
+## 三、Historical — OAuth 认证风险（旧 ADR-003/ADR-006）
 
-### 关键发现
+> 以下是历史 Remote auth 假设，M6 endpoint/auth/capability 不以本节为合同，必须按 08/09 重验 Microsoft 官方文档。
+
+### 历史发现
 
 1. **VS Code 能访问 ≠ 自定义客户端能访问** — VS Code 有微软预注册的 Client ID
 2. **必须手动注册 Entra Application** — 需要 Azure 管理员权限
 3. **需要 Power BI 管理员启用 Tenant 设置**
 4. **早期 2026 年有 Remote MCP 端点中断报告**
 
-### 未来 Remote 授权流程
+### 未来 Cloud 授权验证边界
 
-- 仅在重新批准的 Remote production stage 按 ADR-006 实现；不属于当前 M2 Local 链
+- M6 获批并重新验证官方能力后经 Adapter 扩展；ADR-006 已 SUPERSEDED，其 endpoint/auth 不作为当前合同
 - Token 获取、刷新和存储必须隔离在 Adapter 边界内
 - 不暴露 Token 到 Agent 或业务层
 
@@ -207,4 +211,4 @@ user_id, roles, allowed_semantic_models, allowed_templates, allowed_tools
 
 ---
 
-*最后更新：2026-09-29 | API/MCP authority contract 不变；latest verified remote `b1063ed` / CI `35942794552` success；当前为 M5.10.6 最终 presentation residual FIX；M5 FINAL=false*
+*治理校准：2026-09-30 | 保留历史设计与证据；当前状态以 07/08/09 为准*

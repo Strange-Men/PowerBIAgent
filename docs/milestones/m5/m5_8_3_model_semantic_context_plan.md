@@ -1,5 +1,8 @@
 # M5.8.3 — 实施与验收计划
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+
+
 状态：验收收口；正式 COMPLETE 以 fresh local/residual 与对应提交 CI success 为条件。规范：[ModelSemanticContext](../../specs/model_semantic_context.md)。fresh evidence 的唯一当前摘要见 [09 Handoff](../../09_context_handoff.md)。
 
 1. Safety、Cold Start、A–E authority 审计及规范冻结：完成。

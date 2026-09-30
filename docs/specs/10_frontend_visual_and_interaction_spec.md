@@ -1,7 +1,7 @@
 # 10 — 前端视觉与交互规范
 
-> **状态：** M5.10.6 已 COMPLETE；当前为 M5.10.7 schema-aware template eligibility、typed failure 与 recovery UX 收口。
-> **当前边界：** latest verified remote baseline `bec4661` / CI `36548907575` success；不改变 canonical facts、QueryPlan、DAX、VerifiedFactSet、Memory 或固定 Renderer 视觉。M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED，M5 FINAL=false。
+> **文档职责：** 长期合同与历史实施记录；当前项目状态、路线、交接仅见 docs/07、08、09。
+> **文档职责：** 长期合同与历史实施记录；当前项目状态、路线、交接仅见 docs/07、08、09。
 > **视觉参考：**
 > ![已有对话与组合回答参考](../assets/frontend/整体01.png)
 > ![新聊天欢迎态与菜单参考](../assets/frontend/整体02.png)
@@ -16,9 +16,9 @@
 
 ## 二、当前阶段与实施边界
 
-**当前阶段：** M5.10.7。M5.4 的 conversation-scoped UI state、M5.4.1 Settings Hub、M5.7 Template Required、M5.10.1/2 双模板展示合同与 M5.10.6 factual authority 继续有效；没有真实 presentation block 时不伪造前端表格或图表。模板 eligibility 来自当前模型的 backend schema-aware catalog，错误恢复只消费 typed public failure。
+**冻结实施基线：** M5.10.7/8 的模型感知目录与 typed failure 已收口。M5.4 的 conversation-scoped UI state、M5.4.1 Settings Hub、M5.7 Template Required、M5.10.1/2 双模板展示合同与 M5.10.6 factual authority 继续有效；没有真实 presentation block 时不伪造前端表格或图表。模板 eligibility 来自当前模型的 backend schema-aware catalog，错误恢复只消费 typed public failure。
 
-### 2.1 重建线后续边界
+### 2.1 Historical — 重建线实施边界
 
 - M5.4.2 只固化规范，不修改 `frontend/src/**`。旧 `m5/frontend` 的原 M5.5/M5.5.1 视觉与 UX 代码不是新线基线。
 - M5.6 正在处理 Settings 有 report 但 Recent Reports 不同步、Recent conversation newest-first、failed conversation 正式可管理、toolbar 空间不足时 destructive action 可达，以及 conversation/report floating menu 不被 overflow clipping。
@@ -520,4 +520,8 @@ shell、body、content 与 list 都必须声明 `min-height: 0`/overflow respons
 ---
 
 *创建日期：2026-08-03 | M1.3.2 前端视觉与结构化回答契约固化*
-*最后更新：2026-09-30 | latest verified remote `bec4661` / CI `36548907575` success；M5.10.6 COMPLETE；M5.10.7 implementation complete / manual acceptance pending；M5.10.8 NOT STARTED；M5 FINAL=false*
+*治理校准：2026-09-30 | 长期合同继续有效；当前状态以 07/08/09 为准*
+
+## M5.10.9 唯一视觉校准
+
+.menu-empty-state 固定 font-size: 12px; line-height: 1.5; color: #777。数据模型 title > template empty-state > local catalog note；布局、spacing、模板行为与后端 eligibility authority 不变。

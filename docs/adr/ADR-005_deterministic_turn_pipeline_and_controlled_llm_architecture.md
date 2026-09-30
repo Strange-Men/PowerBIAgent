@@ -6,6 +6,8 @@
 
 ---
 
+> **适用性：** 唯一 TurnPipeline / ToolGateway 决策继续有效。下方 2026-08-04 的 LLM DAX/QueryPlan 草稿范围为历史，随后由 ADR-008/009 与 M5.10.6 单一 SemanticFrame 收紧；当前 LLM 无 canonical/DAX/fact authority。
+
 ## 背景
 
 M1.5 全链路验收后动态复验发现：PydanticAI 生产路径实际未使用、DeepSeek 绕过 ToolGateway 和 ContextBuilder、TurnController 限制未生效、Mock 与 DeepSeek 存在双管线。

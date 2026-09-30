@@ -5,6 +5,8 @@
 - **决策者：** 用户明确批准 M5.9
 - **适用阶段：** M5.9；M5.8.5 correctness authority 冻结
 
+> **历史适用性：** accepted runtime contract 继续有效；文中 NOT STARTED/FINAL=false 为当时阶段边界，当前状态只见 docs/07、08、09。
+
 ## 背景
 
 M5.8.1 已让 Local MCP stdio session 由应用持有并复用，也建立了短 TTL bounded metadata cache 与 per-key singleflight。但所有业务 MCP 操作仍经一个 session worker 串行执行；高并发下 queue wait 成为主要长尾。LLM Provider 已有错误分类，却没有统一的 bounded retry 与整体 request deadline。未来 Remote MCP、PostgreSQL 和云运行时还需要清晰替换边界，但这些 provider 的正式实现不属于 M5.9。

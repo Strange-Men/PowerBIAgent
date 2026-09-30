@@ -3,11 +3,43 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-24 | M5.10.6 LOCAL RELEASE CANDIDATE；M5 FINAL=false
+# 最后更新：2026-09-30 | 机器可校验错误规则/历史证据；current state 仅见 docs/07、08、09
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-5109-001
+  title: 多份历史与根入口同时声明 current state 导致里程碑漂移
+  category: ERR
+  first_detected_version: M5.10.9
+  symptom: 409fd521 FIX exact-SHA CI 已 success，根入口与 07/08/09 仍有 M5.10.8 pending，部分规范与 ADR 索引停留 M5.10.6
+  local_evidence: Cold Start fresh fetch/REST 与 23 项文件级 audit；governance failure-first 4 failed / 4 passed，修复后 docs/settings 57 passed
+  authoritative_sources:
+  - title: M5.10.9 Documentation Governance 用户指令
+    reason: 07 状态、08 路线、09 Handoff 是唯一 current-state authority；历史不能冒充当前状态
+  root_cause: 当前状态、路线、handoff 与长历史混放；既有 version gate 不检查 candidate/final/frozen marker 一致性
+  failed_attempts:
+  - 初版新 gate 以第一个 root 文件为状态 anchor，mixed-state regression 指认错误文件；改以 07 current status 为 anchor
+  repair_attempt_count: 1
+  final_fix: 07/08/09 精简职责，原文 Historical archive；根入口统一 marker；governance gate 拒绝 stale/mixed seal 与缺 frozen markers，CHANGELOG 仅比较最新版本段
+  regression_tests:
+  - backend/tests/unit/test_documentation_governance.py
+  - backend/tests/unit/test_settings.py
+  prohibited_patterns:
+  - 批量替换历史版本、pending、失败或 PASS 使其冒充今日事实
+  - 用祖先 CI 或 Local gates 宣称当前 exact SHA final seal
+  - 从旧 ADR 的 endpoint/auth/SDK 假设直接实现生产 Cloud contract
+  prevention_rules:
+  - 根入口委托 07/08/09；milestone/ADR/archive 只保存历史或 architecture contract
+  - FINAL=true 必须通过候选与最终两个 exact-SHA CI，最终 fetch/HEAD/origin/worktree audit
+  - M6 官方能力、身份/归属与生产风险基线必须先验证，优先经 Adapter/Repository/Service 扩展 Core
+  related_adr: ADR-005
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-30'
+    action: current_state_drift_audited_and_governance_regression_added
+    version: M5.10.9
 - id: ERR-5108-001
   title: 模板目录 effect 同步状态更新导致 frontend lint 发布门失败
   category: ERR

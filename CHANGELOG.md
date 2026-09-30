@@ -2,11 +2,29 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M5.10.9] — 2026-09-30（Documentation Governance & M5 Final Seal）
+
+M5.10.9 RELEASE CANDIDATE；M5 FINAL=false。Settings.version=M5.10.9；M5.10.8 COMPLETE；M5.10.8 FIX COMPLETE。
+
+- 重建 07 当前状态 / 08 当前及未来路线 / 09 Cold Start Handoff 唯一 authority；root 入口同步并指向三文件，旧状态原文以 Historical archive 保存。
+- 明确 M5 Core Analysis Kernel 冻结边界、M6 production identity/ownership/token/RLS-OLS 与 P1 baseline、Data/Control Plane 和 M7 report snapshot/version、M8 pilot、M9 approval authoring 路线；本轮未实现 M6。
+- ADR-006 标记 SUPERSEDED，历史 endpoint/auth/SDK 不作为稳定 production contract；实施 Cloud 前重验官方能力。
+- 唯一 UI polish：menu-empty-state font-size=12px、line-height=1.5、color=#777；无布局、行为或 eligibility 变化。
+- 最小治理 regression 拒绝根入口 seal drift / mixed candidate-final / missing frozen markers，历史 CHANGELOG 不参与 current marker 比对。
+- Local automated / Browser / Remote evidence 见 docs/milestones/m5/m5_10_9_documentation_governance_and_final_seal.md；two-phase exact-SHA closure，当前 SHA/CI 不预填。
+
+## [M5.10.8 FIX] — 2026-09-30（模型感知报表模板目录收口；COMPLETE）
+
+- 只用 runtime canonical metadata 证明 Sales/Logistics domains，domain intersection 后复用原 capability/contract validation；Logistics 空目录仍可问数，无新增模板。
+- simple display 改为“简易销售分析模板”，schema failure 与合法空目录区分；stale selection/response guard 保持。
+- Local Backend 2849 passed / 1 skipped / 2 deselected，Semantic 819，frontend 105 + lint/typecheck/build，Real 4/4 assertions / 10 witnesses 与 Browser catalog smoke PASS；详见 FIX 历史记录，非本轮 fresh evidence。
+- 发布 main@409fd521b4b503b6e8e56846806e099cd98e7a5b / exact-SHA CI Run 36665958820 completed/success；M5 FINAL 当时 false。
+
 ## [M5.10.8] — 2026-09-30（MVP Final Test Seal；M5 FINAL=false）
 
 - 复现 M5.10.7 exact-SHA CI 的 frontend `react-hooks/set-state-in-effect` failure；最小修复模板目录清理/异步获取生命周期，保持 lint 规则与全部业务 contract。
 - 限定 focused regression、现有 required checks 和 Real Data/Report/provider smoke；本地不重跑 51,200 两个大型节点，不删除测试或改变 CI matrix。
-- 分层证据、验收脚本配对修正与人工 UI 清单见 `docs/milestones/m5/m5_10_8_mvp_final_test_seal.md`。Local automated/Real 已通过，状态尚待本提交自动 exact-SHA CI/Remote audit，不预填当前提交 SHA/CI。
+- 分层证据、验收脚本配对修正与人工 UI 清单见 `docs/milestones/m5/m5_10_8_mvp_final_test_seal.md`。Local automated/Real 已通过；后续发布 ef5a4c8ead7c05576360d3070ecf0e286e841dc5 / exact-SHA CI Run 36661689674 completed/success，M5.10.8 COMPLETE。原始 pending 记录作为历史保留。
 
 **Settings.version:** M5.10.8
 

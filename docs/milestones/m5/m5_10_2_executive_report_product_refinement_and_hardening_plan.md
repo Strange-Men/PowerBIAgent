@@ -1,5 +1,8 @@
 # M5.10.2 — Executive Report Product Refinement & Hardening
 
+> **Historical — governance 2026-09-30：** 本文件保存当时设计、计划和分层 evidence，旧 current/pending/FINAL=false 不是今日状态；当前状态见 [07](../../07_milestones_status_and_open_questions.md)、[08](../../08_development_roadmap.md)、[09](../../09_context_handoff.md)。
+
+
 ## 状态与基线
 
 - 状态：COMPLETE（含 Manual Visual Fidelity FIX 本地产品收口；发布以本提交 exact-SHA CI success 为证据）

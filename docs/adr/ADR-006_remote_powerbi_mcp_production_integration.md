@@ -1,11 +1,16 @@
 # ADR-006 — 真实 Power BI Remote MCP 生产接入架构
 
-- **状态：** accepted
+- **状态：** SUPERSEDED
 - **日期：** 2026-08-11
 - **决策者：** PowerBIAgent 项目组
 - **证据基线：** `docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md` 的 Remote 生产化证据基线
 
 ---
+
+> **2026-09-30 governance：** Superseded by docs/08 M6 路线与 docs/09 官方能力重验要求。
+> 以下完整保留 2026-08-11 历史决策，旧 endpoint / SDK / auth / capability 不是稳定 production contract。
+> ToolGateway/Adapter/no-fallback 等通用 invariant 由仍 accepted 的 ADR-005/008/009/017 保留。
+> Fabric IQ MCP 是 M6 需评估方向之一，未经重新验证不能承诺 endpoint、auth 或 RLS/OLS capability。
 
 ## 背景
 

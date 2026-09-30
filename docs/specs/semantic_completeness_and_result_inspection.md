@@ -1,5 +1,7 @@
 # M5.8.5 Semantic Completeness + Result Inspection + Presentation Truth
 
+> **Historical implementation evidence / active contract：** 既有 canonical/metadata/completeness 合同继续有效；以下里程碑 pending/current wording 为当时记录，当前状态只见 docs/07、08、09。
+
 ## 目标与非目标
 
 本规范在现有唯一语义链增加四个 correctness invariant：Semantic Obligation Coverage、Canonical Shape Completeness、Result Semantic Inspection、Deterministic Query Scope。它不重写 M5.8.4，不创建并行语义 authority，不修改 Provider/MCP performance/Report template，也不缓存 QueryResult、facts 或 final answer。
