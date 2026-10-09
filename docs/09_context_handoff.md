@@ -1,13 +1,13 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-> Settings.version=M5.10.9；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> Settings.version=M6.0；M6.0 COMPLETE；M6.1 READY；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一开发交接 authority；当前项目状态见 [07](07_milestones_status_and_open_questions.md)，路线见 [08](08_development_roadmap.md)。
 
 ## 当前阶段 — Current Baseline / Next Milestone
 
-- Current Baseline：M5.10.9 + M5.10.9 FIX COMPLETE（documentation / CI test stability forward-fix）。
+- Current Baseline：M6.0 Fabric IQ Cloud Contract Audit（design/evidence only；最终自身CI / remoteaudit解析）。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
-- NEXT = M6.0 RELEASE CANDIDATE seal，然后M6.1（需下一轮用户授权）。
+- NEXT = M6.1 READY（需下一轮用户授权）；M6.0结束立即停止。
 - M6 Status：contract/design已形成；production runtime NOT IMPLEMENTED。
 
 ## M6.0 accepted handoff
@@ -42,6 +42,16 @@ M5 Final baseline 已成立；post-final 文档修复不重新开启 M5 功能�
 → 08 → 09 → CLAUDE → code/fresh tests → Archive。07/08/09 分别只拥有状态/路线/交接。
 
 ## 最终 baseline 解析
+
+M6.0 Phase A：`e437908a67e6fe57a2259415df6d2e3dbf6dca74` /
+[exact-SHA CI37904870868](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37904870868)
+completed/success，Full Validation (Windows)与全部正常requiredsteps实际success，无skippedstep。
+最终seal更新Settings.version=M6.0；自身SHA不写入自身提交。必须查询当前checkout exactSHA的
+PowerBIAgent Validation / Full Validation (Windows) completed/success，核验全部正常steps，
+fetch后HEAD==origin/main且worktreeclean，才解析为最终M6.0 COMPLETE。不得继承PhaseACI代替finalCI。
+当前真实production仍是M5 Local MVP；无FabricIQAdapter/Entra/frontendauth实现。
+
+### M5 历史基线（保留，不覆盖M6.0当前baseline）
 
 既有 M5 Final baseline：`86aaaec7d2172c041e97392c3de03adcca77ca1b` /
 [exact-SHA CI 36678384015](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36678384015)

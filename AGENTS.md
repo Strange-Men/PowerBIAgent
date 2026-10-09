@@ -6,9 +6,10 @@
 
 ## 当前开发入口
 
-- 当前版本：**M5.10.9**（Documentation Governance & M5 Final Seal）。
+- 当前版本：**M6.0**（Fabric IQ Cloud Contract Audit & Accepted Cloud Consumption Contract）。
 - M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；M5.10.8 与 FIX COMPLETE。
-- 下一正式 milestone：M6 — Cloud Consumption & Enterprise Identity；尚未实现，可进入研究/设计。
+- M6.0 COMPLETE；ADR-020 ACCEPTED；M6.1 READY（下一轮用户明确授权后实施）。
+- 下一正式 milestone：M6.1 — Entra Identity / Login / Session；M6 production runtime 尚未实现。
   每个 implementation patch 必须有用户明确批准的具体 scope、fresh Cold Start、Microsoft 官方
   能力重新验证与先完成的 P0 security boundary 设计/验证；未满足前不得直接写 M6 Cloud code。
 - 07 是当前状态，08 是当前/未来路线，09 是唯一开发交接；根入口不重复保存浮动 SHA/CI。
@@ -88,6 +89,6 @@ Frozen 表示已有 authority / contract / architecture boundary 不再随意重
 failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner / Grounding / Memory，
 禁止重设计 deterministic factual chain；M6 优先经 Adapter / Repository / Service 扩展，能扩展就不重构 Core。
 
-生产级后端风险优先于功能数量；M6 开始前按 09 重新验证 Microsoft 官方能力，ADR-006 已 SUPERSEDED。Token 只允许 Auth / Transport boundary；tenant/principal/ownership 与 RLS/OLS 必须先证明。
+生产级后端风险优先于功能数量；每个M6 implementation按09重新验证Microsoft官方能力与适用P0边界。ADR-020接受Cloud消费/目录设计，ADR-006已SUPERSEDED。Token只允许Auth/Transport；tenant/principal/ownership与RLS/OLS必须先证明。
 
-*最后更新：2026-09-30 | M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以 07/08/09 为准*
+*最后更新：2026-10-09 | M6.0 COMPLETE；M6.1 READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以07/08/09及自身exact-SHA CI为准*

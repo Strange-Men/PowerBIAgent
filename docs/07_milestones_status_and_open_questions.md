@@ -1,19 +1,19 @@
 # 07 — 当前项目状态
 
-> **状态：** Settings.version=M5.10.9；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> **状态：** Settings.version=M6.0；M6.0 COMPLETE；M6.1 READY；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一当前项目状态 authority；路线见 [08](08_development_roadmap.md)，开发交接见 [09](09_context_handoff.md)。
 
 ## 当前状态
 
 | 项目 | 状态 |
 |---|---|
-| Current Version | M5.10.9 |
-| Current Release State | M5 FINAL=true；既有 Final baseline 已成立 |
+| Current Version | M6.0 |
+| Current Release State | M6.0 COMPLETE；最终seal以自身exact-SHA CI + remoteaudit生效；M5 FINAL=true |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | M6.0 RELEASE CANDIDATE → M6.1 Entra Identity / Login / Session |
+| Next | M6.1 READY — Entra Identity / Login / Session；需用户下一轮授权 |
 | Current implementation status | M6 production runtime NOT IMPLEMENTED；本轮只读 audit / design |
-| Ready state | M6.0 official + targeted Cloud probe / ADR-020 已形成；local / exact-SHA gates 后 seal |
+| Ready state | M6.0 official / runtime / accepted ADR / local gates / Phase A CI通过；final自身CI独立验收 |
 
 ## M6.0 当前审计
 
@@ -23,7 +23,8 @@ delegated-only、两模型resolve/schema/query PASS；DiscoverArtifacts名称搜
 Fabric REST current-principal workspace/model/report listing作为M6.4 scoped catalog authority，
 管理员seed补共享资源，明确partial coverage；BFF delegated code/PKCE为M6.1推荐。
 Product/Auth UX为设计合同；当前ChatGPT reference可靠访问受限，现有前端视觉authority保持。
-Settings暂不bump；最终complete以两阶段exact-SHA CI / remote audit成立为准。
+Phase A exact-SHA CI37904870868全绿后进入最终seal，Settings.version=M6.0。
+final自身SHA不写入自身提交；以09的exact-SHA CI / remoteaudit联合解析最终成立状态。
 M5 factual Core与所有production behavior保持；M6.1/2/3/4实际能力尚未实施。
 
 M5.10.8 与 FIX、M5.10.9 已完成。原 Final baseline：

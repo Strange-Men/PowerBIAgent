@@ -1,6 +1,7 @@
 # M6.0 — Fabric IQ Cloud Contract Audit & Accepted Cloud Consumption Contract
 
-日期：2026-10-09。Phase A：RELEASE CANDIDATE。Settings.version=M5.10.9。
+日期：2026-10-09。M6.0 COMPLETE / M6.1 READY；Settings.version=M6.0。
+Phase A已通过；最终seal marker以自身exact-SHA CI / remoteaudit联合成立。
 M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN。
 本阶段仅研究、只读 probe、设计与文档；M6 production runtime implemented: NO。
 正式决策见 [ADR-020](../../adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。
@@ -587,6 +588,7 @@ review候选。本轮未下载/导入/建模。M7 refresh、M8 pilot、Embedded�
 ## 13. Quality / Two-phase Closure
 
 Phase A保持Settings.version=M5.10.9；docs/ADR candidate先跑正常requiredgates，再白名单提交pushmain。
+Phase B在PhaseA exactCI成功后更新Settings.version=M6.0与complete marker；仅版本metadata变化。
 本地backend normal suite排除既有两个51,200大节点（遵守本轮禁止大型stress）；不改测试/CI，
 remote正常Full Validation仍按既有workflow实际执行全部steps。未额外运行130-turn、真实Reportmatrix、
 DeepSeek/Kimi或全browserregression。Cloud证据与automatedmockCI分层。
@@ -607,7 +609,15 @@ Local backend命令：`scripts/run_pytest_ci.py backend/tests -q`，仅deselect
 首轮frontend workertimeout发生在并行本地gates期间，未出现断言失败；待其他frontend/semantic任务结束后
 原命令重跑105/105，记录为本地runner启动失败与恢复，不冒充首轮全绿或修复production。
 
-Phase A local required gates全部通过，candidate待自身exact-SHA CI；SHA/CI将在完成后写入Phase B。
+Phase A：`e437908a67e6fe57a2259415df6d2e3dbf6dca74`，commit `M6.0_FabricIQ云端合同审计候选`；
+[CI37904870868](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37904870868) completed/success。
+Full Validation (Windows)及全部正常requiredsteps实际success，无skippedstep；CI workflow未更改。
+初次push网络reset/443失败，fetch确认remote未前进；一次性HTTP/1.1命令推送成功，未更改Git配置。
+PhaseA结束HEAD==origin/main，clean；freshfetch复核后进入PhaseB。
+Phase B local：Documentation/Version、Repository Safety、Architecture、Error Ledger、Artifact
+Governance复核PASS；documentation/settings/health相关101tests PASS（15.51s）。除Settings.version
+一行metadata与当前文档/marker之外无source变化，已通过的完整normal/frontend/Golden证据保留，
+最终自身CI独立执行全部正常requiredsteps，不拿PhaseACI代替。
 最终seal自身SHA不写入自身提交，以currentcheckout的exactSHA
 Actions completed/success（Full Validation Windows +正常steps）以及fetch后HEAD==origin/main、clean联合解析。
 ADR accepted不等于提前COMPLETE：只有PhaseA全绿后才version=M6.0与COMPLETE marker；最终自身CI仍须绿。
@@ -615,6 +625,7 @@ ADR accepted不等于提前COMPLETE：只有PhaseA全绿后才version=M6.0与COM
 ## 14. Acceptance register
 
 1–17合同/官方/两个模型probe/discovery/目录/adapter/identity/OAuth/RLSmatrix/failure/drift/公开数据路线：
-已形成证据与设计；18 FrozenCore runtimechange=0。19 localgates、20 exactCI、21 HEAD==origin/main、
-22 cleanworktree在seal时按本节记录与09基线解析。尚未验证的M6.1/2/3/4能力不冒充M6.0 blocker或已实现。
+已形成证据与设计；18 FrozenCore runtimechange=0（Settings仅版本metadata）。19 localgates全绿；
+20 PhaseA exactCI全绿，final自身CI仍须独立成立；21 HEAD==origin/main、22 cleanworktree在final
+seal时按本节记录与09基线解析。尚未验证的M6.1/2/3/4能力不冒充M6.0 blocker或已实现。
 M6.0完成后立即停止；M6.1需用户下一轮授权。

@@ -2,10 +2,15 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
-M6.0 RELEASE CANDIDATE（2026-10-09，Settings暂维持M5.10.9）：官方Fabric IQ GA合同重验与两模型
-targeted只读probe、ADR-020消费/目录authority、BFF身份/Token/failure/RLS矩阵与Product/Auth UX设计。
-前端reference部分不可访问已披露；M6.1–M6.6路线明确。无CloudAdapter/auth/frontend/Core行为实现。
-证据见[当前M6.0 audit](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)，seal需自身exact-SHA CI。
+## [M6.0] — 2026-10-09（Fabric IQ Cloud Contract Audit & Accepted Cloud Consumption Contract）
+
+Settings.version=M6.0；M6.0 COMPLETE；M6.1 READY；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN。
+
+- 官方Fabric IQ GA合同重验与两模型targeted只读probe；ADR-020 ACCEPTED，Fabric REST scoped catalog / BFF OAuth / Principal-Token / failure / drift / RLS矩阵定稿。
+- Product/Auth UX状态、compactselector、account/settings、9份wireframes与M6.1/4 handoff；当前ChatGPT reference部分不可访问已披露。M6.5 UCI Online Retail II进入M6.1–M6.6路线。
+- Local backend2874passed/1skipped/2大型节点deselected，Semantic819、Golden11、frontend105与正常gates通过；首轮frontend worker启动timeout及原命令重跑记录保留。
+- Phase A `e437908a67e6fe57a2259415df6d2e3dbf6dca74` / [CI37904870868](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37904870868) completed/success，Full Validation与全部正常steps实际success。
+- [M6.0完整evidence](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)。无CloudAdapter/auth/frontend/Core行为实现；最终marker以自身exact-SHA CI与remoteaudit生效。M6.0结束后停止。
 
 ## [M5.10.9] — 2026-09-30（Documentation Governance & M5 Final Seal）
 
