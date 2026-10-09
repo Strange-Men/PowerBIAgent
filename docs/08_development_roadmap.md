@@ -1,6 +1,6 @@
 # 08 — 当前及未来开发路线
 
-> **状态：** Settings.version=M6.0；M6.0 COMPLETE；M6.1 IMPLEMENTING；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> **状态：** Settings.version=M6.1；M6.1 COMPLETE；M6.2 READY（未实施）；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一路线 authority；状态见 [07](07_milestones_status_and_open_questions.md)，实施入口见 [09](09_context_handoff.md)。
 
 ## 路线总览
@@ -8,7 +8,7 @@
 | Milestone | 定位 | 当前路线 |
 |---|---|---|
 | M5 | Core Analysis Kernel | FROZEN；保留 failure-first correctness forward-fix |
-| M6 | Cloud Consumption & Enterprise Identity | M6.0 COMPLETE / M6.1 IMPLEMENTING；Auth candidate施工；Cloud data未实现；每阶段另行授权 |
+| M6 | Cloud Consumption & Enterprise Identity | M6.1 COMPLETE / M6.2 READY；Auth已实现；Cloud data未实现；每阶段另行授权 |
 | M7 | Freshness & Report Lifecycle | 后续规划 |
 | M8 | Enterprise Pilot Platform | 后续规划 |
 | M9 | Advanced Analytics & Controlled Authoring | 后续规划 |
@@ -46,7 +46,7 @@ SemanticFrame → Grounding → CanonicalQueryPlan → Deterministic DAX
 官方来源、endpoint、auth、tenant/identity、capability/tool schema、RLS/OLS 与 fail-closed probe
 证据。[M6.0 audit](milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md) 已核验Fabric IQ官方GA
 消费合同与两个模型小型runtime probe；[ADR-020](adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)
-接受消费/目录/identity边界。ADR-006旧endpoint/SDK/OAuth假设废弃；Cloud/Entra production未实现。
+接受消费/目录/identity边界。ADR-006旧endpoint/SDK/OAuth假设废弃；M6.1 Entra开发runtime已实现，Cloud data与multi-worker production尚未实现。
 固定selector wire、自建app OAuth、REST catalog与双用户RLS/OLS各在对应implementation入口验收。
 
 | 未来职责 | 范围 |
@@ -61,8 +61,8 @@ refresh API 不得塞入 execute_dax adapter。以上为 M6 架构方向，尚�
 | 阶段 | 目标 / 验收 |
 |---|---|
 | M6.0 | COMPLETE：Fabric IQ官方合同 + 真实targeted probe + Accepted Consumption/Discovery ADR + Product/Auth UX设计；最终自身CI / remoteaudit解析 |
-| M6.1 | Entra Identity、same-origin BFF code/PKCE Login/Session、基础Account UX；用户已授权施工；token仅Auth/Transport；Real/CI验收待完成 |
-| M6.2 | 新FabricIQPowerBIAdapter；固定X-Variants、tools/list validation、schema/result/error normalization与完整性failclosed；复用Core |
+| M6.1 | COMPLETE：Entra Identity、same-origin BFF code/PKCE Login/Session、基础Account UX；token仅Auth/Transport；真实Entra与Phase A CI PASS，final marker以自身CI/remote audit生效 |
+| M6.2 | READY，未实施，须用户独立批准：新FabricIQPowerBIAdapter；固定X-Variants、tools/list validation、schema/result/error normalization与完整性failclosed；复用Core |
 | M6.3 | User A/B Viewer、RLS/OLS、ownership/IDOR、cross-principal cache、revocation/logout负例矩阵 |
 | M6.4 | Fabric REST authoritative scoped Cloud Catalog + 管理员shared-resource seeds；自动加载/compactselector/全Product E2E；普通用户零URL/ID配置 |
 | M6.5 | Public Real Business Data Validation：UCI Online Retail II；不增加QueryShape/报表模板 |

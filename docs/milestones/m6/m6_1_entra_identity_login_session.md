@@ -1,8 +1,8 @@
 # M6.1 — Entra Identity / Login / Session & Basic Account UX
 
-状态：IMPLEMENTING；Settings.version=M6.0。用户2026-10-09明确批准本轮scope。
+状态：M6.1 COMPLETE / M6.2 READY（最终marker仅按自身exact-SHA CI与remote audit生效）；Settings.version=M6.1。用户2026-10-09明确批准本轮scope。
 首次Real OAuth前必须完成代码、fake tests与本地gates，然后停在人工Portal配置。
-Real Entra login/callback/session/account/reload/logout已通过；Phase A提交/CI与Final seal未进行，不得标COMPLETE。
+Real Entra login/callback/session/account/reload/logout已通过；Phase A提交/自身CI全绿。最终封板只更新版本与文档，仍必须独立核验封板自身CI；不实施M6.2。
 
 ## Official Contract（fresh revalidation 2026-10-09）
 
@@ -100,7 +100,10 @@ Local automated（2026-10-09，本轮fresh运行，不继承M6.0历史PASS）：
 - Synthetic浏览器：SIGNED_OUT CTA、simulated callback clean URL、safe Account/menu/settings、signed-in reload恢复、logout后SIGNED_OUT及刷新PASS。仅本地FakeIdentity，绝不等同Real Entra。截图预览和启动辅助脚本保留repo外。
 - repo外secure-input helper：synthetic tempfile round-trip PASS，隐藏输入、保留无关配置、去除重复Auth键、直接写受限ACL文件；验证没有访问真实repo `.env`。
 
-Real Entra：PASS（login/callback/account/reload/logout及跨标签退出，详见上节）。Phase A commit/exact-SHA CI：NOT RUN。Final seal：NOT RUN。Settings.version仍M6.0；M6.1尚未COMPLETE，M6.2不得开始。
+Real Entra：PASS（login/callback/account/reload/logout及跨标签退出，详见上节）。Phase A commit：`5549d0973473eed7849f48465ccbd13af96a5015`，`M6.1_Entra身份登录与会话候选`，当时Settings.version=M6.0。
+[exact-SHA CI37954913373](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37954913373)：completed/success，Full Validation (Windows)与全部required steps实际success，无skipped step，push事件与head_sha已独立核对。
+
+2026-10-10最终seal：Settings.version=M6.1，当前文档M6.1 COMPLETE / M6.2 READY。封板自身SHA不写入自身提交；必须查询当前checkout exact-SHA CI completed/success、全部required steps实际success，fresh fetch后HEAD==origin/main、worktree clean，marker才生效。不能继承Phase A CI。M6.2未实施；完成后立即停止。
 
 手工交接前remote refresh两次遭GitHub连接reset/timeout；没有push。当前HEAD与本地origin/main仍为Cold Start SHA，但不将缓存ref冒充fresh remote audit。恢复后Phase A提交前必须重新fetch确认remote未前进。模拟backend/Vite仅本轮拥有的进程已停止，避免被误当作Real runtime。
 

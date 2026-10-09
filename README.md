@@ -5,14 +5,14 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M6.0 — Fabric IQ Cloud Contract Audit**。M6.0 COMPLETE；M6.1 IMPLEMENTING；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+当前版本：**M6.1 — Entra Identity / Login / Session**。M6.1 COMPLETE；M6.2 READY（未实施）；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 
-M5提供后续企业生产化复用的Core Analysis Kernel；冻结authority/contract/architecture boundary，允许failure-first minimal correctness forward-fix。当前M6.1身份/登录/Session/Account已获批施工，尚未Real/CI/seal验收。
+M5提供后续企业生产化复用的Core Analysis Kernel；冻结authority/contract/architecture boundary，允许failure-first minimal correctness forward-fix。M6.1身份/登录/Session/Account真实Entra验收与候选CI通过；最终COMPLETE以封板自身exact-SHA CI与remote audit生效。
 当前状态、路线、交接分别只见 [07](docs/07_milestones_status_and_open_questions.md)、[08](docs/08_development_roadmap.md)、[09](docs/09_context_handoff.md)。
 
-M6.0 Cloud contract audit COMPLETE：[official/runtime evidence、Product/Auth UX与handoff](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)、[ADR-020 ACCEPTED](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。Fabric IQ两模型只读smoke通过，名称搜索限制已记录；Fabric REST scoped catalog与BFF OAuth方案定稿。M6.1 Auth implementation candidate见下节；Cloud data runtime仍未实现。最终baseline以09的自身exact-SHA CI / remote audit解析。
+M6.0 Cloud contract audit COMPLETE：[official/runtime evidence、Product/Auth UX与handoff](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)、[ADR-020 ACCEPTED](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。Fabric IQ两模型只读smoke通过，名称搜索限制已记录；Fabric REST scoped catalog与BFF OAuth方案定稿。M6.1 Auth实现见下节；Cloud data runtime仍未实现。最终baseline以09的自身exact-SHA CI / remote audit解析。
 
-## M6.1 身份候选（尚未封板）
+## M6.1 身份与账户
 
 [Auth安全合同与验收](docs/milestones/m6/m6_1_entra_identity_login_session.md)。默认`IDENTITY_MODE=LOCAL_DEV`保留M5。
 `ENTRA_BFF`采用同源MSAL code+PKCE、opaque HttpOnly cookie与server session；只开放Auth/Account/安全health。

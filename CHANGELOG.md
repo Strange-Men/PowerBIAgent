@@ -2,11 +2,12 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
-## [Unreleased — M6.1 candidate]
+## [M6.1] — 2026-10-10（Entra Identity / Login / Session & Basic Account UX）
 
 - 新增Entra BFF Auth、request-scoped Principal、process-local session/flow/token隔离与统一CSRF。
 - 前端session-first bootstrap与真实Account设置；ENTRA_BFF在M6.3 ownership前禁用所有旧product资源。
-- MSAL 1.39 +标准ID-token验证库；正常CI使用离线fake。Settings.version仍M6.0，Real/双阶段CI未完成。
+- MSAL 1.39.0 + PyJWT[crypto] 2.13.0；正常CI使用离线fake及actual MSAL离线协议测试。真实组织账号login/callback/account/reload/logout与跨标签退出PASS。
+- Phase A `5549d0973473eed7849f48465ccbd13af96a5015` / [CI37954913373](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37954913373) completed/success，全部required steps实际success。Settings.version=M6.1；最终COMPLETE以封板自身exact-SHA CI与remote audit生效，M6.2 READY但未实施。
 - 证据：[M6.1](docs/milestones/m6/m6_1_entra_identity_login_session.md)。
 
 ## [M6.0] — 2026-10-09（Fabric IQ Cloud Contract Audit & Accepted Cloud Consumption Contract）
