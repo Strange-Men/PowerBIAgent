@@ -1,6 +1,6 @@
 # 07 — 当前项目状态
 
-> **状态：** Settings.version=M6.1；M6.1 COMPLETE；M6.2 READY（未实施）；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> **状态：** Settings.version=M6.1；M6.1 COMPLETE；M6.2 IN PROGRESS（本轮已授权，未封板）；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一当前项目状态 authority；路线见 [08](08_development_roadmap.md)，开发交接见 [09](09_context_handoff.md)。
 
 ## 当前状态
@@ -11,17 +11,25 @@
 | Current Release State | M6.1 COMPLETE；最终seal以自身exact-SHA CI + remoteaudit生效；M5 FINAL=true |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | M6.2 READY — 未实施；须用户独立批准具体scope |
-| Current implementation status | M6.1 Auth/Session/Account runtime IMPLEMENTED；Cloud data runtime NOT IMPLEMENTED |
+| Next | M6.2 IN PROGRESS — 本轮已批准，未封板 |
+| Current implementation status | M6.1 Auth/Session/Account runtime IMPLEMENTED；Cloud data plane candidate IMPLEMENTED；两模型Real PASS，Phase A/Final CI待完成 |
 | Ready state | M6.1 official / Real Entra / local gates / Phase A exact-SHA CI通过；final自身CI独立验收 |
 
-## M6.1 当前封板
+## M6.2 当前实施
+
+2026-10-10用户明确批准Fabric IQ只读Data Plane scope。
+[合同与验收](milestones/m6/m6_2_fabric_iq_cloud_adapter.md)：独立SDK transport、request/session绑定Adapter、
+required capability negotiation、schema-before-bind、unknown metadata与结果完整性fail closed。
+Settings.version保持M6.1；两模型Real、Phase A与Final自身CI未全部通过前不声明COMPLETE。
+Cloud Catalog / multi-user persistence ownership / Product E2E未实现；ENTRA_BFF旧/api仍关闭。
+
+## M6.1 历史封板
 
 用户2026-10-09已批准身份/登录/Session/Account scope。实现与安全合同见
 [M6.1 evidence](milestones/m6/m6_1_entra_identity_login_session.md)。Settings.version=M6.1；
 LOCAL_DEV保留M5，ENTRA_BFF只开放Auth/Account/安全diagnostics。
 ENTRA_BFF multi-user persistence: NOT ENABLED BY DESIGN UNTIL M6.3 OWNERSHIP。
-首次Real OAuth前人工Portal配置停点已完成；真实login/callback/account/reload/logout与跨标签退出PASS。Phase A exact-SHA CI全绿；本次COMPLETE marker仅在最终封板自身CI全绿、fetch后HEAD==origin/main、worktree clean时生效。M6.1完成后停止，不实施M6.2。
+首次Real OAuth前人工Portal配置停点已完成；真实login/callback/account/reload/logout与跨标签退出PASS。Phase A exact-SHA CI全绿；COMPLETE marker以最终封板自身CI全绿、fetch后HEAD==origin/main、worktree clean生效。M6.1封板时M6.2未实施；当前实施见上节。
 
 ## M6.0 历史审计
 

@@ -92,25 +92,25 @@ class TimeRangeSpec(BaseModel):
 class ColumnSchema(BaseModel):
     name: str
     data_type: str
-    is_hidden: bool = False
+    is_hidden: bool | None = False
     description: Optional[str] = None
     display_name: Optional[str] = None
     format_string: Optional[str] = None
-    is_system_managed: bool = False
-    is_key: bool = False
+    is_system_managed: bool | None = False
+    is_key: bool | None = False
     expression: Optional[str] = None
     sort_by_column: Optional[str] = None
 
 
 class MeasureSchema(BaseModel):
     name: str
-    expression: str = ""
-    data_type: str = "decimal"
-    is_hidden: bool = False
+    expression: str | None = ""
+    data_type: str | None = "decimal"
+    is_hidden: bool | None = False
     description: Optional[str] = None
     display_name: Optional[str] = None
     format_string: Optional[str] = None
-    is_system_managed: bool = False
+    is_system_managed: bool | None = False
 
 
 class HierarchySchema(BaseModel):
@@ -128,8 +128,8 @@ class TableSchema(BaseModel):
     columns: list[ColumnSchema] = Field(default_factory=list)
     measures: list[MeasureSchema] = Field(default_factory=list)
     hierarchies: list[HierarchySchema] = Field(default_factory=list)
-    is_hidden: bool = False
-    is_system_managed: bool = False
+    is_hidden: bool | None = False
+    is_system_managed: bool | None = False
     description: Optional[str] = None
     display_name: Optional[str] = None
 
@@ -156,7 +156,9 @@ class SemanticModelSchema(BaseModel):
     relationships: list[RelationshipSchema] = Field(default_factory=list)
     runtime_identity: Optional[str] = None
     session_generation: Optional[int] = Field(default=None, ge=0)
-    metadata_source: Literal["adapter", "local_mcp", "mock"] = "adapter"
+    metadata_source: Literal["adapter", "local_mcp", "mock", "fabric_iq"] = "adapter"
+    # Provider evidence only; unknown relationships aren't canonical Core edges.
+    provider_metadata: dict[str, Any] = Field(default_factory=dict, exclude=True, repr=False)
 
     def get_all_columns(self) -> list[str]:
         """获取所有列名"""

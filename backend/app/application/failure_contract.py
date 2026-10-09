@@ -140,6 +140,19 @@ def map_public_failure(
     if known_error in auth_actions:
         return _failure(PublicFailureCode(known_error), FailureStage.AUTH,
                         auth_actions[known_error], retryable=False)
+    cloud_actions = {
+        "RESOURCE_NOT_ACCESSIBLE": FailureRecoveryAction.SWITCH_ACCOUNT_OR_CONTACT_ADMIN,
+        "MODEL_RESOLUTION_FAILED": FailureRecoveryAction.RESELECT_SEMANTIC_MODEL,
+        "SCHEMA_UNAVAILABLE": FailureRecoveryAction.RESELECT_SEMANTIC_MODEL,
+        "QUERY_REJECTED": FailureRecoveryAction.EDIT_REQUEST,
+        "QUERY_TIMEOUT": FailureRecoveryAction.RETRY,
+        "RATE_LIMITED": FailureRecoveryAction.RETRY,
+        "UPSTREAM_UNAVAILABLE": FailureRecoveryAction.RETRY,
+        "CONTRACT_DRIFT": FailureRecoveryAction.NONE,
+    }
+    if known_error in cloud_actions:
+        return _failure(PublicFailureCode(known_error), public_stage, cloud_actions[known_error],
+                        retryable=known_error in {"QUERY_TIMEOUT", "RATE_LIMITED", "UPSTREAM_UNAVAILABLE"})
     if known_error in _TIMEOUT_ERRORS:
         return _failure(
             PublicFailureCode.REQUEST_TIMEOUT,

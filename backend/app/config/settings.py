@@ -6,13 +6,15 @@ Mock 模式启动不需要任何 API Key。
 
 from enum import Enum
 from functools import lru_cache
-from typing import Optional
+from typing import Literal, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+LiteralFabricVariant = Literal["Fabric.Routing.FabricIQ.V1"]
 
 
 class AppEnv(str, Enum):
@@ -36,6 +38,7 @@ class PowerBIMode(str, Enum):
     MOCK = "mock"
     LOCAL_MCP = "local_mcp"
     REMOTE_MCP = "remote_mcp"
+    FABRIC_IQ = "fabric_iq"
 
 
 class HarnessMode(str, Enum):
@@ -161,6 +164,22 @@ class Settings(BaseSettings):
     powerbi_local_semantic_model_key: str = Field(default="local_desktop_model")
     powerbi_semantic_override_path: Optional[str] = Field(default=None)
     powerbi_local_mcp_readonly: bool = Field(default=True)
+
+    fabric_iq_endpoint: str = "https://fabriciq.svc.cloud.microsoft/v1/mcp/fabriciq"
+    fabric_iq_variant: LiteralFabricVariant = "Fabric.Routing.FabricIQ.V1"
+    fabric_iq_timeout_seconds: int = Field(default=60, ge=5, le=120)
+
+    @field_validator("fabric_iq_endpoint")
+    @classmethod
+    def validate_fabric_endpoint(cls, value: str) -> str:
+        from backend.app.powerbi.fabric_iq_contract import validate_endpoint
+        return validate_endpoint(value)
+
+    @model_validator(mode="after")
+    def validate_cloud_identity(self) -> "Settings":
+        if self.powerbi_mode == PowerBIMode.FABRIC_IQ and self.identity_mode != IdentityMode.ENTRA_BFF:
+            raise ValueError("fabric_iq requires ENTRA_BFF")
+        return self
 
     # ── 资源限制 ──────────────────────────────
     # End-to-end request SLA is deliberately independent from child-stage

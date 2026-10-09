@@ -10,6 +10,13 @@
 - Phase A `5549d0973473eed7849f48465ccbd13af96a5015` / [CI37954913373](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37954913373) completed/success，全部required steps实际success。Settings.version=M6.1；最终COMPLETE以封板自身exact-SHA CI与remote audit生效，M6.2 READY但未实施。
 - 证据：[M6.1](docs/milestones/m6/m6_1_entra_identity_login_session.md)。
 
+### M6.2 开发候选（未发布，Settings.version=M6.1）
+
+- 已获用户明确授权；新增独立FabricIQ Adapter、官方SDK HTTP transport、Auth broker与request principal binding。
+- required tools/schema negotiation、随机opaque binding、unknown metadata与结果完整性fail closed；Legacy RemoteMCP不改。
+- 本地测试/Real两模型/两阶段exact-SHA CI分层验收；未完成前M6.2不标COMPLETE。旧产品API继续关闭。
+- [M6.2 evidence](docs/milestones/m6/m6_2_fabric_iq_cloud_adapter.md)。
+
 ## [M6.0] — 2026-10-09（Fabric IQ Cloud Contract Audit & Accepted Cloud Consumption Contract）
 
 Settings.version=M6.0；M6.0 COMPLETE；M6.1 READY；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN。

@@ -145,9 +145,14 @@ async def lifespan(app: FastAPI):
 
     settings: Settings = app.state.settings
     if settings.identity_mode == IdentityMode.ENTRA_BFF:
-        # No business persistence, report cleanup, LLM or Power BI provider in M6.1.
+        # No business persistence/LLM. M6.2 adds only an identity-free cloud factory.
         service = AuthService(settings, app.state.identity_client or MsalIdentityClient(settings))
         app.state.auth_service = service
+        from backend.app.powerbi.fabric_iq import FabricIQAdapterFactory
+        app.state.fabric_iq_adapter_factory = (
+            FabricIQAdapterFactory(settings, service)
+            if settings.powerbi_mode == PowerBIMode.FABRIC_IQ else None
+        )
         install_auth_log_redaction()
         for name in ("turn_service", "mock_turn_service", "report_repository",
                      "conversation_history_service", "semantic_model_discovery_service",
@@ -169,6 +174,7 @@ async def lifespan(app: FastAPI):
                 pass
             service.close()
             app.state.auth_service = None
+            app.state.fabric_iq_adapter_factory = None
         return
     # M1.6.2: 统一从 Settings 构建一次 HarnessConfig，显式传给所有 TurnService
     harness_config = HarnessConfig.from_settings(settings)

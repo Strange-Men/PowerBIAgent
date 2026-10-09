@@ -44,6 +44,8 @@ dependencies = [
 
     # M2.1: Power BI Local MCP 正式 stdio Client
     "mcp==2.0.0",
+    # M6.2: configurable official SDK HTTP client (headers/redirect boundary).
+    "httpx2==2.9.1",
 
     # M4.0: Persistence infrastructure
     "sqlalchemy==2.0.52",
