@@ -18,13 +18,14 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { isUsableReport } from '../api/adapters'
 import type {
   BatchOperationResult,
   ConversationReportItem,
   ConversationSummary,
   RuntimeMode,
+  AccountActions,
 } from '../types'
 import { FloatingActionMenu } from './FloatingActionMenu'
 import { ResourceManager } from './ResourceManager'
@@ -34,6 +35,7 @@ type ActionMenu =
   | { anchor: HTMLButtonElement; id: string; type: 'report' }
 
 interface SidebarProps {
+  account?: AccountActions
   collapsed: boolean
   activeConversationId: string | null
   runtimeMode: RuntimeMode
@@ -94,6 +96,7 @@ function SidebarLeadingIcon({ status }: { status: ConversationResourceStatus }) 
 }
 
 export function Sidebar({
+  account,
   collapsed,
   activeConversationId,
   runtimeMode,
@@ -133,6 +136,14 @@ export function Sidebar({
   const [reportsOpen, setReportsOpen] = useState(true)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [resourceManagerOpen, setResourceManagerOpen] = useState(false)
+  const accountActionsRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!userMenuOpen) return
+    const actions = accountActionsRef.current
+    actions?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    return () => actions?.querySelector<HTMLButtonElement>('.account-card')?.focus()
+  }, [userMenuOpen])
 
   useEffect(() => {
     const closeMenus = (event: KeyboardEvent) => {
@@ -295,10 +306,10 @@ export function Sidebar({
         </button>
       </div>
 
-      <nav className="sidebar-primary" aria-label="主要导航">
+      {!account ? <nav className="sidebar-primary" aria-label="主要导航">
         <button type="button" onClick={onNewChat} title="新聊天"><Plus size={20} /><span>新聊天</span></button>
         <button type="button" onClick={() => { if (collapsed) onToggle(); setSearchOpen(true) }} title="搜索聊天"><Search size={19} /><span>搜索聊天</span></button>
-      </nav>
+      </nav> : null}
 
       {!collapsed && searchOpen ? (
         <section className="sidebar-search" aria-label="搜索聊天">
@@ -314,7 +325,7 @@ export function Sidebar({
         </section>
       ) : null}
 
-      <div className="sidebar-scroll">
+      {!account ? <div className="sidebar-scroll">
         <section className="sidebar-section project-section"><span className="sidebar-label">项目</span><div className="project-card" title="Power BI 销售分析"><Folder size={18} /><span>Power BI 销售分析</span></div></section>
         <section className="sidebar-section collapsible-section">
           <button className="sidebar-section-toggle" type="button" aria-expanded={reportsOpen} onClick={() => setReportsOpen((open) => !open)}><span>最近报表</span><ChevronDown className={reportsOpen ? 'is-open' : ''} size={15} /></button>
@@ -353,15 +364,18 @@ export function Sidebar({
           {recentOpen ? <div className="recent-conversation-list">{conversationRows(conversations)}</div> : null}
           {actionError ? <p className="sidebar-state sidebar-state-error" role="alert">{actionError}</p> : null}
         </section>
-      </div>
-      <div className="account-actions" data-account-actions>
+      </div> : <div className="sidebar-scroll" />}
+      <div className="account-actions" data-account-actions ref={accountActionsRef}>
         {userMenuOpen && !collapsed ? <div className="account-menu" role="menu" aria-label="用户菜单">
           <button type="button" role="menuitem" onClick={() => { setResourceManagerOpen(true); setUserMenuOpen(false) }}><Settings size={16} />设置</button>
+          {account?.session.authenticated ? <button type="button" role="menuitem" onClick={() => void account.logout()}>退出</button> : null}
         </div> : null}
-        <button className="account-card" type="button" title="PowerBIAgent 用户" aria-label="PowerBIAgent 用户" aria-haspopup="menu" aria-expanded={userMenuOpen} onClick={() => { if (collapsed) onToggle(); setUserMenuOpen((open) => !open) }}><span className="account-avatar"><UserRound size={16} /></span><span className="account-copy"><strong>PowerBIAgent</strong><small>内部用户</small></span></button>
+        {account && !account.session.authenticated ?
+          <button className="account-card" type="button" disabled={['AUTHENTICATING', 'SESSION_ESTABLISHING'].includes(account.state)} onClick={account.login}><span className="account-avatar"><UserRound size={16} /></span><span className="account-copy"><strong>使用 Microsoft 登录</strong></span></button>
+          : <button className="account-card" type="button" title={account?.session.display_name || 'PowerBIAgent 用户'} aria-label={account?.session.display_name || 'PowerBIAgent 用户'} aria-haspopup="menu" aria-expanded={userMenuOpen} onClick={() => { if (collapsed) onToggle(); setUserMenuOpen((open) => !open) }}><span className="account-avatar">{account ? account.session.display_name?.slice(0, 2) : <UserRound size={16} />}</span><span className="account-copy"><strong>{account?.session.display_name || 'PowerBIAgent'}</strong><small>{account ? account.session.preferred_username : '内部用户'}</small></span></button>}
       </div>
     </aside>
-    {resourceManagerOpen ? <ResourceManager runtimeMode={runtimeMode} onClose={() => setResourceManagerOpen(false)} onRenameConversation={onRename} onBulkDeleteConversations={onBulkDeleteConversations} onBulkArchiveConversations={onBulkArchiveConversations} onBulkRestoreConversations={onBulkRestoreConversations} onBulkDeleteReports={onBulkDeleteReports} onBulkArchiveReports={onBulkArchiveReports} onBulkRestoreReports={onBulkRestoreReports} onRenameReport={onRenameReport} /> : null}
+    {resourceManagerOpen ? <ResourceManager account={account} runtimeMode={runtimeMode} onClose={() => setResourceManagerOpen(false)} onRenameConversation={onRename} onBulkDeleteConversations={onBulkDeleteConversations} onBulkArchiveConversations={onBulkArchiveConversations} onBulkRestoreConversations={onBulkRestoreConversations} onBulkDeleteReports={onBulkDeleteReports} onBulkArchiveReports={onBulkArchiveReports} onBulkRestoreReports={onBulkRestoreReports} onRenameReport={onRenameReport} /> : null}
     </>
   )
 }

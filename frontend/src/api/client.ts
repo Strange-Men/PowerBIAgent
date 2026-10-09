@@ -18,6 +18,8 @@ import type {
   ReportTemplateCatalog,
   LLMProfileCatalog,
   FailureInfo,
+  AuthSession,
+  AuthState,
 } from '../types'
 import { publicFailureMessage } from '../failure'
 
@@ -31,22 +33,26 @@ export class ApiError extends Error {
   readonly status: number
   readonly errorType?: string
   readonly failure?: FailureInfo
+  readonly authState?: AuthState
 
   constructor(
     message: string,
     status: number,
     errorType?: string,
     failure?: FailureInfo,
+    authState?: AuthState,
   ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.errorType = errorType
     this.failure = failure
+    this.authState = authState
   }
 }
 
 function url(path: string): string {
+  if (path.startsWith('/auth/')) return path // Auth must ALWAYS remain same-origin.
   return `${apiBaseUrl}${path}`
 }
 
@@ -63,6 +69,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(url(path), {
       ...init,
+      credentials: 'same-origin',
       headers: {
         Accept: 'application/json',
         ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
@@ -99,6 +106,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       response.status,
       errorType,
       failure,
+      AUTH_STATES.has(String((payload as {state?: unknown}).state))
+        ? (payload as {state: AuthState}).state : undefined,
     )
   }
 
@@ -118,6 +127,7 @@ function parseFailure(value: unknown): FailureInfo | undefined {
 }
 
 const PUBLIC_FAILURE_CODES = new Set([
+  'AUTH_REQUIRED', 'AUTH_EXPIRED', 'AUTH_CONSENT_REQUIRED', 'AUTH_FORBIDDEN',
   'REPORT_TEMPLATE_INCOMPATIBLE', 'REPORT_TEMPLATE_UNAVAILABLE',
   'REPORT_DATA_UNAVAILABLE', 'REPORT_EXECUTION_FAILED',
   'REPORT_RENDER_FAILED', 'POWERBI_CONNECTION_LOST',
@@ -126,6 +136,7 @@ const PUBLIC_FAILURE_CODES = new Set([
 ])
 
 const FAILURE_STAGES = new Set([
+  'auth',
   'report_scope', 'report_plan', 'report_query_validation',
   'report_dax_execution', 'sales_report_data_assembly', 'sales_report_spec',
   'report_render_store', 'memory_commit', 'understanding', 'grounding',
@@ -133,9 +144,44 @@ const FAILURE_STAGES = new Set([
 ])
 
 const FAILURE_RECOVERY_ACTIONS = new Set([
+  'login', 'relogin', 'consent_or_contact_admin', 'switch_account_or_contact_admin',
   'retry', 'refresh_semantic_models', 'reselect_semantic_model',
   'reselect_report_template', 'edit_request', 'none',
 ])
+
+const AUTH_STATES = new Set(['SIGNED_OUT', 'AUTHENTICATING', 'SESSION_ESTABLISHING',
+  'SIGNED_IN', 'AUTH_ERROR', 'CONSENT_REQUIRED', 'SESSION_EXPIRED'])
+
+export async function readAuthSession(signal?: AbortSignal): Promise<AuthSession> {
+  try {
+    const dto = await requestJson<AuthSession>('/auth/session', {signal})
+    if (!['LOCAL_DEV', 'ENTRA_BFF'].includes(dto.identity_mode)) throw new Error('Invalid identity mode')
+    if (dto.identity_mode === 'ENTRA_BFF' && (!dto.authenticated || !dto.csrf_token || !dto.expires_in)) {
+      throw new Error('Invalid session')
+    }
+    return {identity_mode:dto.identity_mode, authenticated:dto.authenticated,
+      display_name:dto.display_name, preferred_username:dto.preferred_username,
+      state:dto.identity_mode === 'LOCAL_DEV' ? 'LOCAL_DEV' : 'SIGNED_IN',
+      csrf_token:dto.csrf_token, expires_in:dto.expires_in}
+  } catch (error) {
+    if (error instanceof ApiError && [401, 403].includes(error.status)) {
+      return {identity_mode:'ENTRA_BFF', authenticated:false, display_name:null,
+        preferred_username:null, csrf_token:null, expires_in:0,
+        state:error.authState || 'SIGNED_OUT'}
+    }
+    throw error
+  }
+}
+
+export async function logoutAuthSession(csrf: string): Promise<void> {
+  try {
+    await requestJson('/auth/logout', {method:'POST', headers:{'X-CSRF-Token':csrf}})
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401 &&
+      ['AUTH_REQUIRED', 'AUTH_EXPIRED'].includes(error.failure?.code || '')) return
+    throw error
+  }
+}
 
 function friendlyHttpError(status: number, errorType?: string): string {
   if (errorType === 'llm_profile_unknown' || errorType === 'llm_profile_unavailable') {

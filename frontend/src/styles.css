@@ -1710,3 +1710,11 @@ input:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+/* M6.1 account uses the existing shell, menu and Settings tokens. */
+.auth-welcome { justify-content: center; align-items: center; gap: 12px; padding: 24px; text-align: center; }
+.auth-welcome h1 { font-size: clamp(22px, 3vw, 30px); font-weight: 500; }
+.auth-welcome p { color: var(--text-secondary, #6b6b6b); }
+.account-details { display: grid; gap: 12px; grid-template-columns: auto 1fr; }
+.account-details dd { margin: 0; overflow-wrap: anywhere; }
+.account-settings { display: flex; flex-direction: column; align-items: flex-start; gap: 20px; }
+.account-settings button { padding: 8px 16px; border: 1px solid #ddd; border-radius: 8px; background: #fff; color: inherit; cursor: pointer; }

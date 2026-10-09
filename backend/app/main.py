@@ -16,12 +16,18 @@ M1.5 更新：
 """
 
 from contextlib import asynccontextmanager
+import asyncio
 from typing import Optional
 
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from backend.app.api.routes import router
+from backend.app.auth.routes import router as auth_router
+from backend.app.auth.boundary import AuthBoundaryMiddleware, failure_response, install_auth_log_redaction
+from backend.app.auth.identity import IdentityClient, MsalIdentityClient
+from backend.app.auth.models import AuthFailure
+from backend.app.auth.service import AuthService
 from backend.app.application.mock_turn_service import MockTurnService
 from backend.app.application.conversation_history_service import ConversationHistoryService
 from backend.app.application.semantic_model_discovery_service import (
@@ -32,6 +38,7 @@ from backend.app.application.report_template_compatibility_service import (
 )
 from backend.app.config.settings import (
     LLMMode,
+    IdentityMode,
     PersistenceBackend,
     PowerBIMode,
     Settings,
@@ -137,6 +144,32 @@ async def lifespan(app: FastAPI):
         app.state.settings = get_settings()
 
     settings: Settings = app.state.settings
+    if settings.identity_mode == IdentityMode.ENTRA_BFF:
+        # No business persistence, report cleanup, LLM or Power BI provider in M6.1.
+        service = AuthService(settings, app.state.identity_client or MsalIdentityClient(settings))
+        app.state.auth_service = service
+        install_auth_log_redaction()
+        for name in ("turn_service", "mock_turn_service", "report_repository",
+                     "conversation_history_service", "semantic_model_discovery_service",
+                     "report_template_compatibility_service", "report_template_registry",
+                     "llm_provider_registry", "display_llm_provider_registry", "_persistence_engine"):
+            setattr(app.state, name, None)
+        try:
+            async def expire_auth_state():
+                while True:
+                    await asyncio.sleep(30)
+                    await asyncio.to_thread(service.prune)
+            expiry_task = asyncio.create_task(expire_auth_state())
+            yield
+        finally:
+            expiry_task.cancel()
+            try:
+                await expiry_task
+            except asyncio.CancelledError:
+                pass
+            service.close()
+            app.state.auth_service = None
+        return
     # M1.6.2: 统一从 Settings 构建一次 HarnessConfig，显式传给所有 TurnService
     harness_config = HarnessConfig.from_settings(settings)
     turn_service = None
@@ -301,7 +334,7 @@ async def lifespan(app: FastAPI):
     app.state._persistence_engine = None
 
 
-def create_app(settings: Optional[Settings] = None) -> FastAPI:
+def create_app(settings: Optional[Settings] = None, *, identity_client: IdentityClient | None = None) -> FastAPI:
     """创建 FastAPI 应用 — 避免导入时执行外部网络调用
 
     Args:
@@ -320,8 +353,13 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     # 在 lifespan 启动前预设 settings（lifespan 检查 hasattr）
     app.state.settings = settings
+    app.state.identity_client = identity_client
+    app.state.auth_service = None
+    app.add_exception_handler(AuthFailure, lambda request, error: failure_response(error))
+    app.add_middleware(AuthBoundaryMiddleware)
 
     app.include_router(router)
+    app.include_router(auth_router)
 
     return app
 

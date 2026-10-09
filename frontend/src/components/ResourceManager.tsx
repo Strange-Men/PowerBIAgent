@@ -27,6 +27,7 @@ import type {
   ConversationReportItem,
   ConversationSummary,
   RuntimeMode,
+  AccountActions,
 } from '../types'
 
 const SETTINGS_PAGE_SIZE = 20
@@ -40,6 +41,7 @@ type SettingsSection =
   | 'about'
 
 interface ResourceManagerProps {
+  account?: AccountActions
   runtimeMode: RuntimeMode
   onClose: () => void
   onRenameConversation: (
@@ -223,7 +225,22 @@ function removeSucceeded(current: Set<string>, result: BatchOperationResult) {
   return next
 }
 
-export function ResourceManager({
+export function ResourceManager(props: ResourceManagerProps) {
+  if (!props.account) return <LocalResourceManager {...props} />
+  const {account, onClose} = props
+  return <SettingsFrame onClose={onClose}>
+      <div className="settings-layout">
+        <nav className="settings-nav" aria-label="设置分类"><button type="button" className="is-active">账户</button></nav>
+        <div className="settings-content"><section className="settings-intro account-settings"><h3>账户</h3><dl className="account-details">
+          <dt>姓名</dt><dd>{account.session.display_name}</dd>
+          <dt>用户名</dt><dd>{account.session.preferred_username || '未提供'}</dd>
+          <dt>登录状态</dt><dd>{account.session.authenticated ? '已登录' : '未登录'}</dd>
+        </dl><button type="button" onClick={() => void account.logout()}>退出</button></section></div>
+      </div>
+  </SettingsFrame>
+}
+
+function LocalResourceManager({
   runtimeMode,
   onClose,
   onRenameConversation,
@@ -358,30 +375,7 @@ export function ResourceManager({
   }
 
   return (
-    <div className="resource-manager-backdrop" role="presentation">
-      <section
-        className="resource-manager settings-hub"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="resource-manager-title"
-      >
-        <header className="settings-header">
-          <div>
-            <span className="resource-manager-eyebrow">用户设置</span>
-            <h2 id="resource-manager-title">设置</h2>
-            <p>完整历史按页加载；大批量操作会自动安全分组执行。</p>
-          </div>
-          <button type="button" aria-label="关闭设置" onClick={onClose}>
-            <X size={19} />
-          </button>
-        </header>
-
-        {notice ? (
-          <p className="resource-manager-notice" role="status">
-            {notice}
-          </p>
-        ) : null}
-
+    <SettingsFrame onClose={onClose} notice={notice} subtitle="完整历史按页加载；大批量操作会自动安全分组执行。">
         <div className="settings-layout">
           <nav className="settings-nav" aria-label="设置分类">
             <SettingsNavButton icon={<Settings size={16} />} id="general" label="常规" current={section} onSelect={setSection} />
@@ -575,9 +569,22 @@ export function ResourceManager({
             ) : null}
           </div>
         </div>
-      </section>
-    </div>
+    </SettingsFrame>
   )
+}
+
+function SettingsFrame({onClose, notice, subtitle, children}: {
+  onClose: () => void; notice?: string | null; subtitle?: string; children: ReactNode
+}) {
+  return <div className="resource-manager-backdrop" role="presentation">
+    <section className="resource-manager settings-hub" role="dialog" aria-modal="true" aria-labelledby="resource-manager-title">
+      <header className="settings-header"><div><span className="resource-manager-eyebrow">用户设置</span>
+        <h2 id="resource-manager-title">设置</h2>{subtitle ? <p>{subtitle}</p> : null}</div>
+        <button type="button" aria-label="关闭设置" onClick={onClose}><X size={19} /></button></header>
+      {notice ? <p className="resource-manager-notice" role="status">{notice}</p> : null}
+      {children}
+    </section>
+  </div>
 }
 
 function toggleSelection(

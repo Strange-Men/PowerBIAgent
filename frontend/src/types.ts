@@ -1,6 +1,25 @@
 export type RuntimeMode = 'mock' | 'real'
 
+export type AuthState = 'SIGNED_OUT' | 'AUTHENTICATING' | 'SESSION_ESTABLISHING' |
+  'SIGNED_IN' | 'AUTH_ERROR' | 'CONSENT_REQUIRED' | 'SESSION_EXPIRED'
+export interface AuthSession {
+  identity_mode: 'LOCAL_DEV' | 'ENTRA_BFF'
+  authenticated: boolean
+  display_name: string | null
+  preferred_username: string | null
+  state: AuthState | 'LOCAL_DEV'
+  csrf_token: string | null
+  expires_in: number
+}
+export interface AccountActions {
+  session: AuthSession
+  state: AuthState
+  login: () => void
+  logout: () => Promise<void>
+}
+
 export type PublicFailureCode =
+  | 'AUTH_REQUIRED' | 'AUTH_EXPIRED' | 'AUTH_CONSENT_REQUIRED' | 'AUTH_FORBIDDEN'
   | 'REPORT_TEMPLATE_INCOMPATIBLE'
   | 'REPORT_TEMPLATE_UNAVAILABLE'
   | 'REPORT_DATA_UNAVAILABLE'
@@ -14,6 +33,7 @@ export type PublicFailureCode =
   | 'INTERNAL_FAILURE'
 
 export type FailureStage =
+  | 'auth'
   | 'report_scope'
   | 'report_plan'
   | 'report_query_validation'
@@ -30,6 +50,7 @@ export type FailureStage =
   | 'internal'
 
 export type FailureRecoveryAction =
+  | 'login' | 'relogin' | 'consent_or_contact_admin' | 'switch_account_or_contact_admin'
   | 'retry'
   | 'refresh_semantic_models'
   | 'reselect_semantic_model'

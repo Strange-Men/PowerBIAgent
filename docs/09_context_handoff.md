@@ -1,14 +1,30 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-> Settings.version=M6.0；M6.0 COMPLETE；M6.1 READY；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> Settings.version=M6.0；M6.0 COMPLETE；M6.1 IMPLEMENTING；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一开发交接 authority；当前项目状态见 [07](07_milestones_status_and_open_questions.md)，路线见 [08](08_development_roadmap.md)。
 
 ## 当前阶段 — Current Baseline / Next Milestone
 
 - Current Baseline：M6.0 Fabric IQ Cloud Contract Audit（design/evidence only；最终自身CI / remoteaudit解析）。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
-- NEXT = M6.1 READY（需下一轮用户授权）；M6.0结束立即停止。
-- M6 Status：contract/design已形成；production runtime NOT IMPLEMENTED。
+- ACTIVE = M6.1 IMPLEMENTING（2026-10-09用户已批准具体scope）；首次Real OAuth前必须人工配置。
+- M6 Status：Auth implementation candidate；Cloud data runtime NOT IMPLEMENTED；Real PASS，CI/seal待验收。
+
+## M6.1 active handoff
+
+[M6.1 contract/evidence](milestones/m6/m6_1_entra_identity_login_session.md)记录本轮设计、tests和验收。
+本轮用户已批准Auth/Session/Account；Settings.version保持M6.0直到Real+Phase A exact-SHA CI全绿。
+首次Real OAuth前先完成fake/local gates，随后按用户指令输出ACTION REQUIRED并停止；
+用户回复“M6.1 Entra 配置完成”后才继续真实login/callback/account/reload/logout。
+首次人工配置交接时本地正常门禁与synthetic浏览器验收已PASS，细分数字见M6.1 evidence；当时没有Real OAuth、commit或push。
+2026-10-09用户已确认Portal配置并亲自接受首次用户同意。真实Microsoft组织账号login/callback/account/reload/logout及跨标签退出均PASS；非模拟Test A。截图repo外，真实身份与credential不入库。git fetch现已成功，HEAD==origin/main==Cold Start SHA；Phase A commit/push/CI与Final seal待完成。
+repo外secure-input helper已准备并用synthetic tempfile验证，真实`.env`未由Agent读取/展示。
+LOCAL_DEV保留M5；ENTRA_BFF不初始化业务持久化/provider，全部旧product API fail closed。
+ENTRA_BFF multi-user persistence: NOT ENABLED BY DESIGN UNTIL M6.3 OWNERSHIP。
+production+in-memory SessionStore拒绝启动；process-local cache不具备multi-worker保证。
+M6.2 future trusted authorization projection必须由validated Principal + server-owned model binding +
+authorization evidence创建，不能client self-declare；Auth broker是唯一delegated token获取入口。
+M6.2/M6.3/M6.4未实施；下一阶段仍需用户独立授权。
 
 ## M6.0 accepted handoff
 
@@ -20,7 +36,7 @@
 必须实测固定selector/rawschema/PK-FK/result完整性与failurefixtures。M6.3双Viewer授权/RLS/OLS矩阵。
 M6.4由FabricREST catalogservice提供normalized scoped目录；individual-share覆盖缺口由管理员
 seed补充并标partial，不向普通用户要求URL/ID。前端沿用现有视觉、chat shell/compact rows，
-auth/catalog状态机、logout/epoch/换模型新conversation见M6.0第11节；没有实施UI。
+auth/catalog状态机、logout/epoch/换模型新conversation见M6.0第11节；M6.0当时没有实施UI，当前Auth候选见上节。
 M6.5 UCI Online Retail II，M6.6 production seal；不启动M7/M8。所有implementation需freshColdStart、
 官方重验、适用P0边界验证与用户具体scope授权；M6.0完成后立即停止。
 

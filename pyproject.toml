@@ -38,6 +38,10 @@ dependencies = [
     # M1.1: 网络调用（真实 LLM Provider 运行依赖）
     "httpx==0.28.1",
 
+    # M6.1: Microsoft confidential code/PKCE + standard ID-token validation.
+    "msal==1.39.0",
+    "PyJWT[crypto]==2.13.0",
+
     # M2.1: Power BI Local MCP 正式 stdio Client
     "mcp==2.0.0",
 

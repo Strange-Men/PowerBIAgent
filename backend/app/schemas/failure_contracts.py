@@ -6,6 +6,10 @@ from pydantic import BaseModel, ConfigDict
 
 
 class PublicFailureCode(str, Enum):
+    AUTH_REQUIRED = "AUTH_REQUIRED"
+    AUTH_EXPIRED = "AUTH_EXPIRED"
+    AUTH_CONSENT_REQUIRED = "AUTH_CONSENT_REQUIRED"
+    AUTH_FORBIDDEN = "AUTH_FORBIDDEN"
     REPORT_TEMPLATE_INCOMPATIBLE = "REPORT_TEMPLATE_INCOMPATIBLE"
     REPORT_TEMPLATE_UNAVAILABLE = "REPORT_TEMPLATE_UNAVAILABLE"
     REPORT_DATA_UNAVAILABLE = "REPORT_DATA_UNAVAILABLE"
@@ -20,6 +24,7 @@ class PublicFailureCode(str, Enum):
 
 
 class FailureStage(str, Enum):
+    AUTH = "auth"
     REPORT_SCOPE = "report_scope"
     REPORT_PLAN = "report_plan"
     REPORT_QUERY_VALIDATION = "report_query_validation"
@@ -37,6 +42,10 @@ class FailureStage(str, Enum):
 
 
 class FailureRecoveryAction(str, Enum):
+    LOGIN = "login"
+    RELOGIN = "relogin"
+    CONSENT_OR_CONTACT_ADMIN = "consent_or_contact_admin"
+    SWITCH_ACCOUNT_OR_CONTACT_ADMIN = "switch_account_or_contact_admin"
     RETRY = "retry"
     REFRESH_SEMANTIC_MODELS = "refresh_semantic_models"
     RESELECT_SEMANTIC_MODEL = "reselect_semantic_model"

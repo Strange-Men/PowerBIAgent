@@ -8,6 +8,8 @@ from enum import Enum
 from functools import lru_cache
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from urllib.parse import urlsplit
+from uuid import UUID
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,6 +25,11 @@ class LLMMode(str, Enum):
     MOCK = "mock"
     DEEPSEEK = "deepseek"
     OPENAI_COMPATIBLE = "openai_compatible"
+
+
+class IdentityMode(str, Enum):
+    LOCAL_DEV = "LOCAL_DEV"
+    ENTRA_BFF = "ENTRA_BFF"
 
 
 class PowerBIMode(str, Enum):
@@ -53,6 +60,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="forbid",
+        hide_input_in_errors=True,
     )
 
     # ── 应用基础 ──────────────────────────────
@@ -60,6 +68,52 @@ class Settings(BaseSettings):
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
     version: str = Field(default="M6.0", frozen=True)
+
+    # Auth is separate from Power BI provider credentials. No token in Settings.
+    identity_mode: IdentityMode = IdentityMode.LOCAL_DEV
+    entra_tenant_id: Optional[str] = Field(default=None, repr=False)
+    entra_client_id: Optional[str] = Field(default=None, repr=False)
+    entra_client_secret: Optional[SecretStr] = Field(default=None, repr=False)
+    entra_redirect_uri: str = "http://localhost:5173/auth/callback"
+    auth_allowed_origin: str = "http://localhost:5173"
+    auth_cookie_name: str = Field(default="pbiagent_session", pattern=r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$")
+    auth_cookie_secure: bool = True
+    auth_session_ttl: int = Field(default=3600, ge=60, le=28800)
+    auth_flow_ttl: int = Field(default=300, ge=30, le=600)
+    auth_store_capacity: int = Field(default=1024, ge=8, le=10000)
+
+    @model_validator(mode="after")
+    def validate_identity_boundary(self) -> "Settings":
+        if self.identity_mode != IdentityMode.ENTRA_BFF:
+            return self
+        for value in (self.entra_tenant_id, self.entra_client_id):
+            try:
+                if str(UUID(value or "")) != value:
+                    raise ValueError()
+            except (ValueError, TypeError, AttributeError):
+                raise ValueError("ENTRA_BFF requires canonical tenant/client UUID configuration") from None
+        if not self.entra_client_secret or not self.entra_client_secret.get_secret_value().strip():
+            raise ValueError("ENTRA_BFF requires a server credential")
+        origin = urlsplit(self.auth_allowed_origin)
+        redirect = urlsplit(self.entra_redirect_uri)
+        if (origin.scheme not in {"https", "http"} or not origin.hostname
+                or origin.path or origin.query or origin.fragment or origin.username
+                or origin.password or redirect.username or redirect.password
+                or redirect.query or redirect.fragment or redirect.path != "/auth/callback"
+                or redirect.scheme != origin.scheme or redirect.netloc != origin.netloc):
+            raise ValueError("Auth requires an exact same-origin /auth/callback redirect")
+        if origin.scheme == "http" and not (
+            self.app_env == AppEnv.DEVELOPMENT and origin.hostname == "localhost"
+            and not self.auth_cookie_secure
+        ):
+            raise ValueError("HTTP Auth requires explicit localhost development cookie policy")
+        if not self.auth_cookie_secure and self.app_env != AppEnv.DEVELOPMENT:
+            raise ValueError("Insecure Auth cookies are development-only")
+        if self.app_env == AppEnv.PRODUCTION:
+            if origin.scheme != "https" or origin.hostname in {"localhost", "127.0.0.1", "::1"} or not self.auth_cookie_secure:
+                raise ValueError("Production Auth requires HTTPS/non-localhost/Secure cookies")
+            raise ValueError("InMemoryAuthSessionStore is NOT MULTI-WORKER PRODUCTION READY")
+        return self
 
     # ── 服务器 ──────────────────────────────
     host: str = Field(default="127.0.0.1")

@@ -1,6 +1,6 @@
 # 08 — 当前及未来开发路线
 
-> **状态：** Settings.version=M6.0；M6.0 COMPLETE；M6.1 READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> **状态：** Settings.version=M6.0；M6.0 COMPLETE；M6.1 IMPLEMENTING；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一路线 authority；状态见 [07](07_milestones_status_and_open_questions.md)，实施入口见 [09](09_context_handoff.md)。
 
 ## 路线总览
@@ -8,7 +8,7 @@
 | Milestone | 定位 | 当前路线 |
 |---|---|---|
 | M5 | Core Analysis Kernel | FROZEN；保留 failure-first correctness forward-fix |
-| M6 | Cloud Consumption & Enterprise Identity | M6.0 COMPLETE / M6.1 READY；production未实现；每阶段另行授权 |
+| M6 | Cloud Consumption & Enterprise Identity | M6.0 COMPLETE / M6.1 IMPLEMENTING；Auth candidate施工；Cloud data未实现；每阶段另行授权 |
 | M7 | Freshness & Report Lifecycle | 后续规划 |
 | M8 | Enterprise Pilot Platform | 后续规划 |
 | M9 | Advanced Analytics & Controlled Authoring | 后续规划 |
@@ -61,12 +61,15 @@ refresh API 不得塞入 execute_dax adapter。以上为 M6 架构方向，尚�
 | 阶段 | 目标 / 验收 |
 |---|---|
 | M6.0 | COMPLETE：Fabric IQ官方合同 + 真实targeted probe + Accepted Consumption/Discovery ADR + Product/Auth UX设计；最终自身CI / remoteaudit解析 |
-| M6.1 | Entra Identity、same-origin BFF code/PKCE Login/Session、基础Account UX；token仅Auth/Transport；下一轮明确授权后实施 |
+| M6.1 | Entra Identity、same-origin BFF code/PKCE Login/Session、基础Account UX；用户已授权施工；token仅Auth/Transport；Real/CI验收待完成 |
 | M6.2 | 新FabricIQPowerBIAdapter；固定X-Variants、tools/list validation、schema/result/error normalization与完整性failclosed；复用Core |
 | M6.3 | User A/B Viewer、RLS/OLS、ownership/IDOR、cross-principal cache、revocation/logout负例矩阵 |
 | M6.4 | Fabric REST authoritative scoped Cloud Catalog + 管理员shared-resource seeds；自动加载/compactselector/全Product E2E；普通用户零URL/ID配置 |
 | M6.5 | Public Real Business Data Validation：UCI Online Retail II；不增加QueryShape/报表模板 |
 | M6.6 | Enterprise Production Readiness Seal：安全/部署/恢复/并发/observability与真实能力限制汇总；M7/M8仍独立 |
+
+M6.1 stage boundary：ENTRA_BFF在M6.3 ownership前禁用全部旧product API；
+不提前进行DB migration。实现证据见[M6.1](milestones/m6/m6_1_entra_identity_login_session.md)。
 
 M6.4 workspace catalog需要Workspace.Read.All与Viewer；individual share不保证完整覆盖，返回partial
 而非“无模型”，不以Discover空结果判空。目录覆盖范围、管理员seed/access验证详见M6.0第5节。

@@ -2,6 +2,14 @@ import type { FailureInfo } from './types'
 
 export function publicFailureMessage(failure: FailureInfo): string {
   switch (failure.code) {
+    case 'AUTH_REQUIRED':
+      return '请使用 Microsoft 账号登录。'
+    case 'AUTH_EXPIRED':
+      return '登录已过期，请重新登录。'
+    case 'AUTH_CONSENT_REQUIRED':
+      return '需要批准才能继续，请登录或联系管理员。'
+    case 'AUTH_FORBIDDEN':
+      return '当前账号暂时无法访问，请切换账号或联系管理员。'
     case 'REPORT_TEMPLATE_INCOMPATIBLE':
       return '当前数据模型不支持这个报表模板，请选择其他模板或数据模型。'
     case 'REPORT_TEMPLATE_UNAVAILABLE':

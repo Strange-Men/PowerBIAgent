@@ -2,6 +2,13 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [Unreleased — M6.1 candidate]
+
+- 新增Entra BFF Auth、request-scoped Principal、process-local session/flow/token隔离与统一CSRF。
+- 前端session-first bootstrap与真实Account设置；ENTRA_BFF在M6.3 ownership前禁用所有旧product资源。
+- MSAL 1.39 +标准ID-token验证库；正常CI使用离线fake。Settings.version仍M6.0，Real/双阶段CI未完成。
+- 证据：[M6.1](docs/milestones/m6/m6_1_entra_identity_login_session.md)。
+
 ## [M6.0] — 2026-10-09（Fabric IQ Cloud Contract Audit & Accepted Cloud Consumption Contract）
 
 Settings.version=M6.0；M6.0 COMPLETE；M6.1 READY；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN。

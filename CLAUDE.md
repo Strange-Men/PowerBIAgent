@@ -4,8 +4,8 @@
 
 ## 当前开发入口
 
-Settings.version=M6.0；M6.0 COMPLETE；M6.1 READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。M5.10.8 与 FIX COMPLETE。
-下一正式milestone为M6.1 Entra Identity / Login / Session，需下一轮用户授权；M6 production runtime尚未实现。
+Settings.version=M6.0；M6.0 COMPLETE；M6.1 IMPLEMENTING；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。M5.10.8 与 FIX COMPLETE。
+当前M6.1 Entra Identity / Login / Session已获用户授权施工；Auth candidate未封板，Cloud data runtime尚未实现。
 Cloud消费/目录/Product Auth UX设计见ADR-020与M6.0 evidence，官方重验与适用P0验收仍是implementation前提。
 发布 baseline 按 09 的当前 exact-SHA CI + remote audit 解析，不继承已完成阶段的施工流程。
 

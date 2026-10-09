@@ -33,6 +33,7 @@ def isolate_managed_report_artifacts(
     monkeypatch.setenv("LLM_MODE", "mock")
     monkeypatch.setenv("POWERBI_MODE", "mock")
     monkeypatch.setenv("PERSISTENCE_BACKEND", "memory")
+    monkeypatch.setenv("IDENTITY_MODE", "LOCAL_DEV")
 
     test_root = (tmp_path / "owned_test_artifacts" / "reports").resolve()
     persistence_root = (tmp_path / "owned_test_artifacts" / "persistence").resolve()

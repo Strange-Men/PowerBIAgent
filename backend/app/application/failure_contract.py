@@ -131,6 +131,15 @@ def map_public_failure(
 
     public_stage = coerce_failure_stage(stage)
     known_error = error_type or ""
+    auth_actions = {
+        "AUTH_REQUIRED": FailureRecoveryAction.LOGIN,
+        "AUTH_EXPIRED": FailureRecoveryAction.RELOGIN,
+        "AUTH_CONSENT_REQUIRED": FailureRecoveryAction.CONSENT_OR_CONTACT_ADMIN,
+        "AUTH_FORBIDDEN": FailureRecoveryAction.SWITCH_ACCOUNT_OR_CONTACT_ADMIN,
+    }
+    if known_error in auth_actions:
+        return _failure(PublicFailureCode(known_error), FailureStage.AUTH,
+                        auth_actions[known_error], retryable=False)
     if known_error in _TIMEOUT_ERRORS:
         return _failure(
             PublicFailureCode.REQUEST_TIMEOUT,

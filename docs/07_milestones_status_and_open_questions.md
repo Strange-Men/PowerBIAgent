@@ -1,6 +1,6 @@
 # 07 — 当前项目状态
 
-> **状态：** Settings.version=M6.0；M6.0 COMPLETE；M6.1 READY；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> **状态：** Settings.version=M6.0；M6.0 COMPLETE；M6.1 IMPLEMENTING；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一当前项目状态 authority；路线见 [08](08_development_roadmap.md)，开发交接见 [09](09_context_handoff.md)。
 
 ## 当前状态
@@ -11,9 +11,17 @@
 | Current Release State | M6.0 COMPLETE；最终seal以自身exact-SHA CI + remoteaudit生效；M5 FINAL=true |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | M6.1 READY — Entra Identity / Login / Session；需用户下一轮授权 |
-| Current implementation status | M6 production runtime NOT IMPLEMENTED；本轮只读 audit / design |
+| Next | M6.1 IMPLEMENTING — 用户已批准；Real Entra E2E PASS；等待两阶段CI封板 |
+| Current implementation status | M6.1 Auth implementation candidate；Real PASS；CI/seal待验收；Cloud data runtime NOT IMPLEMENTED |
 | Ready state | M6.0 official / runtime / accepted ADR / local gates / Phase A CI通过；final自身CI独立验收 |
+
+## M6.1 当前施工
+
+用户2026-10-09已批准身份/登录/Session/Account scope。实现与安全合同见
+[M6.1 evidence](milestones/m6/m6_1_entra_identity_login_session.md)。Settings.version仍M6.0；
+LOCAL_DEV保留M5，ENTRA_BFF只开放Auth/Account/安全diagnostics。
+ENTRA_BFF multi-user persistence: NOT ENABLED BY DESIGN UNTIL M6.3 OWNERSHIP。
+首次Real OAuth前人工Portal配置停点已完成；真实login/callback/account/reload/logout与跨标签退出PASS。未通过Phase A与final自身CI前不得标COMPLETE。
 
 ## M6.0 当前审计
 
@@ -25,7 +33,7 @@ Fabric REST current-principal workspace/model/report listing作为M6.4 scoped ca
 Product/Auth UX为设计合同；当前ChatGPT reference可靠访问受限，现有前端视觉authority保持。
 Phase A exact-SHA CI37904870868全绿后进入最终seal，Settings.version=M6.0。
 final自身SHA不写入自身提交；以09的exact-SHA CI / remoteaudit联合解析最终成立状态。
-M5 factual Core与所有production behavior保持；M6.1/2/3/4实际能力尚未实施。
+M6.0封板时M5 factual Core与所有production behavior保持，M6.1/2/3/4尚未实施；当前M6.1候选施工状态见上节。
 
 M5.10.8 与 FIX、M5.10.9 已完成。原 Final baseline：
 `86aaaec7d2172c041e97392c3de03adcca77ca1b` /
