@@ -2,6 +2,11 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+M6.0 RELEASE CANDIDATE（2026-10-09，Settings暂维持M5.10.9）：官方Fabric IQ GA合同重验与两模型
+targeted只读probe、ADR-020消费/目录authority、BFF身份/Token/failure/RLS矩阵与Product/Auth UX设计。
+前端reference部分不可访问已披露；M6.1–M6.6路线明确。无CloudAdapter/auth/frontend/Core行为实现。
+证据见[当前M6.0 audit](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)，seal需自身exact-SHA CI。
+
 ## [M5.10.9] — 2026-09-30（Documentation Governance & M5 Final Seal）
 
 M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。Settings.version=M5.10.9；M5.10.8 COMPLETE；M5.10.8 FIX COMPLETE。

@@ -38,6 +38,10 @@
 
 ## P2 — 专项规范与 Milestone 文档
 
+M6 Cloud入口：[M6.0 audit / Product/Auth UX / handoff](milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)、
+[ADR-020 consumption / catalog authority](adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。
+这是设计合同；current状态/路线/开发交接仍分别以07/08/09为准。
+
 | 路径 | Owner / purpose | 何时读取 |
 |---|---|---|
 | `docs/specs/10_frontend_visual_and_interaction_spec.md` | 前端视觉与交互专项规范 | M5 或相关契约任务 |

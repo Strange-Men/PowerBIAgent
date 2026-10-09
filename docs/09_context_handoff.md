@@ -7,8 +7,22 @@
 
 - Current Baseline：M5.10.9 + M5.10.9 FIX COMPLETE（documentation / CI test stability forward-fix）。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
-- NEXT = M6 — Cloud Consumption & Enterprise Identity。
-- M6 Status：NOT IMPLEMENTED；READY FOR RESEARCH / DESIGN / USER-APPROVED PATCHES。
+- NEXT = M6.0 RELEASE CANDIDATE seal，然后M6.1（需下一轮用户授权）。
+- M6 Status：contract/design已形成；production runtime NOT IMPLEMENTED。
+
+## M6.0 accepted handoff
+
+[M6.0 evidence / Product/Auth UX](milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md) 与
+[ADR-020 ACCEPTED](adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md) 是当前Cloud设计合同。
+官方Fabric IQ GA、delegated-only三scopes、X-Variants selector已重验；现有客户端两模型probe PASS，
+名称discovery empty已分类。M6.1采用same-origin BFF code/PKCE，token仅Auth/Transport；Webredirect
+及credential在M6.1启动时配置，现在不提前配置。M6.2新Adapter，禁止填旧Remote skeleton；
+必须实测固定selector/rawschema/PK-FK/result完整性与failurefixtures。M6.3双Viewer授权/RLS/OLS矩阵。
+M6.4由FabricREST catalogservice提供normalized scoped目录；individual-share覆盖缺口由管理员
+seed补充并标partial，不向普通用户要求URL/ID。前端沿用现有视觉、chat shell/compact rows，
+auth/catalog状态机、logout/epoch/换模型新conversation见M6.0第11节；没有实施UI。
+M6.5 UCI Online Retail II，M6.6 production seal；不启动M7/M8。所有implementation需freshColdStart、
+官方重验、适用P0边界验证与用户具体scope授权；M6.0完成后立即停止。
 
 下一开发者可进入 M6 研究/设计，完成下列 prerequisite 并取得具体 patch scope 授权后才实施。
 M5 Final baseline 已成立；post-final 文档修复不重新开启 M5 功能开发，也不解冻 Core。
@@ -82,9 +96,8 @@ SemanticFrame → Grounding → CanonicalQueryPlan → Deterministic DAX
 
 任何 M6 implementation 前必须重新验证 Microsoft 官方 API / MCP / Fabric 文档，保存日期、
 官方来源、endpoint、auth、tenant/identity、capability/tool schema、RLS/OLS 与 fail-closed probe
-证据。Fabric IQ MCP 是需要评估的默认方向之一，尚未确认其适用性或 production contract。
-ADR-006 已 SUPERSEDED；历史 Power BI Consumption MCP endpoint、SDK 版本、认证假设不得直接
-当成当前稳定合同。Cloud MCP / Entra 尚未实现；本次文档 FIX 不验证 endpoint 或 production contract。
+证据。M6.0已验证官方Fabric IQ合同与当前两模型只读smoke；defaultclientprobe不等于自建app
+或fixedselectorwire已验收。ADR-020接替ADR-006的Cloud合同；Cloud/Entra production尚未实现。
 
 ### M6 prerequisite 顺序
 
@@ -108,13 +121,13 @@ ADR-006 已 SUPERSEDED；历史 Power BI Consumption MCP endpoint、SDK 版本�
 旧 endpoint、constructor defaults 与 NotImplemented message 中的 ADR-006 wording 均不是
 M6 production contract。不得看到 skeleton 就直接实现。先按上列顺序验证 endpoint/auth/
 identity/tool schema/RLS-OLS，再以 accepted contract 与获批 scope 决定后续 Adapter 实施。
-本次仅校正模块 docstring 适用性；server_url default、异常消息、class/method behavior、
-transport/auth、provider selection 与 Settings 均保留。风险与回归记录见 FIX evidence / Error Ledger。
+旧FIX仅校正模块docstring；M6.0不修改server_url/异常/class行为/transport/auth/provider selection。
+Settings只在M6.0最终seal作版本metadata更新。风险与回归记录见FIX evidence / M6.0 contract。
 
 | 未来职责 | 范围 |
 |---|---|
-| PowerBIDataPlane | discover、schema、member/value search、query、execute deterministic DAX |
-| PowerBIControlPlane | refresh、refresh history、workspace metadata、report resource metadata、embed metadata、lifecycle |
+| PowerBIDataPlane | IQ resolve/schema/value/deterministic DAX；Discover仅候选 |
+| PowerBIControlPlane | FabricREST current-principal catalog/metadata；未来refresh/embed/lifecycle |
 
 refresh API 不得塞入 execute_dax adapter。以上为 M6 架构方向，尚未实现。
 

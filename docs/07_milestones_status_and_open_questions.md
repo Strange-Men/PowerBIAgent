@@ -11,9 +11,20 @@
 | Current Release State | M5 FINAL=true；既有 Final baseline 已成立 |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | M6 — Cloud Consumption & Enterprise Identity |
-| Current implementation status | M6 NOT IMPLEMENTED |
-| Ready state | M6 planning / approved-scope implementation ready；前置条件见 09 |
+| Next | M6.0 RELEASE CANDIDATE → M6.1 Entra Identity / Login / Session |
+| Current implementation status | M6 production runtime NOT IMPLEMENTED；本轮只读 audit / design |
+| Ready state | M6.0 official + targeted Cloud probe / ADR-020 已形成；local / exact-SHA gates 后 seal |
+
+## M6.0 当前审计
+
+[M6.0 evidence](milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md) 与
+[ADR-020 ACCEPTED](adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)：Fabric IQ GA、
+delegated-only、两模型resolve/schema/query PASS；DiscoverArtifacts名称搜索仍empty，属于已知限制。
+Fabric REST current-principal workspace/model/report listing作为M6.4 scoped catalog authority，
+管理员seed补共享资源，明确partial coverage；BFF delegated code/PKCE为M6.1推荐。
+Product/Auth UX为设计合同；当前ChatGPT reference可靠访问受限，现有前端视觉authority保持。
+Settings暂不bump；最终complete以两阶段exact-SHA CI / remote audit成立为准。
+M5 factual Core与所有production behavior保持；M6.1/2/3/4实际能力尚未实施。
 
 M5.10.8 与 FIX、M5.10.9 已完成。原 Final baseline：
 `86aaaec7d2172c041e97392c3de03adcca77ca1b` /

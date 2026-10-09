@@ -8,7 +8,7 @@
 | Milestone | 定位 | 当前路线 |
 |---|---|---|
 | M5 | Core Analysis Kernel | FROZEN；保留 failure-first correctness forward-fix |
-| M6 | Cloud Consumption & Enterprise Identity | NEXT；研究/设计与获批 scope 实施 ready，未实现 |
+| M6 | Cloud Consumption & Enterprise Identity | M6.0 contract audit RELEASE CANDIDATE；production未实现 |
 | M7 | Freshness & Report Lifecycle | 后续规划 |
 | M8 | Enterprise Pilot Platform | 后续规划 |
 | M9 | Advanced Analytics & Controlled Authoring | 后续规划 |
@@ -44,16 +44,41 @@ SemanticFrame → Grounding → CanonicalQueryPlan → Deterministic DAX
 
 任何 M6 implementation 前必须重新验证 Microsoft 官方 API / MCP / Fabric 文档，保存日期、
 官方来源、endpoint、auth、tenant/identity、capability/tool schema、RLS/OLS 与 fail-closed probe
-证据。Fabric IQ MCP 是需要评估的默认方向之一，尚未确认其适用性或 production contract。
-ADR-006 已 SUPERSEDED；历史 Power BI Consumption MCP endpoint、SDK 版本、认证假设不得直接
-当成当前稳定合同。Cloud MCP / Entra 尚未实现，官方 production contract 尚待验证。
+证据。[M6.0 audit](milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md) 已核验Fabric IQ官方GA
+消费合同与两个模型小型runtime probe；[ADR-020](adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)
+接受消费/目录/identity边界。ADR-006旧endpoint/SDK/OAuth假设废弃；Cloud/Entra production未实现。
+固定selector wire、自建app OAuth、REST catalog与双用户RLS/OLS各在对应implementation入口验收。
 
 | 未来职责 | 范围 |
 |---|---|
-| PowerBIDataPlane | discover、schema、member/value search、query、execute deterministic DAX |
-| PowerBIControlPlane | refresh、refresh history、workspace metadata、report resource metadata、embed metadata、lifecycle |
+| PowerBIDataPlane | IQ resolve、schema、member/value search、execute deterministic DAX；Discover仅候选 |
+| PowerBIControlPlane | Fabric REST current-principal workspace/model/report catalog与metadata；未来refresh/embed/lifecycle |
 
 refresh API 不得塞入 execute_dax adapter。以上为 M6 架构方向，尚未实现。
+
+### M6 正式分阶段路线
+
+| 阶段 | 目标 / 验收 |
+|---|---|
+| M6.0 | Fabric IQ官方合同 + 真实targeted probe + Accepted Consumption/Discovery ADR + Product/Auth UX设计；两阶段seal |
+| M6.1 | Entra Identity、same-origin BFF code/PKCE Login/Session、基础Account UX；token仅Auth/Transport；下一轮明确授权后实施 |
+| M6.2 | 新FabricIQPowerBIAdapter；固定X-Variants、tools/list validation、schema/result/error normalization与完整性failclosed；复用Core |
+| M6.3 | User A/B Viewer、RLS/OLS、ownership/IDOR、cross-principal cache、revocation/logout负例矩阵 |
+| M6.4 | Fabric REST authoritative scoped Cloud Catalog + 管理员shared-resource seeds；自动加载/compactselector/全Product E2E；普通用户零URL/ID配置 |
+| M6.5 | Public Real Business Data Validation：UCI Online Retail II；不增加QueryShape/报表模板 |
+| M6.6 | Enterprise Production Readiness Seal：安全/部署/恢复/并发/observability与真实能力限制汇总；M7/M8仍独立 |
+
+M6.4 workspace catalog需要Workspace.Read.All与Viewer；individual share不保证完整覆盖，返回partial
+而非“无模型”，不以Discover空结果判空。目录覆盖范围、管理员seed/access验证详见M6.0第5节。
+M6.0 Product/Auth UX第11节是M6.1/4handoff：CurrentChatGPTWeb布局/交互参考，现有PowerBIAgent
+visualtokens authority；本轮无前端实现，不复制品牌，不做dashboard。
+
+M6.5首选[UCI Online Retail II](https://archive.ics.uci.edu/dataset/502/online%2Bretail%2Bii)：约百万真实
+商业交易，订单/商品/客户/国家/数量/价格/取消适配当前Sales事实链。目标FactSales、DimDate、
+DimProduct、DimCustomer、DimCountry；measures Total Sales、Total Quantity、Total Orders、
+Average Order Value、Cancelled Orders、Cancelled Amount、Unique Customers。先明确取消金额正负、
+退货/缺失值/币种等口径再建模；M6.0不下载/导入。Amazon Reviews为后续customer voice/after-sales/
+product review候选。各阶段须独立获批scope，M6.0结束立即停止。
 
 ### Production risk baseline
 

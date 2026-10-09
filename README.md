@@ -10,6 +10,8 @@
 M5 提供后续企业生产化复用的 Core Analysis Kernel；冻结 authority/contract/architecture boundary，允许 failure-first minimal correctness forward-fix。下一阶段 M6 — Cloud Consumption & Enterprise Identity。
 当前状态、路线、交接分别只见 [07](docs/07_milestones_status_and_open_questions.md)、[08](docs/08_development_roadmap.md)、[09](docs/09_context_handoff.md)。
 
+M6.0 Cloud contract audit RELEASE CANDIDATE：[official/runtime evidence、Product/Auth UX与handoff](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)、[ADR-020 ACCEPTED](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。Fabric IQ两模型只读smoke通过，名称搜索限制已记录；Fabric REST scoped catalog与BFF OAuth方案定稿。M6 production runtime/前端auth均未实现。
+
 ## 项目概览
 
 PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用户。用户用自然语言提出数据问题或报表需求；FastAPI 后端负责语义落地、受限 DAX 构造、Power BI 查询、事实验证、回答与静态 HTML 报表生成。
