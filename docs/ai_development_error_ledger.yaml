@@ -34,8 +34,9 @@ entries:
   - 单测修复需 focused、20 次有界重复及邻近 lifespan 回归，旧失败 exact-SHA CI 保留
   - FIX current COMPLETE 只有新最终 marker SHA 的完整 CI 与 remote audit 成立后生效；M5 FINAL=true 不回退
   related_adr: ADR-005
-  related_commits: []
-  status: monitoring
+  related_commits:
+  - f8641f4d588e1823f521a6d1e9e4e459e6c920f3
+  status: resolved
   events:
   - date: '2026-09-30'
     action: final_exact_sha_ci_exposed_preexisting_identity_oracle_failure
@@ -44,6 +45,10 @@ entries:
   - date: '2026-10-09'
     action: explicit_test_scope_authorized_and_minimal_forward_fix_added
     version: M5.10.9
+  - date: '2026-10-09'
+    action: resolved
+    version: M5.10.9
+    commit: f8641f4d588e1823f521a6d1e9e4e459e6c920f3
 - id: ERR-5109-002
   title: Final marker 一致不等于 current semantic truth 一致
   category: ERR

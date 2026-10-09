@@ -1,11 +1,11 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-> Settings.version=M5.10.9；M5.10.9 COMPLETE；M5.10.9 FIX FINAL REVALIDATION PENDING；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> Settings.version=M5.10.9；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一开发交接 authority；当前项目状态见 [07](07_milestones_status_and_open_questions.md)，路线见 [08](08_development_roadmap.md)。
 
 ## 当前阶段 — Current Baseline / Next Milestone
 
-- Current Baseline：M5.10.9；post-final M5.10.9 FIX FINAL REVALIDATION PENDING（documentation / CI test stability forward-fix）。
+- Current Baseline：M5.10.9 + M5.10.9 FIX COMPLETE（documentation / CI test stability forward-fix）。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
 - NEXT = M6 — Cloud Consumption & Enterprise Identity。
 - M6 Status：NOT IMPLEMENTED；READY FOR RESEARCH / DESIGN / USER-APPROVED PATCHES。
@@ -39,8 +39,12 @@ Phase B `953be2683d539fbf4b43d59cca086a3fd598928c` /
 [exact-SHA CI 36688714620](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36688714620)
 completed/failure，2026-10-09 fresh fetch / failure logs 核验；其 FIX COMPLETE marker 未生效。
 失败为既有 health lifespan 测试的 id/address reuse oracle，不是 production lifecycle regression。
-用户已批准只修该测试与 closure evidence；Phase C 修复测试并等待 exact-SHA CI，Phase D tiny marker
-patch 后再等其自身 exact-SHA CI。旧失败 run 保留，不以 rerun 偶然通过替代修复。
+用户获批的 Phase C 测试修复 `f8641f4d588e1823f521a6d1e9e4e459e6c920f3` /
+[exact-SHA CI 37871771667](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37871771667)
+completed/success；Full Validation、全部正常 steps（含 Golden / frontend / typecheck / lint /
+build / strict diff）实际 success，无 skipped；fresh fetch 后 HEAD==origin/main、clean。
+Phase D 只做 marker/evidence patch，仍须其自身 exact-SHA CI 与 remote audit。旧失败 run 保留，
+不以 rerun 偶然通过替代修复。
 最新 FIX 自身 SHA 不写入自身提交；以当前 checkout 的 `git rev-parse HEAD`、该 exact SHA 的
 PowerBIAgent Validation / Full Validation (Windows) completed/success、fetch 后 HEAD==origin/main
 与 clean worktree 联合解析最新发布基线。FIX COMPLETE 须有最终 FIX exact-SHA CI 和 remote audit。

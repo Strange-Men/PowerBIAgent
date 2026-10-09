@@ -1,6 +1,6 @@
 # M5.10.9 FIX — Document Semantic Consistency & M6 Handoff Closure
 
-> 2026-09-30 documentation forward-fix；2026-10-09 CI stability continuation；M5.10.9 FIX FINAL REVALIDATION PENDING。
+> 2026-09-30 documentation forward-fix；2026-10-09 CI stability continuation；M5.10.9 FIX COMPLETE。
 > M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN。
 > 本文件只记录本次 audit / 分层 evidence / closure；current state、路线、handoff 分别见 07/08/09。
 
@@ -153,3 +153,22 @@ Phase D 仅在 Phase C success 后做 tiny marker patch，记录 C SHA / Run / s
 `M5.10.9_FIX_CI稳定性修复与最终封板`；再次等待最终 marker SHA 自身的完整 CI success。
 最终 fetch 后 HEAD==origin/main、worktree clean，required check / Golden / Frontend / Typecheck /
 Lint / Build / strict diff 均实际 success 后，FIX COMPLETE 才生效并停止。M6 implementation 未开始。
+
+### Phase C — Remote exact-SHA success / Phase D marker seal
+
+Phase C SHA：`f8641f4d588e1823f521a6d1e9e4e459e6c920f3`；commit：
+`M5.10.9_FIX_CI生命周期测试稳定性修复`；
+[Run 37871771667](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37871771667)
+completed/success / attempt 1；Job / check-run `113631264274` Full Validation (Windows) success，
+run/job/check 的 head_sha 均匹配。12 个正常 required steps 全部 completed/success；
+Golden、Frontend tests、Typecheck、Lint、Build、Git diff strict 实际执行，没有上游 skipped。
+真实 logs：Semantic 819 passed，full pytest 2877 passed，Frontend 10 files / 105 tests passed，
+strict diff 报告 working tree clean。Remote CI 与 Local automated / Local Real 分层。
+fresh fetch 后 HEAD==origin/main==Phase C SHA、worktree clean，才进入 Phase D。
+
+Phase D：`M5.10.9_FIX_CI稳定性修复与最终封板`；只更改 07/09、CHANGELOG、Ledger 与本 evidence，
+记录 Phase C success 并恢复 current COMPLETE marker；test_health / production / frontend / CI 不再改。
+ERR-5109-003 以已绿 Phase C commit 记 resolved。最终自身 SHA 不写入自身提交；
+最终 SHA / Run 由交付与 09 exact-SHA 解析方式记录。该 marker 须其自身 CI completed/success、
+required check 与所有正常 steps success、final fresh fetch / clean audit 成立才生效。
+M5 FINAL=true 持续保持；完成即停止，可进入下一轮独立 M6 Cold Start，M6 implementation NOT STARTED。
