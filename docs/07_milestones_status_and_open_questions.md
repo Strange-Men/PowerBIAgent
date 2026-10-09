@@ -1,6 +1,6 @@
 # 07 — 当前项目状态
 
-> **状态：** Settings.version=M5.10.9；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> **状态：** Settings.version=M5.10.9；M5.10.9 COMPLETE；M5.10.9 FIX FINAL REVALIDATION PENDING；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一当前项目状态 authority；路线见 [08](08_development_roadmap.md)，开发交接见 [09](09_context_handoff.md)。
 
 ## 当前状态
@@ -10,7 +10,7 @@
 | Current Version | M5.10.9 |
 | Current Release State | M5 FINAL=true；既有 Final baseline 已成立 |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
-| Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency forward-fix |
+| Post-final | M5.10.9 FIX FINAL REVALIDATION PENDING — documentation semantic consistency / CI test stability forward-fix |
 | Next | M6 — Cloud Consumption & Enterprise Identity |
 | Current implementation status | M6 NOT IMPLEMENTED |
 | Ready state | M6 planning / approved-scope implementation ready；前置条件见 09 |
@@ -24,6 +24,11 @@ post-final FIX 只校准文档与治理回归，M5 FINAL=true 持续有效。
 FIX 候选 `9196bb7e52fbc8869daff7233518ac896bc813ca` /
 [CI 36686978579](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36686978579)
 completed/success；最终 FIX marker 以最终 exact-SHA CI + remote audit 成立为准。
+
+2026-10-09 重新核验：Phase B `953be2683d539fbf4b43d59cca086a3fd598928c` /
+[CI 36688714620](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36688714620)
+completed/failure；跨 lifespan 的整数 id 断言产生测试假失败，该提交的 FIX COMPLETE 尚未生效。
+当前仅获批修复该测试 oracle 与 closure evidence；Phase C / D 均须自己的 exact-SHA CI 全绿。
 
 ## M5 Core Analysis Kernel 冻结边界
 

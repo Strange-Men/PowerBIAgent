@@ -6,12 +6,13 @@
 
 M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。Settings.version=M5.10.9；M5.10.8 COMPLETE；M5.10.8 FIX COMPLETE。
 
-### Post-final M5.10.9 FIX — 文档语义一致性与 M6 交接（M5.10.9 FIX COMPLETE）
+### Post-final M5.10.9 FIX — 文档语义一致性与 M6 交接（M5.10.9 FIX FINAL REVALIDATION PENDING）
 
 - 校正当前 PRD/前端合同的八种 QueryShape、双 Sales 模板名称与 model-aware eligible catalog；域不匹配不返回目录，域匹配后保留 capability/disabled 合同。
 - AGENTS/CLAUDE/07/08/09 从已完成的封板施工流程转为 NEXT=M6 prerequisite handoff；M6 未实现，每个 patch 需官方 contract/P0 验证与用户具体 scope 授权。
 - 修复 06 页脚、ADR-019 索引与重复 header；RemoteMCP 仅改 docstring，旧 endpoint/default/异常措辞风险进入 M6 technical debt。无 runtime behavior / Frozen Core 变化。
 - focused semantic governance + positive/negative/history regressions、ERR-5109-002 与分层证据见 [FIX evidence](docs/milestones/m5/m5_10_9_fix_document_semantic_consistency_and_m6_handoff.md)。M5 FINAL=true 持续有效；FIX 按两阶段 exact-SHA CI 收口。
+- 2026-10-09 CI forward-fix：Phase B `953be268` / Run `36688714620` failure 永久保留；既有 health 测试跨已释放对象比较 id 产生假失败。仅修获批单测，以强引用 / `is not` 证明 Service 隔离并验证 shutdown state 清理，记录 ERR-5109-003；production code 与版本不变。Phase C / D 分别等待新 exact-SHA CI。
 
 ### 原 M5.10.9 封板历史
 

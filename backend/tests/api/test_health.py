@@ -359,20 +359,27 @@ class TestLifespanIntegration:
         transport_a = ASGITransport(app=app_a)
         transport_b = ASGITransport(app=app_b)
 
-        svc_a_id = None
-        svc_b_id = None
+        svc_a = None
+        svc_b = None
 
         async with app_a.router.lifespan_context(app_a):
             async with AsyncClient(transport=transport_a, base_url="http://test-a") as ca:
                 ra = await ca.get("/health")
                 assert ra.status_code == 200
-                svc_a_id = id(app_a.state.mock_turn_service)
+                svc_a = app_a.state.mock_turn_service
+                assert svc_a is not None
+
+        assert app_a.state.mock_turn_service is None
+
+        # Keep svc_a alive: CPython may reuse an id after lifespan teardown.
 
         async with app_b.router.lifespan_context(app_b):
             async with AsyncClient(transport=transport_b, base_url="http://test-b") as cb:
                 rb = await cb.get("/health")
                 assert rb.status_code == 200
-                svc_b_id = id(app_b.state.mock_turn_service)
+                svc_b = app_b.state.mock_turn_service
+                assert svc_b is not None
+                assert svc_a is not svc_b
 
-        # 不同实例，不同 Service
-        assert svc_a_id != svc_b_id
+        assert app_b.state.mock_turn_service is None
+        assert svc_a is not svc_b

@@ -1,6 +1,6 @@
 # M5.10.9 FIX — Document Semantic Consistency & M6 Handoff Closure
 
-> 2026-09-30；post-final documentation forward-fix；M5.10.9 FIX COMPLETE。
+> 2026-09-30 documentation forward-fix；2026-10-09 CI stability continuation；M5.10.9 FIX FINAL REVALIDATION PENDING。
 > M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN。
 > 本文件只记录本次 audit / 分层 evidence / closure；current state、路线、handoff 分别见 07/08/09。
 
@@ -60,7 +60,7 @@ NEXT=M6：Cold Start → external Microsoft capability verification → auth/ide
 → accepted implementation contract → 用户具体 patch scope 授权 → production implementation。
 Token 只在 Auth/Transport；Frozen Core authority 保持，M6 优先通过 Adapter/Repository/Service 扩展。
 
-## Local automated — fresh PASS
+## 2026-09-30 Local automated — historical PASS
 
 - Documentation Governance：PASS；focused governance 29 passed。
 - Governance + Settings/version + Error Ledger regressions：131 passed（29 + 49 + 53）；exit 0。
@@ -83,7 +83,7 @@ test_generator_covers_51200_safe_reproducible_cases 与 test_stress_report_has_z
 大型 stress、51,200-case、130-turn、provider matrix、browser full acceptance 或 Desktop Real query。
 远程 CI 仍执行仓库原有 required suite，不能把 Remote CI 视为 Local Real evidence。
 
-## Two-phase FIX closure
+## Historical Phase A / B closure evidence
 
 M5 FINAL=true 从开始到结束保持。Phase A commit：
 `M5.10.9_FIX_文档语义一致性与M6交接候选`；SHA
@@ -98,3 +98,58 @@ Phase B 仅作小型 status/evidence marker patch：
 fetch 后 HEAD==origin/main 与 worktree clean、人工关键文档审计成立后有效。
 自身 SHA 不写入自身提交；最终精确 SHA/Run 在交付中记录，09 提供可重现解析步骤。
 完成本次 FIX 后停止；可进入下一轮独立 M6 Cold Start / Research / Planning，M6 implementation 尚未开始。
+
+## 2026-10-09 — CI lifecycle test stability forward-fix
+
+用户明确授权：“允许修改 backend/tests/api/test_health.py”，且仅限
+`TestLifespanIntegration.test_no_global_state_cross_apps`；允许必要的 07/09、Ledger、
+本 evidence 与 CHANGELOG closure evidence 修正。不再请求相同 scope；不修改 production code、
+Settings.version、Frontend 或 M6。根因记录 ERR-5109-003，首次 minimal repair。
+
+### Fresh baseline / failure-first
+
+fresh main、HEAD 与 fetch 后 origin/main 均为 `953be2683d539fbf4b43d59cca086a3fd598928c`，
+worktree clean。重新读取真实 [Run 36688714620](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36688714620)
+Job `109800545295` 日志：`test_no_global_state_cross_apps` 在 line 378 比较 id，
+出现 `1248422350736 != 1248422350736`；full pytest 为 1 failed / 2876 passed。
+Golden、Frontend、Typecheck、Lint、Build、strict diff 后续步骤未执行，不能算 PASS。
+旧失败 run 永久保留，不 rerun 规避 nondeterministic oracle；953be268 的 FIX COMPLETE 未生效。
+M5 FINAL=true 与原 Final baseline 持续有效。
+
+`git show` / blob audit：原 Final `86aaaec7d2172c041e97392c3de03adcca77ca1b` 与
+953be268 的 `backend/tests/api/test_health.py` 完全相同，blob 均为
+`76fefe064e0002fd868a9a4b8cc5e07ca0a11fc0`。文档 FIX 没有引入该测试逻辑。
+`main.py` 在 startup 创建 app-scoped MockTurnService，在 shutdown 清理 app.state 引用；
+测试没有保存对象强引用，只保存整数 id，因此第一个对象释放后 CPython 可以复用地址。
+相同 id 不能证明两个 app 共享 Service；当前证据为既有测试 oracle 错误，不是 production regression。
+
+### Minimal implementation / local verification
+
+仅获批单测改为保留 svc_a / svc_b 强引用，各自在 lifespan 内 assert 非 None，
+用 `svc_a is not svc_b` 验证同时存活对象的隔离；分别验证 app_a / app_b lifespan 退出后
+`mock_turn_service is None`。不比较整数 id，不加 GC/sleep/retry/timeout/随机化或 allocator 变更。
+邻近既有 `test_two_apps_different_services` 采用同一对象 identity 原则。
+2026-10-09 fresh Local automated：
+
+- 单测 `test_no_global_state_cross_apps`：1 passed；test_health.py 整文件：23 passed。
+- 单测有界重复：20 次独立 Python/pytest 进程，20/20 PASS；首个失败立即停止，无 retry-until-green。
+- AST scope audit：仅该单测方法体改变，其他 tests/imports 完全一致；production / frontend / CI diff 为零。
+- Documentation Governance / Version / Error Ledger regressions：131 passed（29 / 49 / 53）。
+- Repository Safety：427 files PASS；Architecture：143 production files PASS；Error Ledger：120 entries / 0 errors；Artifact Governance PASS。
+- Semantic Compatibility：819 passed / 126 production files；Golden：11 passed / 1 manual-real skipped / 0 errors。
+- Normal backend required suite：2874 passed / 1 skipped / 2 authorized deselected，exit 0。
+  仅 deselect 原有两个 51,200 节点，CI matrix 与测试定义不改。
+- Frontend 首轮与 Python checks 并行，67 passed，但 3 个文件因 forks worker 启动 timeout 未运行；exit 1，保留为失败证据。
+  Python checks 完成后独占资源重跑同一 `npm test`，10 files / 105 tests PASS，所有文件实际执行；不改配置、timeout 或 ignore。
+  Lint / Typecheck / Build 全部 PASS，exit 0；Vite 的 PLUGIN_TIMINGS 提示保留，未降低任何 gate。
+
+Local Real / smoke / 51,200 / 130-turn / large stress / browser full acceptance 不运行；Remote CI matrix 不改。
+
+### Phase C / D closure contract
+
+Phase C：`M5.10.9_FIX_CI生命周期测试稳定性修复`，current marker 为 FINAL REVALIDATION PENDING；
+白名单 staging / push main，等待新 exact-SHA CI 及全部 required steps success。
+Phase D 仅在 Phase C success 后做 tiny marker patch，记录 C SHA / Run / success，提交
+`M5.10.9_FIX_CI稳定性修复与最终封板`；再次等待最终 marker SHA 自身的完整 CI success。
+最终 fetch 后 HEAD==origin/main、worktree clean，required check / Golden / Frontend / Typecheck /
+Lint / Build / strict diff 均实际 success 后，FIX COMPLETE 才生效并停止。M6 implementation 未开始。

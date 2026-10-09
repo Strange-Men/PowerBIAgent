@@ -3,11 +3,47 @@
 # ============================================================================
 #
 # Schema 版本：1.0
-# 最后更新：2026-09-30 | 机器可校验错误规则/历史证据；current state 仅见 docs/07、08、09
+# 最后更新：2026-10-09 | 机器可校验错误规则/历史证据；current state 仅见 docs/07、08、09
 # ============================================================================
 
 schema_version: '1.0'
 entries:
+- id: ERR-5109-003
+  title: 使用已释放对象的 id() 比较跨生命周期实例导致 CI 假失败
+  category: ERR
+  first_detected_version: M5.10.9
+  symptom: Phase B main@953be268 exact-SHA CI 36688714620 的 test_no_global_state_cross_apps 断言两个顺序 lifespan Service 的整数 id 不同，实际 id 相同导致 Full Validation failure
+  local_evidence: 2026-10-09 fresh fetch 与真实 job 109800545295 failure logs；M5 Final 86aaaec7 与 953be268 的 test_health.py blob 同为 76fefe064e0002fd868a9a4b8cc5e07ca0a11fc0；修复后 single test 1 passed、独立进程 20/20 PASS、test_health.py 23 passed；main.py startup 创建 app-scoped Service 且 shutdown 清理引用
+  authoritative_sources:
+  - title: M5.10.9 FIX CI 生命周期测试稳定性用户明确授权
+    reason: 仅修 test_no_global_state_cross_apps 与必要 closure evidence；旧失败 run 保留，Phase C / D 新 exact-SHA CI 必须全绿
+  - title: backend/app/main.py lifespan 与邻近 test_two_apps_different_services
+    reason: app-scoped Service 在 shutdown 后从 app.state 清除；同时保存对象强引用并以 is not 验证隔离，不以已释放对象的 id 数值作 authority
+  root_cause: 测试在 app_a lifespan 结束后只保存整数 id，没有保留 Service 强引用；CPython 可回收对象并复用地址，使独立 app_b Service 合法得到相同 id。属于 nondeterministic test oracle，不是 production global-state bug
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 单测保留 svc_a / svc_b 强引用，用 is not 验证对象 identity，并分别验证两个 app shutdown 后 mock_turn_service 为 None；不改 production lifecycle、不依赖 GC timing、sleep、retry 或 allocator
+  regression_tests:
+  - backend/tests/api/test_health.py
+  prohibited_patterns:
+  - 用 id(object_a) != id(object_b) 验证跨生命周期隔离，而 object_a 已经可能释放
+  - 仅 rerun nondeterministic CI 直到偶然通过便宣称修复
+  - 为测试假失败修改 production lifecycle、保留全局 Service 或增加 instance id
+  prevention_rules:
+  - identity / isolation 断言时被比较对象必须仍存活，优先使用 is / is not
+  - 单测修复需 focused、20 次有界重复及邻近 lifespan 回归，旧失败 exact-SHA CI 保留
+  - FIX current COMPLETE 只有新最终 marker SHA 的完整 CI 与 remote audit 成立后生效；M5 FINAL=true 不回退
+  related_adr: ADR-005
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-09-30'
+    action: final_exact_sha_ci_exposed_preexisting_identity_oracle_failure
+    version: M5.10.9
+    commit: 953be2683d539fbf4b43d59cca086a3fd598928c
+  - date: '2026-10-09'
+    action: explicit_test_scope_authorized_and_minimal_forward_fix_added
+    version: M5.10.9
 - id: ERR-5109-002
   title: Final marker 一致不等于 current semantic truth 一致
   category: ERR
