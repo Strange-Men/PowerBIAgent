@@ -11,7 +11,10 @@ Cloud消费/目录/Product Auth UX设计见ADR-020与M6.0 evidence，官方重�
 
 ## Cold Start
 
-先 Git status/branch/HEAD/origin/log/fetch，核对 main、clean 与 exact baseline；remote main 前进即停止。
+初始审计先 git fetch，再核对 status/branch/HEAD/origin/log：main、clean worktree、HEAD==origin/main 与获批 baseline。
+交付阶段允许本轮临时分支和白名单改动，核对分支归属、diff 与 origin/main 仍等于 Cold Start SHA；
+未知用户修改或非预期 remote main 前进立即停止。受保护 PR 合入后回到 main，以 git pull --ff-only 同步，
+再审计 HEAD==origin/main、worktree clean；初始 main/clean 要求不用于拒绝本轮已授权交付。
 按 AGENTS 与 docs/09 顺序读取 charter、07/08/09、Error Ledger、ADR index/相关 accepted ADR、
 当前任务及 production/邻近 tests。不得以历史 PASS、旧 endpoint 或聊天记忆替代 fresh 证据。
 简短 reality audit 后自动在授权范围继续；文档治理任务中的既有状态漂移由本轮修复，不因漂移重复求确认。
@@ -45,10 +48,12 @@ Token 只留 Auth / Transport，不进入 UserContext/Memory/Trace/Conversation 
 
 ## Git / debugging contract
 
-main 是唯一活动开发线。流程为 failure-first → minimal implementation → fresh gates →
-必要且有界 Real → 白名单 staging → 中文 commit → push main → exact-SHA CI → remote audit。
-不得 git add . / git add -A、force push、rebase、history rewrite、reset --hard、clean、删除分支；
-push 前 fetch，remote main 已前进则停止，不覆盖用户变更。不打 Tag。
+main 是唯一活动开发线与正式发布基线。流程固定为：
+Cold Start → Failure-first → Minimal Patch → Local Gates → 必要 Real 验收 → 白名单 Staging → 中文 Commit → 临时交付分支 → PR Required CI → 受保护合入 main → Main Exact-SHA CI → Remote Audit。
+临时交付分支仅用于本轮 PR，不作为长期并行开发线；本地可先从已核验 main 创建分支再提交，禁止直接 push main。
+管理员同样必须通过 required checks，禁止绕过 branch protection；PR required CI 不替代最终 main exact-SHA CI。
+禁止 git add . / git add -A、force push、rebase、history rewrite、reset --hard、clean、未经授权删除分支。
+push/merge 前 fetch；除本轮受保护 PR 合入外，remote main 相对 Cold Start SHA 前进即停止。不覆盖用户修改，不自动打 Tag。
 
 同一 root cause 的 P1 不因每次失败都停止：保留 reproducer、更新证据，在已授权边界内最多两轮
 minimal forward-fix；达到上限仍失败，或出现新根因、修改边界扩大、architecture risk 时停止重新
@@ -61,4 +66,4 @@ Local automated、Local Real、Remote exact-SHA CI 分层记录；历史 PASS �
 
 提交名称与收口阶段按当前任务授权；current release markers 必须一致。
 staging 前运行 Repository Safety、cached diff 与 documentation gate。自身 SHA 不写入自身提交；
-最终 exact-SHA CI + remote audit 成立后完成该获批任务，下一 patch 另按 scope 授权。
+最终 main SHA 自身的 CI + remote audit 成立后完成该获批任务，不继承 PR CI 或旧 SHA 结果；下一 patch 另按 scope 授权。

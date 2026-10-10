@@ -76,8 +76,11 @@ M5 Final baseline 已成立；post-final 文档修复不重新开启 M5 功能�
 
 ## Mandatory Cold Start
 
-1. git status、git branch --show-current、git rev-parse HEAD / origin/main、git log -8；fetch 后再次
-   核对 main、clean worktree、HEAD==origin/main。remote 前进、非 main 或非本轮改动立即停止。
+1. 初始审计先 git fetch，再 git status、git branch --show-current、git rev-parse HEAD / origin/main、git log -8，
+   核对 main、clean worktree、HEAD==origin/main 与获批 baseline。交付阶段允许本轮临时分支和白名单改动，
+   核对分支归属、diff 与 origin/main 仍等于 Cold Start SHA；未知用户修改或非预期 remote main 前进立即停止。
+   初始 main/clean 要求不用于拒绝本轮已授权交付；受保护 PR 合入后回到 main，以 git pull --ff-only 同步，
+   再审计 HEAD==origin/main、worktree clean。
 2. AGENTS.md → PROJECT_CHARTER.md → CLAUDE.md。
 3. docs/07 → docs/08 → docs/09；README、CHANGELOG 作为导航与历史摘要。
 4. Error Ledger 的 schema、有效 prevention/prohibited rules 与相关条目；ADR README 和任务相关
@@ -89,6 +92,13 @@ M5 Final baseline 已成立；post-final 文档修复不重新开启 M5 功能�
 → 08 → 09 → CLAUDE → code/fresh tests → Archive。07/08/09 分别只拥有状态/路线/交接。
 
 ## 最终 baseline 解析
+
+M6.3 Security Final 已通过 [PR #1](https://github.com/Strange-Men/PowerBIAgent/pull/1) 受保护合入
+`2179e3f118cf0b33b55143c819d9e1e521a19ae0`；
+[Final exact-SHA CI38039151643](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38039151643)
+为该 main SHA 的 push 事件，completed/success。Phase A 管理员豁免及后续收紧记录保留于上文。
+后续 Documentation Governance FIX 不重开 M6.3 功能、不改变安全验收范围；其发布仍须最终 main SHA 自身 CI
+与 remote audit，不继承上述历史 Final 或本轮 PR CI。完成获批 FIX 后立即停止，M6.4 尚未获批、尚未开始。
 
 M6.3 Phase A：`47fb74c512dea64d2644f193b4f76095535bca17` /
 [exact-SHA CI38037929168](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38037929168)，
@@ -242,10 +252,12 @@ Entra/Fabric IQ/PostgreSQL/Blob/Redis/migration 与新模板/分析能力只能�
 
 ## 测试 / CI / release 与 debugging
 
-main 是唯一活动开发线。流程为 failure-first → minimal implementation → fresh gates →
-必要且有界 Real → 白名单 staging → 中文 commit → push main → exact-SHA CI → remote audit。
-不得 git add . / git add -A、force push、rebase、history rewrite、reset --hard、clean、删除分支；
-push 前 fetch，remote main 已前进则停止，不覆盖用户变更。不打 Tag。
+main 是唯一活动开发线与正式发布基线。流程固定为：
+Cold Start → Failure-first → Minimal Patch → Local Gates → 必要 Real 验收 → 白名单 Staging → 中文 Commit → 临时交付分支 → PR Required CI → 受保护合入 main → Main Exact-SHA CI → Remote Audit。
+临时交付分支仅用于本轮 PR，不作为长期并行开发线；本地可先从已核验 main 创建分支再提交，禁止直接 push main。
+管理员同样必须通过 required checks，禁止绕过 branch protection；PR required CI 不替代最终 main exact-SHA CI。
+禁止 git add . / git add -A、force push、rebase、history rewrite、reset --hard、clean、未经授权删除分支。
+push/merge 前 fetch；除本轮受保护 PR 合入外，remote main 相对 Cold Start SHA 前进即停止。不覆盖用户修改，不自动打 Tag。
 
 同一 root cause 的 P1 不因每次失败都停止：保留 reproducer、更新证据，在已授权边界内最多两轮
 minimal forward-fix；达到上限仍失败，或出现新根因、修改边界扩大、architecture risk 时停止重新

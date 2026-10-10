@@ -49,6 +49,11 @@
 
 ## 固定 Cold Start
 
+初始审计先 `git fetch`，核对 main、clean worktree、HEAD==origin/main 与获批 baseline。
+交付阶段允许本轮临时分支和白名单改动，须核对分支归属、diff 与 origin/main 仍等于 Cold Start SHA；
+不得把初始 main/clean 要求用于拒绝本轮已授权交付。未知用户修改或非预期 remote main 前进立即停止。
+受保护 PR 合入后回到 main，以 `git pull --ff-only` 同步，再审计 HEAD==origin/main、worktree clean。
+
 按顺序读取：
 
 1. `AGENTS.md`
@@ -66,11 +71,12 @@
 
 ## Git contract
 
-- `main` 是唯一活动开发线；流程固定为 failure-first → minimal implementation → fresh gates
-  → 必要且有界 Real → 白名单 staging → 中文 commit → 临时交付分支/PR required CI → 受保护合入main → main exact-SHA CI → remote audit。
-  管理员同样受required checks约束；临时codex/交付ref不是并行开发线。具体closure遵循当前批准任务；不自动打Tag。
-- 禁止 `git add .`、`git add -A`、force push、rebase、history rewrite、`reset --hard`、
-  `clean`、branch deletion。remote main 已前进则停止。
+- main 是唯一活动开发线与正式发布基线。流程固定为：
+  Cold Start → Failure-first → Minimal Patch → Local Gates → 必要 Real 验收 → 白名单 Staging → 中文 Commit → 临时交付分支 → PR Required CI → 受保护合入 main → Main Exact-SHA CI → Remote Audit。
+  临时交付分支仅用于本轮 PR，不作为长期并行开发线；本地可先从已核验 main 创建分支再提交，禁止直接 push main。
+  管理员同样必须通过 required checks，禁止绕过 branch protection；PR required CI 不替代最终 main exact-SHA CI。
+- 禁止 `git add .`、`git add -A`、force push、rebase、history rewrite、`reset --hard`、`clean`、未经授权删除分支。
+  push/merge 前 fetch；除本轮受保护 PR 合入外，remote main 相对 Cold Start SHA 前进即停止。不覆盖用户修改，不自动打 Tag。
 - CI 失败只允许 forward-fix；同一 root cause 最多两轮，P1 不因每次失败都停止；上限仍失败、新根因、边界扩大或 architecture risk 才停止重新评估。禁止降低 validator、删除 negative
   tests、修改 expected 迎合错误、Mock Real 或隐藏 warning/error。
 - 不读取、输出或提交 `.env`/Secret、真实业务数据、PBIX、DB、真实 prompt/response dump。
