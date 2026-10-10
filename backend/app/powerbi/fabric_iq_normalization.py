@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import math
+import re
 from functools import wraps
 from uuid import UUID
 
@@ -184,16 +185,57 @@ def _cell(value):
     raise fail("CONTRACT_DRIFT")
 
 
-def _csv_cell(value, kind):
+_INTEGER_LIMITS = {
+    "int64": (-(2**63), 2**63 - 1),
+    "long": (-(2**63), 2**63 - 1),
+    "integer": (-(2**63), 2**63 - 1),
+    "int32": (-(2**31), 2**31 - 1),
+}
+_NUMBER_TYPES = {"double", "decimal", "float", "currency"}
+_TEXT_TYPES = {"string", "datetime", "date", "time"}
+_BOOLEAN_TYPES = {"boolean", "bool"}
+
+
+def _column_kind(kind):
     kind = kind.lower()
-    if kind in {"string", "datetime", "date", "time"}: return value
+    if kind not in _INTEGER_LIMITS and kind not in _NUMBER_TYPES | _TEXT_TYPES | _BOOLEAN_TYPES:
+        raise fail("CONTRACT_DRIFT")
+    return kind
+
+
+def _typed_cell(value, kind):
+    kind = _column_kind(kind)
+    value = _cell(value)
+    if value is None:
+        return value
+    if kind in _INTEGER_LIMITS:
+        low, high = _INTEGER_LIMITS[kind]
+        # Runtime V1 has not declared an Int64 JSON-string encoding contract.
+        # Neither Python bool equality nor a numeric-looking string is proof.
+        if type(value) is not int or not low <= value <= high:
+            raise fail("CONTRACT_DRIFT")
+    elif kind in _NUMBER_TYPES:
+        if type(value) not in {int, float}:
+            raise fail("CONTRACT_DRIFT")
+    elif kind in _BOOLEAN_TYPES:
+        if type(value) is not bool:
+            raise fail("CONTRACT_DRIFT")
+    elif type(value) is not str:
+        raise fail("CONTRACT_DRIFT")
+    return value
+
+
+def _csv_cell(value, kind):
+    kind = _column_kind(kind)
+    if kind in _TEXT_TYPES: return value
     if value == "": return None
     try:
-        if kind in {"int64", "int32", "integer", "long"}:
-            if not __import__('re').fullmatch(r"-?\d+", value): raise ValueError()
-            return int(value)
-        if kind in {"double", "decimal", "float", "currency"}: return _cell(float(value))
-        if kind in {"boolean", "bool"} and value.lower() in {"true", "false"}: return value.lower() == "true"
+        if kind in _INTEGER_LIMITS:
+            # CSV is textual by definition; accept only bounded canonical ASCII.
+            if len(value) > 20 or not re.fullmatch(r"(?:0|-?[1-9][0-9]*)", value): raise ValueError()
+            return _typed_cell(int(value), kind)
+        if kind in _NUMBER_TYPES: return _typed_cell(float(value), kind)
+        if kind in _BOOLEAN_TYPES and value.lower() in {"true", "false"}: return value.lower() == "true"
     except (ValueError, OverflowError): pass
     raise fail("CONTRACT_DRIFT")
 
@@ -214,11 +256,11 @@ def normalize_query(raw, model_id, request):
     for column in columns:
         if not isinstance(column, dict): raise fail("CONTRACT_DRIFT")
         names.append(_name(column.get("name")))
-        types.append(_name(column.get("type")))
+        types.append(_column_kind(_name(column.get("type"))))
     if len(names) != len(set(names)): raise fail("CONTRACT_DRIFT")
     for row in rows:
         if not isinstance(row, list) or len(row) != len(names): raise fail("CONTRACT_DRIFT")
-        for cell in row: _cell(cell)
+        for cell, kind in zip(row, types): _typed_cell(cell, kind)
     if embedded_csv is not None:
         try:
             parsed = list(csv.reader(io.StringIO(embedded_csv, newline=""), strict=True))

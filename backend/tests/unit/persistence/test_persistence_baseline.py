@@ -212,7 +212,7 @@ datefmt = %H:%M:%S
         conn = sqlite3.connect(tmp_db_path)
         cursor = conn.execute("SELECT version_num FROM alembic_version")
         version = cursor.fetchone()[0]
-        assert version == "c2e4f6a8b130"
+        assert version == "f63a1b2c3d40"
         conversation_columns = {
             row[1]
             for row in conn.execute("PRAGMA table_info(conversations)").fetchall()
@@ -725,8 +725,8 @@ datefmt = %H:%M:%S
         )
         ddl = cur.fetchone()[0]
         conn.close()
-        assert "PRIMARY KEY (runtime_mode, conversation_id)" in ddl or \
-               "PRIMARY KEY (\"runtime_mode\", \"conversation_id\")" in ddl, \
+        assert "PRIMARY KEY (owner_id, runtime_mode, conversation_id)" in ddl or \
+               "PRIMARY KEY (\"owner_id\", \"runtime_mode\", \"conversation_id\")" in ddl, \
             f"Expected composite PK in:\n{ddl}"
 
     def test_migration_composite_fk_work_memories(self):
@@ -744,7 +744,7 @@ datefmt = %H:%M:%S
         )
         ddl = cur.fetchone()[0]
         conn.close()
-        assert "FOREIGN KEY (runtime_mode, conversation_id)" in ddl, \
+        assert "FOREIGN KEY(owner_id, runtime_mode, conversation_id)" in ddl.replace("FOREIGN KEY (", "FOREIGN KEY("), \
             f"Expected composite FK in:\n{ddl}"
         # Ensure no old single-column FK remains
         assert "FOREIGN KEY (conversation_id)" not in ddl.replace(
@@ -766,7 +766,7 @@ datefmt = %H:%M:%S
         )
         ddl = cur.fetchone()[0]
         conn.close()
-        assert "FOREIGN KEY (runtime_mode, conversation_id)" in ddl, \
+        assert "FOREIGN KEY(owner_id, runtime_mode, conversation_id)" in ddl.replace("FOREIGN KEY (", "FOREIGN KEY("), \
             f"Expected composite FK in:\n{ddl}"
 
     def test_migration_composite_fk_pending_clarifications(self):
@@ -784,7 +784,7 @@ datefmt = %H:%M:%S
         )
         ddl = cur.fetchone()[0]
         conn.close()
-        assert "FOREIGN KEY (runtime_mode, conversation_id)" in ddl, \
+        assert "FOREIGN KEY(owner_id, runtime_mode, conversation_id)" in ddl.replace("FOREIGN KEY (", "FOREIGN KEY("), \
             f"Expected composite FK in:\n{ddl}"
 
     def test_upgrade_from_initial_to_head(self):
@@ -820,8 +820,8 @@ datefmt = %H:%M:%S
         )
         ddl = cur.fetchone()[0]
         conn.close()
-        assert "PRIMARY KEY (runtime_mode, conversation_id)" in ddl or \
-               "PRIMARY KEY (\"runtime_mode\", \"conversation_id\")" in ddl, \
+        assert "PRIMARY KEY (owner_id, runtime_mode, conversation_id)" in ddl or \
+               "PRIMARY KEY (\"owner_id\", \"runtime_mode\", \"conversation_id\")" in ddl, \
             f"Expected composite PK after upgrade in:\n{ddl}"
 
     def test_upgrade_from_m43_to_head_adds_delete_intents(self):
@@ -858,7 +858,7 @@ datefmt = %H:%M:%S
                 "SELECT version_num FROM alembic_version"
             ).fetchone()[0]
         assert after == ("conversation_delete_intents",)
-        assert version == "c2e4f6a8b130"
+        assert version == "f63a1b2c3d40"
 
     @staticmethod
     def _run_alembic_upgrade(

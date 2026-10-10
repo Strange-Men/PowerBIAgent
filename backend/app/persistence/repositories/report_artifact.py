@@ -19,6 +19,9 @@ Design notes
 
 from __future__ import annotations
 
+from backend.app.persistence.models import LOCAL_OWNER_ID
+from backend.app.persistence.ownership import session_owner_id
+
 import asyncio
 import json
 from datetime import datetime, timezone
@@ -375,7 +378,7 @@ async def _ensure_presentation(
     availability_status: str = _AVAILABLE,
 ) -> ReportPresentationModel:
     result = await session.execute(
-        select(ReportPresentationModel).where(
+        select(ReportPresentationModel).where(ReportPresentationModel.owner_id == session_owner_id(session)).where(
             ReportPresentationModel.report_id == artifact.report_id
         )
     )
@@ -386,7 +389,7 @@ async def _ensure_presentation(
     normalized_title = _normalize_display_title(
         display_title or _DEFAULT_DISPLAY_TITLE
     )
-    row = ReportPresentationModel(
+    row = ReportPresentationModel(owner_id=session_owner_id(session),
         report_id=artifact.report_id,
         source_mode=artifact.source_mode,
         conversation_id=artifact.conversation_id,
@@ -409,8 +412,10 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
+        *, owner_id: str = LOCAL_OWNER_ID,
     ) -> None:
         self._session_factory = session_factory
+        self._owner_id = owner_id
 
     async def save(
         self,
@@ -439,18 +444,18 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
         async with self._session_factory() as session:
             async with session.begin():
                 pending_delete = await session.execute(
-                    select(ReportDeleteIntentModel.report_id).where(
+                    select(ReportDeleteIntentModel.report_id).where(ReportDeleteIntentModel.owner_id == self._owner_id).where(
                         ReportDeleteIntentModel.report_id == artifact.report_id
                     )
                 )
                 if pending_delete.scalar_one_or_none() is not None:
                     raise ReportStorageError("report_delete_pending")
-                stmt = select(ReportArtifactModel).where(
+                stmt = select(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id).where(
                     ReportArtifactModel.report_id == artifact.report_id
                 )
                 if conversation_id is not None:
                     deleting = await session.execute(
-                        select(ConversationDeleteIntentModel.conversation_id).where(
+                        select(ConversationDeleteIntentModel.conversation_id).where(ConversationDeleteIntentModel.owner_id == self._owner_id).where(
                             and_(
                                 ConversationDeleteIntentModel.runtime_mode
                                 == artifact.source_mode,
@@ -481,13 +486,13 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
                     raise ReportStorageError("report_artifact_identity_collision")
                 else:
                     presentation_result = await session.execute(
-                        select(ReportPresentationModel.report_id).where(
+                        select(ReportPresentationModel.report_id).where(ReportPresentationModel.owner_id == self._owner_id).where(
                             ReportPresentationModel.report_id == artifact.report_id
                         )
                     )
                     if presentation_result.scalar_one_or_none() is not None:
                         raise ReportStorageError("report_artifact_identity_collision")
-                    model = ReportArtifactModel(**values)
+                    model = ReportArtifactModel(owner_id=self._owner_id, **values)
                     session.add(model)
                     await _ensure_presentation(
                         session,
@@ -509,7 +514,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
             ReportStorageError: corrupt payload in DB.
         """
         async with self._session_factory() as session:
-            stmt = select(ReportArtifactModel).where(
+            stmt = select(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id).where(
                 ReportArtifactModel.report_id == report_id
             )
             result = await session.execute(stmt)
@@ -521,7 +526,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
     async def exists(self, report_id: str) -> bool:
         """Quick existence check via primary key lookup."""
         async with self._session_factory() as session:
-            stmt = select(ReportArtifactModel.report_id).where(
+            stmt = select(ReportArtifactModel.report_id).where(ReportArtifactModel.owner_id == self._owner_id).where(
                 ReportArtifactModel.report_id == report_id
             )
             result = await session.execute(stmt)
@@ -531,7 +536,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
         async with self._session_factory() as session:
             async with session.begin():
                 intent_result = await session.execute(
-                    select(ReportDeleteIntentModel).where(
+                    select(ReportDeleteIntentModel).where(ReportDeleteIntentModel.owner_id == self._owner_id).where(
                         ReportDeleteIntentModel.report_id == report_id
                     )
                 )
@@ -549,7 +554,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
                     return artifact
 
                 row_result = await session.execute(
-                    select(ReportArtifactModel).where(
+                    select(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id).where(
                         ReportArtifactModel.report_id == report_id
                     )
                 )
@@ -564,7 +569,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
                 presentation.deleted_at = _utc_now_naive()
                 presentation.updated_at = _utc_now_naive()
                 session.add(
-                    ReportDeleteIntentModel(
+                    ReportDeleteIntentModel(owner_id=self._owner_id,
                         report_id=artifact.report_id,
                         source_mode=artifact.source_mode,
                         conversation_id=artifact.conversation_id,
@@ -581,7 +586,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
         async with self._session_factory() as session:
             async with session.begin():
                 result = await session.execute(
-                    select(ReportArtifactModel).where(
+                    select(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id).where(
                         ReportArtifactModel.report_id == report_id
                     )
                 )
@@ -606,7 +611,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
         async with self._session_factory() as session:
             async with session.begin():
                 result = await session.execute(
-                    select(ReportArtifactModel).where(
+                    select(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id).where(
                         and_(
                             ReportArtifactModel.report_id == report_id,
                             ReportArtifactModel.source_mode == source_mode,
@@ -637,7 +642,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
         async with self._session_factory() as session:
             async with session.begin():
                 result = await session.execute(
-                    select(ReportArtifactModel).where(
+                    select(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id).where(
                         and_(
                             ReportArtifactModel.report_id == report_id,
                             ReportArtifactModel.source_mode == source_mode,
@@ -665,7 +670,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
         async with self._session_factory() as session:
             async with session.begin():
                 await session.execute(
-                    delete(ReportDeleteIntentModel).where(
+                    delete(ReportDeleteIntentModel).where(ReportDeleteIntentModel.owner_id == self._owner_id).where(
                         ReportDeleteIntentModel.report_id == report_id
                     )
                 )
@@ -679,7 +684,7 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
         async with self._session_factory() as session:
             from sqlalchemy import func as sa_func, select as sa_select
 
-            stmt = sa_select(sa_func.count(ReportArtifactModel.report_id))
+            stmt = sa_select(sa_func.count(ReportArtifactModel.report_id)).where(ReportArtifactModel.owner_id == self._owner_id)
             result = await session.execute(stmt)
             return result.scalar() or 0
 

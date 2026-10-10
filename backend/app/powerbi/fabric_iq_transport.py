@@ -98,7 +98,7 @@ class FabricIQTransport:
                 code = {401: "AUTH_EXPIRED", 403: "RESOURCE_NOT_ACCESSIBLE", 404: "RESOURCE_NOT_ACCESSIBLE",
                     408: "QUERY_TIMEOUT", 429: "RATE_LIMITED", 504: "QUERY_TIMEOUT"}.get(status, "UPSTREAM_UNAVAILABLE")
                 upstream_error = upstream_error or (AuthFailure(code) if code == "AUTH_EXPIRED" else fail(code))
-                if code == "AUTH_EXPIRED":
+                if status in {401, 403, 404}:
                     await asyncio.to_thread(self._auth.logout, self._sid, None)
                 raise upstream_error
 

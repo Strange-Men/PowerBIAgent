@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import hmac
 import json
 from datetime import datetime, timezone
 from typing import Literal
@@ -120,9 +121,35 @@ class ConversationHistoryService:
         repository: ConversationHistoryRepository,
         *,
         report_repository: ReportRepository | None = None,
+        owner_scope_key: str = "",
+        cursor_secret: bytes = b"",
     ) -> None:
         self._repository = repository
         self._report_repository = report_repository
+        self._owner_scope_key = owner_scope_key
+        self._cursor_secret = cursor_secret
+        if owner_scope_key and not cursor_secret:
+            raise ValueError("scoped cursor signing key required")
+
+    def _encode_cursor(self, payload):
+        encoded = _encode_cursor(payload)
+        if not self._owner_scope_key:
+            return encoded
+        signature = hmac.new(self._cursor_secret,
+            (self._owner_scope_key + ":" + encoded).encode(), hashlib.sha256).hexdigest()
+        return encoded + "." + signature
+
+    def _decode_cursor(self, cursor, **kwargs):
+        if self._owner_scope_key:
+            if not isinstance(cursor, str) or len(cursor) > 2200 or cursor.count(".") != 1:
+                raise InvalidConversationCursorError("invalid_cursor")
+            encoded, signature = cursor.rsplit(".", 1)
+            expected = hmac.new(self._cursor_secret,
+                (self._owner_scope_key + ":" + encoded).encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(signature, expected):
+                raise InvalidConversationCursorError("invalid_cursor")
+            cursor = encoded
+        return _decode_cursor(cursor, **kwargs)
 
     async def list_recent(
         self,
@@ -134,7 +161,7 @@ class ConversationHistoryService:
         _validate_limit(limit)
         after = None
         if cursor is not None:
-            payload = _decode_cursor(
+            payload = self._decode_cursor(
                 cursor, kind="recent", mode=runtime_mode, scope=""
             )
             after = ConversationPosition(
@@ -149,7 +176,7 @@ class ConversationHistoryService:
         )
         next_cursor = None
         if page.next_position is not None:
-            next_cursor = _encode_cursor(
+            next_cursor = self._encode_cursor(
                 _CursorPayload(
                     v=1,
                     kind="recent",
@@ -178,7 +205,7 @@ class ConversationHistoryService:
         _validate_limit(limit)
         after = None
         if cursor is not None:
-            payload = _decode_cursor(
+            payload = self._decode_cursor(
                 cursor,
                 kind="history",
                 mode=runtime_mode,
@@ -201,7 +228,7 @@ class ConversationHistoryService:
         )
         next_cursor = None
         if page.next_position is not None:
-            next_cursor = _encode_cursor(
+            next_cursor = self._encode_cursor(
                 _CursorPayload(
                     v=1,
                     kind="history",
@@ -230,7 +257,7 @@ class ConversationHistoryService:
         _validate_limit(limit)
         after = None
         if cursor is not None:
-            payload = _decode_cursor(
+            payload = self._decode_cursor(
                 cursor, kind="archived", mode=runtime_mode, scope=""
             )
             after = ConversationPosition(
@@ -245,7 +272,7 @@ class ConversationHistoryService:
         )
         next_cursor = None
         if page.next_position is not None:
-            next_cursor = _encode_cursor(
+            next_cursor = self._encode_cursor(
                 _CursorPayload(
                     v=1,
                     kind="archived",
@@ -278,7 +305,7 @@ class ConversationHistoryService:
         scope = _search_scope(normalized_query)
         after = None
         if cursor is not None:
-            payload = _decode_cursor(
+            payload = self._decode_cursor(
                 cursor, kind="search", mode=runtime_mode, scope=scope
             )
             after = ConversationPosition(
@@ -296,7 +323,7 @@ class ConversationHistoryService:
         )
         next_cursor = None
         if page.next_position is not None:
-            next_cursor = _encode_cursor(
+            next_cursor = self._encode_cursor(
                 _CursorPayload(
                     v=1,
                     kind="search",
@@ -325,7 +352,7 @@ class ConversationHistoryService:
         _validate_limit(limit)
         after = None
         if cursor is not None:
-            payload = _decode_cursor(
+            payload = self._decode_cursor(
                 cursor,
                 kind="reports",
                 mode=source_mode,
@@ -343,7 +370,7 @@ class ConversationHistoryService:
         )
         next_cursor = None
         if page.next_position is not None:
-            next_cursor = _encode_cursor(
+            next_cursor = self._encode_cursor(
                 _CursorPayload(
                     v=1,
                     kind="reports",
@@ -372,7 +399,7 @@ class ConversationHistoryService:
         _validate_limit(limit)
         after = None
         if cursor is not None:
-            payload = _decode_cursor(
+            payload = self._decode_cursor(
                 cursor,
                 kind="report_resources",
                 mode=source_mode,
@@ -390,7 +417,7 @@ class ConversationHistoryService:
         )
         next_cursor = None
         if page.next_position is not None:
-            next_cursor = _encode_cursor(
+            next_cursor = self._encode_cursor(
                 _CursorPayload(
                     v=1,
                     kind="report_resources",

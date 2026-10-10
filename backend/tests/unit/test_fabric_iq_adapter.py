@@ -96,6 +96,86 @@ def harness():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("code", [401, 403, 404])
+async def test_m63_permission_failure_invalidates_cached_binding(harness, code):
+    auth, session, transport, adapter = harness
+    ref = await adapter.resolve_bootstrap("fixture")
+    transport.query = {"Error": {"HttpStatusCode": code}}
+    with pytest.raises((PowerBIAdapterError, AuthFailure)):
+        await adapter.execute_dax(DAXRequest(semantic_model_key=ref.server_model_key,
+            dax='EVALUATE ROW("probe",1)'))
+    assert adapter.binding_count == 0
+    assert adapter._schemas == {}
+    with pytest.raises(AuthFailure):
+        auth.require_session(session.session_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["schema", "query", "members"])
+@pytest.mark.parametrize("copied", [False, True])
+async def test_m63_foreign_model_key_denied_before_mcp(harness, operation, copied):
+    auth, _, transport, a = harness
+    ref = await a.resolve_bootstrap("fixture")
+    session_b = auth.sessions.create(principal(4), object(), 3600)
+    b = FabricIQAdapterFactory(auth.settings, auth, transport_factory=lambda *args: transport).create(
+        session_b.session_id, session_b.principal)
+    if copied:
+        b._bindings[ref.server_model_key] = ref
+        b._schemas[ref.server_model_key] = a._schemas[ref.server_model_key]
+    before = len(transport.calls)
+    with pytest.raises(PowerBIAdapterError, match="^RESOURCE_NOT_ACCESSIBLE$"):
+        if operation == "schema": await b.get_semantic_model_schema(ref.server_model_key)
+        elif operation == "query": await b.execute_dax(DAXRequest(
+            semantic_model_key=ref.server_model_key, dax='EVALUATE ROW("probe",1)'))
+        else: await b.get_column_members(ColumnMembersRequest(
+            semantic_model_key=ref.server_model_key, table_name="Facts", field_name="Category", limit=2))
+    assert len(transport.calls) == before
+    assert auth.require_session(session_b.session_id).principal == session_b.principal
+
+
+@pytest.mark.asyncio
+async def test_m63_same_model_different_authorized_schema_result_and_members(harness):
+    auth, _, transport_a, a = harness
+    transport_a.schema["schema"]["Tables"][0]["Columns"].append({"Name": "RestrictedColumn", "Type": "String"})
+    ref_a = await a.resolve_bootstrap("fixture")
+    session_b = auth.sessions.create(principal(4), object(), 3600)
+    transport_b = Transport()
+    b = FabricIQAdapterFactory(auth.settings, auth, bootstrap_urls={"fixture": URL},
+        transport_factory=lambda *args: transport_b).create(session_b.session_id, session_b.principal)
+    ref_b = await b.resolve_bootstrap("fixture")
+    assert "RestrictedColumn" in [c.name for c in a._schemas[ref_a.server_model_key].tables[0].columns]
+    assert "RestrictedColumn" not in [c.name for c in b._schemas[ref_b.server_model_key].tables[0].columns]
+    transport_a.query = result([[1]])
+    transport_b.query = result([[2]])
+    dax = 'EVALUATE ROW("probe",1)'
+    assert (await a.execute_dax(DAXRequest(semantic_model_key=ref_a.server_model_key, dax=dax))).rows == [[1]]
+    assert (await b.execute_dax(DAXRequest(semantic_model_key=ref_b.server_model_key, dax=dax))).rows == [[2]]
+    for adapter, ref, transport, value in ((a, ref_a, transport_a, "A"), (b, ref_b, transport_b, "B")):
+        transport.query = result([[value]])
+        transport.query["executionResult"]["tables"][0]["columns"] = [{"name": "[__member]", "type": "String"}]
+        members = await adapter.get_column_members(ColumnMembersRequest(
+            semantic_model_key=ref.server_model_key, table_name="Facts", field_name="Category", limit=2))
+        assert members.values == [value]
+    with pytest.raises(PowerBIAdapterError):
+        await b.get_column_members(ColumnMembersRequest(semantic_model_key=ref_b.server_model_key,
+            table_name="Facts", field_name="RestrictedColumn", limit=2))
+    # B's negative member lookup must not poison A's independently allowed schema.
+    assert a._schemas[ref_a.server_model_key].tables[0].columns[-1].name == "RestrictedColumn"
+
+
+@pytest.mark.asyncio
+async def test_m63_stale_epoch_ref_rejected_before_mcp(harness):
+    from dataclasses import replace
+    _, _, transport, adapter = harness
+    ref = await adapter.resolve_bootstrap("fixture")
+    adapter._bindings[ref.server_model_key] = replace(ref, authorization_epoch=ref.authorization_epoch - 1)
+    before = len(transport.calls)
+    with pytest.raises(PowerBIAdapterError):
+        await adapter.get_semantic_model_schema(ref.server_model_key)
+    assert len(transport.calls) == before
+
+
+@pytest.mark.asyncio
 async def test_schema_before_bind_unknown_metadata_and_lifecycle(harness):
     auth, session, transport, adapter = harness
     assert adapter.provider_name == "fabric_iq" and not adapter.is_mock

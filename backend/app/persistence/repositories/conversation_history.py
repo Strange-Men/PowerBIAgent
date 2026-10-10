@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from backend.app.persistence.models import LOCAL_OWNER_ID
+from backend.app.persistence.ownership import session_owner_id
+
 import json
 from datetime import datetime
 
@@ -53,9 +56,11 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
     """Read/query lifecycle repository scoped by the namespace at every method."""
 
     def __init__(
-        self, session_factory: async_sessionmaker[AsyncSession]
+        self, session_factory: async_sessionmaker[AsyncSession],
+        *, owner_id: str = LOCAL_OWNER_ID,
     ) -> None:
         self._session_factory = session_factory
+        self._owner_id = owner_id
 
     async def _get_conversation(
         self,
@@ -64,7 +69,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
         conversation_id: str,
     ) -> ConversationModel:
         result = await session.execute(
-            select(ConversationModel).where(
+            select(ConversationModel).where(ConversationModel.owner_id == self._owner_id).where(
                 and_(
                     ConversationModel.runtime_mode == runtime_mode.value,
                     ConversationModel.conversation_id == conversation_id,
@@ -87,7 +92,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
         conversation_ids = [row.conversation_id for row in rows]
 
         snapshot_result = await session.execute(
-            select(ResultSnapshotModel)
+            select(ResultSnapshotModel).where(ResultSnapshotModel.owner_id == self._owner_id)
             .where(
                 and_(
                     ResultSnapshotModel.runtime_mode == runtime_mode.value,
@@ -105,7 +110,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             latest_snapshots.setdefault(snapshot.conversation_id, snapshot)
 
         memory_result = await session.execute(
-            select(WorkMemoryModel)
+            select(WorkMemoryModel).where(WorkMemoryModel.owner_id == self._owner_id)
             .where(
                 and_(
                     WorkMemoryModel.runtime_mode == runtime_mode.value,
@@ -188,13 +193,13 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 (
                     await session.execute(
                         select(func.count())
-                        .select_from(ConversationModel)
+                        .select_from(ConversationModel).where(ConversationModel.owner_id == self._owner_id)
                         .where(and_(*base_conditions))
                     )
                 ).scalar_one()
             )
             result = await session.execute(
-                select(ConversationModel)
+                select(ConversationModel).where(ConversationModel.owner_id == self._owner_id)
                 .where(and_(*conditions))
                 .order_by(
                     func.julianday(ConversationModel.updated_at).desc(),
@@ -239,13 +244,13 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 (
                     await session.execute(
                         select(func.count())
-                        .select_from(ConversationModel)
+                        .select_from(ConversationModel).where(ConversationModel.owner_id == self._owner_id)
                         .where(and_(*base_conditions))
                     )
                 ).scalar_one()
             )
             result = await session.execute(
-                select(ConversationModel)
+                select(ConversationModel).where(ConversationModel.owner_id == self._owner_id)
                 .where(and_(*conditions))
                 .order_by(
                     func.julianday(ConversationModel.updated_at).desc(),
@@ -300,7 +305,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     )
                 )
             result = await session.execute(
-                select(ResultSnapshotModel)
+                select(ResultSnapshotModel).where(ResultSnapshotModel.owner_id == self._owner_id)
                 .where(and_(*conditions))
                 .order_by(
                     func.julianday(ResultSnapshotModel.created_at).desc(),
@@ -316,7 +321,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             report_presentations: dict[str, ReportPresentationModel] = {}
             if request_ids:
                 memory_result = await session.execute(
-                    select(WorkMemoryModel).where(
+                    select(WorkMemoryModel).where(WorkMemoryModel.owner_id == self._owner_id).where(
                         and_(
                             WorkMemoryModel.runtime_mode == runtime_mode.value,
                             WorkMemoryModel.conversation_id == conversation_id,
@@ -333,7 +338,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     select(
                         ReportArtifactModel.report_id,
                         ReportArtifactModel.request_id,
-                    ).where(
+                    ).where(ReportArtifactModel.owner_id == self._owner_id).where(
                         and_(
                             ReportArtifactModel.source_mode == runtime_mode.value,
                             ReportArtifactModel.conversation_id == conversation_id,
@@ -347,7 +352,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     if request_id is not None
                 }
                 presentation_result = await session.execute(
-                    select(ReportPresentationModel).where(
+                    select(ReportPresentationModel).where(ReportPresentationModel.owner_id == self._owner_id).where(
                         and_(
                             ReportPresentationModel.source_mode
                             == runtime_mode.value,
@@ -545,7 +550,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
     ) -> RepositoryPage[ConversationSummary, ConversationPosition]:
         needle = query.casefold()
         memory_match = exists(
-            select(WorkMemoryModel.id).where(
+            select(WorkMemoryModel.id).where(WorkMemoryModel.owner_id == self._owner_id).where(
                 and_(
                     WorkMemoryModel.runtime_mode == runtime_mode.value,
                     WorkMemoryModel.conversation_id
@@ -571,7 +576,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             ]
         )
         snapshot_match = exists(
-            select(ResultSnapshotModel.id).where(
+            select(ResultSnapshotModel.id).where(ResultSnapshotModel.owner_id == self._owner_id).where(
                 and_(
                     ResultSnapshotModel.runtime_mode == runtime_mode.value,
                     ResultSnapshotModel.conversation_id
@@ -600,13 +605,13 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 (
                     await session.execute(
                         select(func.count())
-                        .select_from(ConversationModel)
+                        .select_from(ConversationModel).where(ConversationModel.owner_id == self._owner_id)
                         .where(and_(*base_conditions))
                     )
                 ).scalar_one()
             )
             result = await session.execute(
-                select(ConversationModel)
+                select(ConversationModel).where(ConversationModel.owner_id == self._owner_id)
                 .where(and_(*conditions))
                 .order_by(
                     func.julianday(ConversationModel.updated_at).desc(),
@@ -663,13 +668,13 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 (
                     await session.execute(
                         select(func.count())
-                        .select_from(ReportArtifactModel)
+                        .select_from(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id)
                         .where(and_(*base_conditions))
                     )
                 ).scalar_one()
             )
             result = await session.execute(
-                select(ReportArtifactModel)
+                select(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id)
                 .where(and_(*conditions))
                 .order_by(
                     func.julianday(ReportArtifactModel.created_at).desc(),
@@ -682,7 +687,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             presentation_rows: dict[str, ReportPresentationModel] = {}
             if page_rows:
                 presentation_result = await session.execute(
-                    select(ReportPresentationModel).where(
+                    select(ReportPresentationModel).where(ReportPresentationModel.owner_id == self._owner_id).where(
                         ReportPresentationModel.report_id.in_(
                             [row.report_id for row in page_rows]
                         )
@@ -780,9 +785,10 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
             )
 
         join_condition = (
-            ReportPresentationModel.report_id == ReportArtifactModel.report_id
+            and_(ReportPresentationModel.owner_id == ReportArtifactModel.owner_id, ReportPresentationModel.report_id == ReportArtifactModel.report_id)
         )
         conversation_join_condition = and_(
+            ConversationModel.owner_id == ReportArtifactModel.owner_id,
             ConversationModel.runtime_mode == ReportArtifactModel.source_mode,
             ConversationModel.conversation_id == ReportArtifactModel.conversation_id,
         )
@@ -791,7 +797,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 (
                     await session.execute(
                         select(func.count())
-                        .select_from(ReportArtifactModel)
+                        .select_from(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id)
                         .outerjoin(ReportPresentationModel, join_condition)
                         .where(
                             and_(
@@ -811,7 +817,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 (
                     await session.execute(
                         select(func.count())
-                        .select_from(ReportArtifactModel)
+                        .select_from(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id)
                         .outerjoin(
                             ConversationModel,
                             conversation_join_condition,
@@ -837,14 +843,14 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 (
                     await session.execute(
                         select(func.count())
-                        .select_from(ReportArtifactModel)
+                        .select_from(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id)
                         .join(ReportPresentationModel, join_condition)
                         .where(and_(*base_conditions))
                     )
                 ).scalar_one()
             )
             result = await session.execute(
-                select(ReportArtifactModel, ReportPresentationModel)
+                select(ReportArtifactModel, ReportPresentationModel).where(ReportArtifactModel.owner_id == self._owner_id, ReportPresentationModel.owner_id == self._owner_id)
                 .join(ReportPresentationModel, join_condition)
                 .where(and_(*page_conditions))
                 .order_by(
@@ -1003,7 +1009,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
         async with self._session_factory() as session:
             async with session.begin():
                 intent_result = await session.execute(
-                    select(ConversationDeleteIntentModel).where(
+                    select(ConversationDeleteIntentModel).where(ConversationDeleteIntentModel.owner_id == self._owner_id).where(
                         and_(
                             ConversationDeleteIntentModel.runtime_mode
                             == runtime_mode.value,
@@ -1018,7 +1024,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
 
                 await self._get_conversation(session, runtime_mode, conversation_id)
                 report_result = await session.execute(
-                    select(ReportArtifactModel.report_id).where(
+                    select(ReportArtifactModel.report_id).where(ReportArtifactModel.owner_id == self._owner_id).where(
                         and_(
                             ReportArtifactModel.source_mode == runtime_mode.value,
                             ReportArtifactModel.conversation_id == conversation_id,
@@ -1027,7 +1033,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 )
                 report_ids = list(report_result.scalars().all())
                 pending_report_result = await session.execute(
-                    select(ReportDeleteIntentModel.report_id).where(
+                    select(ReportDeleteIntentModel.report_id).where(ReportDeleteIntentModel.owner_id == self._owner_id).where(
                         and_(
                             ReportDeleteIntentModel.source_mode == runtime_mode.value,
                             ReportDeleteIntentModel.conversation_id == conversation_id,
@@ -1040,7 +1046,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     if report_id not in report_ids
                 )
                 presentation_result = await session.execute(
-                    select(ReportPresentationModel.report_id).where(
+                    select(ReportPresentationModel.report_id).where(ReportPresentationModel.owner_id == self._owner_id).where(
                         and_(
                             ReportPresentationModel.source_mode
                             == runtime_mode.value,
@@ -1065,7 +1071,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     ("work_memories", WorkMemoryModel, WorkMemoryModel.runtime_mode),
                 ):
                     result = await session.execute(
-                        delete(model).where(
+                        delete(model).where(model.owner_id == self._owner_id).where(
                             and_(
                                 mode_column == runtime_mode.value,
                                 model.conversation_id == conversation_id,
@@ -1074,7 +1080,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     )
                     deleted_counts[name] = max(result.rowcount or 0, 0)
                 report_delete = await session.execute(
-                    delete(ReportArtifactModel).where(
+                    delete(ReportArtifactModel).where(ReportArtifactModel.owner_id == self._owner_id).where(
                         and_(
                             ReportArtifactModel.source_mode == runtime_mode.value,
                             ReportArtifactModel.conversation_id == conversation_id,
@@ -1085,7 +1091,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     report_delete.rowcount or 0, 0
                 )
                 await session.execute(
-                    delete(ReportDeleteIntentModel).where(
+                    delete(ReportDeleteIntentModel).where(ReportDeleteIntentModel.owner_id == self._owner_id).where(
                         and_(
                             ReportDeleteIntentModel.source_mode == runtime_mode.value,
                             ReportDeleteIntentModel.conversation_id == conversation_id,
@@ -1093,7 +1099,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     )
                 )
                 await session.execute(
-                    delete(ReportPresentationModel).where(
+                    delete(ReportPresentationModel).where(ReportPresentationModel.owner_id == self._owner_id).where(
                         and_(
                             ReportPresentationModel.source_mode
                             == runtime_mode.value,
@@ -1103,7 +1109,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     )
                 )
                 await session.execute(
-                    delete(ConversationModel).where(
+                    delete(ConversationModel).where(ConversationModel.owner_id == self._owner_id).where(
                         and_(
                             ConversationModel.runtime_mode == runtime_mode.value,
                             ConversationModel.conversation_id == conversation_id,
@@ -1119,7 +1125,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                     "report_artifacts": deleted_counts["report_artifacts"],
                 }
                 session.add(
-                    ConversationDeleteIntentModel(
+                    ConversationDeleteIntentModel(owner_id=self._owner_id,
                         runtime_mode=runtime_mode.value,
                         conversation_id=conversation_id,
                         report_ids_json=json.dumps(
@@ -1183,7 +1189,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
         async with self._session_factory() as session:
             async with session.begin():
                 await session.execute(
-                    delete(ConversationDeleteIntentModel).where(
+                    delete(ConversationDeleteIntentModel).where(ConversationDeleteIntentModel.owner_id == self._owner_id).where(
                         and_(
                             ConversationDeleteIntentModel.runtime_mode
                             == runtime_mode.value,

@@ -25,6 +25,7 @@ from typing import Any, Optional
 
 from sqlalchemy import (
     Column,
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -35,8 +36,10 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    event,
+    text,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, declared_attr
 
 # ---------------------------------------------------------------------------
 # Re-export the runtime mode enum used by persistence models
@@ -52,20 +55,64 @@ class Base(DeclarativeBase):
     pass
 
 
+LOCAL_OWNER_ID = "local:legacy"
+
+
+class ResourceOwnerModel(Base):
+    """Stable tenant/principal ownership, independent of login/cache epochs."""
+
+    __tablename__ = "resource_owners"
+    owner_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    identity_mode: Mapped[str] = mapped_column(String(24), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    principal_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("identity_mode", "tenant_id", "principal_id", name="uq_resource_owner_identity"),
+        CheckConstraint(
+            "(identity_mode = 'LOCAL_DEV' AND owner_id = 'local:legacy' "
+            "AND tenant_id = 'local' AND principal_id = 'legacy') OR "
+            "(identity_mode = 'ENTRA_PRINCIPAL' AND owner_id LIKE 'entra:%' "
+            "AND length(tenant_id) = 36 AND length(principal_id) = 36)",
+            name="ck_resource_owner_identity",
+        ),
+    )
+
+
+@event.listens_for(ResourceOwnerModel.__table__, "after_create")
+def _seed_local_owner(target, connection, **kwargs):
+    connection.execute(target.insert().values(owner_id=LOCAL_OWNER_ID,
+        identity_mode="LOCAL_DEV", tenant_id="local", principal_id="legacy"))
+
+
+class OwnedRow:
+    owner_id: Mapped[str] = mapped_column(String(80), ForeignKey("resource_owners.owner_id"),
+        nullable=False, default=LOCAL_OWNER_ID, server_default=LOCAL_OWNER_ID)
+
+    @declared_attr.directive
+    def __mapper_args__(cls):
+        # Surrogate IDs stay SQLite-autoincrement compatible. ORM flushes also
+        # include owner in UPDATE/DELETE predicates and identity-map keys.
+        if hasattr(cls, "id"):
+            return {"primary_key": [cls.id, cls.owner_id]}
+        return {}
+
+
 # ---------------------------------------------------------------------------
 # Conversations
 # ---------------------------------------------------------------------------
 
 
-class ConversationModel(Base):
+class ConversationModel(OwnedRow, Base):
     """One conversation root.
 
-    Identity: (runtime_mode, conversation_id).
+    Identity: (owner_id, runtime_mode, conversation_id).
     This allows ``mock`` and ``real`` conversations to share the same
     ``conversation_id`` while remaining fully isolated.
     """
 
     __tablename__ = "conversations"
+    owner_id: Mapped[str] = mapped_column(String(80), ForeignKey("resource_owners.owner_id"),
+        primary_key=True, default=LOCAL_OWNER_ID, server_default=LOCAL_OWNER_ID)
 
     conversation_id: Mapped[str] = mapped_column(
         String(64), primary_key=True, comment="UUIDv4 conversation identifier"
@@ -111,6 +158,7 @@ class ConversationModel(Base):
     __table_args__ = (
         Index(
             "ix_conversations_namespace_recent",
+            "owner_id",
             "runtime_mode",
             "archived_at",
             "updated_at",
@@ -133,7 +181,7 @@ class ConversationModel(Base):
 # ---------------------------------------------------------------------------
 
 
-class ConversationDeleteIntentModel(Base):
+class ConversationDeleteIntentModel(OwnedRow, Base):
     """Durable cleanup intent spanning SQLite metadata and report files.
 
     The row deliberately has no foreign key to ``conversations``: it must
@@ -142,6 +190,8 @@ class ConversationDeleteIntentModel(Base):
     """
 
     __tablename__ = "conversation_delete_intents"
+    owner_id: Mapped[str] = mapped_column(String(80), ForeignKey("resource_owners.owner_id"),
+        primary_key=True, default=LOCAL_OWNER_ID, server_default=LOCAL_OWNER_ID)
 
     conversation_id: Mapped[str] = mapped_column(
         String(64), primary_key=True
@@ -163,7 +213,7 @@ class ConversationDeleteIntentModel(Base):
 # ---------------------------------------------------------------------------
 
 
-class WorkMemoryModel(Base):
+class WorkMemoryModel(OwnedRow, Base):
     """Persistent storage for ``StructuredWorkMemory``."""
 
     __tablename__ = "work_memories"
@@ -232,17 +282,22 @@ class WorkMemoryModel(Base):
 
     __table_args__ = (
         UniqueConstraint(
+            "owner_id",
             "runtime_mode",
             "request_id",
             name="uq_work_memories_runtime_request",
         ),
+        Index("ix_work_memories_committed_version", "owner_id", "runtime_mode",
+            "conversation_id", "memory_version", unique=True,
+            sqlite_where=text("state_status = 'committed'")),
         ForeignKeyConstraint(
-            ["runtime_mode", "conversation_id"],
-            ["conversations.runtime_mode", "conversations.conversation_id"],
+            ["owner_id", "runtime_mode", "conversation_id"],
+            ["conversations.owner_id", "conversations.runtime_mode", "conversations.conversation_id"],
             name="fk_work_memories_conv_composite",
         ),
         Index(
             "ix_work_memories_namespace_history",
+            "owner_id",
             "runtime_mode",
             "conversation_id",
             "state_status",
@@ -256,7 +311,7 @@ class WorkMemoryModel(Base):
 # ---------------------------------------------------------------------------
 
 
-class PendingClarificationModel(Base):
+class PendingClarificationModel(OwnedRow, Base):
     """Persistent storage for ``PendingClarificationContext``."""
 
     __tablename__ = "pending_clarifications"
@@ -297,13 +352,14 @@ class PendingClarificationModel(Base):
 
     __table_args__ = (
         UniqueConstraint(
+            "owner_id",
             "runtime_mode",
             "conversation_id",
             name="uq_pending_clarifications_runtime_conv",
         ),
         ForeignKeyConstraint(
-            ["runtime_mode", "conversation_id"],
-            ["conversations.runtime_mode", "conversations.conversation_id"],
+            ["owner_id", "runtime_mode", "conversation_id"],
+            ["conversations.owner_id", "conversations.runtime_mode", "conversations.conversation_id"],
             name="fk_pending_clarifications_conv_composite",
         ),
     )
@@ -314,7 +370,7 @@ class PendingClarificationModel(Base):
 # ---------------------------------------------------------------------------
 
 
-class ResultSnapshotModel(Base):
+class ResultSnapshotModel(OwnedRow, Base):
     """Persistent storage for ``TurnResultSnapshot``."""
 
     __tablename__ = "result_snapshots"
@@ -356,17 +412,19 @@ class ResultSnapshotModel(Base):
 
     __table_args__ = (
         UniqueConstraint(
+            "owner_id",
             "runtime_mode",
             "request_id",
             name="uq_result_snapshots_runtime_request",
         ),
         ForeignKeyConstraint(
-            ["runtime_mode", "conversation_id"],
-            ["conversations.runtime_mode", "conversations.conversation_id"],
+            ["owner_id", "runtime_mode", "conversation_id"],
+            ["conversations.owner_id", "conversations.runtime_mode", "conversations.conversation_id"],
             name="fk_result_snapshots_conv_composite",
         ),
         Index(
             "ix_result_snapshots_namespace_history",
+            "owner_id",
             "runtime_mode",
             "conversation_id",
             "created_at",
@@ -380,7 +438,7 @@ class ResultSnapshotModel(Base):
 # ---------------------------------------------------------------------------
 
 
-class ReportArtifactModel(Base):
+class ReportArtifactModel(OwnedRow, Base):
     """Persistent metadata for managed HTML report artifacts.
 
     The actual HTML content continues to live on the filesystem at
@@ -388,6 +446,8 @@ class ReportArtifactModel(Base):
     """
 
     __tablename__ = "report_artifacts"
+    owner_id: Mapped[str] = mapped_column(String(80), ForeignKey("resource_owners.owner_id"),
+        primary_key=True, default=LOCAL_OWNER_ID, server_default=LOCAL_OWNER_ID)
 
     report_id: Mapped[str] = mapped_column(
         String(64), primary_key=True, comment="rpt_<uuidhex>"
@@ -431,6 +491,7 @@ class ReportArtifactModel(Base):
     __table_args__ = (
         Index(
             "ix_report_artifacts_namespace_history",
+            "owner_id",
             "source_mode",
             "conversation_id",
             "created_at",
@@ -438,6 +499,7 @@ class ReportArtifactModel(Base):
         ),
         Index(
             "ix_report_artifacts_source_history",
+            "owner_id",
             "source_mode",
             "created_at",
             "report_id",
@@ -446,10 +508,12 @@ class ReportArtifactModel(Base):
     )
 
 
-class ReportPresentationModel(Base):
+class ReportPresentationModel(OwnedRow, Base):
     """Mutable presentation metadata kept outside factual report metadata."""
 
     __tablename__ = "report_presentations"
+    owner_id: Mapped[str] = mapped_column(String(80), ForeignKey("resource_owners.owner_id"),
+        primary_key=True, default=LOCAL_OWNER_ID, server_default=LOCAL_OWNER_ID)
 
     report_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     source_mode: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -478,6 +542,7 @@ class ReportPresentationModel(Base):
     __table_args__ = (
         Index(
             "ix_report_presentations_namespace_history",
+            "owner_id",
             "source_mode",
             "conversation_id",
             "request_id",
@@ -485,6 +550,7 @@ class ReportPresentationModel(Base):
         ),
         Index(
             "ix_report_presentations_resource_status",
+            "owner_id",
             "source_mode",
             "archived_at",
             "updated_at",
@@ -493,10 +559,12 @@ class ReportPresentationModel(Base):
     )
 
 
-class ReportDeleteIntentModel(Base):
+class ReportDeleteIntentModel(OwnedRow, Base):
     """Durable witness while one report crosses DB/filesystem deletion."""
 
     __tablename__ = "report_delete_intents"
+    owner_id: Mapped[str] = mapped_column(String(80), ForeignKey("resource_owners.owner_id"),
+        primary_key=True, default=LOCAL_OWNER_ID, server_default=LOCAL_OWNER_ID)
 
     report_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     source_mode: Mapped[str] = mapped_column(String(16), nullable=False)

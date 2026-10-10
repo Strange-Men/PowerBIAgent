@@ -14,6 +14,9 @@ Permanent business semantics
 
 from __future__ import annotations
 
+from backend.app.persistence.models import LOCAL_OWNER_ID
+from backend.app.persistence.ownership import session_owner_id
+
 import copy
 import json
 from typing import Optional
@@ -196,8 +199,10 @@ class SQLiteMemoryRepository(MemoryRepository):
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
+        *, owner_id: str = LOCAL_OWNER_ID,
     ) -> None:
         self._session_factory = session_factory
+        self._owner_id = owner_id
 
     # ------------------------------------------------------------------
     # Conversation root (deterministic get-or-create)
@@ -229,7 +234,7 @@ class SQLiteMemoryRepository(MemoryRepository):
         async with self._session_factory() as session:
             async with session.begin():
                 # Check duplicate
-                stmt = select(WorkMemoryModel).where(
+                stmt = select(WorkMemoryModel).where(WorkMemoryModel.owner_id == self._owner_id).where(
                     and_(
                         WorkMemoryModel.request_id == memory.request_id,
                         WorkMemoryModel.runtime_mode == runtime_mode.value,
@@ -251,7 +256,7 @@ class SQLiteMemoryRepository(MemoryRepository):
                 stored.runtime_mode = runtime_mode
 
                 cols = _work_memory_to_model(stored)
-                model = WorkMemoryModel(**cols)
+                model = WorkMemoryModel(owner_id=self._owner_id, **cols)
                 session.add(model)
                 await session.flush()
 
@@ -263,7 +268,7 @@ class SQLiteMemoryRepository(MemoryRepository):
         runtime_mode: RuntimeDataMode,
     ) -> Optional[StructuredWorkMemory]:
         async with self._session_factory() as session:
-            stmt = select(WorkMemoryModel).where(
+            stmt = select(WorkMemoryModel).where(WorkMemoryModel.owner_id == self._owner_id).where(
                 and_(
                     WorkMemoryModel.request_id == request_id,
                     WorkMemoryModel.runtime_mode == runtime_mode.value,
@@ -288,7 +293,7 @@ class SQLiteMemoryRepository(MemoryRepository):
             ]
 
             stmt = (
-                select(WorkMemoryModel)
+                select(WorkMemoryModel).where(WorkMemoryModel.owner_id == self._owner_id)
                 .where(and_(*conditions))
                 .order_by(WorkMemoryModel.memory_version.desc())
                 .limit(1)
@@ -343,7 +348,7 @@ class SQLiteMemoryRepository(MemoryRepository):
         async with self._session_factory() as session:
             async with session.begin():
                 # 1. Fetch the existing pending row
-                stmt = select(WorkMemoryModel).where(
+                stmt = select(WorkMemoryModel).where(WorkMemoryModel.owner_id == self._owner_id).where(
                     and_(
                         WorkMemoryModel.request_id == memory.request_id,
                         WorkMemoryModel.runtime_mode == runtime_mode.value,
@@ -451,7 +456,7 @@ class SQLiteMemoryRepository(MemoryRepository):
 
                 try:
                     update_stmt = (
-                        update(WorkMemoryModel)
+                        update(WorkMemoryModel).where(WorkMemoryModel.owner_id == self._owner_id)
                         .where(WorkMemoryModel.id == row.id)
                         .values(
                             state_status=MemoryStatus.COMMITTED.value,
@@ -532,7 +537,7 @@ class SQLiteMemoryRepository(MemoryRepository):
     ) -> Optional[StructuredWorkMemory]:
         async with self._session_factory() as session:
             async with session.begin():
-                stmt = select(WorkMemoryModel).where(
+                stmt = select(WorkMemoryModel).where(WorkMemoryModel.owner_id == self._owner_id).where(
                     and_(
                         WorkMemoryModel.request_id == request_id,
                         WorkMemoryModel.runtime_mode == runtime_mode.value,
@@ -550,7 +555,7 @@ class SQLiteMemoryRepository(MemoryRepository):
                 new_payload = domain_to_json(domain)
 
                 update_stmt = (
-                    update(WorkMemoryModel)
+                    update(WorkMemoryModel).where(WorkMemoryModel.owner_id == self._owner_id)
                     .where(WorkMemoryModel.id == row.id)
                     .values(
                         state_status=MemoryStatus.FAILED.value,
@@ -580,7 +585,7 @@ class SQLiteMemoryRepository(MemoryRepository):
                 conditions.append(WorkMemoryModel.state_status == status)
 
             stmt = (
-                select(WorkMemoryModel)
+                select(WorkMemoryModel).where(WorkMemoryModel.owner_id == self._owner_id)
                 .where(and_(*conditions))
                 .order_by(WorkMemoryModel.created_at.desc())
                 .limit(limit)
@@ -595,7 +600,7 @@ class SQLiteMemoryRepository(MemoryRepository):
         runtime_mode: RuntimeDataMode,
     ) -> bool:
         async with self._session_factory() as session:
-            stmt = select(WorkMemoryModel).where(
+            stmt = select(WorkMemoryModel).where(WorkMemoryModel.owner_id == self._owner_id).where(
                 and_(
                     WorkMemoryModel.request_id == request_id,
                     WorkMemoryModel.runtime_mode == runtime_mode.value,
@@ -626,7 +631,7 @@ class SQLiteMemoryRepository(MemoryRepository):
                 )
 
                 # Check existing
-                stmt = select(PendingClarificationModel).where(
+                stmt = select(PendingClarificationModel).where(PendingClarificationModel.owner_id == self._owner_id).where(
                     and_(
                         PendingClarificationModel.conversation_id
                         == context.conversation_id,
@@ -642,14 +647,14 @@ class SQLiteMemoryRepository(MemoryRepository):
                 if existing:
                     # Update
                     update_stmt = (
-                        update(PendingClarificationModel)
+                        update(PendingClarificationModel).where(PendingClarificationModel.owner_id == self._owner_id)
                         .where(PendingClarificationModel.id == existing.id)
                         .values(**cols, updated_at=func.now())
                     )
                     await session.execute(update_stmt)
                 else:
                     # Insert
-                    model = PendingClarificationModel(**cols)
+                    model = PendingClarificationModel(owner_id=self._owner_id, **cols)
                     session.add(model)
                     await session.flush()
 
@@ -661,7 +666,7 @@ class SQLiteMemoryRepository(MemoryRepository):
         runtime_mode: RuntimeDataMode,
     ) -> Optional[PendingClarificationContext]:
         async with self._session_factory() as session:
-            stmt = select(PendingClarificationModel).where(
+            stmt = select(PendingClarificationModel).where(PendingClarificationModel.owner_id == self._owner_id).where(
                 and_(
                     PendingClarificationModel.conversation_id == conversation_id,
                     PendingClarificationModel.runtime_mode == runtime_mode.value,
@@ -680,7 +685,7 @@ class SQLiteMemoryRepository(MemoryRepository):
     ) -> Optional[PendingClarificationContext]:
         async with self._session_factory() as session:
             async with session.begin():
-                stmt = select(PendingClarificationModel).where(
+                stmt = select(PendingClarificationModel).where(PendingClarificationModel.owner_id == self._owner_id).where(
                     and_(
                         PendingClarificationModel.conversation_id == conversation_id,
                         PendingClarificationModel.runtime_mode == runtime_mode.value,
@@ -709,7 +714,7 @@ class SQLiteMemoryRepository(MemoryRepository):
     ) -> int:
         """Get the highest committed memory_version for a conversation/mode pair."""
         stmt = (
-            select(WorkMemoryModel.memory_version)
+            select(WorkMemoryModel.memory_version).where(WorkMemoryModel.owner_id == self._owner_id)
             .where(
                 and_(
                     WorkMemoryModel.conversation_id == conversation_id,
@@ -732,7 +737,7 @@ class SQLiteMemoryRepository(MemoryRepository):
             async with self._session_factory() as session:
                 from sqlalchemy import func as sa_func, select as sa_select
 
-                stmt = sa_select(sa_func.count(WorkMemoryModel.id))
+                stmt = sa_select(sa_func.count(WorkMemoryModel.id)).where(WorkMemoryModel.owner_id == session_owner_id(session))
                 result = await session.execute(stmt)
                 return result.scalar() or 0
 

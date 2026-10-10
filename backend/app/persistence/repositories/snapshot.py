@@ -16,6 +16,9 @@ Design notes
 
 from __future__ import annotations
 
+from backend.app.persistence.models import LOCAL_OWNER_ID
+from backend.app.persistence.ownership import session_owner_id
+
 import asyncio
 from typing import Optional
 
@@ -56,8 +59,10 @@ class SQLiteSnapshotRepository(SnapshotRepository):
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
+        *, owner_id: str = LOCAL_OWNER_ID,
     ) -> None:
         self._session_factory = session_factory
+        self._owner_id = owner_id
         self._idempotency = IdempotencyTracker()
 
     # ------------------------------------------------------------------
@@ -103,7 +108,7 @@ class SQLiteSnapshotRepository(SnapshotRepository):
                 )
 
                 # Check for existing row
-                stmt = select(ResultSnapshotModel).where(
+                stmt = select(ResultSnapshotModel).where(ResultSnapshotModel.owner_id == self._owner_id).where(
                     and_(
                         ResultSnapshotModel.request_id == snapshot.request_id,
                         ResultSnapshotModel.runtime_mode == mode_value,
@@ -122,7 +127,7 @@ class SQLiteSnapshotRepository(SnapshotRepository):
                     existing.response_type = snapshot.response_type
                     existing.conversation_id = snapshot.conversation_id
                 else:
-                    model = ResultSnapshotModel(
+                    model = ResultSnapshotModel(owner_id=self._owner_id,
                         request_id=snapshot.request_id,
                         runtime_mode=mode_value,
                         conversation_id=snapshot.conversation_id,
@@ -168,7 +173,7 @@ class SQLiteSnapshotRepository(SnapshotRepository):
         mode_value = runtime_mode.value if hasattr(runtime_mode, "value") else str(runtime_mode)
 
         async with self._session_factory() as session:
-            stmt = select(ResultSnapshotModel).where(
+            stmt = select(ResultSnapshotModel).where(ResultSnapshotModel.owner_id == self._owner_id).where(
                 and_(
                     ResultSnapshotModel.request_id == request_id,
                     ResultSnapshotModel.runtime_mode == mode_value,
@@ -206,7 +211,7 @@ class SQLiteSnapshotRepository(SnapshotRepository):
         mode_value = runtime_mode.value if hasattr(runtime_mode, "value") else str(runtime_mode)
 
         async with self._session_factory() as session:
-            stmt = select(ResultSnapshotModel).where(
+            stmt = select(ResultSnapshotModel).where(ResultSnapshotModel.owner_id == self._owner_id).where(
                 and_(
                     ResultSnapshotModel.request_id == request_id,
                     ResultSnapshotModel.runtime_mode == mode_value,
@@ -255,7 +260,7 @@ class SQLiteSnapshotRepository(SnapshotRepository):
             async with self._session_factory() as session:
                 from sqlalchemy import func as sa_func, select as sa_select
 
-                stmt = sa_select(sa_func.count(ResultSnapshotModel.id))
+                stmt = sa_select(sa_func.count(ResultSnapshotModel.id)).where(ResultSnapshotModel.owner_id == session_owner_id(session))
                 result = await session.execute(stmt)
                 return result.scalar() or 0
 

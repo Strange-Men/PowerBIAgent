@@ -1,20 +1,44 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-> Settings.version=M6.2；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 READY（未实施，须独立批准）；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> Settings.version=M6.2；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security验收通过，Phase A / Final CI待执行；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一开发交接 authority；当前项目状态见 [07](07_milestones_status_and_open_questions.md)，路线见 [08](08_development_roadmap.md)。
 
 ## 当前阶段 — Current Baseline / Next Milestone
 
 - Current Baseline：M6.2 Fabric IQ Cloud Data Plane Adapter（最终自身CI / remoteaudit解析）。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
-- NEXT = M6.3 READY（未实施，须用户独立批准）。
-- M6 Status：Auth/Session/Account runtime IMPLEMENTED；Fabric IQ Cloud Data Plane已实现，两模型Real与Phase A CI PASS；Final自身CI / remote audit独立验收。
+- ACTIVE = M6.3最终安全验收与两阶段封板已批准；本地最终gates及exact-SHA CI完成后方可COMPLETE；M6.4 NOT READY。
+- M6 Status：M6.2已发布；M6.3 Real安全74/74与Late-Response41/41通过；Phase A/final CI未执行，版本暂为M6.2。
 
-## M6.2 active handoff
+## M6.3 active handoff
+
+[设计、完整证据、范围调整与迁移恢复](milestones/m6/m6_3_multi_user_ownership_authorization_rls_ols.md)。
+真实同tenant双Viewer安全矩阵74/74 PASS（A17、B31、A返回26；0 FAIL/0 NOT_TESTED）。
+COUNTROWS标量/分组为严格数字，Region为A/B/A；A可读RestrictedTable，B实际schema隐藏且固定查询被拒绝。
+真实Late-Response 41/41 PASS：7类A在途操作在native logout及B登录后全部AUTH_REQUIRED；
+Memory/Snapshot/Report/History零过期提交、A binding清除且不可复用，B资源/会话/Idempotency不受影响；A返回身份与原A一致。
+Late测试使用真实Entra/MSAL/BFF、IQ Transport/Adapter及原生Repository；延迟注入仅在仓库外，synthetic DB/HTML。
+完整Cloud Product UI/E2E、外部角色撤销通知NOT_TESTED，不以该测试冒充上述产品能力。
+临时服务已关闭，正式native app已恢复；临时/auth/m63-*及/m63-test路径原生后端404；未登录正式API401、合成登录产品gate403。
+Vite对未代理未知路径仍返回SPA shell，不能把该200当作后端路由存在；/auth代理路径404已实测。
+按用户2026-10-10最终封板指令显式调整验收范围：M6.3 Security独立封板，销售额标量/分组仍FAIL CONTRACT_DRIFT。
+Fabric IQ数值兼容为M6.4 Product E2E前P1 BLOCKER；不得强转、改expected、降低M5 ResultInspection/VerifiedFactSet或伪造PASS。
+旧401首次拒绝层、旧第三轮A指纹差异UNRESOLVED；本轮principal比较来自validated tenant+principal稳定hash，不依赖session/epoch或邮箱。
+Cloud完整性仍保守truncated=true；M6.4 Catalog、完整Chat/Report/History UI与Product E2E未实施，须独立批准。
+
+补丁基线为main@419dfd5cdde5c7550d62bbdaca12c7de853cea65；恢复时保留全部未提交成果与历史失败证据。
+仓库外工具与safe evidence位于D:\AAA_Workfile\PowerBIAgent_M6_3_Acceptance；本轮Late synthetic存储位于D:\AAA_Workfile\M63Late；fixture位于D:\AAA_Workfile\M63Fixture。
+临时延迟hook/诊断路由已从运行中服务卸载；正式代码从未导入仓库外工具。真实账号、token/cookie、raw identity GUID不进入Git。
+Alembic head=f63a1b2c3d40，八表历史行归local:legacy；现有用户DB未读取/迁移。回滚仅恢复M6.2离线完整备份，禁止合并principal IDs。
+Phase A固定中文commit：M6.3_多用户归属与权限隔离候选；Final：M6.3_多用户安全隔离与真实验收封板。
+先安全/清理/local全通过、白名单staging、正常push main并等待候选exact-SHA CI，再升版M6.3与Final CI；不得绕过branch protection。
+当前候选/Final SHA与CI尚未产生；Final完成后立即停止，不自动开始M6.4。
+
+## M6.2 历史 handoff
 
 本轮用户已明确批准M6.2；fresh Cold Start exact基线1c71dee7，官方2026-10-10重验。
 [实施合同与当前验收](milestones/m6/m6_2_fabric_iq_cloud_adapter.md)。
-Cloud Adapter已实现；Settings.version=M6.2；两模型Real与Phase A CI通过。最终COMPLETE按下方自身CI / remote audit规则生效。M6.3须独立批准，禁止自动开始。
+Cloud Adapter已实现；Settings.version=M6.2；两模型Real、Phase A及final自身CI38012437829已通过。M6.2结束时M6.3须独立批准；本轮授权与进度见上方active handoff。
 旧PREP证据已脱敏、不含模型URL；bootstrap与smoke harness只存repo外临时目录。
 没有永久debug route；仅Auth broker获取token；ENTRA_BFF旧product gate保持。
 
@@ -71,9 +95,9 @@ M6.2 Phase A：`daeb5b63e81364da97eabdd0d20b835c868388df` /
 completed/success，push事件、Full Validation (Windows)与全部23 steps实际success，无skipped step。
 最终seal更新Settings.version=M6.2；自身SHA不写入自身提交。查询当前checkout exact SHA的
 PowerBIAgent Validation / Full Validation (Windows) completed/success，逐项核验required steps，
-fetch后HEAD==origin/main且worktree clean，才解析为M6.2 COMPLETE / M6.3 READY。
+fetch后HEAD==origin/main且worktree clean，才解析为M6.2 COMPLETE；M6.3验收与CI独立，不继承该baseline证据。
 不得继承Phase A或历史CI代替Final CI。Auth与Fabric IQ Adapter已实现，两模型Real PASS；
-Cloud Catalog、multi-user persistence ownership、Product E2E仍未实现。
+M6.2封板时Cloud Catalog、multi-user persistence ownership、Product E2E未实现；当前ownership基础进度见M6.3 active handoff。
 
 ### M6.1 历史基线
 

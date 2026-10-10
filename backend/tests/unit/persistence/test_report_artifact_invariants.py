@@ -86,7 +86,7 @@ async def sqlite_report_repo():
 async def _remove_payload_fields(session_factory, report_id: str, *fields: str) -> None:
     async with session_factory() as session:
         async with session.begin():
-            row = await session.get(ReportArtifactModel, report_id)
+            row = await session.get(ReportArtifactModel, {"owner_id": "local:legacy", "report_id": report_id})
             assert row is not None
             payload = json.loads(row.payload_json)
             for field in fields:
@@ -143,7 +143,7 @@ async def test_missing_modern_payload_fails_closed(sqlite_report_repo):
 
     async with session_factory() as session:
         async with session.begin():
-            row = await session.get(ReportArtifactModel, artifact.report_id)
+            row = await session.get(ReportArtifactModel, {"owner_id": "local:legacy", "report_id": artifact.report_id})
             assert row is not None
             row.payload_json = None
 

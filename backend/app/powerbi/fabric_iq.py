@@ -1,5 +1,6 @@
 """Request-scoped read-only cloud provider; no Catalog or product enablement."""
 from dataclasses import dataclass
+from contextlib import asynccontextmanager
 from secrets import token_urlsafe
 from types import MappingProxyType
 from urllib.parse import urlsplit
@@ -84,8 +85,29 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
 
     def _validate(self):
         if self._closed: raise fail("UPSTREAM_UNAVAILABLE")
-        if self._auth.require_session(self._sid).principal != self._principal:
-            raise AuthFailure("AUTH_FORBIDDEN", 403)
+        try:
+            if self._auth.require_session(self._sid).principal != self._principal:
+                raise AuthFailure("AUTH_FORBIDDEN", 403)
+        except AuthFailure:
+            self._bindings.clear()
+            self._schemas.clear()
+            raise
+
+    @asynccontextmanager
+    async def _connection(self):
+        from backend.app.powerbi.base import PowerBIAdapterError
+        try:
+            async with self._transport.connection() as connection:
+                yield connection
+        except (AuthFailure, PowerBIAdapterError) as error:
+            code = error.code if isinstance(error, AuthFailure) else error.error_type
+            if code in {"AUTH_REQUIRED", "AUTH_EXPIRED", "AUTH_FORBIDDEN", "RESOURCE_NOT_ACCESSIBLE"}:
+                self._bindings.clear()
+                self._schemas.clear()
+                # Conservative revocation policy: fresh Microsoft login and
+                # schema-before-bind required for every old model reference.
+                self._auth.logout(self._sid, None)
+            raise
 
     def _binding(self, key):
         self._validate()
@@ -98,7 +120,7 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
 
     async def health_check(self):
         self._validate()
-        async with self._transport.connection(): pass
+        async with self._connection(): pass
         self._validate()
         return True
 
@@ -107,7 +129,7 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         url = self._bootstrap.get(bootstrap_name)
         if url is None: raise fail("MODEL_RESOLUTION_FAILED")
         expected_workspace, expected_model = _bootstrap_identity(url)
-        async with self._transport.connection() as connection:
+        async with self._connection() as connection:
             resolved, resource = unpack(await connection.call("ResolveFabricItem", {"fabricItemId": url}), "MODEL_RESOLUTION_FAILED")
             if (resource is not None or resolved.get("itemType") != "SemanticModel"
                     or guid(resolved.get("fabricItemId")) != expected_model
@@ -125,7 +147,7 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
 
     async def get_semantic_model_schema(self, semantic_model_key):
         ref = self._binding(semantic_model_key)
-        async with self._transport.connection() as connection:
+        async with self._connection() as connection:
             raw = await connection.call("GetSemanticModelSchema", {"artifactId": ref.semantic_model_id})
             schema = normalize_schema(raw, ref.semantic_model_id, semantic_model_key, ref.authorization_epoch)
         self._validate()
@@ -138,7 +160,7 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         import asyncio
         try:
             async with asyncio.timeout(request.timeout_seconds):
-                async with self._transport.connection() as connection:
+                async with self._connection() as connection:
                     raw = await connection.call("ExecuteQuery", {"artifactId": ref.semantic_model_id,
                         "daxQueries": [request.dax], "maxRows": request.max_rows})
                     result = normalize_query(raw, ref.semantic_model_id, request)

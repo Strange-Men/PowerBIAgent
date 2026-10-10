@@ -20,6 +20,9 @@
 
 from __future__ import annotations
 
+from backend.app.persistence.models import LOCAL_OWNER_ID
+from backend.app.persistence.ownership import session_owner_id
+
 from typing import TYPE_CHECKING
 
 from sqlalchemy import and_, func, select, update
@@ -58,10 +61,6 @@ class PersistenceRepositoryError(Exception):
 # catching IntegrityError after flush(), it never poisons the current
 # transaction.  The composite PK (runtime_mode, conversation_id) is
 # the conflict target.
-_INSERT_OR_IGNORE_CONV = """
-INSERT OR IGNORE INTO conversations (conversation_id, runtime_mode)
-VALUES (:conversation_id, :runtime_mode)
-"""
 
 
 async def ensure_conversation(
@@ -83,19 +82,19 @@ async def ensure_conversation(
         PersistenceRepositoryError: unexpected DB error (not a
             duplicate-key condition).
     """
-    from sqlalchemy import text as sa_text
+    from sqlalchemy.dialects.sqlite import insert
     from sqlalchemy.exc import OperationalError
 
     try:
         await session.execute(
-            sa_text(_INSERT_OR_IGNORE_CONV),
-            {
-                "conversation_id": conversation_id,
-                "runtime_mode": runtime_mode_value,
-            },
+            insert(ConversationModel).values(
+                owner_id=session_owner_id(session),
+                conversation_id=conversation_id,
+                runtime_mode=runtime_mode_value,
+            ).on_conflict_do_nothing(),
         )
         delete_intent = await session.execute(
-            select(ConversationDeleteIntentModel.conversation_id).where(
+            select(ConversationDeleteIntentModel.conversation_id).where(ConversationDeleteIntentModel.owner_id == session_owner_id(session)).where(
                 and_(
                     ConversationDeleteIntentModel.runtime_mode
                     == runtime_mode_value,
@@ -127,7 +126,7 @@ async def touch_conversation(
     accidentally update the same ``conversation_id`` in the other mode.
     """
     await session.execute(
-        update(ConversationModel)
+        update(ConversationModel).where(ConversationModel.owner_id == session_owner_id(session))
         .where(
             and_(
                 ConversationModel.runtime_mode == runtime_mode_value,
@@ -150,7 +149,7 @@ async def set_conversation_resource_state(
     if status not in {"ready", "failed"}:
         raise PersistenceRepositoryError("conversation_resource_status_invalid")
     await session.execute(
-        update(ConversationModel)
+        update(ConversationModel).where(ConversationModel.owner_id == session_owner_id(session))
         .where(
             and_(
                 ConversationModel.runtime_mode == runtime_mode_value,
@@ -169,7 +168,7 @@ async def set_default_conversation_title(
 ) -> None:
     """Set the first presentation title without changing conversation identity."""
     await session.execute(
-        update(ConversationModel)
+        update(ConversationModel).where(ConversationModel.owner_id == session_owner_id(session))
         .where(
             and_(
                 ConversationModel.runtime_mode == runtime_mode_value,
@@ -237,7 +236,7 @@ async def _resolve_locked_commit_failure(
                 )
             else:
                 stmt = (
-                    select(WorkMemoryModel.memory_version)
+                    select(WorkMemoryModel.memory_version).where(WorkMemoryModel.owner_id == session_owner_id(fresh_session))
                     .where(
                         and_(
                             WorkMemoryModel.conversation_id == conversation_id,

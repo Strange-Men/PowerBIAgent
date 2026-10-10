@@ -2,6 +2,16 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [Unreleased] — M6.3 安全验收候选（2026-10-10）
+
+- 新增resource_owners与八类资源owner FK/复合identity、确定性local:legacy迁移、validated session scoped factory、SQL owner predicates与独立report root。
+- owner/epoch签名Cursor、app共享scoped Idempotency、DB/claim/Cloud await后失效拒绝；权限失败清理binding/schema并要求fresh login。
+- 真实双Viewer A→B→A安全矩阵74/74 PASS；真实登录、IQ与原生Repository受控延迟41/41 PASS；正式应用临时路由404，ENTRA产品API继续fail closed。
+- 用户明确批准安全里程碑独立封板范围：销售额标量/分组FAIL，Int64/字符串合同合法性UNRESOLVED；保留严格类型校验、CSV镜像与边界负例，不改M5 Core。
+- Fabric IQ数值兼容登记为M6.4 Product E2E前P1 BLOCKER；旧401/历史指纹差异未解决，完整Cloud查询完整性证据不足。
+- Settings.version暂为M6.2；本轮Phase A与Final exact-SHA CI待执行，不提前宣称M6.3 COMPLETE。
+- [合同、分层证据与迁移恢复](docs/milestones/m6/m6_3_multi_user_ownership_authorization_rls_ols.md)。
+
 ## [M6.2] — 2026-10-10（Fabric IQ Cloud Data Plane Adapter）
 
 - 新增独立FabricIQPowerBIAdapter、官方SDK Streamable HTTP transport与request/session principal binding；token仅由既有Auth broker获取并在Transport注入。

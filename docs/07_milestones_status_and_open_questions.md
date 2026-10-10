@@ -1,6 +1,6 @@
 # 07 — 当前项目状态
 
-> **状态：** Settings.version=M6.2；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 READY（未实施，须独立批准）；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> **状态：** Settings.version=M6.2；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security验收通过，Phase A / Final CI待执行；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一当前项目状态 authority；路线见 [08](08_development_roadmap.md)，开发交接见 [09](09_context_handoff.md)。
 
 ## 当前状态
@@ -11,17 +11,35 @@
 | Current Release State | M6.2 COMPLETE；最终seal以自身exact-SHA CI + remoteaudit生效；M5 FINAL=true |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | M6.3 READY — 未实施，须用户独立批准 |
-| Current implementation status | M6.1 Auth/Session/Account runtime IMPLEMENTED；Fabric IQ Cloud data plane IMPLEMENTED；两模型Real与Phase A CI PASS；Final以自身CI/remote audit生效 |
-| Ready state | M6.2 official / current Entra principal两模型Real / local gates / Phase A exact-SHA CI通过；final自身CI独立验收 |
+| Next | M6.3安全验收候选；等待Phase A与Final exact-SHA CI；M6.4须独立批准 |
+| Current implementation status | M6.3 owner namespace / scoped repositories / migration / IDOR / cursor / binding cleanup已实现并通过synthetic验证；ENTRA产品API仍关闭 |
+| Ready state | Real安全74/74、Late-Response41/41通过；Settings.version保持M6.2直到Phase A CI成功 |
 
-## M6.2 当前封板
+## M6.3 最终安全验收与候选
+
+[完整合同、证据与遗留问题](milestones/m6/m6_3_multi_user_ownership_authorization_rls_ols.md)。
+真实同tenant双Viewer安全矩阵74/74 PASS（A17、B31、A返回26；0 FAIL/0 NOT_TESTED）。
+COUNTROWS标量/分组为严格数字，Region为A/B/A；A可读RestrictedTable，B实际schema隐藏且固定查询被拒绝。
+真实Late-Response 41/41 PASS：7类A在途操作在native logout及B登录后全部AUTH_REQUIRED；
+Memory/Snapshot/Report/History零过期提交、A binding清除且不可复用，B资源/会话/Idempotency不受影响；A返回身份与原A一致。
+Late测试使用真实Entra/MSAL/BFF、IQ Transport/Adapter及原生Repository；延迟注入仅在仓库外，synthetic DB/HTML。
+完整Cloud Product UI/E2E、外部角色撤销通知NOT_TESTED，不以该测试冒充上述产品能力。
+临时服务已关闭，正式native app已恢复；临时/auth/m63-*及/m63-test路径原生后端404；未登录正式API401、合成登录产品gate403。
+Vite对未代理未知路径仍返回SPA shell，不能把该200当作后端路由存在；/auth代理路径404已实测。
+按用户2026-10-10最终封板指令显式调整验收范围：M6.3 Security独立封板，销售额标量/分组仍FAIL CONTRACT_DRIFT。
+Fabric IQ数值兼容为M6.4 Product E2E前P1 BLOCKER；不得强转、改expected、降低M5 ResultInspection/VerifiedFactSet或伪造PASS。
+旧401首次拒绝层、旧第三轮A指纹差异UNRESOLVED；本轮principal比较来自validated tenant+principal稳定hash，不依赖session/epoch或邮箱。
+Cloud完整性仍保守truncated=true；M6.4 Catalog、完整Chat/Report/History UI与Product E2E未实施，须独立批准。
+
+当前尚未提交候选，禁止继承M6.2 CI作为M6.3通过证据。
+
+## M6.2 已发布基线
 
 2026-10-10用户明确批准Fabric IQ只读Data Plane scope。
 [合同与验收](milestones/m6/m6_2_fabric_iq_cloud_adapter.md)：独立SDK transport、request/session绑定Adapter、
 required capability negotiation、schema-before-bind、unknown metadata与结果完整性fail closed。
-Settings.version=M6.2；两模型Real与Phase A全步骤CI通过；最终COMPLETE须自身exact-SHA CI与remote audit生效。M6.3 READY，未实施。
-Cloud Catalog / multi-user persistence ownership / Product E2E未实现；ENTRA_BFF旧/api仍关闭。
+Settings.version=M6.2；两模型Real与Phase A全步骤CI通过；最终自身CI38012437829与remote audit已重验。
+M6.2封板时ownership尚未实施；当前M6.3进度见上节。Cloud Catalog / Product E2E未实施；ENTRA_BFF旧/api仍关闭。
 
 ## M6.1 历史封板
 
@@ -90,7 +108,7 @@ measure/fact-family + temporal-dimension-aware 数据证明，不能冒充 refre
 ## 下一阶段与非阻塞风险
 
 下一阶段：M6 — Cloud Consumption & Enterprise Identity；必须另行获批 implementation。
-当前待决策为微软能力/权限验证、租户/主体隔离、存储/事务/部署方案，详见 08/09。
+下一实施阶段为M6.4，须独立批准；数值合同P1必须在Product E2E前解决，存储/部署风险见08/09。
 Local Modeling MCP Preview、LLM 长尾、无权威刷新时间、本地 single-machine persistence 是已知限制，
 不能作为推倒 Core 或提前实现 M6 的理由。
 

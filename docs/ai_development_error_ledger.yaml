@@ -8,6 +8,72 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-63-002
+  title: Fabric IQ销售额Int64列在HTTP响应中为字符串，严格合同拒绝
+  category: ERR
+  first_detected_version: M6.3
+  symptom: 真实Total Sales标量与分组声明Int64但JSON单元格为字符串100，Adapter返回CONTRACT_DRIFT；两个销售额查询FAIL
+  local_evidence: 云端TMDL和TOM证明存储及SUM返回数值；HTTP wire与SDK类型均str；COUNTROWS安全查询为int。真实安全A-B-A 74/74和独立Late-Response 41/41 PASS，不包含销售额PASS
+  authoritative_sources:
+  - title: Microsoft Fabric IQ MCP官方文档与实际tools/list
+    reason: ExecuteQuery无outputSchema或raw numeric选项；尚无充分合同证明字符串Int64合法，不以通用JSON惯例替代服务合同
+  - title: 用户2026-10-10 M6.3最终验收与封板指令
+    reason: 明确允许安全里程碑独立封板，数值兼容必须作为M6.4 Product E2E前P1阻塞项
+  root_cause: VERIFIED首次可观测类型差异位于HTTP响应，早于SDK与Adapter；Fabric IQ内部编码原因及字符串Int64合法性UNRESOLVED，未认定上游Bug
+  failed_attempts:
+  - 临时Harness曾加入未经Real证明的CONVERT包装，已撤回并恢复直接Total Sales；原失败记录保留
+  repair_attempt_count: 1
+  final_fix: 仅完成Adapter按列严格JSON类型、Int64范围、bool与null、CSV镜像验证及负例；真实销售额兼容尚未修复，P1 BLOCKED
+  regression_tests:
+  - backend/tests/unit/test_fabric_iq_cell_contract.py
+  - backend/tests/unit/test_fabric_iq_adapter.py
+  prohibited_patterns:
+  - 强转JSON字符串以绕过数值断言，修改模型业务数据或expected掩盖问题
+  - 把安全74条通过冒充销售额或完整Cloud Product E2E通过
+  - 无新证据将历史401或身份指纹差异标为RESOLVED
+  prevention_rules:
+  - 先取得具体服务输出合同，再决定严格无损Adapter边界兼容；证据不足fail closed
+  - 数值兼容P1在M6.4 Product E2E前必须解决，完整性证据不足继续truncated=true
+  - 安全范围调整必须显式记录用户批准，保留全部历史失败与NOT_TESTED
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-10'
+    action: wire_type_localized_strict_validation_added_numeric_compatibility_remains_p1_blocked
+    version: M6.3
+- id: ERR-63-001
+  title: 权限撤销后Adapter残留schema与model binding
+  category: ERR
+  first_detected_version: M6.3
+  symptom: 新增401/403/404权限失败回归在M6.2 Adapter中观察到binding_count仍为1，旧schema与ref未立即清除
+  local_evidence: synthetic transport失败测试先RED；补充权限失败清理后focused persistence/Fabric IQ/HTTP tests 328 passed、1 skipped；真实RLS/OLS尚未执行
+  authoritative_sources:
+  - title: M6.3用户授权与ADR-020
+    reason: principal绑定的Cloud ref/cache不可跨用户或撤权复用；Microsoft是RLS/OLS authority
+  - title: Microsoft Fabric IQ与RLS/OLS官方文档2026-10-10重验
+    reason: delegated caller权限实时由Microsoft执行；错误不可回退旧schema或Mock
+  root_cause: Adapter已有session/epoch validation，但M6.2权限错误路径未集中销毁schema与bindings；transport仅401强制退出
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Adapter统一connection权限错误边界清理schema/bindings并撤销session；transport401/403/404全部强制fresh login，foreign key在MCP前拒绝且不误伤当前用户session
+  regression_tests:
+  - backend/tests/unit/test_fabric_iq_adapter.py
+  - backend/tests/unit/persistence/test_m63_ownership.py
+  prohibited_patterns:
+  - 权限失败继续使用旧schema/cache/model ref
+  - 以另一个用户schema、elevated身份或Mock证明RLS/OLS通过
+  prevention_rules:
+  - permission failure立即清理session scoped transient state，fresh login后重新schema-before-bind
+  - late DB response与idempotency claim在await后再次验证session，退出后不得返回旧用户内容
+  - synthetic tests与Real双Viewer证据分开记录，缺Real不得封板
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-10'
+    action: failure_first_regression_and_local_forward_fix_waiting_real_fixture_and_commit
+    version: M6.3
 - id: ERR-5109-003
   title: 使用已释放对象的 id() 比较跨生命周期实例导致 CI 假失败
   category: ERR
