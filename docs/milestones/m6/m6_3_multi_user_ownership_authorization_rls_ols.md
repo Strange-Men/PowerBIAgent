@@ -1,8 +1,8 @@
 # M6.3 — Multi-user Ownership / Authorization / RLS-OLS Isolation
 
-日期：2026-10-10。用户已批准专项及最终两阶段封板。Settings.version暂为M6.2。
+日期：2026-10-10。用户已批准专项、独立安全验收范围及最终封板。Settings.version=M6.3。
 当前安全验收通过：Real A→B→A 74/74；Real Late-Response 41/41；临时设施已卸载。
-Phase A / Final exact-SHA CI尚未执行；此候选文档不提前宣称正式COMPLETE。
+Phase A exact-SHA CI全23 steps success；Security COMPLETE按Final自身exact-SHA CI与remote audit生效。
 Fabric IQ销售额数值兼容P1 BLOCKED，M6.4 Product E2E未完成。下文第7节是保留的历史失败轨迹，不代表当前停点。
 
 ## 1. Fresh Cold Start 与官方能力
@@ -232,4 +232,17 @@ Safe原始证据路径与SHA256（仅摘要进入Git，无token/cookie/raw GUID/
 - Architecture158 files、Repository Safety460 files、Ledger122 entries、Documentation Governance与diff check PASS；候选文档更新后Ledger、Documentation Governance、Repository Safety与diff check再次PASS。
 - 真实Late工具离线1 PASS、41条检查；不是Real替代品。Real41单独记录。
 - warnings原样保留：历史Alembic PK reflection与MSAL form_post建议；未过滤。
-- Phase A / Final SHA及CI待产生，Settings.version=M6.2；本地PASS不代替远端exact-SHA CI。
+- Phase A SHA及CI见第12节；Settings.version=M6.3；Final自身CI必须独立验证，本地/候选PASS不能代替。
+
+
+## 12. Phase A CI与Final发布审计
+
+候选commit：`47fb74c512dea64d2644f193b4f76095535bca17`，中文标题M6.3_多用户归属与权限隔离候选。
+[CI38037929168](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38037929168)：push、head_sha精确匹配、
+completed/success、Full Validation (Windows)及全部23 steps success，没有以旧M6.2 CI替代。
+候选使用普通git push，但GitHub明确报告管理员豁免尚未产生的required check；这是已发生的发布流程缺陷，不能写成无豁免。
+用户随后明确授权Agent收紧main保护及提供符合required-check的路径；已只启用enforce_admins，读回true，原required check/App绑定及其他规则完全不变。
+Final通过临时codex/交付ref与PR required CI后受保护合入main，最后再次等待main exact-SHA Full Validation全步骤success。
+临时交付ref不成为新的活动开发线，不force/rebase/reset，不删除分支，不重写候选历史。
+Final中文标题M6.3_多用户安全隔离与真实验收封板；Settings.version=M6.3，最终SHA/CI/HEAD一致性在发布后remote audit记录。
+Final自身CI不成功或Git audit不一致则保持BLOCKED，不以本marker文字伪造COMPLETE。

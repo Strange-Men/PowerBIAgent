@@ -6,10 +6,10 @@
 
 ## 当前开发入口
 
-- 当前版本：**M6.2**（Fabric IQ Cloud Data Plane Adapter）。
+- 当前版本：**M6.3**（多用户归属与权限隔离）。
 - M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；M5.10.8 与 FIX COMPLETE。
-- M6.1 COMPLETE（以自身exact-SHA CI与remote audit生效）；ADR-020 ACCEPTED；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security验收通过，Phase A / Final CI待执行；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY。
-- 用户已明确批准本轮M6.3专项；Settings.version仍为M6.2。进度与真实验收停点见07/08/09及M6.3专项文档；不得自动开始M6.4或开放ENTRA产品API。
+- M6.1 COMPLETE（以自身exact-SHA CI与remote audit生效）；ADR-020 ACCEPTED；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY。
+- M6.3安全封板按自身exact-SHA CI与remote audit生效；Settings.version=M6.3。数值P1及下一阶段交接见07/08/09；不得自动开始M6.4或开放ENTRA产品API。
   每个 implementation patch 必须有用户明确批准的具体 scope、fresh Cold Start、Microsoft 官方
   能力重新验证与先完成的 P0 security boundary 设计/验证；未满足前不得直接写 M6 Cloud code。
 - 07 是当前状态，08 是当前/未来路线，09 是唯一开发交接；根入口不重复保存浮动 SHA/CI。
@@ -67,8 +67,8 @@
 ## Git contract
 
 - `main` 是唯一活动开发线；流程固定为 failure-first → minimal implementation → fresh gates
-  → 必要且有界 Real → 白名单 staging → 中文 commit → push main → exact-SHA CI → remote audit。
-  具体提交与 closure 步骤遵循当前用户批准的任务；不自动打 Tag。
+  → 必要且有界 Real → 白名单 staging → 中文 commit → 临时交付分支/PR required CI → 受保护合入main → main exact-SHA CI → remote audit。
+  管理员同样受required checks约束；临时codex/交付ref不是并行开发线。具体closure遵循当前批准任务；不自动打Tag。
 - 禁止 `git add .`、`git add -A`、force push、rebase、history rewrite、`reset --hard`、
   `clean`、branch deletion。remote main 已前进则停止。
 - CI 失败只允许 forward-fix；同一 root cause 最多两轮，P1 不因每次失败都停止；上限仍失败、新根因、边界扩大或 architecture risk 才停止重新评估。禁止降低 validator、删除 negative
@@ -91,4 +91,4 @@ failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner 
 
 生产级后端风险优先于功能数量；每个M6 implementation按09重新验证Microsoft官方能力与适用P0边界。ADR-020接受Cloud消费/目录设计，ADR-006已SUPERSEDED。Token只允许Auth/Transport；tenant/principal/ownership与RLS/OLS必须先证明。
 
-*最后更新：2026-10-10 | M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security验收通过，Phase A / Final CI待执行；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以07/08/09及自身exact-SHA CI为准*
+*最后更新：2026-10-10 | M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以07/08/09及自身exact-SHA CI为准*

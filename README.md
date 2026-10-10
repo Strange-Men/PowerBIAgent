@@ -5,19 +5,19 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M6.2 — Fabric IQ Cloud Data Plane Adapter**。M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security验收通过，Phase A / Final CI待执行；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+当前版本：**M6.3 — 多用户归属与权限隔离**。M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 
 M5提供后续企业生产化复用的Core Analysis Kernel；冻结authority/contract/architecture boundary，允许failure-first minimal correctness forward-fix。M6.1身份/登录/Session/Account真实Entra验收与候选CI通过；最终COMPLETE以封板自身exact-SHA CI与remote audit生效。
 当前状态、路线、交接分别只见 [07](docs/07_milestones_status_and_open_questions.md)、[08](docs/08_development_roadmap.md)、[09](docs/09_context_handoff.md)。
 
 M6.0 Cloud contract audit COMPLETE：[official/runtime evidence、Product/Auth UX与handoff](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)、[ADR-020 ACCEPTED](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。Fabric IQ两模型只读smoke通过，名称搜索限制已记录；Fabric REST scoped catalog与BFF OAuth方案定稿。M6.1 Auth实现见下节；M6.2 Cloud Adapter已实现，两模型Real与Phase A CI通过。最终baseline以09的自身exact-SHA CI / remote audit解析。
 
-## M6.3 安全验收候选
+## M6.3 多用户安全隔离
 
 [完整安全合同、真实证据与范围调整](docs/milestones/m6/m6_3_multi_user_ownership_authorization_rls_ols.md)。
 Tenant/Principal归属、持久化隔离、IDOR、Cursor/Idempotency/Model Binding与失效保护已实现。
 真实同tenant双Viewer A→B→A安全矩阵74/74 PASS；真实会话受控延迟Late-Response 41/41 PASS。
-临时路由已卸载，正式ENTRA_BFF产品API继续fail closed；Settings.version仍为M6.2，候选/最终exact-SHA CI待完成。
+临时路由已卸载，正式ENTRA_BFF产品API继续fail closed；Settings.version=M6.3。候选CI全步骤通过，正式COMPLETE以Final exact-SHA CI与remote audit生效。
 按2026-10-10用户明确批准，安全里程碑独立验收：销售额标量/分组仍FAIL CONTRACT_DRIFT，
 Fabric IQ数值兼容是M6.4 Product E2E前必须解决的P1阻塞项；Cloud Catalog / Product E2E未实施，M6.4须独立批准。
 
