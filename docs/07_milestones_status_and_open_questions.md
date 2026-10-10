@@ -1,21 +1,21 @@
 # 07 — 当前项目状态
 
-> **状态：** Settings.version=M6.2；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security验收通过，Phase A / Final CI待执行；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> **状态：** Settings.version=M6.3；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一当前项目状态 authority；路线见 [08](08_development_roadmap.md)，开发交接见 [09](09_context_handoff.md)。
 
 ## 当前状态
 
 | 项目 | 状态 |
 |---|---|
-| Current Version | M6.2 |
-| Current Release State | M6.2 COMPLETE；最终seal以自身exact-SHA CI + remoteaudit生效；M5 FINAL=true |
+| Current Version | M6.3 |
+| Current Release State | M6.3 Security COMPLETE；以Final自身exact-SHA CI + remote audit生效；数值兼容P1 BLOCKED；M5 FINAL=true |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | M6.3安全验收候选；等待Phase A与Final exact-SHA CI；M6.4须独立批准 |
+| Next | M6.4未实施、须独立批准；数值P1必须在Product E2E前解决 |
 | Current implementation status | M6.3 owner namespace / scoped repositories / migration / IDOR / cursor / binding cleanup已实现并通过synthetic验证；ENTRA产品API仍关闭 |
-| Ready state | Real安全74/74、Late-Response41/41通过；Settings.version保持M6.2直到Phase A CI成功 |
+| Ready state | Real安全74/74、Late-Response41/41、完整本地回归及候选CI通过；Final自身CI与remote audit解析 |
 
-## M6.3 最终安全验收与候选
+## M6.3 安全里程碑
 
 [完整合同、证据与遗留问题](milestones/m6/m6_3_multi_user_ownership_authorization_rls_ols.md)。
 真实同tenant双Viewer安全矩阵74/74 PASS（A17、B31、A返回26；0 FAIL/0 NOT_TESTED）。
@@ -31,7 +31,7 @@ Fabric IQ数值兼容为M6.4 Product E2E前P1 BLOCKER；不得强转、改expect
 旧401首次拒绝层、旧第三轮A指纹差异UNRESOLVED；本轮principal比较来自validated tenant+principal稳定hash，不依赖session/epoch或邮箱。
 Cloud完整性仍保守truncated=true；M6.4 Catalog、完整Chat/Report/History UI与Product E2E未实施，须独立批准。
 
-当前尚未提交候选，禁止继承M6.2 CI作为M6.3通过证据。
+Phase A exact-SHA CI已全步骤success；Final采用管理员同受保护的PR路径。最终基线按09解析，禁止继承候选或M6.2 CI代替Final证据。
 
 ## M6.2 已发布基线
 

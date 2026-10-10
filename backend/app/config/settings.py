@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="PowerBIAgent", frozen=True)
     app_env: AppEnv = Field(default=AppEnv.DEVELOPMENT)
     debug: bool = Field(default=True)
-    version: str = Field(default="M6.2", frozen=True)
+    version: str = Field(default="M6.3", frozen=True)
 
     # Auth is separate from Power BI provider credentials. No token in Settings.
     identity_mode: IdentityMode = IdentityMode.LOCAL_DEV

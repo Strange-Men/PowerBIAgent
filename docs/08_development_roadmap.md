@@ -1,6 +1,6 @@
 # 08 — 当前及未来开发路线
 
-> **状态：** Settings.version=M6.2；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security验收通过，Phase A / Final CI待执行；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> **状态：** Settings.version=M6.3；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一路线 authority；状态见 [07](07_milestones_status_and_open_questions.md)，实施入口见 [09](09_context_handoff.md)。
 
 ## 路线总览
@@ -8,7 +8,7 @@
 | Milestone | 定位 | 当前路线 |
 |---|---|---|
 | M5 | Core Analysis Kernel | FROZEN；保留 failure-first correctness forward-fix |
-| M6 | Cloud Consumption & Enterprise Identity | M6.2 COMPLETE；M6.3安全与Late-Response真实验收通过，候选/封板CI待完成；M6.4 NOT READY |
+| M6 | Cloud Consumption & Enterprise Identity | M6.2 COMPLETE；M6.3 Security COMPLETE（Final自身CI与remote audit生效），数值兼容P1 BLOCKED；M6.4 NOT READY |
 | M7 | Freshness & Report Lifecycle | 后续规划 |
 | M8 | Enterprise Pilot Platform | 后续规划 |
 | M9 | Advanced Analytics & Controlled Authoring | 后续规划 |
@@ -63,7 +63,7 @@ refresh API 不得塞入 execute_dax adapter。Control Plane/Catalog仍为后续
 | M6.0 | COMPLETE：Fabric IQ官方合同 + 真实targeted probe + Accepted Consumption/Discovery ADR + Product/Auth UX设计；最终自身CI / remoteaudit解析 |
 | M6.1 | COMPLETE：Entra Identity、same-origin BFF code/PKCE Login/Session、基础Account UX；token仅Auth/Transport；真实Entra与Phase A CI PASS，final marker以自身CI/remote audit生效 |
 | M6.2 | COMPLETE（自身CI/remote audit生效）；两模型Real与Phase A CI PASS：新FabricIQPowerBIAdapter；固定X-Variants、tools/list validation、schema/result/error normalization与完整性failclosed；复用Core |
-| M6.3 | Security验收通过：ownership/IDOR/迁移、真实RLS/OLS 74/74、Late-Response 41/41、临时路由清理；待自身两阶段exact-SHA CI。见[M6.3合同](milestones/m6/m6_3_multi_user_ownership_authorization_rls_ols.md) |
+| M6.3 | Security COMPLETE（Final自身CI与remote audit生效）：ownership/IDOR/迁移、真实RLS/OLS 74/74、Late-Response 41/41、临时路由清理；销售额兼容仍P1 BLOCKED。见[M6.3合同](milestones/m6/m6_3_multi_user_ownership_authorization_rls_ols.md) |
 | M6.4 | NOT READY、须独立批准；Fabric IQ数值兼容P1须在Product E2E前解决：Fabric REST authoritative scoped Cloud Catalog + 管理员shared-resource seeds；自动加载/compactselector/全Product E2E；普通用户零URL/ID配置 |
 | M6.5 | Public Real Business Data Validation：UCI Online Retail II；不增加QueryShape/报表模板 |
 | M6.6 | Enterprise Production Readiness Seal：安全/部署/恢复/并发/observability与真实能力限制汇总；M7/M8仍独立 |

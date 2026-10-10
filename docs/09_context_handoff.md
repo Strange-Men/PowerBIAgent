@@ -1,16 +1,16 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-> Settings.version=M6.2；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security验收通过，Phase A / Final CI待执行；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> Settings.version=M6.3；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一开发交接 authority；当前项目状态见 [07](07_milestones_status_and_open_questions.md)，路线见 [08](08_development_roadmap.md)。
 
 ## 当前阶段 — Current Baseline / Next Milestone
 
-- Current Baseline：M6.2 Fabric IQ Cloud Data Plane Adapter（最终自身CI / remoteaudit解析）。
+- Current Baseline：M6.3多用户安全隔离（Final自身CI / remote audit解析）；M6.2为历史基线。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
-- ACTIVE = M6.3最终安全验收与两阶段封板已批准；本地最终gates及exact-SHA CI完成后方可COMPLETE；M6.4 NOT READY。
-- M6 Status：M6.2已发布；M6.3 Real安全74/74与Late-Response41/41通过；Phase A/final CI未执行，版本暂为M6.2。
+- ACTIVE = NONE：M6.3 Final自身CI与remote audit成功后立即停止；M6.4未实施、须独立批准。
+- M6 Status：M6.3 Real安全74/74、Late-Response41/41、完整本地回归及Phase A CI通过；Settings.version=M6.3；最终发布条件见下文。
 
-## M6.3 active handoff
+## M6.3 sealed security handoff
 
 [设计、完整证据、范围调整与迁移恢复](milestones/m6/m6_3_multi_user_ownership_authorization_rls_ols.md)。
 真实同tenant双Viewer安全矩阵74/74 PASS（A17、B31、A返回26；0 FAIL/0 NOT_TESTED）。
@@ -31,8 +31,8 @@ Cloud完整性仍保守truncated=true；M6.4 Catalog、完整Chat/Report/History
 临时延迟hook/诊断路由已从运行中服务卸载；正式代码从未导入仓库外工具。真实账号、token/cookie、raw identity GUID不进入Git。
 Alembic head=f63a1b2c3d40，八表历史行归local:legacy；现有用户DB未读取/迁移。回滚仅恢复M6.2离线完整备份，禁止合并principal IDs。
 Phase A固定中文commit：M6.3_多用户归属与权限隔离候选；Final：M6.3_多用户安全隔离与真实验收封板。
-先安全/清理/local全通过、白名单staging、正常push main并等待候选exact-SHA CI，再升版M6.3与Final CI；不得绕过branch protection。
-当前候选/Final SHA与CI尚未产生；Final完成后立即停止，不自动开始M6.4。
+候选普通push被服务器管理员豁免（事实保留）；用户随后授权收紧main保护，enforce_admins=true且原required check不变。Final必须临时交付ref→PR required CI→受保护合入main→Final main exact-SHA CI；不得再次豁免。
+Phase A SHA/CI见下节；Final自身SHA不写入自身提交，逐项验证main checkout exact-SHA CI，完成后立即停止，不自动开始M6.4。
 
 ## M6.2 历史 handoff
 
@@ -90,14 +90,15 @@ M5 Final baseline 已成立；post-final 文档修复不重新开启 M5 功能�
 
 ## 最终 baseline 解析
 
-M6.2 Phase A：`daeb5b63e81364da97eabdd0d20b835c868388df` /
-[exact-SHA CI37972741912](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37972741912)
-completed/success，push事件、Full Validation (Windows)与全部23 steps实际success，无skipped step。
-最终seal更新Settings.version=M6.2；自身SHA不写入自身提交。查询当前checkout exact SHA的
-PowerBIAgent Validation / Full Validation (Windows) completed/success，逐项核验required steps，
-fetch后HEAD==origin/main且worktree clean，才解析为M6.2 COMPLETE；M6.3验收与CI独立，不继承该baseline证据。
-不得继承Phase A或历史CI代替Final CI。Auth与Fabric IQ Adapter已实现，两模型Real PASS；
-M6.2封板时Cloud Catalog、multi-user persistence ownership、Product E2E未实现；当前ownership基础进度见M6.3 active handoff。
+M6.3 Phase A：`47fb74c512dea64d2644f193b4f76095535bca17` /
+[exact-SHA CI38037929168](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38037929168)，
+push事件、head_sha精确匹配、Full Validation (Windows)与全部23 steps success。
+Final marker更新Settings.version=M6.3；自身SHA不写入自身提交。读取main checkout exact SHA的
+PowerBIAgent Validation / Full Validation (Windows) completed/success并逐项检查required steps；
+fetch后HEAD==origin/main、worktree clean、管理员保护仍启用、无临时授权入口，才解析为M6.3 Security COMPLETE。
+Final通过不等于销售额或M6.4 Cloud Product E2E通过；禁止继承候选/旧M6.2 CI充当Final。
+M6.2历史Phase A daeb5b63e81364da97eabdd0d20b835c868388df / CI37972741912；
+历史Final 419dfd5cdde5c7550d62bbdaca12c7de853cea65 / CI38012437829；均不证明本轮marker。
 
 ### M6.1 历史基线
 
@@ -119,7 +120,7 @@ PowerBIAgent Validation / Full Validation (Windows) completed/success，核验�
 fetch后HEAD==origin/main且worktreeclean，才解析为最终M6.0 COMPLETE。不得继承PhaseACI代替finalCI。
 M6.0封板时真实production仍是M5 Local MVP；当时无FabricIQAdapter/Entra/frontendauth实现。
 
-### M5 历史基线（保留，不覆盖M6.2当前baseline）
+### M5 历史基线（保留，不覆盖M6.3当前baseline）
 
 既有 M5 Final baseline：`86aaaec7d2172c041e97392c3de03adcca77ca1b` /
 [exact-SHA CI 36678384015](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36678384015)
