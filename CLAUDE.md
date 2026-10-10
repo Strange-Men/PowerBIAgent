@@ -4,8 +4,8 @@
 
 ## 当前开发入口
 
-Settings.version=M6.1；M6.1 COMPLETE（自身exact-SHA CI与remote audit生效）；M6.2 IN PROGRESS（本轮已授权，未封板）；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。M5.10.8 与 FIX COMPLETE。
-M6.1 Entra Identity / Login / Session与基础Account已实现；M6.2候选已实现，Real/CI待验收；本轮用户已明确批准具体scope。
+Settings.version=M6.2；M6.1 COMPLETE（自身exact-SHA CI与remote audit生效）；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 READY（未实施，须独立批准）；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。M5.10.8 与 FIX COMPLETE。
+M6.1 Entra Identity / Login / Session与基础Account已实现；M6.2 Fabric IQ Adapter与真实云端数据链路已实现，两模型Real与Phase A CI通过；最终以自身CI/remote audit生效。M6.3须独立批准。
 Cloud消费/目录/Product Auth UX设计见ADR-020与M6.0 evidence，官方重验与适用P0验收仍是implementation前提。
 发布 baseline 按 09 的当前 exact-SHA CI + remote audit 解析，不继承已完成阶段的施工流程。
 

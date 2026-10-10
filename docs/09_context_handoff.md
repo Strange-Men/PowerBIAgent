@@ -1,24 +1,24 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-> Settings.version=M6.1；M6.1 COMPLETE；M6.2 IN PROGRESS（本轮已授权，未封板）；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> Settings.version=M6.2；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 READY（未实施，须独立批准）；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一开发交接 authority；当前项目状态见 [07](07_milestones_status_and_open_questions.md)，路线见 [08](08_development_roadmap.md)。
 
 ## 当前阶段 — Current Baseline / Next Milestone
 
-- Current Baseline：M6.1 Entra Identity / Login / Session（最终自身CI / remoteaudit解析）。
+- Current Baseline：M6.2 Fabric IQ Cloud Data Plane Adapter（最终自身CI / remoteaudit解析）。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
-- ACTIVE = M6.2 IN PROGRESS（本轮用户已批准具体scope，未封板）。
-- M6 Status：Auth/Session/Account runtime IMPLEMENTED；Cloud Data Plane候选已实现，两模型Real PASS，Phase A/Final CI待完成。
+- NEXT = M6.3 READY（未实施，须用户独立批准）。
+- M6 Status：Auth/Session/Account runtime IMPLEMENTED；Fabric IQ Cloud Data Plane已实现，两模型Real与Phase A CI PASS；Final自身CI / remote audit独立验收。
 
 ## M6.2 active handoff
 
 本轮用户已明确批准M6.2；fresh Cold Start exact基线1c71dee7，官方2026-10-10重验。
 [实施合同与当前验收](milestones/m6/m6_2_fabric_iq_cloud_adapter.md)。
-Cloud候选已实现；Settings.version保持M6.1；Real与两个exact-SHA CI之前不得封板。
+Cloud Adapter已实现；Settings.version=M6.2；两模型Real与Phase A CI通过。最终COMPLETE按下方自身CI / remote audit规则生效。M6.3须独立批准，禁止自动开始。
 旧PREP证据已脱敏、不含模型URL；bootstrap与smoke harness只存repo外临时目录。
 没有永久debug route；仅Auth broker获取token；ENTRA_BFF旧product gate保持。
 
-## M6.1 active handoff
+## M6.1 历史 handoff
 
 [M6.1 contract/evidence](milestones/m6/m6_1_entra_identity_login_session.md)记录本轮设计、tests和验收。
 本轮用户已批准Auth/Session/Account；Real+Phase A exact-SHA CI全绿后，最终封板更新Settings.version=M6.1。
@@ -29,7 +29,7 @@ repo外secure-input helper已准备并用synthetic tempfile验证，真实`.env`
 LOCAL_DEV保留M5；ENTRA_BFF不初始化业务持久化/provider，全部旧product API fail closed。
 ENTRA_BFF multi-user persistence: NOT ENABLED BY DESIGN UNTIL M6.3 OWNERSHIP。
 production+in-memory SessionStore拒绝启动；process-local cache不具备multi-worker保证。
-M6.2 future trusted authorization projection必须由validated Principal + server-owned model binding +
+M6.1封板时要求M6.2 trusted authorization projection必须由validated Principal + server-owned model binding +
 authorization evidence创建，不能client self-declare；Auth broker是唯一delegated token获取入口。
 M6.1封板时M6.2/M6.3/M6.4未实施；当前M6.2进度见上方active handoff；后续阶段须另行授权。
 
@@ -66,13 +66,24 @@ M5 Final baseline 已成立；post-final 文档修复不重新开启 M5 功能�
 
 ## 最终 baseline 解析
 
+M6.2 Phase A：`daeb5b63e81364da97eabdd0d20b835c868388df` /
+[exact-SHA CI37972741912](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37972741912)
+completed/success，push事件、Full Validation (Windows)与全部23 steps实际success，无skipped step。
+最终seal更新Settings.version=M6.2；自身SHA不写入自身提交。查询当前checkout exact SHA的
+PowerBIAgent Validation / Full Validation (Windows) completed/success，逐项核验required steps，
+fetch后HEAD==origin/main且worktree clean，才解析为M6.2 COMPLETE / M6.3 READY。
+不得继承Phase A或历史CI代替Final CI。Auth与Fabric IQ Adapter已实现，两模型Real PASS；
+Cloud Catalog、multi-user persistence ownership、Product E2E仍未实现。
+
+### M6.1 历史基线
+
 M6.1 Phase A：`5549d0973473eed7849f48465ccbd13af96a5015` /
 [exact-SHA CI37954913373](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37954913373)
 completed/success，push事件、Full Validation (Windows)及全部required steps实际success，无skipped step。
 最终seal更新Settings.version=M6.1；自身SHA不写入自身提交。查询当前checkout exact SHA的
 PowerBIAgent Validation / Full Validation (Windows) completed/success，逐项核验required steps，
 fetch后HEAD==origin/main且worktree clean，才解析为最终M6.1 COMPLETE / M6.2 READY。
-M6.1封板时Auth已实现；当前FabricIQAdapter候选已实现；Cloud Catalog、multi-user persistence ownership仍未实现。
+M6.1封板时Auth已实现；当前FabricIQAdapter已实现；Cloud Catalog、multi-user persistence ownership仍未实现。
 
 ### M6.0 历史基线
 
@@ -84,7 +95,7 @@ PowerBIAgent Validation / Full Validation (Windows) completed/success，核验�
 fetch后HEAD==origin/main且worktreeclean，才解析为最终M6.0 COMPLETE。不得继承PhaseACI代替finalCI。
 M6.0封板时真实production仍是M5 Local MVP；当时无FabricIQAdapter/Entra/frontendauth实现。
 
-### M5 历史基线（保留，不覆盖M6.1当前baseline）
+### M5 历史基线（保留，不覆盖M6.2当前baseline）
 
 既有 M5 Final baseline：`86aaaec7d2172c041e97392c3de03adcca77ca1b` /
 [exact-SHA CI 36678384015](https://github.com/Strange-Men/PowerBIAgent/actions/runs/36678384015)
@@ -172,7 +183,7 @@ Settings只在M6.0最终seal作版本metadata更新。风险与回归记录见FI
 | PowerBIDataPlane | IQ resolve/schema/value/deterministic DAX；Discover仅候选 |
 | PowerBIControlPlane | FabricREST current-principal catalog/metadata；未来refresh/embed/lifecycle |
 
-refresh API 不得塞入 execute_dax adapter。Control Plane/Catalog仍为后续M6架构方向；M6.2 Data Plane候选见上方active handoff。
+refresh API 不得塞入 execute_dax adapter。Control Plane/Catalog仍为后续M6架构方向；M6.2 Data Plane证据见上方active handoff。
 
 ## Production Backend — P0
 

@@ -2,6 +2,15 @@
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
+## [M6.2] — 2026-10-10（Fabric IQ Cloud Data Plane Adapter）
+
+- 新增独立FabricIQPowerBIAdapter、官方SDK Streamable HTTP transport与request/session principal binding；token仅由既有Auth broker获取并在Transport注入。
+- required tools negotiation、随机opaque模型绑定、schema-before-bind、unknown metadata、严格结果/CSV normalization与完整性fail closed；不修改Legacy RemoteMCP或Frozen Core链。
+- 当前真实Entra principal下M3与Logistics Resolve/Schema/Scalar/Grouped/Members及invalid-DAX PASS；虚构资源ZERO binding PASS。真实CSV大结果、private-link与RLS/OLS A/B未验收，限制见证据。
+- Local backend2964 passed，补充focused81；Semantic819、Golden11、frontend112、typecheck/lint/build及治理全部通过。Phase A `daeb5b63e81364da97eabdd0d20b835c868388df` / [CI37972741912](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37972741912) 全步骤success。
+- Settings.version=M6.2；最终COMPLETE以封板自身exact-SHA CI与remote audit生效。M6.3 READY，未实施、须独立批准；Catalog/persistence ownership/Product E2E仍关闭。
+- [M6.2 evidence](docs/milestones/m6/m6_2_fabric_iq_cloud_adapter.md)。
+
 ## [M6.1] — 2026-10-10（Entra Identity / Login / Session & Basic Account UX）
 
 - 新增Entra BFF Auth、request-scoped Principal、process-local session/flow/token隔离与统一CSRF。
@@ -9,13 +18,6 @@
 - MSAL 1.39.0 + PyJWT[crypto] 2.13.0；正常CI使用离线fake及actual MSAL离线协议测试。真实组织账号login/callback/account/reload/logout与跨标签退出PASS。
 - Phase A `5549d0973473eed7849f48465ccbd13af96a5015` / [CI37954913373](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37954913373) completed/success，全部required steps实际success。Settings.version=M6.1；最终COMPLETE以封板自身exact-SHA CI与remote audit生效，M6.2 READY但未实施。
 - 证据：[M6.1](docs/milestones/m6/m6_1_entra_identity_login_session.md)。
-
-### M6.2 开发候选（未发布，Settings.version=M6.1）
-
-- 已获用户明确授权；新增独立FabricIQ Adapter、官方SDK HTTP transport、Auth broker与request principal binding。
-- required tools/schema negotiation、随机opaque binding、unknown metadata与结果完整性fail closed；Legacy RemoteMCP不改。
-- 本地测试/Real两模型/两阶段exact-SHA CI分层验收；未完成前M6.2不标COMPLETE。旧产品API继续关闭。
-- [M6.2 evidence](docs/milestones/m6/m6_2_fabric_iq_cloud_adapter.md)。
 
 ## [M6.0] — 2026-10-09（Fabric IQ Cloud Contract Audit & Accepted Cloud Consumption Contract）
 

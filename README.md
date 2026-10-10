@@ -5,20 +5,20 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M6.1 — Entra Identity / Login / Session**。M6.1 COMPLETE；M6.2 IN PROGRESS（本轮已授权，未封板）；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+当前版本：**M6.2 — Fabric IQ Cloud Data Plane Adapter**。M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 READY（未实施，须独立批准）；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 
 M5提供后续企业生产化复用的Core Analysis Kernel；冻结authority/contract/architecture boundary，允许failure-first minimal correctness forward-fix。M6.1身份/登录/Session/Account真实Entra验收与候选CI通过；最终COMPLETE以封板自身exact-SHA CI与remote audit生效。
 当前状态、路线、交接分别只见 [07](docs/07_milestones_status_and_open_questions.md)、[08](docs/08_development_roadmap.md)、[09](docs/09_context_handoff.md)。
 
-M6.0 Cloud contract audit COMPLETE：[official/runtime evidence、Product/Auth UX与handoff](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)、[ADR-020 ACCEPTED](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。Fabric IQ两模型只读smoke通过，名称搜索限制已记录；Fabric REST scoped catalog与BFF OAuth方案定稿。M6.1 Auth实现见下节；M6.2 Cloud候选已实现，Real/CI待验收。最终baseline以09的自身exact-SHA CI / remote audit解析。
+M6.0 Cloud contract audit COMPLETE：[official/runtime evidence、Product/Auth UX与handoff](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)、[ADR-020 ACCEPTED](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。Fabric IQ两模型只读smoke通过，名称搜索限制已记录；Fabric REST scoped catalog与BFF OAuth方案定稿。M6.1 Auth实现见下节；M6.2 Cloud Adapter已实现，两模型Real与Phase A CI通过。最终baseline以09的自身exact-SHA CI / remote audit解析。
 
-## M6.2 开发候选
+## M6.2 Fabric IQ Cloud Data Plane
 
 [Fabric IQ Data Plane合同/证据](docs/milestones/m6/m6_2_fabric_iq_cloud_adapter.md)。
 `POWERBI_MODE=fabric_iq`要求`IDENTITY_MODE=ENTRA_BFF`；仅request/session-scoped Adapter，
 固定官方endpoint/selector，复用Auth broker；未知metadata与query completeness保持保守。
 Cloud Catalog、业务persistence ownership与Product E2E尚未启用；旧`/api/*`继续关闭。
-Settings.version=M6.1，M6.2未封板。
+Settings.version=M6.2；最终COMPLETE以自身exact-SHA CI及remote audit生效。M6.3 READY，须独立批准。
 
 ## M6.1 身份与账户
 
@@ -29,7 +29,7 @@ Settings.version=M6.1，M6.2未封板。
 
 开发需Web redirect `http://localhost:5173/auth/callback`、独立Entra tenant/client/SecretStr与显式HTTP cookie policy。
 首次Real OAuth前由用户完成Portal配置和repo外隐藏输入helper；不要把secret发到聊天。
-Vite代理`/auth`/`/api`/`/health`；统一使用`http://localhost:5173`。不新增Workspace.Read.All；Auth-only模式不调用Fabric schema/query，Cloud候选仅在显式fabric_iq模式启用。
+Vite代理`/auth`/`/api`/`/health`；统一使用`http://localhost:5173`。不新增Workspace.Read.All；Auth-only模式不调用Fabric schema/query，Cloud Adapter仅在显式fabric_iq模式启用。
 Auth routes：GET `/auth/login`、GET `/auth/callback`、GET `/auth/session`、POST `/auth/logout`；unsafe方法要求Origin+CSRF。
 
 ## 项目概览
@@ -377,4 +377,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-09-30 | M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以 07/08/09 为准*
+*最后更新：2026-10-10 | M6.2 COMPLETE（自身CI/remote audit生效）；M6.3 READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以 07/08/09 为准*

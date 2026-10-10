@@ -1,6 +1,6 @@
 # 08 — 当前及未来开发路线
 
-> **状态：** Settings.version=M6.1；M6.1 COMPLETE；M6.2 IN PROGRESS（本轮已授权，未封板）；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> **状态：** Settings.version=M6.2；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 READY（未实施，须独立批准）；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一路线 authority；状态见 [07](07_milestones_status_and_open_questions.md)，实施入口见 [09](09_context_handoff.md)。
 
 ## 路线总览
@@ -8,7 +8,7 @@
 | Milestone | 定位 | 当前路线 |
 |---|---|---|
 | M5 | Core Analysis Kernel | FROZEN；保留 failure-first correctness forward-fix |
-| M6 | Cloud Consumption & Enterprise Identity | M6.1 COMPLETE / M6.2 IN PROGRESS；Auth已实现；Cloud候选待Real/CI；每阶段另行授权 |
+| M6 | Cloud Consumption & Enterprise Identity | M6.2 COMPLETE（自身CI/remote audit生效） / M6.3 READY；Auth与Cloud Adapter已实现；每阶段另行授权 |
 | M7 | Freshness & Report Lifecycle | 后续规划 |
 | M8 | Enterprise Pilot Platform | 后续规划 |
 | M9 | Advanced Analytics & Controlled Authoring | 后续规划 |
@@ -34,8 +34,8 @@ failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner 
 再通过既有 Adapter / Repository / Service 小步扩展；生产级后端风险优先于功能数量。
 
 M5 Local MCP = Developer / Desktop Provider；M6 Cloud Provider = Production Cloud Consumption Provider。
-当前实现为 MockPowerBIAdapter、LocalMCPPowerBIAdapter 与未完成的 RemoteMCP skeleton，Real 失败
-不得回退 Mock。未来 Cloud PowerBI Adapter 继续服从 PowerBIAdapter 与 ToolGateway，不能复制管线。
+当前实现为 MockPowerBIAdapter、LocalMCPPowerBIAdapter、FabricIQPowerBIAdapter 与未完成的 RemoteMCP skeleton，Real 失败
+不得回退 Mock。Cloud PowerBI Adapter 继续服从 PowerBIAdapter 与 ToolGateway，不能复制管线。
 
 ```
 SemanticFrame → Grounding → CanonicalQueryPlan → Deterministic DAX
@@ -46,7 +46,7 @@ SemanticFrame → Grounding → CanonicalQueryPlan → Deterministic DAX
 官方来源、endpoint、auth、tenant/identity、capability/tool schema、RLS/OLS 与 fail-closed probe
 证据。[M6.0 audit](milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md) 已核验Fabric IQ官方GA
 消费合同与两个模型小型runtime probe；[ADR-020](adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)
-接受消费/目录/identity边界。ADR-006旧endpoint/SDK/OAuth假设废弃；M6.1 Entra开发runtime已实现，M6.2 Cloud候选待Real/CI，multi-worker production尚未实现。
+接受消费/目录/identity边界。ADR-006旧endpoint/SDK/OAuth假设废弃；M6.1 Entra开发runtime已实现，M6.2 Cloud Adapter两模型Real与Phase A CI通过（最终自身CI/remote audit生效），multi-worker production尚未实现。
 固定selector wire、自建app OAuth、REST catalog与双用户RLS/OLS各在对应implementation入口验收。
 
 | 未来职责 | 范围 |
@@ -54,7 +54,7 @@ SemanticFrame → Grounding → CanonicalQueryPlan → Deterministic DAX
 | PowerBIDataPlane | IQ resolve、schema、member/value search、execute deterministic DAX；Discover仅候选 |
 | PowerBIControlPlane | Fabric REST current-principal workspace/model/report catalog与metadata；未来refresh/embed/lifecycle |
 
-refresh API 不得塞入 execute_dax adapter。Control Plane/Catalog仍为后续M6架构方向；M6.2 Data Plane候选见当前阶段。
+refresh API 不得塞入 execute_dax adapter。Control Plane/Catalog仍为后续M6架构方向；M6.2 Data Plane证据见当前阶段。
 
 ### M6 正式分阶段路线
 
@@ -62,8 +62,8 @@ refresh API 不得塞入 execute_dax adapter。Control Plane/Catalog仍为后续
 |---|---|
 | M6.0 | COMPLETE：Fabric IQ官方合同 + 真实targeted probe + Accepted Consumption/Discovery ADR + Product/Auth UX设计；最终自身CI / remoteaudit解析 |
 | M6.1 | COMPLETE：Entra Identity、same-origin BFF code/PKCE Login/Session、基础Account UX；token仅Auth/Transport；真实Entra与Phase A CI PASS，final marker以自身CI/remote audit生效 |
-| M6.2 | IN PROGRESS，本轮用户已批准：新FabricIQPowerBIAdapter；固定X-Variants、tools/list validation、schema/result/error normalization与完整性failclosed；复用Core |
-| M6.3 | User A/B Viewer、RLS/OLS、ownership/IDOR、cross-principal cache、revocation/logout负例矩阵 |
+| M6.2 | COMPLETE（自身CI/remote audit生效）；两模型Real与Phase A CI PASS：新FabricIQPowerBIAdapter；固定X-Variants、tools/list validation、schema/result/error normalization与完整性failclosed；复用Core |
+| M6.3 | READY，未实施、须独立批准：User A/B Viewer、RLS/OLS、ownership/IDOR、cross-principal cache、revocation/logout负例矩阵 |
 | M6.4 | Fabric REST authoritative scoped Cloud Catalog + 管理员shared-resource seeds；自动加载/compactselector/全Product E2E；普通用户零URL/ID配置 |
 | M6.5 | Public Real Business Data Validation：UCI Online Retail II；不增加QueryShape/报表模板 |
 | M6.6 | Enterprise Production Readiness Seal：安全/部署/恢复/并发/observability与真实能力限制汇总；M7/M8仍独立 |

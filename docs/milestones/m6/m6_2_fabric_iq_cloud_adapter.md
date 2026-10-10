@@ -1,7 +1,8 @@
 # M6.2 — Fabric IQ Cloud Data Plane Adapter
 
 2026-10-10；用户明确批准M6.2 implementation、targeted Real、Phase A与Final seal。
-开发阶段Settings.version=M6.1；M6.2 IN PROGRESS。未通过Real与自身exact-SHA CI前不声明COMPLETE。
+开发阶段Settings.version保持M6.1，Real与Phase A CI通过后最终seal更新为M6.2。
+M6.2 COMPLETE / M6.3 READY仅以最终自身exact-SHA CI和remote audit生效；M6.3未实施、须独立批准。
 
 ## Current Reality Audit / Cold Start
 
@@ -88,6 +89,11 @@ IconUrl/Description/Url不参与identity或执行authority，绝不跟随这些U
 | Typecheck / lint / build | PASS / PASS / PASS（1817 modules） |
 | Governance / architecture / safety / ledger / artifacts / strict diff | PASS；最终文档同步后再验 |
 
+Final seal本地复验：Settings、documentation governance与全部M6.2 focused合计159 passed；
+documentation/security/architecture/ledger/artifact gates与git diff --check再次PASS。
+repo外临时smoke server已停止，恢复正式backend.app.main；health=200、临时route=404、
+anonymous旧product API=401。临时harness与脱敏证据仅保留repo外，不作为产品入口。
+
 全量后端有8条既有MSAL warning，未隐藏/降低校验。
 Repository Safety首次发现synthetic credential命名后按既有测试安全标记修改；扫描规则未改。
 未运行本轮豁免的51200 stress、130-turn、DeepSeek/Kimi Real或report browser matrix。
@@ -126,7 +132,14 @@ CSV/大结果只有synthetic fixtures验证，未做真实大结果验收；priv
 
 ### Remote exact-SHA CI status
 
-Phase A待commit/push；Settings.version=M6.1；自身exact-SHA CI与Final seal均待执行。
+Phase A：`daeb5b63e81364da97eabdd0d20b835c868388df`，commit `M6.2_FabricIQ云端数据适配器候选`。
+[exact-SHA CI37972741912](https://github.com/Strange-Men/PowerBIAgent/actions/runs/37972741912)
+push事件、completed/success；Full Validation (Windows)与全部23 steps实际success，无skipped step。
+fetch后origin/main仍为该Phase A SHA，才更新Settings.version=M6.2与本轮final seal文档。
+最终commit `M6.2_FabricIQ云端数据链路封板`；自身SHA不写入自身提交。须查询当前checkout
+exact SHA的独立Final CI completed/success，全部required steps成功，fresh fetch后
+HEAD==origin/main且worktree clean，才判定M6.2 COMPLETE / M6.3 READY。
+不得继承Phase A或历史CI；Final SHA/CI/remote audit结果在最终交付报告给出。
 没有安全他人资源fixture：UNAVAILABLE IN CURRENT TEST ENVIRONMENT；不宣称RLS/OLS A/B验收。
 
 ### M6.3 / M6.4 handoff

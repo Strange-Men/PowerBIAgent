@@ -1,26 +1,26 @@
 # 07 — 当前项目状态
 
-> **状态：** Settings.version=M6.1；M6.1 COMPLETE；M6.2 IN PROGRESS（本轮已授权，未封板）；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> **状态：** Settings.version=M6.2；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 READY（未实施，须独立批准）；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一当前项目状态 authority；路线见 [08](08_development_roadmap.md)，开发交接见 [09](09_context_handoff.md)。
 
 ## 当前状态
 
 | 项目 | 状态 |
 |---|---|
-| Current Version | M6.1 |
-| Current Release State | M6.1 COMPLETE；最终seal以自身exact-SHA CI + remoteaudit生效；M5 FINAL=true |
+| Current Version | M6.2 |
+| Current Release State | M6.2 COMPLETE；最终seal以自身exact-SHA CI + remoteaudit生效；M5 FINAL=true |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | M6.2 IN PROGRESS — 本轮已批准，未封板 |
-| Current implementation status | M6.1 Auth/Session/Account runtime IMPLEMENTED；Cloud data plane candidate IMPLEMENTED；两模型Real PASS，Phase A/Final CI待完成 |
-| Ready state | M6.1 official / Real Entra / local gates / Phase A exact-SHA CI通过；final自身CI独立验收 |
+| Next | M6.3 READY — 未实施，须用户独立批准 |
+| Current implementation status | M6.1 Auth/Session/Account runtime IMPLEMENTED；Fabric IQ Cloud data plane IMPLEMENTED；两模型Real与Phase A CI PASS；Final以自身CI/remote audit生效 |
+| Ready state | M6.2 official / current Entra principal两模型Real / local gates / Phase A exact-SHA CI通过；final自身CI独立验收 |
 
-## M6.2 当前实施
+## M6.2 当前封板
 
 2026-10-10用户明确批准Fabric IQ只读Data Plane scope。
 [合同与验收](milestones/m6/m6_2_fabric_iq_cloud_adapter.md)：独立SDK transport、request/session绑定Adapter、
 required capability negotiation、schema-before-bind、unknown metadata与结果完整性fail closed。
-Settings.version保持M6.1；两模型Real、Phase A与Final自身CI未全部通过前不声明COMPLETE。
+Settings.version=M6.2；两模型Real与Phase A全步骤CI通过；最终COMPLETE须自身exact-SHA CI与remote audit生效。M6.3 READY，未实施。
 Cloud Catalog / multi-user persistence ownership / Product E2E未实现；ENTRA_BFF旧/api仍关闭。
 
 ## M6.1 历史封板

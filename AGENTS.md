@@ -6,10 +6,10 @@
 
 ## 当前开发入口
 
-- 当前版本：**M6.1**（Entra Identity / Login / Session & Basic Account UX）。
+- 当前版本：**M6.2**（Fabric IQ Cloud Data Plane Adapter）。
 - M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；M5.10.8 与 FIX COMPLETE。
-- M6.1 COMPLETE（以自身exact-SHA CI与remote audit生效）；ADR-020 ACCEPTED；M6.2 IN PROGRESS。
-- 当前获批milestone为M6.2；Auth runtime已实现，Cloud Adapter候选已实现，Real/CI验收待完成。
+- M6.1 COMPLETE（以自身exact-SHA CI与remote audit生效）；ADR-020 ACCEPTED；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 READY（未实施，须独立批准）。
+- M6.2已实现并完成两模型Real与Phase A CI；封板按自身exact-SHA CI和remote audit生效。下一正式milestone为M6.3，须用户独立批准。
   每个 implementation patch 必须有用户明确批准的具体 scope、fresh Cold Start、Microsoft 官方
   能力重新验证与先完成的 P0 security boundary 设计/验证；未满足前不得直接写 M6 Cloud code。
 - 07 是当前状态，08 是当前/未来路线，09 是唯一开发交接；根入口不重复保存浮动 SHA/CI。
@@ -91,4 +91,4 @@ failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner 
 
 生产级后端风险优先于功能数量；每个M6 implementation按09重新验证Microsoft官方能力与适用P0边界。ADR-020接受Cloud消费/目录设计，ADR-006已SUPERSEDED。Token只允许Auth/Transport；tenant/principal/ownership与RLS/OLS必须先证明。
 
-*最后更新：2026-10-10 | M6.1 COMPLETE；M6.2 IN PROGRESS（本轮已授权，未封板）；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以07/08/09及自身exact-SHA CI为准*
+*最后更新：2026-10-10 | M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 READY（未实施，须独立批准）；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以07/08/09及自身exact-SHA CI为准*
