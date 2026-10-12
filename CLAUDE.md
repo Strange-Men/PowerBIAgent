@@ -11,7 +11,8 @@ Cloud消费/目录/Product Auth UX设计见ADR-020与M6.0 evidence，官方重�
 
 ## Cold Start
 
-先 Git status/branch/HEAD/origin/log/fetch，核对 main、clean 与 exact baseline；remote main 前进即停止。
+先 git fetch origin，再核对 status/branch/HEAD/origin/log/staging：初始 main、clean worktree/staging、HEAD==origin/main 与 exact baseline；
+开发中允许本轮已授权白名单改动，未知用户修改或 remote main 相对本轮基线前进即停止。
 按 AGENTS 与 docs/09 顺序读取 charter、07/08/09、Error Ledger、ADR index/相关 accepted ADR、
 当前任务及 production/邻近 tests。不得以历史 PASS、旧 endpoint 或聊天记忆替代 fresh 证据。
 简短 reality audit 后自动在授权范围继续；文档治理任务中的既有状态漂移由本轮修复，不因漂移重复求确认。
@@ -45,10 +46,13 @@ Token 只留 Auth / Transport，不进入 UserContext/Memory/Trace/Conversation 
 
 ## Git / debugging contract
 
-main 是唯一活动开发线。流程为 failure-first → minimal implementation → fresh gates →
-必要且有界 Real → 白名单 staging → 中文 commit → push main → exact-SHA CI → remote audit。
-不得 git add . / git add -A、force push、rebase、history rewrite、reset --hard、clean、删除分支；
-push 前 fetch，remote main 已前进则停止，不覆盖用户变更。不打 Tag。
+main 是唯一正式活动开发线，默认在 main 开发、提交、推送。流程固定为：
+Cold Start → Main 开发 → Failure-first → Minimal Implementation → Local Validation → 必要 Real → 白名单 Staging → 中文 Commit → Push main → 一次 Main Exact-SHA CI → Remote Audit。
+不强制临时开发分支、PR 或 Phase A / Final 双 CI；仅当用户明确要求或 GitHub 权限客观要求时才使用 PR。
+不自动修改 GitHub 分支保护；普通 push 被拒绝即停止报告，不以 force push、关闭更多保护或另建 PR 绕过。
+管理员豁免是既有工作流的权限条件，不允许忽视失败的 CI；每个最终实际 main 提交必须通过自身完整 CI，不能继承旧 SHA 或 PR CI。
+禁止 git add . / git add -A、force push、rebase、history rewrite、reset --hard、clean、未经授权删除分支。
+不覆盖用户修改，不自动打 Tag；push 前 fetch，remote main 相对本轮基线前进即停止。
 
 同一 root cause 的 P1 不因每次失败都停止：保留 reproducer、更新证据，在已授权边界内最多两轮
 minimal forward-fix；达到上限仍失败，或出现新根因、修改边界扩大、architecture risk 时停止重新

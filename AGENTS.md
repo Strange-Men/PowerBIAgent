@@ -49,6 +49,9 @@
 
 ## 固定 Cold Start
 
+先 git fetch origin，再核对 branch、HEAD、origin/main、worktree、staging 与 log；初始要求 main、
+HEAD==origin/main、clean worktree/staging。开发中允许本轮已授权白名单改动；未知用户修改或远端基线前进立即停止。
+
 按顺序读取：
 
 1. `AGENTS.md`
@@ -66,11 +69,13 @@
 
 ## Git contract
 
-- `main` 是唯一活动开发线；流程固定为 failure-first → minimal implementation → fresh gates
-  → 必要且有界 Real → 白名单 staging → 中文 commit → 临时交付分支/PR required CI → 受保护合入main → main exact-SHA CI → remote audit。
-  管理员同样受required checks约束；临时codex/交付ref不是并行开发线。具体closure遵循当前批准任务；不自动打Tag。
+- main 是唯一正式活动开发线，默认在 main 开发、提交、推送。流程固定为：
+  Cold Start → Main 开发 → Failure-first → Minimal Implementation → Local Validation → 必要 Real → 白名单 Staging → 中文 Commit → Push main → 一次 Main Exact-SHA CI → Remote Audit。
+  不强制临时开发分支、PR 或 Phase A / Final 双 CI；仅当用户明确要求或 GitHub 权限客观要求时才使用 PR。
+  不自动修改 GitHub 分支保护；普通 push 被拒绝即停止报告，不以 force push、关闭更多保护或另建 PR 绕过。
+  管理员豁免是既有工作流的权限条件，不允许忽视失败的 CI；每个最终实际 main 提交必须通过自身完整 CI，不能继承旧 SHA 或 PR CI。
 - 禁止 `git add .`、`git add -A`、force push、rebase、history rewrite、`reset --hard`、
-  `clean`、branch deletion。remote main 已前进则停止。
+  `clean`、未经授权删除分支。不覆盖用户修改，不自动打 Tag；push 前 fetch，remote main 相对本轮基线前进即停止。
 - CI 失败只允许 forward-fix；同一 root cause 最多两轮，P1 不因每次失败都停止；上限仍失败、新根因、边界扩大或 architecture risk 才停止重新评估。禁止降低 validator、删除 negative
   tests、修改 expected 迎合错误、Mock Real 或隐藏 warning/error。
 - 不读取、输出或提交 `.env`/Secret、真实业务数据、PBIX、DB、真实 prompt/response dump。

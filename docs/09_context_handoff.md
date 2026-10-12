@@ -31,7 +31,8 @@ Cloud完整性仍保守truncated=true；M6.4 Catalog、完整Chat/Report/History
 临时延迟hook/诊断路由已从运行中服务卸载；正式代码从未导入仓库外工具。真实账号、token/cookie、raw identity GUID不进入Git。
 Alembic head=f63a1b2c3d40，八表历史行归local:legacy；现有用户DB未读取/迁移。回滚仅恢复M6.2离线完整备份，禁止合并principal IDs。
 Phase A固定中文commit：M6.3_多用户归属与权限隔离候选；Final：M6.3_多用户安全隔离与真实验收封板。
-候选普通push被服务器管理员豁免（事实保留）；用户随后授权收紧main保护，enforce_admins=true且原required check不变。Final必须临时交付ref→PR required CI→受保护合入main→Final main exact-SHA CI；不得再次豁免。
+候选普通push当时被服务器管理员豁免（事实保留）；随后main曾只新增enforce_admins=true，原required check/App绑定及其他规则未变。
+M6.3 Final当时经临时交付ref→PR required CI→受保护合入main→Final main exact-SHA CI完成；这是历史操作，不是未来开发的强制流程。
 Phase A SHA/CI见下节；Final自身SHA不写入自身提交，逐项验证main checkout exact-SHA CI，完成后立即停止，不自动开始M6.4。
 
 ## M6.2 历史 handoff
@@ -76,8 +77,9 @@ M5 Final baseline 已成立；post-final 文档修复不重新开启 M5 功能�
 
 ## Mandatory Cold Start
 
-1. git status、git branch --show-current、git rev-parse HEAD / origin/main、git log -8；fetch 后再次
-   核对 main、clean worktree、HEAD==origin/main。remote 前进、非 main 或非本轮改动立即停止。
+1. 先 git fetch origin，再 git status、git branch --show-current、git rev-parse HEAD / origin/main、git log -8，
+   检查 staging，初始核对 main、clean worktree/staging、HEAD==origin/main 与获批 baseline。
+   开发中允许本轮已授权白名单改动；未知用户修改、非获批分支或 remote main 相对本轮基线前进立即停止。
 2. AGENTS.md → PROJECT_CHARTER.md → CLAUDE.md。
 3. docs/07 → docs/08 → docs/09；README、CHANGELOG 作为导航与历史摘要。
 4. Error Ledger 的 schema、有效 prevention/prohibited rules 与相关条目；ADR README 和任务相关
@@ -90,12 +92,26 @@ M5 Final baseline 已成立；post-final 文档修复不重新开启 M5 功能�
 
 ## 最终 baseline 解析
 
+M6.3 Security Final 已通过 [PR #1](https://github.com/Strange-Men/PowerBIAgent/pull/1) 合入
+`2179e3f118cf0b33b55143c819d9e1e521a19ae0`；
+[Final exact-SHA CI38039151643](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38039151643)
+为该 main SHA 的 push 事件，completed/success，安全封板已成立。
+
+后续 Documentation Governance FIX 的 PR 交付授权被用户明确撤回；
+[PR #2](https://github.com/Strange-Men/PowerBIAgent/pull/2) 已关闭、未合并，
+其提交 `ff1c42b87006b81054315bc696d30100db7fde94` 及 PR CI38040853620 SUCCESS仅保留为历史，不证明 main 发布。
+用户已手动取消管理员强制约束；本轮 fresh远程审计为protected=true、enforcement_level=non_admins，
+原Full Validation (Windows)/App15368保留。历史PR/保护调整不构成长期强制PR或双CI规范。
+本轮仅恢复 main 单线工作流；最终实际文档提交仍须自身一次完整main exact-SHA CI及remote audit。
+不继承历史CI、不重开M6.3功能；M6.4尚未获批、尚未开始，完成本轮后立即停止。
+
 M6.3 Phase A：`47fb74c512dea64d2644f193b4f76095535bca17` /
 [exact-SHA CI38037929168](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38037929168)，
 push事件、head_sha精确匹配、Full Validation (Windows)与全部23 steps success。
 Final marker更新Settings.version=M6.3；自身SHA不写入自身提交。读取main checkout exact SHA的
 PowerBIAgent Validation / Full Validation (Windows) completed/success并逐项检查required steps；
-fetch后HEAD==origin/main、worktree clean、管理员保护仍启用、无临时授权入口，才解析为M6.3 Security COMPLETE。
+M6.3 Final当时fetch后HEAD==origin/main、worktree clean、管理员保护启用且无临时授权入口，已解析为M6.3 Security COMPLETE。
+后续工作流恢复不改变该安全验收结论；后续发布按最终实际main SHA自身CI与remote audit验证，不以管理员强制约束作为安全状态续存条件。
 Final通过不等于销售额或M6.4 Cloud Product E2E通过；禁止继承候选/旧M6.2 CI充当Final。
 M6.2历史Phase A daeb5b63e81364da97eabdd0d20b835c868388df / CI37972741912；
 历史Final 419dfd5cdde5c7550d62bbdaca12c7de853cea65 / CI38012437829；均不证明本轮marker。
@@ -242,10 +258,13 @@ Entra/Fabric IQ/PostgreSQL/Blob/Redis/migration 与新模板/分析能力只能�
 
 ## 测试 / CI / release 与 debugging
 
-main 是唯一活动开发线。流程为 failure-first → minimal implementation → fresh gates →
-必要且有界 Real → 白名单 staging → 中文 commit → push main → exact-SHA CI → remote audit。
-不得 git add . / git add -A、force push、rebase、history rewrite、reset --hard、clean、删除分支；
-push 前 fetch，remote main 已前进则停止，不覆盖用户变更。不打 Tag。
+main 是唯一正式活动开发线，默认在 main 开发、提交、推送。流程固定为：
+Cold Start → Main 开发 → Failure-first → Minimal Implementation → Local Validation → 必要 Real → 白名单 Staging → 中文 Commit → Push main → 一次 Main Exact-SHA CI → Remote Audit。
+不强制临时开发分支、PR 或 Phase A / Final 双 CI；仅当用户明确要求或 GitHub 权限客观要求时才使用 PR。
+不自动修改 GitHub 分支保护；普通 push 被拒绝即停止报告，不以 force push、关闭更多保护或另建 PR 绕过。
+管理员豁免是既有工作流的权限条件，不允许忽视失败的 CI；每个最终实际 main 提交必须通过自身完整 CI，不能继承旧 SHA 或 PR CI。
+禁止 git add . / git add -A、force push、rebase、history rewrite、reset --hard、clean、未经授权删除分支。
+不覆盖用户修改，不自动打 Tag；push 前 fetch，remote main 相对本轮基线前进即停止。
 
 同一 root cause 的 P1 不因每次失败都停止：保留 reproducer、更新证据，在已授权边界内最多两轮
 minimal forward-fix；达到上限仍失败，或出现新根因、修改边界扩大、architecture risk 时停止重新
