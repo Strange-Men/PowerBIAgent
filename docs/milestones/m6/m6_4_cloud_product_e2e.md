@@ -425,3 +425,22 @@ Repository Safety、137项Error Ledger、Architecture、Documentation Governance
 迁移警告与MSAL form_post建议均完整保留，不隐藏；新增绑定迁移只在合成临时DB验证。
 后端最初完整3324 PASS后补充exact恢复/历史投影负例，最终全量重验3329 PASS；前端测试构造错误与文档表述修正记录保留。
 待发布提交为定向必要修改，非Final；提交后仅以该actual main SHA的一次Full Validation CI与Remote Audit生效，不能继承候选CI。
+
+## 单人模式本轮收口（2026-10-14；非 Final）
+
+基于稳定5b0f22d9，Cold Start/fetch/clean确认后继续授权scope，没有重启或丢弃成果。
+本轮native安全服务装配、直接服务拒绝P0、完整正式事实回调Synthetic API/React E2E、固定Renderer
+及owner/撤权/迟到/错误合成验证见[一次技术决策与最终差异核验](m6_4_solo_contract_decision.md)。
+该记录明确六项审计偏移、M6.0–M6.4状态、内部未完成和外部条件，不用新结论覆盖原始失败记录。
+本轮未修改Frozen Core、Provider、Shape、模板、Expected、AGENTS或Git规则；version保持M6.3。
+本轮真实BI/外部LLM请求0，M6.4 PARTIAL/BLOCKED、不能封板。完成本轮发布与审计后停止。
+Full/Semantic/Golden/frontend/gates与actual-SHA CI回执仅以20261014-solo fresh记录为准。
+
+本轮fresh本地结果：后端3335 PASS/1 manual Real SKIP/13既有warnings（483.64秒）；
+Semantic819 PASS；Golden11 PASS/1 manual Real SKIP；前端142 PASS，Typecheck/Lint/Build PASS。
+合成事实持久化补充断言4 PASS（full后新增assert-only，生产代码未再改）；Contract/Isolation71 PASS。
+Repository Safety、Architecture、Error Ledger、Documentation、Artifact Governance及diff check PASS。
+合成fixture初始正式语言分支限制、人工语言与canonical不匹配、stdio缺Origin及长路径导致atomic store
+失败均保留本地日志；仅校准测试host/路径、修正来源和文档表述，未修改Expected迎合数值错误。
+native直接调用负例先FAIL，唯一生产P0修复后PASS；M5 Frozen Core diff为空。
+实际发布只按本次main新SHA的完整CI和Remote Audit生效；本节不预报远端成功。

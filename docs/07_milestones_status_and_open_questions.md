@@ -11,10 +11,21 @@
 | Current Release State | M6.3 Security COMPLETE；以Final自身exact-SHA CI + remote audit生效；数值兼容P1 BLOCKED；M5 FINAL=true |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | M6.4已获用户批准，正在本地开发/验证；数值P1必须在Product E2E前解决，当前未发布 |
-| Current implementation status | M6.4正式Cloud控制面、模型选择及Settings已接线；服务组合与UX PARTIAL；业务API仍关闭，数值/完整性及完整Real链BLOCKED |
+| Next | M6.4已获用户批准，正在本地开发/验证；数值P1须在Real Product E2E前解决；阶段成果已发布，Final未封板 |
+| Current implementation status | M6.4 native安全装配及正式事实Synthetic链完成；Cloud资源管理PARTIAL；Real执行、隐私与事实合同BLOCKED |
 | Ready state | Real安全74/74、Late-Response41/41、完整本地回归及候选CI通过；Final自身CI与remote audit解析 |
 
+## M6.4 本轮当前状态（2026-10-14；以下2026-10-13段为历史）
+
+稳定进入基线5b0f22d9已通过自身CI。本轮仅原M6.4：native ENTRA_BFF安全装配Product Service，
+延迟storage在业务gate前不开库；直接native服务调用也先校验租约和关闭的执行gate。
+新增正式事实回调/固定Renderer的完整Synthetic API与React真实client E2E，不将Synthetic计Real。
+Catalog、Chat/History/Report合成接线及owner/撤权/迟到响应验证完成；Settings资源管理仍PARTIAL。
+Int64/八Shape完整性无新可信合同；企业披露/留存策略与当前获批Real仍BLOCKED。真实调用0。
+[一次技术决策及六项最终差异核验](milestones/m6/m6_4_solo_contract_decision.md)区分内部缺口与外部依赖。
+Settings.version=M6.3；M6.4 PARTIAL/BLOCKED，不能封板。本轮完成后停止，不启动后续阶段。
+本轮分层日志和exact-SHA CI/Remote Audit回执在PBIAgentTest/M6.4/Acceptance/20261014-solo。
+当前checkout发布SHA须通过自己的完整CI；不继承5b0f22d9或候选CI。
 ## M6.4 当前开发（2026-10-13，阶段候选；非 Final Seal）
 
 ### 候选后的定向收口（2026-10-13）

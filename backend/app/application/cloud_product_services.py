@@ -29,6 +29,26 @@ class _SelectionLease:
         return record
 
 
+class _NativeCloudTurnService(LLMTurnService):
+    """Enforce Cloud policy even for direct server-side embedding.
+
+    A generic bounded LLM prompt/Trace is not enterprise disclosure consent.
+    Reuse the current closed workspace gate before any Core/provider activity.
+    No new setting, provider or client capability can bypass that gate.
+    """
+    def __init__(self, *, lease, **kwargs):
+        super().__init__(**kwargs)
+        self._cloud_lease = lease
+
+    async def execute(self, *args, **kwargs):
+        lease = self._cloud_lease
+        lease.require_session(lease._sid)
+        lease._workspace.require_execution(lease._sid, lease._principal)
+        result = await super().execute(*args, **kwargs)
+        lease.require_session(lease._sid)
+        return result
+
+
 @dataclass(frozen=True)
 class PreparedCloudProduct:
     turn_service: LLMTurnService
@@ -51,10 +71,14 @@ class PreparedCloudProduct:
 
 class CloudProductServiceFactory:
     """Storage must be explicitly supplied; no default DB opening or migration."""
-    def __init__(self, auth, workspace, repository_factory, llm_registry, display_llm_registry):
+    def __init__(self, auth, workspace, repository_factory, llm_registry, display_llm_registry,
+                 *, synthetic_turn_factory=None):
         self._auth, self._workspace, self._repositories = auth, workspace, repository_factory
         self._llm, self._display = llm_registry, display_llm_registry
         self._test_policy = CloudTestPolicy(auth.settings)
+        # Trusted host injection only; never a setting or client execution flag.
+        # The native branch cannot use a synthetic runtime or gain readiness.
+        self._synthetic_turn_factory = synthetic_turn_factory
 
     def _validate_identity(self, sid, principal):
         if self._auth.require_session(sid).principal != principal:
@@ -163,6 +187,11 @@ class CloudProductServiceFactory:
         lease.require_session(sid)
         settings = self._auth.settings
         if adapter.is_mock:
+            if self._synthetic_turn_factory is not None:
+                turn = self._synthetic_turn_factory(adapter=adapter, repositories=repositories,
+                    settings=settings)
+                return PreparedCloudProduct(turn, repositories, selection.conversation_id,
+                                            selection.selected_model_key, lease)
             from backend.app.application.mock_turn_service import MockTurnService
             from backend.app.llm.mock import MockLLMProvider
             from backend.app.report.mock import MockReportRenderer
@@ -172,7 +201,8 @@ class CloudProductServiceFactory:
                 config=HarnessConfig.from_settings(settings).model_copy(update={
                     'llm_mode':LLMMode.MOCK,'powerbi_mode':PowerBIMode.MOCK}))
         else:
-            turn = LLMTurnService(memory_repo=repositories.memory, snapshot_store=repositories.snapshots,
+            turn = _NativeCloudTurnService(lease=lease,
+            memory_repo=repositories.memory, snapshot_store=repositories.snapshots,
             llm_provider=None, llm_registry=self._llm, display_llm_registry=self._display,
             powerbi_adapter=adapter, report_renderer=build_report_dispatcher(
                 SalesReportRenderer(), ExecutiveSalesReportRenderer()),

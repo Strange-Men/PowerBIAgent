@@ -8,6 +8,37 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-64-016
+  title: 原生Cloud已组合服务直接调用可绕过外层披露拒绝边界
+  category: ERR
+  first_detected_version: M6.4
+  symptom: PreparedCloudProduct拒绝执行但其内部通用TurnService直接调用可进入Core
+  local_evidence: native-gate-first.log先FAIL；test_native_composed_service_direct_call_cannot_bypass_disclosure_gate
+  authoritative_sources:
+  - title: 用户M6.4企业数据传输P0约束
+    reason: 未经批准业务schema和事实不得进入外部LLM或持久化
+  - title: ADR-020
+    reason: server-side身份与授权边界不能依赖调用者选择安全入口
+  root_cause: 拒绝门槛只位于HTTP与Prepared包装器，native通用服务没有Cloud租约校验
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Cloud服务子类在Core execute前后复核租约并先检查关闭的workspace业务gate；原生装配使用延迟且gate先于开库的owner repository factory
+  regression_tests:
+  - backend/tests/unit/test_cloud_product_composition.py
+  - backend/tests/unit/test_cloud_product_runtime.py
+  - backend/tests/unit/test_cloud_privacy_boundary.py
+  prohibited_patterns:
+  - 将HTTP拒绝当作内部服务可披露业务数据的授权
+  - 通过Synthetic PASS自动打开native Real查询或开库
+  prevention_rules:
+  - 原生embedding必须保留身份选择与业务门槛，未通过合同和隐私验收不得进入Core
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-14'
+    action: direct_native_gate_failure_first_and_synthetic_factual_e2e
+    version: M6.4
 - id: ERR-64-014
   title: Cloud历史仅owner授权不足以证明当前资源权限及选择一致性
   category: ERR

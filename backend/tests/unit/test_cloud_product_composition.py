@@ -99,6 +99,33 @@ async def test_composition_reuses_native_pipeline_and_owner_repositories(harness
 
 
 @pytest.mark.asyncio
+async def test_native_composed_service_direct_call_cannot_bypass_disclosure_gate(harness,factory,monkeypatch):
+    """Embedding the prepared service must not bypass the HTTP/prepared gate."""
+    auth,session,transport,_ = harness
+    ws = workspace(harness)
+    registry = build_llm_registry(auth.settings)
+    services = CloudProductServiceFactory(auth,ws,factory,registry,registry)
+    called = []
+    async def forbidden_core(*args,**kwargs):
+        called.append(True)
+        raise AssertionError('native core must not see unapproved data')
+    monkeypatch.setattr(LLMTurnService,'execute',forbidden_core)
+    try:
+        catalog = await ws.catalog(session.session_id,session.principal)
+        await ws.select(session.session_id,session.principal,catalog.items[0].key)
+        prepared = await services.prepare(session.session_id,session.principal)
+        before = len(transport.calls)
+        with pytest.raises(AuthFailure):
+            await prepared.turn_service.execute('SYNTHETIC_PRIVATE_MARKER',
+                conversation_id=prepared.conversation_id,request_id='unapproved-native',
+                semantic_model_key=prepared.semantic_model_key)
+        assert not called and len(transport.calls)==before
+        assert await prepared.repositories.memory.get_by_request_id('unapproved-native',RuntimeDataMode.REAL) is None
+    finally:
+        await ws.aclose(); await registry.aclose()
+
+
+@pytest.mark.asyncio
 async def test_late_prepare_cannot_restore_invalidated_selection(harness, factory, monkeypatch):
     """A pending service composition must not revive a revoked catalog epoch."""
     auth, session, _, _ = harness

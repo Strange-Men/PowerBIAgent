@@ -84,8 +84,11 @@ async def llm_profiles(request: Request, principal=Depends(require_principal)):
     service, sid = await workspace(request)
     service.status(sid, principal)
     registry = request.app.state.cloud_llm_registry
-    return registry.public_catalog(default_profile_key=request.app.state.settings.llm_default_profile,
-                                   include_keys={"deepseek", "kimi-k2.6"})
+    from backend.app.memory.models import RuntimeDataMode
+    synthetic = service.data_mode(sid,principal)==RuntimeDataMode.MOCK
+    keys = {'mock'} if synthetic else {'deepseek','kimi-k2.6'}
+    return registry.public_catalog(default_profile_key='mock' if synthetic else request.app.state.settings.llm_default_profile,
+                                   include_keys=keys)
 
 
 @router.get("/report-templates")

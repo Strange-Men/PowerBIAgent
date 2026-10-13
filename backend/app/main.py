@@ -145,7 +145,8 @@ async def lifespan(app: FastAPI):
 
     settings: Settings = app.state.settings
     if settings.identity_mode == IdentityMode.ENTRA_BFF:
-        # No business persistence/LLM. M6.2 adds only an identity-free cloud factory.
+        # Native service composition is safe while execution remains closed;
+        # no business storage is opened and no external generation occurs.
         service = AuthService(settings, app.state.identity_client or MsalIdentityClient(settings))
         app.state.auth_service = service
         from backend.app.powerbi.fabric_iq import FabricIQAdapterFactory
@@ -162,6 +163,14 @@ async def lifespan(app: FastAPI):
         )
         app.state.cloud_llm_registry = build_llm_registry(settings) if app.state.cloud_workspace_service else None
         app.state.cloud_product_services = None
+        native_repositories = None
+        if app.state.cloud_workspace_service is not None:
+            from backend.app.application.cloud_product_runtime import DeferredCloudRepositories
+            from backend.app.application.cloud_product_services import CloudProductServiceFactory
+            native_repositories = DeferredCloudRepositories(service,app.state.cloud_workspace_service,settings)
+            app.state.cloud_product_services = CloudProductServiceFactory(service,
+                app.state.cloud_workspace_service,native_repositories,
+                app.state.cloud_llm_registry,app.state.cloud_llm_registry)
         cloud_runtime = None
         if app.state.cloud_runtime_factory is not None:
             # Explicit host composition for offline synthetic acceptance; no
@@ -198,6 +207,7 @@ async def lifespan(app: FastAPI):
             if app.state.cloud_llm_registry is not None:
                 await app.state.cloud_llm_registry.aclose()
             if cloud_runtime is not None: await cloud_runtime.close()
+            if native_repositories is not None: await native_repositories.aclose()
             service.close()
             app.state.auth_service = None
             app.state.fabric_iq_adapter_factory = None

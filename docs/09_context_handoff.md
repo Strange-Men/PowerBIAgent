@@ -5,11 +5,22 @@
 
 ## 当前阶段 — Current Baseline / Next Milestone
 
-- Current Baseline：M6.3多用户安全隔离（Final自身CI / remote audit解析）；M6.2为历史基线。
+- Current Baseline：Settings M6.3安全封板；M6.4阶段main基线按最新exact-SHA CI / Remote Audit解析。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
-- ACTIVE = M6.4 Cloud Product E2E：用户已明确批准原scope，正在本地开发/验证，尚未发布；不得启动M6.5。
+- ACTIVE = M6.4 Cloud Product E2E：原scope已批准；阶段提交已有，Final仍PARTIAL/BLOCKED；不得启动M6.5。
 - M6 Status：M6.3 Real安全74/74、Late-Response41/41、完整本地回归及Phase A CI通过；Settings.version=M6.3；最终发布条件见下文。
 
+## 本轮收口交接（2026-10-14；后续旧轮段落仅历史证据）
+
+进入main基线5b0f22d913dcf47af53903f8b4fae1d3162d2dc1、自身CI已SUCCESS；不重发候选。
+本轮native ENTRA_BFF已安全装配Product Service，但business gate关闭，deferred仓库不打开DB；
+直接service embedding也不能绕过gate进入Core/外部LLM。正式事实回调与固定Renderer通过完整
+Synthetic API/React client链，MOCK来源及owner存储保持，不能作为Real PASS。
+[一次合同技术决策与最终差异核验](milestones/m6/m6_4_solo_contract_decision.md)为本轮未决清单。
+Int64/Completeness与企业授权仍外部BLOCKED；Cloud完整资源管理及披露/留存落实仍内部PARTIAL，
+不报告只剩外部依赖。原M6 Workspace逐资源allowlist、native fail-closed、Settings.version=M6.3保持。
+本轮源码/测试/文档白名单发布按实际SHA CI及Remote Audit回执生效，证据在20261014-solo。
+收口完成后停止。后续M6.4.1/M6.5及另一开发任务均未授权。下文尚未装配/未发布等描述为旧轮历史。
 ## M6.4 active handoff（2026-10-13）
 
 最新定向工作基于候选`4f17b9319b6310e511d6754d36062b59edcf393a`；候选exact-SHA CI SUCCESS已验证，不重复候选发布。

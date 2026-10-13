@@ -71,4 +71,6 @@ def test_native_cloud_business_paths_cannot_disclose_to_configured_external_prov
         for path in ('/api/reports', '/api/v1/conversations', '/api/reports/synthetic-report/download'):
             assert client.get(path).status_code == 403
         assert app.state.turn_service is None and app.state._persistence_engine is None
+        assert app.state.cloud_product_services is not None
+        assert app.state.cloud_product_services._repositories._engine is None
     generate.assert_not_awaited()
