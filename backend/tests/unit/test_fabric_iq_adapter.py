@@ -18,6 +18,7 @@ URL = f"https://app.powerbi.com/groups/{WORKSPACE}/datasets/{MODEL}/details"
 
 
 def settings(**changes):
+    changes.setdefault('fabric_test_mode', False)  # Synthetic formal-product contract fixtures.
     return Settings(_env_file=None, identity_mode="ENTRA_BFF", entra_tenant_id=TENANT,
                     entra_client_id=CLIENT, entra_client_secret="NOT_A_REAL_SECRET_AUTH",
                     auth_cookie_secure=False, **changes)

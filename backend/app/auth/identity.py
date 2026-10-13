@@ -11,12 +11,13 @@ import jwt
 import msal
 
 from backend.app.auth.models import AuthFailure, PrincipalContext
-from backend.app.config.settings import Settings
+from backend.app.config.settings import PowerBIMode, Settings
 
 POWERBI_RESOURCE = "https://analysis.windows.net/powerbi/api"
 DELEGATED_SCOPES = tuple(f"{POWERBI_RESOURCE}/{name}" for name in (
     "Item.Read.All", "Item.Execute.All", "Dataset.Read.All",
 ))
+CATALOG_SCOPES = (f"{POWERBI_RESOURCE}/Workspace.Read.All",)
 
 
 @dataclass(repr=False)
@@ -57,7 +58,8 @@ class MsalIdentityClient:
         context = MsalContext(client, cache)
         try:
             flow = client.initiate_auth_code_flow(
-                scopes=list(DELEGATED_SCOPES), redirect_uri=self.settings.entra_redirect_uri,
+                scopes=list(DELEGATED_SCOPES + (CATALOG_SCOPES if self.settings.powerbi_mode == PowerBIMode.FABRIC_IQ else ())),
+                redirect_uri=self.settings.entra_redirect_uri,
                 response_mode="query", prompt="select_account",
             )
             return flow, context

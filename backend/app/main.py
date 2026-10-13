@@ -153,6 +153,14 @@ async def lifespan(app: FastAPI):
             FabricIQAdapterFactory(settings, service)
             if settings.powerbi_mode == PowerBIMode.FABRIC_IQ else None
         )
+        from backend.app.application.cloud_workspace_service import CloudWorkspaceService
+        from backend.app.llm.factory import build_llm_registry
+        app.state.cloud_workspace_service = (
+            CloudWorkspaceService(service, app.state.fabric_iq_adapter_factory,
+                                  shared_seeds=settings.fabric_shared_models)
+            if app.state.fabric_iq_adapter_factory is not None else None
+        )
+        app.state.cloud_llm_registry = build_llm_registry(settings) if app.state.cloud_workspace_service else None
         install_auth_log_redaction()
         for name in ("turn_service", "mock_turn_service", "report_repository",
                      "conversation_history_service", "semantic_model_discovery_service",
@@ -164,6 +172,8 @@ async def lifespan(app: FastAPI):
                 while True:
                     await asyncio.sleep(30)
                     await asyncio.to_thread(service.prune)
+                    if app.state.cloud_workspace_service is not None:
+                        await app.state.cloud_workspace_service.prune()
             expiry_task = asyncio.create_task(expire_auth_state())
             yield
         finally:
@@ -172,6 +182,10 @@ async def lifespan(app: FastAPI):
                 await expiry_task
             except asyncio.CancelledError:
                 pass
+            if app.state.cloud_workspace_service is not None:
+                await app.state.cloud_workspace_service.aclose()
+            if app.state.cloud_llm_registry is not None:
+                await app.state.cloud_llm_registry.aclose()
             service.close()
             app.state.auth_service = None
             app.state.fabric_iq_adapter_factory = None
@@ -361,11 +375,15 @@ def create_app(settings: Optional[Settings] = None, *, identity_client: Identity
     app.state.settings = settings
     app.state.identity_client = identity_client
     app.state.auth_service = None
+    app.state.cloud_workspace_service = None
+    app.state.cloud_llm_registry = None
     app.add_exception_handler(AuthFailure, lambda request, error: failure_response(error))
     app.add_middleware(AuthBoundaryMiddleware)
 
     app.include_router(router)
     app.include_router(auth_router)
+    from backend.app.api.cloud_routes import router as cloud_router
+    app.include_router(cloud_router)
 
     return app
 

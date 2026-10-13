@@ -18,6 +18,7 @@ import {
   renameReport,
   restoreConversation,
   restoreReport,
+  readCloudCatalog,
   sendChat,
 } from './client'
 
@@ -26,6 +27,17 @@ afterEach(() => {
 })
 
 describe('API namespace and chat mapping', () => {
+  it.each(['RESOURCE_NOT_ACCESSIBLE', 'MODEL_RESOLUTION_FAILED', 'SCHEMA_UNAVAILABLE',
+    'QUERY_REJECTED', 'QUERY_TIMEOUT', 'RATE_LIMITED', 'UPSTREAM_UNAVAILABLE', 'CONTRACT_DRIFT'])(
+    'retains the existing backend Cloud failure code %s without raw diagnostics', async code => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({detail:{failure:{
+        code, stage:'tool_execution', retryable:false, recovery_action:'none',
+      }}, raw:'PRIVATE_PROVIDER_DETAIL'}), {status:503,headers:{'Content-Type':'application/json'}})))
+      const caught = await readCloudCatalog().catch(error => error)
+      expect(caught).toMatchObject({failure:{code}})
+      expect(caught.message).not.toContain('PRIVATE_PROVIDER_DETAIL')
+    })
+
   it('accepts only the bounded typed failure contract from HTTP errors', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

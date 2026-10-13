@@ -371,7 +371,7 @@ export function Sidebar({
           {account?.session.authenticated ? <button type="button" role="menuitem" onClick={() => void account.logout()}>退出</button> : null}
         </div> : null}
         {account && !account.session.authenticated ?
-          <button className="account-card" type="button" disabled={['AUTHENTICATING', 'SESSION_ESTABLISHING'].includes(account.state)} onClick={account.login}><span className="account-avatar"><UserRound size={16} /></span><span className="account-copy"><strong>使用 Microsoft 登录</strong></span></button>
+          <button className="account-card" type="button" aria-label="使用 Microsoft 登录" title="使用 Microsoft 登录" disabled={['AUTHENTICATING', 'SESSION_ESTABLISHING'].includes(account.state)} onClick={account.login}><span className="account-avatar"><UserRound size={16} /></span><span className="account-copy"><strong>使用 Microsoft 登录</strong></span></button>
           : <button className="account-card" type="button" title={account?.session.display_name || 'PowerBIAgent 用户'} aria-label={account?.session.display_name || 'PowerBIAgent 用户'} aria-haspopup="menu" aria-expanded={userMenuOpen} onClick={() => { if (collapsed) onToggle(); setUserMenuOpen((open) => !open) }}><span className="account-avatar">{account ? account.session.display_name?.slice(0, 2) : <UserRound size={16} />}</span><span className="account-copy"><strong>{account?.session.display_name || 'PowerBIAgent'}</strong><small>{account ? account.session.preferred_username : '内部用户'}</small></span></button>}
       </div>
     </aside>

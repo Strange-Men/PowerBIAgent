@@ -10,6 +10,21 @@ export function publicFailureMessage(failure: FailureInfo): string {
       return '需要批准才能继续，请登录或联系管理员。'
     case 'AUTH_FORBIDDEN':
       return '当前账号暂时无法访问，请切换账号或联系管理员。'
+    case 'RESOURCE_NOT_ACCESSIBLE':
+      return '当前账号无法访问这个数据模型，请切换账号或联系管理员。'
+    case 'MODEL_RESOLUTION_FAILED':
+    case 'SCHEMA_UNAVAILABLE':
+      return '暂时无法读取这个数据模型，请刷新目录后重新选择。'
+    case 'QUERY_REJECTED':
+      return '云端数据服务无法完成本次查询，请调整问题后重试。'
+    case 'QUERY_TIMEOUT':
+      return '云端数据服务响应超时，请重试。'
+    case 'RATE_LIMITED':
+      return '云端数据服务请求较多，请稍后重试。'
+    case 'UPSTREAM_UNAVAILABLE':
+      return '云端数据服务暂不可用，请稍后重试。'
+    case 'CONTRACT_DRIFT':
+      return '云端数据响应暂时无法验证，请联系管理员。'
     case 'REPORT_TEMPLATE_INCOMPATIBLE':
       return '当前数据模型不支持这个报表模板，请选择其他模板或数据模型。'
     case 'REPORT_TEMPLATE_UNAVAILABLE':

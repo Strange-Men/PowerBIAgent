@@ -43,9 +43,17 @@ class AuthBoundaryMiddleware(BaseHTTPMiddleware):
                 response = JSONResponse({"status": "ok", "identity_mode": "ENTRA_BFF", "ready": True})
             elif path.startswith("/api/") or path in {"/api", "/docs", "/redoc", "/openapi.json"}:
                 await run_in_threadpool(service.require_session, request.cookies.get(settings.auth_cookie_name))
-                raise AuthFailure("AUTH_FORBIDDEN", 403)
+                from backend.app.api.cloud_routes import CONTROL_PLANE_ROUTES
+                if ((request.method, path) in CONTROL_PLANE_ROUTES
+                        and getattr(request.app.state, "cloud_workspace_service", None) is not None):
+                    response = await call_next(request)
+                else:
+                    raise AuthFailure("AUTH_FORBIDDEN", 403)
             else:
                 response = await call_next(request)
+                if path == "/auth/logout" and response.status_code == 200:
+                    cloud = getattr(request.app.state, "cloud_workspace_service", None)
+                    if cloud is not None: await cloud.prune()
         except AuthFailure as error:
             response = failure_response(error)
         response.headers["Cache-Control"] = "no-store"
@@ -65,8 +73,15 @@ class AuthLogRedaction(logging.Filter):
             record.stack_info = None
         elif record.name == "uvicorn.access":
             args = record.args
-            if isinstance(args, tuple) and len(args) == 5 and str(args[2]).startswith("/auth/"):
-                record.args = (args[0], args[1], str(args[2]).split("?", 1)[0], args[3], args[4])
+            if isinstance(args, tuple) and len(args) == 5:
+                path = str(args[2]).split("?", 1)[0]
+                if path.startswith('/api/'):
+                    # Client-forged IDs and schema/member query strings must
+                    # not become persistent access-log evidence.
+                    path = '/api/[resource details redacted]'
+                elif not path.startswith('/auth/'):
+                    return True
+                record.args = (args[0], args[1], path, args[3], args[4])
         return True
 
 

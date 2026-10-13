@@ -11,9 +11,52 @@
 | Current Release State | M6.3 Security COMPLETE；以Final自身exact-SHA CI + remote audit生效；数值兼容P1 BLOCKED；M5 FINAL=true |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | M6.4未实施、须独立批准；数值P1必须在Product E2E前解决 |
-| Current implementation status | M6.3 owner namespace / scoped repositories / migration / IDOR / cursor / binding cleanup已实现并通过synthetic验证；ENTRA产品API仍关闭 |
+| Next | M6.4已获用户批准，正在本地开发/验证；数值P1必须在Product E2E前解决，当前未发布 |
+| Current implementation status | M6.4正式Cloud控制面、模型选择及Settings已接线；服务组合与UX PARTIAL；业务API仍关闭，数值/完整性及完整Real链BLOCKED |
 | Ready state | Real安全74/74、Late-Response41/41、完整本地回归及候选CI通过；Final自身CI与remote audit解析 |
+
+## M6.4 当前开发（2026-10-13，阶段候选；非 Final Seal）
+
+用户最新明确授权一次M6.4阶段候选提交、正常Push main、该exact SHA Full Validation CI及Remote Audit；范围冻结，不新增功能。
+本轮fresh fetch成功，main/HEAD/origin/main一致，暂存区为空；48项既有源码/测试/文档修改与上一轮最终清单一致。
+候选基线以提交标题`M6.4_云端产品阶段候选与安全边界`对应的当前checkout exact SHA及远端回执解析；不继承历史CI。
+Settings.version继续M6.3；M6.4保持PARTIAL/BLOCKED、Final NOT READY。后文历史“不Commit/Push”限制已由本次候选授权替代；Final仍须全部原定验收。
+未验证业务HTTP、测试History/Report回放与外部LLM准备继续fail closed；Real NOT_TESTED/BLOCKED不妨碍安全候选提交，不计Real PASS。
+fresh本地质量门槛、候选CI与远端审计结果见[专项候选收口记录](milestones/m6/m6_4_cloud_product_e2e.md)。
+
+最新测试隔离轮本地后端3275 PASS/1 SKIP/12 warnings，隔离31项；前端132 PASS与Typecheck/Lint/Build，Semantic819、Golden11/1 manual Real SKIP；必要Real及完整Chat→Facts→Answer/Report未通过，未提交发布。
+
+测试Workspace强制隔离已本地实现，定向逐项REST及Adapter/Transport allowlist默认拒绝；原始回执/seed身份本机匹配。企业隐私P0仍PARTIAL，History/Report/外部LLM链保持拒绝；Real未运行，M6.4未发布。详见专项最新测试隔离章节。
+
+[本轮合同与分层证据](milestones/m6/m6_4_cloud_product_e2e.md)。Charter旧状态与08的M9规划已先行修正。
+Catalog增加current-principal只读REST与逐模型Resolve/Schema验证，复用ToolGateway和现有Adapter。
+恢复开发已接正式Cloud控制面接口、显式模型选择、Settings/Data与既有Composer；业务执行入口仍关闭。
+用户另行明确批准model_semantic_context.py六处类型兼容声明，None仍为未知、fabric_iq来源保留；其他Frozen Core不改。
+Viewer A已完成真实登录；本轮Real Catalog PASS（6个可访问模型），目录仍诚实标为PARTIAL。
+首轮三条固定查询在ToolGateway前置策略处被临时harness遗漏的模型授权上下文阻断，尚未到达ExecuteQuery；
+仓库外最小接线修复经12项OFFLINE测试通过；Viewer A重新登录后，三条查询均已真实到达ExecuteQuery。
+COUNTROWS严格数值与独立预期匹配（但truncated=true）；销售额标量/分组在HTTP wire和SDK中均为Int64列配字符串，FAIL CONTRACT_DRIFT。
+三条响应均无完整性信号，官方合同重验仍不足，严格CONTRACT_DRIFT与truncated=true保留；不是登录或consent停点。
+Viewer B正式首页已发现15个已验证模型（含获准共享synthetic fixture）；REST的18工作区目录完成，123候选的IQ授权串行耗尽预算。
+已复用有界并发和同一deadline返回scoped PARTIAL；后续Real选择遭遇RATE_LIMITED，模板资格本轮未通过。
+新负例定位未知授权失败误计不可访问并继续扇出；最小修复停止当前批次、drain任务并保留unverified范围，Real复验待新native会话。
+CloudProductServiceFactory复用既有TurnPipeline/owner repositories；新增History和Report owner只读组合，身份在await前后重验。
+正式业务API、Cloud Chat/History/Report前端完整链和会话恢复尚未完成；最新前端131项/Lint/Build通过，后端全量3244 PASS、1 SKIP、12 warnings。
+八类Shape已逐项研究，SCALAR与标量FILTERED_AGGREGATION在既有合同内存在候选证明路径，但尚未取得可信Real证明；不要求所有问题无条件等待Microsoft。
+Settings.version=M6.3，M6.4发布仍NOT READY。
+本轮按用户明确许可，在fetch失败后以GitHub连接器核对相同main SHA，仅继续本地开发/测试。
+成功fetch且远端基线未变化前禁止Commit/Push/Final Seal；该临时例外不改变长期Git规则。
+本轮有界fetch曾失败并用连接器核验；最新HTTP/1.1 fetch已成功，main/HEAD/origin/main仍为原基线，staging为空。
+产品Adapter新增完整性保护，正式API继续关闭。
+
+用户补充企业数据P0并确认公司及账号所有者完整授权尚未确认；受影响Real操作暂停，本人创建的原生Real服务已停止。
+暂停前最后一次目录返回6个已验证模型、明确115个尚未验证，获准synthetic fixture模型选择成功；模板资格及业务Real链未通过。
+合成开发继续：模型名称本地筛选、隐私边界审计、LOCAL_DEV合成问答/新聊天/历史恢复已验；结果不计Cloud Real PASS。
+DeepSeek/Kimi通用Provider实际可接收上层columns/rows；两个profile仅经in-process合成wire验证，未向外部发送企业数据。
+现有Secret scrubber不是业务数据DLP；History/Report当前模型RLS/OLS重验与跨登录绑定未完成，P0保持PARTIAL/BLOCKED。
+仓库外六目录仅脱敏风险扫描，十个历史DB及二进制/归档等内容未读；风险候选不能冒充已确认泄漏或“安全PASS”。
+P0证据在PBIAgentTest/M6.4/Acceptance/p0_privacy_audit.md；同样约束用户提及的M6.4.1 PREP边界，不新增版本或实施范围。
+当前可运行服务仅LOCAL_DEV合成实例；公司/账号授权明确前不恢复企业Real，也不向外部LLM发送真实BI或敏感Schema。
 
 ## M6.3 安全里程碑
 

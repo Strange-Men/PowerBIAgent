@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Composer } from './components/Composer'
 import { ConversationView } from './components/ConversationView'
 import { Sidebar } from './components/Sidebar'
+import { CloudWorkspace } from './components/CloudWorkspace'
 import { usePowerBIAgent } from './hooks/usePowerBIAgent'
 import { useAuth } from './hooks/useAuth'
 import type { BatchOperationResult } from './types'
@@ -24,7 +25,9 @@ export function App() {
       onBulkRestoreReports={emptyBatch} account={{session:auth.session || {
         identity_mode:'ENTRA_BFF', authenticated:false, display_name:null, preferred_username:null,
         csrf_token:null, state:auth.state, expires_in:0}, state:auth.state, login:auth.login, logout:auth.logout}} />
-    <main className="chat-main auth-welcome">
+    <main className={`chat-main ${auth.session?.authenticated ? '' : 'auth-welcome'}`}>
+      {auth.session?.authenticated ? <CloudWorkspace key={auth.generation} session={auth.session}
+        onAuthInvalid={auth.refresh} /> : <>
       <h1>{auth.session?.authenticated ? '欢迎回来' : '使用组织 Power BI 数据进行问答'}</h1>
       {auth.state === 'SESSION_ESTABLISHING' || auth.state === 'AUTHENTICATING'
         ? <p role="status">{auth.state === 'AUTHENTICATING' ? '正在登录…' : '正在确认登录状态…'}</p>
@@ -34,6 +37,7 @@ export function App() {
           : auth.state === 'CONSENT_REQUIRED' ? '需要批准才能继续，请登录或联系管理员。'
           : auth.state === 'AUTH_ERROR' ? '登录未完成，请重试或联系管理员。' : '登录后查看你的账户。'}</p>}
       {auth.logoutPending ? <button type="button" onClick={() => void auth.logout()}>重试退出</button> : null}
+      </>}
     </main>
   </div>
 }

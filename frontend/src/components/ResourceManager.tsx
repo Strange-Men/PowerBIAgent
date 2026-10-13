@@ -29,6 +29,7 @@ import type {
   RuntimeMode,
   AccountActions,
 } from '../types'
+import { CloudAccountSettings } from './CloudAccountSettings'
 
 const SETTINGS_PAGE_SIZE = 20
 
@@ -229,14 +230,7 @@ export function ResourceManager(props: ResourceManagerProps) {
   if (!props.account) return <LocalResourceManager {...props} />
   const {account, onClose} = props
   return <SettingsFrame onClose={onClose}>
-      <div className="settings-layout">
-        <nav className="settings-nav" aria-label="设置分类"><button type="button" className="is-active">账户</button></nav>
-        <div className="settings-content"><section className="settings-intro account-settings"><h3>账户</h3><dl className="account-details">
-          <dt>姓名</dt><dd>{account.session.display_name}</dd>
-          <dt>用户名</dt><dd>{account.session.preferred_username || '未提供'}</dd>
-          <dt>登录状态</dt><dd>{account.session.authenticated ? '已登录' : '未登录'}</dd>
-        </dl><button type="button" onClick={() => void account.logout()}>退出</button></section></div>
-      </div>
+      <CloudAccountSettings account={account} />
   </SettingsFrame>
 }
 

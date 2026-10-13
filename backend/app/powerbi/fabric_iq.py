@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 
 from backend.app.auth.models import AuthFailure
 from backend.app.config.settings import IdentityMode, PowerBIMode
+from backend.app.config.cloud_test_policy import CloudTestPolicy
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.powerbi.fabric_iq_contract import fail
 from backend.app.powerbi.fabric_iq_normalization import (
@@ -55,18 +56,28 @@ class FabricIQAdapterFactory:
         for url in self._bootstrap.values(): _bootstrap_identity(url)
 
     def create(self, session_id, principal):
+        return self._create(session_id, principal, product_queries=False)
+
+    def create_product(self, session_id, principal):
+        """Product execution requires proven completeness before Core consumes rows."""
+        return self._create(session_id, principal, product_queries=True)
+
+    def _create(self, session_id, principal, *, product_queries):
         if self._auth.require_session(session_id).principal != principal:
             raise AuthFailure("AUTH_FORBIDDEN", 403)
         return FabricIQPowerBIAdapter(self._auth, session_id, principal, self._bootstrap,
-            self._transport_factory(self._settings, self._auth, session_id, principal))
+            self._transport_factory(self._settings, self._auth, session_id, principal),
+            product_queries=product_queries)
 
 
 class FabricIQPowerBIAdapter(PowerBIAdapter):
-    def __init__(self, auth, session_id, principal, bootstrap, transport):
+    def __init__(self, auth, session_id, principal, bootstrap, transport, *, product_queries=False):
         self._auth, self._sid, self._principal = auth, session_id, principal
         self._bootstrap, self._transport = bootstrap, transport
         self._bindings, self._schemas = {}, {}
         self._closed = False
+        self._product_queries = product_queries
+        self._test_policy = CloudTestPolicy(auth.settings)
 
     @property
     def provider_name(self): return "fabric_iq"
@@ -93,6 +104,11 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
             self._schemas.clear()
             raise
 
+    def assert_session_binding(self, auth, session_id, principal):
+        self._validate()
+        if self._auth is not auth or self._sid != session_id or self._principal != principal:
+            raise AuthFailure("AUTH_FORBIDDEN", 403)
+
     @asynccontextmanager
     async def _connection(self):
         from backend.app.powerbi.base import PowerBIAdapterError
@@ -116,6 +132,13 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         if not ref or (ref.tenant_id, ref.principal_id, ref.session_epoch, ref.authorization_epoch) != (
                 p.tenant_id, p.principal_id, p.session_epoch, p.authorization_epoch):
             raise fail("RESOURCE_NOT_ACCESSIBLE")
+        try:
+            self._test_policy.model(ref.workspace_id, ref.semantic_model_id)
+        except Exception:
+            # Scope revocation invalidates every transient schema/binding.
+            self._bindings.clear()
+            self._schemas.clear()
+            raise
         return ref
 
     async def health_check(self):
@@ -128,17 +151,34 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         self._validate()
         url = self._bootstrap.get(bootstrap_name)
         if url is None: raise fail("MODEL_RESOLUTION_FAILED")
+        return await self._resolve_authorized_url(url)
+
+    async def bind_catalog_model(self, workspace_id, model_id):
+        """Server-owned REST candidate; Resolve+Schema must still prove access."""
+        self._validate()
+        workspace_id, model_id = guid(workspace_id), guid(model_id)
+        url = f"https://app.powerbi.com/groups/{workspace_id}/datasets/{model_id}/details"
+        return await self._resolve_authorized_url(url, reuse=True)
+
+    async def _resolve_authorized_url(self, url, *, reuse=False):
+        self._validate()
         expected_workspace, expected_model = _bootstrap_identity(url)
+        self._test_policy.model(expected_workspace, expected_model)
         async with self._connection() as connection:
             resolved, resource = unpack(await connection.call("ResolveFabricItem", {"fabricItemId": url}), "MODEL_RESOLUTION_FAILED")
             if (resource is not None or resolved.get("itemType") != "SemanticModel"
                     or guid(resolved.get("fabricItemId")) != expected_model
                     or guid(resolved.get("workspaceId")) != expected_workspace):
                 raise fail("MODEL_RESOLUTION_FAILED")
+            self._validate()
+            self._test_policy.model(expected_workspace, expected_model)
             raw = await connection.call("GetSemanticModelSchema", {"artifactId": expected_model})
-            key = "fabric_iq:" + token_urlsafe(32)
+            old = next((ref for ref in self._bindings.values()
+                if ref.workspace_id == expected_workspace and ref.semantic_model_id == expected_model), None) if reuse else None
+            key = old.server_model_key if old else "fabric_iq:" + token_urlsafe(32)
             schema = normalize_schema(raw, expected_model, key, self._principal.authorization_epoch)
         self._validate()
+        self._test_policy.model(expected_workspace, expected_model)
         p = self._principal
         ref = CloudSemanticModelRef(key, p.tenant_id, p.principal_id, expected_workspace, expected_model,
             schema.name, p.session_epoch, p.authorization_epoch)
@@ -151,6 +191,7 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
             raw = await connection.call("GetSemanticModelSchema", {"artifactId": ref.semantic_model_id})
             schema = normalize_schema(raw, ref.semantic_model_id, semantic_model_key, ref.authorization_epoch)
         self._validate()
+        self._binding(semantic_model_key)
         self._schemas[semantic_model_key] = schema
         return schema.model_copy(deep=True)
 
@@ -167,6 +208,15 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         except TimeoutError:
             raise fail("QUERY_TIMEOUT") from None
         self._validate()
+        self._binding(request.semantic_model_key)
+        return self._product_result(result)
+
+    def _product_result(self, result):
+        # Generic Core can present partial rows with disclosure; the adaptive
+        # Sales report does not retain that marker. Cloud product calls must
+        # therefore fail before any facts, Memory or report artifact are built.
+        if self._product_queries and result.truncated:
+            raise fail("CONTRACT_DRIFT")
         return result
 
     async def normalize_result(self, raw):
@@ -175,7 +225,7 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
             raise fail("CONTRACT_DRIFT")
         response, request = raw
         ref = self._binding(request.semantic_model_key)
-        return normalize_query(response, ref.semantic_model_id, request)
+        return self._product_result(normalize_query(response, ref.semantic_model_id, request))
 
     async def normalize_error(self, raw):
         from backend.app.powerbi.base import PowerBIAdapterError

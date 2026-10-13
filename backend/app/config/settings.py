@@ -13,6 +13,8 @@ from uuid import UUID
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from backend.app.config.cloud_catalog import SharedModelSeed
+from backend.app.config.cloud_test_policy import CloudTestAllowlist
 
 LiteralFabricVariant = Literal["Fabric.Routing.FabricIQ.V1"]
 
@@ -168,6 +170,11 @@ class Settings(BaseSettings):
     fabric_iq_endpoint: str = "https://fabriciq.svc.cloud.microsoft/v1/mcp/fabriciq"
     fabric_iq_variant: LiteralFabricVariant = "Fabric.Routing.FabricIQ.V1"
     fabric_iq_timeout_seconds: int = Field(default=60, ge=5, le=120)
+    fabric_shared_models: tuple[SharedModelSeed, ...] = Field(default=(), max_length=100, repr=False)
+    # Local M6 Real testing defaults closed. Formal current-principal product
+    # deployments explicitly disable this environment policy; LOCAL_DEV is unaffected.
+    fabric_test_mode: bool = True
+    fabric_test_allowlist: CloudTestAllowlist | None = Field(default=None, repr=False)
 
     @field_validator("fabric_iq_endpoint")
     @classmethod

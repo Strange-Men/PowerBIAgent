@@ -26,9 +26,9 @@ class RuntimeObject(MetadataRecord):
     description: str | None = None
     display_name: str | None = None
     format_string: str | None = None
-    is_hidden: bool = False
-    is_system_managed: bool = False
-    is_key: bool = False
+    is_hidden: bool | None = False
+    is_system_managed: bool | None = False
+    is_key: bool | None = False
     expression: str | None = None
     sort_by_column: str | None = None
     evidence: tuple[str, ...] = ()
@@ -38,8 +38,8 @@ class RuntimeTable(MetadataRecord):
     name: str
     description: str | None = None
     display_name: str | None = None
-    is_hidden: bool = False
-    is_system_managed: bool = False
+    is_hidden: bool | None = False
+    is_system_managed: bool | None = False
 
 
 class RuntimeRelationship(MetadataRecord):
@@ -74,7 +74,7 @@ class ModelSemanticContext(MetadataRecord):
     runtime_identity: str
     schema_fingerprint: str
     session_generation: int | None = None
-    metadata_source: Literal["adapter", "local_mcp", "mock"]
+    metadata_source: Literal["adapter", "local_mcp", "mock", "fabric_iq"]
     tables: tuple[RuntimeTable, ...]
     columns: tuple[RuntimeObject, ...]
     measures: tuple[RuntimeObject, ...]

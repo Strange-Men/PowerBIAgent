@@ -8,6 +8,381 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-64-013
+  title: Cloud并发Profile身份失效被目录成功结果掩盖
+  category: ERR
+  first_detected_version: M6.4
+  symptom: Catalog和LLM profiles并行请求，Profile401被allSettled忽略，继续status请求并发布Catalog
+  local_evidence: 新合成profile401负例先FAIL未触发identity恢复；修复把401升级共享身份失败并清空目录和选择，前端focused回归验证
+  authoritative_sources:
+  - title: M6.4 Principal会话与Late Response P0合同
+    reason: 任一并发Cloud请求证明身份失效时，不得继续发布该身份资源或恢复旧选择
+  root_cause: 独立Profile失败被视为可用性问题，未区分401身份失败
+  failed_attempts:
+  - 初次补丁误放模板函数造成未定义变量，立即定位纠正，不修改negative expected
+  repair_attempt_count: 2
+  final_fix: Profile401在并发settled后进入既有failure身份恢复，清空Catalog/status/templates/profile；旧generation仍拒绝，业务gate未开放
+  regression_tests:
+  - frontend/src/components/CloudWorkspace.test.tsx
+  prohibited_patterns:
+  - 忽略并发子请求401而使用兄弟Catalog成功结果继续展示旧身份资源
+  prevention_rules:
+  - Promise.allSettled必须逐项处理身份失效与普通可用性失败，不能用成功子结果掩盖Auth失效
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: concurrent_profile_401_invalidates_cloud_presentation_synthetic_only
+    version: M6.4
+- id: ERR-64-012
+  title: M6真实测试目录仅验证账号权限而未限制获批测试资源
+  category: ERR
+  first_detected_version: M6.4
+  symptom: current-principal Catalog可枚举同事Workspace；Viewer或IQ访问成功不能证明测试授权，旧Binding与History亦缺测试范围证明
+  local_evidence: 原始回执和合成seed在本机exact身份匹配；新增16项failure-first隔离用例先FAIL未实现配置合同，实施后通过并扩充直接IQ与HTTP及迟到响应负例；所有ID与授权对象为合成
+  authoritative_sources:
+  - title: 用户2026-10-13 M6.4最高优先级测试Workspace与企业隐私P0授权
+    reason: 真实测试只限原始获批M6 Workspace逐model/report，默认拒绝，正式产品current-principal目录不改
+  - title: Microsoft Fabric v1 Workspace及SemanticModel和Report GET与Fabric IQ工具合同
+    reason: 支持已知资源定向读取；调用者权限仅证明访问，不证明公司测试或外部LLM披露授权
+  root_cause: 现有Auth和owner授权没有独立测试资源批准边界；通用LLM及Trace最小化不等于数据脱敏
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 测试环境默认CloudTestPolicy与本地逐资源配置，REST定向GET和安全投影，Adapter及Transport逐调用范围复验；测试History/Report/外部事实LLM准备在存储前拒绝；原生runner强制隔离，不运行Real；access-log伪造ID/query-string先FAIL后遮蔽API路径，未标记来源默认非合成
+  regression_tests:
+  - backend/tests/unit/test_cloud_test_isolation.py
+  - backend/tests/unit/test_cloud_catalog_transport.py
+  - backend/tests/unit/test_cloud_privacy_boundary.py
+  prohibited_patterns:
+  - 为查找fixture遍历同事Workspace或使用真实企业资源做越权负例
+  - 从Viewer或登录成功推导测试及外部LLM披露授权
+  - 将测试单Workspace误写为产品永久架构或关闭数值完整性门槛
+  prevention_rules:
+  - 每次Real之前核对原始receipt和本地批准列表；缺配置及必要授权拒绝，合成工作继续
+  - 恢复资源必须证明当前principal和exact模型范围；历史owner不自动授予当前RLS/OLS
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: test_scope_allowlist_and_privacy_refusal_implemented_real_pending
+    version: M6.4
+- id: ERR-64-011
+  title: 隐私审计测试的假Key未采用既有明确占位标记
+  category: ERR
+  first_detected_version: M6.4
+  symptom: 新增P0测试使用SYNTHETIC前缀假Key，仓库既有Secret规则不识别该标记，全量安全门禁FAIL
+  local_evidence: 首轮全量3243 PASS一项RepositorySafety FAIL；仅把测试假值改为既有NOT_A_REAL_SECRET标记后55 focused及最新全量3244 PASS一SKIP十二warnings
+  authoritative_sources:
+  - title: 既有RepositorySafety测试假值标记规范
+    reason: 测试凭据必须明确标为假值，不修改扫描规则、白名单或expected
+  root_cause: 新测试使用未被既有安全规范接受的占位格式，非真实凭据泄露证据
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅修改测试内固定假值为既有明确标记，Provider参数和安全断言不变；保留失败记录，未读取或替换真实凭据
+  regression_tests:
+  - backend/tests/unit/test_cloud_privacy_boundary.py
+  - backend/tests/unit/test_repository_safety.py
+  prohibited_patterns:
+  - 为测试假值关闭Secret检查或扩充生产代码豁免
+  prevention_rules:
+  - 隐私负例使用仓库既有明显合成标记，安全门禁保持原合同
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: synthetic_test_credentials_marked_under_existing_safety_contract
+    version: M6.4
+- id: ERR-64-010
+  title: Catalog将限流及未知验证失败误记为不可访问并继续扇出
+  category: ERR
+  first_detected_version: M6.4
+  symptom: Viewer B目录返回已验证模型后选择遭遇RATE_LIMITED；未知验证失败仍计inaccessible且持续请求后续候选
+  local_evidence: 四项分类与停止扇出负例先FAIL；第一轮分类修复后停止扇出仍FAIL六次调用超过四次上界；第二轮在释放并发槽前设置halt状态，41项相关回归通过
+  authoritative_sources:
+  - title: Microsoft Fabric IQ MCP limitations and considerations，2026-10-13重验
+    reason: 元数据与DAX受服务端限流；rate-limit可重试但应先退避，不代表资源权限拒绝
+  - title: ADR-020 scoped catalog与M6.0 PARTIAL边界
+    reason: 只有当前主体验证成功的条目可选；未验证与确认不可访问必须区分
+  root_cause: 所有非Auth Tool失败均写finished=None，抹去失败类别；并发槽释放后新任务可早于gather取消启动
+  failed_attempts:
+  - 仅抛内部停止异常仍允许两个新任务在gather取消前启动，负例保持FAIL
+  repair_attempt_count: 2
+  final_fix: 未知验证失败保留公开类别并停止当前批次，先设置halt状态再取消及drain；未验证不计不可访问；保留已验证条目，零条目为error而非empty；无后台自动重试
+  regression_tests:
+  - backend/tests/unit/test_cloud_catalog_service.py
+  - backend/tests/unit/test_cloud_workspace_service.py
+  - backend/tests/api/test_cloud_control_plane.py
+  prohibited_patterns:
+  - 将限流、超时或合同漂移冒充权限拒绝或授权范围完整
+  - 发现限流后继续启动全部候选授权或无限重试
+  prevention_rules:
+  - scoped metadata PARTIAL必须区分验证成功、确认不可访问和未验证；任务调度停止先于释放并发槽
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: typed_unknown_authorization_and_bounded_fanout_stop_verified_locally_real_pending
+    version: M6.4
+- id: ERR-64-009
+  title: 报表模板读取失败错误清除已成功的模型选择
+  category: ERR
+  first_detected_version: M6.4
+  symptom: choose或returning load已取得服务端有效模型状态，后续模板请求失败却进入全局catch清除模型或目录
+  local_evidence: selection与reload两个负例先FAIL；拆分模板安全恢复后八项focused与130项全前端测试通过，Lint及Build通过
+  authoritative_sources:
+  - title: M6.0模型选择与报表模板独立资格合同
+    reason: 模板失败不能伪装模型未选；身份失效与模型epoch保护仍优先拒绝
+  root_cause: Catalog或selection和模板读取共用同一个异常处理块
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 复用单一模板加载函数，非401错误仅清理模板并显示既有安全failure文案；401仍进入身份恢复；旧generation不发布任何状态，事实执行gate保持关闭
+  regression_tests:
+  - frontend/src/components/CloudWorkspace.test.tsx
+  prohibited_patterns:
+  - 模板失败清除已经验证成功的模型或将原始provider detail显示给用户
+  prevention_rules:
+  - 目录、模型选择、模板资格分别验证成功和失败边界，恢复不得扩大执行权限
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: template_failure_recovery_preserves_verified_model_local_only
+    version: M6.4
+- id: ERR-64-008
+  title: 大目录逐模型串行授权耗尽全请求预算
+  category: ERR
+  first_detected_version: M6.4
+  symptom: Viewer B的18工作区REST目录阶段完成，123模型IQ授权串行耗尽约120秒预算，已验证结果整体丢失
+  local_evidence: 低基数分阶段计时证明REST先完成；有界并发后Real目录15模型PARTIAL；加速预算负例先TimeoutError，再以scoped PARTIAL返回唯一已验证条目并drain任务
+  authoritative_sources:
+  - title: ADR-020与M6.0 scoped catalog、逐模型验证和timeout合同
+    reason: REST候选不是授权，目录局部完成可返回已验证条目但必须声明未验证范围
+  root_cause: 每个候选串行Resolve及Schema，外层deadline将全部已验证结果一并丢弃
+  failed_attempts:
+  - 第一轮有界并发仍接近请求预算，不足以保证大目录稳健完成；第二轮仅对metadata显式声明scoped PARTIAL
+  repair_attempt_count: 2
+  final_fix: 复用既有bounded_gather_ordered并发上界三；共享seed仅优先验证且REST标签优先；同一绝对deadline预留取消预算，auth失败和caller取消仍拒绝整体；授权预算PARTIAL不授予任何查询完整性
+  regression_tests:
+  - backend/tests/unit/test_cloud_catalog_service.py
+  - backend/tests/unit/test_cloud_workspace_service.py
+  prohibited_patterns:
+  - 放开未验证候选、无界并发或通过增大timeout隐藏根因
+  - 把目录authorization_scope_complete当作QueryResult完整性
+  prevention_rules:
+  - 先定位REST与IQ阶段；大目录预算、取消drain、native身份和候选边界独立验证
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: bounded_authorization_and_scoped_metadata_partial_real_catalog_observed
+    version: M6.4
+- id: ERR-64-007
+  title: Cloud元数据请求排队未计入请求预算
+  category: ERR
+  first_detected_version: M6.4
+  symptom: Catalog等待同session lock时不受request deadline约束，多个迟到请求可持续排队
+  local_evidence: 加速synthetic deadline负例先FAIL外层TimeoutError；统一元数据操作预算后31项Catalog及Service控制面回归通过
+  authoritative_sources:
+  - title: M6.4原定timeout与Late Response安全范围
+    reason: 排队与外部调用均受同一请求预算约束，排队超时不得清除另一个有效操作的选择
+  root_cause: request timeout仅包围取得lock后的Catalog执行，未包含lock等待
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Service元数据操作统一将lock等待与执行包在既有请求预算内；排队超时无状态副作用，活动Catalog取消继续清理自身状态
+  regression_tests:
+  - backend/tests/unit/test_cloud_workspace_service.py
+  - backend/tests/unit/test_cloud_product_composition.py
+  - backend/tests/api/test_cloud_control_plane.py
+  prohibited_patterns:
+  - 只给upstream调用计时而允许请求无限排队
+  - 未持有操作锁的超时请求清除其他请求的有效选择
+  prevention_rules:
+  - 请求deadline必须覆盖服务端排队，取消后的身份与选择校验保留
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: bounded_metadata_queue_and_safe_timeout_state_verified
+    version: M6.4
+- id: ERR-64-006
+  title: 前端遗漏既有Cloud公开错误码导致恢复信息丢失
+  category: ERR
+  first_detected_version: M6.4
+  symptom: 后端返回既有QUERY_TIMEOUT等Cloud FailureInfo，前端白名单拒绝且Cloud组件仅显示泛化目录错误
+  local_evidence: 八个HTTP错误合同负例与一个UX负例先9 FAIL；补齐既有八码后30项focused及127项完整前端测试通过，Lint和Build通过；Real目录超时已显示安全恢复文案
+  authoritative_sources:
+  - title: 既有backend PublicFailureCode与M6.0安全错误恢复合同
+    reason: 前端只消费正式低基数FailureInfo，不能丢失公开恢复动作或展示provider原文
+  root_cause: 前端typed union和parseFailure白名单未同步M6.2 Cloud码，CloudWorkspace又丢弃已解析failure
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅补齐既有八码的frontend识别与安全文案，CloudWorkspace复用publicFailureMessage；未知码仍拒绝，raw detail不进入页面
+  regression_tests:
+  - frontend/src/api/client.test.ts
+  - frontend/src/components/CloudWorkspace.test.tsx
+  prohibited_patterns:
+  - 放宽为任意provider错误字符串或把原始响应直接显示给用户
+  prevention_rules:
+  - Cloud恢复必须验证正式HTTP错误DTO到可见UX的链路，同时保留未知码和敏感原文负例
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: existing_cloud_failure_contract_connected_to_product_ux
+    version: M6.4
+- id: ERR-64-005
+  title: Cloud服务准备请求可恢复已失效的模型选择
+  category: ERR
+  first_detected_version: M6.4
+  symptom: prepare读取selection后等待schema重验时，目录失效再刷新可使旧prepare重新选回旧模型
+  local_evidence: 新增真实Service与native合成Adapter竞态负例先FAIL未抛冲突；最小修复后Service和Workspace九项通过
+  authoritative_sources:
+  - title: ADR-020与M6.0身份模型切换及Late Response合同
+    reason: 旧请求不能恢复已失效的selection或继承旧模型上下文
+  root_cause: CloudProductServiceFactory重验模型时遗漏传入已读取的server generation，未复用现有CAS边界
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Service prepare仅向既有select传入expected_generation=current.generation，旧epoch在任何Repository组合之前拒绝
+  regression_tests:
+  - backend/tests/unit/test_cloud_product_composition.py
+  - backend/tests/unit/test_cloud_workspace_service.py
+  prohibited_patterns:
+  - 在await后的服务组合中无条件恢复旧模型选择
+  prevention_rules:
+  - 身份与模型状态读取后所有重验步骤必须绑定已读取generation，失效只拒绝而不自动恢复
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: service_preparation_reuses_existing_generation_guard
+    version: M6.4
+- id: ERR-64-004
+  title: Cloud Schema未知标记与来源不能进入M5 runtime metadata context
+  category: ERR
+  first_detected_version: M6.4
+  symptom: 原生Cloud Schema保留None并标记fabric_iq，ModelSemanticContext在RuntimeTable bool字段和来源Literal拒绝，模板eligibility不可用
+  local_evidence: OFFLINE原生Adapter投影诊断BLOCKED；新增兼容及隐藏对象用例先3 FAIL，按用户明确批准六处类型声明修复后274项focused与819项Semantic Compatibility通过；Real模板复验待运行服务加载新代码
+  authoritative_sources:
+  - title: 用户2026-10-13本轮Frozen Core六字段最小兼容补丁明确批准
+    reason: 仅允许RuntimeObject三项bool和RuntimeTable两项bool保留None，并扩展fabric_iq来源；其他Frozen Core不改
+  - title: ADR-020与M6.2 Schema未知元数据合同
+    reason: 未知标记不得强填False或伪造关系、表达式及安全authority
+  root_cause: M6.2公共Schema支持未知标记和fabric_iq来源，但M5内部只读metadata context仍保留旧bool与来源枚举
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 经用户明确授权仅修改model_semantic_context.py六处类型声明，None原样保留，旧默认值和过滤逻辑不变
+  regression_tests:
+  - backend/tests/unit/test_cloud_semantic_context.py
+  - backend/tests/unit/test_model_semantic_context.py
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/unit/test_report_template_compatibility.py
+  prohibited_patterns:
+  - 将未知hidden/system/key元数据强制改为False以通过Core
+  - 借兼容补丁扩大Planner、DAX、ResultInspection或VerifiedFactSet修改
+  prevention_rules:
+  - 新Provider schema必须验证实际metadata context与下游eligibility，不以Schema DTO构造成功代替产品兼容
+  - Frozen Core合同兼容缺口先提供最小差异与负例并取得明确批准，unknown语义必须保留
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: user_approved_six_declarations_unknown_preserving_compatibility_patch
+    version: M6.4
+- id: ERR-64-003
+  title: 临时Real查询审计遗漏网关模型授权上下文
+  category: ERR
+  first_detected_version: M6.4
+  symptom: Real Catalog返回6个可访问模型，但三条固定查询在ExecuteQuery之前被ToolGateway拒绝
+  local_evidence: 首轮REAL audit-001保留；实际native_probe合成回归先2 FAIL，修复后与边界回归合计12 PASS；Real复验三条查询均已到达ExecuteQuery，count类型和值匹配，销售额仍独立CONTRACT_DRIFT
+  authoritative_sources:
+  - title: 既有ToolGateway与UserContext模型授权合同
+    reason: allowed_tools与allowed_semantic_models必须同时精确授权，Catalog候选不能代替执行权限
+  root_cause: harness只设置allowed_tools，UserContext模型白名单保留默认mock模型；原边界测试注入stub runner未覆盖实际native probe
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅在仓库外harness传入当前principal已Resolve和Schema验证的opaque ref.server_model_key；不修改网关或扩大模型白名单
+  regression_tests:
+  - backend/tests/unit/test_harness.py
+  prohibited_patterns:
+  - 为临时审计绕过ToolGateway或使用通配模型授权
+  - 将尚未到达ExecuteQuery的本地策略拒绝误报为上游数值编码故障
+  prevention_rules:
+  - 验收工具除HTTP边界测试外必须覆盖实际native Adapter和Gateway调用路径
+  - 诊断先证明失败阶段，未执行的Real查询保持NOT_TESTED
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: temporary_native_probe_scope_fixed_real_execute_reached_numeric_p1_remains
+    version: M6.4
+- id: ERR-64-002
+  title: 临时审计页登录链接违反既有return_to白名单
+  category: ERR
+  first_detected_version: M6.4
+  symptom: 仓库外审计页链接携带return_to=/auth/m64-audit，本地auth/login在跳转Microsoft前返回400 AUTH_FORBIDDEN
+  local_evidence: 用户截图与AuthService.start的仅允许根路径规则一致；仓库外登录链接回归先1 FAIL/9 PASS，改为/auth/login后10 PASS；浏览器已验证新链接
+  authoritative_sources:
+  - title: 现有M6.1 AuthService.start与test_unsafe_return_to
+    reason: 防止任意redirect的根路径白名单有效；临时工具必须遵守已有Auth合同
+  root_cause: 临时页面误以为任意同源return_to均被允许，原离线验收遗漏真实页面登录链接
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅修仓库外页面链接为/auth/login，说明登录完成后切回审计页；重启本人创建的临时进程，未修改Auth白名单或租户权限
+  regression_tests:
+  - backend/tests/api/test_auth_security.py
+  prohibited_patterns:
+  - 为临时harness便利放宽正式Auth的redirect或CSRF边界
+  - 将本地return_to拒绝误报为Microsoft consent或租户配置问题
+  prevention_rules:
+  - 临时页面的登录链接必须通过native Auth离线跳转回归，不能只测试手写正确登录URL
+  - 遵守已有return_to白名单，必要时登录回根页面后手动切回临时工具
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: temporary_link_fixed_without_weakening_native_auth
+    version: M6.4
+- id: ERR-64-001
+  title: Cloud Catalog构造时未核对Adapter所属用户
+  category: ERR
+  first_detected_version: M6.4
+  symptom: 本轮新增负例将有效B用户的Catalog误配到A用户Adapter，构造未抛AUTH_FORBIDDEN
+  local_evidence: test_service_rejects_another_valid_users_adapter_at_construction先RED；补充Auth实例/session/principal一致性断言后，49项新增Catalog focused tests通过；Real尚未执行
+  authoritative_sources:
+  - title: 用户M6.4 scope与ADR-020
+    reason: Catalog候选必须由当前已验证Principal逐项验证，其他用户Adapter或Schema不可授予访问
+  root_cause: Service仅验证自身session有效，未验证注入REST和IQ Adapter与自身Auth/session/principal完全一致
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: REST与IQ Adapter提供assert_session_binding，Service构造先验证绑定再注册ToolGateway handler；没有跨用户调用或fallback
+  regression_tests:
+  - backend/tests/unit/test_cloud_catalog_binding.py
+  - backend/tests/unit/test_cloud_catalog_transport.py
+  prohibited_patterns:
+  - 仅凭两个session分别有效就认为Service与Adapter属于同一用户
+  - 从客户端tenant/principal或另一个用户的schema授予模型访问
+  prevention_rules:
+  - 跨组件构造同时核对Auth实例/session/validated principal，await前后重验native session
+  - 当前用户逐模型Resolve与Schema后才绑定opaque key，synthetic与Real分层记录
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: failure_first_constructor_binding_fixed_local_only_real_pending
+    version: M6.4
 - id: ERR-63-002
   title: Fabric IQ销售额Int64列在HTTP响应中为字符串，严格合同拒绝
   category: ERR

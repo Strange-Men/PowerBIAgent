@@ -22,6 +22,7 @@ import type {
   AuthState,
 } from '../types'
 import { publicFailureMessage } from '../failure'
+import type { CloudCatalog, CloudWorkspaceStatus } from '../cloudTypes'
 
 interface ErrorPayload {
   detail?: unknown
@@ -52,7 +53,7 @@ export class ApiError extends Error {
 }
 
 function url(path: string): string {
-  if (path.startsWith('/auth/')) return path // Auth must ALWAYS remain same-origin.
+  if (path.startsWith('/auth/') || path.startsWith('/api/v1/cloud/')) return path // BFF always same-origin.
   return `${apiBaseUrl}${path}`
 }
 
@@ -128,6 +129,8 @@ function parseFailure(value: unknown): FailureInfo | undefined {
 
 const PUBLIC_FAILURE_CODES = new Set([
   'AUTH_REQUIRED', 'AUTH_EXPIRED', 'AUTH_CONSENT_REQUIRED', 'AUTH_FORBIDDEN',
+  'RESOURCE_NOT_ACCESSIBLE', 'MODEL_RESOLUTION_FAILED', 'SCHEMA_UNAVAILABLE',
+  'QUERY_REJECTED', 'QUERY_TIMEOUT', 'RATE_LIMITED', 'UPSTREAM_UNAVAILABLE', 'CONTRACT_DRIFT',
   'REPORT_TEMPLATE_INCOMPATIBLE', 'REPORT_TEMPLATE_UNAVAILABLE',
   'REPORT_DATA_UNAVAILABLE', 'REPORT_EXECUTION_FAILED',
   'REPORT_RENDER_FAILED', 'POWERBI_CONNECTION_LOST',
@@ -398,3 +401,16 @@ export async function listRecentReports(
   const page = await listManagedReports(sourceMode, 'active', 8)
   return page.items
 }
+
+export const readCloudCatalog = (signal?: AbortSignal) =>
+  requestJson<CloudCatalog>('/api/v1/cloud/catalog', { signal })
+export const readCloudStatus = (signal?: AbortSignal) =>
+  requestJson<CloudWorkspaceStatus>('/api/v1/cloud/status', { signal })
+export const selectCloudModel = (key: string, csrf: string, expectedGeneration: number, signal?: AbortSignal) =>
+  requestJson<CloudWorkspaceStatus>('/api/v1/cloud/selection', {
+    method: 'POST', body: JSON.stringify({ key, expected_generation: expectedGeneration }), headers: { 'X-CSRF-Token': csrf }, signal,
+  })
+export const readCloudProfiles = (signal?: AbortSignal) =>
+  requestJson<LLMProfileCatalog>('/api/v1/cloud/llm-profiles', { signal })
+export const readCloudTemplates = (signal?: AbortSignal) =>
+  requestJson<ReportTemplateCatalog>('/api/v1/cloud/report-templates', { signal })

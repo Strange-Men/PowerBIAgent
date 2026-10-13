@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { CatalogOption, LLMProfileOption } from '../types'
 
 interface ComposerProps {
+  dataSourceKind?: 'desktop' | 'cloud'
+  executionBlockedReason?: string | null
   sending: boolean
   semanticModel: CatalogOption | null
   semanticModelOptions: CatalogOption[]
@@ -25,6 +27,8 @@ interface ComposerProps {
 }
 
 export function Composer({
+  dataSourceKind = 'desktop',
+  executionBlockedReason = null,
   sending,
   semanticModel,
   semanticModelOptions,
@@ -48,6 +52,7 @@ export function Composer({
   const [value, setValue] = useState('')
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const [modelFilter, setModelFilter] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const modelButtonRef = useRef<HTMLButtonElement>(null)
@@ -58,6 +63,9 @@ export function Composer({
     semanticModel.selectable !== false &&
     !(reportTemplate && loadingReportTemplates) &&
     llmProfile?.available === true
+  const filteredModels = dataSourceKind === 'cloud' && modelFilter.trim()
+    ? semanticModelOptions.filter(option => option.label.toLocaleLowerCase()
+      .includes(modelFilter.trim().toLocaleLowerCase())) : semanticModelOptions
 
   useEffect(() => {
     const closeMenus = (event: MouseEvent) => {
@@ -87,7 +95,7 @@ export function Composer({
   const submit = async () => {
     const content = value.trim()
     if (
-      !content ||
+      !content || executionBlockedReason ||
       sending ||
       !semanticModel?.compatible ||
       semanticModel.selectable === false ||
@@ -118,20 +126,29 @@ export function Composer({
                 刷新
               </button>
             </div>
+            {dataSourceKind === 'cloud' && semanticModelOptions.length > 1 ? (
+              <input className="catalog-filter" type="search" aria-label="筛选数据模型"
+                placeholder="按名称筛选模型" maxLength={200} value={modelFilter}
+                onChange={event => setModelFilter(event.target.value)} />
+            ) : null}
             {loadingSemanticModels ? (
-              <p className="menu-empty-state">正在获取当前 Desktop 模型…</p>
+              <p className="menu-empty-state">{dataSourceKind === 'cloud' ? '正在获取云端数据模型…' : '正在获取当前 Desktop 模型…'}</p>
             ) : null}
             {!loadingSemanticModels && semanticModelOptions.length === 0 ? (
               <p className="menu-empty-state">
                 {semanticModelError || '当前没有可用数据模型。'}
               </p>
             ) : null}
-            {semanticModelOptions.map((option, index) => (
+            {!loadingSemanticModels && semanticModelOptions.length > 0 && filteredModels.length === 0 ? (
+              <p className="menu-empty-state">没有匹配的模型，请更换筛选词。</p>
+            ) : null}
+            {filteredModels.map((option, index) => (
               <button
                 className="menu-option"
                 key={option.key}
                 type="button"
                 aria-describedby={`model-status-${index}`}
+                disabled={loadingSemanticModels || option.selectable === false}
                 onClick={() => {
                   onSemanticModelChange(option)
                   setAddMenuOpen(false)
@@ -158,7 +175,9 @@ export function Composer({
             ) : null}
             {!loadingReportTemplates && reportTemplateOptions.length === 0 ? (
               <p className="menu-empty-state">
-                {reportTemplateError || '当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。'}
+                {reportTemplateError || (executionBlockedReason
+                  ? '当前数据模型暂无可用报表模板。'
+                  : '当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。')}
               </p>
             ) : null}
             {reportTemplateOptions.map((option) => (
@@ -184,7 +203,7 @@ export function Composer({
             ))}
           </div>
           <p className="local-catalog-note">
-            数据模型来自后端 Desktop discovery；模板仅提供显式选择，问题内容仍决定分析或报表意图。
+            {dataSourceKind === 'cloud' ? '仅显示当前账号可访问的数据模型；请显式选择模型。' : '数据模型来自后端 Desktop discovery；模板仅提供显式选择，问题内容仍决定分析或报表意图。'}
           </p>
         </div>
       ) : null}
@@ -262,7 +281,7 @@ export function Composer({
         <button
           className="send-button"
           type="button"
-          disabled={!canSend}
+          disabled={!canSend || Boolean(executionBlockedReason)}
           aria-label="发送"
           onClick={() => void submit()}
         >
@@ -273,7 +292,8 @@ export function Composer({
         <span>
           {loadingSemanticModels
             ? '正在连接数据模型'
-            : semanticModel?.label || semanticModelError || '当前没有可用数据模型'}
+            : semanticModel?.label || semanticModelError || (dataSourceKind === 'cloud' && semanticModelOptions.length
+              ? '请选择云端数据模型' : '当前没有可用数据模型')}
         </span>
         {reportTemplate ? (
           <span>· 已选 {reportTemplate.label}</span>

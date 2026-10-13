@@ -4,7 +4,7 @@ from threading import RLock
 from time import time
 from uuid import UUID
 
-from backend.app.auth.identity import DELEGATED_SCOPES, IdentityClient
+from backend.app.auth.identity import CATALOG_SCOPES, DELEGATED_SCOPES, IdentityClient
 from backend.app.auth.models import AuthFailure, PrincipalContext
 from backend.app.auth.stores import InMemoryAuthFlowStore, InMemoryAuthSessionStore
 from backend.app.config.settings import Settings
@@ -111,10 +111,10 @@ class AuthService:
     def get_delegated_token(self, sid, principal, scopes=DELEGATED_SCOPES):
         with self._lock:
             record = self.require_session(sid)
-            if record.principal != principal or tuple(scopes) != DELEGATED_SCOPES:
+            if record.principal != principal or tuple(scopes) not in (DELEGATED_SCOPES, CATALOG_SCOPES):
                 raise AuthFailure("AUTH_FORBIDDEN", 403)
             try:
-                return self.identity.delegated_token(record.context, principal, DELEGATED_SCOPES)
+                return self.identity.delegated_token(record.context, principal, tuple(scopes))
             except AuthFailure:
                 self.sessions.invalidate(sid)
                 raise

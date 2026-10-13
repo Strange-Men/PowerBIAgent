@@ -4,6 +4,7 @@ import type { ConversationMessage } from '../types'
 import { AssistantMessage } from './AssistantMessage'
 
 interface ConversationViewProps {
+  welcomeDescription?: string
   messages: ConversationMessage[]
   sending: boolean
   loadingConversation: boolean
@@ -11,6 +12,7 @@ interface ConversationViewProps {
 }
 
 export function ConversationView({
+  welcomeDescription = '可以查询数据、生成报表或开始新的分析。',
   messages,
   sending,
   loadingConversation,
@@ -31,7 +33,7 @@ export function ConversationView({
           <span>✦</span>
         </div>
         <h1 id="welcome-title">今天想分析什么数据？</h1>
-        <p>可以查询数据、生成报表或开始新的分析。</p>
+        <p>{welcomeDescription}</p>
       </section>
     )
   }

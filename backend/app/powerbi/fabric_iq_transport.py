@@ -8,6 +8,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from backend.app.auth.models import AuthFailure
+from backend.app.config.cloud_test_policy import CloudTestPolicy
 from backend.app.powerbi.base import PowerBIAdapterError
 from backend.app.powerbi.fabric_iq_contract import (
     VARIANT, capability_fingerprint, fail, safe_capability_evidence, validate_endpoint,
@@ -51,6 +52,7 @@ class FabricIQTransport:
         self._auth, self._sid, self._principal = auth, session_id, principal
         self._http_transport = http_transport  # synthetic SDK-on-wire tests only
         self._closed = False
+        self._test_policy = CloudTestPolicy(settings)
         self.capability_evidence = None
         self.wire_evidence = {"initialize": 0, "tools/list": 0, "tools/call": 0,
                               "selector_verified": True, "authorization_injected": True}
@@ -73,6 +75,12 @@ class FabricIQTransport:
                 # Validate actual outbound destination before obtaining any token.
                 validate_endpoint(str(request.url))
                 self.validate_principal()
+                if request.method == 'POST':
+                    import json
+                    message = json.loads(request.content)
+                    if message.get('method') == 'tools/call':
+                        params = message.get('params', {})
+                        self._test_policy.iq_call(params.get('name'), params.get('arguments', {}))
                 token = await asyncio.to_thread(self._auth.get_delegated_token, self._sid, self._principal)
                 if not isinstance(token, str) or not token.strip() or any(c.isspace() for c in token):
                     raise AuthFailure("AUTH_EXPIRED")
@@ -125,7 +133,7 @@ class FabricIQTransport:
                             self.capability_evidence = safe_capability_evidence(fingerprint, self._endpoint)
                             self.validate_principal()
                             try:
-                                yield FabricIQConnection(session, inventory, self.validate_principal)
+                                yield FabricIQConnection(session, inventory, self.validate_principal, self._test_policy)
                             except BaseException as error:
                                 primary_error = error
                                 raise
@@ -144,12 +152,14 @@ class FabricIQTransport:
 
 
 class FabricIQConnection:
-    def __init__(self, session, inventory, validate):
+    def __init__(self, session, inventory, validate, test_policy=None):
         self._session, self._validate = session, validate
+        self._test_policy = test_policy
         self._inventory = {t["name"]: t for t in inventory}
 
     async def call(self, name, arguments):
         self._validate()
+        if self._test_policy is not None: self._test_policy.iq_call(name, arguments)
         props = self._inventory[name]["inputSchema"]["properties"]
         # Runtime restrictions are authoritative; never silently clamp maxRows.
         for key, value in arguments.items():

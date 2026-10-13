@@ -161,7 +161,7 @@ Frozen 表示已有 authority / contract / architecture boundary 不再随意重
 failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner / Grounding / Memory，
 禁止重设计 deterministic factual chain；M6 优先经 Adapter / Repository / Service 扩展，能扩展就不重构 Core。
 
-M6 生产级后端 P0 identity/auth/namespace/ownership/IDOR/token/RLS/OLS/fail-closed 优先，P1 分布式/持久化/恢复/部署风险与路线由 docs/08、docs/09 定义。M6 尚未实现；后续实施须用户批准具体 scope 并完成 09 前置条件。
+M6 生产级后端 P0 identity/auth/namespace/ownership/IDOR/token/RLS/OLS/fail-closed 优先，P1 分布式/持久化/恢复/部署风险与路线由 docs/08、docs/09 定义。M6.1 COMPLETE、M6.2 COMPLETE、M6.3 Security COMPLETE；M6.4 正在按本轮用户授权开发，Fabric IQ 数值兼容 P1 尚未解决。M5 Frozen Core 继续有效；后续实施仍须用户批准具体 scope 并完成 09 前置条件。
 当前状态仅见 docs/07，路线仅见 docs/08，Cold Start Handoff 仅见 docs/09；本文件不另设 current-state authority。
 
-*最后更新：2026-10-09 | Settings.version=M6.0；M6.0 COMPLETE；M6.1 READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以07/08/09及自身exact-SHA CI为准*
+*最后更新：2026-10-13 | 产品使命与长期架构规则；当前状态以07/08/09及自身exact-SHA CI为准，M6.4 开发授权不等于完成或发布*

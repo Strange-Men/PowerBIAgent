@@ -7,8 +7,71 @@
 
 - Current Baseline：M6.3多用户安全隔离（Final自身CI / remote audit解析）；M6.2为历史基线。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
-- ACTIVE = NONE：M6.3 Final自身CI与remote audit成功后立即停止；M6.4未实施、须独立批准。
+- ACTIVE = M6.4 Cloud Product E2E：用户已明确批准原scope，正在本地开发/验证，尚未发布；不得启动M6.5。
 - M6 Status：M6.3 Real安全74/74、Late-Response41/41、完整本地回归及Phase A CI通过；Settings.version=M6.3；最终发布条件见下文。
+
+## M6.4 active handoff（2026-10-13）
+
+最新用户授权优先收口现有48项修改：一次阶段候选Commit/Push main、候选exact-SHA Full Validation CI与Remote Audit，不是Final Seal。
+本轮已成功fresh fetch，main/HEAD/origin/main相同、staging空；修改路径与上一轮最终隔离记录完全一致，未发现新增混入文件。
+候选标题`M6.4_云端产品阶段候选与安全边界`；SHA通过当前checkout与仓库外候选回执解析，不把本提交自身SHA写入本提交。
+本节后面的“不Commit/Push”均为旧轮历史状态；本次用户候选授权替代该限制，长期main单线/白名单/正常push/自身CI流程不变。
+Settings.version=M6.3、M6.4 PARTIAL/BLOCKED、Final NOT READY；业务API及测试History/Report/LLM准备继续拒绝，不能为候选而放开。
+必要Real因授权/Int64/Completeness未满足记NOT_TESTED/BLOCKED；不强行执行，也不继承旧宽目录测试为当前隔离PASS。
+fresh验证与候选审计见专项候选收口章节及PBIAgentTest/M6.4/Acceptance/20261013-candidate；原始失败与历史证据保留。
+
+最新测试隔离轮本地后端3275 PASS/1 SKIP/12 warnings，隔离31项；前端132 PASS与Typecheck/Lint/Build，Semantic819、Golden11/1 manual Real SKIP；必要Real及完整Chat→Facts→Answer/Report未通过，未提交发布。
+
+本轮最高P0：所有Real仅原始获批M6测试Workspace/model/report。CloudTestPolicy默认开启、缺配置拒绝；本地allowlist和runner已接，reports为空。重新fetch成功基线不变。未来不得执行旧宽目录runner或企业Schema/LLM probe；旧History/Report缺持久exact资源/当前授权证明保持拒绝。原44项成果保留，最新证据在PBIAgentTest/M6.4/Acceptance/20261013-test-isolation；Real/完整业务/封板仍BLOCKED。
+
+[本轮专项证据](milestones/m6/m6_4_cloud_product_e2e.md)。初始main/HEAD/clean校验完成；两次有界fetch失败后，
+本轮依用户明确许可用GitHub连接器核对远端main与本地HEAD一致，仅继续本地开发/测试。
+此许可仅限本轮，不修改下方Mandatory Cold Start或长期Git规则；成功fetch且基线未前进前禁止Commit/Push/Final Seal。
+后续本轮fetch曾成功；最新两次有界重试再次失败，连接器fresh main SHA仍等于原基线。
+main/HEAD/cached origin/main一致、staging空；原16项成果已保留，当前恢复开发新增文件清单见获准Acceptance/current-modified-files.md；提交前仍需fresh fetch成功且基线未变。
+Charter旧状态与08的M9规划已先修正；Catalog REST/Service与Auth精确只读scope、逐模型schema-before-bind已本地实现。
+本地Full Backend/Semantic/Golden与Catalog安全测试见专项记录；不继承M6.3 Real结果作为本轮PASS。
+Viewer A已真实登录并执行首轮审计；Real Catalog PASS，6个模型可访问，workspace scope complete，individual-share覆盖仅configured seeds，整体PARTIAL。
+首轮count/scalar/grouped均在ExecuteQuery之前被临时harness遗漏allowed_semantic_models阻断，不能记为上游数值失败或查询PASS。
+仓库外harness仅补入当前已验证ref.server_model_key；实际native probe回归先2 FAIL，再与边界测试合计12 PASS。
+已重启本人创建的临时服务加载修复，用户重新登录后完成Real复验（02:12:54 UTC）：Catalog再次PASS、6模型、整体PARTIAL。
+三条查询均ExecuteQuery HTTP200；count严格int值匹配但truncated=true，销售额scalar/grouped在HTTP wire和SDK均Int64配str，FAIL CONTRACT_DRIFT。
+所有响应无完整性字段；官方重验仍无足够编码/完整性合同，当前阻塞不再是登录/consent。不得重复要求用户重新配置已有效权限。
+安全证据位于仓库外runs/20261013T020906Z-8d579b58ddbc48e7b39bfdaddc3f632d/audit-001.json。
+本次Real后已关闭临时审计进程并恢复native app。GET审计页（后端及Vite代理）404；未登录POST先被CSRF拒绝401，
+隔离synthetic有效session+CSRF验证POST审计路径404、产品API403；原生路由集合无m64临时入口。
+仓库外native-cleanup-evidence.json记录8项PASS；fabric_iq_contract_support_note.md为脱敏支持草稿，尚未发送任何第三方。
+仓库外临时只读审计：D:\AAA_Workfile\PowerBIAgent_M6_4_Acceptance；不由production导入，不读取/迁移业务DB。
+正式ENTRA业务API保持关闭；Cloud产品接线/UX/浏览器Query与Report E2E未完成；数值P1/完整性仍UNRESOLVED。
+未来正式接线必须使用FabricIQAdapterFactory.create_product，在Core前拒绝未知完整性的结果；普通create仅保留审计合同。
+现有Sales报表直接组装可丢失truncated标记的合成失败证据已保留，M5 Core未修改。
+Settings.version=M6.3；M6.4发布NOT READY，不Commit/Push，不宣称封板。
+
+用户2026-10-13恢复原M6.4并要求测试目录治理：唯一新总目录D:\AAA_Workfile\PBIAgentTest，历史五目录仅盘点未迁移。
+原16文件已备份到该总目录Cache；后续工具/输出在M6.4/Acceptance、RealEvidence，pytest显式cache_dir并以仓库为cwd。
+恢复开发时fetch曾失败并经连接器核验；最新HTTP/1.1 fetch成功，HEAD/origin/main仍等于原基线。提交前仍须fresh fetch且基线未变。
+新增正式Cloud Control Plane与前端目录/显式选择/Settings；业务执行仍fail closed，未打开既有DB。
+CloudProductServiceFactory复用LLMTurnService与PrincipalScopedRepositoryFactory，selection lease阻止失效写入；尚未挂生产业务执行API。
+用户另行明确批准仅model_semantic_context.py六处声明兼容：五项bool接受None及来源枚举增加fabric_iq；不修改默认值、过滤或其他Core合同。
+274项相关focused、819项Semantic Compatibility通过；完整文件对HEAD严格六处声明替换检查通过，其他Frozen Core未改。
+最新全量后端3244 PASS、1 SKIP、12 warnings（259.86秒），见backend-full-p0-privacy-final-local.txt；3240及此前记录为历史。
+最新前端131 PASS/Lint/Build；模板失败不清除已验证模型，模型名称仅本地筛选，401/旧generation仍拒绝，Cloud发送仍禁用。
+Viewer A正式产品页6模型/Settings/退出已观察。Viewer B目录15模型PARTIAL；18工作区REST先完成，123候选IQ授权耗尽预算。
+有界并发三及同一绝对deadline的scoped PARTIAL已实现；后续发现限流被误计不可访问并持续扇出，四项负例先FAIL，第二轮停止调度修复后41 focused PASS。
+此前synthetic fixture选择两次RATE_LIMITED；最后一次新native会话返回6模型、115未验证且fixture选择成功，模板资格未验。
+用户随后补充企业P0并确认完整测试授权未确认，原生Real服务现已停止；不要重复要求登录或继续企业资源操作。
+正式首页为http://localhost:5173/；旧/auth/m64-audit已卸载。不要以临时probe、mock或单独控制面冒充产品E2E。
+新增owner只读History/Report服务组合：不依赖当前模型选择，不恢复Memory；scope和返回前native身份重验，跨用户/伪造principal/迟到响应负例通过。
+仍无正式业务API/存储生命周期接线、Cloud业务前端及跨登录恢复模型映射；旧opaque模型key不可凭名称或同schema猜测新资源。
+Fact合同研究及七项OFFLINE scalar候选核验在获准Acceptance目录；不授予完整性，Int64仍严格拒绝字符串，产品Adapter仍拒绝truncated结果。
+原生runner在PBIAgentTest/M6.4/Acceptance/run_native.py，当前已停止；原审计路由未恢复。
+当前run_synthetic_product.py仅LOCAL_DEV/Mock BI/Mock LLM，未加载.env、无企业身份，新合成SQLite与报告root均在获准Cache。
+合成浏览器问答、新聊天、旧历史重开已观察；报表未选有效模板明确拒绝，未做Report生成/下载；不计Cloud Real PASS。
+P0审计在获准Acceptance/p0_privacy_audit.md：通用Provider透传columns/rows，Observer计数summary不含正文，但Secret scrubber不证明业务数据最小化。
+History/Report仅owner检查不足以证明当前模型RLS/OLS；正式业务HTTP仍关闭。需要完成资源绑定/撤权验证与披露边界，不能放行企业数据到外部LLM。
+六目录脱敏扫描只报告风险候选；10个历史DB、归档/图片/二进制内容未读，无文件迁移删除。历史企业数据来源和历史传输仍未证明。
+公司/账号所有者明确授权后才恢复Real；外部LLM企业数据披露仍单独视为未授权。此P0同样约束用户提及的M6.4.1 PREP边界。
+旧五个测试目录未迁移；新证据仅PBIAgentTest。未Commit/Push，未执行本轮CI或Final Seal。M6.5未启动。
 
 ## M6.3 sealed security handoff
 
