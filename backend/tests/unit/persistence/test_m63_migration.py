@@ -69,7 +69,8 @@ def test_fresh_and_m62_upgrade_preserves_all_local_resources(tmp_path, legacy):
     with pytest.raises(RuntimeError, match="forward-only"):
         command.downgrade(cfg, "c2e4f6a8b130")
     with closing(sqlite3.connect(path)) as conn:
-        assert conn.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "f63a1b2c3d40"
+        from alembic.script import ScriptDirectory
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone()[0] == ScriptDirectory.from_config(cfg).get_current_head()
 
 
 def test_upgraded_db_supports_same_ids_across_principals(tmp_path):

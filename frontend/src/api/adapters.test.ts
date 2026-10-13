@@ -227,6 +227,18 @@ describe('history transcript projection', () => {
     expect(isUsableReport(deleted)).toBe(false)
   })
 
+  it('accepts paired Cloud references and rejects mixed or external paths',()=>{
+    const report: ReportResource={report_id:'synthetic',template_key:'sales_report',contract_version:'mock',
+      view_reference:'/api/reports/synthetic',download_reference:'/api/reports/synthetic/download',
+      content_type:'text/html',content_hash:'synthetic'}
+    const cloud={...report,view_reference:`/api/v1/cloud/reports/${report.report_id}`,
+      download_reference:`/api/v1/cloud/reports/${report.report_id}/download`}
+    expect(isUsableReport(cloud)).toBe(true)
+    expect(isUsableReport({...cloud,download_reference:report.download_reference})).toBe(false)
+    expect(isUsableReport({...cloud,view_reference:`https://example.invalid${cloud.view_reference}`})).toBe(false)
+    expect(isUsableReport({...cloud,view_reference:cloud.view_reference+'?principal=foreign'})).toBe(false)
+  })
+
   it('restores the same typed Power BI recovery message from history', () => {
     const messages = historyItemToMessages({
       request_id: 'req-failed-history',

@@ -17,6 +17,29 @@
 
 ## M6.4 当前开发（2026-10-13，阶段候选；非 Final Seal）
 
+### 候选后的定向收口（2026-10-13）
+
+基于已通过exact-SHA CI的候选`4f17b9319b6310e511d6754d36062b59edcf393a`继续用户授权scope；候选CI不重复运行。
+本轮Cold Start已成功fetch并核对clean main；GitHub连接采用本次公共DNS验证后的命令级解析恢复，未改变系统或长期Git配置。
+
+| 原定模块 | 本轮状态与边界 |
+|---|---|
+| Catalog / Allowlist | DONE（本地）；保持定向测试范围与逐调用拒绝，正式current-principal架构不变 |
+| Chat / History / Report API | DONE（受控合成接线）；原生FabricIQ业务仍BLOCKED；旧历史无绑定拒绝 |
+| Cloud选择 / 新会话 / 恢复 / 模板资格 | DONE（合成）；owner不可变exact绑定与Resolve/Schema复证，模板显式资格 |
+| Settings / 前端恢复 / 跨会话竞态 | DONE（合成）；Chat/历史/报表链接接线，401恢复与abort/generation拒绝旧响应 |
+| Principal / 撤权 / RLS-OLS | 合成Ownership与撤权DONE；真实RLS/OLS仍NOT_TESTED |
+| Int64 / 八类Completeness | BLOCKED；无新增可验证Microsoft wire合同，保留严格类型与truncated=true |
+| 企业隐私P0 / 完整Real E2E | PARTIAL/BLOCKED；native业务存储前拒绝，本轮BI与外部LLM真实调用0 |
+
+新增迁移只在合成临时SQLite验证，没有打开、迁移、删除或搬迁真实DB；既有migration head断言改为解析当前head，数据结构/owner负例不变。
+Mock报表只验证原Mock链与受保护API/HTML，不能作为正式Renderer、VerifiedFactSet或Real PASS。
+正式外部LLM业务披露保护仍需最小化/批准的输入输出及持久化策略；通用Trace/Provider不是业务DLP。原M5 Frozen Core本轮无修改。
+本轮质量/发布回执统一在`PBIAgentTest/M6.4/Acceptance/20261013-directed`；实际新main提交必须通过自身一次完整CI和Remote Audit。
+Settings.version=M6.3；M6.4 PARTIAL/BLOCKED、Final NOT READY。上轮候选发布授权已完成，本轮仅发布通过本地门槛的定向必要修改。
+定向最终本地：后端3329 PASS/1 SKIP/13 warnings，前端141 PASS与Typecheck/Lint/Build；Semantic819、Golden11/1 manual Real SKIP与全部治理检查PASS。
+候选文件33项Secret/新增身份扫描无风险命中；本轮真实BI/外部LLM请求0。新提交的CI与Remote Audit以actual main SHA回执解析。
+
 用户最新明确授权一次M6.4阶段候选提交、正常Push main、该exact SHA Full Validation CI及Remote Audit；范围冻结，不新增功能。
 本轮fresh fetch成功，main/HEAD/origin/main一致，暂存区为空；48项既有源码/测试/文档修改与上一轮最终清单一致。
 候选基线以提交标题`M6.4_云端产品阶段候选与安全边界`对应的当前checkout exact SHA及远端回执解析；不继承历史CI。

@@ -395,3 +395,33 @@ Repository Safety、Error Ledger、Architecture、Documentation Governance、Art
 Settings.version=M6.3，M6.4 PARTIAL/BLOCKED、Final NOT READY。候选不开放未验证链路、不标COMPLETE。
 剩余ACTION REQUIRED：公司/账号所有者逐Workspace/model/report真实测试与外部LLM披露授权、可信Int64/Completeness证据、exact资源恢复与正式Cloud/A-B/Report Real E2E。
 Microsoft合同调查已有有界官方证据，不重复同一调查；只剩外部依赖时停止开发，不自动进入M6.4.1/M6.5。
+
+## 候选后定向产品接线（2026-10-13，实施中）
+
+用户批准补齐原定Chat/History/Report API、模型绑定/恢复、前端及撤权竞态；不扩大Provider/Shape/模板或Frozen Core。
+fresh fetch通过本次命令限定DNS解析恢复，main/HEAD/origin/main仍为候选基线、clean；不改系统网络或长期Git规则。
+官方Fabric IQ页本轮读取成功，delegated/RLS边界仍适用，未新增Int64或完整性编码合同；不发Real资源请求。
+
+P0实施设计：服务端持久exact conversation/model绑定与schema fingerprint位于owner repository边界，旧缺绑定记录拒绝。
+每次恢复/历史/报表读取先用当前principal重新Resolve+Schema，验证exact资源与fingerprint；失败、撤权及迟到响应拒绝。
+原opaque key仅在owner绑定证明成立后由Adapter恢复；客户端ID、名称、旧session或schema相似均不授权。
+受控服务API使用既有TurnPipeline/Repository；native Fabric IQ执行与回放在未获安全/事实验收前继续关闭。
+合成完整链仅显式in-process Mock BI/Mock LLM注入，标为mock，不以部署开关或客户端请求打开真实业务。
+持久扩展只增加绑定元数据，不迁移/读取真实数据库；本轮schema验证仅新合成DB，正式数据库迁移需operator授权。
+本轮受控API：Chat/new-chat/restore/history/reports/view/download均位于同源Cloud BFF，Auth+CSRF先于路由；
+Chat不接收客户端principal/model/conversation字段，分页与重复字段有界校验，异常只返回安全类别，HTML设CSP sandbox/no-store。
+前端复用既有ConversationView/Composer/Sidebar，接Chat、历史恢复、新会话、受保护报表引用及Settings401恢复。
+客户端abort和generation仅作显示保护，服务器owner+selection租约仍在每次持久化与响应前后验证。
+模板仍原注册集合；合成模板资格使用测试专属canonical schema，Mock报告复用既有MockRenderer，不能计正式Renderer或真实VerifiedFactSet PASS。
+
+Int64有界调查未得到可验证编码合同，string/bool/float严格拒绝；八类已有QueryShape代表DAX的未知响应和未文档化complete/totalRows标记均保留truncated=true。
+没有修改Expected迎合数值错误、关闭完整性检查、更换Provider或扩大六字段Frozen补丁。本轮真实BI、外部LLM均0。
+完整本地验证及当前main exact-SHA CI/Remote Audit见本轮仓库外directed回执；失败记录保留，M6.4保持PARTIAL/BLOCKED。
+
+定向本地最终结果：后端3329 PASS/1 SKIP/13 warnings；前端141 PASS、Typecheck/Lint/Build PASS；
+Semantic819 PASS、Golden11 PASS/1 manual Real SKIP；Allowlist+产品API focused44 PASS（随后新增missing-binding负例纳入全量）。
+Repository Safety、137项Error Ledger、Architecture、Documentation Governance、Artifact Governance与diff check PASS。
+33项白名单源码/测试/文档扫描未发现Secret、JWT或新增真实身份字面值；Frozen Core diff为空。
+迁移警告与MSAL form_post建议均完整保留，不隐藏；新增绑定迁移只在合成临时DB验证。
+后端最初完整3324 PASS后补充exact恢复/历史投影负例，最终全量重验3329 PASS；前端测试构造错误与文档表述修正记录保留。
+待发布提交为定向必要修改，非Final；提交后仅以该actual main SHA的一次Full Validation CI与Remote Audit生效，不能继承候选CI。

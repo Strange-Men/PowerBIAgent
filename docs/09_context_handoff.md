@@ -12,6 +12,17 @@
 
 ## M6.4 active handoff（2026-10-13）
 
+最新定向工作基于候选`4f17b9319b6310e511d6754d36062b59edcf393a`；候选exact-SHA CI SUCCESS已验证，不重复候选发布。
+本轮授权完成Cloud Chat/History/Report受控服务/API与前端接线、Settings恢复、exact binding和Late Response合成验收。
+native FabricIQ执行及业务History/Report仍存储前拒绝；真实外部LLM路径不开放。仅显式host注入的既有Mock服务可执行合成链，不能由env或客户端开启。
+新增owner绑定迁移只验合成DB；旧会话无绑定不回放，恢复Resolve+Schema fingerprint重新证明；A/B、撤权、Schema drift和迟到字节均有负例。
+真实固定Renderer保持原合同；Mock报告使用既有MockRenderer，不能计正式VerifiedFactSet或Real报告通过。
+本轮证据在`PBIAgentTest/M6.4/Acceptance/20261013-directed`；最新main提交标题/当前checkout及发布回执解析其exact-SHA CI与Remote Audit，不继承候选CI。
+Git网络应自行恢复（已用本次公共DNS核实后命令级curloptResolve成功fetch），不因常规网络失败重开开发；push前远端前进仍按原规则停止。
+剩余外部条件：公司及账号所有者批准原M6 Workspace逐资源Real验收；单独批准业务LLM披露与留存；Microsoft可证明Int64及八类完整性合同。
+内部Final条件：在这些证据具备后最小落实对应native执行/隐私保护，完成正式Chat→VerifiedFactSet→Answer/Report与浏览器Real、RLS/OLS验收，再更新M6.4版本。
+Settings.version=M6.3、M6.4 PARTIAL/BLOCKED。范围限定原M6.4；M6.4.1与M6.5未获开发授权。下方旧入口状态由本段及07最新状态限定。
+
 最新用户授权优先收口现有48项修改：一次阶段候选Commit/Push main、候选exact-SHA Full Validation CI与Remote Audit，不是Final Seal。
 本轮已成功fresh fetch，main/HEAD/origin/main相同、staging空；修改路径与上一轮最终隔离记录完全一致，未发现新增混入文件。
 候选标题`M6.4_云端产品阶段候选与安全边界`；SHA通过当前checkout与仓库外候选回执解析，不把本提交自身SHA写入本提交。

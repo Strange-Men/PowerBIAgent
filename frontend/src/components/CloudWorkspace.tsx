@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ApiError, readCloudCatalog, readCloudProfiles, readCloudStatus, readCloudTemplates, selectCloudModel } from '../api/client'
+import { ApiError, newCloudChat, readCloudCatalog, readCloudConversation, readCloudHistory, readCloudProfiles, readCloudReports, readCloudStatus, readCloudTemplates, restoreCloudChat, selectCloudModel, sendCloudChat } from '../api/client'
+import { chatResponseToMessage, historyItemToMessages } from '../api/adapters'
 import type { CloudCatalog, CloudWorkspaceStatus } from '../cloudTypes'
-import type { AuthSession, CatalogOption, LLMProfileOption } from '../types'
+import type { AccountActions, AuthSession, CatalogOption, ConversationMessage, ConversationReportItem, ConversationSummary, LLMProfileOption } from '../types'
+import { Sidebar } from './Sidebar'
 import { Composer } from './Composer'
 import { ConversationView } from './ConversationView'
 import { publicFailureMessage } from '../failure'
 
-export function CloudWorkspace({ session, onAuthInvalid }: {
-  session: AuthSession; onAuthInvalid: () => void
+const unavailable=async () => { throw new Error('该操作暂不可用。') }
+const emptyBatch=async () => ({succeededIds:[],failed:[]})
+
+export function CloudWorkspace({ session, onAuthInvalid, account, collapsed=false, onToggle=() => {} }: {
+  session: AuthSession; onAuthInvalid: () => void; account?: AccountActions; collapsed?: boolean; onToggle?: () => void
 }) {
   const [catalog, setCatalog] = useState<CloudCatalog | null>(null)
   const [status, setStatus] = useState<CloudWorkspaceStatus | null>(null)
@@ -19,6 +24,11 @@ export function CloudWorkspace({ session, onAuthInvalid }: {
   const [template, setTemplate] = useState<CatalogOption | null>(null)
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [templateError, setTemplateError] = useState<string | null>(null)
+  const [messages,setMessages]=useState<ConversationMessage[]>([])
+  const [sending,setSending]=useState(false)
+  const [restored,setRestored]=useState(false)
+  const [recent,setRecent]=useState<ConversationSummary[]>([])
+  const [reports,setReports]=useState<ConversationReportItem[]>([])
   const generation = useRef(0)
   const serverGeneration = useRef(0)
   const active = useRef<AbortController | null>(null)
@@ -29,6 +39,15 @@ export function CloudWorkspace({ session, onAuthInvalid }: {
     active.current = controller
     return { controller, current: ++generation.current }
   }, [])
+
+  const clearConversation=() => { setMessages([]); setSending(false); setRestored(false) }
+
+  const loadResources=useCallback(async (controller: AbortController,current: number) => {
+    const [history,artifacts]=await Promise.all([readCloudHistory(controller.signal),readCloudReports(controller.signal)])
+    if (current!==generation.current) return
+    setRecent(history.items); setReports(artifacts.items)
+    return history.items
+  },[])
 
   const failure = useCallback((caught: unknown, selection: boolean) => {
     if (caught instanceof ApiError && caught.status === 401) onAuthInvalid()
@@ -75,6 +94,16 @@ export function CloudWorkspace({ session, onAuthInvalid }: {
       setCatalog(models.value)
       setStatus(nextStatus)
       serverGeneration.current = nextStatus.generation
+      if (nextStatus.execution_ready) {
+        const history=await loadResources(controller,current)
+        if (current!==generation.current) return
+        if (nextStatus.conversation_id && history?.some(item=>item.conversation_id===nextStatus.conversation_id)) {
+          const page=await readCloudConversation(nextStatus.conversation_id,controller.signal)
+          if (current!==generation.current) return
+          if (page.conversation_id!==nextStatus.conversation_id) throw new Error('History mismatch')
+          setMessages(page.items.flatMap(historyItemToMessages)); setRestored(true)
+        }
+      }
       if (nextStatus.selected_model_key && models.value.items.some(item => item.key === nextStatus.selected_model_key)) {
         setTemplatesLoading(true)
         await loadTemplates(controller, current)
@@ -82,17 +111,19 @@ export function CloudWorkspace({ session, onAuthInvalid }: {
     } catch (caught) {
       if (current !== generation.current) return
       setCatalog(null); setStatus(null); setTemplates([]); setTemplate(null)
+      clearConversation(); setRecent([]); setReports([])
       if (caught instanceof ApiError && caught.status === 401) { setProfiles([]); setProfile(null) }
       failure(caught, false)
     } finally {
       if (current === generation.current) { setLoading(false); setTemplatesLoading(false) }
     }
-  }, [begin, failure, loadTemplates])
+  }, [begin, failure, loadTemplates, loadResources])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
     const changed = () => {
       setLoading(true); setStatus(null); setTemplate(null); setTemplates([]); setTemplateError(null)
+      clearConversation(); setRecent([]); setReports([])
       void load()
     }
     window.addEventListener('powerbiagent-cloud-catalog-updated', changed)
@@ -105,12 +136,14 @@ export function CloudWorkspace({ session, onAuthInvalid }: {
 
   const refresh = async () => {
     setLoading(true); setError(null); setStatus(null); setTemplate(null); setTemplates([]); setTemplateError(null)
+    clearConversation(); setRecent([]); setReports([])
     await load()
   }
 
   const choose = async (option: CatalogOption) => {
     if (!session.csrf_token || !catalog?.items.some(item => item.key === option.key)) return
     const { controller, current } = begin()
+    clearConversation()
     setError(null); setStatus(null); setTemplate(null); setTemplates([]); setTemplateError(null); setTemplatesLoading(true)
     try {
       let nextStatus: CloudWorkspaceStatus
@@ -135,6 +168,51 @@ export function CloudWorkspace({ session, onAuthInvalid }: {
     }
   }
 
+  const changeConversation=async (id?: string) => {
+    if (!status?.execution_ready || !session.csrf_token) return
+    const {controller,current}=begin()
+    clearConversation(); setError(null); setTemplates([]); setTemplate(null); setTemplatesLoading(true)
+    try {
+      const next=id ? await restoreCloudChat(id,serverGeneration.current,session.csrf_token,controller.signal)
+        : await newCloudChat(serverGeneration.current,session.csrf_token,controller.signal)
+      if (current!==generation.current) return
+      serverGeneration.current=next.generation; setStatus(next)
+      if (id) {
+        const page=await readCloudConversation(id,controller.signal)
+        if (current!==generation.current) return
+        if (page.conversation_id!==id) throw new Error('History mismatch')
+        setMessages(page.items.flatMap(historyItemToMessages)); setRestored(true)
+      }
+      await loadTemplates(controller,current)
+    } catch (caught) {
+      if (current!==generation.current) return
+      clearConversation(); setStatus(null); failure(caught,true)
+    } finally { if (current===generation.current) setTemplatesLoading(false) }
+  }
+
+  const send=async (content: string) => {
+    if (!status?.execution_ready || !status.conversation_id || !session.csrf_token || sending) return
+    const conversation=status.conversation_id
+    const {controller,current}=begin()
+    const requestId=crypto.randomUUID()
+    setSending(true); setError(null)
+    setMessages(previous=>[...previous,{id:`user-${requestId}`,role:'user',content}])
+    try {
+      const response=await sendCloudChat({message:content,request_id:requestId,expected_generation:serverGeneration.current,
+        llm_profile_key:profile?.profile_key,report_template_key:template?.key},session.csrf_token,controller.signal)
+      if (current!==generation.current) return
+      if (response.conversation_id!==conversation || response.request_id!==requestId) throw new Error('Response mismatch')
+      setMessages(previous=>[...previous,chatResponseToMessage(response)])
+      await loadResources(controller,current)
+    } catch (caught) {
+      if (current!==generation.current) return
+      if (caught instanceof ApiError && [401,403,409].includes(caught.status)) {
+        clearConversation(); setStatus(null); setRecent([]); setReports([])
+      }
+      failure(caught,true)
+    } finally { if (current===generation.current) setSending(false) }
+  }
+
   const options: CatalogOption[] = (catalog?.items || []).map(item => ({key:item.key,
     label:item.display_name, description:item.workspace_display_name, compatible:true, selectable:true}))
   const selected = options.find(item => item.key === status?.selected_model_key) || null
@@ -147,13 +225,13 @@ export function CloudWorkspace({ session, onAuthInvalid }: {
       : !options.length ? '当前没有发现可访问的数据模型。' : '请选择一个数据模型开始。')
   const executionBlocked = !status?.execution_ready ? '数据问答暂不可用，请稍后重试。' : null
 
-  return <>
-    <ConversationView messages={[]} sending={false} loadingConversation={false} restored={false}
+  const content=<>
+    <ConversationView messages={messages} sending={sending} loadingConversation={templatesLoading} restored={restored}
       welcomeDescription="请选择当前账号可访问的云端模型。" />
     <p className="local-catalog-note" role="status">{notice}</p>
     {error || catalog?.status === 'error' || catalog?.status === 'forbidden'
       ? <button type="button" onClick={() => void refresh()}>重新加载数据模型</button> : null}
-    <Composer key={status?.conversation_id || 'cloud-unselected'} sending={false} semanticModel={selected} semanticModelOptions={options}
+    <Composer key={status?.conversation_id || 'cloud-unselected'} sending={sending} semanticModel={selected} semanticModelOptions={options}
       loadingSemanticModels={loading} semanticModelError={error}
       semanticModelCompatibilityNotice={templatesLoading ? '正在验证模型访问与报表模板…'
         : selected ? executionBlocked : '请显式选择一个数据模型'}
@@ -162,7 +240,19 @@ export function CloudWorkspace({ session, onAuthInvalid }: {
       loadingLLMProfiles={loading} llmProfileError={null}
       onSemanticModelChange={option => void choose(option)} onRefreshSemanticModels={refresh}
       onReportTemplateChange={setTemplate} onLLMProfileChange={setProfile}
-      onSend={async () => { throw new Error('Cloud execution is not ready') }}
+      onSend={send}
       dataSourceKind="cloud" executionBlockedReason={executionBlocked} />
   </>
+  if (!account) return content
+  return <div className="app-shell">
+    <Sidebar account={account} collapsed={collapsed} onToggle={onToggle} runtimeMode="real"
+      cloudExecutionReady={Boolean(status?.execution_ready)} activeConversationId={status?.conversation_id || null}
+      conversations={recent} reports={reports} error={null} onNewChat={()=>void changeConversation()}
+      onOpenConversation={item=>void changeConversation(item.conversation_id)} onSearch={unavailable}
+      onRename={unavailable} onArchive={unavailable} onRestore={unavailable} onDelete={unavailable}
+      onDeleteReport={unavailable} onArchiveReport={unavailable} onRenameReport={unavailable}
+      onBulkDeleteConversations={emptyBatch} onBulkArchiveConversations={emptyBatch} onBulkRestoreConversations={emptyBatch}
+      onBulkDeleteReports={emptyBatch} onBulkArchiveReports={emptyBatch} onBulkRestoreReports={emptyBatch} />
+    <main className="chat-main">{content}</main>
+  </div>
 }

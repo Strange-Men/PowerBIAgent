@@ -25,7 +25,7 @@ class CloudWorkspaceStatus(BaseModel):
     selected_model_key: str | None = None
     conversation_id: str | None = None
     generation: int = 0
-    execution_ready: Literal[False] = False
+    execution_ready: bool = False
     blockers: tuple[Literal["numeric_contract", "query_completeness"], ...] = (
         "numeric_contract", "query_completeness")
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -33,6 +33,11 @@ class CloudWorkspaceStatus(BaseModel):
 
 class CloudSelectionConflict(ValueError):
     def __init__(self): super().__init__("cloud_selection_changed")
+
+
+class _BindingKey(BaseModel):
+    model_key: str
+    model_config=ConfigDict(extra='forbid',frozen=True)
 
 
 @dataclass
@@ -143,13 +148,89 @@ class CloudWorkspaceService:
 
     def status(self, sid, principal):
         current = self._context(sid, principal)
+        synthetic = bool(current.adapter.is_mock)
         return CloudWorkspaceStatus(selected_model_key=current.selected,
-            conversation_id=current.conversation_id, generation=current.generation)
+            conversation_id=current.conversation_id, generation=current.generation,
+            execution_ready=synthetic, blockers=() if synthetic else ('numeric_contract','query_completeness'))
 
     def require_execution(self, sid, principal):
         self._validate(sid, principal)
-        # No deploy flag, client readiness claim or test hook can open this gate.
-        raise AuthFailure("AUTH_FORBIDDEN", 403)
+        # Only an explicitly injected existing Mock adapter can exercise the
+        # synthetic product chain. No setting/client flag enables real BI.
+        if not self._context(sid, principal).adapter.is_mock:
+            raise AuthFailure("AUTH_FORBIDDEN", 403)
+
+    def require_business_access(self, sid, principal):
+        self.require_execution(sid, principal)
+
+    def data_mode(self,sid,principal):
+        return RuntimeDataMode.MOCK if self._context(sid,principal).adapter.is_mock else RuntimeDataMode.REAL
+
+    async def bound_projection(self, sid, principal):
+        from backend.app.persistence.cloud_bindings import CloudConversationBinding
+        from backend.app.query_plan.semantic_catalog import compute_schema_fingerprint
+        current = self._context(sid, principal)
+        async with self._metadata_operation(current):
+            self._validate(sid, principal)
+            if current.selected not in current.keys: raise AuthFailure('AUTH_FORBIDDEN',403)
+            gateway = ToolGateway()
+            register_schema_tool(gateway,current.adapter,HarnessConfig.from_settings(self._auth.settings))
+            schema = await gateway.execute(TOOL_NAME_SCHEMA,ToolExecutionContext(runtime_mode=RuntimeDataMode.REAL,
+                intent=IntentType.DATA_QUESTION,user=UserContext(allowed_tools=[TOOL_NAME_SCHEMA],
+                    allowed_semantic_models=[current.selected])),SchemaInput(semantic_model_key=current.selected))
+            self._validate(sid,principal)
+            if schema.key!=current.selected: raise fail('CONTRACT_DRIFT')
+            ws, model = current.adapter.bound_resource_identity(current.selected)
+            return CloudConversationBinding(conversation_id=current.conversation_id,model_key=current.selected,
+                workspace_id=ws,model_id=model,schema_fingerprint=compute_schema_fingerprint(schema),
+                source_mode='mock' if current.adapter.is_mock else 'real')
+
+    async def revalidate_binding(self, sid, principal, binding, *, select=False, expected_generation=None):
+        from backend.app.query_plan.semantic_catalog import compute_schema_fingerprint
+        current = self._context(sid,principal)
+        async with self._metadata_operation(current):
+            self._validate(sid,principal)
+            if expected_generation is not None and current.generation!=expected_generation:
+                raise CloudSelectionConflict()
+            if binding.source_mode != ('mock' if current.adapter.is_mock else 'real'):
+                raise AuthFailure('AUTH_FORBIDDEN',403)
+            # Wrap provider Resolve+Schema in the same metadata ToolGateway.
+            async def restore(_):
+                ref = await current.adapter.restore_bound_model(str(binding.workspace_id),str(binding.model_id),binding.model_key)
+                return _BindingKey(model_key=ref.server_model_key)
+            from backend.app.harness.runtime.tool_gateway import ToolSpec
+            gateway=ToolGateway()
+            gateway.register(ToolSpec(name='restore_cloud_binding',input_model=_BindingKey,output_model=_BindingKey,
+                handler=restore,read_only=True,max_retries=0,allowed_intents=[IntentType.DATA_QUESTION],
+                supported_modes=[RuntimeDataMode.REAL]))
+            context=ToolExecutionContext(runtime_mode=RuntimeDataMode.REAL,intent=IntentType.DATA_QUESTION,
+                user=UserContext(allowed_tools=['restore_cloud_binding',TOOL_NAME_SCHEMA],allowed_semantic_models=[binding.model_key]))
+            try:
+                key=(await gateway.execute('restore_cloud_binding',context,_BindingKey(model_key=binding.model_key))).model_key
+                register_schema_tool(gateway,current.adapter,HarnessConfig.from_settings(self._auth.settings))
+                schema=await gateway.execute(TOOL_NAME_SCHEMA,context,SchemaInput(semantic_model_key=key))
+                self._validate(sid,principal)
+                if key!=binding.model_key or schema.key!=key or compute_schema_fingerprint(schema)!=binding.schema_fingerprint:
+                    raise AuthFailure('AUTH_FORBIDDEN',403)
+            except BaseException:
+                current.keys.discard(binding.model_key)
+                self._clear_selection(current)
+                raise
+            if select:
+                current.keys.add(key)
+                self._clear_selection(current)
+                current.selected,current.conversation_id=key,binding.conversation_id
+            return self.status(sid,principal)
+
+    async def new_chat(self,sid,principal,expected_generation):
+        current=self._context(sid,principal)
+        async with self._metadata_operation(current):
+            self._validate(sid,principal)
+            if expected_generation!=current.generation: raise CloudSelectionConflict()
+            if current.selected not in current.keys: raise AuthFailure('AUTH_FORBIDDEN',403)
+            current.generation+=1
+            current.conversation_id=str(uuid4())
+            return self.status(sid,principal)
 
     def selected_context(self, sid, principal):
         """Server composition only; a client key cannot construct this projection."""
@@ -166,7 +247,11 @@ class CloudWorkspaceService:
             self._validate(sid, principal)
             if current.selected is None:
                 return ReportTemplateCatalogResponse(items=[], reason_code="no_eligible_report_template")
-            result = await ReportTemplateCompatibilityService(current.adapter, self._auth.settings).discover(current.selected)
+            settings = self._auth.settings
+            if current.adapter.is_mock:
+                from backend.app.config.settings import PowerBIMode, LLMMode
+                settings = settings.model_copy(update={'powerbi_mode':PowerBIMode.MOCK,'llm_mode':LLMMode.MOCK})
+            result = await ReportTemplateCompatibilityService(current.adapter, settings).discover(current.selected)
             self._validate(sid, principal)
             return result
 

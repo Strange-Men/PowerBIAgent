@@ -35,6 +35,7 @@ type ActionMenu =
   | { anchor: HTMLButtonElement; id: string; type: 'report' }
 
 interface SidebarProps {
+  cloudExecutionReady?: boolean
   account?: AccountActions
   collapsed: boolean
   activeConversationId: string | null
@@ -96,6 +97,7 @@ function SidebarLeadingIcon({ status }: { status: ConversationResourceStatus }) 
 }
 
 export function Sidebar({
+  cloudExecutionReady=false,
   account,
   collapsed,
   activeConversationId,
@@ -260,7 +262,7 @@ export function Sidebar({
                 <small className="failed-label">失败</small>
               ) : null}
             </button>
-            <button
+            {!account ? <button
               className="conversation-actions-trigger"
               type="button"
               aria-label={`管理对话：${title}`}
@@ -276,7 +278,7 @@ export function Sidebar({
               }}
             >
               <MoreHorizontal size={17} />
-            </button>
+            </button> : null}
           </>
         )}
         {actionMenu?.type === 'conversation' && actionMenu.id === conversation.conversation_id && !isEditing ? (
@@ -306,9 +308,9 @@ export function Sidebar({
         </button>
       </div>
 
-      {!account ? <nav className="sidebar-primary" aria-label="主要导航">
+      {!account || cloudExecutionReady ? <nav className="sidebar-primary" aria-label="主要导航">
         <button type="button" onClick={onNewChat} title="新聊天"><Plus size={20} /><span>新聊天</span></button>
-        <button type="button" onClick={() => { if (collapsed) onToggle(); setSearchOpen(true) }} title="搜索聊天"><Search size={19} /><span>搜索聊天</span></button>
+        {!account ? <button type="button" onClick={() => { if (collapsed) onToggle(); setSearchOpen(true) }} title="搜索聊天"><Search size={19} /><span>搜索聊天</span></button> : null}
       </nav> : null}
 
       {!collapsed && searchOpen ? (
@@ -325,21 +327,21 @@ export function Sidebar({
         </section>
       ) : null}
 
-      {!account ? <div className="sidebar-scroll">
+      {!account || cloudExecutionReady ? <div className="sidebar-scroll">
         <section className="sidebar-section project-section"><span className="sidebar-label">项目</span><div className="project-card" title="Power BI 销售分析"><Folder size={18} /><span>Power BI 销售分析</span></div></section>
         <section className="sidebar-section collapsible-section">
           <button className="sidebar-section-toggle" type="button" aria-expanded={reportsOpen} onClick={() => setReportsOpen((open) => !open)}><span>最近报表</span><ChevronDown className={reportsOpen ? 'is-open' : ''} size={15} /></button>
           {reportsOpen && reports.length === 0 ? <p className="sidebar-state">暂无最近报表</p> : reportsOpen ? reports.map((report) => isUsableReport(report) ? (
             <div className="sidebar-item-row" data-report-actions key={report.report_id}>
               <a className="sidebar-item" href={report.view_reference} target="_blank" rel="noreferrer" title={`查看${report.display_title || '销售分析报告'}`}><FileText size={17} /><span>{report.display_title || '销售分析报告'}</span></a>
-              <button className="conversation-actions-trigger" type="button" aria-label={`管理报表：${report.display_title || '销售分析报告'}`} aria-haspopup="menu" aria-expanded={actionMenu?.type === 'report' && actionMenu.id === report.report_id} onClick={(event) => {
+              {!account ? <button className="conversation-actions-trigger" type="button" aria-label={`管理报表：${report.display_title || '销售分析报告'}`} aria-haspopup="menu" aria-expanded={actionMenu?.type === 'report' && actionMenu.id === report.report_id} onClick={(event) => {
                 const anchor = event.currentTarget
                 setActionMenu((current) => (
                   current?.type === 'report' && current.id === report.report_id
                     ? null
                     : { anchor, id: report.report_id, type: 'report' }
                 ))
-              }}><MoreHorizontal size={17} /></button>
+              }}><MoreHorizontal size={17} /></button> : null}
               {actionMenu?.type === 'report' && actionMenu.id === report.report_id ? (
                 <FloatingActionMenu anchor={actionMenu.anchor} ariaLabel={`报表操作：${report.display_title || '销售分析报告'}`} onClose={() => setActionMenu(null)}>
                   <button type="button" role="menuitem" disabled={managingReportId === report.report_id} onClick={() => {

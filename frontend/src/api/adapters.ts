@@ -113,12 +113,12 @@ export function historyItemToMessages(
 }
 
 export function isUsableReport(report: ReportResource | null): report is ReportResource {
+  const bases=['/api/reports','/api/v1/cloud/reports']
   return Boolean(
     report?.report_id &&
       report.availability_status !== 'deleted' &&
-      report.view_reference === `/api/reports/${encodeURIComponent(report.report_id)}` &&
-      report.download_reference ===
-        `/api/reports/${encodeURIComponent(report.report_id)}/download`,
+      bases.some(base => report.view_reference === `${base}/${encodeURIComponent(report.report_id)}` &&
+        report.download_reference === `${base}/${encodeURIComponent(report.report_id)}/download`),
   )
 }
 

@@ -125,6 +125,7 @@ class PrincipalRepositories:
     report_metadata: object
     reports: object
     history_service: object
+    cloud_bindings: object
 
 
 class PrincipalScopedRepositoryFactory:
@@ -174,4 +175,6 @@ class PrincipalScopedRepositoryFactory:
         history_service = ConversationHistoryService(history, report_repository=reports,
             owner_scope_key=scope.transient_key, cursor_secret=self._cursor_secret)
         validate()
-        return PrincipalRepositories(scope, memory, snapshots, history, metadata, reports, history_service)
+        from backend.app.persistence.cloud_bindings import CloudBindingRepository
+        return PrincipalRepositories(scope, memory, snapshots, history, metadata, reports, history_service,
+                                     CloudBindingRepository(sessions, scope.owner_id))

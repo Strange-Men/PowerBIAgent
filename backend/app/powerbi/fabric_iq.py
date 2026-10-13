@@ -160,7 +160,23 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         url = f"https://app.powerbi.com/groups/{workspace_id}/datasets/{model_id}/details"
         return await self._resolve_authorized_url(url, reuse=True)
 
-    async def _resolve_authorized_url(self, url, *, reuse=False):
+    def bound_resource_identity(self, key):
+        ref = self._binding(key)
+        return ref.workspace_id, ref.semantic_model_id
+
+    async def restore_bound_model(self, workspace_id, model_id, key):
+        """Server-owned persisted projection only; still Resolve+Schema proof."""
+        self._validate()
+        workspace_id, model_id = guid(workspace_id), guid(model_id)
+        if not isinstance(key,str) or not key.startswith('fabric_iq:') or len(key)>128:
+            raise fail('RESOURCE_NOT_ACCESSIBLE')
+        old = self._bindings.get(key)
+        if old and (old.workspace_id,old.semantic_model_id)!=(workspace_id,model_id):
+            raise fail('RESOURCE_NOT_ACCESSIBLE')
+        return await self._resolve_authorized_url(
+            f'https://app.powerbi.com/groups/{workspace_id}/datasets/{model_id}/details', restored_key=key)
+
+    async def _resolve_authorized_url(self, url, *, reuse=False, restored_key=None):
         self._validate()
         expected_workspace, expected_model = _bootstrap_identity(url)
         self._test_policy.model(expected_workspace, expected_model)
@@ -175,7 +191,7 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
             raw = await connection.call("GetSemanticModelSchema", {"artifactId": expected_model})
             old = next((ref for ref in self._bindings.values()
                 if ref.workspace_id == expected_workspace and ref.semantic_model_id == expected_model), None) if reuse else None
-            key = old.server_model_key if old else "fabric_iq:" + token_urlsafe(32)
+            key = restored_key or (old.server_model_key if old else "fabric_iq:" + token_urlsafe(32))
             schema = normalize_schema(raw, expected_model, key, self._principal.authorization_epoch)
         self._validate()
         self._test_policy.model(expected_workspace, expected_model)

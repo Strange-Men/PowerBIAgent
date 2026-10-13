@@ -43,10 +43,17 @@ class AuthBoundaryMiddleware(BaseHTTPMiddleware):
                 response = JSONResponse({"status": "ok", "identity_mode": "ENTRA_BFF", "ready": True})
             elif path.startswith("/api/") or path in {"/api", "/docs", "/redoc", "/openapi.json"}:
                 await run_in_threadpool(service.require_session, request.cookies.get(settings.auth_cookie_name))
-                from backend.app.api.cloud_routes import CONTROL_PLANE_ROUTES
+                from backend.app.api.cloud_routes import CONTROL_PLANE_ROUTES, is_product_route
                 if ((request.method, path) in CONTROL_PLANE_ROUTES
                         and getattr(request.app.state, "cloud_workspace_service", None) is not None):
                     response = await call_next(request)
+                elif is_product_route(request.method,path) and getattr(request.app.state,'cloud_workspace_service',None) is not None:
+                    principal=await run_in_threadpool(service.require_session,request.cookies.get(settings.auth_cookie_name))
+                    request.app.state.cloud_workspace_service.require_business_access(
+                        request.cookies.get(settings.auth_cookie_name),principal.principal)
+                    if getattr(request.app.state,'cloud_product_services',None) is None:
+                        raise AuthFailure('AUTH_FORBIDDEN',403)
+                    response=await call_next(request)
                 else:
                     raise AuthFailure("AUTH_FORBIDDEN", 403)
             else:

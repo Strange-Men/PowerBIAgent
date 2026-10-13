@@ -97,6 +97,22 @@ class OwnedRow:
         return {}
 
 
+class CloudConversationBindingModel(OwnedRow, Base):
+    """Immutable owner/exact resource projection; no schema or BI rows."""
+    __tablename__ = "cloud_conversation_bindings"
+    owner_id: Mapped[str] = mapped_column(String(80), ForeignKey("resource_owners.owner_id"), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    model_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    schema_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    __table_args__ = (
+        UniqueConstraint('owner_id', 'model_key', 'conversation_id', name='uq_cloud_conversation_binding'),
+        CheckConstraint("source_mode IN ('mock','real')", name='ck_cloud_binding_source'),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Conversations
 # ---------------------------------------------------------------------------

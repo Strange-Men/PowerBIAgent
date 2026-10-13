@@ -414,3 +414,41 @@ export const readCloudProfiles = (signal?: AbortSignal) =>
   requestJson<LLMProfileCatalog>('/api/v1/cloud/llm-profiles', { signal })
 export const readCloudTemplates = (signal?: AbortSignal) =>
   requestJson<ReportTemplateCatalog>('/api/v1/cloud/report-templates', { signal })
+
+export const sendCloudChat = (body: {
+  message: string; request_id: string; expected_generation: number
+  llm_profile_key?: string; report_template_key?: string
+}, csrf: string, signal?: AbortSignal) => requestJson<ChatResponse>('/api/v1/cloud/chat', {
+  method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf},signal,
+})
+export const newCloudChat = (expectedGeneration: number, csrf: string, signal?: AbortSignal) =>
+  requestJson<CloudWorkspaceStatus>('/api/v1/cloud/new-chat', {
+    method:'POST',body:JSON.stringify({expected_generation:expectedGeneration}),headers:{'X-CSRF-Token':csrf},signal,
+  })
+export const restoreCloudChat = (conversationId: string, expectedGeneration: number, csrf: string, signal?: AbortSignal) =>
+  requestJson<CloudWorkspaceStatus>('/api/v1/cloud/restore', {
+    method:'POST',body:JSON.stringify({conversation_id:conversationId,expected_generation:expectedGeneration}),
+    headers:{'X-CSRF-Token':csrf},signal,
+  })
+export const readCloudHistory = (signal?: AbortSignal) =>
+  requestJson<ConversationListPage>('/api/v1/cloud/history', {signal})
+export const readCloudReports = (signal?: AbortSignal) =>
+  requestJson<ReportResourcePage>('/api/v1/cloud/reports', {signal})
+export async function readCloudConversation(id: string, signal?: AbortSignal): Promise<ConversationHistoryPage> {
+  const items: ConversationHistoryPage['items']=[]
+  let cursor: string | undefined
+  let first: ConversationHistoryPage | undefined
+  const seen=new Set<string>()
+  do {
+    const query=queryString({limit:50,cursor})
+    const page=await requestJson<ConversationHistoryPage>(`/api/v1/cloud/history/${encodeURIComponent(id)}?${query}`,{signal})
+    if (page.conversation_id!==id) throw new ApiError('历史暂不可用，请重试。',503)
+    first ||= page
+    items.push(...page.items)
+    cursor=page.next_cursor || undefined
+    if (cursor && seen.has(cursor)) throw new ApiError('历史暂不可用，请重试。',503)
+    if (cursor) seen.add(cursor)
+  } while (cursor && items.length<500)
+  if (cursor) throw new ApiError('历史暂不可用，请重试。',503)
+  return {...first!,items,next_cursor:null}
+}

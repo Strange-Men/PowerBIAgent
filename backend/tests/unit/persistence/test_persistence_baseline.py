@@ -212,7 +212,10 @@ datefmt = %H:%M:%S
         conn = sqlite3.connect(tmp_db_path)
         cursor = conn.execute("SELECT version_num FROM alembic_version")
         version = cursor.fetchone()[0]
-        assert version == "f63a1b2c3d40"
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        cfg=Config();cfg.set_main_option('script_location',str(project_root/'backend'/'alembic'))
+        assert version == ScriptDirectory.from_config(cfg).get_current_head()
         conversation_columns = {
             row[1]
             for row in conn.execute("PRAGMA table_info(conversations)").fetchall()
@@ -858,7 +861,10 @@ datefmt = %H:%M:%S
                 "SELECT version_num FROM alembic_version"
             ).fetchone()[0]
         assert after == ("conversation_delete_intents",)
-        assert version == "f63a1b2c3d40"
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        cfg=Config();cfg.set_main_option('script_location',str(project_root/'backend'/'alembic'))
+        assert version == ScriptDirectory.from_config(cfg).get_current_head()
 
     @staticmethod
     def _run_alembic_upgrade(

@@ -161,6 +161,17 @@ async def lifespan(app: FastAPI):
             if app.state.fabric_iq_adapter_factory is not None else None
         )
         app.state.cloud_llm_registry = build_llm_registry(settings) if app.state.cloud_workspace_service else None
+        app.state.cloud_product_services = None
+        cloud_runtime = None
+        if app.state.cloud_runtime_factory is not None:
+            # Explicit host composition for offline synthetic acceptance; no
+            # request/env flag replaces Fabric IQ with Mock or enables Real.
+            cloud_runtime = await app.state.cloud_runtime_factory(service)
+            if app.state.cloud_workspace_service is not None: await app.state.cloud_workspace_service.aclose()
+            if app.state.cloud_llm_registry is not None: await app.state.cloud_llm_registry.aclose()
+            app.state.cloud_workspace_service=cloud_runtime.workspace
+            app.state.cloud_llm_registry=cloud_runtime.registry
+            app.state.cloud_product_services=cloud_runtime.products
         install_auth_log_redaction()
         for name in ("turn_service", "mock_turn_service", "report_repository",
                      "conversation_history_service", "semantic_model_discovery_service",
@@ -186,6 +197,7 @@ async def lifespan(app: FastAPI):
                 await app.state.cloud_workspace_service.aclose()
             if app.state.cloud_llm_registry is not None:
                 await app.state.cloud_llm_registry.aclose()
+            if cloud_runtime is not None: await cloud_runtime.close()
             service.close()
             app.state.auth_service = None
             app.state.fabric_iq_adapter_factory = None
@@ -354,7 +366,8 @@ async def lifespan(app: FastAPI):
     app.state._persistence_engine = None
 
 
-def create_app(settings: Optional[Settings] = None, *, identity_client: IdentityClient | None = None) -> FastAPI:
+def create_app(settings: Optional[Settings] = None, *, identity_client: IdentityClient | None = None,
+               cloud_runtime_factory=None) -> FastAPI:
     """创建 FastAPI 应用 — 避免导入时执行外部网络调用
 
     Args:
@@ -377,6 +390,8 @@ def create_app(settings: Optional[Settings] = None, *, identity_client: Identity
     app.state.auth_service = None
     app.state.cloud_workspace_service = None
     app.state.cloud_llm_registry = None
+    app.state.cloud_product_services = None
+    app.state.cloud_runtime_factory = cloud_runtime_factory
     app.add_exception_handler(AuthFailure, lambda request, error: failure_response(error))
     app.add_middleware(AuthBoundaryMiddleware)
 

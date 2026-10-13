@@ -16,6 +16,7 @@ export interface AccountActions {
   state: AuthState
   login: () => void
   logout: () => Promise<void>
+  refresh?: () => void
 }
 
 export type PublicFailureCode =

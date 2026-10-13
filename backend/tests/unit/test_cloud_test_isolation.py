@@ -61,6 +61,35 @@ async def test_foreign_catalog_candidate_never_reaches_iq(workspace_id, model_id
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('workspace_id,model_id', [(FOREIGN,MODEL),(WORKSPACE,FOREIGN)])
+async def test_persisted_restoration_cannot_bypass_exact_allowlist(workspace_id,model_id):
+    auth,session,wire,adapter=native()
+    try:
+        with pytest.raises(PowerBIAdapterError,match='^RESOURCE_NOT_ACCESSIBLE$'):
+            await adapter.restore_bound_model(workspace_id,model_id,'fabric_iq:synthetic-old')
+        assert wire.calls==[]
+    finally:
+        await adapter.aclose(); auth.close()
+
+
+@pytest.mark.asyncio
+async def test_native_restore_revalidates_resolve_schema_and_current_principal():
+    auth,session,wire,adapter=native()
+    try:
+        restored=await adapter.restore_bound_model(WORKSPACE,MODEL,'fabric_iq:synthetic-old')
+        assert restored.server_model_key=='fabric_iq:synthetic-old'
+        assert [name for name,_ in wire.calls]==['ResolveFabricItem','GetSemanticModelSchema']
+        assert adapter.bound_resource_identity(restored.server_model_key)==(WORKSPACE,MODEL)
+        auth.logout(session.session_id,None)
+        before=len(wire.calls)
+        with pytest.raises(AuthFailure):
+            await adapter.restore_bound_model(WORKSPACE,MODEL,restored.server_model_key)
+        assert len(wire.calls)==before
+    finally:
+        await adapter.aclose(); auth.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('operation', ['schema','query','members','normalize'])
 async def test_same_principal_forged_or_old_binding_is_denied(operation):
     auth, session, wire, adapter = native()

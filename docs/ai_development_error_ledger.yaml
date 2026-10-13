@@ -8,6 +8,69 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-64-014
+  title: Cloud历史仅owner授权不足以证明当前资源权限及选择一致性
+  category: ERR
+  first_detected_version: M6.4
+  symptom: 旧会话和报表缺少持久exact模型投影；同owner撤权或选择切换后可能回放过期结果
+  local_evidence: directed合成failure-first binding负例先FAIL；新增API撤权、Schema drift、迟到Chat/History/Report和A/B重新登录测试
+  authoritative_sources:
+  - title: 用户M6.4 Workspace Allowlist与Principal Ownership安全要求
+    reason: owner不能替代当前资源批准和RLS/OLS证明，旧Binding与Late Response必须拒绝
+  - title: ADR-020
+    reason: 服务端current-principal授权与Adapter权限边界不由客户端键替代
+  root_cause: 原服务组合只有owner投影，没有不可变exact模型绑定与读响应generation租约
+  failed_attempts:
+  - RootModel字符串投影不符合既有ToolGateway字典摘要合同，改为普通BaseModel
+  - 合成服务使用FabricIQ运行命名空间，改为既有Mock配置以保持来源诚实
+  repair_attempt_count: 2
+  final_fix: 增加owner-scoped不可变绑定表；恢复先Resolve和Schema fingerprint复证；读取与持久化沿用owner租约且核对generation；native业务gate存储前拒绝
+  regression_tests:
+  - backend/tests/api/test_cloud_product_api.py
+  - backend/tests/unit/test_cloud_bound_recovery.py
+  - backend/tests/unit/persistence/test_m64_binding_migration.py
+  - frontend/src/components/CloudWorkspace.test.tsx
+  prohibited_patterns:
+  - 从owner或旧会话自动推导当前BI事实访问权
+  - 模型或Principal切换后发布旧响应
+  prevention_rules:
+  - 恢复必须核对服务端持久exact身份和当前授权，缺投影拒绝
+  - async响应和事务必须前后验证身份与generation，未经验证native路径继续关闭
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: directed_synthetic_binding_and_late_response_boundary_verified
+    version: M6.4
+- id: ERR-64-015
+  title: 合成报表旧规格不能冒充正式Renderer合同
+  category: ERR
+  first_detected_version: M6.4
+  symptom: 原Mock报告使用旧字段和title，正式SalesReportRenderer拒绝sales_report_title_invalid
+  local_evidence: directed API report先FAIL；同合成schema补充明确canonical模板资格后暴露Renderer严格拒绝
+  authoritative_sources:
+  - title: M5 Frozen Core与用户禁止Mock冒充Real要求
+    reason: 合成旧规格不能降低正式Renderer或VerifiedFactSet校验
+  root_cause: 服务组合误把原Mock报告规格送入正式Renderer
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 合成链复用原LOCAL_DEV的MockRenderer和MockTurnService，正式nativeRenderer保持原合同及执行gate；API边界仅投影保护链接，保持Mock标识
+  regression_tests:
+  - backend/tests/api/test_cloud_product_api.py
+  - frontend/src/api/adapters.test.ts
+  prohibited_patterns:
+  - 修改正式Renderer合同以接收旧Mock规格
+  - 合成Report PASS声称正式VerifiedFactSet或Real报告验收通过
+  prevention_rules:
+  - 合成与Real分层记录，所有Mock入口显式host注入且不能由env或客户端开启
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-13'
+    action: reused_existing_mock_renderer_without_frozen_core_change
+    version: M6.4
 - id: ERR-64-013
   title: Cloud并发Profile身份失效被目录成功结果掩盖
   category: ERR

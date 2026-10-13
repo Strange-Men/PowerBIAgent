@@ -26,16 +26,22 @@ async def test_owned_history_and_report_reads_do_not_require_a_selected_model(ha
     artifact = await seed_report(owner, conversation='owned-conversation')
     before = len(transport.calls)
     try:
-        page = await services.list_history(a.session_id, a.principal, limit=10)
+        # Tightened product replay now refuses native Real before storage.
+        for operation in [lambda:services.list_history(a.session_id,a.principal,limit=10),
+            lambda:services.read_history(a.session_id,a.principal,'owned-conversation',limit=10),
+            lambda:services.read_report(a.session_id,a.principal,artifact.report_id)]:
+            with pytest.raises(AuthFailure): await operation()
+        page = await owner.history_service.list_recent(RuntimeDataMode.REAL, limit=10)
         assert [item.conversation_id for item in page.items] == ['owned-conversation']
-        history = await services.read_history(a.session_id, a.principal, 'owned-conversation', limit=10)
+        history = await owner.history_service.get_history(RuntimeDataMode.REAL, 'owned-conversation', limit=10)
         assert 'owned-read' in {item.request_id for item in history.items}
-        assert (await services.read_report(a.session_id, a.principal, artifact.report_id))[0].report_id == artifact.report_id
-        assert not (await services.list_history(b.session_id, b.principal, limit=10)).items
+        assert (await owner.reports.read_html(artifact.report_id))[0].report_id == artifact.report_id
+        other=await factory.for_session(auth,b.session_id,b.principal)
+        assert not (await other.history_service.list_recent(RuntimeDataMode.REAL,limit=10)).items
         with pytest.raises(ConversationNotFoundError):
-            await services.read_history(b.session_id, b.principal, 'owned-conversation', limit=10)
+            await other.history_service.get_history(RuntimeDataMode.REAL, 'owned-conversation', limit=10)
         with pytest.raises(ReportNotFoundError):
-            await services.read_report(b.session_id, b.principal, artifact.report_id)
+            await other.reports.read_html(artifact.report_id)
         with pytest.raises(AuthFailure):
             await services.list_history(a.session_id, b.principal, limit=10)
         assert len(transport.calls) == before

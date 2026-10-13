@@ -8,6 +8,8 @@ vi.mock('../api/client', async importOriginal => ({
   ...await importOriginal<typeof import('../api/client')>(),
   readCloudCatalog: vi.fn(), readCloudStatus: vi.fn(), selectCloudModel: vi.fn(),
   readCloudProfiles: vi.fn(), readCloudTemplates: vi.fn(),
+  sendCloudChat:vi.fn(),readCloudHistory:vi.fn(),readCloudReports:vi.fn(),readCloudConversation:vi.fn(),
+  newCloudChat:vi.fn(),restoreCloudChat:vi.fn(),
 }))
 const status: CloudWorkspaceStatus = {selected_model_key:null,conversation_id:null,generation:0,
   execution_ready:false,blockers:['numeric_contract','query_completeness']}
@@ -23,6 +25,79 @@ beforeEach(() => {
   vi.mocked(api.readCloudStatus).mockResolvedValue(status)
   vi.mocked(api.readCloudProfiles).mockResolvedValue({items:[]} as never)
   vi.mocked(api.readCloudTemplates).mockResolvedValue({items:[],reason_code:'no_eligible_report_template'} as never)
+  vi.mocked(api.readCloudHistory).mockResolvedValue({items:[]} as never)
+  vi.mocked(api.readCloudReports).mockResolvedValue({items:[]} as never)
+})
+
+describe('Synthetic Cloud product wiring',()=>{
+  const ready={...status,selected_model_key:'opaque-a',conversation_id:'synthetic-current',generation:1,execution_ready:true,blockers:[]}
+  const account={session,state:'SIGNED_IN' as const,login:vi.fn(),logout:vi.fn().mockResolvedValue(undefined)}
+  const summary={conversation_id:'synthetic-old',title:'合成历史',source_mode:'mock'}
+  const enable=()=>{
+    vi.mocked(api.readCloudStatus).mockResolvedValue(ready)
+    vi.mocked(api.readCloudProfiles).mockResolvedValue({items:[{profile_key:'deepseek',display_name:'合成 AI',available:true,default:true}]} as never)
+  }
+  const submit=async()=>{
+    const input=await screen.findByRole('textbox',{name:'询问你的 Power BI 数据'})
+    fireEvent.change(input,{target:{value:'合成销售问题'}})
+    fireEvent.click(screen.getByRole('button',{name:'发送'}))
+  }
+  it('sends only generation and bounded request fields, displays protected report links',async()=>{
+    enable()
+    vi.mocked(api.sendCloudChat).mockImplementation(async body=>({request_id:body.request_id,conversation_id:ready.conversation_id,
+      terminal_state:'completed',response_type:'answer',answer:'合成验证回答',report:{report_id:'synthetic-report',
+        view_reference:'/api/v1/cloud/reports/synthetic-report',download_reference:'/api/v1/cloud/reports/synthetic-report/download'}} as never))
+    render(<CloudWorkspace session={session} onAuthInvalid={vi.fn()} />)
+    await screen.findByText('模型甲')
+    await submit()
+    expect(await screen.findByText('合成验证回答')).toBeInTheDocument()
+    const body=vi.mocked(api.sendCloudChat).mock.calls[0][0]
+    expect(body).toMatchObject({message:'合成销售问题',expected_generation:1,llm_profile_key:'deepseek'})
+    expect(body).not.toHaveProperty('model_key'); expect(body).not.toHaveProperty('conversation_id')
+    expect(screen.getByRole('link',{name:/查看/})).toHaveAttribute('href','/api/v1/cloud/reports/synthetic-report')
+  })
+  it('restores only server-authorized history and starts fresh conversation with retained model',async()=>{
+    enable()
+    vi.mocked(api.readCloudHistory).mockResolvedValue({items:[summary]} as never)
+    vi.mocked(api.restoreCloudChat).mockResolvedValue({...ready,conversation_id:'synthetic-old',generation:2})
+    vi.mocked(api.readCloudConversation).mockResolvedValue({conversation_id:'synthetic-old',items:[{
+      request_id:'old-answer',user_message:'旧合成问题',answer:'旧合成回答',terminal_state:'completed',response_type:'answer'}]} as never)
+    vi.mocked(api.newCloudChat).mockResolvedValue({...ready,conversation_id:'synthetic-new',generation:3})
+    render(<CloudWorkspace session={session} onAuthInvalid={vi.fn()} account={account} />)
+    fireEvent.click(await screen.findByRole('button',{name:'合成历史'}))
+    expect(await screen.findByText('旧合成回答')).toBeInTheDocument()
+    expect(api.restoreCloudChat).toHaveBeenCalledWith('synthetic-old',1,'synthetic-proof',expect.any(AbortSignal))
+    fireEvent.click(screen.getByRole('button',{name:'新聊天'}))
+    await waitFor(()=>expect(api.newCloudChat).toHaveBeenCalledWith(2,'synthetic-proof',expect.any(AbortSignal)))
+    await waitFor(()=>expect(screen.queryByText('旧合成回答')).not.toBeInTheDocument())
+    expect(screen.getByText('模型甲')).toBeInTheDocument()
+  })
+  it('discards delayed chat after model switch even if fetch ignores abort',async()=>{
+    enable()
+    let finish!: (value: never)=>void
+    vi.mocked(api.sendCloudChat).mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+    vi.mocked(api.selectCloudModel).mockResolvedValue({...ready,selected_model_key:'opaque-b',conversation_id:'synthetic-b',generation:2})
+    render(<CloudWorkspace session={session} onAuthInvalid={vi.fn()} />)
+    await screen.findByText('模型甲'); await submit()
+    await waitFor(()=>expect(api.sendCloudChat).toHaveBeenCalled())
+    const body=vi.mocked(api.sendCloudChat).mock.calls[0][0]
+    fireEvent.click(screen.getByRole('button',{name:'打开数据与报表选项'}))
+    fireEvent.click(screen.getByRole('button',{name:/模型乙/}))
+    await screen.findByText('模型乙')
+    await act(async()=>finish({request_id:body.request_id,conversation_id:ready.conversation_id,answer:'迟到私有回答',terminal_state:'completed'} as never))
+    expect(screen.queryByText('迟到私有回答')).not.toBeInTheDocument()
+    expect(vi.mocked(api.sendCloudChat).mock.calls[0][2]?.aborted).toBe(true)
+  })
+  it('clears displayed business data on revoked or expired chat identity',async()=>{
+    enable()
+    const invalid=vi.fn()
+    vi.mocked(api.sendCloudChat).mockRejectedValue(new api.ApiError('PRIVATE_AUTH_DETAIL',401))
+    render(<CloudWorkspace session={session} onAuthInvalid={invalid} />)
+    await screen.findByText('模型甲'); await submit()
+    await waitFor(()=>expect(invalid).toHaveBeenCalledOnce())
+    expect(screen.queryByText('合成销售问题')).not.toBeInTheDocument()
+    expect(screen.queryByText('PRIVATE_AUTH_DETAIL')).not.toBeInTheDocument()
+  })
 })
 
 describe('Cloud control-plane UX', () => {

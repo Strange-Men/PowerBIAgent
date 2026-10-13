@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { readCloudCatalog, readCloudStatus } from '../api/client'
+import { ApiError, readCloudCatalog, readCloudStatus } from '../api/client'
 import type { AccountActions } from '../types'
 
 export function CloudAccountSettings({account}: {account: AccountActions}) {
@@ -19,14 +19,18 @@ export function CloudAccountSettings({account}: {account: AccountActions}) {
     abort.current = controller
     try {
       const catalog = await readCloudCatalog(controller.signal)
+      if (current !== epoch.current) return
       const status = await readCloudStatus(controller.signal)
       if (current !== epoch.current) return
       if (catalog.status === 'error' || catalog.status === 'forbidden') throw new Error('Catalog unavailable')
       setInfo({count:catalog.items.length,partial:catalog.status === 'partial',
         selected:catalog.items.find(item => item.key === status.selected_model_key)?.display_name || null})
       window.dispatchEvent(new Event('powerbiagent-cloud-catalog-updated'))
-    } catch {
-      if (current === epoch.current) setError(true)
+    } catch (caught) {
+      if (current === epoch.current) {
+        setError(true)
+        if (caught instanceof ApiError && caught.status===401) account.refresh?.()
+      }
     } finally {
       if (current === epoch.current) setLoading(false)
     }

@@ -15,6 +15,9 @@ export function App() {
   const [collapsed, setCollapsed] = useState(() =>
     typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 760px)').matches : false)
   if (auth.session?.identity_mode === 'LOCAL_DEV') return <LocalWorkspace />
+  if (auth.session?.authenticated) return <CloudWorkspace key={auth.generation} session={auth.session}
+    onAuthInvalid={auth.refresh} collapsed={collapsed} onToggle={()=>setCollapsed(v=>!v)}
+    account={{session:auth.session,state:auth.state,login:auth.login,logout:auth.logout,refresh:auth.refresh}} />
   return <div className="app-shell">
     <Sidebar key={auth.generation} collapsed={collapsed} activeConversationId={null} runtimeMode="real"
       conversations={[]} reports={[]} error={null} onToggle={() => setCollapsed(v => !v)} onNewChat={() => {}}

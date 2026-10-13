@@ -19,11 +19,32 @@ import {
   restoreConversation,
   restoreReport,
   readCloudCatalog,
+  readCloudConversation,
+  sendCloudChat,
   sendChat,
 } from './client'
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('Cloud same-origin bounded product requests',()=>{
+  it('keeps CSRF, abort and server generation without client ownership fields',async()=>{
+    const fetchMock=vi.fn().mockResolvedValue(new Response('{}',{status:200}))
+    vi.stubGlobal('fetch',fetchMock)
+    const controller=new AbortController()
+    await sendCloudChat({message:'Synthetic',request_id:'synthetic',expected_generation:3},'synthetic-proof',controller.signal)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/cloud/chat')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({credentials:'same-origin',signal:controller.signal,
+      headers:{'X-CSRF-Token':'synthetic-proof'},body:JSON.stringify({message:'Synthetic',request_id:'synthetic',expected_generation:3})})
+  })
+  it.each(['repeated','wrong_identity'])('refuses %s history pages',async mode=>{
+    const fetchMock=vi.fn().mockImplementation(()=>Promise.resolve(new Response(JSON.stringify({
+      conversation_id:mode==='wrong_identity'?'foreign':'synthetic',items:[],next_cursor:'repeat'}),{status:200})))
+    vi.stubGlobal('fetch',fetchMock)
+    await expect(readCloudConversation('synthetic')).rejects.toBeInstanceOf(ApiError)
+    expect(fetchMock).toHaveBeenCalledTimes(mode==='wrong_identity'?1:2)
+  })
 })
 
 describe('API namespace and chat mapping', () => {
