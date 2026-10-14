@@ -8,6 +8,7 @@ from backend.app.auth.identity import CATALOG_SCOPES, DELEGATED_SCOPES
 from backend.app.auth.models import AuthFailure
 from backend.app.config.cloud_test_policy import CloudTestPolicy
 from backend.app.powerbi.fabric_iq_contract import fail
+from backend.app.powerbi.base import PowerBIAdapterError
 from backend.app.powerbi.fabric_iq_normalization import guid
 from backend.app.powerbi.fabric_iq_transport import install_fabric_log_redaction
 
@@ -20,6 +21,8 @@ class FabricCatalogTransport:
         self._auth, self._sid, self._principal = auth, session_id, principal
         self._max_pages, self._max_items, self._sleep = max_pages, max_items, sleep
         self._closed = False
+        self.inaccessible_count = 0
+        self.test_scope_complete = True
         self._test_policy = CloudTestPolicy(auth.settings)
         self.validate()
         install_fabric_log_redaction()
@@ -49,29 +52,40 @@ class FabricCatalogTransport:
 
     async def list_workspaces(self):
         if self._test_policy.enabled:
-            ws = str(self._test_policy.scope.workspace_id)
-            return [await self._get('/workspaces/' + ws, {})]
+            return await self._approved_items([
+                '/workspaces/' + str(w.workspace_id) for w in self._test_policy.scope.workspaces])
         return await self._pages("/workspaces")
 
     async def list_models(self, workspace_id):
         if self._test_policy.enabled:
-            self._test_policy.workspace(workspace_id)
-            rows = []
-            for model in self._test_policy.scope.models:
+            workspace = self._test_policy.workspace(workspace_id)
+            paths = []
+            for model in workspace.models:
                 self._test_policy.model(workspace_id, model.model_id)
-                rows.append(await self._get(f'/workspaces/{workspace_id}/semanticModels/{model.model_id}', {}))
-            return rows
+                paths.append(f'/workspaces/{workspace_id}/semanticModels/{model.model_id}')
+            return await self._approved_items(paths)
         return await self._pages(f"/workspaces/{guid(workspace_id)}/semanticModels", recursive=True)
 
     async def list_reports(self, workspace_id):
         if self._test_policy.enabled:
-            self._test_policy.workspace(workspace_id)
-            rows = []
-            for report in self._test_policy.scope.reports:
+            workspace = self._test_policy.workspace(workspace_id)
+            paths = []
+            for report in workspace.reports:
                 self._test_policy.report(workspace_id, report.report_id)
-                rows.append(await self._get(f'/workspaces/{workspace_id}/reports/{report.report_id}', {}))
-            return rows
+                paths.append(f'/workspaces/{workspace_id}/reports/{report.report_id}')
+            return await self._approved_items(paths)
         return await self._pages(f"/workspaces/{guid(workspace_id)}/reports", recursive=True)
+
+    async def _approved_items(self, paths):
+        rows = []
+        for path in paths:
+            try: rows.append(await self._get(path, {}))
+            except PowerBIAdapterError as error:
+                if error.error_type != 'RESOURCE_NOT_ACCESSIBLE': raise
+                self.validate()
+                self.inaccessible_count += 1
+                self.test_scope_complete = False
+        return rows
 
     async def _get(self, path, params):
         for attempt in range(3):

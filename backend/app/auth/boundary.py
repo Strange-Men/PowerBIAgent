@@ -19,7 +19,8 @@ def failure_response(error: AuthFailure):
         return JSONResponse(status_code=error.status, content={
             'failure': failure.model_dump(mode='json'), 'denial_reason': error.denial_reason,
         }, headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
-    if error.status >= 500:
+    if error.status >= 500 or error.code == 'AUTH_FORBIDDEN':
+        # A resource/coarse-route refusal does not prove identity invalidation.
         return JSONResponse(status_code=error.status, content={
             'failure': failure.model_dump(mode='json'),
         }, headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
@@ -55,12 +56,7 @@ class AuthBoundaryMiddleware(BaseHTTPMiddleware):
                 if ((request.method, path) in CONTROL_PLANE_ROUTES
                         and getattr(request.app.state, "cloud_workspace_service", None) is not None):
                     response = await call_next(request)
-                elif is_product_route(request.method,path) and getattr(request.app.state,'cloud_workspace_service',None) is not None:
-                    principal=await run_in_threadpool(service.require_session,request.cookies.get(settings.auth_cookie_name))
-                    request.app.state.cloud_workspace_service.require_business_access(
-                        request.cookies.get(settings.auth_cookie_name),principal.principal)
-                    if getattr(request.app.state,'cloud_product_services',None) is None:
-                        raise AuthFailure('AUTH_FORBIDDEN',403)
+                elif is_product_route(request.method,path) and getattr(request.app.state,'cloud_product_services',None) is not None:
                     response=await call_next(request)
                 else:
                     raise AuthFailure("AUTH_FORBIDDEN", 403)

@@ -106,8 +106,7 @@ class CloudProductServiceFactory:
         # Legacy snapshots lack a durable exact test-resource authorization
         # projection. Owner identity alone cannot authorize replay of BI facts.
         if self._test_policy.enabled: raise AuthFailure('AUTH_FORBIDDEN', 403)
-        self._workspace.require_business_access(sid,principal)
-        require_cloud_business_data(self._workspace,sid,principal)
+        self._workspace.require_persistence(sid,principal)
         # Past resources are owner-scoped; viewing does not select a model or
         # restore business Memory. Storage is still explicitly supplied.
         self._validate_identity(sid, principal)
@@ -247,6 +246,8 @@ class CloudProductServiceFactory:
         # No real schema/facts reach the generic external Provider or storage
         # while test disclosure and recovery contracts are unproven.
         if self._test_policy.enabled: raise AuthFailure('AUTH_FORBIDDEN', 403)
+        self._workspace.require_execution(sid,principal)
+        require_cloud_business_data(self._workspace,sid,principal)
         current = self._workspace.status(sid, principal)
         if current.selected_model_key is None: raise AuthFailure("AUTH_FORBIDDEN", 403)
         await self._workspace.select(sid, principal, current.selected_model_key,

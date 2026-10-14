@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, logoutAuthSession, readAuthSession } from '../api/client'
 import type { AuthSession, AuthState } from '../types'
+import { cloudFailureAction } from '../failure'
 
 const signedOut: AuthSession = {identity_mode:'ENTRA_BFF', authenticated:false,
   display_name:null, preferred_username:null, state:'SIGNED_OUT', csrf_token:null, expires_in:0}
@@ -48,7 +49,7 @@ export function useAuth() {
       setState(next.state === 'LOCAL_DEV' ? 'SIGNED_OUT' : next.state)
     } catch (caught) {
       if (current !== epoch.current) return
-      if (caught instanceof ApiError && (caught.status===0 || caught.status>=500)) {
+      if (!(caught instanceof ApiError) || cloudFailureAction(caught)!=='auth') {
         setSessionCheckError('暂时无法确认会话，请检查网络后重试。')
         setState(previous=>previous==='SESSION_ESTABLISHING' ? 'AUTH_ERROR' : previous)
         return

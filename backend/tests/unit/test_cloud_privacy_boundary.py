@@ -67,7 +67,8 @@ def test_native_cloud_business_paths_cannot_disclose_to_configured_external_prov
         login(client)
         headers = {'Origin':ORIGIN, 'X-CSRF-Token':client.get('/auth/session').json()['csrf_token']}
         for path in ('/api/v1/chat', '/api/v1/cloud/chat'):
-            assert client.post(path, json={'message':'SYNTHETIC_BUSINESS_MARKER'}, headers=headers).status_code == 403
+            assert client.post(path, json={'message':'SYNTHETIC_BUSINESS_MARKER','request_id':'synthetic',
+                'expected_generation':0} if path.endswith('/cloud/chat') else {'message':'SYNTHETIC_BUSINESS_MARKER'}, headers=headers).status_code == 403
         for path in ('/api/reports', '/api/v1/conversations', '/api/reports/synthetic-report/download'):
             assert client.get(path).status_code == 403
         assert app.state.turn_service is None and app.state._persistence_engine is None
@@ -86,7 +87,7 @@ async def test_execution_gate_or_client_source_cannot_grant_enterprise_retention
     from backend.app.persistence import database
     engine=Mock(side_effect=AssertionError('enterprise persistence must not open'))
     monkeypatch.setattr(database,'create_engine',engine)
-    workspace=SimpleNamespace(require_business_access=lambda *args:None,
+    workspace=SimpleNamespace(require_disclosure=lambda *args:None,require_persistence=lambda *args:None,
         data_mode=lambda *args:RuntimeDataMode.REAL)
     with pytest.raises(AuthFailure): require_cloud_business_data(workspace,'synthetic',object())
     repositories=DeferredCloudRepositories(object(),workspace,config(powerbi_mode='fabric_iq',persistence_backend='sqlite'))

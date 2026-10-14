@@ -27,10 +27,15 @@ async def test_catalog_native_adapter_schema_before_bind_and_session_key_stabili
 @pytest.mark.asyncio
 async def test_native_permission_denial_discards_whole_catalog(harness):
     auth,session,transport,adapter = harness
+    original_schema = transport.schema
     transport.schema = {"Error":{"HttpStatusCode":403}}
     service = CloudCatalogService(auth,session.session_id,session.principal,REST(),adapter)
-    with pytest.raises(AuthFailure): await service.discover()
+    denied = await service.discover()
+    assert denied.items == [] and denied.inaccessible_count == 1
     assert adapter.binding_count == 0
+    assert auth.require_session(session.session_id).principal == session.principal
+    transport.schema = original_schema
+    assert len((await service.discover()).items) == 1
 
 
 @pytest.mark.asyncio

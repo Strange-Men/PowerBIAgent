@@ -30,6 +30,18 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
+it.each([403,409])('session check %s does not prove the valid login expired',async status=>{
+  fetchMock.mockResolvedValueOnce(response(signedIn)).mockResolvedValue(response({failure:{
+    code:'AUTH_FORBIDDEN',stage:'auth',retryable:false,recovery_action:'none'}},status))
+  const {result}=renderHook(()=>useAuth())
+  await waitFor(()=>expect(result.current.session?.authenticated).toBe(true))
+  const generation=result.current.generation
+  await act(async()=>result.current.refresh())
+  expect(result.current.session?.authenticated).toBe(true)
+  expect(result.current.generation).toBe(generation)
+  expect(result.current.state).toBe('SIGNED_IN')
+})
+
 it('signed out bootstrap performs ZERO product API access', async () => {
   render(<App />)
   await waitFor(() => expect(screen.getByRole('button', {name: '使用 Microsoft 登录'})).toBeEnabled())

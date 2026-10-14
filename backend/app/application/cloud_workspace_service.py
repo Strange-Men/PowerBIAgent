@@ -136,7 +136,7 @@ class CloudWorkspaceService:
                 if schema.key != key: raise fail("CONTRACT_DRIFT")
             except BaseException as error:
                 current.keys.discard(key)
-                self._clear_selection(current)
+                if current.selected == key: self._clear_selection(current)
                 if isinstance(error, ToolExecutionError) and isinstance(error.__context__, AuthFailure):
                     raise error.__context__
                 raise
@@ -160,8 +160,22 @@ class CloudWorkspaceService:
         if not self._context(sid, principal).adapter.is_mock:
             raise AuthFailure("AUTH_FORBIDDEN", 403, denial_reason='cloud_execution_blocked')
 
-    def require_business_access(self, sid, principal):
-        self.require_execution(sid, principal)
+    def require_resource_access(self, sid, principal, key):
+        current = self._context(sid, principal)
+        if key not in current.keys: raise fail('RESOURCE_NOT_ACCESSIBLE')
+        # Binding validates current identity and operator test scope separately
+        # from Microsoft's Resolve/Schema proof acquired by the service.
+        current.adapter.bound_resource_identity(key)
+
+    def require_disclosure(self, sid, principal):
+        self._validate(sid, principal)
+        if not self._context(sid, principal).adapter.is_mock:
+            raise AuthFailure('AUTH_FORBIDDEN',403,denial_reason='cloud_disclosure_blocked')
+
+    def require_persistence(self, sid, principal):
+        self._validate(sid, principal)
+        if not self._context(sid, principal).adapter.is_mock:
+            raise AuthFailure('AUTH_FORBIDDEN',403,denial_reason='cloud_persistence_blocked')
 
     def data_mode(self,sid,principal):
         return RuntimeDataMode.MOCK if self._context(sid,principal).adapter.is_mock else RuntimeDataMode.REAL
@@ -214,7 +228,7 @@ class CloudWorkspaceService:
                     raise AuthFailure('AUTH_FORBIDDEN',403)
             except BaseException:
                 current.keys.discard(binding.model_key)
-                self._clear_selection(current)
+                if current.selected == binding.model_key: self._clear_selection(current)
                 raise
             if select:
                 current.keys.add(key)

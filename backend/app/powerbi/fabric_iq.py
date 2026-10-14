@@ -110,19 +110,23 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
             raise AuthFailure("AUTH_FORBIDDEN", 403)
 
     @asynccontextmanager
-    async def _connection(self):
+    async def _connection(self, *, key=None, resource=None):
         from backend.app.powerbi.base import PowerBIAdapterError
         try:
             async with self._transport.connection() as connection:
                 yield connection
         except (AuthFailure, PowerBIAdapterError) as error:
             code = error.code if isinstance(error, AuthFailure) else error.error_type
-            if code in {"AUTH_REQUIRED", "AUTH_EXPIRED", "AUTH_FORBIDDEN", "RESOURCE_NOT_ACCESSIBLE"}:
+            if code in {"AUTH_REQUIRED", "AUTH_EXPIRED"}:
                 self._bindings.clear()
                 self._schemas.clear()
-                # Conservative revocation policy: fresh Microsoft login and
-                # schema-before-bind required for every old model reference.
                 self._auth.logout(self._sid, None)
+            elif code in {'AUTH_FORBIDDEN','RESOURCE_NOT_ACCESSIBLE','SCHEMA_UNAVAILABLE','MODEL_RESOLUTION_FAILED'}:
+                affected = [key] if key is not None else [k for k, ref in self._bindings.items()
+                    if resource == (ref.workspace_id, ref.semantic_model_id)]
+                for affected_key in affected:
+                    self._bindings.pop(affected_key, None)
+                    self._schemas.pop(affected_key, None)
             raise
 
     def _binding(self, key):
@@ -135,9 +139,8 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         try:
             self._test_policy.model(ref.workspace_id, ref.semantic_model_id)
         except Exception:
-            # Scope revocation invalidates every transient schema/binding.
-            self._bindings.clear()
-            self._schemas.clear()
+            self._bindings.pop(key, None)
+            self._schemas.pop(key, None)
             raise
         return ref
 
@@ -180,7 +183,7 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         self._validate()
         expected_workspace, expected_model = _bootstrap_identity(url)
         self._test_policy.model(expected_workspace, expected_model)
-        async with self._connection() as connection:
+        async with self._connection(resource=(expected_workspace, expected_model)) as connection:
             resolved, resource = unpack(await connection.call("ResolveFabricItem", {"fabricItemId": url}), "MODEL_RESOLUTION_FAILED")
             if (resource is not None or resolved.get("itemType") != "SemanticModel"
                     or guid(resolved.get("fabricItemId")) != expected_model
@@ -203,7 +206,7 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
 
     async def get_semantic_model_schema(self, semantic_model_key):
         ref = self._binding(semantic_model_key)
-        async with self._connection() as connection:
+        async with self._connection(key=semantic_model_key) as connection:
             raw = await connection.call("GetSemanticModelSchema", {"artifactId": ref.semantic_model_id})
             schema = normalize_schema(raw, ref.semantic_model_id, semantic_model_key, ref.authorization_epoch)
         self._validate()
@@ -217,7 +220,7 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         import asyncio
         try:
             async with asyncio.timeout(request.timeout_seconds):
-                async with self._connection() as connection:
+                async with self._connection(key=request.semantic_model_key) as connection:
                     raw = await connection.call("ExecuteQuery", {"artifactId": ref.semantic_model_id,
                         "daxQueries": [request.dax], "maxRows": request.max_rows})
                     result = normalize_query(raw, ref.semantic_model_id, request)

@@ -11,25 +11,32 @@
 | Current Release State | M6.3 Security COMPLETE；以Final自身exact-SHA CI + remote audit生效；数值兼容P1 BLOCKED；M5 FINAL=true |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | 独立M6.4_FIX收口后停止；M6.4 FINAL NOT READY；M6.5/M6.6未启动 |
-| Current implementation status | FIX资源管理、服务端企业数据拒绝、完整合成链与技术决策已实施；COMPLETE以自身CI/Audit/clean生效；Real仍BLOCKED |
-| Ready state | Real安全74/74、Late-Response41/41、完整本地回归及候选CI通过；Final自身CI与remote audit解析 |
+| Next | Round 1 Boundary Cleanup 自身CI/Audit收口后停止；M6.4 FINAL NOT READY；Round 2未启动 |
+| Current implementation status | M6.4_FIX COMPLETE；Round 1多Workspace/访问与执行边界已实施，COMPLETE仅以本轮新提交自身CI/Audit/clean生效；Real仍BLOCKED |
+| Ready state | Previous green main：81d3b2e78330936504361494e3fdd90bd2fadcd3；Full Validation 38503188109 SUCCESS；Round 1不得继承旧CI |
 
 ## M6.4_FIX 当前状态（2026-10-14）
 
-M6.0 COMPLETE；M6.1 COMPLETE；M6.2 COMPLETE（保留Int64/完整性限制）；M6.3 Security COMPLETE。
-起始main@6e8643ba15f4a6f6215f152408c054658fcd5f1f，独立FIX不新增里程碑，不改原路线。
-[FIX工程修复与验收](milestones/m6/m6_4_fix_engineering_closure.md)：资源全生命周期/Settings批量/全历史恢复，
-current Principal与exact binding租约，企业执行/披露/留存服务端默认拒绝，完整离线合成事实产品链。
-FIX COMPLETE须当前实际提交自己的Full Validation全部SUCCESS、Remote Audit及clean，否则BLOCKED。
-后续基线d01fe914的CI38498609270 FAILURE（前端143 PASS/1 FAIL），旧本地PASS不能证明其COMPLETE。
-本轮[运行时回归修复](milestones/m6/m6_4_fix_runtime_regressions.md)仅处理删除同步、会话误判、
-并发callback、拒绝提示分类与底部布局；自身CI/Audit/clean条件仍适用。
-三账号登录后API403与B反复验证的逐请求现场归因尚未完整证明，不以合成复现声称Real问题已消失。
-[技术决策](milestones/m6/m6_4_solo_contract_decision.md)为ALTERNATIVE_CANDIDATE（Arrow）；运行继续ADR-020 IQ，无迁移/fallback。
-原生IQ精确数字/完整性、披露留存许可及native策略、获准逐资源真实浏览器E2E仍BLOCKED/NOT_TESTED。
-M6.4 FINAL NOT READY；Settings.version=M6.3；M5 Frozen Core无本FIX改动；完成本轮即停止。
-当前证据路径PBIAgentTest/M6.4_FIX/Acceptance；下文同日solo及早期段落全为历史，不覆盖本节。
+M6.0 COMPLETE；M6.1 COMPLETE；M6.2 COMPLETE（保留Int64/完整性限制）；M6.3 Security COMPLETE；M6.4_FIX COMPLETE。
+Baseline / previous green main：`81d3b2e78330936504361494e3fdd90bd2fadcd3`；
+[自身Full Validation 38503188109](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38503188109) SUCCESS。
+旧FIX与运行时失败只保留在[工程专项](milestones/m6/m6_4_fix_engineering_closure.md)及
+[运行时专项](milestones/m6/m6_4_fix_runtime_regressions.md)，不作为当前失败状态。
+
+Round 1 Boundary Cleanup：operator配置为workspaces[1..100]，每Workspace独立model/report白名单，
+metadata只定向请求；单资源拒绝不注销有效Session。Authentication/Resource/Test Scope/Execution/
+Disclosure/Persistence分开；只有AUTH_REQUIRED/AUTH_EXPIRED注销Session，资源403局部恢复，
+execution-blocked保留Catalog/合法Selection，409同步服务端状态，network/5xx保留登录。
+Recovery focused后端159PASS、前端36PASS；完整本地Gates与发布结果按本轮仓库外回执解析。
+Round 1仅当当前新main提交自身Full Validation SUCCESS、Remote Audit及clean后为COMPLETE；
+这些条件满足前保持待发布验收，不继承previous green CI，也不提前宣称完成。
+
+Real Query Execution、Real External LLM Disclosure、Real Business Persistence仍BLOCKED。
+Remaining work：Data Plane correctness（精确数值/完整性）+ approved Real E2E；
+真实业务执行/披露/留存的许可与native策略仍是上述验收前提，本轮不开放。
+M6.4 FINAL NOT READY；Settings.version=M6.3；M5 Frozen Core diff=0；Round 2未实施。
+本轮安全证据和exact-SHA CI/Remote Audit回执位于PBIAgentTest/M6.4/Acceptance/20261014-round1。
+完成本轮即STOP；下文同日solo及早期段落全为历史，不覆盖本节。
 
 ## M6.4 旧solo轮记录（2026-10-14；历史）
 

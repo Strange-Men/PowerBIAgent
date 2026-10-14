@@ -6,7 +6,7 @@ import type { AccountActions, AuthSession, CatalogOption, ConversationMessage, C
 import { Sidebar } from './Sidebar'
 import { Composer } from './Composer'
 import { ConversationView } from './ConversationView'
-import { cloudDenialMessage, publicFailureMessage } from '../failure'
+import { cloudDenialMessage, cloudFailureAction, publicFailureMessage } from '../failure'
 import { listCloudConversations, listCloudReports, mutateCloudResource, type CloudResourceAction } from '../api/client'
 import type { BatchOperationResult } from '../types'
 
@@ -48,19 +48,45 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
     return history.items
   },[])
 
-  const failure = useCallback((caught: unknown, selection: boolean) => {
-    if (caught instanceof ApiError && [401,403].includes(caught.status)) {
+  const failure = useCallback((caught: unknown, selection: boolean, resourceKey?: string) => {
+    const action=caught instanceof ApiError ? cloudFailureAction(caught) : 'recoverable'
+    if (action==='auth') {
       generation.current++; active.current?.abort()
       setMessages([]); setRecent([]); setReports([]); setStatus(null); setSending(false); setRestored(false)
-      setTemplates([]); setTemplate(null)
+      setCatalog(null); setProfiles([]); setProfile(null); setTemplates([]); setTemplate(null)
       setLoading(false); setTemplatesLoading(false)
+      onAuthInvalid()
+    } else if (action==='resource') {
+      generation.current++; active.current?.abort()
+      setSending(false); setLoading(false); setTemplatesLoading(false)
+      if (resourceKey) setCatalog(previous=>previous ? {...previous,items:previous.items.filter(item=>item.key!==resourceKey)} : previous)
+      if (selection) {
+        setStatus(previous=>previous && resourceKey && previous.selected_model_key!==resourceKey ? previous : null)
+        setMessages([]); setRestored(false); setTemplates([]); setTemplate(null)
+      }
+    } else if (action==='conflict') {
+      const {controller,current}=begin()
+      setSending(false); setTemplatesLoading(false)
+      void readCloudStatus(controller.signal).then(next=>{
+        if (current!==generation.current) return
+        serverGeneration.current=next.generation
+        setStatus(next)
+        // A changed generation can invalidate displayed business context.
+        setMessages([]); setRestored(false); setTemplates([]); setTemplate(null)
+      }).catch(syncError=>{
+        if (current!==generation.current) return
+        if (syncError instanceof ApiError && cloudFailureAction(syncError)==='auth') {
+          setCatalog(null); setStatus(null); setMessages([]); setRecent([]); setReports([])
+          setTemplates([]); setTemplate(null); onAuthInvalid()
+        } else setError('暂时无法同步会话，请重试。')
+      })
     }
-    if (caught instanceof ApiError && caught.status === 401) onAuthInvalid()
     setError(caught instanceof ApiError && caught.denialReason ? cloudDenialMessage(caught.denialReason)
+      : action==='conflict' ? '会话状态已变化，正在同步，请重试。'
       : caught instanceof ApiError && caught.failure ? publicFailureMessage(caught.failure)
       : caught instanceof ApiError && caught.status===0 ? '无法连接到 PowerBIAgent 服务，请检查网络后重试。'
       : selection ? '当前模型暂不可访问，请刷新目录后重新选择。' : '暂时无法加载数据模型，请重试。')
-  }, [onAuthInvalid])
+  }, [onAuthInvalid,begin])
 
   const resourceLoaders=useMemo(()=>({
     conversations:async (resourceStatus: 'active' | 'archived',cursor?: string) => {
@@ -199,9 +225,6 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       }
     } catch (caught) {
       if (current !== generation.current) return
-      setCatalog(null); setStatus(null); setTemplates([]); setTemplate(null)
-      clearConversation(); setRecent([]); setReports([])
-      if (caught instanceof ApiError && caught.status === 401) { setProfiles([]); setProfile(null) }
       failure(caught, false)
     } finally {
       if (current === generation.current) { setLoading(false); setTemplatesLoading(false) }
@@ -224,8 +247,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
   }, [load])
 
   const refresh = async () => {
-    setLoading(true); setError(null); setStatus(null); setTemplate(null); setTemplates([]); setTemplateError(null)
-    clearConversation(); setRecent([]); setReports([])
+    setLoading(true); setError(null); setTemplateError(null)
     await load()
   }
 
@@ -233,7 +255,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
     if (!session.csrf_token || !catalog?.items.some(item => item.key === option.key)) return
     const { controller, current } = begin()
     clearConversation()
-    setError(null); setStatus(null); setTemplate(null); setTemplates([]); setTemplateError(null); setTemplatesLoading(true)
+    setError(null); setTemplate(null); setTemplates([]); setTemplateError(null); setTemplatesLoading(true)
     try {
       let nextStatus: CloudWorkspaceStatus
       try {
@@ -251,7 +273,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       await loadTemplates(controller, current)
     } catch (caught) {
       if (current !== generation.current) return
-      setStatus(null); failure(caught, true)
+      failure(caught, true, option.key)
     } finally {
       if (current === generation.current) setTemplatesLoading(false)
     }
@@ -275,7 +297,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       await loadTemplates(controller,current)
     } catch (caught) {
       if (current!==generation.current) return
-      clearConversation(); setStatus(null); failure(caught,true)
+      failure(caught,true)
     } finally { if (current===generation.current) setTemplatesLoading(false) }
   }
 
@@ -295,10 +317,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       await loadResources(controller,current)
     } catch (caught) {
       if (current!==generation.current) return
-      if (caught instanceof ApiError && [401,403,409].includes(caught.status)) {
-        clearConversation(); setStatus(null); setRecent([]); setReports([])
-      }
-      failure(caught,true)
+      failure(caught,true,status.selected_model_key || undefined)
     } finally { if (current===generation.current) setSending(false) }
   }
 

@@ -47,7 +47,9 @@ async def safe_call(operation):
         detail = {"failure": failure.model_dump(mode="json")}
         if getattr(cause, 'denial_reason', None) == 'test_scope_missing':
             detail['denial_reason'] = 'test_scope_missing'
-        raise HTTPException(503, detail) from None
+        status = 403 if code in {'RESOURCE_NOT_ACCESSIBLE','AUTH_FORBIDDEN'} else 503
+        if getattr(cause, 'denial_reason', None) == 'test_scope_missing': status = 503
+        raise HTTPException(status, detail) from None
 
 
 @router.get("/catalog")

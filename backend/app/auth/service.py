@@ -29,7 +29,8 @@ class AuthService:
         logging.getLogger(__name__).info(
             'auth_configuration session_store=inmemory session_ttl=%d test_mode=%s test_scope_configured=%s approved_models=%d approved_reports=%d',
             settings.auth_session_ttl, settings.fabric_test_mode, scope is not None,
-            len(scope.models) if scope else 0, len(scope.reports) if scope else 0)
+            sum(len(w.models) for w in scope.workspaces) if scope else 0,
+            sum(len(w.reports) for w in scope.workspaces) if scope else 0)
 
     def set_notice(self, key, code):
         with self._lock:

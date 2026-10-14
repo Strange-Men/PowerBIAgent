@@ -15,7 +15,8 @@ def require_cloud_business_data(workspace,sid,principal):
     their existing separate lifetime. This is a refusal policy, not a DLP
     classifier or a grant mechanism.
     """
-    workspace.require_business_access(sid,principal)
+    workspace.require_disclosure(sid,principal)
+    workspace.require_persistence(sid,principal)
     if workspace.data_mode(sid,principal)!=RuntimeDataMode.MOCK:
         raise AuthFailure('AUTH_FORBIDDEN',403)
 
@@ -32,8 +33,9 @@ class DeferredCloudRepositories:
         self._engine = self._repositories = None
 
     async def for_session(self, auth, sid, principal):
-        self._workspace.require_business_access(sid, principal)
-        require_cloud_business_data(self._workspace,sid,principal)
+        self._workspace.require_persistence(sid, principal)
+        if self._workspace.data_mode(sid,principal)!=RuntimeDataMode.MOCK:
+            raise AuthFailure('AUTH_FORBIDDEN',403,denial_reason='cloud_persistence_blocked')
         if self._settings.persistence_backend != PersistenceBackend.SQLITE:
             raise AuthFailure('AUTH_FORBIDDEN',403)
         # No schema creation, migration, legacy assignment or default fallback.

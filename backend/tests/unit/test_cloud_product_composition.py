@@ -11,6 +11,17 @@ from backend.tests.unit.test_fabric_iq_adapter import harness, principal  # noqa
 from backend.tests.unit.test_cloud_workspace_service import workspace
 
 
+def synthetic_workspace(harness):
+    """Reuse the explicitly Mock API host for permitted storage/lifecycle tests."""
+    from types import SimpleNamespace
+    from backend.app.application.cloud_workspace_service import CloudWorkspaceService
+    from backend.tests.api.test_cloud_product_api import SyntheticAdapter
+    from backend.tests.unit.test_cloud_workspace_service import RestContext
+    auth, _, _, _ = harness
+    adapter_factory = SimpleNamespace(create_product=lambda sid, p: SyntheticAdapter(auth, sid, p))
+    return CloudWorkspaceService(auth, adapter_factory, rest_factory=lambda *args: RestContext())
+
+
 @pytest.mark.asyncio
 async def test_owned_history_and_report_reads_do_not_require_a_selected_model(harness, factory):
     from backend.tests.unit.persistence.test_m63_ownership import snapshot, seed_report
@@ -54,26 +65,32 @@ async def test_owned_history_and_report_reads_do_not_require_a_selected_model(ha
 async def test_logout_after_owned_history_read_discards_completed_response(harness, factory, monkeypatch):
     from backend.app.application.conversation_history_service import ConversationHistoryService
     auth, session, _, _ = harness
-    ws = workspace(harness)
+    ws = synthetic_workspace(harness)
     registry = build_llm_registry(auth.settings)
     services = CloudProductServiceFactory(auth, ws, factory, registry, registry)
     original = ConversationHistoryService.list_recent
+    reads = []
     async def logout_after_read(service, *args, **kwargs):
         result = await original(service, *args, **kwargs)
+        reads.append(True)
         auth.logout(session.session_id, None)
         return result
     monkeypatch.setattr(ConversationHistoryService, 'list_recent', logout_after_read)
     try:
         with pytest.raises(AuthFailure):
             await services.list_history(session.session_id, session.principal, limit=10)
+        assert reads == [True]
     finally:
         await ws.aclose(); await registry.aclose()
 
 
 @pytest.mark.asyncio
 async def test_composition_reuses_native_pipeline_and_owner_repositories(harness, factory):
+    """Permitted Mock composition retains the shared pipeline and owner isolation."""
+    from backend.app.application.mock_turn_service import MockTurnService
+    from backend.app.application.turn_pipeline import TurnPipeline
     auth, a, transport, _ = harness
-    ws = workspace(harness)
+    ws = synthetic_workspace(harness)
     registry = build_llm_registry(auth.settings)
     services = CloudProductServiceFactory(auth, ws, factory, registry, registry)
     b = auth.sessions.create(principal(4), object(), 3600)
@@ -84,23 +101,32 @@ async def test_composition_reuses_native_pipeline_and_owner_repositories(harness
             await ws.select(session.session_id, session.principal, catalog.items[0].key)
             bundles.append(await services.prepare(session.session_id, session.principal))
         first, second = bundles
-        assert isinstance(first.turn_service, LLMTurnService)
+        assert isinstance(first.turn_service, MockTurnService)
+        assert isinstance(first.turn_service.pipeline, TurnPipeline)
         assert first.repositories.owner_scope.owner_id != second.repositories.owner_scope.owner_id
         await first.repositories.memory.create_pending(StructuredWorkMemory(
-            request_id="synthetic-a", conversation_id=first.conversation_id), RuntimeDataMode.REAL)
-        assert await second.repositories.memory.get_by_request_id("synthetic-a", RuntimeDataMode.REAL) is None
+            request_id="synthetic-a", conversation_id=first.conversation_id), RuntimeDataMode.MOCK)
+        assert await second.repositories.memory.get_by_request_id("synthetic-a", RuntimeDataMode.MOCK) is None
         before = len(transport.calls)
+        auth.logout(a.session_id, None)
         with pytest.raises(AuthFailure):
             await first.execute("synthetic", request_id="must-not-run")
         assert len(transport.calls) == before
-        assert await first.repositories.memory.get_by_request_id("must-not-run", RuntimeDataMode.REAL) is None
+        returned_a = auth.sessions.create(a.principal, object(), 3600)
+        owner = await factory.for_session(auth, returned_a.session_id, returned_a.principal)
+        assert await owner.memory.get_by_request_id("must-not-run", RuntimeDataMode.MOCK) is None
     finally:
         await ws.aclose(); await registry.aclose()
 
 
 @pytest.mark.asyncio
 async def test_native_composed_service_direct_call_cannot_bypass_disclosure_gate(harness,factory,monkeypatch):
-    """Embedding the prepared service must not bypass the HTTP/prepared gate."""
+    """Native prepare cannot open storage; explicit in-memory embedding stays closed."""
+    from unittest.mock import AsyncMock
+    from backend.app.application.cloud_product_services import _NativeCloudTurnService, _SelectionLease
+    from backend.app.memory.repository import InMemoryMemoryRepository
+    from backend.app.memory.result_snapshot import ResultSnapshotStore
+    from backend.app.report.fixed import SalesReportRenderer
     auth,session,transport,_ = harness
     ws = workspace(harness)
     registry = build_llm_registry(auth.settings)
@@ -110,17 +136,31 @@ async def test_native_composed_service_direct_call_cannot_bypass_disclosure_gate
         called.append(True)
         raise AssertionError('native core must not see unapproved data')
     monkeypatch.setattr(LLMTurnService,'execute',forbidden_core)
+    storage = AsyncMock(side_effect=AssertionError('native prepare must not open storage'))
+    monkeypatch.setattr(factory, 'for_session', storage)
     try:
         catalog = await ws.catalog(session.session_id,session.principal)
         await ws.select(session.session_id,session.principal,catalog.items[0].key)
-        prepared = await services.prepare(session.session_id,session.principal)
+        with pytest.raises(AuthFailure) as denied:
+            await services.prepare(session.session_id,session.principal)
+        assert denied.value.denial_reason == 'cloud_execution_blocked'
+        storage.assert_not_awaited()
+        adapter, selection = ws.selected_context(session.session_id, session.principal)
+        lease = _SelectionLease(auth, ws, session.session_id, session.principal, selection)
+        memory = InMemoryMemoryRepository()
+        turn = _NativeCloudTurnService(lease=lease, memory_repo=memory,
+            snapshot_store=ResultSnapshotStore(), llm_provider=None, llm_registry=registry,
+            display_llm_registry=registry, powerbi_adapter=adapter,
+            report_renderer=SalesReportRenderer(), settings=auth.settings)
         before = len(transport.calls)
         with pytest.raises(AuthFailure):
-            await prepared.turn_service.execute('SYNTHETIC_PRIVATE_MARKER',
-                conversation_id=prepared.conversation_id,request_id='unapproved-native',
-                semantic_model_key=prepared.semantic_model_key)
+            await turn.execute('SYNTHETIC_PRIVATE_MARKER',
+                conversation_id=selection.conversation_id,request_id='unapproved-native',
+                semantic_model_key=selection.selected_model_key)
         assert not called and len(transport.calls)==before
-        assert await prepared.repositories.memory.get_by_request_id('unapproved-native',RuntimeDataMode.REAL) is None
+        assert await memory.get_by_request_id('unapproved-native',RuntimeDataMode.REAL) is None
+        assert auth.require_session(session.session_id).principal == session.principal
+        assert ws.status(session.session_id, session.principal) == selection
     finally:
         await ws.aclose(); await registry.aclose()
 
@@ -129,7 +169,7 @@ async def test_native_composed_service_direct_call_cannot_bypass_disclosure_gate
 async def test_late_prepare_cannot_restore_invalidated_selection(harness, factory, monkeypatch):
     """A pending service composition must not revive a revoked catalog epoch."""
     auth, session, _, _ = harness
-    ws = workspace(harness)
+    ws = synthetic_workspace(harness)
     registry = build_llm_registry(auth.settings)
     services = CloudProductServiceFactory(auth, ws, factory, registry, registry)
     try:
@@ -156,7 +196,7 @@ async def test_late_prepare_cannot_restore_invalidated_selection(harness, factor
 @pytest.mark.parametrize("invalidate", ["logout", "catalog_revoked"])
 async def test_logout_or_selection_invalidation_prevents_repository_writes(harness, factory, monkeypatch, invalidate):
     auth, session, _, _ = harness
-    ws = workspace(harness)
+    ws = synthetic_workspace(harness)
     registry = build_llm_registry(auth.settings)
     services = CloudProductServiceFactory(auth, ws, factory, registry, registry)
     try:
@@ -171,13 +211,16 @@ async def test_logout_or_selection_invalidation_prevents_repository_writes(harne
             await ws.catalog(session.session_id, session.principal)
         with pytest.raises(AuthFailure):
             await prepared.repositories.memory.create_pending(StructuredWorkMemory(
-                request_id="late", conversation_id=prepared.conversation_id), RuntimeDataMode.REAL)
+                request_id="late", conversation_id=prepared.conversation_id), RuntimeDataMode.MOCK)
     finally:
         await ws.aclose(); await registry.aclose()
 
 
 @pytest.mark.asyncio
 async def test_native_relogin_preserves_owner_history_but_not_session_model_binding(harness, factory):
+    """Synthetic owner fixtures survive login; native product storage stays blocked."""
+    from types import SimpleNamespace
+    from backend.app.application.cloud_product_services import _SelectionLease
     from backend.tests.unit.persistence.test_m63_ownership import snapshot, seed_report
     from backend.app.conversation.models import ConversationNotFoundError
     from backend.app.report.resources import ReportNotFoundError
@@ -187,8 +230,16 @@ async def test_native_relogin_preserves_owner_history_but_not_session_model_bind
     services = CloudProductServiceFactory(auth, ws, factory, registry, registry)
     async def prepare(session):
         catalog = await ws.catalog(session.session_id, session.principal)
-        await ws.select(session.session_id, session.principal, catalog.items[0].key)
-        return await services.prepare(session.session_id, session.principal)
+        selection = await ws.select(session.session_id, session.principal, catalog.items[0].key)
+        with pytest.raises(AuthFailure) as denied:
+            await services.prepare(session.session_id, session.principal)
+        assert denied.value.denial_reason == 'cloud_execution_blocked'
+        # Seed only the explicitly supplied synthetic owner fixture, never the
+        # native product factory; preserve invalidated-lease write/read checks.
+        lease = _SelectionLease(auth, ws, session.session_id, session.principal, selection)
+        repositories = await factory.for_session(lease, session.session_id, session.principal)
+        return SimpleNamespace(repositories=repositories, conversation_id=selection.conversation_id,
+            semantic_model_key=selection.selected_model_key)
     try:
         first = await prepare(a)
         await first.repositories.snapshots.save(snapshot("a-history", first.conversation_id), RuntimeDataMode.REAL)

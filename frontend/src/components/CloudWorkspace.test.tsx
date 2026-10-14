@@ -43,6 +43,39 @@ describe('Synthetic Cloud product wiring',()=>{
     fireEvent.change(input,{target:{value:'合成销售问题'}})
     fireEvent.click(screen.getByRole('button',{name:'发送'}))
   }
+  it.each([['execution',403],['conflict',409],['network',0],['upstream',503]] as const)(
+    'preserves verified catalog and selection on %s chat failure',async(kind,httpStatus)=>{
+      enable()
+      const invalid=vi.fn()
+      vi.mocked(api.sendCloudChat).mockRejectedValue(new api.ApiError('private',httpStatus,undefined,
+        kind==='execution' ? {code:'AUTH_FORBIDDEN',stage:'auth',retryable:false,recovery_action:'none'} as never : undefined,
+        undefined,kind==='execution' ? 'cloud_execution_blocked' : undefined))
+      render(<CloudWorkspace session={session} onAuthInvalid={invalid} />)
+      await screen.findByText('模型甲'); await submit()
+      await waitFor(()=>expect(api.sendCloudChat).toHaveBeenCalledOnce())
+      fireEvent.change(screen.getByRole('textbox',{name:'询问你的 Power BI 数据'}),{target:{value:'重试问题'}})
+      await waitFor(()=>expect(screen.getByRole('button',{name:'发送'})).toBeEnabled())
+      expect(screen.getByText('模型甲')).toBeInTheDocument()
+      expect(invalid).not.toHaveBeenCalled()
+      if (kind==='conflict') expect(api.readCloudStatus).toHaveBeenCalledTimes(2)
+      fireEvent.click(screen.getByRole('button',{name:'打开数据与报表选项'}))
+      expect(screen.getByRole('button',{name:/模型乙/})).toBeInTheDocument()
+    })
+  it('resource refusal preserves the valid account and other workspace options',async()=>{
+    enable()
+    const invalid=vi.fn()
+    vi.mocked(api.selectCloudModel).mockRejectedValue(new api.ApiError('private',403,undefined,
+      {code:'RESOURCE_NOT_ACCESSIBLE',stage:'tool_execution',retryable:false,recovery_action:'select_model'} as never))
+    render(<CloudWorkspace session={session} onAuthInvalid={invalid} />)
+    await screen.findByText('模型甲')
+    fireEvent.click(screen.getByRole('button',{name:'打开数据与报表选项'}))
+    fireEvent.click(screen.getByRole('button',{name:/模型乙/}))
+    await screen.findByText('当前账号无法访问这个数据模型，请切换账号或联系管理员。')
+    expect(invalid).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button',{name:'打开数据与报表选项'}))
+    expect(screen.queryByRole('button',{name:/模型乙/})).not.toBeInTheDocument()
+    expect(screen.getByRole('button',{name:/模型甲/})).toBeInTheDocument()
+  })
   it('acknowledges a committed report deletion while the follow-up list is delayed',async()=>{
     enable()
     const report={report_id:'synthetic-report',display_title:'合成报表',conversation_id:ready.conversation_id}
@@ -67,11 +100,12 @@ describe('Synthetic Cloud product wiring',()=>{
   })
   it('discards Settings pages after a newer permission refusal',async()=>{
     enable()
+    const invalid=vi.fn()
     let resolveOld!: (page: never)=>void
     vi.mocked(api.listCloudConversations).mockImplementationOnce(()=>new Promise(resolve=>{resolveOld=resolve}))
       .mockResolvedValue({items:[],next_cursor:null,total_count:0} as never)
     vi.mocked(api.listCloudReports).mockResolvedValue({items:[],next_cursor:null,total_count:0} as never)
-    render(<CloudWorkspace session={session} account={account} onAuthInvalid={vi.fn()} />)
+    render(<CloudWorkspace session={session} account={account} onAuthInvalid={invalid} />)
     await screen.findByText('模型甲')
     fireEvent.click(screen.getByRole('button',{name:'Synthetic A'}))
     fireEvent.click(screen.getByRole('menuitem',{name:'设置'}))
@@ -81,7 +115,11 @@ describe('Synthetic Cloud product wiring',()=>{
     fireEvent.click(screen.getByRole('button',{name:'关闭设置'}))
     fireEvent.click(screen.getByRole('button',{name:'打开数据与报表选项'}))
     fireEvent.click(await screen.findByRole('button',{name:'刷新数据模型'}))
-    await waitFor(()=>expect(screen.queryByRole('button',{name:'搜索聊天'})).not.toBeInTheDocument())
+    await screen.findByText('暂时无法加载数据模型，请重试。')
+    expect(screen.getByRole('button',{name:'搜索聊天'})).toBeInTheDocument()
+    expect(screen.getByRole('button',{name:'Synthetic A'})).toBeInTheDocument()
+    expect(screen.getByText('模型甲',{selector:'.composer-selection span'})).toBeInTheDocument()
+    expect(invalid).not.toHaveBeenCalled()
     await act(async()=>resolveOld({items:[{...summary,title:'旧Principal私有历史'}],next_cursor:null,total_count:1} as never))
     expect(screen.queryByText('旧Principal私有历史')).not.toBeInTheDocument()
   })

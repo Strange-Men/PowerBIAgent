@@ -1,7 +1,6 @@
 """User-approved six-field compatibility; unknown never becomes false."""
 import pytest
 
-from backend.app.auth.models import AuthFailure
 from backend.app.powerbi.base import PowerBIAdapterError
 from backend.app.query_plan.model_semantic_context import ModelSemanticContextBuilder, RuntimeObject, RuntimeTable
 from backend.tests.unit.test_fabric_iq_adapter import harness, WORKSPACE, MODEL  # noqa: F401
@@ -43,7 +42,7 @@ async def test_context_compatibility_does_not_bypass_native_permission_failure(h
     with pytest.raises(PowerBIAdapterError, match="^RESOURCE_NOT_ACCESSIBLE$"):
         await adapter.get_semantic_model_schema(ref.server_model_key)
     assert adapter.binding_count == 0
-    with pytest.raises(AuthFailure): auth.require_session(session.session_id)
+    assert auth.require_session(session.session_id).principal == session.principal
 
 
 def test_legacy_runtime_defaults_remain_false():

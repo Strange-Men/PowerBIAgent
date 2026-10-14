@@ -22,6 +22,7 @@ import type {
   AuthState,
 } from '../types'
 import { publicFailureMessage } from '../failure'
+import type { CloudDenialReason } from '../failure'
 import type { CloudCatalog, CloudWorkspaceStatus } from '../cloudTypes'
 
 interface ErrorPayload {
@@ -36,7 +37,7 @@ export class ApiError extends Error {
   readonly errorType?: string
   readonly failure?: FailureInfo
   readonly authState?: AuthState
-  readonly denialReason?: 'test_scope_missing' | 'cloud_execution_blocked'
+  readonly denialReason?: CloudDenialReason
 
   constructor(
     message: string,
@@ -44,7 +45,7 @@ export class ApiError extends Error {
     errorType?: string,
     failure?: FailureInfo,
     authState?: AuthState,
-    denialReason?: 'test_scope_missing' | 'cloud_execution_blocked',
+    denialReason?: CloudDenialReason,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -114,7 +115,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       failure,
       AUTH_STATES.has(String((payload as {state?: unknown}).state))
         ? (payload as {state: AuthState}).state : undefined,
-      reason==='test_scope_missing' || reason==='cloud_execution_blocked' ? reason : undefined,
+      reason==='test_scope_missing' || reason==='cloud_execution_blocked' || reason==='cloud_disclosure_blocked' || reason==='cloud_persistence_blocked' ? reason : undefined,
     )
   }
 
@@ -173,7 +174,7 @@ export async function readAuthSession(signal?: AbortSignal): Promise<AuthSession
       state:dto.identity_mode === 'LOCAL_DEV' ? 'LOCAL_DEV' : 'SIGNED_IN',
       csrf_token:dto.csrf_token, expires_in:dto.expires_in}
   } catch (error) {
-    if (error instanceof ApiError && [401, 403].includes(error.status)) {
+    if (error instanceof ApiError && (error.status===401 || ['AUTH_REQUIRED','AUTH_EXPIRED'].includes(error.failure?.code || ''))) {
       return {identity_mode:'ENTRA_BFF', authenticated:false, display_name:null,
         preferred_username:null, csrf_token:null, expires_in:0,
         state:error.authState || 'SIGNED_OUT'}

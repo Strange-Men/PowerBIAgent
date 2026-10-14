@@ -177,9 +177,10 @@ class CloudCatalogService:
             except (ToolExecutionError, ToolTimeoutError) as error:
                 self.validate()
                 cause = error.__context__
-                if isinstance(cause, AuthFailure): raise cause
+                if isinstance(cause, AuthFailure) and cause.code != 'AUTH_FORBIDDEN': raise cause
                 code = getattr(cause, "error_type",
                     "QUERY_TIMEOUT" if isinstance(error, ToolTimeoutError) else "UPSTREAM_UNAVAILABLE")
+                if isinstance(cause, AuthFailure): code = 'RESOURCE_NOT_ACCESSIBLE'
                 if code not in {"RESOURCE_NOT_ACCESSIBLE", "MODEL_RESOLUTION_FAILED", "SCHEMA_UNAVAILABLE"}:
                     # Unknown access is not a denial. Stop this batch and drain
                     # siblings rather than amplify an upstream throttle/failure.
@@ -201,6 +202,8 @@ class CloudCatalogService:
             authorization_complete, error_type = False, deferred.code
         items = [finished[index] for index in sorted(finished) if finished[index] is not None]
         inaccessible = sum(item is None for item in finished.values())
+        inaccessible += getattr(self._rest, 'inaccessible_count', 0)
+        complete = complete and getattr(self._rest, 'test_scope_complete', True)
         self.validate()
         # No authority proves coverage of unconfigured individual shares.
         # Successful workspace enumeration with zero rows is still PARTIAL.

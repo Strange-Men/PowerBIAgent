@@ -1,9 +1,22 @@
 import type { FailureInfo } from './types'
 
-export function cloudDenialMessage(reason: 'test_scope_missing' | 'cloud_execution_blocked'): string {
-  return reason==='test_scope_missing'
-    ? '已登录；测试资源白名单尚未配置，请联系管理员配置已批准的测试资源。'
-    : '已登录；云端业务验收尚未完成，数据问答与报表暂未开放。'
+export type CloudDenialReason = 'test_scope_missing' | 'cloud_execution_blocked' | 'cloud_disclosure_blocked' | 'cloud_persistence_blocked'
+
+export function cloudDenialMessage(reason: CloudDenialReason): string {
+  switch (reason) {
+    case 'test_scope_missing': return '已登录；测试资源白名单尚未配置，请联系管理员配置已批准的测试资源。'
+    case 'cloud_disclosure_blocked': return '已登录；云端业务数据暂不能交给外部 AI 分析。'
+    case 'cloud_persistence_blocked': return '已登录；云端业务历史与报表留存尚未开放。'
+    default: return '已登录；云端业务验收尚未完成，数据问答与报表暂未开放。'
+  }
+}
+
+export function cloudFailureAction(error: {status: number; failure?: FailureInfo; denialReason?: CloudDenialReason}): 'auth' | 'resource' | 'blocked' | 'conflict' | 'recoverable' {
+  if (error.status===401 || ['AUTH_REQUIRED','AUTH_EXPIRED'].includes(error.failure?.code || '')) return 'auth'
+  if (error.denialReason) return 'blocked'
+  if (error.status===403) return 'resource'
+  if (error.status===409) return 'conflict'
+  return 'recoverable'
 }
 
 export function publicFailureMessage(failure: FailureInfo): string {

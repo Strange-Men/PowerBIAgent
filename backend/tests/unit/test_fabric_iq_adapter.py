@@ -107,8 +107,10 @@ async def test_m63_permission_failure_invalidates_cached_binding(harness, code):
             dax='EVALUATE ROW("probe",1)'))
     assert adapter.binding_count == 0
     assert adapter._schemas == {}
-    with pytest.raises(AuthFailure):
-        auth.require_session(session.session_id)
+    if code == 401:
+        with pytest.raises(AuthFailure): auth.require_session(session.session_id)
+    else:
+        assert auth.require_session(session.session_id).principal == session.principal
 
 
 @pytest.mark.asyncio

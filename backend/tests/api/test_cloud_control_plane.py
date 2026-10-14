@@ -63,10 +63,21 @@ def test_native_business_refusal_is_distinct_from_auth_and_never_clears_session(
     login(client)
     response=client.get('/api/v1/cloud/history')
     assert response.status_code==403
-    assert response.json()['denial_reason']=='cloud_execution_blocked'
+    assert response.json()['failure']['code']=='AUTH_FORBIDDEN'
     assert 'state' not in response.json() and 'authenticated' not in response.json()
-    assert client.get('/auth/session').status_code==200
+    assert client.get('/auth/session').json()['authenticated'] is True
+    # Formal-product fixture: persistence and execution are distinct service
+    # denials. Disabling test scope is not an execution/retention grant.
+    app.state.auth_service.settings.fabric_test_mode=False
+    history=client.get('/api/v1/cloud/history')
+    assert history.status_code==403 and history.json()['denial_reason']=='cloud_persistence_blocked'
+    headers={'Origin':ORIGIN,'X-CSRF-Token':client.get('/auth/session').json()['csrf_token']}
+    chat=client.post('/api/v1/cloud/chat',json={'message':'synthetic','request_id':'synthetic',
+        'expected_generation':0},headers=headers)
+    assert chat.status_code==403 and chat.json()['denial_reason']=='cloud_execution_blocked'
+    assert client.get('/auth/session').json()['authenticated'] is True
     assert app.state._persistence_engine is None
+    assert app.state.cloud_product_services._repositories._engine is None
 
 
 def test_logout_purges_control_plane_context(cloud):

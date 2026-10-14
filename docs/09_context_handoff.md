@@ -5,27 +5,35 @@
 
 ## 当前阶段 — Current Baseline / Next Milestone
 
-- Current Baseline：Settings M6.3安全封板；M6.4阶段main基线按最新exact-SHA CI / Remote Audit解析。
+- Settings.version=M6.3；Baseline / previous green SHA：81d3b2e78330936504361494e3fdd90bd2fadcd3；Full Validation 38503188109 SUCCESS。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
-- ACTIVE = 独立M6.4_FIX工程收口：当前实际提交自身CI/Audit/clean后COMPLETE，否则BLOCKED；M6.4 FINAL NOT READY；执行完停止。
+- M6.4_FIX COMPLETE；ACTIVE = Round 1 Boundary Cleanup，COMPLETE仅按新提交自身CI/Audit/clean解析；M6.4 FINAL NOT READY；执行完STOP，不进入Round 2。
 - M6 Status：M6.3 Real安全74/74、Late-Response41/41、完整本地回归及Phase A CI通过；Settings.version=M6.3；最终发布条件见下文。
 
 ## M6.4_FIX 唯一当前交接（2026-10-14）
 
-M6.0 COMPLETE；M6.1 COMPLETE；M6.2 COMPLETE（保留数值/完整性限制）；M6.3 Security COMPLETE。
-起始main@6e8643ba15f4a6f6215f152408c054658fcd5f1f。实现与复现见
-[专项](milestones/m6/m6_4_fix_engineering_closure.md)，技术判断见[决策](milestones/m6/m6_4_solo_contract_decision.md)。
-资源API复用原会话/报表/Settings/批量契约，正式owner/exact binding复证；native企业数据执行、
-外部LLM、留存与旧资源读取在相应流转前服务端拒绝。合成host不会成为native授权开关。
-完整Synthetic产品链通过Mock/Fake Entra及正式事实回调验证，非Real；无Frozen Core/Provider/模板/Shape变更。
-FIX COMPLETE仅以当前checkout实际main SHA自身Full Validation全部SUCCESS、Remote Audit、clean生效；
-后续runtime修复基线d01fe914、CI38498609270 FAILURE；处理范围与复现见
-[运行时专项](milestones/m6/m6_4_fix_runtime_regressions.md)。用户提供302回调、session401后200、API403；
-B是否重启/一小时TTL/Conditional Access触发尚UNCONFIRMED。无真实账号或业务测试授权扩展。
-仓库外receipt与分层结果在PBIAgentTest/M6.4_FIX/Acceptance，不能继承起始或旧阶段CI。
-M6.4 FINAL NOT READY；IQ数值/八Shape完整性、获准逐资源环境、企业披露留存native策略及真实浏览器全链未过。
-Arrow为ALTERNATIVE_CANDIDATE；运行保持ADR-020 IQ，无Provider迁移/fallback。Settings.version=M6.3。
-本轮结束立即停止；不得自动再开发M6.4.1/M6.5/M6.6。下文全部是历史，不沿用旧PARTIAL作为当前FIX结果。
+M6.0 COMPLETE；M6.1 COMPLETE；M6.2 COMPLETE（保留数值/完整性限制）；M6.3 Security COMPLETE；M6.4_FIX COMPLETE。
+Previous green main：`81d3b2e78330936504361494e3fdd90bd2fadcd3`；
+[该SHA的Full Validation 38503188109](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38503188109) SUCCESS。
+旧失败与复现保留在[工程专项](milestones/m6/m6_4_fix_engineering_closure.md)及
+[运行时专项](milestones/m6/m6_4_fix_runtime_regressions.md)，不是当前发布失败。
+
+Round 1只整理Cloud边界：workspaces[1..100]逐Workspace独立model/report批准；只定向metadata，
+未批准资源ZERO request。正式current-principal Catalog不变；Resources经Resolve/Schema复证。
+Auth/CSRF/coarse route归Middleware；资源访问、执行、披露和持久化各由service明确拒绝/验证。
+AUTH_REQUIRED/AUTH_EXPIRED才注销Session；resource-level AUTH_FORBIDDEN、不可访问、Schema/Model
+及Test Scope拒绝不注销，有关transient binding/selection局部失效，其它资源继续工作。
+前端401清登录，resource403局部恢复，execution403保留Catalog/合法Selection，409同步server state；
+临时network/5xx保留登录，generation与迟到身份/数据拒绝合同保持。
+Recovery focused后端159PASS、前端36PASS；完整本地Gates及发布以仓库外分层回执为准。
+当前Round 1新提交只有自身Main Full Validation SUCCESS + Remote Audit + clean后才能判COMPLETE；
+成立前为待发布验收，禁止继承previous green CI。自身SHA不写入自身提交。
+
+Real Query Execution / External LLM Disclosure / Business Persistence继续BLOCKED；Synthetic不计Real。
+Remaining work：Data Plane correctness + approved Real E2E；真实业务执行/披露/留存许可和native策略
+仍为验收前提。M6.4 FINAL NOT READY；Settings.version=M6.3；M5 Frozen Core diff=0。
+证据目录PBIAgentTest/M6.4/Acceptance/20261014-round1；当前是Round 1 Final Closure，无Round 2实施授权。
+发布完成后立即STOP，不启动Data Plane、Real E2E或后续阶段。下文全部为历史，不覆盖当前交接。
 
 ## 旧solo轮交接（2026-10-14；历史）
 

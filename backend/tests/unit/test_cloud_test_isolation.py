@@ -303,7 +303,8 @@ def test_native_api_missing_scope_and_forged_ids_never_acquire_resource_token(mo
 async def test_enterprise_model_without_company_approval_denied():
     config=scoped_settings()
     config.fabric_test_allowlist=config.fabric_test_allowlist.model_copy(update={
-        'models':(config.fabric_test_allowlist.models[0].model_copy(update={'synthetic_only':False}),)})
+        'workspaces':(config.fabric_test_allowlist.workspaces[0].model_copy(update={
+            'models':(config.fabric_test_allowlist.workspaces[0].models[0].model_copy(update={'synthetic_only':False}),)}),)})
     auth,session,wire,adapter=native(config)
     try:
         with pytest.raises(PowerBIAdapterError,match='^RESOURCE_NOT_ACCESSIBLE$'):
