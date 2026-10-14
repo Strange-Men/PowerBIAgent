@@ -6,12 +6,12 @@ import type { AccountActions, AuthSession, CatalogOption, ConversationMessage, C
 import { Sidebar } from './Sidebar'
 import { Composer } from './Composer'
 import { ConversationView } from './ConversationView'
-import { publicFailureMessage } from '../failure'
+import { cloudDenialMessage, publicFailureMessage } from '../failure'
 import { listCloudConversations, listCloudReports, mutateCloudResource, type CloudResourceAction } from '../api/client'
 import type { BatchOperationResult } from '../types'
 
-export function CloudWorkspace({ session, onAuthInvalid, account, collapsed=false, onToggle=() => {} }: {
-  session: AuthSession; onAuthInvalid: () => void; account?: AccountActions; collapsed?: boolean; onToggle?: () => void
+export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckError=null, collapsed=false, onToggle=() => {} }: {
+  session: AuthSession; onAuthInvalid: () => void; account?: AccountActions; sessionCheckError?: string | null; collapsed?: boolean; onToggle?: () => void
 }) {
   const [catalog, setCatalog] = useState<CloudCatalog | null>(null)
   const [status, setStatus] = useState<CloudWorkspaceStatus | null>(null)
@@ -56,7 +56,9 @@ export function CloudWorkspace({ session, onAuthInvalid, account, collapsed=fals
       setLoading(false); setTemplatesLoading(false)
     }
     if (caught instanceof ApiError && caught.status === 401) onAuthInvalid()
-    setError(caught instanceof ApiError && caught.failure ? publicFailureMessage(caught.failure)
+    setError(caught instanceof ApiError && caught.denialReason ? cloudDenialMessage(caught.denialReason)
+      : caught instanceof ApiError && caught.failure ? publicFailureMessage(caught.failure)
+      : caught instanceof ApiError && caught.status===0 ? '无法连接到 PowerBIAgent 服务，请检查网络后重试。'
       : selection ? '当前模型暂不可访问，请刷新目录后重新选择。' : '暂时无法加载数据模型，请重试。')
   }, [onAuthInvalid])
 
@@ -99,13 +101,29 @@ export function CloudWorkspace({ session, onAuthInvalid, account, collapsed=fals
       serverGeneration.current=next.generation
       if (next.conversation_id!==status?.conversation_id) clearConversation()
       setStatus(next)
-      // Reread the current transcript to project report tombstones and titles.
-      if (next.conversation_id && next.conversation_id===status?.conversation_id && messages.length) {
-        const page=await readCloudConversation(next.conversation_id,controller.signal)
-        if (current!==generation.current) throw new ApiError('资源请求已失效。',409)
-        setMessages(page.items.flatMap(historyItemToMessages))
+      if (action==='rename') {
+        if (kind==='history') setRecent(items=>items.map(item=>item.conversation_id===id ? {...item,title} : item))
+        else setReports(items=>items.map(item=>item.report_id===id ? {...item,display_title:title} : item))
       }
-      await loadResources(controller,current)
+      if (action==='delete' && kind==='reports') {
+        setReports(items=>items.filter(item=>item.report_id!==id))
+        setMessages(items=>items.map(item=>item.role==='assistant' && item.report?.report_id===id
+          ? {...item,report:{...item.report,availability_status:'deleted'}} : item))
+      }
+      // The server has committed the operation. Projection reads must not
+      // turn that acknowledgement into a failed/retryable deletion.
+      const synchronize = async () => {
+        // Reread the current transcript to project report tombstones and titles.
+        if (next.conversation_id && next.conversation_id===status?.conversation_id && messages.length) {
+          const page=await readCloudConversation(next.conversation_id,controller.signal)
+          if (current!==generation.current) throw new ApiError('资源请求已失效。',409)
+          setMessages(page.items.flatMap(historyItemToMessages))
+        }
+        await loadResources(controller,current)
+      }
+      void synchronize().catch(caught => {
+        if (current===generation.current) failure(caught,true)
+      })
     } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
   }
 
@@ -288,22 +306,26 @@ export function CloudWorkspace({ session, onAuthInvalid, account, collapsed=fals
     label:item.display_name, description:item.workspace_display_name, compatible:true, selectable:true}))
   const selected = options.find(item => item.key === status?.selected_model_key) || null
   const notice = loading ? '正在加载可访问的云端模型…'
-    : error || (catalog?.status === 'partial' ? '已显示可访问模型；部分模型可能未包含在目录中。'
+    : error || sessionCheckError || (catalog?.status === 'partial' ? '已显示可访问模型；部分模型可能未包含在目录中。'
       + (catalog.authorization_scope_complete === false && (catalog.unverified_count || 0) > 0
         ? `还有 ${catalog.unverified_count} 个模型尚未验证，请刷新目录后重试。` : '')
-      : catalog?.status === 'forbidden' ? '当前账号无法读取模型目录，请切换账号或联系管理员。'
+      : catalog?.status === 'forbidden' ? '已登录；当前账号无法读取已批准的模型目录，请切换账号或联系管理员。'
       : catalog?.status === 'error' ? '数据模型目录暂不可用，请刷新重试。'
+      : selected && !status?.execution_ready ? cloudDenialMessage('cloud_execution_blocked')
+      : selected ? '已选择当前账号可访问的数据模型。'
       : !options.length ? '当前没有发现可访问的数据模型。' : '请选择一个数据模型开始。')
   const executionBlocked = !status?.execution_ready ? '数据问答暂不可用，请稍后重试。' : null
 
   const content=<>
     <ConversationView messages={messages} sending={sending} loadingConversation={templatesLoading} restored={restored}
       welcomeDescription="请选择当前账号可访问的云端模型。" />
-    <p className="local-catalog-note" role="status">{notice}</p>
-    {error || catalog?.status === 'error' || catalog?.status === 'forbidden'
-      ? <button type="button" onClick={() => void refresh()}>重新加载数据模型</button> : null}
     <Composer key={status?.conversation_id || 'cloud-unselected'} sending={sending} semanticModel={selected} semanticModelOptions={options}
-      loadingSemanticModels={loading} semanticModelError={error}
+      statusNotice={<div className="cloud-catalog-status">
+        <p className="local-catalog-note" role="status">{notice}</p>
+        {error || catalog?.status === 'error' || catalog?.status === 'forbidden'
+          ? <button type="button" onClick={() => void refresh()}>重新加载数据模型</button> : null}
+      </div>}
+      loadingSemanticModels={loading} semanticModelError={null}
       semanticModelCompatibilityNotice={templatesLoading ? '正在验证模型访问与报表模板…'
         : selected ? executionBlocked : '请显式选择一个数据模型'}
       reportTemplate={template} reportTemplateOptions={templates} loadingReportTemplates={templatesLoading}

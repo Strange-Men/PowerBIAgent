@@ -32,6 +32,7 @@ class SessionDTO(BaseModel):
 class AuthFailure(Exception):
     code: str = "AUTH_REQUIRED"
     status: int = 401
+    denial_reason: Literal['cloud_execution_blocked'] | None = None
 
     def __str__(self):
         return self.code

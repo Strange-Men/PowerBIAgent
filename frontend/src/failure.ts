@@ -1,5 +1,11 @@
 import type { FailureInfo } from './types'
 
+export function cloudDenialMessage(reason: 'test_scope_missing' | 'cloud_execution_blocked'): string {
+  return reason==='test_scope_missing'
+    ? '已登录；测试资源白名单尚未配置，请联系管理员配置已批准的测试资源。'
+    : '已登录；云端业务验收尚未完成，数据问答与报表暂未开放。'
+}
+
 export function publicFailureMessage(failure: FailureInfo): string {
   switch (failure.code) {
     case 'AUTH_REQUIRED':

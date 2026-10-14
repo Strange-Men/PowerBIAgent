@@ -253,3 +253,73 @@ def test_periodic_prune_destroys_idle_expired_auth_state(harness):
     app.state.auth_service.prune()
     assert identity.destroyed
     assert not app.state.auth_service.flows.peek(c.cookies.get("pbiagent_flow"))
+
+
+def test_token_acquisition_network_error_preserves_session_but_returns_no_token(harness, monkeypatch):
+    from backend.app.auth.models import AuthFailure
+    c, app, identity = harness
+    login(c)
+    service = app.state.auth_service
+    record = service.require_session(c.cookies.get('pbiagent_session'))
+    with monkeypatch.context() as patch:
+        patch.setattr(identity, 'delegated_token', lambda *args: (_ for _ in ()).throw(ConnectionError('private-upstream')))
+        with pytest.raises(AuthFailure) as caught:
+            service.get_delegated_token(record.session_id, record.principal)
+        assert caught.value.status == 503
+        assert caught.value.code == 'UPSTREAM_UNAVAILABLE'
+    assert c.get('/auth/session').status_code == 200
+    assert record.context is not None
+    assert service.get_delegated_token(record.session_id, record.principal) == 'synthetic-access-value'
+
+
+def test_stale_callback_does_not_consume_new_browser_flow(harness, monkeypatch):
+    c, app, identity = harness
+    c.get('/auth/login', follow_redirects=False)
+    old_flow = c.cookies.get('pbiagent_flow')
+    original = identity.initiate
+    def newer():
+        payload, context = original()
+        payload['state'] = 'newer-synthetic-state'
+        return payload, context
+    monkeypatch.setattr(identity, 'initiate', newer)
+    c.get('/auth/login', follow_redirects=False)
+    new_flow = c.cookies.get('pbiagent_flow')
+    response = c.get('/auth/callback?state=synthetic-state&code=synthetic-code', follow_redirects=False)
+    assert response.status_code == 302
+    assert c.cookies.get('pbiagent_flow') == new_flow
+    assert app.state.auth_service.flows.peek(new_flow) is not None
+    assert app.state.auth_service.flows.peek(old_flow) is None
+    c.get('/auth/callback?state=newer-synthetic-state&code=synthetic-code', follow_redirects=False)
+    assert c.get('/auth/session').status_code == 200
+    # A delayed callback after the successful newer login cannot clear it.
+    c.get('/auth/callback?state=synthetic-state&code=synthetic-code', follow_redirects=False)
+    assert c.get('/auth/session').status_code == 200
+
+
+def test_callback_network_failure_has_retry_category_without_identity_details(harness):
+    from requests.exceptions import ConnectionError
+    c, _, identity = harness
+    identity.error = ConnectionError('private-upstream-token-details')
+    login(c)
+    response = c.get('/auth/session')
+    assert response.status_code == 503
+    failure(response, 'UPSTREAM_UNAVAILABLE')
+    assert response.json()['failure']['recovery_action'] == 'retry'
+    assert 'state' not in response.json()
+    assert 'private-upstream' not in response.text
+
+
+def test_session_checks_do_not_slide_hard_ttl_and_restart_requires_login(harness):
+    from backend.app.auth.service import AuthService
+    from backend.app.auth.models import AuthFailure
+    c, app, identity = harness
+    login(c)
+    service = app.state.auth_service
+    record = service.require_session(c.cookies.get('pbiagent_session'))
+    expires = record.expires_at
+    for _ in range(3): assert c.get('/auth/session').status_code == 200
+    assert record.expires_at == expires
+    restarted = AuthService(service.settings, identity)
+    with pytest.raises(AuthFailure, match='AUTH_REQUIRED'):
+        restarted.require_session(record.session_id)
+    restarted.close()

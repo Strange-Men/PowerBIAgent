@@ -101,3 +101,49 @@ it('session expiry clears identity and requires relogin', async () => {
   expect(result.current.state).toBe('SESSION_EXPIRED')
   expect(result.current.session?.authenticated).toBe(false)
 })
+
+it.each([0,503])('preserves a signed-in session during a transient check failure (%s)',async status=>{
+  fetchMock.mockResolvedValueOnce(response(signedIn))
+  const {result}=renderHook(()=>useAuth())
+  await waitFor(()=>expect(result.current.state).toBe('SIGNED_IN'))
+  const generation=result.current.generation
+  if (status===0) fetchMock.mockRejectedValueOnce(new Error('offline'))
+  else fetchMock.mockResolvedValueOnce(response({},status))
+  await act(async()=>result.current.refresh())
+  expect(result.current.session?.authenticated).toBe(true)
+  expect(result.current.state).toBe('SIGNED_IN')
+  expect(result.current.generation).toBe(generation)
+  expect(result.current.sessionCheckError).toBe('暂时无法确认会话，请检查网络后重试。')
+  expect(channels[0].postMessage).not.toHaveBeenCalled()
+  fetchMock.mockResolvedValueOnce(response(signedIn))
+  await act(async()=>result.current.refresh())
+  expect(result.current.sessionCheckError).toBeNull()
+})
+
+it('shows a service failure at bootstrap without claiming Microsoft authentication failed',async()=>{
+  fetchMock.mockRejectedValue(new Error('offline'))
+  render(<App />)
+  expect(await screen.findByText('暂时无法确认会话，请检查网络后重试。')).toBeInTheDocument()
+  expect(screen.queryByText('登录未完成，请重试或联系管理员。')).not.toBeInTheDocument()
+  expect(screen.getByRole('button',{name:'重试确认会话'})).toBeEnabled()
+})
+
+it('continues the minute checks after a transient failure and detects the next browser account',async()=>{
+  vi.useFakeTimers()
+  try {
+    fetchMock.mockResolvedValueOnce(response(signedIn))
+    const {result}=renderHook(()=>useAuth())
+    await act(async()=>{await Promise.resolve()})
+    expect(result.current.session?.authenticated).toBe(true)
+    const firstGeneration=result.current.generation
+    fetchMock.mockRejectedValueOnce(new Error('offline'))
+    await act(async()=>vi.advanceTimersByTimeAsync(60000))
+    expect(result.current.session?.authenticated).toBe(true)
+    expect(result.current.generation).toBe(firstGeneration)
+    fetchMock.mockResolvedValueOnce(response({...signedIn,display_name:'Synthetic B',csrf_token:'synthetic-b-proof'}))
+    await act(async()=>vi.advanceTimersByTimeAsync(60000))
+    expect(result.current.session?.display_name).toBe('Synthetic B')
+    expect(result.current.generation).toBeGreaterThan(firstGeneration)
+    expect(result.current.sessionCheckError).toBeNull()
+  } finally {vi.useRealTimers()}
+})

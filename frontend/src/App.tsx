@@ -16,7 +16,7 @@ export function App() {
     typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 760px)').matches : false)
   if (auth.session?.identity_mode === 'LOCAL_DEV') return <LocalWorkspace />
   if (auth.session?.authenticated) return <CloudWorkspace key={auth.generation} session={auth.session}
-    onAuthInvalid={auth.refresh} collapsed={collapsed} onToggle={()=>setCollapsed(v=>!v)}
+    onAuthInvalid={auth.refresh} sessionCheckError={auth.sessionCheckError} collapsed={collapsed} onToggle={()=>setCollapsed(v=>!v)}
     account={{session:auth.session,state:auth.state,login:auth.login,logout:auth.logout,refresh:auth.refresh}} />
   return <div className="app-shell">
     <Sidebar key={auth.generation} collapsed={collapsed} activeConversationId={null} runtimeMode="real"
@@ -36,9 +36,10 @@ export function App() {
         ? <p role="status">{auth.state === 'AUTHENTICATING' ? '正在登录…' : '正在确认登录状态…'}</p>
         : auth.session?.authenticated ? <p>你已登录。组织数据功能将在后续版本开放。</p>
         : <p role={auth.state === 'SIGNED_OUT' ? 'status' : 'alert'}>{
-          auth.logoutPending ? '退出尚未完成，请重试。' : auth.state === 'SESSION_EXPIRED' ? '登录已过期，请重新登录。'
+          auth.logoutPending ? '退出尚未完成，请重试。' : auth.sessionCheckError || (auth.state === 'SESSION_EXPIRED' ? '登录已过期，请重新登录。'
           : auth.state === 'CONSENT_REQUIRED' ? '需要批准才能继续，请登录或联系管理员。'
-          : auth.state === 'AUTH_ERROR' ? '登录未完成，请重试或联系管理员。' : '登录后查看你的账户。'}</p>}
+          : auth.state === 'AUTH_ERROR' ? '登录未完成，请重试或联系管理员。' : '登录后查看你的账户。')}</p>}
+      {auth.sessionCheckError ? <button type="button" onClick={()=>void auth.refresh()}>重试确认会话</button> : null}
       {auth.logoutPending ? <button type="button" onClick={() => void auth.logout()}>重试退出</button> : null}
       </>}
     </main>

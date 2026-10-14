@@ -43,6 +43,28 @@ describe('Synthetic Cloud product wiring',()=>{
     fireEvent.change(input,{target:{value:'合成销售问题'}})
     fireEvent.click(screen.getByRole('button',{name:'发送'}))
   }
+  it('acknowledges a committed report deletion while the follow-up list is delayed',async()=>{
+    enable()
+    const report={report_id:'synthetic-report',display_title:'合成报表',conversation_id:ready.conversation_id}
+    vi.mocked(api.listCloudConversations).mockResolvedValue({items:[],next_cursor:null,total_count:0} as never)
+    vi.mocked(api.listCloudReports).mockImplementation(async resourceStatus=>({
+      items:resourceStatus==='active'?[report]:[],next_cursor:null,total_count:resourceStatus==='active'?1:0} as never))
+    vi.mocked(api.mutateCloudResource).mockResolvedValue({workspace_status:ready})
+    render(<CloudWorkspace session={session} account={account} onAuthInvalid={vi.fn()} />)
+    await screen.findByText('模型甲')
+    fireEvent.click(screen.getByRole('button',{name:'Synthetic A'}))
+    fireEvent.click(screen.getByRole('menuitem',{name:'设置'}))
+    fireEvent.click(screen.getByRole('button',{name:'报表管理'}))
+    fireEvent.click(await screen.findByRole('checkbox',{name:'选择报表：合成报表'}))
+    let finish!: (page: never)=>void
+    vi.mocked(api.readCloudReports).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
+    vi.spyOn(window,'confirm').mockReturnValue(true)
+    fireEvent.click(screen.getByRole('button',{name:'批量删除'}))
+    await waitFor(()=>expect(api.mutateCloudResource).toHaveBeenCalled())
+    await waitFor(()=>expect(screen.queryByRole('checkbox',{name:'选择报表：合成报表'})).not.toBeInTheDocument())
+    expect(screen.getByText('已完成 1 项操作。')).toBeInTheDocument()
+    await act(async()=>finish({items:[]} as never))
+  })
   it('discards Settings pages after a newer permission refusal',async()=>{
     enable()
     let resolveOld!: (page: never)=>void
@@ -122,6 +144,23 @@ describe('Synthetic Cloud product wiring',()=>{
 })
 
 describe('Cloud control-plane UX', () => {
+  it.each([
+    ['test_scope_missing',503,'已登录；测试资源白名单尚未配置，请联系管理员配置已批准的测试资源。'],
+    ['cloud_execution_blocked',403,'已登录；云端业务验收尚未完成，数据问答与报表暂未开放。'],
+  ] as const)('renders %s once while retaining the signed-in account',async(reason,httpStatus,message)=>{
+    const invalid=vi.fn()
+    const account={session,state:'SIGNED_IN' as const,login:vi.fn(),logout:vi.fn().mockResolvedValue(undefined)}
+    vi.mocked(api.readCloudCatalog).mockRejectedValueOnce(new api.ApiError('private',httpStatus,undefined,undefined,undefined,reason))
+    render(<CloudWorkspace session={session} account={account} onAuthInvalid={invalid} />)
+    await screen.findByText(message)
+    expect(screen.getAllByText(message)).toHaveLength(1)
+    expect(screen.getByRole('button',{name:'Synthetic A'})).toBeInTheDocument()
+    expect(invalid).not.toHaveBeenCalled()
+    expect(screen.getByRole('button',{name:'发送'})).toBeDisabled()
+    fireEvent.click(screen.getByRole('button',{name:'打开数据与报表选项'}))
+    expect(screen.getAllByText(message)).toHaveLength(1)
+    expect(screen.getByRole('status').closest('.composer-wrap')).toBeInTheDocument()
+  })
   it('clears catalog when concurrent profile loading detects an expired identity', async () => {
     const invalid=vi.fn()
     vi.mocked(api.readCloudProfiles).mockRejectedValue(new api.ApiError('SYNTHETIC_EXPIRED',401))

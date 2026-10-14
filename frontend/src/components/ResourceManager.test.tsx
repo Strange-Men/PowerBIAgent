@@ -191,6 +191,22 @@ describe('ResourceManager full-history pagination', () => {
 })
 
 describe('ResourceManager lifecycle operations', () => {
+  it('does not resurrect a deleted report from a page started before deletion',async()=>{
+    let finish!: (page: never)=>void
+    vi.mocked(listManagedReports).mockImplementation((_mode,status,_limit,cursor)=>
+      cursor ? new Promise(resolve=>{finish=resolve}) : Promise.resolve({
+        source_mode:'real',status,...page(status==='active'?reports:[archivedReport])}))
+    vi.stubGlobal('confirm',vi.fn().mockReturnValue(true))
+    setup()
+    fireEvent.click(screen.getByRole('button',{name:'报表管理'}))
+    fireEvent.click(await screen.findByRole('checkbox',{name:'选择报表：历史报表 1'}))
+    fireEvent.click(screen.getByRole('button',{name:'加载更多'}))
+    fireEvent.click(screen.getByRole('button',{name:'批量删除'}))
+    await screen.findByText('已完成 1 项操作。')
+    finish({source_mode:'real',status:'active',items:[reports[0],reports[20]],next_cursor:null,total_count:30} as never)
+    await waitFor(()=>expect(screen.queryByRole('button',{name:'正在加载更多…'})).not.toBeInTheDocument())
+    expect(screen.queryByRole('checkbox',{name:'选择报表：历史报表 1'})).not.toBeInTheDocument()
+  })
   it('keeps the resource toolbar outside the independently scrollable list', async () => {
     setup()
     fireEvent.click(screen.getByRole('button', { name: /对话管理/ }))

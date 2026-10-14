@@ -282,6 +282,8 @@ def test_native_api_missing_scope_and_forged_ids_never_acquire_resource_token(mo
         response=client.get('/api/v1/cloud/catalog')
         assert response.status_code==503
         assert 'RESOURCE_NOT_ACCESSIBLE' in response.text
+        assert response.json()['detail']['denial_reason']=='test_scope_missing'
+        assert client.get('/auth/session').status_code==200
         assert WORKSPACE not in response.text and MODEL not in response.text
         for path in [f'/api/v1/cloud/catalog?workspace_id={FOREIGN}',
             f'/api/v1/cloud/catalog?model_id={FOREIGN}']:

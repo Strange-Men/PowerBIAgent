@@ -19,6 +19,9 @@ M6.0 COMPLETE；M6.1 COMPLETE；M6.2 COMPLETE（保留数值/完整性限制）�
 外部LLM、留存与旧资源读取在相应流转前服务端拒绝。合成host不会成为native授权开关。
 完整Synthetic产品链通过Mock/Fake Entra及正式事实回调验证，非Real；无Frozen Core/Provider/模板/Shape变更。
 FIX COMPLETE仅以当前checkout实际main SHA自身Full Validation全部SUCCESS、Remote Audit、clean生效；
+后续runtime修复基线d01fe914、CI38498609270 FAILURE；处理范围与复现见
+[运行时专项](milestones/m6/m6_4_fix_runtime_regressions.md)。用户提供302回调、session401后200、API403；
+B是否重启/一小时TTL/Conditional Access触发尚UNCONFIRMED。无真实账号或业务测试授权扩展。
 仓库外receipt与分层结果在PBIAgentTest/M6.4_FIX/Acceptance，不能继承起始或旧阶段CI。
 M6.4 FINAL NOT READY；IQ数值/八Shape完整性、获准逐资源环境、企业披露留存native策略及真实浏览器全链未过。
 Arrow为ALTERNATIVE_CANDIDATE；运行保持ADR-020 IQ，无Provider迁移/fallback。Settings.version=M6.3。

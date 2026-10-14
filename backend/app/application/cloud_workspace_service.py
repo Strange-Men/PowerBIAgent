@@ -158,7 +158,7 @@ class CloudWorkspaceService:
         # Only an explicitly injected existing Mock adapter can exercise the
         # synthetic product chain. No setting/client flag enables real BI.
         if not self._context(sid, principal).adapter.is_mock:
-            raise AuthFailure("AUTH_FORBIDDEN", 403)
+            raise AuthFailure("AUTH_FORBIDDEN", 403, denial_reason='cloud_execution_blocked')
 
     def require_business_access(self, sid, principal):
         self.require_execution(sid, principal)

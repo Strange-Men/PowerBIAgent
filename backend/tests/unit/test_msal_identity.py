@@ -125,3 +125,29 @@ def test_supported_library_rejects_wrong_state_before_token_exchange(msal_flow):
         identity.complete(flow, {"state":"wrong-state", "code":"synthetic-code"}, context)
     assert http.post_data is None
     identity.destroy(context)
+
+
+@pytest.mark.parametrize('error',['temporarily_unavailable','server_error'])
+def test_silent_refresh_transient_error_is_retryable_without_destroying_bound_cache(msal_flow,monkeypatch,error):
+    from backend.app.auth.models import AuthFailure
+    identity, flow, context, _ = msal_flow
+    result=identity.complete(flow,{'state':flow['state'],'code':'synthetic-code'},context)
+    principal=PrincipalContext(tenant_id=TENANT,principal_id=OID,subject=result.claims['sub'],
+        issuer=result.claims['iss'],display_name='Synthetic User',preferred_username=None,
+        session_epoch=1,authorization_epoch=1)
+    monkeypatch.setattr(context.client,'acquire_token_silent_with_error',lambda *args,**kwargs:{'error':error})
+    with pytest.raises(AuthFailure) as caught: identity.delegated_token(context,principal,DELEGATED_SCOPES)
+    assert caught.value.status==503 and caught.value.code=='UPSTREAM_UNAVAILABLE'
+    assert context.account_id and context.client.get_accounts()
+    identity.destroy(context)
+
+
+def test_msal_authority_discovery_network_failure_is_not_auth_rejection(monkeypatch):
+    from requests.exceptions import ConnectionError
+    from backend.app.auth.models import AuthFailure
+    identity=MsalIdentityClient(Settings(_env_file=None,identity_mode='ENTRA_BFF',entra_tenant_id=TENANT,
+        entra_client_id=CLIENT,entra_client_secret='NOT_A_REAL_SECRET_MSAL',auth_cookie_secure=False))
+    def unavailable(*args,**kwargs): raise ConnectionError('private-authority-details')
+    monkeypatch.setattr(msal,'ConfidentialClientApplication',unavailable)
+    with pytest.raises(AuthFailure) as caught: identity.initiate()
+    assert caught.value.status==503 and caught.value.code=='UPSTREAM_UNAVAILABLE'

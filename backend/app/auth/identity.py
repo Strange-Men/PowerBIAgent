@@ -9,6 +9,7 @@ from typing import Protocol
 
 import jwt
 import msal
+from requests.exceptions import RequestException
 
 from backend.app.auth.models import AuthFailure, PrincipalContext
 from backend.app.config.settings import PowerBIMode, Settings
@@ -49,20 +50,24 @@ class MsalIdentityClient:
 
     def initiate(self):
         cache = msal.SerializableTokenCache()
-        client = msal.ConfidentialClientApplication(
-            self.settings.entra_client_id,
-            authority=self.authority,
-            client_credential=self.settings.entra_client_secret.get_secret_value(),
-            token_cache=cache, enable_pii_log=False, timeout=15,
-        )
-        context = MsalContext(client, cache)
+        context = None
         try:
+            client = msal.ConfidentialClientApplication(
+                self.settings.entra_client_id,
+                authority=self.authority,
+                client_credential=self.settings.entra_client_secret.get_secret_value(),
+                token_cache=cache, enable_pii_log=False, timeout=15,
+            )
+            context = MsalContext(client, cache)
             flow = client.initiate_auth_code_flow(
                 scopes=list(DELEGATED_SCOPES + (CATALOG_SCOPES if self.settings.powerbi_mode == PowerBIMode.FABRIC_IQ else ())),
                 redirect_uri=self.settings.entra_redirect_uri,
                 response_mode="query", prompt="select_account",
             )
             return flow, context
+        except RequestException:
+            self.destroy(context)
+            raise AuthFailure('UPSTREAM_UNAVAILABLE', 503) from None
         except Exception:
             self.destroy(context)
             raise AuthFailure() from None
@@ -96,6 +101,8 @@ class MsalIdentityClient:
             raise AuthFailure("AUTH_FORBIDDEN", 403)
         result = context.client.acquire_token_silent_with_error(list(scopes), account=accounts[0])
         if not result or not result.get("access_token"):
+            if result and result.get('error') in {'temporarily_unavailable', 'server_error'}:
+                raise AuthFailure('UPSTREAM_UNAVAILABLE', 503)
             if result and result.get("error") in {"consent_required", "interaction_required"}:
                 raise AuthFailure("AUTH_CONSENT_REQUIRED")
             raise AuthFailure("AUTH_EXPIRED")

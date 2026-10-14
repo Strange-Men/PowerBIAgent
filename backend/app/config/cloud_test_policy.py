@@ -6,6 +6,15 @@ import re
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.app.powerbi.fabric_iq_contract import fail
+from backend.app.powerbi.base import PowerBIAdapterError
+
+
+class MissingCloudTestScope(PowerBIAdapterError):
+    denial_reason = 'test_scope_missing'
+
+    def __init__(self):
+        super().__init__('RESOURCE_NOT_ACCESSIBLE', provider='fabric_iq',
+                         error_type='RESOURCE_NOT_ACCESSIBLE', retryable=False)
 
 
 class TestModelApproval(BaseModel):
@@ -47,7 +56,7 @@ class CloudTestPolicy:
     @property
     def scope(self):
         scope = getattr(self._settings, 'fabric_test_allowlist', None)
-        if scope is None: raise fail('RESOURCE_NOT_ACCESSIBLE')
+        if scope is None: raise MissingCloudTestScope()
         return scope
 
     def workspace(self, workspace_id):

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { logoutAuthSession, readAuthSession } from '../api/client'
+import { ApiError, logoutAuthSession, readAuthSession } from '../api/client'
 import type { AuthSession, AuthState } from '../types'
 
 const signedOut: AuthSession = {identity_mode:'ENTRA_BFF', authenticated:false,
@@ -10,6 +10,7 @@ export function useAuth() {
   const [state, setState] = useState<AuthState>('SESSION_ESTABLISHING')
   const [generation, setGeneration] = useState(0)
   const [logoutPending, setLogoutPending] = useState(false)
+  const [sessionCheckError, setSessionCheckError] = useState<string | null>(null)
   const epoch = useRef(0)
   const abort = useRef<AbortController | null>(null)
   const channel = useRef<BroadcastChannel | null>(null)
@@ -23,6 +24,7 @@ export function useAuth() {
     setGeneration(epoch.current)
     setSession(signedOut)
     setState('SIGNED_OUT')
+    setSessionCheckError(null)
     if (broadcast) channel.current?.postMessage('session-invalidated')
   }, [])
 
@@ -42,9 +44,16 @@ export function useAuth() {
         setGeneration(current)
       }
       setSession(next)
+      setSessionCheckError(null)
       setState(next.state === 'LOCAL_DEV' ? 'SIGNED_OUT' : next.state)
-    } catch {
+    } catch (caught) {
       if (current !== epoch.current) return
+      if (caught instanceof ApiError && (caught.status===0 || caught.status>=500)) {
+        setSessionCheckError('暂时无法确认会话，请检查网络后重试。')
+        setState(previous=>previous==='SESSION_ESTABLISHING' ? 'AUTH_ERROR' : previous)
+        return
+      }
+      csrf.current = null
       setSession(signedOut)
       setState('AUTH_ERROR')
       setGeneration(current)
@@ -73,10 +82,10 @@ export function useAuth() {
 
   useEffect(() => {
     if (session?.identity_mode !== 'ENTRA_BFF' || !session.authenticated) return
-    const timer = window.setTimeout(() => void refresh(), Math.min(session.expires_in * 1000, 60000))
+    const timer = window.setInterval(() => void refresh(), Math.max(1000,Math.min(session.expires_in * 1000, 60000)))
     const focus = () => void refresh()
     window.addEventListener('focus', focus)
-    return () => { window.clearTimeout(timer); window.removeEventListener('focus', focus) }
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', focus) }
   }, [session, refresh])
 
   const logout = useCallback(async () => {
@@ -103,8 +112,9 @@ export function useAuth() {
     epoch.current += 1
     abort.current?.abort()
     setState('AUTHENTICATING')
+    setSessionCheckError(null)
     window.location.assign('/auth/login')
   }, [])
 
-  return {session, state, generation, login, logout, logoutPending, refresh}
+  return {session, state, generation, login, logout, logoutPending, refresh, sessionCheckError}
 }

@@ -42,7 +42,7 @@ input:focus-visible {
 .app-shell {
   display: flex;
   height: 100dvh;
-  min-height: 600px;
+  min-height: 0;
   overflow: hidden;
   background: #fff;
 }
@@ -564,6 +564,7 @@ input:focus-visible {
   position: relative;
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex: 1;
   flex-direction: column;
   background: #fff;
@@ -595,7 +596,7 @@ input:focus-visible {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 50px 24px 170px;
+  padding: 24px;
   text-align: center;
 }
 
@@ -642,7 +643,7 @@ input:focus-visible {
   width: min(900px, calc(100% - 48px));
   min-height: 100%;
   margin: 0 auto;
-  padding: 48px 0 190px;
+  padding: 48px 0 24px;
 }
 
 .history-note {
@@ -1299,11 +1300,9 @@ input:focus-visible {
 }
 
 .composer-wrap {
-  position: absolute;
+  position: relative;
   z-index: 10;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  flex: 0 0 auto;
   width: min(960px, calc(100% - 48px));
   margin: 0 auto;
   padding: 16px 0 20px;
@@ -1408,6 +1407,8 @@ input:focus-visible {
   color: #929292;
   font-size: 11px;
   text-align: center;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 
 .composer-selection.compatibility-warning {
@@ -1421,7 +1422,11 @@ input:focus-visible {
 
 .composer-popover {
   position: absolute;
-  bottom: 105px;
+  bottom: calc(100% - 10px);
+  max-height: min(480px, 65dvh);
+  max-width: 100%;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
   padding: 10px;
   border: 1px solid #dedede;
   border-radius: 13px;
@@ -1551,9 +1556,29 @@ input:focus-visible {
   line-height: 1.45;
 }
 
+.cloud-catalog-status {
+  padding: 0 12px 8px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.cloud-catalog-status .local-catalog-note {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.cloud-catalog-status button {
+  padding: 4px 10px;
+  border: 1px solid #dedede;
+  border-radius: 8px;
+  color: #555;
+  background: #fff;
+  cursor: pointer;
+}
+
 @media (max-width: 760px) {
   .app-shell {
-    min-height: 520px;
+    min-height: 0;
   }
 
   .sidebar {

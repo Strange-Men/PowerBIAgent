@@ -44,7 +44,10 @@ async def safe_call(operation):
         if isinstance(cause, AuthFailure): raise cause
         code = getattr(cause, "error_type", "UPSTREAM_UNAVAILABLE")
         failure = map_public_failure(terminal_state="tool_failed", stage="tool_execution", error_type=code)
-        raise HTTPException(503, {"failure": failure.model_dump(mode="json")}) from None
+        detail = {"failure": failure.model_dump(mode="json")}
+        if getattr(cause, 'denial_reason', None) == 'test_scope_missing':
+            detail['denial_reason'] = 'test_scope_missing'
+        raise HTTPException(503, detail) from None
 
 
 @router.get("/catalog")

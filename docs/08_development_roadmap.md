@@ -20,6 +20,7 @@ M6 每个 implementation patch 必须另行获批，并满足 09 的官方能力
 2026-10-14独立M6.4_FIX只修既有内部偏移，不新增正式里程碑，不改变下文M6.5–M9目标。
 资源管理/企业数据服务端拒绝/合成E2E/技术决策见[FIX](milestones/m6/m6_4_fix_engineering_closure.md)；
 COMPLETE按自身CI/Remote Audit/clean生效。M6.0–M6.2 COMPLETE（M6.2保留数值/完整性限制），
+既有FIX后续[运行时回归](milestones/m6/m6_4_fix_runtime_regressions.md)继续同一scope收口，不新增阶段或改变原路线。
 M6.3 Security COMPLETE；M6.4 FINAL NOT READY，M6.5/M6.6未启动。Settings.version=M6.3。
 
 ## M5 — Core Analysis Kernel

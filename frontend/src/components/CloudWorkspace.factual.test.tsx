@@ -18,6 +18,9 @@ it('uses real API client and native Cloud routes through offline factual host', 
   let stderr = ''
   child.stderr.on('data', chunk => { stderr += String(chunk) })
   const pending = new Map<number, (value: Response) => void>()
+  const deletionAck = new Map<number, (status: number) => void>()
+  let reportDeletion!: (status: number) => void
+  const reportDeleted = new Promise<number>(resolve=>{reportDeletion=resolve})
   let ready!: (session: AuthSession) => void
   const sessionPromise = new Promise<AuthSession>(resolve => { ready = resolve })
   const lines = createInterface({ input: child.stdout })
@@ -27,6 +30,8 @@ it('uses real API client and native Cloud routes through offline factual host', 
     else {
       pending.get(value.id)?.(new Response(value.body, { status: value.status, headers: value.headers }))
       pending.delete(value.id)
+      deletionAck.get(value.id)?.(value.status)
+      deletionAck.delete(value.id)
     }
   })
   const exit = new Promise<void>((resolve, reject) => {
@@ -39,6 +44,7 @@ it('uses real API client and native Cloud routes through offline factual host', 
     vi.stubGlobal('fetch', (input: string, init?: RequestInit) => new Promise<Response>(resolve => {
       const id = ++serial
       pending.set(id, resolve)
+      if (init?.method==='DELETE' && input.startsWith('/api/v1/cloud/reports/')) deletionAck.set(id,reportDeletion)
       requests.push(input)
       child.stdin.write(JSON.stringify({ id, path: input, method: init?.method || 'GET',
         headers: { Origin: 'http://localhost:5173', ...init?.headers }, body: init?.body }) + '\n')
@@ -92,6 +98,9 @@ it('uses real API client and native Cloud routes through offline factual host', 
     fireEvent.click(await screen.findByRole('checkbox',{name:/选择报表/}))
     vi.spyOn(window,'confirm').mockReturnValue(true)
     fireEvent.click(screen.getByRole('button',{name:'批量删除'}))
+    // The stdio host uses real SQLite/HTML cleanup. Await its commit response,
+    // then assert the UI projection; do not use a 1s DOM poll as an API deadline.
+    expect(await reportDeleted).toBe(200)
     await waitFor(()=>expect(screen.queryByRole('checkbox',{name:/选择报表/})).not.toBeInTheDocument())
     expect((await fetch(link.getAttribute('href')!+'/download')).status).toBe(404)
     fireEvent.click(screen.getByRole('button',{name:'关闭设置'}))

@@ -58,6 +58,17 @@ def test_metadata_control_plane_is_not_available_for_non_cloud_entra():
         assert client.get("/api/v1/cloud/status").status_code == 403
 
 
+def test_native_business_refusal_is_distinct_from_auth_and_never_clears_session(cloud):
+    client, app = cloud
+    login(client)
+    response=client.get('/api/v1/cloud/history')
+    assert response.status_code==403
+    assert response.json()['denial_reason']=='cloud_execution_blocked'
+    assert 'state' not in response.json() and 'authenticated' not in response.json()
+    assert client.get('/auth/session').status_code==200
+    assert app.state._persistence_engine is None
+
+
 def test_logout_purges_control_plane_context(cloud):
     client, app = cloud
     login(client)

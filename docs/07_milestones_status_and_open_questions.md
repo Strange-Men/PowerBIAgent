@@ -22,6 +22,10 @@ M6.0 COMPLETE；M6.1 COMPLETE；M6.2 COMPLETE（保留Int64/完整性限制）�
 [FIX工程修复与验收](milestones/m6/m6_4_fix_engineering_closure.md)：资源全生命周期/Settings批量/全历史恢复，
 current Principal与exact binding租约，企业执行/披露/留存服务端默认拒绝，完整离线合成事实产品链。
 FIX COMPLETE须当前实际提交自己的Full Validation全部SUCCESS、Remote Audit及clean，否则BLOCKED。
+后续基线d01fe914的CI38498609270 FAILURE（前端143 PASS/1 FAIL），旧本地PASS不能证明其COMPLETE。
+本轮[运行时回归修复](milestones/m6/m6_4_fix_runtime_regressions.md)仅处理删除同步、会话误判、
+并发callback、拒绝提示分类与底部布局；自身CI/Audit/clean条件仍适用。
+三账号登录后API403与B反复验证的逐请求现场归因尚未完整证明，不以合成复现声称Real问题已消失。
 [技术决策](milestones/m6/m6_4_solo_contract_decision.md)为ALTERNATIVE_CANDIDATE（Arrow）；运行继续ADR-020 IQ，无迁移/fallback。
 原生IQ精确数字/完整性、披露留存许可及native策略、获准逐资源真实浏览器E2E仍BLOCKED/NOT_TESTED。
 M6.4 FINAL NOT READY；Settings.version=M6.3；M5 Frozen Core无本FIX改动；完成本轮即停止。

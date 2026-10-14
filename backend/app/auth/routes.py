@@ -2,6 +2,8 @@
 from secrets import token_urlsafe
 import json
 from time import time
+from requests.exceptions import RequestException
+from jwt.exceptions import PyJWKClientConnectionError
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -9,6 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from backend.app.auth.boundary import failure_response
 from backend.app.auth.dependencies import get_auth_service
 from backend.app.auth.models import AuthFailure, SessionDTO
+from backend.app.auth.service import SupersededAuthFlow
 from backend.app.config.settings import IdentityMode
 
 router = APIRouter(prefix="/auth")
@@ -54,10 +57,13 @@ def callback(request: Request):
                                            request.cookies.get(settings.auth_cookie_name))
         response = RedirectResponse(target, status_code=302)
         cookie(response, settings.auth_cookie_name, session.session_id, settings, settings.auth_session_ttl)
+    except SupersededAuthFlow:
+        return RedirectResponse('/', status_code=302)
     except Exception as error:
         response = RedirectResponse("/", status_code=302)
         clear_cookie(response, settings.auth_cookie_name, settings)
-        code = error.code if isinstance(error, AuthFailure) else "AUTH_REQUIRED"
+        code = error.code if isinstance(error, AuthFailure) else (
+            'UPSTREAM_UNAVAILABLE' if isinstance(error, (RequestException, PyJWKClientConnectionError)) else 'AUTH_REQUIRED')
         key = token_urlsafe(32)
         service.set_notice(key, code)
         cookie(response, NOTICE_COOKIE, key, settings, settings.auth_flow_ttl)
@@ -73,7 +79,7 @@ def session(request: Request):
     service = get_auth_service(request)
     notice = service.take_notice(request.cookies.get(NOTICE_COOKIE))
     if notice:
-        response = failure_response(AuthFailure(notice))
+        response = failure_response(AuthFailure(notice, 503 if notice=='UPSTREAM_UNAVAILABLE' else 401))
         if notice == "AUTH_REQUIRED":
             response = JSONResponse({**json.loads(response.body), "state": "AUTH_ERROR"}, status_code=401)
         clear_cookie(response, NOTICE_COOKIE, settings)

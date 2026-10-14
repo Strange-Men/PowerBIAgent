@@ -169,12 +169,17 @@ function usePagedResources<T>(
 
   const removeIds = useCallback(
     (ids: string[]) => {
+      if (!ids.length) return
+      // A page obtained before this committed mutation is no longer current.
+      generationRef.current += 1
       const removed = new Set(ids)
       setState((current) => {
         const items = current.items.filter((item) => !removed.has(keyOf(item)))
         return {
           ...current,
           items,
+          loading: false,
+          loadingMore: false,
           totalCount: Math.max(
             0,
             current.totalCount - (current.items.length - items.length),

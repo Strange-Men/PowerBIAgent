@@ -8,6 +8,122 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-64-018
+  title: 已提交Cloud删除被后续读取阻塞且迟到页可复活资源
+  category: ERR
+  first_detected_version: M6.4_FIX
+  symptom: CI38498609270报表checkbox未消失；删除成功后等待完整投影读取，旧分页还可覆盖删除
+  local_evidence: 原合成API测试及新增延迟读取和旧页负例；新增两个前端用例先FAIL
+  authoritative_sources:
+  - title: 用户M6.4_FIX运行时回归scope
+    reason: 删除确认、UI同步和可重试语义不得互相混淆
+  root_cause: mutate把已提交操作与后续读取绑定；removeIds没有使旧页generation失效；合成测试用1秒DOM等待充当SQLite操作deadline
+  failed_attempts:
+  - 分离投影后原rename同步断言暴露侧栏未即时更新；补充已确认标题和删除tombstone的本地投影
+  repair_attempt_count: 1
+  final_fix: 服务端确认后立即投影并返回成功；后续读取独立且保留授权和generation验证；旧页失效；原API测试先等DELETE确认再断言原checkbox和404，不增加timeout
+  regression_tests:
+  - frontend/src/components/CloudWorkspace.factual.test.tsx
+  - frontend/src/components/CloudWorkspace.test.tsx
+  - frontend/src/components/ResourceManager.test.tsx
+  - backend/tests/api/test_cloud_resource_lifecycle.py
+  prohibited_patterns:
+  - 将后续读取失败伪装成已提交删除失败
+  - 未收到删除确认就移除资源或放宽CAS与删除意图
+  prevention_rules:
+  - 测试区分真实操作完成与UI投影；已提交变更使旧分页失效
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-14'
+    action: committed_delete_and_stale_page_failure_first
+    version: M6.4_FIX
+- id: ERR-64-019
+  title: 暂时网络异常被误判为Microsoft会话失效
+  category: ERR
+  first_detected_version: M6.4_FIX
+  symptom: 前端每分钟check异常清身份；后端静默取Token异常清cache并报AUTH_EXPIRED
+  local_evidence: 网络0及503前端用例先2FAIL；token broker网络用例先FAIL；MSAL构造阶段网络异常先FAIL，修复后11PASS；原安全负例保留
+  authoritative_sources:
+  - title: Microsoft MSAL Python token acquisition与用户会话隔离合同
+    reason: 静默刷新绑定当前账号；网络错误不能证明身份撤销
+  root_cause: catch-all把网络可用性和认证authority混为一类；一次失败也终止前端下一分钟检查
+  failed_attempts:
+  - 仅在initiate_auth_code_flow周围分类异常，遗漏MSAL客户端构造阶段的authority discovery网络异常
+  repair_attempt_count: 2
+  final_fix: 构造与交换及静默刷新网络503返回可重试类别，无Token回传；保留有效会话但每次业务仍经服务端验证；分钟检查继续；真正401及账号错配仍拒绝；TTL不滑动
+  regression_tests:
+  - frontend/src/auth.test.tsx
+  - backend/tests/api/test_auth_security.py
+  - backend/tests/unit/test_msal_identity.py
+  prohibited_patterns:
+  - 扩OAuth scope或绕过MFA与Conditional Access
+  - 用旧缓存Token或其他账号作为失败fallback
+  prevention_rules:
+  - 认证拒绝与暂时可用性分别处理；network failure返回ZERO Token
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-14'
+    action: transient_session_error_failure_first
+    version: M6.4_FIX
+- id: ERR-64-020
+  title: 迟到OAuth callback可消费新登录Flow
+  category: ERR
+  first_detected_version: M6.4_FIX
+  symptom: 同浏览器第二次login替换flow cookie后，第一次callback仍消耗新flow并清session
+  local_evidence: 新合成交错callback用例先FAIL，新flow cookie丢失
+  authoritative_sources:
+  - title: Microsoft authorization code state与PKCE合同
+    reason: callback只能消费与自身state匹配的flow
+  root_cause: 先consume浏览器当前flow和invalidate当前session，再检查state
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在Auth锁内比较当前flow的state；迟到callback不消费新flow或清Cookie；未知及重放继续不能建立身份
+  regression_tests:
+  - backend/tests/api/test_auth_security.py
+  prohibited_patterns:
+  - 接受旧callback建立新账号身份
+  - 从浏览器参数推导principal或共享账号Token Cache
+  prevention_rules:
+  - callback在改变当前flow/session前证明归属；多浏览器cache与principal隔离
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-14'
+    action: superseded_callback_failure_first
+    version: M6.4_FIX
+- id: ERR-64-021
+  title: Cloud底部文档流状态与绝对定位Composer重叠
+  category: ERR
+  first_detected_version: M6.4_FIX
+  symptom: 状态文字重复，重载按钮成为底部灰条；150%等效缩放页面600px超出533px视口
+  local_evidence: 基线浏览器before-150截图和几何；四种视口after均无重叠及溢出
+  authoritative_sources:
+  - title: 用户底部布局与原视觉保持要求
+    reason: 输入和提示必须正常排布且只显示一次
+  root_cause: composer绝对定位，独立status和按钮仍占文档流；固定min-height大于视口
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Composer沿flex文档流；唯一Cloud提示和恢复动作放同一footer；min-height不超过视口；popover按footer实际高度定位和有界滚动
+  regression_tests:
+  - frontend/src/components/CloudWorkspace.test.tsx
+  - scripts/manual_smoke/cloud_runtime_browser_acceptance.mjs
+  prohibited_patterns:
+  - 用固定像素padding补偿动态状态高度
+  - 复制同一拒绝消息到多个可见区域
+  prevention_rules:
+  - 用实际浏览器几何覆盖缩放与窄屏；拒绝提示区分登录态和产品gate
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-14'
+    action: synthetic_browser_layout_regression
+    version: M6.4_FIX
 - id: ERR-64-017
   title: Cloud报表删除中断后预授权丢失可恢复删除意图
   category: ERR

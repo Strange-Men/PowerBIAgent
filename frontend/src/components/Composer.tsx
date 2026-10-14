@@ -1,8 +1,9 @@
 import { Check, ChevronDown, Plus, RefreshCw, Send, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { CatalogOption, LLMProfileOption } from '../types'
 
 interface ComposerProps {
+  statusNotice?: ReactNode
   dataSourceKind?: 'desktop' | 'cloud'
   executionBlockedReason?: string | null
   sending: boolean
@@ -27,6 +28,7 @@ interface ComposerProps {
 }
 
 export function Composer({
+  statusNotice,
   dataSourceKind = 'desktop',
   executionBlockedReason = null,
   sending,
@@ -237,6 +239,7 @@ export function Composer({
         </div>
       ) : null}
 
+      {statusNotice}
       <div className="composer">
         <button
           ref={addButtonRef}

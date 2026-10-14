@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError, readCloudCatalog, readCloudStatus } from '../api/client'
 import type { AccountActions } from '../types'
+import { cloudDenialMessage, publicFailureMessage } from '../failure'
 
 export function CloudAccountSettings({account}: {account: AccountActions}) {
   const [tab, setTab] = useState<'account' | 'data'>('account')
   const [info, setInfo] = useState<{count:number;partial:boolean;selected:string | null} | null>(null)
-  const [error, setError] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const epoch = useRef(0)
   const abort = useRef<AbortController | null>(null)
   useEffect(() => () => { epoch.current += 1; abort.current?.abort() }, [])
 
   const load = async () => {
-    setTab('data'); setLoading(true); setError(false); setInfo(null)
+    setTab('data'); setLoading(true); setError(null); setInfo(null)
     const current = ++epoch.current
     abort.current?.abort()
     const controller = new AbortController()
@@ -28,7 +29,9 @@ export function CloudAccountSettings({account}: {account: AccountActions}) {
       window.dispatchEvent(new Event('powerbiagent-cloud-catalog-updated'))
     } catch (caught) {
       if (current === epoch.current) {
-        setError(true)
+        setError(caught instanceof ApiError && caught.denialReason ? cloudDenialMessage(caught.denialReason)
+          : caught instanceof ApiError && caught.failure ? publicFailureMessage(caught.failure)
+          : '暂时无法加载目录，请重试。')
         if (caught instanceof ApiError && caught.status===401) account.refresh?.()
       }
     } finally {
@@ -52,7 +55,7 @@ export function CloudAccountSettings({account}: {account: AccountActions}) {
       </dl><button type="button" onClick={() => void account.logout()}>退出</button></>
         : <><h3>数据与模型</h3>
           {loading ? <p role="status">正在加载云端数据模型…</p> : null}
-          {error ? <p role="alert">暂时无法加载目录，请重试。</p> : null}
+          {error ? <p role="alert">{error}</p> : null}
           {info ? <><p>当前账号可访问 {info.count} 个已验证模型。</p>
             {info.partial ? <p>部分模型可能未包含在目录中。</p> : null}
             <p>{info.selected || '尚未选择模型，请在对话输入区显式选择。'}</p></> : null}

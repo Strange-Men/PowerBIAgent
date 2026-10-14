@@ -3,11 +3,16 @@ from secrets import compare_digest
 from threading import RLock
 from time import time
 from uuid import UUID
+import logging
 
 from backend.app.auth.identity import CATALOG_SCOPES, DELEGATED_SCOPES, IdentityClient
 from backend.app.auth.models import AuthFailure, PrincipalContext
 from backend.app.auth.stores import InMemoryAuthFlowStore, InMemoryAuthSessionStore
 from backend.app.config.settings import Settings
+
+
+class SupersededAuthFlow(Exception):
+    """A delayed callback owns neither the current flow nor current session."""
 
 
 class AuthService:
@@ -20,6 +25,11 @@ class AuthService:
         self._lock = RLock()
         self._epoch = 0
         self._notices = {}
+        scope = settings.fabric_test_allowlist
+        logging.getLogger(__name__).info(
+            'auth_configuration session_store=inmemory session_ttl=%d test_mode=%s test_scope_configured=%s approved_models=%d approved_reports=%d',
+            settings.auth_session_ttl, settings.fabric_test_mode, scope is not None,
+            len(scope.models) if scope else 0, len(scope.reports) if scope else 0)
 
     def set_notice(self, key, code):
         with self._lock:
@@ -51,6 +61,11 @@ class AuthService:
 
     def complete(self, correlation: str | None, response: dict, old_session: str | None):
         with self._lock:
+            current = self.flows.peek(correlation)
+            if current and not compare_digest(str(response.get('state', '')), current.payload.get('state', '')):
+                raise SupersededAuthFlow()
+            if not correlation and self.sessions.lookup(old_session)[0] is not None:
+                raise SupersededAuthFlow()
             flow = self.flows.consume(correlation)
             # Clear old identity even when a subsequent callback fails.
             self.sessions.invalidate(old_session)
@@ -115,12 +130,14 @@ class AuthService:
                 raise AuthFailure("AUTH_FORBIDDEN", 403)
             try:
                 return self.identity.delegated_token(record.context, principal, tuple(scopes))
-            except AuthFailure:
-                self.sessions.invalidate(sid)
+            except AuthFailure as error:
+                if error.status < 500:
+                    self.sessions.invalidate(sid)
                 raise
             except Exception:
-                self.sessions.invalidate(sid)
-                raise AuthFailure("AUTH_EXPIRED") from None
+                # No token is returned. Temporary upstream failures do not
+                # prove that the validated session/account was revoked.
+                raise AuthFailure("UPSTREAM_UNAVAILABLE", 503) from None
 
     def close(self):
         with self._lock:

@@ -28,6 +28,7 @@ interface ErrorPayload {
   detail?: unknown
   error_type?: unknown
   failure?: unknown
+  denial_reason?: unknown
 }
 
 export class ApiError extends Error {
@@ -35,6 +36,7 @@ export class ApiError extends Error {
   readonly errorType?: string
   readonly failure?: FailureInfo
   readonly authState?: AuthState
+  readonly denialReason?: 'test_scope_missing' | 'cloud_execution_blocked'
 
   constructor(
     message: string,
@@ -42,6 +44,7 @@ export class ApiError extends Error {
     errorType?: string,
     failure?: FailureInfo,
     authState?: AuthState,
+    denialReason?: 'test_scope_missing' | 'cloud_execution_blocked',
   ) {
     super(message)
     this.name = 'ApiError'
@@ -49,6 +52,7 @@ export class ApiError extends Error {
     this.errorType = errorType
     this.failure = failure
     this.authState = authState
+    this.denialReason = denialReason
   }
 }
 
@@ -100,6 +104,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
           ? nested.error_type
           : undefined
     const failure = parseFailure(payload.failure) || parseFailure(nested?.failure)
+    const reason = payload.denial_reason || nested?.denial_reason
     throw new ApiError(
       failure
         ? publicFailureMessage(failure)
@@ -109,6 +114,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       failure,
       AUTH_STATES.has(String((payload as {state?: unknown}).state))
         ? (payload as {state: AuthState}).state : undefined,
+      reason==='test_scope_missing' || reason==='cloud_execution_blocked' ? reason : undefined,
     )
   }
 

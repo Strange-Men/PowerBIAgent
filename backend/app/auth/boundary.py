@@ -15,6 +15,14 @@ UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 def failure_response(error: AuthFailure):
     failure = map_public_failure(terminal_state="auth_failed", stage="auth", error_type=error.code)
+    if error.denial_reason:
+        return JSONResponse(status_code=error.status, content={
+            'failure': failure.model_dump(mode='json'), 'denial_reason': error.denial_reason,
+        }, headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
+    if error.status >= 500:
+        return JSONResponse(status_code=error.status, content={
+            'failure': failure.model_dump(mode='json'),
+        }, headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
     state = {"AUTH_REQUIRED": "SIGNED_OUT", "AUTH_EXPIRED": "SESSION_EXPIRED",
              "AUTH_FORBIDDEN": "AUTH_ERROR", "AUTH_CONSENT_REQUIRED": "CONSENT_REQUIRED"}[error.code]
     return JSONResponse(status_code=error.status, content={
@@ -62,6 +70,8 @@ class AuthBoundaryMiddleware(BaseHTTPMiddleware):
                     cloud = getattr(request.app.state, "cloud_workspace_service", None)
                     if cloud is not None: await cloud.prune()
         except AuthFailure as error:
+            logging.getLogger(__name__).info('auth_boundary status=%d category=%s denial_reason=%s',
+                error.status, error.code, error.denial_reason or 'none')
             response = failure_response(error)
         response.headers["Cache-Control"] = "no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
