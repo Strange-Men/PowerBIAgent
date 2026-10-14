@@ -10,6 +10,7 @@ from backend.app.memory.models import RuntimeDataMode
 from backend.app.report.executive import ExecutiveSalesReportRenderer
 from backend.app.report.fixed import SalesReportRenderer
 from backend.app.report.registry import build_report_dispatcher
+from backend.app.application.cloud_product_runtime import require_cloud_business_data
 
 
 class _SelectionLease:
@@ -29,6 +30,21 @@ class _SelectionLease:
         return record
 
 
+class _ResourceLease(_SelectionLease):
+    """Reuse the adapter's current access witness at each storage boundary."""
+    def __init__(self,*args,adapter,binding):
+        super().__init__(*args)
+        self._adapter,self._binding=adapter,binding
+
+    def require_session(self,sid):
+        record=super().require_session(sid)
+        self._adapter.assert_session_binding(self._auth,sid,self._principal)
+        if self._adapter.bound_resource_identity(self._binding.model_key)!=(
+                str(self._binding.workspace_id),str(self._binding.model_id)):
+            raise AuthFailure('AUTH_FORBIDDEN',403)
+        return record
+
+
 class _NativeCloudTurnService(LLMTurnService):
     """Enforce Cloud policy even for direct server-side embedding.
 
@@ -44,6 +60,7 @@ class _NativeCloudTurnService(LLMTurnService):
         lease = self._cloud_lease
         lease.require_session(lease._sid)
         lease._workspace.require_execution(lease._sid, lease._principal)
+        require_cloud_business_data(lease._workspace,lease._sid,lease._principal)
         result = await super().execute(*args, **kwargs)
         lease.require_session(lease._sid)
         return result
@@ -61,6 +78,7 @@ class PreparedCloudProduct:
         lease = self._lease
         lease.require_session(lease._sid)
         lease._workspace.require_execution(lease._sid, lease._principal)
+        require_cloud_business_data(lease._workspace,lease._sid,lease._principal)
         result = await self.turn_service.execute(message,
             conversation_id=self.conversation_id, request_id=request_id,
             semantic_model_key=self.semantic_model_key, llm_profile_key=llm_profile_key,
@@ -89,6 +107,7 @@ class CloudProductServiceFactory:
         # projection. Owner identity alone cannot authorize replay of BI facts.
         if self._test_policy.enabled: raise AuthFailure('AUTH_FORBIDDEN', 403)
         self._workspace.require_business_access(sid,principal)
+        require_cloud_business_data(self._workspace,sid,principal)
         # Past resources are owner-scoped; viewing does not select a model or
         # restore business Memory. Storage is still explicitly supplied.
         self._validate_identity(sid, principal)
@@ -100,9 +119,15 @@ class CloudProductServiceFactory:
         if not restores_selection: lease.require_session(sid)
         return result
 
-    async def list_history(self, sid, principal, *, limit, cursor=None):
+    async def list_history(self, sid, principal, *, limit, cursor=None, status='active', query=None):
         async def read(repos):
-            page=await repos.history_service.list_recent(self._mode(sid,principal),limit=limit,cursor=cursor)
+            mode=self._mode(sid,principal)
+            if query is not None:
+                page=await repos.history_service.search(mode,query=query,limit=limit,cursor=cursor)
+            elif status=='archived':
+                page=await repos.history_service.list_archived(mode,limit=limit,cursor=cursor)
+            else:
+                page=await repos.history_service.list_recent(mode,limit=limit,cursor=cursor)
             for item in page.items: await self._authorize(repos,sid,principal,item.conversation_id)
             return page
         return await self._read_owned(sid,principal,read)
@@ -156,9 +181,9 @@ class CloudProductServiceFactory:
                 expected_generation=expected_generation)
         return await self._read_owned(sid,principal,restore,restores_selection=True)
 
-    async def list_reports(self,sid,principal,*,limit,cursor=None):
+    async def list_reports(self,sid,principal,*,limit,cursor=None,status='active'):
         async def read(repos):
-            page=await repos.history_service.list_managed_reports(self._mode(sid,principal),status='active',limit=limit,cursor=cursor)
+            page=await repos.history_service.list_managed_reports(self._mode(sid,principal),status=status,limit=limit,cursor=cursor)
             for item in page.items:
                 binding=await self._authorize(repos,sid,principal,item.conversation_id)
                 artifact=await repos.report_metadata.get(item.report_id)
@@ -167,6 +192,56 @@ class CloudProductServiceFactory:
                     raise AuthFailure('AUTH_FORBIDDEN',403)
             return page
         return await self._read_owned(sid,principal,read)
+
+    async def mutate_resource(self,sid,principal,kind,resource_id,action,*,expected_generation,title=None):
+        """Explicit Resource API only; reuse the original durable lifecycle.
+
+        Preparation uses auth-only repositories to prove the target. Writes
+        use a fresh selection lease, so a prior chat cannot commit after a
+        destructive operation invalidates its generation.
+        """
+        from backend.app.application.cloud_workspace_service import CloudSelectionConflict
+        from backend.app.report.resources import ReportNotFoundError
+        if kind not in {'history','reports'} or action not in {'rename','archive','unarchive','delete'}:
+            raise AuthFailure('AUTH_FORBIDDEN',403)
+        async def mutate(repos):
+            if self._workspace.status(sid,principal).generation!=expected_generation:
+                raise CloudSelectionConflict()
+            artifact=None
+            conversation_id=resource_id
+            if kind=='reports':
+                artifact=await (repos.report_metadata.get_for_delete(resource_id) if action=='delete'
+                    else repos.report_metadata.get(resource_id))
+                if artifact is None: raise ReportNotFoundError('report_not_found')
+                conversation_id=artifact.conversation_id
+            binding=await self._authorize(repos,sid,principal,conversation_id)
+            if artifact is not None and (artifact.semantic_model_key,artifact.schema_fingerprint,artifact.source_mode)!=(
+                    binding.model_key,binding.schema_fingerprint,binding.source_mode):
+                raise AuthFailure('AUTH_FORBIDDEN',403)
+            current=self._workspace.status(sid,principal)
+            if current.generation!=expected_generation: raise CloudSelectionConflict()
+            if kind=='history' and action in {'archive','delete'} and current.conversation_id==resource_id:
+                current=await self._workspace.new_chat(sid,principal,expected_generation)
+            adapter=self._workspace._context(sid,principal).adapter
+            lease=_ResourceLease(self._auth,self._workspace,sid,principal,current,adapter=adapter,binding=binding)
+            writable=await self._repositories.for_session(lease,sid,principal)
+            lease.require_session(sid)
+            service=writable.history_service if kind=='history' else writable.reports
+            method='restore' if action=='unarchive' else action
+            if kind=='history':
+                args=(self._mode(sid,principal),resource_id)
+            else:
+                args=(resource_id,)
+                if action in {'archive','unarchive'}: args+=(self._mode(sid,principal).value,)
+            if action=='rename': args+=(title,)
+            result=await getattr(service,method)(*args)
+            if kind=='history' and action=='delete': await writable.cloud_bindings.delete(resource_id)
+            lease.require_session(sid)
+            # Current access, not history ownership, authorizes the response.
+            if action!='delete': await self._authorize(writable,sid,principal,conversation_id)
+            lease.require_session(sid)
+            return {'resource':result,'workspace_status':self._workspace.status(sid,principal)}
+        return await self._read_owned(sid,principal,mutate,restores_selection=True)
 
     async def prepare(self, sid, principal):
         # No real schema/facts reach the generic external Provider or storage

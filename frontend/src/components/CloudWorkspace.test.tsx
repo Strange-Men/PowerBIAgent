@@ -10,6 +10,7 @@ vi.mock('../api/client', async importOriginal => ({
   readCloudProfiles: vi.fn(), readCloudTemplates: vi.fn(),
   sendCloudChat:vi.fn(),readCloudHistory:vi.fn(),readCloudReports:vi.fn(),readCloudConversation:vi.fn(),
   newCloudChat:vi.fn(),restoreCloudChat:vi.fn(),
+  listCloudConversations:vi.fn(),listCloudReports:vi.fn(),mutateCloudResource:vi.fn(),
 }))
 const status: CloudWorkspaceStatus = {selected_model_key:null,conversation_id:null,generation:0,
   execution_ready:false,blockers:['numeric_contract','query_completeness']}
@@ -42,6 +43,26 @@ describe('Synthetic Cloud product wiring',()=>{
     fireEvent.change(input,{target:{value:'合成销售问题'}})
     fireEvent.click(screen.getByRole('button',{name:'发送'}))
   }
+  it('discards Settings pages after a newer permission refusal',async()=>{
+    enable()
+    let resolveOld!: (page: never)=>void
+    vi.mocked(api.listCloudConversations).mockImplementationOnce(()=>new Promise(resolve=>{resolveOld=resolve}))
+      .mockResolvedValue({items:[],next_cursor:null,total_count:0} as never)
+    vi.mocked(api.listCloudReports).mockResolvedValue({items:[],next_cursor:null,total_count:0} as never)
+    render(<CloudWorkspace session={session} account={account} onAuthInvalid={vi.fn()} />)
+    await screen.findByText('模型甲')
+    fireEvent.click(screen.getByRole('button',{name:'Synthetic A'}))
+    fireEvent.click(screen.getByRole('menuitem',{name:'设置'}))
+    fireEvent.click(await screen.findByRole('button',{name:'对话管理'}))
+    await waitFor(()=>expect(api.listCloudConversations).toHaveBeenCalled())
+    vi.mocked(api.readCloudCatalog).mockRejectedValueOnce(new api.ApiError('refused',403))
+    fireEvent.click(screen.getByRole('button',{name:'关闭设置'}))
+    fireEvent.click(screen.getByRole('button',{name:'打开数据与报表选项'}))
+    fireEvent.click(await screen.findByRole('button',{name:'刷新数据模型'}))
+    await waitFor(()=>expect(screen.queryByRole('button',{name:'搜索聊天'})).not.toBeInTheDocument())
+    await act(async()=>resolveOld({items:[{...summary,title:'旧Principal私有历史'}],next_cursor:null,total_count:1} as never))
+    expect(screen.queryByText('旧Principal私有历史')).not.toBeInTheDocument()
+  })
   it('sends only generation and bounded request fields, displays protected report links',async()=>{
     enable()
     vi.mocked(api.sendCloudChat).mockImplementation(async body=>({request_id:body.request_id,conversation_id:ready.conversation_id,

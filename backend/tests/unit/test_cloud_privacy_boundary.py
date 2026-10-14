@@ -74,3 +74,31 @@ def test_native_cloud_business_paths_cannot_disclose_to_configured_external_prov
         assert app.state.cloud_product_services is not None
         assert app.state.cloud_product_services._repositories._engine is None
     generate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execution_gate_or_client_source_cannot_grant_enterprise_retention(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from backend.app.application.cloud_product_runtime import DeferredCloudRepositories,require_cloud_business_data
+    from backend.app.auth.models import AuthFailure
+    from backend.app.memory.models import RuntimeDataMode
+    from backend.app.persistence import database
+    engine=Mock(side_effect=AssertionError('enterprise persistence must not open'))
+    monkeypatch.setattr(database,'create_engine',engine)
+    workspace=SimpleNamespace(require_business_access=lambda *args:None,
+        data_mode=lambda *args:RuntimeDataMode.REAL)
+    with pytest.raises(AuthFailure): require_cloud_business_data(workspace,'synthetic',object())
+    repositories=DeferredCloudRepositories(object(),workspace,config(powerbi_mode='fabric_iq',persistence_backend='sqlite'))
+    with pytest.raises(AuthFailure): await repositories.for_session(object(),'synthetic',object())
+    engine.assert_not_called()
+
+
+def test_client_disclosure_synthetic_and_retention_flags_are_never_grants():
+    from backend.app.api.cloud_routes import CloudChatRequest,GenerationRequest
+    from pydantic import ValidationError
+    for field in ('synthetic_only','external_llm_approved','retention_approved','source_mode'):
+        with pytest.raises(ValidationError):
+            CloudChatRequest.model_validate({'message':'SYNTHETIC','request_id':'safe',
+                'expected_generation':0,field:True})
+        with pytest.raises(ValidationError): GenerationRequest.model_validate({'expected_generation':0,field:True})

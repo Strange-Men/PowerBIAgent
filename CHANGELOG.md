@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## M6.4_FIX（2026-10-14）
+
+Cloud资源API复用现有ConversationHistoryService/PrincipalReportRepository与Settings，补齐搜索、
+分页、完整恢复、重命名、归档/恢复/删除及批量；owner/exact binding租约保护撤权与迟到写入，
+报表独立删除tombstone及中断重试保持。服务端拒绝未经许可的native企业执行/披露/留存，不以Secret redaction冒充DLP。
+完整Synthetic事实产品链及两固定模板、八Shape合成验收；Arrow仅技术候选，生产仍IQ，无迁移。
+FIX COMPLETE以自身全量CI/Remote Audit/clean生效；M6.4 FINAL NOT READY；Settings.version=M6.3；M5 Core冻结。
+
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`
 
 ## [M6.3] — 2026-10-10（多用户归属与权限隔离）

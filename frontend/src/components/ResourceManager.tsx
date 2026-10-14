@@ -43,6 +43,7 @@ type SettingsSection =
 
 interface ResourceManagerProps {
   account?: AccountActions
+  resourceLoaders?: ResourcePageLoaders
   runtimeMode: RuntimeMode
   onClose: () => void
   onRenameConversation: (
@@ -77,6 +78,11 @@ interface PageResponse<T> {
   items: T[]
   next_cursor: string | null
   total_count: number
+}
+
+export interface ResourcePageLoaders {
+  conversations: (status: 'active' | 'archived', cursor?: string) => Promise<PageResponse<ConversationSummary>>
+  reports: (status: 'active' | 'archived', cursor?: string) => Promise<PageResponse<ConversationReportItem>>
 }
 
 interface PagedState<T> {
@@ -227,7 +233,7 @@ function removeSucceeded(current: Set<string>, result: BatchOperationResult) {
 }
 
 export function ResourceManager(props: ResourceManagerProps) {
-  if (!props.account) return <LocalResourceManager {...props} />
+  if (!props.account || props.resourceLoaders) return <LocalResourceManager {...props} />
   const {account, onClose} = props
   return <SettingsFrame onClose={onClose}>
       <CloudAccountSettings account={account} />
@@ -235,6 +241,8 @@ export function ResourceManager(props: ResourceManagerProps) {
 }
 
 function LocalResourceManager({
+  account,
+  resourceLoaders,
   runtimeMode,
   onClose,
   onRenameConversation,
@@ -263,23 +271,23 @@ function LocalResourceManager({
 
   const loadActiveConversations = useCallback(
     (cursor?: string) =>
-      listRecentConversations(runtimeMode, SETTINGS_PAGE_SIZE, cursor),
-    [runtimeMode],
+      resourceLoaders ? resourceLoaders.conversations('active',cursor) : listRecentConversations(runtimeMode, SETTINGS_PAGE_SIZE, cursor),
+    [runtimeMode,resourceLoaders],
   )
   const loadArchivedConversations = useCallback(
     (cursor?: string) =>
-      listArchivedConversations(runtimeMode, SETTINGS_PAGE_SIZE, cursor),
-    [runtimeMode],
+      resourceLoaders ? resourceLoaders.conversations('archived',cursor) : listArchivedConversations(runtimeMode, SETTINGS_PAGE_SIZE, cursor),
+    [runtimeMode,resourceLoaders],
   )
   const loadActiveReports = useCallback(
     (cursor?: string) =>
-      listManagedReports(runtimeMode, 'active', SETTINGS_PAGE_SIZE, cursor),
-    [runtimeMode],
+      resourceLoaders ? resourceLoaders.reports('active',cursor) : listManagedReports(runtimeMode, 'active', SETTINGS_PAGE_SIZE, cursor),
+    [runtimeMode,resourceLoaders],
   )
   const loadArchivedReports = useCallback(
     (cursor?: string) =>
-      listManagedReports(runtimeMode, 'archived', SETTINGS_PAGE_SIZE, cursor),
-    [runtimeMode],
+      resourceLoaders ? resourceLoaders.reports('archived',cursor) : listManagedReports(runtimeMode, 'archived', SETTINGS_PAGE_SIZE, cursor),
+    [runtimeMode,resourceLoaders],
   )
 
   const activeConversations = usePagedResources(
@@ -382,7 +390,7 @@ function LocalResourceManager({
 
           <div className="settings-content">
             {section === 'general' ? (
-              <SettingsIntro title="常规" text="资源管理使用独立分页，不影响左侧栏的最近记录。" />
+              account ? <CloudAccountSettings account={account} /> : <SettingsIntro title="常规" text="资源管理使用独立分页，不影响左侧栏的最近记录。" />
             ) : null}
 
             {section === 'conversations' ? (
@@ -408,6 +416,8 @@ function LocalResourceManager({
                         activeConversations.removeIds(result.succeededIds)
                         setActiveConversationSelected((current) => removeSucceeded(current, result))
                         void archivedConversations.reload()
+                        void activeReports.reload()
+                        void archivedReports.reload()
                       })
                     }}><Archive size={15} />批量归档</button>
                     <button className="danger-action" type="button" disabled={busy || activeConversationSelected.size === 0} onClick={() => {
@@ -493,6 +503,8 @@ function LocalResourceManager({
                           archivedConversations.removeIds(result.succeededIds)
                           setArchivedConversationSelected((current) => removeSucceeded(current, result))
                           void activeConversations.reload()
+                          void activeReports.reload()
+                          void archivedReports.reload()
                         })
                       }}><RotateCcw size={15} />批量恢复</button>
                       <button className="danger-action" type="button" disabled={busy || archivedConversationSelected.size === 0} onClick={() => {
@@ -556,10 +568,10 @@ function LocalResourceManager({
             ) : null}
 
             {section === 'models' ? (
-              <SettingsIntro title="数据模型" text={`当前资源 namespace：${runtimeMode}。数据模型仍由后端安全发现接口管理。`} />
+              account ? <CloudAccountSettings account={account} /> : <SettingsIntro title="数据模型" text={`当前资源 namespace：${runtimeMode}。数据模型仍由后端安全发现接口管理。`} />
             ) : null}
             {section === 'about' ? (
-              <SettingsIntro title="关于" text="PowerBIAgent M5.4.1 — 本地 Power BI 数据分析 Agent。" />
+              <SettingsIntro title="关于" text={account ? 'PowerBIAgent — Power BI 云端数据分析。' : 'PowerBIAgent M5.4.1 — 本地 Power BI 数据分析 Agent。'} />
             ) : null}
           </div>
         </div>

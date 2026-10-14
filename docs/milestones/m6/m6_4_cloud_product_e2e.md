@@ -1,4 +1,8 @@
-# M6.4 — Cloud Product E2E（开发中，未发布）
+# M6.4 — Cloud Product E2E（阶段已发布，FINAL NOT READY）
+
+当前2026-10-14独立[M6.4_FIX](m6_4_fix_engineering_closure.md)修复资源/隐私拒绝/合成链/文档偏移，
+自身CI与Remote Audit生效后工程COMPLETE；不等于M6.4 FINAL。Settings.version=M6.3，native IQ fail closed。
+当前技术决策见[有界比较](m6_4_solo_contract_decision.md)。下文保留各旧轮原始记录，均属历史时间状态。
 
 日期：2026-10-13。用户已批准原 M6.4 scope；Settings.version 仍为 M6.3。
 M5 FINAL / Frozen Core 继续有效。此文件是本轮设计与分层证据，不替代 07/08/09。

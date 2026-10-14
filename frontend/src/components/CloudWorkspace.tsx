@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, newCloudChat, readCloudCatalog, readCloudConversation, readCloudHistory, readCloudProfiles, readCloudReports, readCloudStatus, readCloudTemplates, restoreCloudChat, selectCloudModel, sendCloudChat } from '../api/client'
 import { chatResponseToMessage, historyItemToMessages } from '../api/adapters'
 import type { CloudCatalog, CloudWorkspaceStatus } from '../cloudTypes'
@@ -7,9 +7,8 @@ import { Sidebar } from './Sidebar'
 import { Composer } from './Composer'
 import { ConversationView } from './ConversationView'
 import { publicFailureMessage } from '../failure'
-
-const unavailable=async () => { throw new Error('该操作暂不可用。') }
-const emptyBatch=async () => ({succeededIds:[],failed:[]})
+import { listCloudConversations, listCloudReports, mutateCloudResource, type CloudResourceAction } from '../api/client'
+import type { BatchOperationResult } from '../types'
 
 export function CloudWorkspace({ session, onAuthInvalid, account, collapsed=false, onToggle=() => {} }: {
   session: AuthSession; onAuthInvalid: () => void; account?: AccountActions; collapsed?: boolean; onToggle?: () => void
@@ -45,15 +44,87 @@ export function CloudWorkspace({ session, onAuthInvalid, account, collapsed=fals
   const loadResources=useCallback(async (controller: AbortController,current: number) => {
     const [history,artifacts]=await Promise.all([readCloudHistory(controller.signal),readCloudReports(controller.signal)])
     if (current!==generation.current) return
-    setRecent(history.items); setReports(artifacts.items)
+    setRecent(history.items.slice(0,8)); setReports(artifacts.items.slice(0,8))
     return history.items
   },[])
 
   const failure = useCallback((caught: unknown, selection: boolean) => {
+    if (caught instanceof ApiError && [401,403].includes(caught.status)) {
+      generation.current++; active.current?.abort()
+      setMessages([]); setRecent([]); setReports([]); setStatus(null); setSending(false); setRestored(false)
+      setTemplates([]); setTemplate(null)
+      setLoading(false); setTemplatesLoading(false)
+    }
     if (caught instanceof ApiError && caught.status === 401) onAuthInvalid()
     setError(caught instanceof ApiError && caught.failure ? publicFailureMessage(caught.failure)
       : selection ? '当前模型暂不可访问，请刷新目录后重新选择。' : '暂时无法加载数据模型，请重试。')
   }, [onAuthInvalid])
+
+  const resourceLoaders=useMemo(()=>({
+    conversations:async (resourceStatus: 'active' | 'archived',cursor?: string) => {
+      const current=generation.current
+      try {
+        const page=await listCloudConversations(resourceStatus,20,cursor)
+        if (current!==generation.current) throw new ApiError('资源请求已失效。',409)
+        return page
+      } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
+    },
+    reports:async (resourceStatus: 'active' | 'archived',cursor?: string) => {
+      const current=generation.current
+      try {
+        const page=await listCloudReports(resourceStatus,20,cursor)
+        if (current!==generation.current) throw new ApiError('资源请求已失效。',409)
+        return page
+      } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
+    },
+  }),[failure])
+
+  const search=async (query: string) => {
+    const current=generation.current
+    try {
+      const page=await listCloudConversations('active',50,undefined,query)
+      if (current!==generation.current) throw new ApiError('搜索请求已失效。',409)
+      return page.items
+    } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
+  }
+
+  const mutate=async (kind: 'history' | 'reports',id: string,action: CloudResourceAction,title?: string) => {
+    if (!session.csrf_token) throw new ApiError('请重新登录。',401)
+    if (sending) throw new ApiError('对话仍在分析，请稍后再管理资源。',409)
+    const {controller,current}=begin()
+    try {
+      const result=await mutateCloudResource(kind,id,action,serverGeneration.current,session.csrf_token,title,controller.signal)
+      if (current!==generation.current) throw new ApiError('资源请求已失效。',409)
+      const next=result.workspace_status
+      serverGeneration.current=next.generation
+      if (next.conversation_id!==status?.conversation_id) clearConversation()
+      setStatus(next)
+      // Reread the current transcript to project report tombstones and titles.
+      if (next.conversation_id && next.conversation_id===status?.conversation_id && messages.length) {
+        const page=await readCloudConversation(next.conversation_id,controller.signal)
+        if (current!==generation.current) throw new ApiError('资源请求已失效。',409)
+        setMessages(page.items.flatMap(historyItemToMessages))
+      }
+      await loadResources(controller,current)
+    } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
+  }
+
+  const bulk=async (kind: 'history' | 'reports',ids: string[],action: CloudResourceAction): Promise<BatchOperationResult> => {
+    const result: BatchOperationResult={succeededIds:[],failed:[]}
+    for (const id of ids) {
+      try { await mutate(kind,id,action); result.succeededIds.push(id) }
+      catch (caught) {
+        result.failed.push({id,reason:'操作未完成，请重新加载资源。'})
+        if (caught instanceof ApiError && [401,403,409].includes(caught.status)) {
+          for (const remaining of ids.slice(result.succeededIds.length+result.failed.length)) {
+            result.failed.push({id:remaining,reason:'资源授权已失效，请重新加载。'})
+          }
+          break
+        }
+      }
+    }
+    return result
+  }
 
   const loadTemplates = useCallback(async (controller: AbortController, current: number) => {
     try {
@@ -245,14 +316,22 @@ export function CloudWorkspace({ session, onAuthInvalid, account, collapsed=fals
   </>
   if (!account) return content
   return <div className="app-shell">
-    <Sidebar account={account} collapsed={collapsed} onToggle={onToggle} runtimeMode="real"
+    <Sidebar key={status?.execution_ready ? 'ready' : 'blocked'} account={account} collapsed={collapsed} onToggle={onToggle} runtimeMode="real"
+      resourceLoaders={status?.execution_ready ? resourceLoaders : undefined}
       cloudExecutionReady={Boolean(status?.execution_ready)} activeConversationId={status?.conversation_id || null}
       conversations={recent} reports={reports} error={null} onNewChat={()=>void changeConversation()}
-      onOpenConversation={item=>void changeConversation(item.conversation_id)} onSearch={unavailable}
-      onRename={unavailable} onArchive={unavailable} onRestore={unavailable} onDelete={unavailable}
-      onDeleteReport={unavailable} onArchiveReport={unavailable} onRenameReport={unavailable}
-      onBulkDeleteConversations={emptyBatch} onBulkArchiveConversations={emptyBatch} onBulkRestoreConversations={emptyBatch}
-      onBulkDeleteReports={emptyBatch} onBulkArchiveReports={emptyBatch} onBulkRestoreReports={emptyBatch} />
+      onOpenConversation={item=>void changeConversation(item.conversation_id)} onSearch={search}
+      onRename={(item,title)=>mutate('history',item.conversation_id,'rename',title)}
+      onArchive={item=>mutate('history',item.conversation_id,'archive')} onRestore={item=>mutate('history',item.conversation_id,'unarchive')}
+      onDelete={item=>mutate('history',item.conversation_id,'delete')}
+      onDeleteReport={item=>mutate('reports',item.report_id,'delete')} onArchiveReport={item=>mutate('reports',item.report_id,'archive')}
+      onRenameReport={(item,title)=>mutate('reports',item.report_id,'rename',title)}
+      onBulkDeleteConversations={items=>bulk('history',items.map(item=>item.conversation_id),'delete')}
+      onBulkArchiveConversations={items=>bulk('history',items.map(item=>item.conversation_id),'archive')}
+      onBulkRestoreConversations={items=>bulk('history',items.map(item=>item.conversation_id),'unarchive')}
+      onBulkDeleteReports={items=>bulk('reports',items.map(item=>item.report_id),'delete')}
+      onBulkArchiveReports={items=>bulk('reports',items.map(item=>item.report_id),'archive')}
+      onBulkRestoreReports={items=>bulk('reports',items.map(item=>item.report_id),'unarchive')} />
     <main className="chat-main">{content}</main>
   </div>
 }

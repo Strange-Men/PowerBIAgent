@@ -434,6 +434,17 @@ export const readCloudHistory = (signal?: AbortSignal) =>
   requestJson<ConversationListPage>('/api/v1/cloud/history', {signal})
 export const readCloudReports = (signal?: AbortSignal) =>
   requestJson<ReportResourcePage>('/api/v1/cloud/reports', {signal})
+export const listCloudConversations = (status: 'active' | 'archived', limit=20, cursor?: string, q?: string, signal?: AbortSignal) =>
+  requestJson<ConversationListPage>(`/api/v1/cloud/history?${queryString({status,limit,cursor,q})}`,{signal})
+export const listCloudReports = (status: ReportResourceStatus, limit=20, cursor?: string, signal?: AbortSignal) =>
+  requestJson<ReportResourcePage>(`/api/v1/cloud/reports?${queryString({status,limit,cursor})}`,{signal})
+export type CloudResourceAction = 'rename' | 'archive' | 'unarchive' | 'delete'
+export const mutateCloudResource = (kind: 'history' | 'reports', id: string, action: CloudResourceAction,
+  expectedGeneration: number, csrf: string, title?: string, signal?: AbortSignal) =>
+  requestJson<{workspace_status: CloudWorkspaceStatus}>(`/api/v1/cloud/${kind}/${encodeURIComponent(id)}${action==='delete'?'':'/'+action}`,{
+    method:action==='delete'?'DELETE':'POST',body:JSON.stringify({expected_generation:expectedGeneration,title}),
+    headers:{'X-CSRF-Token':csrf},signal,
+  })
 export async function readCloudConversation(id: string, signal?: AbortSignal): Promise<ConversationHistoryPage> {
   const items: ConversationHistoryPage['items']=[]
   let cursor: string | undefined
@@ -448,7 +459,6 @@ export async function readCloudConversation(id: string, signal?: AbortSignal): P
     cursor=page.next_cursor || undefined
     if (cursor && seen.has(cursor)) throw new ApiError('历史暂不可用，请重试。',503)
     if (cursor) seen.add(cursor)
-  } while (cursor && items.length<500)
-  if (cursor) throw new ApiError('历史暂不可用，请重试。',503)
+  } while (cursor)
   return {...first!,items,next_cursor:null}
 }

@@ -29,6 +29,19 @@ afterEach(() => {
 })
 
 describe('Cloud same-origin bounded product requests',()=>{
+  it('restores more than 500 history items through bounded pages',async()=>{
+    let page=0
+    const fetchMock=vi.fn().mockImplementation(()=>Promise.resolve(new Response(JSON.stringify({
+      conversation_id:'synthetic',items:Array.from({length:50},(_,i)=>({request_id:`${page}-${i}`})),
+      next_cursor:++page<11?`page-${page}`:null,
+    }),{status:200})))
+    vi.stubGlobal('fetch',fetchMock)
+    const controller=new AbortController()
+    const history=await readCloudConversation('synthetic',controller.signal)
+    expect(history.items).toHaveLength(550)
+    expect(fetchMock).toHaveBeenCalledTimes(11)
+    expect(fetchMock.mock.calls.every(call=>call[1].signal===controller.signal)).toBe(true)
+  })
   it('keeps CSRF, abort and server generation without client ownership fields',async()=>{
     const fetchMock=vi.fn().mockResolvedValue(new Response('{}',{status:200}))
     vi.stubGlobal('fetch',fetchMock)

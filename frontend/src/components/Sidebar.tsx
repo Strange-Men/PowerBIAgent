@@ -28,13 +28,14 @@ import type {
   AccountActions,
 } from '../types'
 import { FloatingActionMenu } from './FloatingActionMenu'
-import { ResourceManager } from './ResourceManager'
+import { ResourceManager, type ResourcePageLoaders } from './ResourceManager'
 
 type ActionMenu =
   | { anchor: HTMLButtonElement; id: string; type: 'conversation' }
   | { anchor: HTMLButtonElement; id: string; type: 'report' }
 
 interface SidebarProps {
+  resourceLoaders?: ResourcePageLoaders
   cloudExecutionReady?: boolean
   account?: AccountActions
   collapsed: boolean
@@ -97,6 +98,7 @@ function SidebarLeadingIcon({ status }: { status: ConversationResourceStatus }) 
 }
 
 export function Sidebar({
+  resourceLoaders,
   cloudExecutionReady=false,
   account,
   collapsed,
@@ -262,7 +264,7 @@ export function Sidebar({
                 <small className="failed-label">失败</small>
               ) : null}
             </button>
-            {!account ? <button
+            {!account || resourceLoaders ? <button
               className="conversation-actions-trigger"
               type="button"
               aria-label={`管理对话：${title}`}
@@ -310,10 +312,10 @@ export function Sidebar({
 
       {!account || cloudExecutionReady ? <nav className="sidebar-primary" aria-label="主要导航">
         <button type="button" onClick={onNewChat} title="新聊天"><Plus size={20} /><span>新聊天</span></button>
-        {!account ? <button type="button" onClick={() => { if (collapsed) onToggle(); setSearchOpen(true) }} title="搜索聊天"><Search size={19} /><span>搜索聊天</span></button> : null}
+        {!account || resourceLoaders ? <button type="button" onClick={() => { if (collapsed) onToggle(); setSearchOpen(true) }} title="搜索聊天"><Search size={19} /><span>搜索聊天</span></button> : null}
       </nav> : null}
 
-      {!collapsed && searchOpen ? (
+      {!collapsed && searchOpen && (!account || cloudExecutionReady) ? (
         <section className="sidebar-search" aria-label="搜索聊天">
           <div className="sidebar-search-heading"><strong>搜索聊天</strong><button type="button" aria-label="关闭搜索" onClick={() => setSearchOpen(false)}><X size={16} /></button></div>
           <form onSubmit={(event) => { event.preventDefault(); void runSearch() }}>
@@ -334,7 +336,7 @@ export function Sidebar({
           {reportsOpen && reports.length === 0 ? <p className="sidebar-state">暂无最近报表</p> : reportsOpen ? reports.map((report) => isUsableReport(report) ? (
             <div className="sidebar-item-row" data-report-actions key={report.report_id}>
               <a className="sidebar-item" href={report.view_reference} target="_blank" rel="noreferrer" title={`查看${report.display_title || '销售分析报告'}`}><FileText size={17} /><span>{report.display_title || '销售分析报告'}</span></a>
-              {!account ? <button className="conversation-actions-trigger" type="button" aria-label={`管理报表：${report.display_title || '销售分析报告'}`} aria-haspopup="menu" aria-expanded={actionMenu?.type === 'report' && actionMenu.id === report.report_id} onClick={(event) => {
+              {!account || resourceLoaders ? <button className="conversation-actions-trigger" type="button" aria-label={`管理报表：${report.display_title || '销售分析报告'}`} aria-haspopup="menu" aria-expanded={actionMenu?.type === 'report' && actionMenu.id === report.report_id} onClick={(event) => {
                 const anchor = event.currentTarget
                 setActionMenu((current) => (
                   current?.type === 'report' && current.id === report.report_id
@@ -377,7 +379,7 @@ export function Sidebar({
           : <button className="account-card" type="button" title={account?.session.display_name || 'PowerBIAgent 用户'} aria-label={account?.session.display_name || 'PowerBIAgent 用户'} aria-haspopup="menu" aria-expanded={userMenuOpen} onClick={() => { if (collapsed) onToggle(); setUserMenuOpen((open) => !open) }}><span className="account-avatar">{account ? account.session.display_name?.slice(0, 2) : <UserRound size={16} />}</span><span className="account-copy"><strong>{account?.session.display_name || 'PowerBIAgent'}</strong><small>{account ? account.session.preferred_username : '内部用户'}</small></span></button>}
       </div>
     </aside>
-    {resourceManagerOpen ? <ResourceManager account={account} runtimeMode={runtimeMode} onClose={() => setResourceManagerOpen(false)} onRenameConversation={onRename} onBulkDeleteConversations={onBulkDeleteConversations} onBulkArchiveConversations={onBulkArchiveConversations} onBulkRestoreConversations={onBulkRestoreConversations} onBulkDeleteReports={onBulkDeleteReports} onBulkArchiveReports={onBulkArchiveReports} onBulkRestoreReports={onBulkRestoreReports} onRenameReport={onRenameReport} /> : null}
+    {resourceManagerOpen ? <ResourceManager account={account} resourceLoaders={resourceLoaders} runtimeMode={runtimeMode} onClose={() => setResourceManagerOpen(false)} onRenameConversation={onRename} onBulkDeleteConversations={onBulkDeleteConversations} onBulkArchiveConversations={onBulkArchiveConversations} onBulkRestoreConversations={onBulkRestoreConversations} onBulkDeleteReports={onBulkDeleteReports} onBulkArchiveReports={onBulkArchiveReports} onBulkRestoreReports={onBulkRestoreReports} onRenameReport={onRenameReport} /> : null}
     </>
   )
 }

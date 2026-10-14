@@ -9,7 +9,8 @@
 - 当前版本：**M6.3**（多用户归属与权限隔离）。
 - M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；M5.10.8 与 FIX COMPLETE。
 - M6.1 COMPLETE（以自身exact-SHA CI与remote audit生效）；ADR-020 ACCEPTED；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY。
-- M6.3安全封板按自身exact-SHA CI与remote audit生效；Settings.version=M6.3。数值P1及下一阶段交接见07/08/09；不得自动开始M6.4或开放ENTRA产品API。
+- M6.0 COMPLETE；独立M6.4_FIX工程修复按自身CI/Audit/clean生效；M6.4 FINAL NOT READY；Settings.version=M6.3。
+  当前状态与未决门槛见07/08/09；不得自动扩大FIX、启动M6.5/M6.6或开放native企业执行/披露/留存。
   每个 implementation patch 必须有用户明确批准的具体 scope、fresh Cold Start、Microsoft 官方
   能力重新验证与先完成的 P0 security boundary 设计/验证；未满足前不得直接写 M6 Cloud code。
 - 07 是当前状态，08 是当前/未来路线，09 是唯一开发交接；根入口不重复保存浮动 SHA/CI。
@@ -96,4 +97,4 @@ failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner 
 
 生产级后端风险优先于功能数量；每个M6 implementation按09重新验证Microsoft官方能力与适用P0边界。ADR-020接受Cloud消费/目录设计，ADR-006已SUPERSEDED。Token只允许Auth/Transport；tenant/principal/ownership与RLS/OLS必须先证明。
 
-*最后更新：2026-10-10 | M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以07/08/09及自身exact-SHA CI为准*
+*最后更新：2026-10-14 | M6.0–M6.2 COMPLETE（保留M6.2数值/完整性限制）；M6.3 Security COMPLETE；M6.4_FIX按自身CI/Audit生效；M6.4 FINAL NOT READY；M5 FINAL/FROZEN；当前状态以07/08/09及自身exact-SHA CI为准*

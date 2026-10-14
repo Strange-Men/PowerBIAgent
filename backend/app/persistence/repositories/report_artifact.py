@@ -115,6 +115,10 @@ class ReportArtifactRepository:
         """Check whether metadata exists for this report_id."""
         raise NotImplementedError
 
+    async def get_for_delete(self, report_id: str) -> ReportArtifact:
+        """Read a deletion witness without mutating metadata or exposing HTML."""
+        return await self.get(report_id)
+
     async def begin_delete(self, report_id: str) -> ReportArtifact:
         """Persist delete intent and hide metadata in one transaction."""
         raise NotImplementedError
@@ -532,6 +536,19 @@ class SQLiteReportArtifactRepository(ReportArtifactRepository):
             result = await session.execute(stmt)
             return result.scalar_one_or_none() is not None
 
+    async def get_for_delete(self, report_id: str) -> ReportArtifact:
+        try:
+            return await self.get(report_id)
+        except ReportNotFoundError:
+            async with self._session_factory() as session:
+                intent = (await session.execute(select(ReportDeleteIntentModel).where(
+                    ReportDeleteIntentModel.owner_id == self._owner_id,
+                    ReportDeleteIntentModel.report_id == report_id,
+                ))).scalar_one_or_none()
+                if intent is None:
+                    raise ReportNotFoundError("report_not_found")
+                return _delete_payload_to_artifact(intent.payload_json)
+
     async def begin_delete(self, report_id: str) -> ReportArtifact:
         async with self._session_factory() as session:
             async with session.begin():
@@ -764,6 +781,13 @@ class InMemoryReportArtifactRepository(ReportArtifactRepository):
     async def exists(self, report_id: str) -> bool:
         async with self._lock:
             return report_id in self._items
+
+    async def get_for_delete(self, report_id: str) -> ReportArtifact:
+        async with self._lock:
+            artifact = self._items.get(report_id) or self._delete_intents.get(report_id)
+            if artifact is None:
+                raise ReportNotFoundError("report_not_found")
+            return artifact
 
     async def begin_delete(self, report_id: str) -> ReportArtifact:
         async with self._lock:

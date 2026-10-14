@@ -17,6 +17,11 @@ M0—M4 已封板；M5.10.8 与 FIX COMPLETE。M5 小阶段历史移交 CHANGELO
 旧路线原文见 [Historical snapshot](archive/m5_pre_final_08_development_roadmap.md)。
 M6 每个 implementation patch 必须另行获批，并满足 09 的官方能力与 P0 安全前置条件。
 
+2026-10-14独立M6.4_FIX只修既有内部偏移，不新增正式里程碑，不改变下文M6.5–M9目标。
+资源管理/企业数据服务端拒绝/合成E2E/技术决策见[FIX](milestones/m6/m6_4_fix_engineering_closure.md)；
+COMPLETE按自身CI/Remote Audit/clean生效。M6.0–M6.2 COMPLETE（M6.2保留数值/完整性限制），
+M6.3 Security COMPLETE；M6.4 FINAL NOT READY，M6.5/M6.6未启动。Settings.version=M6.3。
+
 ## M5 — Core Analysis Kernel
 
 TurnPipeline、QuestionRouter、SemanticFrame、Grounding、StateTransition、CanonicalQueryPlan、
@@ -61,7 +66,7 @@ refresh API 不得塞入 execute_dax adapter。Control Plane/Catalog仍为后续
 M6.4本轮新增测试安全顺序：先原始测试Workspace/model/report服务器allowlist与隐私P0，再产品E2E；仅测试环境收窄，正式产品保留current-principal Catalog。缺配置/授权fail closed，合成开发继续；不自动进入M6.4.1、M6.5、i18n或Azure。
 
 2026-10-13用户授权现有M6.4成果阶段候选提交及自身exact-SHA CI/Remote Audit；不新增功能，Settings.version=M6.3，阶段保持PARTIAL/BLOCKED。
-候选提交不授予业务执行或Final资格；剩余仅原定公司/账号测试授权、企业隐私P0、Int64/Completeness及正式Cloud Real E2E，外部依赖阻塞时停止重复开发。
+该候选记录为历史；当时还有Cloud资源及隐私内部缺口，当前由独立FIX修复。候选不授予业务执行或Final资格。
 
 | 阶段 | 目标 / 验收 |
 |---|---|

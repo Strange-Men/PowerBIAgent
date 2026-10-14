@@ -10,6 +10,12 @@
 M5提供后续企业生产化复用的Core Analysis Kernel；冻结authority/contract/architecture boundary，允许failure-first minimal correctness forward-fix。M6.1身份/登录/Session/Account真实Entra验收与候选CI通过；最终COMPLETE以封板自身exact-SHA CI与remote audit生效。
 当前状态、路线、交接分别只见 [07](docs/07_milestones_status_and_open_questions.md)、[08](docs/08_development_roadmap.md)、[09](docs/09_context_handoff.md)。
 
+M6.0 COMPLETE；[M6.4_FIX工程收口](docs/milestones/m6/m6_4_fix_engineering_closure.md)补齐Cloud资源API、
+原Settings/Sidebar管理、完整历史与owner/exact-binding生命周期，企业数据执行/披露/留存由服务端拒绝。
+完整离线合成产品链与合同负例可复现；FIX COMPLETE仅以本提交自身全量CI、Remote Audit及clean生效。
+M6.4 FINAL NOT READY：IQ精确数字/完整性、获准Real环境、native披露留存策略与真实浏览器产品验收仍需证明。
+M6.2保留数值/完整性限制；Settings.version=M6.3；M6.5/M6.6未启动。
+
 M6.0 Cloud contract audit COMPLETE：[official/runtime evidence、Product/Auth UX与handoff](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)、[ADR-020 ACCEPTED](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。Fabric IQ两模型只读smoke通过，名称搜索限制已记录；Fabric REST scoped catalog与BFF OAuth方案定稿。M6.1 Auth实现见下节；M6.2 Cloud Adapter已实现，两模型Real与Phase A CI通过。最终baseline以09的自身exact-SHA CI / remote audit解析。
 
 ## M6.3 多用户安全隔离
@@ -19,21 +25,21 @@ Tenant/Principal归属、持久化隔离、IDOR、Cursor/Idempotency/Model Bindi
 真实同tenant双Viewer A→B→A安全矩阵74/74 PASS；真实会话受控延迟Late-Response 41/41 PASS。
 临时路由已卸载，正式ENTRA_BFF产品API继续fail closed；Settings.version=M6.3。候选CI全步骤通过，正式COMPLETE以Final exact-SHA CI与remote audit生效。
 按2026-10-10用户明确批准，安全里程碑独立验收：销售额标量/分组仍FAIL CONTRACT_DRIFT，
-Fabric IQ数值兼容是M6.4 Product E2E前必须解决的P1阻塞项；Cloud Catalog / Product E2E未实施，M6.4须独立批准。
+Fabric IQ数值兼容是M6.4 Product E2E前必须解决的P1阻塞项；Cloud Catalog与合成Product E2E已实施，完整Real仍BLOCKED。
 
 ## M6.2 Fabric IQ Cloud Data Plane
 
 [Fabric IQ Data Plane合同/证据](docs/milestones/m6/m6_2_fabric_iq_cloud_adapter.md)。
 `POWERBI_MODE=fabric_iq`要求`IDENTITY_MODE=ENTRA_BFF`；仅request/session-scoped Adapter，
 固定官方endpoint/selector，复用Auth broker；未知metadata与query completeness保持保守。
-Cloud Catalog、ENTRA业务服务与Product E2E尚未启用；旧`/api/*`继续关闭。
-Settings.version=M6.2；自身exact-SHA CI38012437829及remote audit已重验。当前M6.3进度见上节。
+本节是M6.2阶段边界：Cloud Catalog现已实现，native业务服务安全装配且执行/披露/留存拒绝；旧`/api/*`继续关闭。
+M6.2历史自身exact-SHA CI38012437829及remote audit已重验；当前Settings.version=M6.3。
 
 ## M6.1 身份与账户
 
 [Auth安全合同与验收](docs/milestones/m6/m6_1_entra_identity_login_session.md)。默认`IDENTITY_MODE=LOCAL_DEV`保留M5。
 `ENTRA_BFF`采用同源MSAL code+PKCE、opaque HttpOnly cookie与server session；只开放Auth/Account/安全health。
-**ENTRA_BFF multi-user persistence: NOT ENABLED BY DESIGN UNTIL M6.3 OWNERSHIP**；登录前后均禁止旧history/report/chat/model API。
+M6.1历史边界为OWNERSHIP前不启用多用户存储；M6.3现已实现PrincipalScopedRepository。登录前后仍禁止旧history/report/chat/model API，Cloud仅按当前服务端门槛访问。
 此阶段InMemoryAuthSessionStore仅single-process development，production拒绝启动。
 
 开发需Web redirect `http://localhost:5173/auth/callback`、独立Entra tenant/client/SecretStr与显式HTTP cookie policy。
@@ -386,4 +392,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-10-10 | M6.2 COMPLETE（自身CI/remote audit生效）；M6.3 READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；当前状态以 07/08/09 为准*
+*最后更新：2026-10-14 | M6.0–M6.2 COMPLETE；M6.3 Security COMPLETE；M6.4_FIX按自身CI/Audit生效；M6.4 FINAL NOT READY；Settings.version=M6.3；M5 FINAL/FROZEN；当前状态以07/08/09为准*

@@ -8,6 +8,33 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-64-017
+  title: Cloud报表删除中断后预授权丢失可恢复删除意图
+  category: ERR
+  first_detected_version: M6.4_FIX
+  symptom: metadata删除后HTML清理失败，正式Cloud重试404而durable intent仍存在
+  local_evidence: test_interrupted_html_delete_retries_owned_intent先report FAIL及conversation PASS
+  authoritative_sources:
+  - title: 用户M6.4_FIX资源生命周期与当前权限合同
+    reason: 原正式资源API需安全复用持久删除重试，owner不能替代当前模型授权
+  root_cause: Cloud预授权仅读取available metadata，无法只读owner-scoped pending delete intent
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: get_for_delete只读owner删除证据；当前exact binding及ResourceLease校验后调用原delete；view/download不读intent
+  regression_tests:
+  - backend/tests/api/test_cloud_resource_lifecycle.py
+  prohibited_patterns:
+  - 用begin_delete替代授权前只读检查
+  - 用删除意图开放HTML下载或绕过当前模型权限
+  prevention_rules:
+  - durable cleanup retry应保留只读授权证据且继续验证当前Principal和绑定
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-14'
+    action: cloud_delete_intent_retry_failure_first
+    version: M6.4_FIX
 - id: ERR-64-016
   title: 原生Cloud已组合服务直接调用可绕过外层披露拒绝边界
   category: ERR

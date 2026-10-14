@@ -1,6 +1,23 @@
 """Native Cloud storage composition; authorization precedes opening storage."""
 from backend.app.auth.models import AuthFailure
 from backend.app.config.settings import PersistenceBackend
+from backend.app.memory.models import RuntimeDataMode
+
+
+def require_cloud_business_data(workspace,sid,principal):
+    """Server-owned disclosure/retention boundary for this FIX.
+
+    No enterprise disclosure or retention grant exists in this release.
+    Only host-owned Mock data can reach business Core, persistent resources
+    or its Trace. Test allowlists, a client source flag, account visibility,
+    and an execution gate are not disclosure/retention authorization.
+    Auth/Transport and access-validated ephemeral catalog metadata retain
+    their existing separate lifetime. This is a refusal policy, not a DLP
+    classifier or a grant mechanism.
+    """
+    workspace.require_business_access(sid,principal)
+    if workspace.data_mode(sid,principal)!=RuntimeDataMode.MOCK:
+        raise AuthFailure('AUTH_FORBIDDEN',403)
 
 
 class DeferredCloudRepositories:
@@ -16,6 +33,7 @@ class DeferredCloudRepositories:
 
     async def for_session(self, auth, sid, principal):
         self._workspace.require_business_access(sid, principal)
+        require_cloud_business_data(self._workspace,sid,principal)
         if self._settings.persistence_backend != PersistenceBackend.SQLITE:
             raise AuthFailure('AUTH_FORBIDDEN',403)
         # No schema creation, migration, legacy assignment or default fallback.

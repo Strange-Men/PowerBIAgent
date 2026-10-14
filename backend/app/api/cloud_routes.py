@@ -22,7 +22,9 @@ router = APIRouter(prefix="/api/v1/cloud")
 def is_product_route(method,path):
     return ((method,path) in {('POST','/api/v1/cloud/chat'),('POST','/api/v1/cloud/new-chat'),
         ('POST','/api/v1/cloud/restore'),('GET','/api/v1/cloud/history'),('GET','/api/v1/cloud/reports')}
-        or method=='GET' and re.fullmatch(r'/api/v1/cloud/(?:history/[^/]{1,64}|reports/[^/]{1,64}(?:/download)?)',path) is not None)
+        or method=='GET' and re.fullmatch(r'/api/v1/cloud/(?:history/[^/]{1,64}|reports/[^/]{1,64}(?:/download)?)',path) is not None
+        or method=='DELETE' and re.fullmatch(r'/api/v1/cloud/(?:history|reports)/[a-zA-Z0-9_-]{1,64}',path) is not None
+        or method=='POST' and re.fullmatch(r'/api/v1/cloud/(?:history|reports)/[a-zA-Z0-9_-]{1,64}/(?:rename|archive|unarchive)',path) is not None)
 
 
 async def workspace(request: Request):
@@ -203,21 +205,32 @@ async def restore(request:Request,principal=Depends(require_principal)):
     return await product_call(service.restore(sid,principal,body.conversation_id,body.expected_generation))
 
 
-def page_query(request):
-    if set(request.query_params)-{'limit','cursor'} or len(request.query_params.multi_items())!=len(request.query_params):
+def page_query(request,*,managed=False,search=False):
+    allowed={'limit','cursor'} | ({'status'} if managed else set()) | ({'q'} if search else set())
+    if set(request.query_params)-allowed or len(request.query_params.multi_items())!=len(request.query_params):
         raise HTTPException(422,'invalid_cloud_query')
     limit=request.query_params.get('limit','20')
     if not limit.isascii() or not limit.isdecimal() or len(limit)>2 or not 1<=int(limit)<=50:
         raise HTTPException(422,'invalid_cloud_query')
     cursor=request.query_params.get('cursor')
     if cursor is not None and not 1<=len(cursor)<=2200: raise HTTPException(422,'invalid_cloud_query')
-    return {'limit':int(limit),'cursor':cursor}
+    result={'limit':int(limit),'cursor':cursor}
+    if managed:
+        status=request.query_params.get('status','active')
+        if status not in {'active','archived'}: raise HTTPException(422,'invalid_cloud_query')
+        result['status']=status
+    if search and 'q' in request.query_params:
+        query=request.query_params['q'].strip()
+        if not query or len(query)>200 or result['status']!='active':
+            raise HTTPException(422,'invalid_cloud_query')
+        result['query']=query
+    return result
 
 
 @router.get('/history')
 async def history(request:Request,principal=Depends(require_principal)):
     service,sid=await product(request)
-    return public_product(await product_call(service.list_history(sid,principal,**page_query(request))))
+    return public_product(await product_call(service.list_history(sid,principal,**page_query(request,managed=True,search=True))))
 
 
 @router.get('/history/{conversation_id}')
@@ -229,7 +242,24 @@ async def history_detail(conversation_id:str,request:Request,principal=Depends(r
 @router.get('/reports')
 async def reports(request:Request,principal=Depends(require_principal)):
     service,sid=await product(request)
-    return public_product(await product_call(service.list_reports(sid,principal,**page_query(request))))
+    return public_product(await product_call(service.list_reports(sid,principal,**page_query(request,managed=True))))
+
+
+class RenameResourceRequest(GenerationRequest):
+    title: str=Field(min_length=1,max_length=120)
+
+
+@router.post('/{kind}/{resource_id}/{action}')
+@router.delete('/{kind}/{resource_id}')
+async def mutate_resource(kind:str,resource_id:str,request:Request,action:str='delete',principal=Depends(require_principal)):
+    if (kind not in {'history','reports'} or action not in {'rename','archive','unarchive','delete'}
+            or not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}',resource_id) or request.query_params):
+        raise HTTPException(422,'invalid_cloud_request')
+    body=await body_as(request,RenameResourceRequest if action=='rename' else GenerationRequest)
+    if action=='rename' and kind=='history' and len(body.title)>80:
+        raise HTTPException(422,'invalid_cloud_request')
+    service,sid=await product(request)
+    return public_product(await product_call(service.mutate_resource(sid,principal,kind,resource_id,action,**body.model_dump())))
 
 
 async def report_response(request,principal,report_id,download):

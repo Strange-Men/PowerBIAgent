@@ -1,5 +1,34 @@
 # M6.4 单人收口：Fabric IQ 技术决策与最终差异核验
 
+## M6.4_FIX 当前技术结论（2026-10-14）
+
+**ALTERNATIVE_CANDIDATE：Arrow REST 值得另行获批验证；生产继续 KEEP IQ（ADR-020）。**
+三接口官方页面本轮已重新读取。这里只作一次离线合同比较，BI/外部LLM请求均为0。
+没有接口已证明当前环境满足八种Shape的完整Real事实合同；禁止迁移或隐式fallback。
+
+| 官方接口 | 精确数字 / 编码 | 完整性、错误及八Shape证明 | delegated 身份 / 环境与限额 |
+|---|---|---|---|
+| [Fabric IQ ExecuteQuery](https://learn.microsoft.com/en-us/fabric/iq/connectors/fabric-iq-mcp) | 官方未给出本项目所需Int64编码、null/精度合同；历史Int64/str拒绝仍有效 | 默认maxRows=250；嵌入CSV可能截断；未给出可信完整性证据。HTTP200或ROW语法均不证明完整 | Item.Read.All / Item.Execute.All / Dataset.Read.All；RLS/OLS；不要求Build或Premium。已接受的目录/Resolve authority继续使用 |
+| [Execute Queries JSON REST](https://learn.microsoft.com/en-us/rest/api/power-bi/datasets/execute-queries) | rows为JSON object[]，没有逐列强类型或精确Int64 wire编码承诺；不能从JSON数字推导本项目的跨语言精度 | 1 query / 1 table；100,000 rows或1,000,000 values、15MB；HTTP200可携部分结果和错误，response/query/table error都须拒绝。各Shape仍须证明预期基数和coverage | read+Build、Dataset.Read.All及tenant Execute Queries setting；120请求/分钟/用户。SP+RLS/SSO限制不作为本项目delegated绕行方案 |
+| [Execute DAX Queries Arrow REST](https://learn.microsoft.com/en-us/rest/api/power-bi/datasets/execute-dax-queries) | 自包含Arrow IPC streams串接，LZ4；Arrow类型化传输为精确整数候选，但尚未实证端点逐列Int64/Decimal/null映射 | 一次query可有多个EVALUATE；IsError=true及FaultCode/FaultString须检查，包括HTTP200；默认resultSetRowCountLimit=1,000,000。不能据无error就假定row limit未截断或八Shape完整 | read+Build、同tenant setting、现代容量基础设施适用条件；120请求/分钟全局，Pro/PPU为40。当前测试容量、Build、setting及具体模型资格NOT_TESTED |
+
+Arrow候选成本：新增执行Transport/Provider与IPC/LZ4解码依赖，列类型/精度规范化、全部stream/error/limit检查、
+逐Principal授权及限额；现有Catalog/Resolve保持IQ。最小接口变化可限于PowerBIAdapter后执行实现，
+保留ToolGateway、QueryResult、八Shape及Frozen Core；但完整性必须先证明，不能靠Adapter把未知标成complete。
+混合服务的token scope、服务身份、RLS/OLS一致性与运维成本仍需单独验证，未批准前零实现。
+
+JSON候选的最小差异为Adapter后REST执行、列名/顺序恢复、JSON精度规则及各层error/limit验证；
+八Shape继续单一deterministic表，不为接口新增QueryPlan。没有逐列强类型证据，故不优先于Arrow。
+三接口均只考虑当前delegated caller，沿用RLS/OLS，不使用impersonatedUserName、roles或SP提升权限。
+Build/tenant setting/容量与当前RLS/OLS实际行为缺本轮获准环境证据，不能用旧IQ登录PASS证明替代接口。
+
+最终未证明：IQ Int64字符串语义及精度；三接口所有limit/partial场景的可信完整性；当前模型/容量/权限下的
+Arrow可用性；真实QueryResult→VerifiedFactSet→Answer/两模板及浏览器A/B撤权链。
+未知结果继续fail closed，expected与严格数字验证器不变。
+
+下文是本FIX之前的solo轮历史（同日较早），其PARTIAL/待授权比较表述不再作为当前工程状态。
+当前工程及发布证据见 [M6.4_FIX](m6_4_fix_engineering_closure.md)。
+
 日期：2026-10-14。状态：PARTIAL/BLOCKED，非 Final Seal。用户授权只覆盖原M6.4；
 不修改验收定义、ADR-020、Git流程、Frozen Core、Provider、八类QueryShape或两种模板。
 

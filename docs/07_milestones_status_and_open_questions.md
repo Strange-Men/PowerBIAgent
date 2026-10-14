@@ -11,11 +11,23 @@
 | Current Release State | M6.3 Security COMPLETE；以Final自身exact-SHA CI + remote audit生效；数值兼容P1 BLOCKED；M5 FINAL=true |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | M6.4已获用户批准，正在本地开发/验证；数值P1须在Real Product E2E前解决；阶段成果已发布，Final未封板 |
-| Current implementation status | M6.4 native安全装配及正式事实Synthetic链完成；Cloud资源管理PARTIAL；Real执行、隐私与事实合同BLOCKED |
+| Next | 独立M6.4_FIX收口后停止；M6.4 FINAL NOT READY；M6.5/M6.6未启动 |
+| Current implementation status | FIX资源管理、服务端企业数据拒绝、完整合成链与技术决策已实施；COMPLETE以自身CI/Audit/clean生效；Real仍BLOCKED |
 | Ready state | Real安全74/74、Late-Response41/41、完整本地回归及候选CI通过；Final自身CI与remote audit解析 |
 
-## M6.4 本轮当前状态（2026-10-14；以下2026-10-13段为历史）
+## M6.4_FIX 当前状态（2026-10-14）
+
+M6.0 COMPLETE；M6.1 COMPLETE；M6.2 COMPLETE（保留Int64/完整性限制）；M6.3 Security COMPLETE。
+起始main@6e8643ba15f4a6f6215f152408c054658fcd5f1f，独立FIX不新增里程碑，不改原路线。
+[FIX工程修复与验收](milestones/m6/m6_4_fix_engineering_closure.md)：资源全生命周期/Settings批量/全历史恢复，
+current Principal与exact binding租约，企业执行/披露/留存服务端默认拒绝，完整离线合成事实产品链。
+FIX COMPLETE须当前实际提交自己的Full Validation全部SUCCESS、Remote Audit及clean，否则BLOCKED。
+[技术决策](milestones/m6/m6_4_solo_contract_decision.md)为ALTERNATIVE_CANDIDATE（Arrow）；运行继续ADR-020 IQ，无迁移/fallback。
+原生IQ精确数字/完整性、披露留存许可及native策略、获准逐资源真实浏览器E2E仍BLOCKED/NOT_TESTED。
+M6.4 FINAL NOT READY；Settings.version=M6.3；M5 Frozen Core无本FIX改动；完成本轮即停止。
+当前证据路径PBIAgentTest/M6.4_FIX/Acceptance；下文同日solo及早期段落全为历史，不覆盖本节。
+
+## M6.4 旧solo轮记录（2026-10-14；历史）
 
 稳定进入基线5b0f22d9已通过自身CI。本轮仅原M6.4：native ENTRA_BFF安全装配Product Service，
 延迟storage在业务gate前不开库；直接native服务调用也先校验租约和关闭的执行gate。

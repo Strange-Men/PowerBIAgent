@@ -2,7 +2,7 @@
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.dialects.sqlite import insert
 
 from backend.app.auth.models import AuthFailure
@@ -43,3 +43,11 @@ class CloudBindingRepository:
                     CloudConversationBindingModel.owner_id == self._owner,
                     CloudConversationBindingModel.conversation_id == binding.conversation_id))).scalar_one()
                 if any(getattr(row,k) != v for k,v in values.items()): raise AuthFailure('AUTH_FORBIDDEN',403)
+
+    async def delete(self,conversation_id):
+        """Remove only the same owner's lifecycle metadata after deletion."""
+        async with self._sessions() as session:
+            async with session.begin():
+                await session.execute(delete(CloudConversationBindingModel).where(
+                    CloudConversationBindingModel.owner_id==self._owner,
+                    CloudConversationBindingModel.conversation_id==conversation_id))

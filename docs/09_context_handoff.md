@@ -7,10 +7,24 @@
 
 - Current Baseline：Settings M6.3安全封板；M6.4阶段main基线按最新exact-SHA CI / Remote Audit解析。
 - M5 FINAL=true；Core Analysis Kernel 与 Local MVP baseline 已 Frozen。
-- ACTIVE = M6.4 Cloud Product E2E：原scope已批准；阶段提交已有，Final仍PARTIAL/BLOCKED；不得启动M6.5。
+- ACTIVE = 独立M6.4_FIX工程收口：当前实际提交自身CI/Audit/clean后COMPLETE，否则BLOCKED；M6.4 FINAL NOT READY；执行完停止。
 - M6 Status：M6.3 Real安全74/74、Late-Response41/41、完整本地回归及Phase A CI通过；Settings.version=M6.3；最终发布条件见下文。
 
-## 本轮收口交接（2026-10-14；后续旧轮段落仅历史证据）
+## M6.4_FIX 唯一当前交接（2026-10-14）
+
+M6.0 COMPLETE；M6.1 COMPLETE；M6.2 COMPLETE（保留数值/完整性限制）；M6.3 Security COMPLETE。
+起始main@6e8643ba15f4a6f6215f152408c054658fcd5f1f。实现与复现见
+[专项](milestones/m6/m6_4_fix_engineering_closure.md)，技术判断见[决策](milestones/m6/m6_4_solo_contract_decision.md)。
+资源API复用原会话/报表/Settings/批量契约，正式owner/exact binding复证；native企业数据执行、
+外部LLM、留存与旧资源读取在相应流转前服务端拒绝。合成host不会成为native授权开关。
+完整Synthetic产品链通过Mock/Fake Entra及正式事实回调验证，非Real；无Frozen Core/Provider/模板/Shape变更。
+FIX COMPLETE仅以当前checkout实际main SHA自身Full Validation全部SUCCESS、Remote Audit、clean生效；
+仓库外receipt与分层结果在PBIAgentTest/M6.4_FIX/Acceptance，不能继承起始或旧阶段CI。
+M6.4 FINAL NOT READY；IQ数值/八Shape完整性、获准逐资源环境、企业披露留存native策略及真实浏览器全链未过。
+Arrow为ALTERNATIVE_CANDIDATE；运行保持ADR-020 IQ，无Provider迁移/fallback。Settings.version=M6.3。
+本轮结束立即停止；不得自动再开发M6.4.1/M6.5/M6.6。下文全部是历史，不沿用旧PARTIAL作为当前FIX结果。
+
+## 旧solo轮交接（2026-10-14；历史）
 
 进入main基线5b0f22d913dcf47af53903f8b4fae1d3162d2dc1、自身CI已SUCCESS；不重发候选。
 本轮native ENTRA_BFF已安全装配Product Service，但business gate关闭，deferred仓库不打开DB；
