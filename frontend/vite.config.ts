@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
+  // Local validation owns external output paths; CI keeps its default layout.
+  cacheDir: process.env.PBIAGENT_VALIDATION_CACHE,
+  build: { outDir: process.env.PBIAGENT_VALIDATION_OUTPUT },
   plugins: [react()],
   server: {
     host: '127.0.0.1',

@@ -6,15 +6,12 @@
 
 ## 当前开发入口
 
-- 当前版本：**M6.4**（云端产品最终验收）。
-- M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY；M5.10.8 与 FIX COMPLETE。
-- M6.1 COMPLETE（以自身exact-SHA CI与remote audit生效）；ADR-020 ACCEPTED；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ correctness IQ_ACCEPTED；M6.4 Final Git Seal待自身exact-SHA CI/Remote Audit/clean。
-- M6.0 COMPLETE；独立M6.4_FIX工程修复按自身CI/Audit/clean生效；M6.4 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；Settings.version=M6.4。
-  当前状态与未决门槛见07/08/09；不得自动扩大FIX、启动M6.5/M6.6或开放native企业执行/披露/留存。
-  每个 implementation patch 必须有用户明确批准的具体 scope、fresh Cold Start、Microsoft 官方
-  能力重新验证与先完成的 P0 security boundary 设计/验证；未满足前不得直接写 M6 Cloud code。
-- 07 是当前状态，08 是当前/未来路线，09 是唯一开发交接；根入口不重复保存浮动 SHA/CI。
-- 发布基线按 09 的当前 checkout exact-SHA CI 和 remote audit 解析，不继承旧阶段 CI。
+- 当前版本：**M6.4.1**（治理维护发布）；M6.4 FINAL COMPLETE 是已验证稳定基线。
+- M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。M6.0–M6.3 各自按自身 CI/Audit COMPLETE；IQ_ACCEPTED。
+- M6.4.1 仅处理仓库外测试资产治理、README 信息架构、current-state 一致性、IQ 保守结果边界明确化及 Test B OLS 证据状态；不实施 Schema cache、connection reuse、Favorites/Preferences，不进入 M6.5。
+- 本轮治理与 fresh gates 已 PASS，Settings.version=M6.4.1；维护发布只按自身 exact-SHA CI/Remote Audit/clean 生效。
+- 07 是当前状态，08 是路线，09 是唯一交接；根入口不重复保存浮动 SHA/CI。
+- 每个后续 implementation 仍须明确 scope、fresh Cold Start、Microsoft 官方能力重新验证与适用 P0 前置设计/验证。
 
 ## Authority boundary
 
@@ -68,6 +65,18 @@ HEAD==origin/main、clean worktree/staging。开发中允许本轮已授权白�
 → `PROJECT_CHARTER.md` → 正式 PRD → accepted ADR → 当前专项设计 → 08 → 09 →
 `CLAUDE.md` → 代码与 fresh 测试 → Archive。
 
+## 测试资产长期规则
+
+所有本地 test/cache/acceptance/evidence/screenshot/diagnostic/synthetic DB/report/benchmark/runner
+output 均进入独立仓库外根 `PBIAGENT_TEST_ROOT`（目录名 PBIAgentTest），按 milestone/purpose/run
+分层；禁止写入工作区父目录或正式仓库。正式测试源码、fixtures 定义与配置继续属于 Git。
+本地验证使用 `scripts/run_local_validation.py --milestone <版本> [--frontend] -- <命令>`；显式
+cache_dir/TMP/TEMP/basetemp，参数使用正斜杠和正确引用，owned temp 在结束/异常时自动清理。
+执行后核对 Git status 无新临时目录；真实产品持久化不是测试资产，不移动、读取或删除用户 DB。
+CI 保持既有可移植命令，不写本机路径。DB 只有 synthetic 来源明确时可 byte copy/hash；
+未分类 DB 保留并报告。迁移必须 Inventory → Copy → SHA/数量/字节 Verify → Reference Migration
+→ Regression → 清理 → fresh inventory/receipt，禁止 move-first。历史证据不可冒充当前 PASS。
+
 ## Git contract
 
 - main 是唯一正式活动开发线，默认在 main 开发、提交、推送。流程固定为：
@@ -97,4 +106,4 @@ failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner 
 
 生产级后端风险优先于功能数量；每个M6 implementation按09重新验证Microsoft官方能力与适用P0边界。ADR-020接受Cloud消费/目录设计，ADR-006已SUPERSEDED。Token只允许Auth/Transport；tenant/principal/ownership与RLS/OLS必须先证明。
 
-*最后更新：2026-10-15 | M6.0–M6.3按各自证据COMPLETE；M6.4同Round 2 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；M5 FINAL/FROZEN；当前状态以07/08/09为准*
+*最后更新：2026-10-15 | M6.4 FINAL COMPLETE；M6.4.1 维护发布按自身 CI/Audit/clean 生效；M5 FINAL/FROZEN；当前状态以07/08/09为准*

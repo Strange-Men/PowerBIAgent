@@ -1,8 +1,8 @@
 # M6.4 Round 2 — Fabric IQ Data Plane decision
 
-## 当前Final Seal（2026-10-15）
+## 已完成的 M6.4 Final Seal（2026-10-15）
 
-Settings.version=M6.4；同Round 2必要Local/Cloud Real和fresh发布门已通过，Final Git Seal待本提交自身完整exact-SHA CI、Remote Audit与clean，全部成立才解析M6.4 FINAL COMPLETE并STOP。当前合同、timeout根因、Admin/Test A late/stale与RLS证据、既有OLS Test B例外和登录性能限制见[07当前验收](../../07_milestones_status_and_open_questions.md)。保守IQ inline合同及原授权边界保持，不重开Int64/lineage/QueryShape/provenance。
+M6.4 FINAL COMPLETE；Final SHA `bdbe7189be21ff043340c2025625a9e3398310b0`，自身 Full Validation 38693083553 SUCCESS，Remote Audit PASS，封板时 worktree/staging clean。当前维护状态见[07](../../07_milestones_status_and_open_questions.md)。M6.4.1 仅将既有 business rows ≤12、wire sentinel=N+1、columns ≤8 明确为 CLOSED_AS_EXPLICIT_LIMIT；Test B OLS deny 为 DEFERRED_BY_TEST_PRINCIPAL。原授权边界、Int64、lineage、QueryShape、completeness 和 provenance 保持。
 
 ## 此前Round 2施工证据（历史）
 

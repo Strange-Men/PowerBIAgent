@@ -1,411 +1,185 @@
 # PowerBIAgent
 
-[![PowerBIAgent Validation](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml?query=branch%3Amain)
+用自然语言查询 Power BI 语义模型，并从经过验证的事实生成固定模板 HTML 报表。
+
+PowerBIAgent 面向不熟悉 DAX 的业务用户，提供 React 对话界面和 FastAPI 后端。语言模型理解问题，确定性运行时完成语义落地、DAX 构造、查询和结果验证；回答与报表共享 `VerifiedFactSet`。可连接本机 Power BI Desktop，也可通过 Fabric IQ 查询云端模型。
+
+[![Validation](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Strange-Men/PowerBIAgent/actions/workflows/ci.yml)
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![React + FastAPI](https://img.shields.io/badge/React%20%2B%20FastAPI-web-009688)
 
-面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
+## Why PowerBIAgent
 
-当前版本：**M6.4 — 云端产品最终验收**。M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ correctness IQ_ACCEPTED；M6.4 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+业务人员知道想回答的问题，却不一定知道模型中的表、字段、指标或 DAX 写法。PowerBIAgent 将自然语言意图与当前模型的真实结构、成员和权限绑定，帮助用户问数、追问和生成报表。
 
-M5提供后续企业生产化复用的Core Analysis Kernel；冻结authority/contract/architecture boundary，允许failure-first minimal correctness forward-fix。M6.1身份/登录/Session/Account真实Entra验收与候选CI通过；最终COMPLETE以封板自身exact-SHA CI与remote audit生效。
-当前状态、路线、交接分别只见 [07](docs/07_milestones_status_and_open_questions.md)、[08](docs/08_development_roadmap.md)、[09](docs/09_context_handoff.md)。
+产品的重点是答案可验证：对象含糊时先澄清，结果不完整时拒绝把部分结果当作完整结论。语言模型不编写执行用 DAX，也不计算业务数值；历史对话方便恢复工作，但不会成为新的事实来源。普通聊天可以直接进行，涉及组织业务事实时才进入正式查询链。
 
-M6.0 COMPLETE；[M6.4_FIX工程收口](docs/milestones/m6/m6_4_fix_engineering_closure.md)补齐Cloud资源API、
-原Settings/Sidebar管理、完整历史与owner/exact-binding生命周期，企业数据执行/披露/留存由服务端拒绝。
-完整离线合成产品链与合同负例可复现；FIX COMPLETE仅以本提交自身全量CI、Remote Audit及clean生效。
-M6.4同Round 2必要Real及fresh gates PASS，Local旧120秒配置恢复既有180秒合同，完整专业Report、Admin/Test A产品与late/stale安全复验PASS。Final Git Seal仅按自身exact-SHA CI/Remote Audit/clean生效；随后STOP。
-M6.2历史数值/完整性限制由M6.4保守IQ合同收口；Settings.version=M6.4；M6.5/M6.6未启动。
+## Key Features
 
-M6.0 Cloud contract audit COMPLETE：[official/runtime evidence、Product/Auth UX与handoff](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)、[ADR-020 ACCEPTED](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。Fabric IQ两模型只读smoke通过，名称搜索限制已记录；Fabric REST scoped catalog与BFF OAuth方案定稿。M6.1 Auth实现见下节；M6.2 Cloud Adapter已实现，两模型Real与Phase A CI通过。最终baseline以09的自身exact-SHA CI / remote audit解析。
+- **自然语言问数**：支持单值、实体列表、分组、排名、成员集合、筛选聚合、趋势与有界趋势八种查询形状。
+- **确定性事实链**：用运行时 schema 和成员验证语义对象，由确定性构造器生成受限 DAX，结果检查后进入 `VerifiedFactSet`。
+- **两种 Power BI 接入**：Local Desktop 经只读 Modeling MCP 连接当前模型；Fabric IQ Cloud 使用 Microsoft 登录和当前资源权限。
+- **固定模板报表**：提供“简易销售分析模板”和“专业销售经营分析模板”，共享已验证事实，生成可查看、下载的静态 HTML。
+- **多轮分析与恢复**：支持兼容的追问、模型切换隔离，以及使用 SQLite 的历史、搜索、归档、恢复和资源删除。
+- **模型与模板目录**：由后端提供模型和适配当前模型的模板；用户显式选择，失效或不匹配时明确提示。
+- **可控语言模型选择**：支持 DeepSeek、Kimi K2.6 的公开 profile 与离线 Mock；每轮固定所选模型，失败不自动切换 Provider。
+- **离线验证**：Mock、Synthetic 和 Golden 用例覆盖事实链及权限边界，真实 Desktop 与 Cloud 验收独立记录。
 
-## M6.3 多用户安全隔离
-
-[完整安全合同、真实证据与范围调整](docs/milestones/m6/m6_3_multi_user_ownership_authorization_rls_ols.md)。
-Tenant/Principal归属、持久化隔离、IDOR、Cursor/Idempotency/Model Binding与失效保护已实现。
-真实同tenant双Viewer A→B→A安全矩阵74/74 PASS；真实会话受控延迟Late-Response 41/41 PASS。
-临时路由已卸载，正式ENTRA_BFF产品API继续fail closed；Settings.version=M6.3。候选CI全步骤通过，正式COMPLETE以Final exact-SHA CI与remote audit生效。
-按2026-10-10用户明确批准，安全里程碑独立验收：销售额标量/分组仍FAIL CONTRACT_DRIFT，
-Fabric IQ数值兼容是M6.4 Product E2E前必须解决的P1阻塞项；Cloud Catalog与合成Product E2E已实施，完整Real仍BLOCKED。
-
-## M6.2 Fabric IQ Cloud Data Plane
-
-[Fabric IQ Data Plane合同/证据](docs/milestones/m6/m6_2_fabric_iq_cloud_adapter.md)。
-`POWERBI_MODE=fabric_iq`要求`IDENTITY_MODE=ENTRA_BFF`；仅request/session-scoped Adapter，
-固定官方endpoint/selector，复用Auth broker；未知metadata与query completeness保持保守。
-本节是M6.2阶段边界：Cloud Catalog现已实现，native业务服务安全装配且执行/披露/留存拒绝；旧`/api/*`继续关闭。
-M6.2历史自身exact-SHA CI38012437829及remote audit已重验；当前Settings.version=M6.4。
-
-## M6.1 身份与账户
-
-[Auth安全合同与验收](docs/milestones/m6/m6_1_entra_identity_login_session.md)。默认`IDENTITY_MODE=LOCAL_DEV`保留M5。
-`ENTRA_BFF`采用同源MSAL code+PKCE、opaque HttpOnly cookie与server session；只开放Auth/Account/安全health。
-M6.1历史边界为OWNERSHIP前不启用多用户存储；M6.3现已实现PrincipalScopedRepository。登录前后仍禁止旧history/report/chat/model API，Cloud仅按当前服务端门槛访问。
-此阶段InMemoryAuthSessionStore仅single-process development，production拒绝启动。
-
-开发需Web redirect `http://localhost:5173/auth/callback`、独立Entra tenant/client/SecretStr与显式HTTP cookie policy。
-首次Real OAuth前由用户完成Portal配置和repo外隐藏输入helper；不要把secret发到聊天。
-Vite代理`/auth`/`/api`/`/health`；统一使用`http://localhost:5173`。不新增Workspace.Read.All；Auth-only模式不调用Fabric schema/query，Cloud Adapter仅在显式fabric_iq模式启用。
-Auth routes：GET `/auth/login`、GET `/auth/callback`、GET `/auth/session`、POST `/auth/logout`；unsafe方法要求Origin+CSRF。
-
-## 项目概览
-
-PowerBIAgent 面向公司内部少量、不熟悉 Power BI 或 DAX 的业务用户。用户用自然语言提出数据问题或报表需求；FastAPI 后端负责语义落地、受限 DAX 构造、Power BI 查询、事实验证、回答与静态 HTML 报表生成。
-
-当前产品形态是 Windows 本地单机 MVP：支持 Mock 离线开发，也支持 DeepSeek 或 Kimi K2.6 + Local MCP + Power BI Desktop 真实链。React 前端通过 Vite 代理接入 FastAPI，并从后端只读目录显式选择 LLM profile 与当前打开的 Desktop/PBIX 模型。
-
-## 核心能力
-
-- 自然语言 Power BI 数据问答，Mock 与 Real 共用同一 TurnPipeline 执行骨架。
-- Semantic Grounding 前的 Question Router 只处理确定性 capability/safety；唯一 `SemanticFrame` Understanding Layer 解释普通聊天、data/report mode、八种 QueryShape、relation、业务 mention 与 exact evidence spans。General turn 只把当前消息交给现有 LLM provider，不读取 schema、不执行 DAX/报表、不接触或污染 semantic Memory，当前日期时间来自可配置 application timezone。
-- Power BI MCP runtime schema 是模型结构 authority；immutable `ModelSemanticContext` 把当前 PBIX metadata 适配为候选证据，exact identity + fingerprint 验证的 optional model override 只补充业务语言/temporal metadata，runtime members 继续验证成员值。
-- Real DAX 由受限的确定性构造器生成，并在 Power BI 执行前经过独立 Layer 3 验证。
-- `VerifiedFactSet` 是数值、结果顺序、筛选、时间与来源信息的唯一对外事实边界；requested query scope 只由实际执行的 CanonicalQueryPlan 投影，observed data coverage 只由返回 rows 证明，空 rows 明确表示“当前查询范围未返回数据”而不是 0。
-- veto-only Understanding Coverage、runtime Grounding、StateTransition 后的 Canonical Shape Completeness，以及 QueryResult 到 VerifiedFactSet 前的 Result Semantic Inspection 构成 fail-closed 设计；任何无证据 shape、未知对象/成员、不完整排名或模糊时间范围仍在 DAX 前澄清。旧 Intent/QueryPlan/TurnRelation 自然语言 authority 已从 production 主链删除。
-- Registry 登记 `sales_report`（简易销售分析模板）与 `sales_executive_report`（专业销售经营分析模板）；后端目录先按当前 semantic model 的 domain eligibility 筛选，再按 runtime schema 返回 `compatible/partial/incompatible/unavailable`，只允许显式选择可用模板。域不匹配不返回目录；Logistics 当前无适配模板仍可问数。二者分别绑定独立固定 Renderer，禁止 fallback 或 LLM 临场生成 HTML/CSS/SVG。
-- COMPLEX 模板在 Renderer 前必须具备标题、分析期间、实际筛选、observed coverage、指标口径、异常状态、模型/来源、数据新鲜度和生成时间；当前轮明确时间进入全部固定子查询，多查询 coverage 保守汇总；`data_updated_at`、`queried_at`、`snapshot_at`、`generated_at` 不得互相代替。
-- 结构化多轮 Memory 只补当前轮真正省略的兼容槽；fresh/follow-up/replace 分离，当前明确表达始终优先；歧义、失败、unsupported 和 clarification 不污染已提交状态。
-- SQLite 提供重启恢复、结构化历史/搜索、可恢复归档、永久删除、独立 report 删除与崩溃后删除重试。
-- `(runtime_mode, conversation_id)` 和 `(source_mode, conversation_id)` 严格隔离 Mock/Real 状态与报表历史。
-- `presentation` 只读展示契约把已验证的单指标、表格、柱状图/折线图和报表附件安全交给前端；dataset 只投影 VerifiedFactSet 数据事实覆盖字段，内容块只保存引用。
-- 展示型 transcript 与标题支持完整历史恢复、默认标题、重命名、归档和删除，不参与 Memory 或业务事实判断。
-
-## 工作原理
+## Architecture
 
 ```mermaid
 flowchart LR
-    User["User"] --> API["FastAPI"]
+    User["User"] --> React["React"]
+    React --> API["FastAPI"]
     API --> Pipeline["TurnPipeline"]
-    Pipeline --> Grounding["Intent / Grounding"]
-    Grounding --> Coverage["Obligation Coverage"]
-    Coverage --> Plan["Canonical QueryPlan"]
-    Plan --> Shape["Shape Completeness"]
-    Shape --> DAX["Deterministic DAX"]
+    Pipeline --> Grounding["Grounding / QueryPlan"]
+    Grounding --> DAX["Deterministic DAX"]
     DAX --> PBI["Power BI"]
-    PBI --> Result["QueryResult"]
-    Result --> Inspection["Result Inspection"]
-    Inspection --> Facts["VerifiedFactSet"]
-    Facts --> Scope["Query Scope / Presentation"]
-    Scope --> Output["Answer / Report"]
-    Output --> State["Memory / Snapshot"]
+    PBI --> Facts["Result Inspection / VerifiedFactSet"]
+    Facts --> Output["Answer / Report"]
 ```
 
-LLM 负责受约束的语言理解；runtime schema、确定性代码、Power BI、`QueryResult` 与 `VerifiedFactSet` 负责事实真值。Power BI 调用只能经过 `ToolGateway → PowerBIAdapter`，Real 失败不会静默回退 Mock。
+LLM 负责理解和表达；运行时负责证明对象、执行状态、查询结果和事实。Power BI 访问统一经过 ToolGateway 与 Adapter，Local/Cloud 替换接入层，保留同一上层事实链。报表使用固定模板 Renderer，不让 LLM 临时生成 HTML、脚本或业务计算逻辑。详细职责见[项目章程](PROJECT_CHARTER.md)和[架构决策](docs/adr/README.md)。
 
-## 事实权威边界
+## Runtime Modes
 
-| LLM 可以 | LLM 不可以 |
-|---|---|
-| Intent、turn relation 与受限 `TimeIntentDraft` 语言理解 | 发明业务语义、runtime 对象或 canonical 时间范围 |
-| 在 Catalog-owned candidate ID 中进行有界选择 | 生成具有权威性的 Real DAX |
-| 生成受事实约束的语言草稿 | 发明 QueryResult、数字、排名、趋势或因果 |
-| 输出 registry-owned 报表意图弱信号 | 生成任意 HTML、JavaScript 或报表事实 |
+| 模式 | Power BI 来源 | 身份与配置 | 适用场景 |
+|---|---|---|---|
+| Mock | 离线合成模型 | `LLM_MODE=mock`、`POWERBI_MODE=mock` | 开发与自动化测试；不需要 API Key 或 Desktop |
+| Local Desktop | 当前打开的 Desktop 模型 | `IDENTITY_MODE=LOCAL_DEV`、`POWERBI_MODE=local_mcp`，已配置真实 LLM | Windows 本地只读分析；显式选择目标模型 |
+| Fabric IQ Cloud | 已授权 Workspace 中的云端模型 | `IDENTITY_MODE=ENTRA_BFF`、`POWERBI_MODE=fabric_iq`，operator 配置 | Microsoft 登录、资源权限和应用策略约束下的云端问数与报表 |
 
-权威来源是 runtime schema、Business Semantic Catalog、确定性 Grounding/StateTransition、Deterministic DAX、Power BI、`QueryResult` 与 `VerifiedFactSet`。SQLite 持久化和历史记录不是业务事实来源。
+Local Desktop 使用本机模型；Fabric IQ Cloud 使用当前登录 principal 的访问权限。Microsoft 登录本身不自动授予应用执行、外部 LLM 披露或业务持久化权限。云端查询只走 Fabric IQ，Fabric REST 负责目录与 metadata。旧 `remote_mcp` 模式当前不可用。
 
-## 当前能力
+## Quick Start
 
-| 领域 | 已实现能力 |
-|---|---|
-| 数据问答 | SCALAR、dimension-only ENTITY_LIST、GROUPED、RANKING/Top1、runtime-validated MEMBER_SET/`IN_SET`、FILTERED_AGGREGATION、TREND 与 BOUNDED_TREND；只澄清当前 shape 真正缺失的槽位 |
-| 非业务路由 | 自然问候、configured-timezone 日期时间、bounded 概念/产品能力说明、公开 LLM profile 信息、安全 Decimal 基础算术与明确 unsupported；ZERO schema/member/DAX/semantic Memory mutation |
-| 报表 | “简易销售分析模板” `sales_report` 与“专业销售经营分析模板” `sales_executive_report` 均可显式选择；两者共享 Sales requirements/事实 snapshot，使用各自固定安全静态 HTML Renderer 与资源查看/下载 |
-| 多轮 Memory | 当前明确表达 > bounded semantic draft > committed Memory；fresh 清除无关旧槽，follow-up/replace 只继承兼容省略项；模型切换清空旧语义上下文 |
-| 持久化与恢复 | SQLite Memory/Snapshot/报表 metadata；重启重放；不完整崩溃证据受控失败；持久化删除意图 |
-| 历史与搜索 | 仅 SQLite 支持最近会话、展示型 transcript、自动标题/重命名、有界搜索、archive/restore 与永久删除；旧会话只恢复真实已保存内容 |
-| 多模型 LLM | DeepSeek 与 Kimi K2.6 共享 OpenAI-compatible Provider；每轮按公开 profile key 冻结 provider/model snapshot，无全局 mutable default、自动路由或失败 fallback |
-| 本地 Power BI | DeepSeek/Kimi + 只读 Local Modeling MCP + Power BI Desktop；可同时安全枚举多个 PBIX，由前端单选后使用 opaque key 精确绑定；每次 schema/member/DAX 都重新枚举并只连接唯一匹配实例，stale/ambiguous identity fail closed；Real DAX/事实的 LLM 权限为 0 |
-| React 网页前端 | 完整历史恢复、已归档入口/恢复、独立 report 删除、A/B history stale-response 防护，以及文字/指标/表格/柱状图/折线图/报表附件动态渲染 |
-| 可恢复错误 UX | 后端公开稳定 `FailureInfo(code/stage/retryable/recovery_action)`；前端按 typed code 映射安全中文恢复提示，模型/模板失效与可重试执行/渲染失败采用不同恢复动作，并为 error/status 提供明确 ARIA 语义 |
+### Prerequisites
 
-Local MCP 实机基线固定为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`，并通过只读 schema + DAX 单行 capability probe 校验协议能力。Remote MCP 继续延期。M5.3.3 不改变 M0–M5 factual authority。
+- Python **3.11**；仓库提供名为 `PBIAgent` 的 Conda 环境。
+- Node.js **24 LTS** 与 npm，用于 React/Vite 前端；Local MCP 还需要 npm/npx。
+- Local Desktop 需要 Windows、Power BI Desktop、已打开的目标模型，以及已配置的真实 LLM Key。
+- Mock 模式无需 Microsoft 账号、API Key 或 Power BI Desktop。
 
-## 快速开始
+### Install
 
-> **默认配置是 Mock，只用于开发测试。** 要查询当前打开的真实 PBIX，请先按“本地 Power BI 真实模式启动”配置本地 `.env`，再启动后端和前端。
-
-### 环境要求
-
-- Windows 本地环境。
-- Python 3.11；仓库固定 Conda 环境名为 `PBIAgent`（Conda 安装于 `D:\Conda`）。
-- Mock 后端不需要 API Key 或 Power BI Desktop；运行 React 前端需要 Node.js 20.19+。
-- Real Local MCP 需要 Node.js 20+、npm/npx、Power BI Desktop，以及已打开的目标 PBIX。
-
-### 本地 Power BI 真实模式启动
-
-仓库默认配置是 Mock，只用于离线开发和测试。如果前端出现以下任一内容，说明当前**不是 Real 模式**：
-
-- “Mock 销售模型”；
-- `mock_*` 模型 key；
-- 固定的假回答。
-
-Real 模式至少需要在本地 `.env` 中配置以下内容；`DEEPSEEK_API_KEY` 只填写用户自己的 Key，不得提交、输出或记录：
-
-```dotenv
-LLM_MODE=deepseek
-LLM_DEFAULT_PROFILE=deepseek
-POWERBI_MODE=local_mcp
-PERSISTENCE_BACKEND=sqlite
-APPLICATION_TIMEZONE=Asia/Shanghai
-MAX_TOOL_CALLS=8
-POWERBI_LOCAL_MCP_READONLY=true
-DEEPSEEK_API_KEY=<用户自己的 Key>
-```
-
-按以下顺序启动：
-
-1. 在 Power BI Desktop 中打开一个或多个目标 PBIX。
-2. 启动 FastAPI 后端。
-3. 启动 React 前端。
-4. 打开 `http://127.0.0.1:5173`。
-5. 在“数据模型”菜单确认显示当前 Desktop 模型列表，而不是 Mock 模型；选择本轮要分析的 PBIX。
-6. 在“AI 模型”菜单显式选择 DeepSeek 或已配置的 Kimi K2.6；提交后该轮 profile 不再受后续 UI 切换影响。
-
-Kimi K2.6 使用用户自有的 OpenAI-compatible gateway；生产代码不提供真实 host 或 Key。启用时设置 `LLM_MODE=openai_compatible`、`LLM_DEFAULT_PROFILE=kimi-k2.6`、`KIMI_BASE_URL=<用户 gateway>/v1`、`KIMI_API_KEY=<用户 Key>` 与 `KIMI_MODEL=azure/Kimi-K2.6`。也可同时配置 DeepSeek/Kimi，由前端逐轮显式选择；任一 provider 失败均不会自动切换到另一 provider。
-
-`PERSISTENCE_BACKEND=sqlite` 是最近会话、搜索、历史和报表历史正常工作的前提。启动后可执行以下只读检查：
+在仓库根目录执行：
 
 ```powershell
-curl.exe http://127.0.0.1:8000/health
-curl.exe http://127.0.0.1:8000/api/v1/semantic-models
-```
-
-正常 Real catalog 的 `runtime_mode` 应为 `real`，每个模型的 `source` 应为 `local_desktop`，而不是 `mock`。后端为每个 Desktop 实例确定性生成当前进程内的 `local_desktop:<opaque-id>`；它不暴露 PID、端口、connection string 或 raw fingerprint，display name 只用于展示。`/health` 只验证当前 runtime 配置是否就绪，不探测 Power BI Desktop 是否在线；实际模型连接状态以 `/api/v1/semantic-models` 为准。compatibility probe 会针对每个精确 option 验证 protocol、required tools、Connect、schema 读取与 `EVALUATE ROW("__pbiagent_probe", 1)` 的一行结果。Desktop 或后端进程重启后旧 key 可失效，前端刷新目录并要求重新选择，不自动切换到其他 PBIX。
-
-### Conda 初始化（首次使用）
-
-PowerShell 中若 `conda activate` 后 `python` 仍指向 base 而不是 PBIAgent，说明缺少 conda PowerShell 初始化。**只需执行一次**：
-
-```powershell
-conda init powershell
-# 然后关闭并重新打开 PowerShell 窗口
-```
-
-初始化后，`conda activate` 会正确切换 Python 路径。验证方法：
-
-```powershell
+conda env create -f environment.yml
 conda activate PBIAgent
-python -c "import sys; print(sys.executable)"
-# 应输出：D:\Conda\envs\PBIAgent\python.exe
-# 而非：D:\Conda\python.exe
+python -m pip install -e ".[dev]"
 ```
 
-**如果 `python` 路径不正确**，说明 PowerShell profile 未加载。排查步骤：
-1. 检查 profile 是否存在：`Test-Path $PROFILE`
-2. 重新打开终端（profile 只在启动时加载）
-3. 或执行 `. $PROFILE` 手动加载后重新 activate
-
-### 安装
+配置项见 [.env.example](.env.example)。环境变量覆盖本地配置；真实 Key 只在本地安全配置，不提交或发送到聊天。首次使用、没有已有配置时可复制模板：
 
 ```powershell
-D:\Conda\Scripts\conda.exe env create -f environment.yml
-D:\Conda\envs\PBIAgent\python.exe -m pip install -e ".[dev]"
 Copy-Item .env.example .env
-conda activate PBIAgent
 ```
 
-`.env.example` 是唯一可提交的配置模板。Mock 默认配置可直接运行；真实 Secret 只由用户写入本地 `.env`，不得提交或输出。
+### Mock backend
 
-### 启动
-
-**确认 Python 路径正确后**启动后端：
+在已激活的 Python 环境中启动：
 
 ```powershell
-conda activate PBIAgent
+$env:IDENTITY_MODE = 'LOCAL_DEV'
+$env:LLM_MODE = 'mock'
+$env:POWERBI_MODE = 'mock'
+$env:PERSISTENCE_BACKEND = 'memory'
 $env:REQUEST_TIMEOUT_SECONDS = '180'
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
 
-另开终端启动前端：
+Mock 返回合成数据，适合先熟悉对话与模板流程。`memory` 只保留进程内状态；需要重启恢复、历史或搜索时使用 `PERSISTENCE_BACKEND=sqlite`。存储职责见[持久化 ADR](docs/adr/ADR-012_local_persistence_architecture.md)。
+
+### Frontend
+
+另开终端，在仓库根目录执行：
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-打开 `http://localhost:5173/`。Vite 将 `/auth`、`/api` 与 `/health` 代理到 `127.0.0.1:8000`。Microsoft 登录的前端地址、回调和配置 Origin 必须一致，不要混用 `127.0.0.1` 与 `localhost`。SQLite 历史和搜索功能需要后端设置 `PERSISTENCE_BACKEND=sqlite`；前端最终使用的 runtime namespace 以后端发现结果为准。
+打开 **http://localhost:5173/**。Vite 将 `/auth`、`/api`、`/health` 代理到后端。开发模式下可通过 **http://127.0.0.1:8000/docs** 查看 OpenAPI；`DEBUG=false` 时关闭 Swagger/ReDoc。
 
-正式 End-to-End request SLA 为180秒；单次LLM、MCP、Renderer为120秒，DAX为30秒。上方进程配置防止旧dotenv的120秒parent覆盖既有合同，不扩大child timeout；新终端启动也需明确使用当前合同。
+### Local Desktop
 
-启动命令会读取当前环境，不会自动从 Desktop 切到 Cloud。受控 Cloud 测试必须明确使用
-`IDENTITY_MODE=ENTRA_BFF`、`POWERBI_MODE=fabric_iq`，并由 operator 加载仓库外已批准的
-Workspace 测试策略及独立合成 SQLite/report root。三个服务端授权 `query_execution`、
-`external_llm_disclosure`、`business_persistence` 默认关闭；Microsoft 登录成功不自动开启它们。
-普通用户不填写这些配置。测试策略按 Workspace 授权，不要求逐 Model/Report 人工名单。
-
-若 `/auth/session` 已返回 200，随后 Cloud API 返回 403，应先区分 Cloud 服务未初始化、测试策略/
-目标授权未开放与 Microsoft 资源拒绝，不要直接把通用“联系管理员”提示当成账号权限不足。
-`ENTRA_BFF + local_mcp` 不会初始化 Fabric IQ Cloud 服务；原 Local Desktop 继续使用 `LOCAL_DEV`。
-Cloud 测试只使用 operator 已准备的独立合成存储，不自动创建/迁移或读取既有业务数据库。
-
-下面直接调用旧业务 API 的示例仅适用于 `LOCAL_DEV`；`ENTRA_BFF` 使用浏览器登录后的正式 Cloud API。
+先在 Desktop 打开模型，并安全配置 `DEEPSEEK_API_KEY`。在仓库根目录、已激活环境中启动：
 
 ```powershell
-curl.exe http://127.0.0.1:8000/health
-
-curl.exe -X POST http://127.0.0.1:8000/api/v1/chat `
-  -H "Content-Type: application/json" `
-  -d '{"message":"本月销售额是多少？"}'
+$env:IDENTITY_MODE = 'LOCAL_DEV'
+$env:LLM_MODE = 'deepseek'
+$env:LLM_DEFAULT_PROFILE = 'deepseek'
+$env:POWERBI_MODE = 'local_mcp'
+$env:POWERBI_LOCAL_MCP_READONLY = 'true'
+$env:PERSISTENCE_BACKEND = 'sqlite'
+$env:MAX_TOOL_CALLS = '8'
+$env:REQUEST_TIMEOUT_SECONDS = '180'
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
 
-`DEBUG=true` 时可访问 `http://127.0.0.1:8000/docs`；关闭 debug 后不暴露 Swagger/ReDoc。
+前端启动方式相同。进入“数据模型”菜单选择当前 Desktop 模型，在“AI 模型”菜单选择已配置的 profile，再提交问题。生成报表前显式选择适配当前模型的模板。若目录仍显示 Mock 销售模型，先确认后端模式与当前终端配置。
 
-### 常见启动问题
+Local MCP 实机协议基线为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`；模型目录会验证连接和 schema。Desktop 或后端重启后旧模型 key 可能失效，需要刷新目录并重新选择。Kimi K2.6 使用用户自有的 OpenAI-compatible gateway，配置项见模板；不提供预设真实 host 或 Key。更多前置条件与恢复方式见[Power BI MCP/API 契约](docs/04_powerbi_mcp_and_api_contracts.md)。
 
-#### `python-dotenv could not parse statement starting at line ...`
+### Fabric IQ Cloud
 
-`.env` 只能包含 `KEY=value`、以 `#` 开头的注释和空行。不要粘贴 Markdown 代码围栏、PowerShell 命令、项目符号或只有 `KEY` 没有 `=` 的内容；一个配置项只占一行。诊断命令只报告非法行号与安全配置状态，不打印任何配置值或 Key：
+Cloud 需要 operator 先完成 Entra 同源登录、Workspace 范围、应用策略与隔离存储配置。浏览器 Origin 与 OAuth callback 必须一致，不混用 `localhost` 与 `127.0.0.1`。普通用户通过 Microsoft 登录、模型目录与对话页面使用产品。
+
+完整边界见[Cloud ADR](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)、[Auth 文档](docs/milestones/m6/m6_1_entra_identity_login_session.md)和[开发交接](docs/09_context_handoff.md)。登录或授权失败时，先区分应用策略与 Microsoft 资源访问，不直接扩大 Workspace 权限。
+
+## Project Structure
+
+```text
+backend/   FastAPI、确定性分析链、Power BI Adapter、Repository 和正式测试
+frontend/  React/Vite 对话界面、资源操作和 frontend tests
+docs/      产品需求、架构决策、当前状态、路线与里程碑
+scripts/   开发检查、可移植本地验证 runner 和显式人工验收工具
+harness/   离线 fixtures、Golden cases 与已知答案基线
+```
+
+## Documentation
+
+| 入口 | 内容 |
+|---|---|
+| [PRD](docs/00_product_requirements_document.md) | 产品目标、用户需求与正式范围 |
+| [Project Charter](PROJECT_CHARTER.md) | 项目使命与长期架构约束 |
+| [ADR](docs/adr/README.md) | 控制面、事实、报表、存储与 Cloud 决策 |
+| [07 · 当前状态](docs/07_milestones_status_and_open_questions.md) | 当前发布状态与验收结论 |
+| [08 · 开发路线](docs/08_development_roadmap.md) | 当前及未来阶段边界 |
+| [09 · 开发交接](docs/09_context_handoff.md) | Cold Start、运行配置、限制与恢复入口 |
+| [Milestones](docs/milestones/) | 各阶段设计、验证和历史证据摘要 |
+| [CHANGELOG](CHANGELOG.md) | 版本变更记录 |
+| [AGENTS](AGENTS.md) | 开发协作、测试资产、治理与 Git 规则 |
+| [文档地图](docs/index.md) | 完整导航与阅读优先级 |
+
+API 请求/响应以当前开发实例 OpenAPI 和[接口契约](docs/04_powerbi_mcp_and_api_contracts.md)为准。发布证明保存在状态、交接和 milestone 文档；项目首页只介绍产品和启动入口。
+
+## Development
+
+安装开发依赖后，先将 `PBIAGENT_TEST_ROOT` 设为仓库外独立的 **PBIAgentTest** 绝对路径。本地测试通过 runner 执行，cache、输出与临时文件按 milestone/run 存放；临时目录结束时清理。路径和生命周期规则见 [AGENTS](AGENTS.md)。GitHub CI 保持其现有可移植运行方式。
 
 ```powershell
-python scripts/check_startup_config.py --env-file .env
+python scripts/run_local_validation.py --milestone M6.4.1 -- python -m pytest backend/tests -q
+python scripts/run_local_validation.py --milestone M6.4.1 -- python scripts/check_semantic_compatibility.py
+python scripts/run_local_validation.py --milestone M6.4.1 --frontend -- npm test
+python scripts/run_local_validation.py --milestone M6.4.1 --frontend -- npm run build
 ```
 
-按报告行号在本地修正后重新运行诊断，再重启后端。不要把 `.env`、诊断时使用的真实 Key 或任何 Secret 提交到 Git。
+自动化验证使用离线 Mock/Synthetic；它不证明真实 Desktop 在线状态、Cloud 权限或真实 OLS deny。运行真实验收前读取对应专项文档并使用独立测试资产，不把真实业务文件或凭据放进 Git。
 
-#### `No module named uvicorn`
+## Status / Limitations
 
-使用 `python -m uvicorn ...` 时报错，但 `conda run -n PBIAgent python -m uvicorn ...` 正常。
-**原因：** PowerShell 的 `conda activate` 未生效，Python 仍指向 base 环境（`D:\Conda\python.exe`）。
-**解决：** 执行 `conda init powershell` 一次 → 关闭并重新打开 PowerShell → 确认 `python -c "import sys; print(sys.executable)"` 输出 `D:\Conda\envs\PBIAgent\python.exe`。
+当前版本：**M6.4.1**；稳定基线 **M6.4 FINAL COMPLETE**。Local Desktop 与 Fabric IQ Cloud 已通过各自正式验收。本次维护处理测试资产和文档治理，当前发布信息与维护结论以 [07](docs/07_milestones_status_and_open_questions.md) 为准。
 
-作为一次性临时方案，也可用绝对路径直接启动：
+- Fabric IQ 正式边界为 **business rows ≤12、wire=N+1 sentinel、columns ≤8**。超界、CSV、未知或不完整结果在正式 Facts 前拒绝；较大 TopN 或长趋势不能据此宣称完整结果。
+- Cloud 会话与存储仍为 single-process/SQLite/filesystem，尚不是多 worker 企业生产部署。Microsoft 配额、MCP Preview 协议和上游延迟仍有适用限制。
+- Test B 的独立 Real OLS deny evidence 受测试 principal 可用性限制；已有 RLS/owner 验收不替代该证据。
+- 不支持跨语义模型查询、任意 DAX/代码/HTML，也不提供报表设计器或 Native Report Center。
+- 当前两种固定报表面向 Sales domain；不适配的模型仍可问数，但不返回不适用模板。
+- Local Desktop 依赖 Windows 和正在打开的模型；模型切换、失效与身份不明确时要求重新确认。
 
-```powershell
-D:\Conda\envs\PBIAgent\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
-```
+## License / Usage
 
-#### `Errno 10048` / 端口 8000 已占用
-
-**原因：** 上次启动的后端进程未退出。
-**排查与关闭：**
-
-```powershell
-# 查看谁占了 8000 端口
-netstat -ano | Select-String ':8000' | Select-String 'LISTENING'
-
-# 确认是 uvicorn 进程后关闭（替换 PID 为实际值）
-Stop-Process -Id <PID> -Force
-
-# 或直接通过端口查找并关闭
-$pid = (netstat -ano | Select-String ':8000' | Select-String 'LISTENING' | ForEach-Object { $_ -split '\s+' } | Select-Object -Last 1)
-Stop-Process -Id $pid -Force
-```
-
-**注意：** `Stop-Process` 按 PID 关闭，确认 PID 对应的进程名是 `python` 且命令行含 `uvicorn` 再执行。不要误杀其他程序。
-
-#### 如何确认当前 Python 路径正确
-
-```powershell
-conda activate PBIAgent
-python -c "import sys; print(sys.executable)"
-# 期望输出：D:\Conda\envs\PBIAgent\python.exe
-```
-
-如果输出是 `D:\Conda\python.exe`，说明环境激活未生效，参照上一条执行 `conda init powershell`。
-
-`sales_report` 的 schema、4 次查询和渲染需要 `MAX_TOOL_CALLS=8` 的正式工具预算；更低值会受控失败。仓库固定实机基线为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`；详细前置条件、Smoke 与故障分类见 [Power BI MCP 与 API 契约](docs/04_powerbi_mcp_and_api_contracts.md) 和 [M2 集成计划](docs/milestones/m2/12_m2_powerbi_mcp_integration_plan.md)。
-
-Local MCP DAX 执行会验证实际 columns/rows/`rowCount` shape，并使用一行 sentinel 探测上限。协议显式返回的 truncation/limit metadata 会映射到 `QueryResult.truncated`；beta.12 无法证明完整且结果触及请求上限时保守标记 truncated，`VerifiedFactSet` 不会据此宣称全量排名、最大值或最小值完整。
-
-## 运行模式
-
-| `LLM_MODE` | `POWERBI_MODE` | 用途 |
-|---|---|---|
-| `mock` | `mock` | 默认离线开发与 CI，不需要 Secret |
-| `deepseek` | `mock` | 真实语言模型 + Mock Power BI 数据 |
-| `deepseek` | `local_mcp` | 真实 DeepSeek + readonly Local MCP + Power BI Desktop |
-| `openai_compatible` | `local_mcp` | DeepSeek/Kimi profile 目录 + readonly Local MCP；默认 profile 由 `LLM_DEFAULT_PROFILE` 指定 |
-
-`remote_mcp` 当前不可用。`PERSISTENCE_BACKEND=memory` 是兼容性默认值，只保留进程内状态；需要重启恢复、历史或搜索时必须显式使用 `PERSISTENCE_BACKEND=sqlite`。
-
-## API 接口
-
-| 方法 | 路径/字段 | 说明 |
-|---|---|---|
-| `GET` | `/health` | 当前 runtime 配置就绪状态 |
-| `GET` | `/api/v1/semantic-models` | 当前 Desktop 模型的安全目录、runtime namespace 与最小 Agent compatibility 状态 |
-| `GET` | `/api/v1/report-templates` | 当前可用的 registry-owned 报表模板只读目录；前端不维护第二份模板 authority |
-| `GET` | `/api/v1/llm-profiles` | 安全公开的 LLM profile 目录；不返回 Key 或 base URL |
-| `POST` | `/api/v1/chat` | 非流式数据问答与报表生成 |
-| 字段 | `semantic_model_key` | 从发现目录选择 opaque 模型 key；必须精确绑定当前 Desktop 实例 |
-| 字段 | `llm_profile_key` | 本轮显式选择的公开 LLM profile；进入幂等指纹并在 turn 内冻结 |
-| 字段 | `report_template_key` | 报表请求必须显式提供的 registry-owned 模板 key；当前公开 `sales_report`（“简易销售分析模板”）与 `sales_executive_report`（“专业销售经营分析模板”），missing/invalid/stale 均在 ReportSpec/Renderer/artifact 前 fail closed |
-| `GET` | `/api/reports/{report_id}` | 查看 repository-owned HTML 报表 |
-| `GET` | `/api/reports/{report_id}/download` | 下载 UTF-8 HTML 报表 |
-| `GET` | `/api/v1/conversations` | 按 `runtime_mode` 查询最近会话 |
-| `GET` | `/api/v1/conversations/search` | 按 `runtime_mode` 搜索声明范围内的持久化字段 |
-| `GET` | `/api/v1/conversations/{conversation_id}/history` | 持久化的展示型 user/assistant transcript 与结构化轮次结果；不成为事实来源 |
-| `GET` | `/api/v1/conversations/{conversation_id}/reports` | 按 `source_mode` 查询严格报表 metadata |
-| `PATCH` | `/api/v1/conversations/{conversation_id}` | 在 `runtime_mode` namespace 内重命名会话；只修改 presentation metadata |
-| `POST` | `/api/v1/conversations/{conversation_id}/archive` | 幂等归档指定 namespace |
-| `DELETE` | `/api/v1/conversations/{conversation_id}` | 删除指定 namespace 及关联的受管 HTML |
-
-Conversation API 仅在 SQLite 后端可用；namespace 查询参数必填，每页数量为 1–50，cursor 是绑定端点、查询与 namespace 的不透明令牌。完整请求/响应 schema 以 debug 模式下的 OpenAPI 为准。
-
-## 持久化
-
-- SQLite 默认路径：`local_state/persistence/powerbiagent.db`。
-- Report HTML 路径：`local_state/reports/`。
-- SQLite 保存结构化状态与 metadata；文件系统是 HTML 的唯一权威来源。
-- 已提交 WorkMemory 只从完整 `payload_json` 恢复；缺失、空、损坏、不完整或与数据库完整性列冲突时受控失败，不使用部分列回退。
-- 只有终态 Snapshot 可以作为请求重放权威；存在 Memory 但缺少 Snapshot 时必须受控失败。
-- Memory conversation API 与 Snapshot/request API 必须显式携带 runtime namespace；Mock/Real 状态严格隔离，历史和搜索不会升级为事实来源。
-- conversation `title`、Snapshot `user_message` 和 `presentation` 只服务 UI 恢复；它们不能输入 Grounding、QueryPlan、Memory 或 VerifiedFactSet。
-
-上述路径均在 Git 之外。当前 schema 由 Alembic 管理；M5.3 migration 仅为 `conversations` 增加 nullable `title` presentation metadata，不改变 conversation identity、Memory 或事实链。
-
-## 开发与验证
-
-```powershell
-# 后端完整回归
-python -m pytest backend/tests -q
-
-# 永久语义兼容门禁
-python scripts/check_semantic_compatibility.py
-
-# Golden 用例
-python -m backend.app.harness.cases
-
-# 确定性治理门禁
-python scripts/check_architecture_gate.py
-python scripts/check_repository_safety.py
-python scripts/check_ai_error_ledger.py
-python scripts/check_documentation_governance.py
-python scripts/check_artifact_governance.py
-
-# 全新 SQLite schema Smoke
-python -m alembic upgrade head
-```
-
-`PowerBIAgent Validation` 在 GitHub Actions 上验证准确的 commit SHA，并由 `main` / `m5/rebuild` 的 push 或 pull request 触发。Semantic Compatibility Gate 扫描完整 `backend/app/**` production 文本并禁止依赖 known-answer/test oracle，且在 full pytest 前运行；同一 workflow 使用 Node.js LTS 与 `npm ci` 执行 frontend Vitest、typecheck、lint 和 production build。CI 只使用 Mock/Fake 边界，不持有 DeepSeek Key、Microsoft Token、PBIX 或真实业务数据；真实 Power BI Desktop 验收始终是本地人工 Smoke。
-
-## 项目状态
-
-当前状态只见 [07](docs/07_milestones_status_and_open_questions.md)，M5 小阶段历史见 [变更记录](CHANGELOG.md) 与 milestone docs。下一阶段为 M6 — Cloud Consumption & Enterprise Identity。
-
-## 文档导航
-
-- [项目章程](PROJECT_CHARTER.md) — 项目使命、范围与北极星。
-- [正式 PRD](docs/00_product_requirements_document.md) — 唯一产品需求基线。
-- [开发路线](docs/08_development_roadmap.md) — 当前路线与阶段边界。
-- [上下文交接](docs/09_context_handoff.md) — 当前代码状态、限制与下一步。
-- [文档地图](docs/index.md) — 文档导航与阅读优先级。
-- [架构决策记录](docs/adr/) — 已接受的 ADR 与权威边界。
-- [M5 泛化与验收契约](docs/specs/13_m5_generalization_and_acceptance_contract.md) — 重建历史、M5.5—M5.10 边界与 Generalization Gate。
-- [AGENTS.md](AGENTS.md) — 代码 Agent 的 Cold Start、Git 与 README 维护约定。
-
-## 范围与已知限制
-
-- 本地单机 MVP；不支持多租户、复杂权限或 Power BI RLS。
-- Remote MCP 延期；不承诺生产级远程 Power BI 接入。
-- 不支持跨语义模型查询、任意 DAX、任意代码或任意 HTML。
-- 当前可用报表为“简易销售分析模板” `sales_report` 与“专业销售经营分析模板” `sales_executive_report`；报表请求必须显式选择，两个模板不得互相 fallback。
-- Real Power BI 验收需要 Windows、Node.js 20+、Power BI Desktop 与本地人工 Smoke；CI 不验证 Desktop 在线链。
-- 当前结构化展示支持单值指标、多行表格，以及根据真实 QueryResult 字段引用生成的简单柱状图或折线图；不提供前端排序/筛选工作台、任意 ChartSpec 或前端推断数据。
-- `m5/rebuild` 已冻结为只读发布追溯分支，不接收 M5.9/M5.10 新开发。`m5/frontend` 上的 `a197db3`（原 M5.5）与 `6d1620a`（原 M5.5.1）作为实验/审计历史由 `archive/m5-frontend-experimental-final` tag 永久保存；新线从 M5.4.1 `cab40b0` 重新开始，能力必须分阶段重新实现并重新验收。main 是唯一活动开发线。
-
-公司内部专有软件。
-
----
-
-*最后更新：2026-10-15 | Settings.version=M6.4；同Round 2 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；M5 FINAL/FROZEN；当前状态以07/08/09为准*
+本仓库为公司内部专有软件，`pyproject.toml` 声明 **Proprietary**。未授予通用开源使用许可；内部使用仍须遵守组织的数据访问、外部 LLM 披露和留存策略。依赖组件遵循各自许可证。

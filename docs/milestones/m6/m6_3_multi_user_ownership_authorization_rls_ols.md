@@ -116,7 +116,7 @@ failure-first：最初新增 owner tests 因缺 factory/module RED；权限撤�
 ## 7. 历史部署与失败证据轨迹（原文保留；当前结论见第9—11节）
 
 2026-10-10后续用户确认：同tenant两个独立测试用户已加入PowerBIAgent-M6-Dev且均为Viewer；用户本人保持Admin仅做配置，不计入RLS/OLS证据。
-按后续授权，Agent已在仓库外生成D:\AAA_Workfile\M63Fixture：单一synthetic PBIP/PBIR、model.bim、官方TOM生成的TMDL、create-only XMLA和固定Fabric REST payload。
+按后续授权，Agent已在仓库外生成PBIAGENT_TEST_ROOT/M6.3/Fixtures：单一synthetic PBIP/PBIR、model.bim、官方TOM生成的TMDL、create-only XMLA和固定Fabric REST payload。
 Microsoft公开JSON schema六项与Microsoft.AnalysisServices 19.114.12 TOM/TMDL反序列化/角色属性检查PASS；20个定义文件SHA256 manifest。无真实用户成员、外部data source或业务数据。
 仓库外publish_fixture.py使用既有localhost回调，独立管理员Fabric SemanticModel.ReadWrite.All流程；token只在临时Auth/Transport内存，不改产品DELEGATED_SCOPES。
 固定用户指定工作区和模型，空POST+native CSRF，只创建不覆盖/删除；201、202轮询、冲突、网络结果不明停止、禁止重复创建及product gate离线检查PASS。
@@ -154,7 +154,7 @@ E. 两个独立 browser profiles：先 A 登录建立自己的 schema/key、synt
 Agent 负责临时 harness 启停、schema/query 与证据收集，用户只做浏览器/Microsoft 登录/Power BI 权限操作。
 用户配置后只需回复：**M6.3 RLS/OLS 测试用户配置完成**。
 
-仓库外 `D:\AAA_Workfile\PowerBIAgent_M6_3_Acceptance\security_harness.py` 已准备，未启动Real服务器。
+仓库外 `PBIAGENT_TEST_ROOT/M6.3/Acceptance/security_harness.py` 已准备，未启动Real服务器。
 仅 synthetic resource、server-owned fixture bootstrap、固定 scalar/grouped/restricted DAX；require_principal + native CSRF；不接受 tenant/principal/token/任意 DAX。
 harness 使用新的独立 synthetic DB/root；不读取开发者业务 DB。不得将它挂入 production app 或提交为永久 debug route。
 仓库外validate_harness.py offline dry-run PASS：native OAuth协议fake、A/B synthetic resource/相同ID、server-derived owner、spoof拒绝、foreign/missing拒绝、schema/scalar/grouped/restricted、旧key/epoch与native product 403/临时path404。此结果只证明harness可用，不证明Microsoft RLS/OLS。
@@ -205,7 +205,7 @@ Safe原始证据路径与SHA256（仅摘要进入Git，无token/cookie/raw GUID/
 - audits/20261010-decoupled-security/real-security-matrix.json：8f5f3e3aac286ece2675991f9587bdb2e9b4d2fecab0d3a5b69bc92a377e04a1。
 - audits/20261010-final-seal/real-late-response.json：f04cac4b8c194223e7d6f267366df41a5f61dd8704d1c23590769c7cbc0f4f6d。
 - audits/20261010-final-seal/native-route-cleanup.json：ba21cf7c7637a9e9c1f9c4142a6d091974b346094cd8af34f73eb6509b0379fa。
-仓库外根目录为D:\AAA_Workfile\PowerBIAgent_M6_3_Acceptance；历史三轮失败、离线失败、撤回CONVERT的原记录全部保留。
+仓库外根目录为PBIAGENT_TEST_ROOT/M6.3/Acceptance；历史三轮失败、离线失败、撤回CONVERT的原记录全部保留。
 
 ## 10. 数值合同与独立未决项
 

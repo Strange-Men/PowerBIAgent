@@ -1,10 +1,20 @@
 # 08 — 当前及未来开发路线
 
-> Settings.version=M6.4；同Round 2 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；M5 FINAL/FROZEN有效。
+> **状态：** Settings.version=M6.4.1；稳定基线 M6.4 FINAL COMPLETE；M5 FINAL/FROZEN 有效。
 
-## 当前路线
+## 当前阶段 — M6.4.1 维护 / 发布判定
 
-Settings.version=M6.4；同Round 2必要Local/Cloud Real和fresh发布门已通过，Final Git Seal待本提交自身完整exact-SHA CI、Remote Audit与clean，全部成立才解析M6.4 FINAL COMPLETE并STOP。当前合同、timeout根因、Admin/Test A late/stale与RLS证据、既有OLS Test B例外和登录性能限制见[07当前验收](07_milestones_status_and_open_questions.md)。不启动M6.5/M6.6，后续须独立授权。
+M6.4 FINAL COMPLETE；Final SHA `bdbe7189be21ff043340c2025625a9e3398310b0`；自身 [Full Validation 38693083553](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38693083553) SUCCESS，Remote Audit PASS，封板时 HEAD=origin/main、worktree/staging clean。
+
+M6.4.1 仅处理仓库外测试资产治理、README 信息架构、current-state 一致性、IQ 保守结果边界明确化及 Test B OLS 证据状态；不实施 Schema cache、connection reuse、Favorites/Preferences，不进入 M6.5。
+
+Folder Governance：448 文件 / 44,252,661 bytes 原始副本验证通过；10 synthetic DB 仅 byte copy/hash。用户已人工删除旧五目录与仓库误生成五目录，fresh 验证 MANUAL_DELETE_COMPLETE；旧目录=0、仓库临时目录=0、active old-path reference=0、SHA mismatch=0。
+
+IQ 正式 Cloud business rows ≤12，wire sentinel=N+1，columns ≤8；超界在 Facts 前 fail closed。CLOSED_AS_EXPLICIT_LIMIT，不扩大 completeness、QueryShape、Provider 或 Frozen Core。Test B 当前没有可用验收 principal，DEFERRED_BY_TEST_PRINCIPAL；后续生产安全封板仍须独立 Real OLS deny，不能用 Test A 或历史 PASS 替代。
+
+专项交接见 [M6.4.1](milestones/m6/m6_4_1_test_asset_governance_and_post_final_closure.md)。M6.4 既有 Local/Cloud Real、Int64、lineage、完整性、报告来源、owner/RLS/late-stale 验收不重新打开。本轮无生产事实链变更；发布须本轮 Final commit 自身完整 exact-SHA CI、Remote Audit 和 clean，不继承 M6.4 CI。
+
+本轮fresh：后端3521PASS/1SKIP/15既有warnings、Semantic819PASS、Golden11PASS/1manualSKIP、前端160PASS、Typecheck/Lint/Build及治理门PASS；补充runner/IQ负例16PASS。Local/Cloud Real未重复运行（无事实production行为变化）；不能计为fresh Real PASS。中文发布提交为`M6.4.1_测试资产治理与封板遗留收口`；自身CI/Remote Audit/clean全部成立后FINAL COMPLETE并STOP，不进入M6.5。exact-SHA回执按main当前提交和外部Governance解析，不继承旧CI。
 
 ## 此前阶段记录（历史，不作为当前下一步或Final CI）
 

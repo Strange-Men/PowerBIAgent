@@ -1,23 +1,22 @@
 # 07 — 当前项目状态
 
-> Settings.version=M6.4；同Round 2 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；M5 FINAL/FROZEN有效。
+> Settings.version=M6.4.1；稳定基线 M6.4 FINAL COMPLETE；M5 FINAL/FROZEN 有效。
 
-## 当前状态
+## 当前阶段 — M6.4.1 维护 / 发布判定
 
-同一 M6.4 Round 2；必要Local/Cloud Real与版本更新前fresh Full Gates已通过，Settings.version=M6.4。
-当前为Final Git Seal待验；只有最终实际main提交自身PowerBIAgent Validation / Full Validation (Windows) SUCCESS、required checks成功、Remote Audit、HEAD=origin/main及worktree/staging clean全部成立，才解析M6.4 FINAL COMPLETE；随后STOP。自身SHA不写入自身提交，不继承旧SHA CI。
+M6.4 FINAL COMPLETE；Final SHA `bdbe7189be21ff043340c2025625a9e3398310b0`；自身 [Full Validation 38693083553](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38693083553) SUCCESS，Remote Audit PASS，封板时 HEAD=origin/main、worktree/staging clean。
 
-Local根因是dotenv来源旧request=120覆盖既有正式parent=180合同；child LLM/MCP/render=120、DAX=30不变。fresh原120秒复现Understanding=4.468秒、Coverage在剩余115.532秒开始、115.547秒后parent取消、累计120.015秒，业务DAX未进入；原115.781秒失败原件保留。无deadline实现bug证据，仅进程级恢复REQUEST_TIMEOUT_SECONDS=180，未读取/修改dotenv或production timeout代码，不扩大SLA。原完整专业Report最终16.688秒Real PASS，三合法LLM阶段、九DAX/九VerifiedFactSet/九section、Power BI Desktop来源、无功能裁减/fallback、MCP/worker残留0。
+M6.4.1 仅处理仓库外测试资产治理、README 信息架构、current-state 一致性、IQ 保守结果边界明确化及 Test B OLS 证据状态；不实施 Schema cache、connection reuse、Favorites/Preferences，不进入 M6.5。
 
-Cloud原生Admin与Test A Final当前Real PASS：既有owned专业Report view/download、History/Restore、cross-owner History=403/Report=404且与unknown body相同、越权mutation拒绝且session保留、Test A RLS scalar=100/Region A列表绑定VerifiedFactSet。Admin迟到History/Report均403、在途真实DeepSeek响应失去generation后403、ZERO事实Memory/Snapshot；stale generation=409。已成功的rename/archive/unarchive/delete生命周期保持本Round有效checkpoint，未重放非幂等写入。Test A首次Final尾部与普通UI并发产生409，失败保存，仅续跑剩余步骤PASS。既有用户批准Test B不可用例外保留：A允许RestrictedTable，本轮不宣称OLS deny Real PASS。
+Folder Governance：448 文件 / 44,252,661 bytes 原始副本验证通过；10 synthetic DB 仅 byte copy/hash。用户已人工删除旧五目录与仓库误生成五目录，fresh 验证 MANUAL_DELETE_COMPLETE；旧目录=0、仓库临时目录=0、active old-path reference=0、SHA mismatch=0。
 
-IQ_ACCEPTED保持；Fabric IQ唯一Cloud Data Plane，REST只作Catalog/Metadata。整个PowerBIAgent-M6-Dev Workspace含未来测试资源获批，其外ZERO request；三个operator test grant独立默认false，测试批准不是production授权。保守inline business N=min(request.max_rows,12)、wire=N+1、最多8列/104cells/66 ASCII JSON bytes每cell或name/8192bytes execution；CSV/超界/unknown/incomplete在Facts前拒绝，不宣称任意大结果完整。Local max_rows=1000和Frozen事实链不变；仅此前获批Report provenance兼容例外。
+本地 runner 已使用正确引用的正斜杠路径和 canonical owned temp；误生成五目录共2,928文件已归档并由用户清理，根因/失败证据保留，当前清理阻塞已解除。README 改为项目首页；配置排障及历史信息分别落在09/专项文档。fresh gates已通过，Settings.version=M6.4.1；发布按自身CI/Audit/clean生效。
 
-本轮fresh：Full Backend 3516 PASS/1 existing manual SKIP/15保留warnings；Frontend 160 PASS；Semantic 819 PASS；Golden 11 PASS/1 manual Real SKIP；Typecheck/Lint/Build、Repository Safety、Architecture、Documentation Governance、Error Ledger、Artifact Governance PASS。首次Backend仅文档当前阶段版本位置失败，最小修正文档后全量PASS；Frontend worker启动失败及base Python缺依赖原件保留，使用既有PBI_SYNTHETIC_PYTHON配置重跑全量PASS，未改expected。版本更新后完整发布门再次执行；exact-SHA CI仍须独立证明。
+IQ 正式 Cloud business rows ≤12，wire sentinel=N+1，columns ≤8；超界在 Facts 前 fail closed。CLOSED_AS_EXPLICIT_LIMIT，不扩大 completeness、QueryShape、Provider 或 Frozen Core。Test B 当前没有可用验收 principal，DEFERRED_BY_TEST_PRINCIPAL；后续生产安全封板仍须独立 Real OLS deny，不能用 Test A 或历史 PASS 替代。
 
-登录性能计时：Auth session=0.015秒、native目录=15.36秒（独立复测9.219秒）、模型Schema选择=6.50秒、模板Schema=6.734秒、Restore Resolve+Schema=8.281秒；不是已证明Auth恢复timeout。UI“正在恢复对话”也用于模板验证，性能/文案后续变更不在当前timeout root cause内。上游RATE_LIMITED失败与正常reload/reselect/Restore恢复保留，不重试产品写操作、不取消Microsoft配额。
+专项交接见 [M6.4.1](milestones/m6/m6_4_1_test_asset_governance_and_post_final_closure.md)。M6.4 既有 Local/Cloud Real、Int64、lineage、完整性、报告来源、owner/RLS/late-stale 验收不重新打开。本轮无生产事实链变更；发布须本轮 Final commit 自身完整 exact-SHA CI、Remote Audit 和 clean，不继承 M6.4 CI。
 
-证据均在仓库外PBIAgentTest/M6.4/Acceptance/20261014-round2：final-timeout-root-cause-evidence.json、final-local-timeout-recovery-receipt.json、final-native-admin-receipt.json、final-native-test-a-receipt.json及final-native-stage-timings.json。测试服务关闭，仓库不含诊断observer/acceptance runner/debug route/DB/PBIX/业务dump/credential。M6.4不等于enterprise production ready；single-process session、SQLite/filesystem、Preview MCP、LLM长尾、配额及既有MSAL/Alembic warnings公开保留。M6.5/M6.6未启动，后续须独立授权。
+本轮fresh：后端3521PASS/1SKIP/15既有warnings、Semantic819PASS、Golden11PASS/1manualSKIP、前端160PASS、Typecheck/Lint/Build及治理门PASS；补充runner/IQ负例16PASS。Local/Cloud Real未重复运行（无事实production行为变化）；不能计为fresh Real PASS。中文发布提交为`M6.4.1_测试资产治理与封板遗留收口`；自身CI/Remote Audit/clean全部成立后FINAL COMPLETE并STOP，不进入M6.5。exact-SHA回执按main当前提交和外部Governance解析，不继承旧CI。
 
 ## 此前阶段记录（历史，不作为当前下一步或Final CI）
 

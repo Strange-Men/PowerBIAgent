@@ -1,8 +1,8 @@
-# M6.4 — Cloud Product E2E（同 Round 2 继续，FINAL NOT READY）
+# M6.4 — Cloud Product E2E（FINAL COMPLETE）
 
-## 当前Final Seal（2026-10-15）
+## 已完成的 M6.4 Final Seal（2026-10-15）
 
-Settings.version=M6.4；同Round 2必要Local/Cloud Real和fresh发布门已通过，Final Git Seal待本提交自身完整exact-SHA CI、Remote Audit与clean，全部成立才解析M6.4 FINAL COMPLETE并STOP。当前合同、timeout根因、Admin/Test A late/stale与RLS证据、既有OLS Test B例外和登录性能限制见[07当前验收](../../07_milestones_status_and_open_questions.md)。IQ_ACCEPTED与Frozen Core不重开，原失败证据和同Round成功生命周期checkpoint保留，不重放非幂等写入。
+M6.4 FINAL COMPLETE；Final SHA `bdbe7189be21ff043340c2025625a9e3398310b0`，自身 Full Validation 38693083553 SUCCESS，Remote Audit PASS，封板时 worktree/staging clean。当前维护状态见[07](../../07_milestones_status_and_open_questions.md)。IQ_ACCEPTED 与 Frozen Core 不重开；原失败证据及成功生命周期 checkpoint 保留。M6.4.1 将保守结果合同记为 CLOSED_AS_EXPLICIT_LIMIT，Test B OLS deny 记为 DEFERRED_BY_TEST_PRINCIPAL，不扩大既有验收。
 
 ## 此前Round 2施工证据（历史）
 
@@ -117,7 +117,7 @@ SalesReportDataAssembler能接受truncated分组结果，而SalesReportSpecBuild
 正式API仍关闭，direct Core失败reproducer保留，没有反转expected、放宽validator或新建事实链。
 产品完整性保护与Catalog/原生Adapter/cell focused回归：254 PASS / 1 MSAL warning（11.24s）。
 上表3204条Full Backend发生于此保护之前；保护后完整回归3208 PASS / 1 SKIP / 12 warnings。
-完整输出保存在仓库外PowerBIAgent_M6_4_Acceptance/local-full-backend.txt。
+完整输出保存在仓库外PBIAGENT_TEST_ROOT/M6.4/Acceptance/legacy-root/local-full-backend.txt。
 
 ## 临时审计登录链接修复
 

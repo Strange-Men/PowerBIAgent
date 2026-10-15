@@ -1,10 +1,18 @@
 # CHANGELOG
 
+## [M6.4.1] — 2026-10-15（测试资产治理与封板遗留收口）
+
+仓库外测试资产统一到 PBIAgentTest，448 文件 / 44,252,661 bytes 原件和2,928个误生成临时文件完成存档验证；用户人工清理10旧目录，fresh核对零残留、零活跃旧路径引用、零SHA差异。新增本地validation runner显式隔离pytest/Vite/TypeScript缓存、构建产物和临时目录，CI默认方式不变。
+
+README从约29.8KB精简为约11.8KB项目首页，历史/配置/authority保持权威文档入口；修复M6.4 Final后的current-state陈旧文字。IQ保守结果上界CLOSED_AS_EXPLICIT_LIMIT；独立Test B Real OLS deny为DEFERRED_BY_TEST_PRINCIPAL，后续生产安全封板责任保留。误扩展cache/connection/Favorites代码已精确退出，Frozen Core和产品事实行为不变；唯一runtime diff为版本标记。
+
+fresh后端3521PASS/1SKIP（15既有warnings）、Semantic819PASS、Golden11PASS/1manualSKIP、前端160PASS、Typecheck/Lint/Build及治理门PASS；补充runner/IQ负例16PASS。本次无事实生产行为改动，Local/Cloud Real未重复运行，不冒充fresh Real PASS。发布仅以本提交自身完整CI、Remote Audit和clean生效；详见[M6.4.1](docs/milestones/m6/m6_4_1_test_asset_governance_and_post_final_closure.md)。结束STOP，不进入M6.5。
+
 ## [M6.4] — 2026-10-15（云端产品最终验收）
 
 Fabric IQ唯一Cloud Data Plane、保守inline/Int64/lineage、Workspace测试边界和独立operator grants、真实Report来源及Cloud metadata有界退避收口。Admin/Test A原生产品、资源生命周期、RLS/owner/late-stale与Local完整专业Report通过；旧120秒parent运行配置恢复既有180秒合同，child不变，无timeout production代码修改。
 
-Final仅按本提交自身完整CI/Remote Audit/clean生效。Preview/配额/结果上界、single-process及既有Test B不可用OLS验收例外保留，M6.5/M6.6未启动。
+M6.4 FINAL COMPLETE；Final SHA `bdbe7189be21ff043340c2025625a9e3398310b0`；自身 [Full Validation 38693083553](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38693083553) SUCCESS，Remote Audit PASS，封板时 HEAD=origin/main、worktree/staging clean。 Preview/配额/结果上界、single-process及既有Test B不可用OLS验收例外保留，M6.5/M6.6未启动。
 
 ## M6.4_FIX（2026-10-14）
 

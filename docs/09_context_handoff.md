@@ -1,10 +1,42 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-> Settings.version=M6.4；同Round 2 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；M5 FINAL/FROZEN有效。
+> Settings.version=M6.4.1；稳定基线 M6.4 FINAL COMPLETE；M5 FINAL/FROZEN 有效。
 
-## 当前阶段 — M6.4 / Final Git Seal
+## 当前阶段 — M6.4.1 维护 / 发布判定
 
-Settings.version=M6.4；同Round 2必要Local/Cloud Real和fresh发布门已通过，Final Git Seal待本提交自身完整exact-SHA CI、Remote Audit与clean，全部成立才解析M6.4 FINAL COMPLETE并STOP。当前合同、timeout根因、Admin/Test A late/stale与RLS证据、既有OLS Test B例外和登录性能限制见[07当前验收](07_milestones_status_and_open_questions.md)。Cold Start须fetch/main/HEAD/origin/staging/diff核对，禁止覆盖Round 2成果或用旧CI替代当前SHA；必要Real回执与最终CI/Audit回执均在仓库外20261014-round2目录。Local正式parent180/child120/DAX30，运行环境须显式恢复既有180秒合同；不读取dotenv。
+M6.4 FINAL COMPLETE；Final SHA `bdbe7189be21ff043340c2025625a9e3398310b0`；自身 [Full Validation 38693083553](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38693083553) SUCCESS，Remote Audit PASS，封板时 HEAD=origin/main、worktree/staging clean。
+
+M6.4.1 仅处理仓库外测试资产治理、README 信息架构、current-state 一致性、IQ 保守结果边界明确化及 Test B OLS 证据状态；不实施 Schema cache、connection reuse、Favorites/Preferences，不进入 M6.5。
+
+Folder Governance：448 文件 / 44,252,661 bytes 原始副本验证通过；10 synthetic DB 仅 byte copy/hash。用户已人工删除旧五目录与仓库误生成五目录，fresh 验证 MANUAL_DELETE_COMPLETE；旧目录=0、仓库临时目录=0、active old-path reference=0、SHA mismatch=0。
+
+IQ 正式 Cloud business rows ≤12，wire sentinel=N+1，columns ≤8；超界在 Facts 前 fail closed。CLOSED_AS_EXPLICIT_LIMIT，不扩大 completeness、QueryShape、Provider 或 Frozen Core。Test B 当前没有可用验收 principal，DEFERRED_BY_TEST_PRINCIPAL；后续生产安全封板仍须独立 Real OLS deny，不能用 Test A 或历史 PASS 替代。
+
+专项交接见 [M6.4.1](milestones/m6/m6_4_1_test_asset_governance_and_post_final_closure.md)。M6.4 既有 Local/Cloud Real、Int64、lineage、完整性、报告来源、owner/RLS/late-stale 验收不重新打开。本轮无生产事实链变更；发布须本轮 Final commit 自身完整 exact-SHA CI、Remote Audit 和 clean，不继承 M6.4 CI。
+
+Cold Start：fetch origin → main/HEAD/origin/status/staging/diff/log；本轮起点必须为上述 M6.4 Final SHA。仅白名单改动；未知修改或 remote drift 停止。外部根使用 PBIAGENT_TEST_ROOT；本地 runner 显式 milestone/run cache_dir，CI 保持原方式。Local parent180/child120/DAX30 合同不变。
+
+本地 runner 已使用正确引用的正斜杠路径和 canonical owned temp；误生成五目录共2,928文件已归档并由用户清理，根因/失败证据保留，当前清理阻塞已解除。README 改为项目首页；配置排障及历史信息分别落在09/专项文档。fresh gates已通过，Settings.version=M6.4.1；发布按自身CI/Audit/clean生效。
+
+## 稳定运行入口（README移出细节）
+
+- Conda首次PowerShell激活异常可执行 `conda init powershell`，重开终端后激活PBIAgent；
+  用 `python -c "import sys; print(sys.executable)"` 确认当前解释器。uvicorn缺失先检查环境。
+- dotenv只接受KEY=value、注释与空行；`python scripts/check_startup_config.py --env-file .env`
+  只报告安全配置状态/非法行号，不输出Secret。端口占用先确认owner/命令行，不能盲目关闭进程。
+- Kimi配置使用 `LLM_MODE=openai_compatible`、`LLM_DEFAULT_PROFILE=kimi-k2.6`、
+  KIMI_BASE_URL/KIMI_API_KEY及 `KIMI_MODEL=azure/Kimi-K2.6`；用户自有gateway，禁止dump或自动fallback。
+- health仅证明配置，不探测Desktop在线；model catalog/probe才证明当前实例能力。
+  Local parent180/child120/DAX30、MAX_TOOL_CALLS=8、readonly合同保持。
+- Cloud要求ENTRA_BFF+fabric_iq，同源callback与cookie配置由operator管理；LOCAL_DEV+local_mcp
+  是Desktop入口。session200后403先区分服务初始化、policy/grant和Microsoft资源拒绝。
+  query_execution/external_llm_disclosure/business_persistence各自默认关闭，登录不自动授权。
+- SQLite支持历史/搜索，Memory/Snapshot恢复仍按完整payload与终态证据；HTML由文件repository管理。
+  LOCAL_DEV conversation API显式namespace、page1–50及opaque cursor；Cloud接口以OpenAPI为准。
+- 本地pytest/semantic/frontend/Real工具必须由canonical runner设置cache/TMP/TEMP/output；
+  仓库既有用户local_state、tmp等不在本轮删除授权内，不读取或搬迁业务数据。
+
+本轮fresh：后端3521PASS/1SKIP/15既有warnings、Semantic819PASS、Golden11PASS/1manualSKIP、前端160PASS、Typecheck/Lint/Build及治理门PASS；补充runner/IQ负例16PASS。Local/Cloud Real未重复运行（无事实production行为变化）；不能计为fresh Real PASS。中文发布提交为`M6.4.1_测试资产治理与封板遗留收口`；自身CI/Remote Audit/clean全部成立后FINAL COMPLETE并STOP，不进入M6.5。exact-SHA回执按main当前提交和外部Governance解析，不继承旧CI。
 
 ## 此前阶段记录（历史，不作为当前下一步或Final CI）
 
@@ -183,7 +215,7 @@ Viewer A已真实登录并执行首轮审计；Real Catalog PASS，6个模型可
 本次Real后已关闭临时审计进程并恢复native app。GET审计页（后端及Vite代理）404；未登录POST先被CSRF拒绝401，
 隔离synthetic有效session+CSRF验证POST审计路径404、产品API403；原生路由集合无m64临时入口。
 仓库外native-cleanup-evidence.json记录8项PASS；fabric_iq_contract_support_note.md为脱敏支持草稿，尚未发送任何第三方。
-仓库外临时只读审计：D:\AAA_Workfile\PowerBIAgent_M6_4_Acceptance；不由production导入，不读取/迁移业务DB。
+仓库外临时只读审计：PBIAGENT_TEST_ROOT/M6.4/Acceptance/legacy-root；不由production导入，不读取/迁移业务DB。
 正式ENTRA业务API保持关闭；Cloud产品接线/UX/浏览器Query与Report E2E未完成；数值P1/完整性仍UNRESOLVED。
 未来正式接线必须使用FabricIQAdapterFactory.create_product，在Core前拒绝未知完整性的结果；普通create仅保留审计合同。
 现有Sales报表直接组装可丢失truncated标记的合成失败证据已保留，M5 Core未修改。
@@ -232,7 +264,7 @@ Fabric IQ数值兼容为M6.4 Product E2E前P1 BLOCKER；不得强转、改expect
 Cloud完整性仍保守truncated=true；M6.4 Catalog、完整Chat/Report/History UI与Product E2E未实施，须独立批准。
 
 补丁基线为main@419dfd5cdde5c7550d62bbdaca12c7de853cea65；恢复时保留全部未提交成果与历史失败证据。
-仓库外工具与safe evidence位于D:\AAA_Workfile\PowerBIAgent_M6_3_Acceptance；本轮Late synthetic存储位于D:\AAA_Workfile\M63Late；fixture位于D:\AAA_Workfile\M63Fixture。
+仓库外工具与safe evidence位于PBIAGENT_TEST_ROOT/M6.3/Acceptance；本轮Late synthetic存储位于PBIAGENT_TEST_ROOT/M6.3/LateResponse；fixture位于PBIAGENT_TEST_ROOT/M6.3/Fixtures。
 临时延迟hook/诊断路由已从运行中服务卸载；正式代码从未导入仓库外工具。真实账号、token/cookie、raw identity GUID不进入Git。
 Alembic head=f63a1b2c3d40，八表历史行归local:legacy；现有用户DB未读取/迁移。回滚仅恢复M6.2离线完整备份，禁止合并principal IDs。
 Phase A固定中文commit：M6.3_多用户归属与权限隔离候选；Final：M6.3_多用户安全隔离与真实验收封板。

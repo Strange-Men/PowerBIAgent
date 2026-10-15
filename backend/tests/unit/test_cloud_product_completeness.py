@@ -46,3 +46,21 @@ async def test_product_rejects_sentinel_and_provider_incomplete_before_facts(har
     ref=await adapter.bind_catalog_model(WORKSPACE,MODEL)
     with pytest.raises(PowerBIAdapterError,match='^CONTRACT_DRIFT$'):
         await adapter.execute_dax(DAXRequest(semantic_model_key=ref.server_model_key,dax='EVALUATE ROW("probe",1)'))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('dax', [
+    'EVALUATE TOPN(20, ROW("probe", 1), [probe], DESC)',
+    'EVALUATE SUMMARIZECOLUMNS(\'Date\'[Month], "probe", [probe])',
+])
+async def test_large_ranking_or_trend_cannot_bypass_product_row_boundary(harness,dax):
+    auth,session,transport,_=harness
+    transport.query=result(rows=[[1]]*13)
+    adapter=FabricIQAdapterFactory(auth.settings,auth,transport_factory=lambda *args:transport).create_product(
+        session.session_id,session.principal)
+    ref=await adapter.bind_catalog_model(WORKSPACE,MODEL)
+    with pytest.raises(PowerBIAdapterError,match='^CONTRACT_DRIFT$'):
+        await adapter.execute_dax(DAXRequest(semantic_model_key=ref.server_model_key,dax=dax,max_rows=1000))
+    calls=[args for name,args in transport.calls if name=='ExecuteQuery']
+    assert len(calls)==1 and calls[0]['maxRows']==13
+    assert auth.require_session(session.session_id).principal==session.principal

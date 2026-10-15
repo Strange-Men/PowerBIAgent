@@ -5,6 +5,7 @@ same offline factual fixture as the API E2E. Only synthetic public API output
 crosses stdout. Temp artifacts are owned by this test, outside the repository.
 """
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -18,8 +19,11 @@ from backend.tests.api.test_cloud_factual_e2e import factual_product
 
 
 def main():
-    root = Path('D:/AAA_Workfile/PBIAgentTest')
-    with tempfile.TemporaryDirectory(prefix='m64-synthetic-ui-',dir=root if root.is_dir() else None) as folder:
+    configured_root = os.environ.get('PBIAGENT_TEST_ROOT')
+    root = Path(configured_root) / 'M6.4.1/Acceptance' if configured_root else None
+    if root is not None:
+        root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='synthetic-ui-',dir=root) as folder:
         patch = pytest.MonkeyPatch()
         fixture = factual_product.__wrapped__(Path(folder),patch)
         try:

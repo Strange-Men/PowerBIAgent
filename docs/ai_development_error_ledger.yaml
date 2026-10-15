@@ -8,6 +8,42 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-641-001
+  title: PREP性能方向与测试资产复制原件治理需服从当前scope
+  category: ERR
+  first_detected_version: M6.4.1
+  symptom: 实验connection与Favorites已修改worktree；引用迁移重复扫描自身备份使部分backup不再是原件；本地PYTEST_ADDOPTS反斜杠被解析为转义，临时文件误入仓库
+  local_evidence: 仓库外Research/ScopeRecovery保存10文件逐hunk恢复及6新文件移除；Governance保存448源文件和VerifiedSourceArchive逐项SHA
+  authoritative_sources:
+  - title: 用户M6.4.1 Scope Recovery
+    reason: 当前scope仅Folder Governance和三项封板遗留，PREP不是代码authority
+  root_cause: 旧PREP性能内容超出最新维护scope；动态递归扫描纳入新生成的备份目录；pytest环境参数经shlex解析，Windows路径未使用正斜杠且部分诊断basetemp父目录未预建
+  failed_attempts:
+  - 原备份目录递归复制；首次清理重复生成备份被工具policy拒绝，保留并分类历史
+  repair_attempt_count: 1
+  final_fix: 逐文件reverse diff并核对M6.4 Final Git blob；专属实验文件移入Research；扫描固定快照并排除备份，旧源原件独立归档再SHA验证；runner使用as_posix、预建父目录与短run名称避免Windows路径上界，Vite/TypeScript输出按外部验证路径隔离；2928个本轮误入仓库的synthetic文件复制并SHA复核至Research；删除被policy拒绝的历史证据保留，用户人工清理10目录后fresh验证MANUAL_DELETE_COMPLETE；不改事实链或历史test expected
+  regression_tests:
+  - backend/tests/unit/test_test_asset_governance.py
+  - backend/tests/unit/test_m6_4_iq_inline_envelope.py
+  prohibited_patterns:
+  - 将旧PREP方案作为当前实施授权或将Research实验作为正式验收门槛
+  - 复制完成前删除源目录或将修改后文件hash冒充原始副本zero diff
+  prevention_rules:
+  - 当前用户scope优先；inventory和copy原件manifest不可变，reference修改与原始SHA分层保存
+  - PYTEST_ADDOPTS中的Windows路径使用正斜杠，预建basetemp父目录并保持短run路径；本地runner结束必须检查git status无测试输出
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-15'
+    action: explicit_scope_recovery_verified_zero_experimental_production_diff_original_assets_preserved
+    version: M6.4.1
+  - date: '2026-10-15'
+    action: pytest_windows_escape_root_cause_fixed_semantic_819_pass_transient_2918_hash_verified_cleanup_policy_blocked
+    version: M6.4.1
+  - date: '2026-10-15'
+    action: user_manual_cleanup_ten_directories_verified_2928_transient_files_canonical_intact_zero_old_references
+    version: M6.4.1
 - id: ERR-64-025
   title: Cloud验收后Local完整Report复验超时且原smoke未保留阶段
   category: ERR

@@ -42,7 +42,7 @@
 | ADR-017 | [Bounded Runtime Concurrency 与 Resilience](ADR-017_bounded_runtime_concurrency_and_resilience.md) | accepted | 2026-09-07 |
 | ADR-018 | [Deterministic Semantic Expression Normalization](ADR-018_deterministic_semantic_expression_normalization.md) | accepted | 2026-09-08 |
 | ADR-019 | [Complex Report Reading Context and Template Authority](ADR-019_complex_report_reading_context_and_template_authority.md) | accepted | 2026-09-11 |
-| ADR-020 | [Fabric IQ Cloud Consumption Contract & Cloud Model Discovery Authority](ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md) | ACCEPTED（设计；production未实现） | 2026-10-09 |
+| ADR-020 | [Fabric IQ Cloud Consumption Contract & Cloud Model Discovery Authority](ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md) | ACCEPTED（实施状态与验收见07/09） | 2026-10-09 |
 
 当前 active 核心决策为 ADR-005、ADR-007—ADR-020（各自历史限制按后续 accepted 决策收紧）；ADR-006 SUPERSEDED，Cloud 合同由 ADR-020 与 M6.0 evidence 接替。
 
