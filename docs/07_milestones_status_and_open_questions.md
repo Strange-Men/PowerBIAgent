@@ -1,21 +1,136 @@
 # 07 — 当前项目状态
 
-> **状态：** Settings.version=M6.3；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+> Settings.version=M6.4；同Round 2 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；M5 FINAL/FROZEN有效。
+
+## 当前状态
+
+同一 M6.4 Round 2；必要Local/Cloud Real与版本更新前fresh Full Gates已通过，Settings.version=M6.4。
+当前为Final Git Seal待验；只有最终实际main提交自身PowerBIAgent Validation / Full Validation (Windows) SUCCESS、required checks成功、Remote Audit、HEAD=origin/main及worktree/staging clean全部成立，才解析M6.4 FINAL COMPLETE；随后STOP。自身SHA不写入自身提交，不继承旧SHA CI。
+
+Local根因是dotenv来源旧request=120覆盖既有正式parent=180合同；child LLM/MCP/render=120、DAX=30不变。fresh原120秒复现Understanding=4.468秒、Coverage在剩余115.532秒开始、115.547秒后parent取消、累计120.015秒，业务DAX未进入；原115.781秒失败原件保留。无deadline实现bug证据，仅进程级恢复REQUEST_TIMEOUT_SECONDS=180，未读取/修改dotenv或production timeout代码，不扩大SLA。原完整专业Report最终16.688秒Real PASS，三合法LLM阶段、九DAX/九VerifiedFactSet/九section、Power BI Desktop来源、无功能裁减/fallback、MCP/worker残留0。
+
+Cloud原生Admin与Test A Final当前Real PASS：既有owned专业Report view/download、History/Restore、cross-owner History=403/Report=404且与unknown body相同、越权mutation拒绝且session保留、Test A RLS scalar=100/Region A列表绑定VerifiedFactSet。Admin迟到History/Report均403、在途真实DeepSeek响应失去generation后403、ZERO事实Memory/Snapshot；stale generation=409。已成功的rename/archive/unarchive/delete生命周期保持本Round有效checkpoint，未重放非幂等写入。Test A首次Final尾部与普通UI并发产生409，失败保存，仅续跑剩余步骤PASS。既有用户批准Test B不可用例外保留：A允许RestrictedTable，本轮不宣称OLS deny Real PASS。
+
+IQ_ACCEPTED保持；Fabric IQ唯一Cloud Data Plane，REST只作Catalog/Metadata。整个PowerBIAgent-M6-Dev Workspace含未来测试资源获批，其外ZERO request；三个operator test grant独立默认false，测试批准不是production授权。保守inline business N=min(request.max_rows,12)、wire=N+1、最多8列/104cells/66 ASCII JSON bytes每cell或name/8192bytes execution；CSV/超界/unknown/incomplete在Facts前拒绝，不宣称任意大结果完整。Local max_rows=1000和Frozen事实链不变；仅此前获批Report provenance兼容例外。
+
+本轮fresh：Full Backend 3516 PASS/1 existing manual SKIP/15保留warnings；Frontend 160 PASS；Semantic 819 PASS；Golden 11 PASS/1 manual Real SKIP；Typecheck/Lint/Build、Repository Safety、Architecture、Documentation Governance、Error Ledger、Artifact Governance PASS。首次Backend仅文档当前阶段版本位置失败，最小修正文档后全量PASS；Frontend worker启动失败及base Python缺依赖原件保留，使用既有PBI_SYNTHETIC_PYTHON配置重跑全量PASS，未改expected。版本更新后完整发布门再次执行；exact-SHA CI仍须独立证明。
+
+登录性能计时：Auth session=0.015秒、native目录=15.36秒（独立复测9.219秒）、模型Schema选择=6.50秒、模板Schema=6.734秒、Restore Resolve+Schema=8.281秒；不是已证明Auth恢复timeout。UI“正在恢复对话”也用于模板验证，性能/文案后续变更不在当前timeout root cause内。上游RATE_LIMITED失败与正常reload/reselect/Restore恢复保留，不重试产品写操作、不取消Microsoft配额。
+
+证据均在仓库外PBIAgentTest/M6.4/Acceptance/20261014-round2：final-timeout-root-cause-evidence.json、final-local-timeout-recovery-receipt.json、final-native-admin-receipt.json、final-native-test-a-receipt.json及final-native-stage-timings.json。测试服务关闭，仓库不含诊断observer/acceptance runner/debug route/DB/PBIX/业务dump/credential。M6.4不等于enterprise production ready；single-process session、SQLite/filesystem、Preview MCP、LLM长尾、配额及既有MSAL/Alembic warnings公开保留。M6.5/M6.6未启动，后续须独立授权。
+
+## 此前阶段记录（历史，不作为当前下一步或Final CI）
+
+> **状态：** Settings.version=M6.3；M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ correctness IQ_ACCEPTED；M6.4 Round 2 Final Closure进行中（Local timeout恢复既有合同并Real PASS）；M5.10.9 COMPLETE；M5.10.9 FIX COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 > 唯一当前项目状态 authority；路线见 [08](08_development_roadmap.md)，开发交接见 [09](09_context_handoff.md)。
 
 ## 当前状态
 
+同Round 2 Final Closure：旧运行配置parent=120覆盖既有正式180秒合同，child LLM/MCP/render=120、DAX=30不变。fresh复现Understanding=4.468秒，Coverage剩余115.532秒开始，115.547秒后parent取消，总计120.015秒，业务DAX未进入；原115.781秒失败原件保留。仅进程恢复REQUEST_TIMEOUT_SECONDS=180，无production timeout代码或SLA变更、无implementation bug证据。原完整专业Report最终16.688秒Real PASS：三个合法LLM阶段、九DAX/九VerifiedFactSet/九section、Power BI Desktop来源、无功能裁减或fallback、MCP/worker残留0。Cloud Final原生复验和最终fresh gates继续；Settings.version=M6.3，未staging/commit/push，无本轮Final自身CI/Audit。证据在仓库外20261014-round2/final-timeout-root-cause-evidence.json及final-local-timeout-recovery-receipt.json；正式合同见ERR-5106-008。
+
 | 项目 | 状态 |
 |---|---|
 | Current Version | M6.3 |
-| Current Release State | M6.3 Security COMPLETE；以Final自身exact-SHA CI + remote audit生效；数值兼容P1 BLOCKED；M5 FINAL=true |
+| Current Release State | M6.3 Security COMPLETE；以Final自身exact-SHA CI + remote audit生效；IQ correctness已证明，产品Final未验收；M5 FINAL=true |
 | Frozen | M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN |
 | Post-final | M5.10.9 FIX COMPLETE — documentation semantic consistency / CI test stability forward-fix |
-| Next | Round 1 Boundary Cleanup 自身CI/Audit收口后停止；M6.4 FINAL NOT READY；Round 2未启动 |
-| Current implementation status | M6.4_FIX COMPLETE；Round 1多Workspace/访问与执行边界已实施，COMPLETE仅以本轮新提交自身CI/Audit/clean生效；Real仍BLOCKED |
-| Ready state | Previous green main：81d3b2e78330936504361494e3fdd90bd2fadcd3；Full Validation 38503188109 SUCCESS；Round 1不得继承旧CI |
+| Next | 当前Round 2 Cloud Final、fresh Full Gates、自身CI/Audit后STOP；不启动M6.5/M6.6 |
+| Current implementation status | Round 1 COMPLETE；Round 2 IQ_ACCEPTED（Int64、completeness、8/8 Real）；Native capability/Workspace 边界已实施；Admin/Test A 获批产品 Real PASS；Local timeout配置恢复及完整Report Real PASS；Final复验继续 |
+| Ready state | Fresh main baseline d943d02d32140a605a33dd0aca928dbd420e344a；自身Full Validation 38521027447 SUCCESS（23 steps）；不是Round 2发布CI |
 
-## M6.4_FIX 当前状态（2026-10-14）
+## Round 2 Cloud metadata最小修复（2026-10-15，新增明确授权）
+
+用户已批准去除重复Schema、请求内exact model/schema新鲜proof去重、Cloud rename减少无关同步、
+原deadline内有界退避只读metadata。fresh fetch/main/基线/staging核对通过；官方IQ限流合同已重验。
+P0设计见IQ decision；后端failure-first 8FAIL/7PASS，前端1FAIL/23PASS。最小实现后邻近47PASS、安全68PASS、Cloud前端24PASS，Architecture恢复PASS；Semantic819PASS、Golden11PASS/1manualSKIP，全后端3516PASS/1SKIP/15保留warnings、前端160PASS、Typecheck/Lint/Build与治理门均PASS。Admin/Test A普通UI获批Real已完成；Local后置完整Report复验失败，当前STOP见上。
+Admin慢速native lifecycle已PASS，仅证明功能/权限可执行，不计产品限流修复；普通启动配置问题已定位并提供独立进程级启动脚本。
+普通 uvicorn + Vite 已完成 Admin 登录、获批 Workspace 三模型目录、Rich 已知销售额问答与侧栏重命名；合成 SQLite 只读复核 completed/real/committed 和持久标题均 PASS，未使用验收脚本冷却。新聊天后 Restore 原问答 PASS；两个既有模板均 Real 生成、completed/committed、页面已查看，专业模板 Fabric IQ 来源正确。连续第二个报表后双资源列表刷新仍返回 503 RATE_LIMITED；Auth session 仍 200，已提交报表仍可查看，原生重新加载、重选 Rich 后已 Restore 三个原历史 turn，无重新认证或写操作重放。该失败与截图保留；不能把单次重命名 PASS 解释为上游永不限流。Test A隔离已完成；Local后置完整Report失败为当前唯一blocker。
+该授权不改事实链、RLS/OLS/ownership、Local、八Shape或Provider；仍同Round2，M6.3，FINAL NOT READY。
+
+## Round 2 FINAL Provenance Fix（2026-10-15，当前授权）
+
+用户明确批准极窄 Report provenance / presentation compatibility，覆盖此前 ERR-64-023 的 STOP。
+fresh fetch 成功；main / HEAD / origin/main 仍为 d943d02d32140a605a33dd0aca928dbd420e344a，staging 空，只有本轮授权修改。
+ReportDataSourceKind 新增 FABRIC_IQ=fabric_iq；创建快照前由服务端实际 FabricIQPowerBIAdapter
+及当前 principal/session-bound 模型证明来源；不依赖 real flag、前端字段或 friendly 字符串。
+ReadingContext、professional projection 共用同一 immutable snapshot；旧 Local/Remote/Fixture 映射保留。
+QueryPlan、DAX Builder、ResultInspection、VerifiedFactSet、八 Shape 和 IQ numeric/completeness 合同无新增改动。
+failure-first 7 FAIL/6 PASS，修复及邻近 103 PASS；原生专业报表显示 Fabric IQ · 实时查询，
+审计来源 fabric_iq，真实模型名保留、合成 KPI 未变，native completed/real/mock=false/Memory committed。
+仓库外 real-product-provenance-fixed-receipt.json 保存 artifact 与 screenshot hashes；旧错误来源回执仍保留。
+IQ_ACCEPTED（Int64、completeness、八 Shape 8/8）保持。当前继续原授权剩余产品/安全验收。Local Desktop Answer/完整九查询专业报表已 Real PASS；全后端 3493 PASS/1 SKIP，Semantic 819 PASS、前端 159 PASS、Golden 11 PASS/1 manual SKIP，Typecheck/Lint/Build/Architecture PASS。
+Settings.version=M6.3；未 commit/push，无本轮 exact-SHA CI/Remote Audit；不得提前计为 M6.4 FINAL COMPLETE。
+以下 lineage/provenance STOP 为此前历史；当前授权和进度以本节为准，不启动新 Round 或 M6.5。
+
+## 当前补充验收：限流与普通手动启动（2026-10-15）
+
+用户要求核清产品限流体验与普通前后端启动的权限提示。原生 resource rename 的 Real 回执已出现
+RATE_LIMITED；冷却后的 Restore、两个模板 view/download、三轮历史读取均通过，但连续 rename 再次限流。
+当前仓库外验收器的冷却/慢速节奏仅用于保留步骤推进，不是产品限流修复，不可据此宣称常规使用体验已解决。
+现有 resource mutation 在写入前后重做 Resolve/Schema 校验；去重/退避若实施须保留 caller、exact resource、
+policy epoch 与权限撤销安全边界，不能通过省略授权或放宽 Frozen Core 收口。
+专用宿主显式加载批准 Workspace 的三个 capability 与 owned synthetic SQLite/report root；普通 Settings 启动
+不会自动继承该进程内注入。用户提供普通 uvicorn/Vite 命令与 auth/session=200 后两条 API=403；只读 native startup 诊断确认 ENTRA_BFF+local_mcp，Cloud service 未初始化、operator policy 未配置，足以解释粗粒度 route refusal，不能判为 Microsoft 账号权限不足。仓库外 start-cloud-native-backend.ps1 仅准备进程级已批准测试配置后执行正式 backend.app.main:app；CheckOnly 已证明 fabric_iq/Cloud service/三个 grant 均正确初始化，零 Data Plane 请求、未打开业务存储；完整普通前后端 Real 仍待切换后验证。
+普通前后端可复现验收及失败分类须核清；未通过前保持 M6.3，禁止提前 Final Seal。
+
+## Round 2 IQ FINAL LINEAGE FIX（2026-10-15，此前记录）
+
+同一 Round 2，Fabric IQ 唯一 Cloud Data Plane。当前已验证 schema 是 lineage authority：
+exact canonical 名或唯一 exact `TableName ColumnName` 才可归一化；未知、歧义、大小写/空格偏移拒绝。
+Measure 仅 exact schema 名；内部固定投影 alias 不对公开 execute_dax 开放。
+Failure-first 后 lineage 32 tests PASS；Real `FactSales Region` → `FactSales.Region` → `Region`
+→ 原有 ResultInspection/VerifiedFactSet PASS。完整八 Shape Real 8/8 PASS，已核对已知值、行数、
+无截断、Layer3、Inspection 与 Facts。Int64 min/max/null 和 N=12/wire=13 profile 证据共同授予 IQ_ACCEPTED。
+外部 `iq-accepted-lineage-receipt.json` 保存四份脱敏 evidence 的 hash 索引；原始失败证据保留。
+
+继续原授权 Real Product E2E：三个服务端 Workspace capability 独立 StrictBool、默认 false，
+只在仓库外 operator 配置启用批准测试范围。owner-approved、Mock 标记、客户端字段不授予权限。
+复用原有 owner repository 与 exact-resource/selection lease，policy 撤销使在途操作失败。
+Admin 原生 Fabric IQ + DeepSeek 已返回 Total Sales=300，历史重命名已通过；只用新建的合成验收 DB，未读/迁移既有业务 DB。
+Disclosure monitor 只记录计数和无 GUID/raw-schema-dump 检查，不保存真实 prompt/response。
+
+用户纠正测试范围为整个 PowerBIAgent-M6-Dev Workspace，包括现有及后续测试 Model/Report。
+目录只定向读取批准 Workspace 和其分页 collections，其它 Workspace ZERO request；不再逐资源人工白名单。
+IQ 每连接使用服务端 exact Workspace/artifact 上下文，Resolve 返回身份与当前 principal GetSchema 仍必须验证。
+新增 Workspace failure-first 7 FAIL/4 PASS，修复后 Workspace/产品边界组合 100 PASS；全量后端 3480 PASS/1 SKIP/15 warnings；前端 159 PASS、Semantic 819 PASS、Golden 11 PASS/1 manual SKIP，Typecheck/Lint PASS。
+两个旧负例依赖缺失/伪造 service 时现为明确 AUTH_FORBIDDEN，原负例保留。
+
+批准 Workspace 内现有 M3 Rich 合成模型已通过两个固定模板的 KPI 生成；简单报表 view/download 已验证。
+专业报表生成不能计为验收通过：实际查询来自 Fabric IQ，但 canonical snapshot 的 source_kind 为
+`local_mcp`、source_display_name 为 `Power BI Desktop`，专业报表原样显示了错误来源。
+根因在 Frozen Core `backend/app/application/deepseek_turn_service.py:2664` 创建快照时写死来源；
+当前没有来源注入参数。本轮禁止改 Core，也不允许在创建后改写来源快照绕过 authority。
+唯一当前 blocker 为专业报表来源真实性；M6.4 FINAL BLOCKED，STOP。验收宿主已关闭。
+脱敏 `real-product-report-source-blocker-receipt.json` 保存 HTML、Core source 与截图 hash；生成成功不冒充通过。
+日期补充已获批准并完成；移动 measure 到 Sales 主表的离线提案未获明确批准，未执行。
+Test A、RLS/OLS、完整资源生命周期、Local Desktop 与发布验收未完成；停止后不继续这些工作。
+Settings.version=M6.3；未 commit/push；没有本轮 exact-SHA CI/Remote Audit，不将 IQ_ACCEPTED 计为 Final。
+ResultInspection/VerifiedFactSet/Builder/QueryPlan/Renderer 等 M5 Frozen Core production diff=0。
+下面旧停止记录为历史；当前以本节专业报表来源 blocker 为准，STOP，不启动新 Round 或 M6.5。
+
+## M6.4 Round 2 前次合同失败（2026-10-14，历史）
+
+最新用户明确授权继续同 Round 2。Fabric IQ MCP 为唯一 Cloud query Data Plane；禁止新 Provider 或 Frozen Core 修改。
+fresh runtime/raw envelope 已读取：structuredContent 仅 citation，无 CSV column type metadata。
+按用户允许的 conservative inline 路径，实测宽表 18→19 行转换 CSV；更小 profile N=12、wire=13
+已证明 0/1/N/N+1、overflow 与重复完整性。Int64 min/max/null 及 2^53±1 精确通过。
+最小 IQ boundary failure-first 实施及相关 227 tests PASS；M5 Core production diff=0。
+用户批准的原合成模型日期补充与刷新完成，原定义备份及官方 TOM/TMDL 校验保留。
+SCALAR Real PASS；ENTITY_LIST 返回已知 A/B 两行且未截断，但 IQ 列名为 `FactSales Region`，
+canonical 字段为 `Region`。raw descriptor 只有 name/type，无 canonical lineage；
+ResultInspection 拒绝 `result_inspection_field_missing_or_ambiguous`。不从 friendly label 推断身份，
+不改 Frozen Core、不绕过事实验证；其余六形状未运行，八 Shape 未全部 PASS。
+[短合同与当前证据](milestones/m6/m6_4_iq_data_plane_decision.md)；IQ_ACCEPTED 未授予。
+按本轮新合同根因/八 Shape 停止条件：M6.4 FINAL BLOCKED，STOP。探测服务已关闭；
+执行/披露/留存未开启；Admin/Test A 产品、Local Desktop 与发布未完成。
+本地后端3413 PASS/1 SKIP/15 warnings，前端159 PASS；Semantic819、Golden11/1 manual SKIP，
+Typecheck/Lint/Build及治理检查通过，仅计 Local automated，不能替代 Real 或自身 SHA CI。
+Settings.version=M6.3；没有本轮 commit/push，不继承 baseline CI 封板。
+Test B 不作为 blocker；一个批准 Real Workspace 加既有多 Workspace synthetic matrix 可验收。
+此前 CSV STOP 为历史，已被最新 continuation 覆盖；不创建新 Round，不自动进入 M6.5。
+以下旧轮记录均属历史，不覆盖本节。
+
+## M6.4_FIX / Round 1历史状态（2026-10-14）
 
 M6.0 COMPLETE；M6.1 COMPLETE；M6.2 COMPLETE（保留Int64/完整性限制）；M6.3 Security COMPLETE；M6.4_FIX COMPLETE。
 Baseline / previous green main：`81d3b2e78330936504361494e3fdd90bd2fadcd3`；
@@ -28,8 +143,8 @@ metadata只定向请求；单资源拒绝不注销有效Session。Authentication
 Disclosure/Persistence分开；只有AUTH_REQUIRED/AUTH_EXPIRED注销Session，资源403局部恢复，
 execution-blocked保留Catalog/合法Selection，409同步服务端状态，network/5xx保留登录。
 Recovery focused后端159PASS、前端36PASS；完整本地Gates与发布结果按本轮仓库外回执解析。
-Round 1仅当当前新main提交自身Full Validation SUCCESS、Remote Audit及clean后为COMPLETE；
-这些条件满足前保持待发布验收，不继承previous green CI，也不提前宣称完成。
+Round 1已以d943d02d32140a605a33dd0aca928dbd420e344a自身Full Validation 38521027447 SUCCESS、
+Remote Audit及当轮clean正式COMPLETE；该发布证据不证明Round 2验收。
 
 Real Query Execution、Real External LLM Disclosure、Real Business Persistence仍BLOCKED。
 Remaining work：Data Plane correctness（精确数值/完整性）+ approved Real E2E；
@@ -45,7 +160,7 @@ M6.4 FINAL NOT READY；Settings.version=M6.3；M5 Frozen Core diff=0；Round 2�
 新增正式事实回调/固定Renderer的完整Synthetic API与React真实client E2E，不将Synthetic计Real。
 Catalog、Chat/History/Report合成接线及owner/撤权/迟到响应验证完成；Settings资源管理仍PARTIAL。
 Int64/八Shape完整性无新可信合同；企业披露/留存策略与当前获批Real仍BLOCKED。真实调用0。
-[一次技术决策及六项最终差异核验](milestones/m6/m6_4_solo_contract_decision.md)区分内部缺口与外部依赖。
+[一次技术决策及六项最终差异核验](milestones/m6/m6_4_iq_data_plane_decision.md)区分内部缺口与外部依赖。
 Settings.version=M6.3；M6.4 PARTIAL/BLOCKED，不能封板。本轮完成后停止，不启动后续阶段。
 本轮分层日志和exact-SHA CI/Remote Audit回执在PBIAgentTest/M6.4/Acceptance/20261014-solo。
 当前checkout发布SHA须通过自己的完整CI；不继承5b0f22d9或候选CI。

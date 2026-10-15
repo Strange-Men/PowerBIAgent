@@ -1,8 +1,25 @@
-# M6.4 — Cloud Product E2E（阶段已发布，FINAL NOT READY）
+# M6.4 — Cloud Product E2E（同 Round 2 继续，FINAL NOT READY）
 
-当前2026-10-14独立[M6.4_FIX](m6_4_fix_engineering_closure.md)修复资源/隐私拒绝/合成链/文档偏移，
-自身CI与Remote Audit生效后工程COMPLETE；不等于M6.4 FINAL。Settings.version=M6.3，native IQ fail closed。
-当前技术决策见[有界比较](m6_4_solo_contract_decision.md)。下文保留各旧轮原始记录，均属历史时间状态。
+## 当前Final Seal（2026-10-15）
+
+Settings.version=M6.4；同Round 2必要Local/Cloud Real和fresh发布门已通过，Final Git Seal待本提交自身完整exact-SHA CI、Remote Audit与clean，全部成立才解析M6.4 FINAL COMPLETE并STOP。当前合同、timeout根因、Admin/Test A late/stale与RLS证据、既有OLS Test B例外和登录性能限制见[07当前验收](../../07_milestones_status_and_open_questions.md)。IQ_ACCEPTED与Frozen Core不重开，原失败证据和同Round成功生命周期checkpoint保留，不重放非幂等写入。
+
+## 此前Round 2施工证据（历史）
+
+## Final Closure timeout证据（2026-10-15）
+
+同Round 2 Final Closure：旧运行配置parent=120覆盖既有正式180秒合同，child LLM/MCP/render=120、DAX=30不变。fresh复现Understanding=4.468秒，Coverage剩余115.532秒开始，115.547秒后parent取消，总计120.015秒，业务DAX未进入；原115.781秒失败原件保留。仅进程恢复REQUEST_TIMEOUT_SECONDS=180，无production timeout代码或SLA变更、无implementation bug证据。原完整专业Report最终16.688秒Real PASS：三个合法LLM阶段、九DAX/九VerifiedFactSet/九section、Power BI Desktop来源、无功能裁减或fallback、MCP/worker残留0。Cloud Final原生复验和最终fresh gates继续；Settings.version=M6.3，未staging/commit/push，无本轮Final自身CI/Audit。证据在仓库外20261014-round2/final-timeout-root-cause-evidence.json及final-local-timeout-recovery-receipt.json；正式合同见ERR-5106-008。
+
+当前2026-10-15：IQ_ACCEPTED（Int64、completeness、八 Shape Real 8/8）保持。
+用户明确批准极窄 provenance enum / presentation compatibility；已完成 failure-first 与最小修复。
+原生专业报表已显示 Fabric IQ · 实时查询、source_kind=fabric_iq，模型名称与业务数值保持一致。
+real-product-provenance-fixed-receipt.json 保存 HTML/screenshot hashes；此前错误来源证据仍保留为历史。
+全后端 3493 PASS/1 SKIP、Semantic 819 PASS、前端 159 PASS、Golden 11 PASS/1 manual SKIP；Typecheck/Lint/Build/Architecture PASS。
+Local Desktop Answer 与完整专业报表通过，原九个章节与 Desktop 来源保留，MCP session/worker 关闭后残留为零。
+Admin/Test A 的其余资源生命周期与隔离验收继续；Settings.version=M6.3，未 commit/push，无本轮 exact-SHA CI/Remote Audit。
+当前技术决策见[IQ唯一Data Plane合同](m6_4_iq_data_plane_decision.md)。下文保留旧轮原始记录，均属历史时间状态。
+
+2026-10-15 同 Round 2：获批 Cloud metadata 最小修复后，全后端 3516 PASS/1 SKIP、前端 160 PASS、Semantic 819 PASS，其他门均 PASS。普通 uvicorn + Vite 的 Admin 登录、批准 Workspace 目录、已知 Rich 销售额问答、侧栏重命名与新聊天后 Restore 已通过；仓库外 ordinary-native-admin-receipt.json 与截图保存只读持久化复核，不使用慢速验收脚本代替普通 UI。当前专业报表复验与 Test A 隔离继续，仍 M6.3 / FINAL NOT READY。
 
 日期：2026-10-13。用户已批准原 M6.4 scope；Settings.version 仍为 M6.3。
 M5 FINAL / Frozen Core 继续有效。此文件是本轮设计与分层证据，不替代 07/08/09。
@@ -434,7 +451,7 @@ Repository Safety、137项Error Ledger、Architecture、Documentation Governance
 
 基于稳定5b0f22d9，Cold Start/fetch/clean确认后继续授权scope，没有重启或丢弃成果。
 本轮native安全服务装配、直接服务拒绝P0、完整正式事实回调Synthetic API/React E2E、固定Renderer
-及owner/撤权/迟到/错误合成验证见[一次技术决策与最终差异核验](m6_4_solo_contract_decision.md)。
+及owner/撤权/迟到/错误合成验证见[一次技术决策与最终差异核验](m6_4_iq_data_plane_decision.md)。
 该记录明确六项审计偏移、M6.0–M6.4状态、内部未完成和外部条件，不用新结论覆盖原始失败记录。
 本轮未修改Frozen Core、Provider、Shape、模板、Expected、AGENTS或Git规则；version保持M6.3。
 本轮真实BI/外部LLM请求0，M6.4 PARTIAL/BLOCKED、不能封板。完成本轮发布与审计后停止。

@@ -2655,14 +2655,22 @@ class LLMTurnService:
                         filtered_facts,
                     )
                 )
+                from backend.app.report.provenance import report_source_kind
+
+                report_source = report_source_kind(
+                    self.powerbi, report_data_contract.semantic_model_key,
+                )
                 data_snapshot = ReportDataSnapshotBuilder().build(
                     semantic_model_identity=report_data_contract.semantic_model_key,
                     semantic_model_display_name=schema.name,
                     schema_fingerprint=report_data_contract.schema_fingerprint,
                     query_results=filtered_results,
                     verified_fact_sets=filtered_facts,
-                    source_kind=ReportDataSourceKind.LOCAL_MCP,
-                    source_display_name="Power BI Desktop",
+                    source_kind=report_source,
+                    source_display_name=(
+                        None if report_source is ReportDataSourceKind.FABRIC_IQ
+                        else "Power BI Desktop"
+                    ),
                     queried_at=queried_at,
                     snapshot_at=snapshot_at,
                 )

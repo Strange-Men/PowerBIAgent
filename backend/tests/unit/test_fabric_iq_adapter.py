@@ -59,7 +59,7 @@ def schema():
 
 def result(rows=None, **changes):
     root = {"semanticModel": {"ArtifactId": MODEL}, "executionResult": {"tables": [
-        {"columns": [{"name": "[probe]", "type": "Int64"}], "rows": rows if rows is not None else [[1]]}]}}
+        {"columns": [{"name": "Count", "type": "Int64"}], "rows": rows if rows is not None else [[1]]}]}}
     root.update(changes)
     return root
 
@@ -72,7 +72,7 @@ class Transport:
         self.calls = []
         self.closes = 0
     @asynccontextmanager
-    async def connection(self):
+    async def connection(self, *, resource=None):
         capability_fingerprint(self.inventory)
         try:
             yield self
@@ -232,15 +232,15 @@ async def test_expired_wrong_session_and_foreign_key_refuse_before_mcp(harness):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("rows", [[[1]], [[None]], [[1], [2]]])
-async def test_query_preserves_shape_and_defaults_unknown_completeness(harness, rows):
+async def test_query_preserves_shape_with_proven_inline_envelope(harness, rows):
     _, _, transport, adapter = harness
     ref = await adapter.resolve_bootstrap("fixture")
     transport.query = result(rows)
     actual = await adapter.execute_dax(DAXRequest(semantic_model_key=ref.server_model_key,
         dax='EVALUATE ROW("probe",1)', max_rows=20))
-    assert actual.columns == ["[probe]"] and actual.rows == rows
-    assert actual.row_count == len(rows) and actual.source_mode == "real" and actual.truncated
-    assert transport.calls[-1][1]["maxRows"] == 20
+    assert actual.columns == ["Count"] and actual.rows == rows
+    assert actual.row_count == len(rows) and actual.source_mode == "real" and not actual.truncated
+    assert transport.calls[-1][1]["maxRows"] == 13
 
 
 @pytest.mark.asyncio
@@ -270,16 +270,19 @@ async def test_malformed_and_error_queries_fail_closed(harness, case):
 
 
 @pytest.mark.asyncio
-async def test_csv_full_resource_not_inline_preview_and_malformed_denied(harness):
+async def test_csv_full_resource_is_diagnostic_only_and_transport_denies_it(harness):
     _, _, transport, adapter = harness
     ref = await adapter.resolve_bootstrap("fixture")
     q = result()
     transport.query = {"content": [{"type": "text", "text": __import__('json').dumps(q)},
         {"type": "resource", "resource": {"uri": "data:synthetic", "mimeType": "text/csv",
-                                              "text": "[probe]\r\n1\r\n2\r\n"}}]}
-    actual = await adapter.execute_dax(DAXRequest(semantic_model_key=ref.server_model_key, dax="EVALUATE bad"))
+                                              "text": "Count\r\n1\r\n2\r\n"}}]}
+    request = DAXRequest(semantic_model_key=ref.server_model_key, dax="EVALUATE bad")
+    actual = await adapter.normalize_result((transport.query, request))
     assert actual.rows == [[1], [2]] and actual.truncated
-    transport.query["content"][1]["resource"]["text"] = '[probe]\n"unclosed'
+    with pytest.raises(PowerBIAdapterError, match="^CONTRACT_DRIFT$"):
+        await adapter.execute_dax(request)
+    transport.query["content"][1]["resource"]["text"] = 'Count\n"unclosed'
     with pytest.raises(PowerBIAdapterError):
         await adapter.execute_dax(DAXRequest(semantic_model_key=ref.server_model_key, dax="EVALUATE bad"))
 
@@ -290,8 +293,8 @@ async def test_unverified_complete_flag_cannot_grant_completeness(harness):
     ref = await adapter.resolve_bootstrap("fixture")
     transport.query = result(truncated=False)
     for limit, truncated in [(1, True), (10, True)]:
-        actual = await adapter.execute_dax(DAXRequest(semantic_model_key=ref.server_model_key,
-            dax='EVALUATE ROW("probe",1)', max_rows=limit))
+        actual = await adapter.normalize_result((transport.query,DAXRequest(semantic_model_key=ref.server_model_key,
+            dax='EVALUATE ROW("probe",1)', max_rows=limit)))
         assert actual.truncated is truncated
 
 
@@ -357,10 +360,11 @@ async def test_grouped_rows_preserved_and_no_provider_query_retry(harness):
     ref = await adapter.resolve_bootstrap("fixture")
     transport.query = result([["alpha", 1], ["beta", None]])
     transport.query["executionResult"]["tables"][0]["columns"] = [
-        {"name": "Facts[Category]", "type": "String"}, {"name": "[probe]", "type": "Int64"}]
+        {"name": "Facts Category", "type": "String"}, {"name": "Count", "type": "Int64"}]
     actual = await adapter.execute_dax(DAXRequest(semantic_model_key=ref.server_model_key,
-        dax="EVALUATE SUMMARIZECOLUMNS('Facts'[Category],\"probe\",[Count])", max_rows=10))
+        dax="EVALUATE SUMMARIZECOLUMNS('Facts'[Category],\"Count\",[Count])", max_rows=10))
     assert actual.rows == [["alpha", 1], ["beta", None]]
+    assert actual.columns == ["Category", "Count"]
     before = len(transport.calls)
     transport.query = {"Error": {"HttpStatusCode": 429}}
     with pytest.raises(PowerBIAdapterError, match="RATE_LIMITED"):

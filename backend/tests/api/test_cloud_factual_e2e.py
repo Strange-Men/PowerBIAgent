@@ -180,7 +180,7 @@ def factual_product(tmp_path, monkeypatch):
             'persistence_database_path':str(tmp_path/'synthetic.db')}))
         async with engine.begin() as conn: await conn.run_sync(Base.metadata.create_all)
         ws = CloudWorkspaceService(auth, SimpleNamespace(create_product=lambda sid,p:
-            FactualSyntheticAdapter(auth,sid,p)), rest_factory=lambda *args:SyntheticREST())
+            FactualSyntheticAdapter(auth,sid,p)), rest_factory=lambda *args:SyntheticREST(),synthetic_product=True)
         repos = PrincipalScopedRepositoryFactory(create_session_factory(engine),tmp_path/'reports')
         registry = LLMProviderRegistry()
         registry.register(mock_profile(),llm)

@@ -130,6 +130,10 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       if (action==='rename') {
         if (kind==='history') setRecent(items=>items.map(item=>item.conversation_id===id ? {...item,title} : item))
         else setReports(items=>items.map(item=>item.report_id===id ? {...item,display_title:title} : item))
+        // The successful server acknowledgement already authorizes the title.
+        // The open manager refreshes its own page; unrelated facts/resources
+        // do not need another transcript and two full projections.
+        return
       }
       if (action==='delete' && kind==='reports') {
         setReports(items=>items.filter(item=>item.report_id!==id))

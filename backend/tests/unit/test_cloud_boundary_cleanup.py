@@ -28,13 +28,15 @@ def approval():
          'reports':[{'report_id':REPORT_B,'model_id':MODEL_B,'synthetic_only':True}]}])
 
 
-def test_each_workspace_owns_its_model_and_report_allowlist():
+def test_workspace_scope_requires_exact_iq_connection_context():
     policy=CloudTestPolicy(SimpleNamespace(fabric_test_mode=True,fabric_test_allowlist=approval()))
     for ws,model,report in ((WORKSPACE,MODEL,REPORT_A),(WS_B,MODEL_B,REPORT_B)):
         policy.model(ws,model); policy.report(ws,report)
-        policy.iq_call('GetSemanticModelSchema',{'artifactId':model})
-        policy.iq_call('GetReportMetadata',{'artifactId':report})
-    for ws,model,report in ((WORKSPACE,MODEL_B,REPORT_B),(WS_B,MODEL,REPORT_A),(FOREIGN,MODEL,REPORT_A)):
+        policy.iq_call('GetSemanticModelSchema',{'artifactId':model},resource=(ws,model))
+        policy.iq_call('GetReportMetadata',{'artifactId':report},resource=(ws,report))
+        with pytest.raises(PowerBIAdapterError):
+            policy.iq_call('GetSemanticModelSchema',{'artifactId':MODEL_B if model==MODEL else MODEL},resource=(ws,model))
+    for ws,model,report in ((FOREIGN,MODEL,REPORT_A),(FOREIGN,MODEL_B,REPORT_B)):
         with pytest.raises(PowerBIAdapterError): policy.model(ws,model)
         with pytest.raises(PowerBIAdapterError): policy.report(ws,report)
 
@@ -52,12 +54,17 @@ async def test_targeted_catalog_isolates_denial_without_logout_or_other_workspac
         if key==denied: return httpx2.Response(403)
         parts=path.split('/')
         body={'id':key,'displayName':'Synthetic '+key[-3:]}
-        if len(parts)==5:
-            body.update(workspaceId=parts[2],type='SemanticModel' if parts[3]=='semanticModels' else 'Report')
+        if len(parts)==4:
+            is_model=parts[3]=='semanticModels'
+            if denied==REPORT_A and parts[2]==WORKSPACE and not is_model: return httpx2.Response(403)
+            item=(MODEL if parts[2]==WORKSPACE else MODEL_B) if is_model else (REPORT_A if parts[2]==WORKSPACE else REPORT_B)
+            body={'value':[{'id':item,'displayName':'Synthetic '+item[-3:],
+                'workspaceId':parts[2],'type':'SemanticModel' if is_model else 'Report'}]}
         return httpx2.Response(200,json=body)
     async def call(name,args):
         wire.calls.append((name,args))
         model=args['artifactId'] if 'artifactId' in args else args['fabricItemId'].split('/')[-2]
+        if model==denied: raise fail('RESOURCE_NOT_ACCESSIBLE')
         if name=='ResolveFabricItem':
             return {'fabricItemId':model,'workspaceId':WORKSPACE if model==MODEL else WS_B,'itemType':'SemanticModel'}
         result=copy.deepcopy(wire.schema)
@@ -71,13 +78,13 @@ async def test_targeted_catalog_isolates_denial_without_logout_or_other_workspac
             assert requests==[]
             catalog=await CloudCatalogService(auth,session.session_id,session.principal,rest,adapter).discover()
         assert len(catalog.items)==(1 if denied in (WORKSPACE,MODEL) else 2)
-        assert catalog.inaccessible_count==(1 if denied else 0)
-        assert catalog.workspace_scope_complete==(denied is None)
+        assert catalog.inaccessible_count==(1 if denied in (WORKSPACE,MODEL) else 0)
+        assert catalog.workspace_scope_complete==(denied in (None,MODEL))
         assert auth.require_session(session.session_id).principal==session.principal
         assert all(path.startswith(('/workspaces/'+WORKSPACE,'/workspaces/'+WS_B)) for path in requests)
         assert '/workspaces' not in requests
         assert not any(name=='ExecuteQuery' for name,_ in wire.calls)
-        assert any(path.endswith(MODEL_B) for path in requests)
+        assert f'/workspaces/{WS_B}/semanticModels' in requests
         if denied==WORKSPACE: assert not any(path.startswith('/workspaces/'+WORKSPACE+'/') for path in requests)
     finally:
         await adapter.aclose(); auth.close()

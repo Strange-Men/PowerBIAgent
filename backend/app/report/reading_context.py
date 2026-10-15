@@ -348,6 +348,7 @@ def _source_display_name(
 ) -> str:
     base = {
         ReportDataSourceKind.LOCAL_MCP: "Power BI Desktop",
+        ReportDataSourceKind.FABRIC_IQ: "Fabric IQ",
         ReportDataSourceKind.REMOTE_MCP: "远程 Power BI",
         ReportDataSourceKind.TEST_FIXTURE: "测试数据",
     }[kind]

@@ -19,7 +19,7 @@ def synthetic_workspace(harness):
     from backend.tests.unit.test_cloud_workspace_service import RestContext
     auth, _, _, _ = harness
     adapter_factory = SimpleNamespace(create_product=lambda sid, p: SyntheticAdapter(auth, sid, p))
-    return CloudWorkspaceService(auth, adapter_factory, rest_factory=lambda *args: RestContext())
+    return CloudWorkspaceService(auth, adapter_factory, rest_factory=lambda *args: RestContext(),synthetic_product=True)
 
 
 @pytest.mark.asyncio

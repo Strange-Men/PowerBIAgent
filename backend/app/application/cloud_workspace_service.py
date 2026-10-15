@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 from backend.app.application.cloud_catalog_service import CloudCatalogService
 from backend.app.auth.models import AuthFailure
+from backend.app.config.cloud_test_policy import CloudTestPolicy
 from backend.app.harness.errors import ToolExecutionError
 from backend.app.harness.models import HarnessConfig
 from backend.app.harness.runtime.tool_gateway import ToolExecutionContext, ToolGateway
@@ -26,7 +27,7 @@ class CloudWorkspaceStatus(BaseModel):
     conversation_id: str | None = None
     generation: int = 0
     execution_ready: bool = False
-    blockers: tuple[Literal["numeric_contract", "query_completeness"], ...] = (
+    blockers: tuple[Literal["numeric_contract", "query_completeness", "operator_approval"], ...] = (
         "numeric_contract", "query_completeness")
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -53,11 +54,14 @@ class _SessionWorkspace:
 
 class CloudWorkspaceService:
     def __init__(self, auth, adapter_factory, *, shared_seeds=(),
-                 rest_factory=FabricCatalogTransport):
+                 rest_factory=FabricCatalogTransport, synthetic_product=False):
         self._auth, self._factory = auth, adapter_factory
         self._seeds, self._rest_factory = tuple(shared_seeds), rest_factory
         self._contexts = {}
         self._closed = False
+        # Explicit offline host composition; never inferred from adapter flags.
+        self._synthetic_product = synthetic_product is True
+        self._product_policy = CloudTestPolicy(auth.settings)
 
     @property
     def context_count(self): return len(self._contexts)
@@ -148,16 +152,27 @@ class CloudWorkspaceService:
 
     def status(self, sid, principal):
         current = self._context(sid, principal)
-        synthetic = bool(current.adapter.is_mock)
+        ready = self._capability(current, 'query_execution')
         return CloudWorkspaceStatus(selected_model_key=current.selected,
             conversation_id=current.conversation_id, generation=current.generation,
-            execution_ready=synthetic, blockers=() if synthetic else ('numeric_contract','query_completeness'))
+            execution_ready=ready, blockers=() if ready else ('operator_approval',))
+
+    def _capability(self, current, name, *, binding=None):
+        if self._synthetic_product and current.adapter.is_mock:
+            return True
+        if binding is not None:
+            return self._product_policy.capability(binding.workspace_id, binding.model_id, name)
+        if current.selected is None or current.selected not in current.keys:
+            return False
+        ws, model = current.adapter.bound_resource_identity(current.selected)
+        return self._product_policy.capability(ws, model, name)
+
+    def policy_snapshot(self):
+        return self._product_policy.snapshot()
 
     def require_execution(self, sid, principal):
         self._validate(sid, principal)
-        # Only an explicitly injected existing Mock adapter can exercise the
-        # synthetic product chain. No setting/client flag enables real BI.
-        if not self._context(sid, principal).adapter.is_mock:
+        if not self._capability(self._context(sid, principal), 'query_execution'):
             raise AuthFailure("AUTH_FORBIDDEN", 403, denial_reason='cloud_execution_blocked')
 
     def require_resource_access(self, sid, principal, key):
@@ -169,12 +184,15 @@ class CloudWorkspaceService:
 
     def require_disclosure(self, sid, principal):
         self._validate(sid, principal)
-        if not self._context(sid, principal).adapter.is_mock:
+        if not self._capability(self._context(sid, principal), 'external_llm_disclosure'):
             raise AuthFailure('AUTH_FORBIDDEN',403,denial_reason='cloud_disclosure_blocked')
 
-    def require_persistence(self, sid, principal):
+    def require_persistence(self, sid, principal, *, binding=None):
         self._validate(sid, principal)
-        if not self._context(sid, principal).adapter.is_mock:
+        current = self._context(sid, principal)
+        granted = (self._capability(current, 'business_persistence', binding=binding) if binding is not None
+            else (self._synthetic_product and current.adapter.is_mock) or self._product_policy.storage_enabled())
+        if not granted:
             raise AuthFailure('AUTH_FORBIDDEN',403,denial_reason='cloud_persistence_blocked')
 
     def data_mode(self,sid,principal):
@@ -201,6 +219,8 @@ class CloudWorkspaceService:
 
     async def revalidate_binding(self, sid, principal, binding, *, select=False, expected_generation=None):
         from backend.app.query_plan.semantic_catalog import compute_schema_fingerprint
+        from backend.app.powerbi.fabric_iq import FabricIQPowerBIAdapter
+        from backend.app.schemas.data_contracts import SemanticModelSchema
         current = self._context(sid,principal)
         async with self._metadata_operation(current):
             self._validate(sid,principal)
@@ -209,20 +229,30 @@ class CloudWorkspaceService:
             if binding.source_mode != ('mock' if current.adapter.is_mock else 'real'):
                 raise AuthFailure('AUTH_FORBIDDEN',403)
             # Wrap provider Resolve+Schema in the same metadata ToolGateway.
+            native_iq=isinstance(current.adapter, FabricIQPowerBIAdapter)
             async def restore(_):
+                if native_iq:
+                    return await current.adapter.restore_bound_schema(
+                        str(binding.workspace_id), str(binding.model_id), binding.model_key)
                 ref = await current.adapter.restore_bound_model(str(binding.workspace_id),str(binding.model_id),binding.model_key)
                 return _BindingKey(model_key=ref.server_model_key)
             from backend.app.harness.runtime.tool_gateway import ToolSpec
             gateway=ToolGateway()
-            gateway.register(ToolSpec(name='restore_cloud_binding',input_model=_BindingKey,output_model=_BindingKey,
+            gateway.register(ToolSpec(name='restore_cloud_binding',input_model=_BindingKey,
+                output_model=SemanticModelSchema if native_iq else _BindingKey,
                 handler=restore,read_only=True,max_retries=0,allowed_intents=[IntentType.DATA_QUESTION],
                 supported_modes=[RuntimeDataMode.REAL]))
             context=ToolExecutionContext(runtime_mode=RuntimeDataMode.REAL,intent=IntentType.DATA_QUESTION,
                 user=UserContext(allowed_tools=['restore_cloud_binding',TOOL_NAME_SCHEMA],allowed_semantic_models=[binding.model_key]))
             try:
-                key=(await gateway.execute('restore_cloud_binding',context,_BindingKey(model_key=binding.model_key))).model_key
-                register_schema_tool(gateway,current.adapter,HarnessConfig.from_settings(self._auth.settings))
-                schema=await gateway.execute(TOOL_NAME_SCHEMA,context,SchemaInput(semantic_model_key=key))
+                restored=await gateway.execute('restore_cloud_binding',context,_BindingKey(model_key=binding.model_key))
+                if native_iq:
+                    schema=restored
+                    key=schema.key
+                else:
+                    key=restored.model_key
+                    register_schema_tool(gateway,current.adapter,HarnessConfig.from_settings(self._auth.settings))
+                    schema=await gateway.execute(TOOL_NAME_SCHEMA,context,SchemaInput(semantic_model_key=key))
                 self._validate(sid,principal)
                 if key!=binding.model_key or schema.key!=key or compute_schema_fingerprint(schema)!=binding.schema_fingerprint:
                     raise AuthFailure('AUTH_FORBIDDEN',403)

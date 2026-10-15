@@ -3,14 +3,13 @@ from dataclasses import dataclass
 
 from backend.app.application.deepseek_turn_service import LLMTurnService
 from backend.app.auth.models import AuthFailure
-from backend.app.config.cloud_test_policy import CloudTestPolicy
 from backend.app.config.settings import LLMMode,PowerBIMode
 from backend.app.harness.models import HarnessConfig
 from backend.app.memory.models import RuntimeDataMode
 from backend.app.report.executive import ExecutiveSalesReportRenderer
 from backend.app.report.fixed import SalesReportRenderer
 from backend.app.report.registry import build_report_dispatcher
-from backend.app.application.cloud_product_runtime import require_cloud_business_data
+from backend.app.application.cloud_product_runtime import require_cloud_business_data, require_native_workspace
 
 
 class _SelectionLease:
@@ -18,11 +17,14 @@ class _SelectionLease:
     def __init__(self, auth, workspace, sid, principal, selection):
         self._auth, self._workspace = auth, workspace
         self._sid, self._principal, self._selection = sid, principal, selection
+        self._policy_snapshot = workspace.policy_snapshot()
 
     def require_session(self, sid):
         if sid != self._sid: raise AuthFailure("AUTH_FORBIDDEN", 403)
         record = self._auth.require_session(sid)
         if record.principal != self._principal: raise AuthFailure("AUTH_FORBIDDEN", 403)
+        if self._workspace.policy_snapshot() != self._policy_snapshot:
+            raise AuthFailure('AUTH_FORBIDDEN',403)
         current = self._workspace.status(sid, self._principal)
         if (current.generation, current.selected_model_key, current.conversation_id) != (
                 self._selection.generation, self._selection.selected_model_key, self._selection.conversation_id):
@@ -38,6 +40,7 @@ class _ResourceLease(_SelectionLease):
 
     def require_session(self,sid):
         record=super().require_session(sid)
+        self._workspace.require_persistence(sid,self._principal,binding=self._binding)
         self._adapter.assert_session_binding(self._auth,sid,self._principal)
         if self._adapter.bound_resource_identity(self._binding.model_key)!=(
                 str(self._binding.workspace_id),str(self._binding.model_id)):
@@ -93,7 +96,6 @@ class CloudProductServiceFactory:
                  *, synthetic_turn_factory=None):
         self._auth, self._workspace, self._repositories = auth, workspace, repository_factory
         self._llm, self._display = llm_registry, display_llm_registry
-        self._test_policy = CloudTestPolicy(auth.settings)
         # Trusted host injection only; never a setting or client execution flag.
         # The native branch cannot use a synthetic runtime or gain readiness.
         self._synthetic_turn_factory = synthetic_turn_factory
@@ -103,9 +105,9 @@ class CloudProductServiceFactory:
             raise AuthFailure("AUTH_FORBIDDEN", 403)
 
     async def _read_owned(self, sid, principal, operation, *, restores_selection=False):
-        # Legacy snapshots lack a durable exact test-resource authorization
-        # projection. Owner identity alone cannot authorize replay of BI facts.
-        if self._test_policy.enabled: raise AuthFailure('AUTH_FORBIDDEN', 403)
+        # Owner storage access does not grant replay: each result below must
+        # prove its durable exact binding and current target capability.
+        require_native_workspace(self._workspace)
         self._workspace.require_persistence(sid,principal)
         # Past resources are owner-scoped; viewing does not select a model or
         # restore business Memory. Storage is still explicitly supplied.
@@ -115,11 +117,14 @@ class CloudProductServiceFactory:
         self._validate_identity(sid, principal)
         result = await operation(repositories)
         self._validate_identity(sid, principal)
+        if self._workspace.policy_snapshot() != lease._policy_snapshot:
+            raise AuthFailure('AUTH_FORBIDDEN',403)
         if not restores_selection: lease.require_session(sid)
         return result
 
     async def list_history(self, sid, principal, *, limit, cursor=None, status='active', query=None):
         async def read(repos):
+            access_proofs=set()
             mode=self._mode(sid,principal)
             if query is not None:
                 page=await repos.history_service.search(mode,query=query,limit=limit,cursor=cursor)
@@ -127,7 +132,7 @@ class CloudProductServiceFactory:
                 page=await repos.history_service.list_archived(mode,limit=limit,cursor=cursor)
             else:
                 page=await repos.history_service.list_recent(mode,limit=limit,cursor=cursor)
-            for item in page.items: await self._authorize(repos,sid,principal,item.conversation_id)
+            for item in page.items: await self._authorize(repos,sid,principal,item.conversation_id,access_proofs=access_proofs)
             return page
         return await self._read_owned(sid,principal,read)
 
@@ -163,17 +168,26 @@ class CloudProductServiceFactory:
     def _mode(self,sid,principal):
         return self._workspace.data_mode(sid,principal)
 
-    async def _authorize(self,repos,sid,principal,conversation_id):
+    async def _authorize(self,repos,sid,principal,conversation_id,*,access_proofs=None):
         binding=await repos.cloud_bindings.get(conversation_id)
         if binding is None: raise AuthFailure('AUTH_FORBIDDEN',403)
-        await self._workspace.revalidate_binding(sid,principal,binding)
+        self._workspace.require_persistence(sid,principal,binding=binding)
+        # Owned binding/grant checks still run for every row. Only a fresh
+        # access proof from this same HTTP operation can cover the same exact
+        # model and schema. No state survives this list request.
+        proof=(binding.workspace_id,binding.model_id,binding.schema_fingerprint,binding.source_mode)
+        if access_proofs is None or proof not in access_proofs:
+            await self._workspace.revalidate_binding(sid,principal,binding)
         self._validate_identity(sid,principal)
+        self._workspace.require_persistence(sid,principal,binding=binding)
+        if access_proofs is not None: access_proofs.add(proof)
         return binding
 
     async def restore(self,sid,principal,conversation_id,expected_generation):
         async def restore(repos):
             binding=await repos.cloud_bindings.get(conversation_id)
             if binding is None: raise AuthFailure('AUTH_FORBIDDEN',403)
+            self._workspace.require_persistence(sid,principal,binding=binding)
             # Prove the owner history root exists before restoring selection.
             await repos.history_service.get_history(self._mode(sid,principal),conversation_id,limit=1)
             return await self._workspace.revalidate_binding(sid,principal,binding,select=True,
@@ -182,9 +196,10 @@ class CloudProductServiceFactory:
 
     async def list_reports(self,sid,principal,*,limit,cursor=None,status='active'):
         async def read(repos):
+            access_proofs=set()
             page=await repos.history_service.list_managed_reports(self._mode(sid,principal),status=status,limit=limit,cursor=cursor)
             for item in page.items:
-                binding=await self._authorize(repos,sid,principal,item.conversation_id)
+                binding=await self._authorize(repos,sid,principal,item.conversation_id,access_proofs=access_proofs)
                 artifact=await repos.report_metadata.get(item.report_id)
                 if artifact is None or (artifact.semantic_model_key,artifact.schema_fingerprint,artifact.source_mode)!=(
                         binding.model_key,binding.schema_fingerprint,binding.source_mode):
@@ -243,9 +258,8 @@ class CloudProductServiceFactory:
         return await self._read_owned(sid,principal,mutate,restores_selection=True)
 
     async def prepare(self, sid, principal):
-        # No real schema/facts reach the generic external Provider or storage
-        # while test disclosure and recovery contracts are unproven.
-        if self._test_policy.enabled: raise AuthFailure('AUTH_FORBIDDEN', 403)
+        # The three independent operator grants precede Core and storage.
+        require_native_workspace(self._workspace)
         self._workspace.require_execution(sid,principal)
         require_cloud_business_data(self._workspace,sid,principal)
         current = self._workspace.status(sid, principal)
@@ -254,6 +268,7 @@ class CloudProductServiceFactory:
                                      expected_generation=current.generation)
         adapter, selection = self._workspace.selected_context(sid, principal)
         adapter.assert_session_binding(self._auth, sid, principal)
+        require_cloud_business_data(self._workspace,sid,principal)
         lease = _SelectionLease(self._auth, self._workspace, sid, principal, selection)
         repositories = await self._repositories.for_session(lease, sid, principal)
         lease.require_session(sid)

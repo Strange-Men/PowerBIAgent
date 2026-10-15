@@ -5,7 +5,7 @@
 
 面向 Power BI 语义模型的自然语言分析后端，以确定性事实链提供数据问答、固定模板报表和可恢复的多轮会话。
 
-当前版本：**M6.3 — 多用户归属与权限隔离**。M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
+当前版本：**M6.4 — 云端产品最终验收**。M6.1 COMPLETE；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ correctness IQ_ACCEPTED；M6.4 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。
 
 M5提供后续企业生产化复用的Core Analysis Kernel；冻结authority/contract/architecture boundary，允许failure-first minimal correctness forward-fix。M6.1身份/登录/Session/Account真实Entra验收与候选CI通过；最终COMPLETE以封板自身exact-SHA CI与remote audit生效。
 当前状态、路线、交接分别只见 [07](docs/07_milestones_status_and_open_questions.md)、[08](docs/08_development_roadmap.md)、[09](docs/09_context_handoff.md)。
@@ -13,8 +13,8 @@ M5提供后续企业生产化复用的Core Analysis Kernel；冻结authority/con
 M6.0 COMPLETE；[M6.4_FIX工程收口](docs/milestones/m6/m6_4_fix_engineering_closure.md)补齐Cloud资源API、
 原Settings/Sidebar管理、完整历史与owner/exact-binding生命周期，企业数据执行/披露/留存由服务端拒绝。
 完整离线合成产品链与合同负例可复现；FIX COMPLETE仅以本提交自身全量CI、Remote Audit及clean生效。
-M6.4 FINAL NOT READY：IQ精确数字/完整性、获准Real环境、native披露留存策略与真实浏览器产品验收仍需证明。
-M6.2保留数值/完整性限制；Settings.version=M6.3；M6.5/M6.6未启动。
+M6.4同Round 2必要Real及fresh gates PASS，Local旧120秒配置恢复既有180秒合同，完整专业Report、Admin/Test A产品与late/stale安全复验PASS。Final Git Seal仅按自身exact-SHA CI/Remote Audit/clean生效；随后STOP。
+M6.2历史数值/完整性限制由M6.4保守IQ合同收口；Settings.version=M6.4；M6.5/M6.6未启动。
 
 M6.0 Cloud contract audit COMPLETE：[official/runtime evidence、Product/Auth UX与handoff](docs/milestones/m6/m6_0_fabric_iq_cloud_contract_audit.md)、[ADR-020 ACCEPTED](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。Fabric IQ两模型只读smoke通过，名称搜索限制已记录；Fabric REST scoped catalog与BFF OAuth方案定稿。M6.1 Auth实现见下节；M6.2 Cloud Adapter已实现，两模型Real与Phase A CI通过。最终baseline以09的自身exact-SHA CI / remote audit解析。
 
@@ -33,7 +33,7 @@ Fabric IQ数值兼容是M6.4 Product E2E前必须解决的P1阻塞项；Cloud Ca
 `POWERBI_MODE=fabric_iq`要求`IDENTITY_MODE=ENTRA_BFF`；仅request/session-scoped Adapter，
 固定官方endpoint/selector，复用Auth broker；未知metadata与query completeness保持保守。
 本节是M6.2阶段边界：Cloud Catalog现已实现，native业务服务安全装配且执行/披露/留存拒绝；旧`/api/*`继续关闭。
-M6.2历史自身exact-SHA CI38012437829及remote audit已重验；当前Settings.version=M6.3。
+M6.2历史自身exact-SHA CI38012437829及remote audit已重验；当前Settings.version=M6.4。
 
 ## M6.1 身份与账户
 
@@ -211,6 +211,7 @@ conda activate PBIAgent
 
 ```powershell
 conda activate PBIAgent
+$env:REQUEST_TIMEOUT_SECONDS = '180'
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -222,7 +223,22 @@ npm install
 npm run dev
 ```
 
-打开 `http://127.0.0.1:5173`。Vite 开发服务器将 `/api` 与 `/health` 代理到 `127.0.0.1:8000`。SQLite 历史和搜索功能需要后端设置 `PERSISTENCE_BACKEND=sqlite`；前端最终使用的 runtime namespace 以后端发现结果为准。
+打开 `http://localhost:5173/`。Vite 将 `/auth`、`/api` 与 `/health` 代理到 `127.0.0.1:8000`。Microsoft 登录的前端地址、回调和配置 Origin 必须一致，不要混用 `127.0.0.1` 与 `localhost`。SQLite 历史和搜索功能需要后端设置 `PERSISTENCE_BACKEND=sqlite`；前端最终使用的 runtime namespace 以后端发现结果为准。
+
+正式 End-to-End request SLA 为180秒；单次LLM、MCP、Renderer为120秒，DAX为30秒。上方进程配置防止旧dotenv的120秒parent覆盖既有合同，不扩大child timeout；新终端启动也需明确使用当前合同。
+
+启动命令会读取当前环境，不会自动从 Desktop 切到 Cloud。受控 Cloud 测试必须明确使用
+`IDENTITY_MODE=ENTRA_BFF`、`POWERBI_MODE=fabric_iq`，并由 operator 加载仓库外已批准的
+Workspace 测试策略及独立合成 SQLite/report root。三个服务端授权 `query_execution`、
+`external_llm_disclosure`、`business_persistence` 默认关闭；Microsoft 登录成功不自动开启它们。
+普通用户不填写这些配置。测试策略按 Workspace 授权，不要求逐 Model/Report 人工名单。
+
+若 `/auth/session` 已返回 200，随后 Cloud API 返回 403，应先区分 Cloud 服务未初始化、测试策略/
+目标授权未开放与 Microsoft 资源拒绝，不要直接把通用“联系管理员”提示当成账号权限不足。
+`ENTRA_BFF + local_mcp` 不会初始化 Fabric IQ Cloud 服务；原 Local Desktop 继续使用 `LOCAL_DEV`。
+Cloud 测试只使用 operator 已准备的独立合成存储，不自动创建/迁移或读取既有业务数据库。
+
+下面直接调用旧业务 API 的示例仅适用于 `LOCAL_DEV`；`ENTRA_BFF` 使用浏览器登录后的正式 Cloud API。
 
 ```powershell
 curl.exe http://127.0.0.1:8000/health
@@ -392,4 +408,4 @@ python -m alembic upgrade head
 
 ---
 
-*最后更新：2026-10-14 | M6.0–M6.2 COMPLETE；M6.3 Security COMPLETE；M6.4_FIX按自身CI/Audit生效；M6.4 FINAL NOT READY；Settings.version=M6.3；M5 FINAL/FROZEN；当前状态以07/08/09为准*
+*最后更新：2026-10-15 | Settings.version=M6.4；同Round 2 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；M5 FINAL/FROZEN；当前状态以07/08/09为准*

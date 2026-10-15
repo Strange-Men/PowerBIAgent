@@ -4,8 +4,8 @@
 
 ## 当前开发入口
 
-Settings.version=M6.3；M6.1 COMPLETE（自身exact-SHA CI与remote audit生效）；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ数值兼容P1 BLOCKED；M6.4 NOT READY；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。M5.10.8 与 FIX COMPLETE。
-M6.0 COMPLETE；独立M6.4_FIX工程修复按自身CI/Audit/clean生效；M6.4 FINAL NOT READY；Settings.version=M6.3。
+Settings.version=M6.4；M6.1 COMPLETE（自身exact-SHA CI与remote audit生效）；M6.2 COMPLETE（以自身exact-SHA CI与remote audit生效）；M6.3 Security COMPLETE（以Final exact-SHA CI与remote audit生效）；Fabric IQ correctness IQ_ACCEPTED；M6.4 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；M5.10.9 COMPLETE；M5 FINAL=true；M5 CORE ANALYSIS KERNEL FROZEN；LOCAL MVP BASELINE FROZEN；M6 PRODUCTIONIZATION READY。M5.10.8 与 FIX COMPLETE。
+M6.0 COMPLETE；独立M6.4_FIX工程修复按自身CI/Audit/clean生效；M6.4 Final Git Seal待自身exact-SHA CI/Remote Audit/clean；Settings.version=M6.4。
 数值/完整性限制与未决风险见07/08/09，不自动扩大FIX、启动M6.5/M6.6或开放native企业执行/披露/留存。
 Cloud消费/目录/Product Auth UX设计见ADR-020与M6.0 evidence，官方重验与适用P0验收仍是implementation前提。
 发布 baseline 按 09 的当前 exact-SHA CI + remote audit 解析，不继承已完成阶段的施工流程。

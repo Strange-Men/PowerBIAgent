@@ -102,7 +102,7 @@ class ReportPresentationProjection(BaseModel):
 class ProfessionalReportPresenter:
     """Map a validated complex ReportSpec to business-friendly text only."""
 
-    _OPAQUE_PREFIXES = ("local_desktop:", "local_mcp:", "remote_mcp:")
+    _OPAQUE_PREFIXES = ("local_desktop:", "local_mcp:", "remote_mcp:", "fabric_iq:")
     _LONG_HEX = re.compile(r"[0-9a-f]{24,}", re.IGNORECASE)
     _FIELD_LABELS = {
         "Region": "区域",
@@ -210,12 +210,15 @@ class ProfessionalReportPresenter:
             return "当前 Power BI Desktop 模型"
         if snapshot.source_kind is ReportDataSourceKind.REMOTE_MCP:
             return "当前 Power BI 语义模型"
+        if snapshot.source_kind is ReportDataSourceKind.FABRIC_IQ:
+            return "当前 Power BI 语义模型"
         return "报表验证模型"
 
     @staticmethod
     def _source_display_name(snapshot) -> str:
         base = (snapshot.source_display_name or "").strip() or {
             ReportDataSourceKind.LOCAL_MCP: "Power BI Desktop",
+            ReportDataSourceKind.FABRIC_IQ: "Fabric IQ",
             ReportDataSourceKind.REMOTE_MCP: "远程 Power BI",
             ReportDataSourceKind.TEST_FIXTURE: "测试数据",
         }[snapshot.source_kind]

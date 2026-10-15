@@ -24,5 +24,5 @@ export interface CloudWorkspaceStatus {
   conversation_id: string | null
   generation: number
   execution_ready: boolean
-  blockers: Array<'numeric_contract' | 'query_completeness'>
+  blockers: Array<'numeric_contract' | 'query_completeness' | 'operator_approval'>
 }

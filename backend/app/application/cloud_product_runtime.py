@@ -1,41 +1,38 @@
 """Native Cloud storage composition; authorization precedes opening storage."""
 from backend.app.auth.models import AuthFailure
 from backend.app.config.settings import PersistenceBackend
-from backend.app.memory.models import RuntimeDataMode
+
+
+def require_native_workspace(workspace):
+    from backend.app.application.cloud_workspace_service import CloudWorkspaceService
+    if not isinstance(workspace, CloudWorkspaceService):
+        raise AuthFailure('AUTH_FORBIDDEN', 403)
 
 
 def require_cloud_business_data(workspace,sid,principal):
-    """Server-owned disclosure/retention boundary for this FIX.
-
-    No enterprise disclosure or retention grant exists in this release.
-    Only host-owned Mock data can reach business Core, persistent resources
-    or its Trace. Test allowlists, a client source flag, account visibility,
-    and an execution gate are not disclosure/retention authorization.
-    Auth/Transport and access-validated ephemeral catalog metadata retain
-    their existing separate lifetime. This is a refusal policy, not a DLP
-    classifier or a grant mechanism.
-    """
+    """Independent server-owned grants precede Core, Provider and storage."""
+    require_native_workspace(workspace)
     workspace.require_disclosure(sid,principal)
     workspace.require_persistence(sid,principal)
-    if workspace.data_mode(sid,principal)!=RuntimeDataMode.MOCK:
-        raise AuthFailure('AUTH_FORBIDDEN',403)
+    adapter, selection = workspace.selected_context(sid, principal)
+    from types import SimpleNamespace
+    ws, model = adapter.bound_resource_identity(selection.selected_model_key)
+    workspace.require_persistence(sid, principal, binding=SimpleNamespace(workspace_id=ws, model_id=model))
 
 
 class DeferredCloudRepositories:
     """Compose existing owner repositories lazily, without creating/migrating DBs.
 
-    Native execution is currently unavailable. Neither startup, blocked HTTP,
-    nor direct service preparation may touch enterprise business persistence.
-    Future readiness must first be proven by the workspace authority.
+    Startup and denied requests never open business persistence. Explicit
+    operator grants and owner/exact-resource leases guard permitted access.
     """
     def __init__(self, auth, workspace, settings):
         self._auth, self._workspace, self._settings = auth, workspace, settings
         self._engine = self._repositories = None
 
     async def for_session(self, auth, sid, principal):
+        require_native_workspace(self._workspace)
         self._workspace.require_persistence(sid, principal)
-        if self._workspace.data_mode(sid,principal)!=RuntimeDataMode.MOCK:
-            raise AuthFailure('AUTH_FORBIDDEN',403,denial_reason='cloud_persistence_blocked')
         if self._settings.persistence_backend != PersistenceBackend.SQLITE:
             raise AuthFailure('AUTH_FORBIDDEN',403)
         # No schema creation, migration, legacy assignment or default fallback.

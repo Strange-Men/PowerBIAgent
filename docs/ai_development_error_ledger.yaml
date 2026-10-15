@@ -8,6 +8,135 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-64-025
+  title: Cloud验收后Local完整Report复验超时且原smoke未保留阶段
+  category: ERR
+  first_detected_version: M6.4
+  symptom: 同一代码Local Answer Real PASS，但随后完整专业Report复验只返回TimeoutError，没有阶段信息
+  local_evidence: 仓库外local-desktop-post-cloud-answer.txt为PASS，local-desktop-post-cloud-report.txt原始FAIL保留；独立timed operator仅记录既有调用起止和异常类型，不记录参数或返回数据
+  authoritative_sources:
+  - title: 用户同Round2 Local Desktop regression与Final门槛
+    reason: 不用历史PASS替代本次失败；只有满足获批验收与自身CI/Audit才Final
+  root_cause: fresh配置差分与120秒复现证明dotenv来源旧request=120覆盖既有正式180秒parent合同；Understanding 4.468秒后Coverage以剩余115.532秒开始，115.547秒后parent取消，累计120.015秒，业务DAX未进入。child 120秒不变；无重复扣减、额外stage或取消传播implementation bug证据，首次115.781秒只保留原精度
+  failed_attempts: []
+  repair_attempt_count: 0
+  final_fix: 仅进程级恢复既有REQUEST_TIMEOUT_SECONDS=180，不读取或修改dotenv，不改production timeout代码或SLA；原完整专业Report最终16.688秒Real PASS，三合法LLM阶段、九DAX/九VerifiedFactSet/九section、Desktop来源、无fallback或功能裁减、MCP/worker残留0。120秒原失败与fresh timeline及180秒有界provider重试诊断均保留，最终无重试PASS；发布Final gates继续
+  regression_tests:
+  - scripts/manual_smoke/executive_report_real_e2e.py
+  prohibited_patterns:
+  - 用较早Report PASS覆盖或删除本次TimeoutError回执
+  - 为通过验收扩大timeout或绕过LLM和事实验证
+  prevention_rules:
+  - Real失败与重验分层保留，诊断仅记录阶段计时和低基数错误，不记录token或prompt和response
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-15'
+    action: post_cloud_local_answer_pass_report_timeout_preserved_timing_only_recheck_started
+    version: M6.4
+  - date: '2026-10-15'
+    action: original_deadline_recheck_failed_during_second_llm_before_dax_zero_mcp_residual_final_blocked_stop
+    version: M6.4
+  - date: '2026-10-15'
+    action: legacy_runtime_parent_override_proven_existing_180_contract_restored_full_local_report_real_pass_no_core_edit
+    version: M6.4
+- id: ERR-64-024
+  title: Cloud资源重验及重命名同步重复metadata造成IQ请求放大
+  category: ERR
+  first_detected_version: M6.4
+  symptom: Real两个模板及Restore成功后连续rename触发RATE_LIMITED；普通UI的成功rename还会额外刷新对话和双资源列表
+  local_evidence: 仓库外native-admin-remaining-receipt与慢速lifecycle回执分开保存；新增后端failure-first 8FAIL/7PASS，Cloud rename前端1FAIL/23PASS证明重复读取
+  authoritative_sources:
+  - title: 用户同Round2批准最小Cloud限流修复
+    reason: 去重复metadata和无关刷新，并有界退避只读调用；不削弱owner或RLS/OLS，不重放资源写操作
+  - title: Microsoft Fabric IQ MCP limitations
+    reason: metadata与DAX均受服务端throttling；rate-limit可退避重试，REST数值quota不可当作IQ保证
+  root_cause: 每次授权Resolve加Schema后再GetSchema，mutation前后重复；列表逐资源验证同模型，Cloud rename成功后再读transcript与双列表
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 同次Resolve/Schema proof取代紧接重复Schema，请求内按exact model/schema复用access proof且逐行owner/grant仍校验；只读metadata有效Retry-After内最多一次wire重试；Cloud rename去掉无关同步。邻近47PASS、补充安全68PASS、前端24PASS，全后端3516PASS/1SKIP、前端160PASS、Semantic819PASS。普通UI Admin目录/问答/两次rename/Restore/两个模板PASS；连续报表后的双列表仍503限流，登录保留且已正常重载/重选/Restore恢复，失败证据保留，不声称消除上游配额；Test A待验。首版synthetic分支触发AST直接Schema调用，已恢复ToolGateway，未改validator
+  regression_tests:
+  - backend/tests/unit/test_cloud_metadata_request_cost.py
+  - backend/tests/unit/test_fabric_iq_metadata_backoff.py
+  - frontend/src/components/CloudWorkspace.test.tsx
+  prohibited_patterns:
+  - 跨请求或principal缓存授权以躲避限流
+  - 重试产品写操作或扩大timeout以掩盖限流
+  - 把慢速脚本PASS当作普通产品UI性能与可用性已解决
+  prevention_rules:
+  - 新鲜access proof仅当前HTTP请求和exact模型schema范围复用，owner与epoch及迟到撤销仍逐项校验
+  - 只读metadata仅按有效Retry-After在原deadline内最多重试一次，ExecuteQuery及产品mutation不重放
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-15'
+    action: user_authorized_minimal_cloud_rate_scope_p0_and_failure_first_verified
+    version: M6.4
+  - date: '2026-10-15'
+    action: ordinary_native_admin_two_renames_and_report_templates_pass_upstream_rate_and_recovery_retained_test_a_pending
+    version: M6.4
+- id: ERR-64-023
+  title: Fabric IQ专业报表的canonical来源被Frozen Core写死为Local Desktop
+  category: ERR
+  first_detected_version: M6.4
+  symptom: 实际Fabric IQ查询生成的专业报表显示Power BI Desktop，审计source_kind为local_mcp
+  local_evidence: 仓库外real-product-report-source-blocker-receipt.json记录实际provider、HTML内容hash、Core source hash及professional-report-provenance-blocker.png截图hash
+  authoritative_sources:
+  - title: 用户M6.4 Round 2最终停止条件与Frozen Core边界
+    reason: 需要Core修改或新的重大架构根因时FINAL BLOCKED并STOP，不得以生成成功冒充验收通过
+  root_cause: deepseek_turn_service.py创建ReportDataSnapshot时直接指定LOCAL_MCP及Power BI Desktop；当前没有可注入的来源参数，错误来源沿canonical快照传至Renderer
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 用户明确批准极窄provenance兼容；新增FABRIC_IQ enum，以实际FabricIQ adapter类型及当前bound模型确定来源，快照/ReadingContext/presentation一致；failure-first 7FAIL/6PASS、邻近103PASS，真实专业报表来源与artifact hash验证PASS，产品Final仍待剩余验收
+  regression_tests:
+  - backend/tests/unit/test_fabric_iq_report_provenance.py
+  prohibited_patterns:
+  - 将native报表生成成功或正确数值冒充来源真实性通过
+  - 为通过产品验收修改当前禁止改动的Core或在下游覆写canonical来源
+  prevention_rules:
+  - 产品来源必须与实际执行provider及canonical来源authority一致
+  - IQ_ACCEPTED与产品Final验收分别记录；不能继承baseline CI作为本轮发布证据
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-15'
+    action: native_professional_report_source_mismatch_preserved_final_blocked_stop
+    version: M6.4
+  - date: '2026-10-15'
+    action: user_authorized_narrow_provenance_fix_failure_first_and_native_professional_source_pass
+    version: M6.4
+- id: ERR-64-022
+  title: IQ typed inline维度列使用flattened标签，canonical身份未证明
+  category: ERR
+  first_detected_version: M6.4
+  symptom: ENTITY_LIST的已知A/B两行与无截断通过，但IQ列名FactSales Region不能通过canonical字段Region的ResultInspection
+  local_evidence: 同一批准合成模型的原生IQ raw descriptor只有name/type，structuredContent仅citation；SCALAR Real PASS，ENTITY_LIST为result_inspection_field_missing_or_ambiguous
+  authoritative_sources:
+  - title: 用户M6.4 Round 2 IQ Final Continuation
+    reason: 八QueryShape全部PASS前禁止IQ_ACCEPTED；不修改Frozen Core或寻找第三种Data Plane
+  root_cause: typed列名称未提供canonical source/table/field lineage；现有Core只接受可验证的canonical字段身份，不能从flattened friendly label猜映射
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 用户明确授权schema-bound唯一精确映射；failure-first 5个正向用例先失败，修复后邻近304 PASS；ENTITY_LIST Real已通过唯一schema lineage及原有Inspection/Facts，完整八Shape Real 8/8 PASS；与Int64/inline证据共同授予IQ_ACCEPTED，产品Final仍待验收
+  regression_tests:
+  - backend/tests/unit/test_cloud_shape_evidence.py
+  - backend/tests/unit/test_fabric_iq_lineage.py
+  - backend/tests/unit/test_result_semantic_inspection.py
+  prohibited_patterns:
+  - 无schema唯一精确证明而从friendly标签猜canonical身份或改写QueryResult字段迎合事实检查
+  - 将SCALAR或typed inline正确性冒充八Shape及完整产品E2E通过
+  prevention_rules:
+  - result字段身份必须有可验证合同；不降低ResultInspection或VerifiedFactSet
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-14'
+    action: real_inline_column_identity_failure_preserved_final_blocked_stop
+    version: M6.4
 - id: ERR-64-018
   title: 已提交Cloud删除被后续读取阻塞且迟到页可复活资源
   category: ERR
@@ -635,7 +764,7 @@ entries:
   failed_attempts:
   - 临时Harness曾加入未经Real证明的CONVERT包装，已撤回并恢复直接Total Sales；原失败记录保留
   repair_attempt_count: 1
-  final_fix: 仅完成Adapter按列严格JSON类型、Int64范围、bool与null、CSV镜像验证及负例；真实销售额兼容尚未修复，P1 BLOCKED
+  final_fix: M6.4授权Real证明Int64 min/max/null与2^53±1；共享canonical ASCII decimal与signed范围parser无损兼容声明integer列的字符串，真实SCALAR销售额300与VerifiedFactSet通过；schema-bound lineage修复后八Shape Real 8/8 PASS，已授予IQ_ACCEPTED；不代替产品Final
   regression_tests:
   - backend/tests/unit/test_fabric_iq_cell_contract.py
   - backend/tests/unit/test_fabric_iq_adapter.py
@@ -654,6 +783,9 @@ entries:
   - date: '2026-10-10'
     action: wire_type_localized_strict_validation_added_numeric_compatibility_remains_p1_blocked
     version: M6.3
+  - date: '2026-10-14'
+    action: real_canonical_int64_and_scalar_facts_proven_iq_final_acceptance_not_granted
+    version: M6.4
 - id: ERR-63-001
   title: 权限撤销后Adapter残留schema与model binding
   category: ERR

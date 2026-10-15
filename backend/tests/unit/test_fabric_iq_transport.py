@@ -74,15 +74,20 @@ async def test_official_sdk_initialize_list_call_headers_close_and_safe_evidence
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status,code", [(302, "UPSTREAM_UNAVAILABLE"), (401, "AUTH_EXPIRED"),
-    (403, "RESOURCE_NOT_ACCESSIBLE"), (429, "RATE_LIMITED"), (503, "UPSTREAM_UNAVAILABLE")])
+    (403, "RESOURCE_NOT_ACCESSIBLE"), (404, "RESOURCE_NOT_ACCESSIBLE"),
+    (429, "RATE_LIMITED"), (503, "UPSTREAM_UNAVAILABLE")])
 async def test_status_safe_failure_no_redirect_no_query_retry(status, code):
     peer = Peer()
     peer.status = status
-    client, _, _ = transport(peer)
+    client, auth, record = transport(peer)
     with pytest.raises((PowerBIAdapterError, AuthFailure)) as captured:
         async with client.connection(): pass
     assert str(captured.value) == code
     assert peer.frames == []
+    if status == 401:
+        with pytest.raises(AuthFailure): auth.require_session(record.session_id)
+    else:
+        assert auth.require_session(record.session_id).principal == record.principal
 
 
 @pytest.mark.asyncio

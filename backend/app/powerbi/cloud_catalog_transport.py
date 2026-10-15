@@ -57,23 +57,11 @@ class FabricCatalogTransport:
         return await self._pages("/workspaces")
 
     async def list_models(self, workspace_id):
-        if self._test_policy.enabled:
-            workspace = self._test_policy.workspace(workspace_id)
-            paths = []
-            for model in workspace.models:
-                self._test_policy.model(workspace_id, model.model_id)
-                paths.append(f'/workspaces/{workspace_id}/semanticModels/{model.model_id}')
-            return await self._approved_items(paths)
+        self._test_policy.workspace(workspace_id)
         return await self._pages(f"/workspaces/{guid(workspace_id)}/semanticModels", recursive=True)
 
     async def list_reports(self, workspace_id):
-        if self._test_policy.enabled:
-            workspace = self._test_policy.workspace(workspace_id)
-            paths = []
-            for report in workspace.reports:
-                self._test_policy.report(workspace_id, report.report_id)
-                paths.append(f'/workspaces/{workspace_id}/reports/{report.report_id}')
-            return await self._approved_items(paths)
+        self._test_policy.workspace(workspace_id)
         return await self._pages(f"/workspaces/{guid(workspace_id)}/reports", recursive=True)
 
     async def _approved_items(self, paths):
@@ -113,7 +101,7 @@ class FabricCatalogTransport:
                 try: body = response.json()
                 except (ValueError, UnicodeError): raise fail("CONTRACT_DRIFT") from None
                 self._test_policy.rest_path(path)
-                if self._test_policy.enabled:
+                if self._test_policy.enabled and len(path.split('/')) in {3, 5}:
                     parts = path.split('/')
                     if (not isinstance(body, dict) or guid(body.get('id')) != parts[-1]
                             or body.get('error') or body.get('errors')
@@ -150,7 +138,19 @@ class FabricCatalogTransport:
                     or any(not isinstance(row, dict) for row in body["value"])
                     or any(body.get(key) for key in ("error", "errors"))):
                 raise fail("CONTRACT_DRIFT")
-            rows.extend(body["value"])
+            if self._test_policy.enabled:
+                parts = path.split('/')
+                expected_type = {'semanticModels': 'SemanticModel', 'reports': 'Report'}.get(parts[-1])
+                if expected_type is None: raise fail('CONTRACT_DRIFT')
+                projected = []
+                for row in body['value']:
+                    if guid(row.get('workspaceId')) != parts[2] or row.get('type') != expected_type:
+                        raise fail('CONTRACT_DRIFT')
+                    guid(row.get('id'))
+                    projected.append({key: row[key] for key in ('id', 'displayName', 'workspaceId', 'type') if key in row})
+                rows.extend(projected)
+            else:
+                rows.extend(body['value'])
             if len(rows) > self._max_items: raise fail("CONTRACT_DRIFT")
             token, uri = body.get("continuationToken"), body.get("continuationUri")
             if token is None:

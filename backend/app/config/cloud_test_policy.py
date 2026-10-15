@@ -3,7 +3,7 @@ from uuid import UUID
 from urllib.parse import urlsplit
 import re
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 from backend.app.powerbi.fabric_iq_contract import fail
 from backend.app.powerbi.base import PowerBIAdapterError
@@ -32,8 +32,12 @@ class TestReportApproval(BaseModel):
 
 class TestWorkspaceApproval(BaseModel):
     workspace_id: UUID
-    models: tuple[TestModelApproval, ...] = Field(min_length=1, max_length=100)
+    # Legacy operator metadata remains readable, never resource authority.
+    models: tuple[TestModelApproval, ...] = Field(default=(), max_length=100)
     reports: tuple[TestReportApproval, ...] = Field(default=(), max_length=100)
+    query_execution: StrictBool = False
+    external_llm_disclosure: StrictBool = False
+    business_persistence: StrictBool = False
     model_config = ConfigDict(extra='forbid', frozen=True)
 
     @model_validator(mode='after')
@@ -64,7 +68,8 @@ class CloudTestAllowlist(BaseModel):
     def unique_workspaces(self):
         if len({w.workspace_id for w in self.workspaces}) != len(self.workspaces):
             raise ValueError('test workspaces must be unique')
-        # IQ artifact-only calls must resolve to exactly one approved workspace.
+        # Reject contradictory legacy metadata; IQ authority uses connection
+        # context and current-principal Resolve/Schema, never these lists.
         models = [m.model_id for w in self.workspaces for m in w.models]
         reports = [r.report_id for w in self.workspaces for r in w.reports]
         if len(set(models)) != len(models) or len(set(reports)) != len(reports):
@@ -85,6 +90,25 @@ class CloudTestPolicy:
         if scope is None: raise MissingCloudTestScope()
         return scope
 
+    def capability(self, workspace_id, model_id, name):
+        if name not in {'query_execution', 'external_llm_disclosure', 'business_persistence'}:
+            return False
+        scope = getattr(self._settings, 'fabric_test_allowlist', None)
+        if not self.enabled or scope is None:
+            return False
+        workspace = next((w for w in scope.workspaces if str(w.workspace_id) == str(workspace_id)), None)
+        return bool(workspace is not None and getattr(workspace, name) is True)
+
+    def storage_enabled(self):
+        # Opening the owner repository grants no resource response: every row
+        # still requires its exact binding, current access and target grant.
+        scope = getattr(self._settings, 'fabric_test_allowlist', None)
+        return bool(self.enabled and scope is not None and any(
+            w.business_persistence for w in scope.workspaces))
+
+    def snapshot(self):
+        return self.enabled, getattr(self._settings, 'fabric_test_allowlist', None)
+
     def workspace(self, workspace_id):
         if not self.enabled: return
         approved = next((w for w in self.scope.workspaces if str(w.workspace_id) == str(workspace_id)), None)
@@ -93,49 +117,50 @@ class CloudTestPolicy:
 
     def model(self, workspace_id, model_id):
         if not self.enabled: return
-        workspace = self.workspace(workspace_id)
-        approved = next((m for m in workspace.models if str(m.model_id) == str(model_id)), None)
-        if approved is None or (not approved.synthetic_only and not self.scope.company_account_owner_approved):
-            raise fail('RESOURCE_NOT_ACCESSIBLE')
+        self.workspace(workspace_id)
+        self._artifact_id(model_id)
 
     def report(self, workspace_id, report_id):
         if not self.enabled: return
-        workspace = self.workspace(workspace_id)
-        approved = next((r for r in workspace.reports if str(r.report_id) == str(report_id)), None)
-        if approved is None or (not approved.synthetic_only and not self.scope.company_account_owner_approved):
-            raise fail('RESOURCE_NOT_ACCESSIBLE')
-        self.model(workspace_id, approved.model_id)
+        self.workspace(workspace_id)
+        self._artifact_id(report_id)
 
-    def _artifact_workspace(self, artifact_id, collection, field):
-        workspace = next((w for w in self.scope.workspaces
-            if any(str(getattr(item, field)) == str(artifact_id) for item in getattr(w, collection))), None)
-        if workspace is None: raise fail('RESOURCE_NOT_ACCESSIBLE')
-        return workspace.workspace_id
+    @staticmethod
+    def _artifact_id(value):
+        try:
+            if not isinstance(value, str) or str(UUID(value)) != value:
+                raise ValueError
+        except (ValueError, TypeError, AttributeError):
+            raise fail('RESOURCE_NOT_ACCESSIBLE') from None
 
     def rest_path(self, path):
         if not self.enabled: return
-        matched = re.fullmatch(r'/workspaces/([0-9a-f-]{36})(?:/(semanticModels|reports)/([0-9a-f-]{36}))?', path)
+        matched = re.fullmatch(r'/workspaces/([0-9a-f-]{36})(?:/(semanticModels|reports)(?:/([0-9a-f-]{36}))?)?', path)
         if not matched: raise fail('RESOURCE_NOT_ACCESSIBLE')
-        if matched[2] == 'semanticModels': self.model(matched[1], matched[3])
-        elif matched[2] == 'reports': self.report(matched[1], matched[3])
+        if matched[2] == 'semanticModels' and matched[3]: self.model(matched[1], matched[3])
+        elif matched[2] == 'reports' and matched[3]: self.report(matched[1], matched[3])
         else: self.workspace(matched[1])
 
-    def iq_call(self, name, arguments):
+    def iq_call(self, name, arguments, *, resource=None):
         if not self.enabled: return
+        if not isinstance(resource, tuple) or len(resource) != 2:
+            raise fail('RESOURCE_NOT_ACCESSIBLE')
+        workspace_id, artifact_id = resource
+        self.model(workspace_id, artifact_id)
         if name == 'ResolveFabricItem':
             parsed = urlsplit(arguments.get('fabricItemId', ''))
             matched = re.fullmatch(r'/groups/([0-9a-f-]{36})/(datasets|semanticmodels|reports)/([0-9a-f-]{36})(?:/details)?', parsed.path)
             if (parsed.scheme != 'https' or parsed.netloc not in {'app.powerbi.com','app.fabric.microsoft.com'}
-                    or parsed.query or parsed.fragment or not matched):
+                    or parsed.query or parsed.fragment or not matched
+                    or (matched[1], matched[3]) != resource):
                 raise fail('RESOURCE_NOT_ACCESSIBLE')
             if matched[2] == 'reports': self.report(matched[1], matched[3])
             else: self.model(matched[1], matched[3])
         elif name in {'GetSemanticModelSchema','ValueSearch','ExecuteQuery'}:
-            artifact = arguments.get('artifactId')
-            self.model(self._artifact_workspace(artifact, 'models', 'model_id'), artifact)
+            if arguments.get('artifactId') != artifact_id: raise fail('RESOURCE_NOT_ACCESSIBLE')
         elif name == 'GetReportMetadata':
-            artifact = arguments.get('artifactId')
-            self.report(self._artifact_workspace(artifact, 'reports', 'report_id'), artifact)
+            if arguments.get('artifactId') != artifact_id: raise fail('RESOURCE_NOT_ACCESSIBLE')
+            self.report(workspace_id, artifact_id)
         else:
             # Name discovery cannot be scoped by the known workspace contract.
             raise fail('RESOURCE_NOT_ACCESSIBLE')

@@ -1,7 +1,11 @@
 """Official SDK Streamable HTTP; Auth alone owns delegated acquisition."""
 import asyncio
 import logging
+import json
+import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import httpx2
 from mcp import ClientSession
@@ -44,6 +48,45 @@ def _known_exception(error):
     return None
 
 
+def _retry_after_seconds(headers):
+    values = headers.get_list('Retry-After')
+    if len(values) != 1: return None
+    value = values[0].strip()
+    if not value.isascii() or len(value) > 80: return None
+    if re.fullmatch('[0-9]{1,10}', value): return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+        if when.tzinfo is None: return None
+        return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+    except (ValueError, TypeError, OverflowError): return None
+
+
+class _MetadataBackoffTransport(httpx2.AsyncBaseTransport):
+    """One bounded retry below the same MCP SDK, for named read metadata only."""
+    def __init__(self, inner, before_retry, deadline):
+        self._inner, self._before_retry, self._deadline = inner, before_retry, deadline
+
+    async def handle_async_request(self, request):
+        response = await self._inner.handle_async_request(request)
+        if response.status_code != 429 or request.method != 'POST': return response
+        try:
+            frame = json.loads(request.content)
+            eligible = (frame.get('method') == 'tools/call'
+                and frame.get('params', {}).get('name') in {'ResolveFabricItem', 'GetSemanticModelSchema'})
+        except (ValueError, TypeError, AttributeError): eligible = False
+        delay = _retry_after_seconds(response.headers) if eligible else None
+        if delay is None or delay >= self._deadline - asyncio.get_running_loop().time(): return response
+        await response.aclose()
+        await asyncio.sleep(delay)
+        # Reacquire through native Auth/Transport and recheck exact policy;
+        # the product mutation and ExecuteQuery are never replayed here.
+        await self._before_retry(request)
+        return await self._inner.handle_async_request(request)
+
+    async def aclose(self):
+        await self._inner.aclose()
+
+
 class FabricIQTransport:
     def __init__(self, settings, auth, session_id, principal, *, http_transport=None):
         self._endpoint = validate_endpoint(settings.fabric_iq_endpoint)
@@ -64,8 +107,9 @@ class FabricIQTransport:
             raise AuthFailure("AUTH_FORBIDDEN", 403)
 
     @asynccontextmanager
-    async def connection(self):
+    async def connection(self, *, resource=None):
         self.validate_principal()
+        if resource is not None: self._test_policy.model(*resource)
         upstream_error = None
         primary_error = None
 
@@ -80,7 +124,7 @@ class FabricIQTransport:
                     message = json.loads(request.content)
                     if message.get('method') == 'tools/call':
                         params = message.get('params', {})
-                        self._test_policy.iq_call(params.get('name'), params.get('arguments', {}))
+                        self._test_policy.iq_call(params.get('name'), params.get('arguments', {}), resource=resource)
                 token = await asyncio.to_thread(self._auth.get_delegated_token, self._sid, self._principal)
                 if not isinstance(token, str) or not token.strip() or any(c.isspace() for c in token):
                     raise AuthFailure("AUTH_EXPIRED")
@@ -106,15 +150,18 @@ class FabricIQTransport:
                 code = {401: "AUTH_EXPIRED", 403: "RESOURCE_NOT_ACCESSIBLE", 404: "RESOURCE_NOT_ACCESSIBLE",
                     408: "QUERY_TIMEOUT", 429: "RATE_LIMITED", 504: "QUERY_TIMEOUT"}.get(status, "UPSTREAM_UNAVAILABLE")
                 upstream_error = upstream_error or (AuthFailure(code) if code == "AUTH_EXPIRED" else fail(code))
-                if status in {401, 403, 404}:
+                if status == 401:
                     await asyncio.to_thread(self._auth.logout, self._sid, None)
                 raise upstream_error
 
         try:
             # Owned by the caller task, including cancellation and all teardown.
             async with asyncio.timeout(self._timeout):
+                retry_transport = _MetadataBackoffTransport(
+                    self._http_transport or httpx2.AsyncHTTPTransport(trust_env=False), inject,
+                    asyncio.get_running_loop().time() + self._timeout)
                 async with httpx2.AsyncClient(timeout=self._timeout, follow_redirects=False, trust_env=False,
-                    transport=self._http_transport, event_hooks={"request": [inject], "response": [check_response]}) as http:
+                    transport=retry_transport, event_hooks={"request": [inject], "response": [check_response]}) as http:
                     async with streamable_http_client(self._endpoint, http_client=http) as streams:
                         async with ClientSession(*streams, read_timeout_seconds=self._timeout) as session:
                             await session.initialize()
@@ -133,7 +180,7 @@ class FabricIQTransport:
                             self.capability_evidence = safe_capability_evidence(fingerprint, self._endpoint)
                             self.validate_principal()
                             try:
-                                yield FabricIQConnection(session, inventory, self.validate_principal, self._test_policy)
+                                yield FabricIQConnection(session, inventory, self.validate_principal, self._test_policy, resource=resource)
                             except BaseException as error:
                                 primary_error = error
                                 raise
@@ -152,14 +199,15 @@ class FabricIQTransport:
 
 
 class FabricIQConnection:
-    def __init__(self, session, inventory, validate, test_policy=None):
+    def __init__(self, session, inventory, validate, test_policy=None, *, resource=None):
         self._session, self._validate = session, validate
         self._test_policy = test_policy
+        self._resource = resource
         self._inventory = {t["name"]: t for t in inventory}
 
     async def call(self, name, arguments):
         self._validate()
-        if self._test_policy is not None: self._test_policy.iq_call(name, arguments)
+        if self._test_policy is not None: self._test_policy.iq_call(name, arguments, resource=self._resource)
         props = self._inventory[name]["inputSchema"]["properties"]
         # Runtime restrictions are authoritative; never silently clamp maxRows.
         for key, value in arguments.items():
@@ -172,4 +220,5 @@ class FabricIQConnection:
                     raise fail("CONTRACT_DRIFT")
         result = await self._session.call_tool(name, arguments)
         self._validate()
+        if self._test_policy is not None: self._test_policy.iq_call(name, arguments, resource=self._resource)
         return result

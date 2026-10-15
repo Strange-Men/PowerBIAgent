@@ -1,11 +1,17 @@
 # CHANGELOG
 
+## [M6.4] — 2026-10-15（云端产品最终验收）
+
+Fabric IQ唯一Cloud Data Plane、保守inline/Int64/lineage、Workspace测试边界和独立operator grants、真实Report来源及Cloud metadata有界退避收口。Admin/Test A原生产品、资源生命周期、RLS/owner/late-stale与Local完整专业Report通过；旧120秒parent运行配置恢复既有180秒合同，child不变，无timeout production代码修改。
+
+Final仅按本提交自身完整CI/Remote Audit/clean生效。Preview/配额/结果上界、single-process及既有Test B不可用OLS验收例外保留，M6.5/M6.6未启动。
+
 ## M6.4_FIX（2026-10-14）
 
 Cloud资源API复用现有ConversationHistoryService/PrincipalReportRepository与Settings，补齐搜索、
 分页、完整恢复、重命名、归档/恢复/删除及批量；owner/exact binding租约保护撤权与迟到写入，
 报表独立删除tombstone及中断重试保持。服务端拒绝未经许可的native企业执行/披露/留存，不以Secret redaction冒充DLP。
-完整Synthetic事实产品链及两固定模板、八Shape合成验收；Arrow仅技术候选，生产仍IQ，无迁移。
+完整Synthetic事实产品链及两固定模板、八Shape合成验收；旧技术候选已在Round 2清除，最终Cloud Data Plane仅Fabric IQ。
 FIX COMPLETE以自身全量CI/Remote Audit/clean生效；M6.4 FINAL NOT READY；Settings.version=M6.3；M5 Core冻结。
 
 > 完整历史变更记录见 `docs/archive/m0-m1.6_detailed_changelog.md`

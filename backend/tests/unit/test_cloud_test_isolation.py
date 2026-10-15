@@ -49,7 +49,7 @@ async def test_missing_test_allowlist_denies_before_any_iq_operation():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('workspace_id,model_id', [(FOREIGN,MODEL),(WORKSPACE,FOREIGN)])
+@pytest.mark.parametrize('workspace_id,model_id', [(FOREIGN,MODEL),(FOREIGN,FOREIGN)])
 async def test_foreign_catalog_candidate_never_reaches_iq(workspace_id, model_id):
     auth, session, wire, adapter = native()
     try:
@@ -61,8 +61,8 @@ async def test_foreign_catalog_candidate_never_reaches_iq(workspace_id, model_id
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('workspace_id,model_id', [(FOREIGN,MODEL),(WORKSPACE,FOREIGN)])
-async def test_persisted_restoration_cannot_bypass_exact_allowlist(workspace_id,model_id):
+@pytest.mark.parametrize('workspace_id,model_id', [(FOREIGN,MODEL),(FOREIGN,FOREIGN)])
+async def test_persisted_restoration_cannot_bypass_workspace_scope(workspace_id,model_id):
     auth,session,wire,adapter=native()
     try:
         with pytest.raises(PowerBIAdapterError,match='^RESOURCE_NOT_ACCESSIBLE$'):
@@ -110,7 +110,7 @@ async def test_same_principal_forged_or_old_binding_is_denied(operation):
 
 
 @pytest.mark.asyncio
-async def test_test_catalog_only_fetches_exact_approved_resource_paths():
+async def test_test_catalog_only_fetches_collections_inside_approved_workspace():
     auth, session, wire, adapter = native()
     paths=[]
     from backend.app.auth.identity import CATALOG_SCOPES, DELEGATED_SCOPES
@@ -122,10 +122,10 @@ async def test_test_catalog_only_fetches_exact_approved_resource_paths():
         if request.url.path == f'/v1/workspaces/{WORKSPACE}':
             body={'id':WORKSPACE,'displayName':'Synthetic Workspace'}
         else:
-            is_model = '/semanticModels/' in request.url.path
-            body={'id':MODEL if is_model else REPORT,'workspaceId':WORKSPACE,
+            is_model = request.url.path.endswith('/semanticModels')
+            body={'value':[{'id':MODEL if is_model else REPORT,'workspaceId':WORKSPACE,
                 'displayName':'Synthetic Model' if is_model else 'Synthetic Report',
-                'type':'SemanticModel' if is_model else 'Report'}
+                'type':'SemanticModel' if is_model else 'Report'}]}
         return httpx2.Response(200,json=body)
     from backend.app.application.cloud_catalog_service import CloudCatalogService
     try:
@@ -134,20 +134,20 @@ async def test_test_catalog_only_fetches_exact_approved_resource_paths():
             catalog=await CloudCatalogService(auth,session.session_id,session.principal,rest,adapter).discover()
         assert len(catalog.items)==1
         assert paths == [f'/v1/workspaces/{WORKSPACE}',
-            f'/v1/workspaces/{WORKSPACE}/semanticModels/{MODEL}',
-            f'/v1/workspaces/{WORKSPACE}/reports/{REPORT}']
+            f'/v1/workspaces/{WORKSPACE}/semanticModels',
+            f'/v1/workspaces/{WORKSPACE}/reports']
         assert catalog.coverage_scope == 'approved_test_resources'
         assert catalog.individual_share_coverage == 'not_applicable_test_scope'
         assert [call.args[2] for call in auth.get_delegated_token.call_args_list] == [
-            CATALOG_SCOPES, DELEGATED_SCOPES, DELEGATED_SCOPES]
+            CATALOG_SCOPES, CATALOG_SCOPES, CATALOG_SCOPES]
     finally:
         await adapter.aclose(); auth.close()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('path', ['/workspaces',f'/workspaces/{FOREIGN}',
-    f'/workspaces/{FOREIGN}/semanticModels/{MODEL}',f'/workspaces/{WORKSPACE}/semanticModels/{FOREIGN}',
-    f'/workspaces/{WORKSPACE}/reports/{FOREIGN}',f'/workspaces/{WORKSPACE}/reports'])
+    f'/workspaces/{FOREIGN}/semanticModels/{MODEL}',f'/workspaces/{FOREIGN}/semanticModels',
+    f'/workspaces/{FOREIGN}/reports/{FOREIGN}',f'/workspaces/{FOREIGN}/reports'])
 async def test_direct_rest_path_denied_before_token_or_http(path):
     auth,session,wire,adapter=native()
     from unittest.mock import Mock
@@ -187,7 +187,7 @@ def test_approved_iq_scope_does_not_authorize_discovery_or_enterprise_disclosure
     for name,args in [('ResolveFabricItem',{'fabricItemId':URL}),
         ('GetSemanticModelSchema',{'artifactId':MODEL}),('ValueSearch',{'artifactId':MODEL}),
         ('ExecuteQuery',{'artifactId':MODEL}),('GetReportMetadata',{'artifactId':REPORT})]:
-        policy.iq_call(name,args)
+        policy.iq_call(name,args,resource=(WORKSPACE, args.get('artifactId',MODEL)))
     with pytest.raises(PowerBIAdapterError): policy.iq_call('DiscoverArtifacts',{})
 
 
@@ -300,25 +300,29 @@ def test_native_api_missing_scope_and_forged_ids_never_acquire_resource_token(mo
 
 
 @pytest.mark.asyncio
-async def test_enterprise_model_without_company_approval_denied():
+async def test_legacy_model_marker_is_not_workspace_access_authority():
     config=scoped_settings()
     config.fabric_test_allowlist=config.fabric_test_allowlist.model_copy(update={
         'workspaces':(config.fabric_test_allowlist.workspaces[0].model_copy(update={
             'models':(config.fabric_test_allowlist.workspaces[0].models[0].model_copy(update={'synthetic_only':False}),)}),)})
     auth,session,wire,adapter=native(config)
     try:
-        with pytest.raises(PowerBIAdapterError,match='^RESOURCE_NOT_ACCESSIBLE$'):
-            await adapter.resolve_bootstrap('fixture')
-        assert wire.calls==[]
+        await adapter.resolve_bootstrap('fixture')
+        assert [name for name,_ in wire.calls]==['ResolveFabricItem','GetSemanticModelSchema']
+        from backend.app.config.cloud_test_policy import CloudTestPolicy
+        assert not CloudTestPolicy(config).capability(WORKSPACE,MODEL,'external_llm_disclosure')
     finally:
         await adapter.aclose(); auth.close()
 
 
-def test_unmarked_origin_is_not_synthetic_and_requires_company_approval():
+def test_workspace_read_approval_does_not_grant_disclosure_or_retention():
     from backend.app.config.cloud_test_policy import CloudTestAllowlist, CloudTestPolicy
     config=scoped_settings()
     config.fabric_test_allowlist=CloudTestAllowlist(workspace_id=WORKSPACE,models=[{'model_id':MODEL}])
-    with pytest.raises(PowerBIAdapterError): CloudTestPolicy(config).model(WORKSPACE,MODEL)
+    policy=CloudTestPolicy(config)
+    policy.model(WORKSPACE,MODEL)
+    assert not policy.capability(WORKSPACE,MODEL,'external_llm_disclosure')
+    assert not policy.capability(WORKSPACE,MODEL,'business_persistence')
 
 
 def test_access_log_does_not_persist_forged_resource_ids_or_query_strings():

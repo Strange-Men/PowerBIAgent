@@ -64,7 +64,7 @@ def cloud_product(tmp_path):
         engine=create_engine(settings.model_copy(update={'persistence_database_path':str(tmp_path/'synthetic.db')}))
         async with engine.begin() as conn: await conn.run_sync(Base.metadata.create_all)
         factory=SimpleNamespace(create_product=lambda sid,p:SyntheticAdapter(auth,sid,p))
-        workspace=CloudWorkspaceService(auth,factory,rest_factory=lambda *args:SyntheticREST())
+        workspace=CloudWorkspaceService(auth,factory,rest_factory=lambda *args:SyntheticREST(),synthetic_product=True)
         repos=PrincipalScopedRepositoryFactory(create_session_factory(engine),tmp_path/'reports')
         registry=build_llm_registry(settings)
         products=CloudProductServiceFactory(auth,workspace,repos,registry,registry)

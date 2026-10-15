@@ -43,6 +43,29 @@ describe('Synthetic Cloud product wiring',()=>{
     fireEvent.change(input,{target:{value:'合成销售问题'}})
     fireEvent.click(screen.getByRole('button',{name:'发送'}))
   }
+  it('Cloud rename does not reread unrelated transcript and both resource projections',async()=>{
+    enable()
+    vi.mocked(api.listCloudConversations).mockResolvedValue({items:[summary],next_cursor:null,total_count:1} as never)
+    vi.mocked(api.listCloudReports).mockResolvedValue({items:[],next_cursor:null,total_count:0} as never)
+    vi.mocked(api.mutateCloudResource).mockResolvedValue({workspace_status:ready})
+    const prompt=vi.spyOn(window,'prompt').mockReturnValue('已验证新标题')
+    try {
+      render(<CloudWorkspace session={session} account={account} onAuthInvalid={vi.fn()} />)
+      await screen.findByText('模型甲')
+      const historyReads=vi.mocked(api.readCloudHistory).mock.calls.length
+      const reportReads=vi.mocked(api.readCloudReports).mock.calls.length
+      fireEvent.click(screen.getByRole('button',{name:'Synthetic A'}))
+      fireEvent.click(screen.getByRole('menuitem',{name:'设置'}))
+      fireEvent.click(screen.getByRole('button',{name:'对话管理'}))
+      fireEvent.click(await screen.findByRole('button',{name:'重命名'}))
+      await waitFor(()=>expect(api.mutateCloudResource).toHaveBeenCalledWith(
+        'history','synthetic-old','rename',1,'synthetic-proof','已验证新标题',expect.any(AbortSignal)))
+      await waitFor(()=>expect(api.listCloudConversations).toHaveBeenCalledTimes(2))
+      expect(api.readCloudHistory).toHaveBeenCalledTimes(historyReads)
+      expect(api.readCloudReports).toHaveBeenCalledTimes(reportReads)
+      expect(api.readCloudConversation).not.toHaveBeenCalled()
+    } finally { prompt.mockRestore() }
+  })
   it.each([['execution',403],['conflict',409],['network',0],['upstream',503]] as const)(
     'preserves verified catalog and selection on %s chat failure',async(kind,httpStatus)=>{
       enable()

@@ -32,7 +32,7 @@ def test_native_int64_is_preserved_exactly(kind, value):
     assert result.truncated is True  # A type fix cannot grant completeness.
 
 
-@pytest.mark.parametrize("value", ["100", "0", str(INT64_MIN), str(INT64_MAX), "abc", True, False, 100.0, INT64_MIN - 1, INT64_MAX + 1,
+@pytest.mark.parametrize("value", ["abc", True, False, 100.0, INT64_MIN - 1, INT64_MAX + 1,
     "1.0", "1e2", "+100", " 100", "100 ", "0100", "-0", "", "١٠٠", "１００",
     "9223372036854775808", "-9223372036854775809", {}, []])
 def test_int64_wrong_types_and_ambiguous_strings_fail_closed(value):
@@ -94,10 +94,18 @@ def test_int64_csv_mirror_preserves_native_json(value, csv_value):
 @pytest.mark.parametrize("value,csv_value", [(100,"101"), (100,"0100"), (100,"+100"),
     (100," 100"), (100,"100.0"), (100,"1e2"), (True,"1"),
     (INT64_MAX+1,str(INT64_MAX+1)), (None,"100"), (100,"١٠٠"), (0,"-0"),
-    (100,"1"*10000), ("100","100"), (str(INT64_MAX),str(INT64_MAX))])
+    (100,"1"*10000)])
 def test_int64_csv_mismatch_or_invalid_encoding_rejected(value, csv_value):
     with pytest.raises(PowerBIAdapterError, match="^CONTRACT_DRIFT$"):
         normalize(value, csv_value=csv_value)
+
+
+@pytest.mark.parametrize("value", ["100", "0", str(INT64_MIN), str(INT64_MAX)])
+def test_proven_canonical_int64_string_uses_same_csv_parser(value):
+    for csv_value in (None, value):
+        actual = normalize(value, csv_value=csv_value)
+        assert type(actual.rows[0][0]) is int and actual.rows[0][0] == int(value)
+        assert actual.truncated  # Utility normalization has no transport proof.
 
 
 @pytest.mark.parametrize("value,csv_value", [(True,"true"),(False,"false"),(None,'""')])
@@ -113,17 +121,17 @@ def test_boolean_csv_does_not_accept_numeric_or_contradictory_values(value, csv_
 
 
 @pytest.mark.asyncio
-async def test_string_rejection_keeps_native_session_and_model_binding(harness):
+async def test_invalid_string_rejection_keeps_native_session_and_model_binding(harness):
     from backend.tests.unit.test_fabric_iq_adapter import result
     auth, session, transport, adapter = harness
     ref = await adapter.resolve_bootstrap("fixture")
-    transport.query = result([["100"]])
+    transport.query = result([["0100"]])
     with pytest.raises(PowerBIAdapterError, match="^CONTRACT_DRIFT$"):
         await adapter.execute_dax(DAXRequest(semantic_model_key=ref.server_model_key,
             dax='EVALUATE ROW("probe",1)'))
     assert auth.require_session(session.session_id).principal == session.principal
     assert adapter.binding_count == 1
     assert len([call for call in transport.calls if call[0] == "ExecuteQuery"]) == 1
-    transport.query = result([[100]])
+    transport.query = result([["100"]])
     assert (await adapter.execute_dax(DAXRequest(semantic_model_key=ref.server_model_key,
         dax='EVALUATE ROW("probe",1)'))).rows == [[100]]

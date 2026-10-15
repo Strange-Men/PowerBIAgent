@@ -11,7 +11,7 @@ from backend.app.config.cloud_test_policy import CloudTestPolicy
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.powerbi.fabric_iq_contract import fail
 from backend.app.powerbi.fabric_iq_normalization import (
-    error_code, guid, normalize_query, normalize_schema, unpack,
+    IQInlineEnvelope, error_code, guid, normalize_query, normalize_schema, unpack,
 )
 from backend.app.powerbi.fabric_iq_transport import FabricIQTransport
 from backend.app.powerbi.models import PowerBICompatibilityProbe
@@ -112,8 +112,11 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
     @asynccontextmanager
     async def _connection(self, *, key=None, resource=None):
         from backend.app.powerbi.base import PowerBIAdapterError
+        if key is not None:
+            ref = self._binding(key)
+            resource = (ref.workspace_id, ref.semantic_model_id)
         try:
-            async with self._transport.connection() as connection:
+            async with self._transport.connection(resource=resource) as connection:
                 yield connection
         except (AuthFailure, PowerBIAdapterError) as error:
             code = error.code if isinstance(error, AuthFailure) else error.error_type
@@ -179,6 +182,21 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         return await self._resolve_authorized_url(
             f'https://app.powerbi.com/groups/{workspace_id}/datasets/{model_id}/details', restored_key=key)
 
+    async def restore_bound_schema(self, workspace_id, model_id, key):
+        """Return the typed schema proven by this exact fresh Resolve+Schema.
+
+        This is a single metadata operation, never a cross-request access cache.
+        Ordinary get_semantic_model_schema and query execution stay unchanged.
+        """
+        ref = await self.restore_bound_model(workspace_id, model_id, key)
+        bound = self._binding(key)
+        schema = self._schemas.get(key)
+        if (bound is not ref or schema is None or schema.key != key
+                or schema.metadata_source != 'fabric_iq'
+                or schema.session_generation != ref.authorization_epoch):
+            raise fail('CONTRACT_DRIFT')
+        return schema.model_copy(deep=True)
+
     async def _resolve_authorized_url(self, url, *, reuse=False, restored_key=None):
         self._validate()
         expected_workspace, expected_model = _bootstrap_identity(url)
@@ -215,19 +233,33 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         return schema.model_copy(deep=True)
 
     async def execute_dax(self, request):
+        return await self._execute_query(request)
+
+    async def _execute_query(self, request, *, projected_columns=None):
+        # projected_columns is supplied only by the two server-owned fixed
+        # diagnostic/member projections below, never by a public DAX request.
         if not isinstance(request, DAXRequest) or request.is_mock: raise fail("QUERY_REJECTED")
         ref = self._binding(request.semantic_model_key)
+        schema = self._schemas.get(request.semantic_model_key)
+        if schema is None or schema.key != ref.server_model_key or schema.session_generation != ref.authorization_epoch:
+            raise fail("CONTRACT_DRIFT")
+        envelope = IQInlineEnvelope.for_request(request)
         import asyncio
         try:
             async with asyncio.timeout(request.timeout_seconds):
                 async with self._connection(key=request.semantic_model_key) as connection:
                     raw = await connection.call("ExecuteQuery", {"artifactId": ref.semantic_model_id,
-                        "daxQueries": [request.dax], "maxRows": request.max_rows})
-                    result = normalize_query(raw, ref.semantic_model_id, request)
+                        "daxQueries": [request.dax], "maxRows": envelope.wire_limit})
+                    result = normalize_query(raw, ref.semantic_model_id, request, envelope=envelope,
+                        schema=schema if projected_columns is None else None)
+                    if projected_columns is not None and tuple(result.columns) not in projected_columns:
+                        raise fail("CONTRACT_DRIFT")
         except TimeoutError:
             raise fail("QUERY_TIMEOUT") from None
         self._validate()
         self._binding(request.semantic_model_key)
+        if self._schemas.get(request.semantic_model_key) is not schema:
+            raise fail("CONTRACT_DRIFT")
         return self._product_result(result)
 
     def _product_result(self, result):
@@ -244,7 +276,8 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
             raise fail("CONTRACT_DRIFT")
         response, request = raw
         ref = self._binding(request.semantic_model_key)
-        return self._product_result(normalize_query(response, ref.semantic_model_id, request))
+        return self._product_result(normalize_query(response, ref.semantic_model_id, request,
+            schema=self._schemas[request.semantic_model_key]))
 
     async def normalize_error(self, raw):
         from backend.app.powerbi.base import PowerBIAdapterError
@@ -264,11 +297,11 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         column = request.field_name.replace("]", "]]")
         reference = f"'{table}'[{column}]"
         # Deduplicate the grounded column before projecting its fixed alias.
-        # Never reverse-map Fabric's friendly labels (which may be ambiguous).
+        # The alias is owned by this exact projection, not a business label.
         dax = (f'EVALUATE TOPN({request.limit + 1}, SELECTCOLUMNS(DISTINCT({reference}), '
                f'"__member", {reference}), [__member], ASC) ORDER BY [__member] ASC')
-        result = await self.execute_dax(DAXRequest(semantic_model_key=request.semantic_model_key,
-            dax=dax, max_rows=request.limit + 1))
+        result = await self._execute_query(DAXRequest(semantic_model_key=request.semantic_model_key,
+            dax=dax, max_rows=request.limit + 1), projected_columns=(("__member",), ("[__member]",)))
         if result.columns not in (["__member"], ["[__member]"]):
             raise fail("CONTRACT_DRIFT")
         return ColumnMembersResult(semantic_model_key=request.semantic_model_key,
@@ -279,8 +312,9 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
     async def probe_compatibility(self, semantic_model_key):
         await self.health_check()
         await self.get_semantic_model_schema(semantic_model_key)
-        result = await self.execute_dax(DAXRequest(semantic_model_key=semantic_model_key,
-            dax='EVALUATE ROW("__pbiagent_probe", 1)', max_rows=2))
+        result = await self._execute_query(DAXRequest(semantic_model_key=semantic_model_key,
+            dax='EVALUATE ROW("__pbiagent_probe", 1)', max_rows=2),
+            projected_columns=(("__pbiagent_probe",), ("[__pbiagent_probe]",)))
         verified = result.columns in (["__pbiagent_probe"], ["[__pbiagent_probe]"]) and result.rows == [[1]]
         if not verified: raise fail("CONTRACT_DRIFT")
         return PowerBICompatibilityProbe(semantic_model_key=semantic_model_key,

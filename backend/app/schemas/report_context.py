@@ -52,6 +52,7 @@ class ReportFreshnessState(str, Enum):
 class ReportDataSourceKind(str, Enum):
     TEST_FIXTURE = "test_fixture"
     LOCAL_MCP = "local_mcp"
+    FABRIC_IQ = "fabric_iq"
     # Reserved contract value only.  M5.10 does not implement transport,
     # authentication, polling, or any Remote MCP request schema.
     REMOTE_MCP = "remote_mcp"
