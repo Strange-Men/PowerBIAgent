@@ -22,6 +22,7 @@ classifiers = [
 # 核心依赖 — M0.4.1 已验证并锁定版本
 # ----------------------------------------------------------
 dependencies = [
+    "Babel==2.18.0",              # Presentation-only locale formatting
     # Data Validation
     "pydantic==2.13.4",            # 数据校验
 

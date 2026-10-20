@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { tr, publicText } from './i18n'
 import { useEffect, useState } from 'react'
 import { Composer } from './components/Composer'
 import { ConversationView } from './components/ConversationView'
@@ -7,10 +9,11 @@ import { usePowerBIAgent } from './hooks/usePowerBIAgent'
 import { useAuth } from './hooks/useAuth'
 import type { BatchOperationResult } from './types'
 
-const unavailable = async () => { throw new Error('当前暂不开放组织数据访问。') }
+const unavailable = async () => { throw new Error(tr('auth:organizationDataAccessIsCurrentlyUnavailable')) }
 const emptyBatch = async (): Promise<BatchOperationResult> => ({succeededIds:[], failed:[]})
 
 export function App() {
+  useTranslation()
   const auth = useAuth()
   const [collapsed, setCollapsed] = useState(() =>
     typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 760px)').matches : false)
@@ -31,22 +34,23 @@ export function App() {
     <main className={`chat-main ${auth.session?.authenticated ? '' : 'auth-welcome'}`}>
       {auth.session?.authenticated ? <CloudWorkspace key={auth.generation} session={auth.session}
         onAuthInvalid={auth.refresh} /> : <>
-      <h1>{auth.session?.authenticated ? '欢迎回来' : '使用组织 Power BI 数据进行问答'}</h1>
+      <h1>{auth.session?.authenticated ? tr('auth:welcomeBack') : tr('auth:askQuestionsAboutYourOrganizationsPowerBiData')}</h1>
       {auth.state === 'SESSION_ESTABLISHING' || auth.state === 'AUTHENTICATING'
-        ? <p role="status">{auth.state === 'AUTHENTICATING' ? '正在登录…' : '正在确认登录状态…'}</p>
-        : auth.session?.authenticated ? <p>你已登录。组织数据功能将在后续版本开放。</p>
+        ? <p role="status">{auth.state === 'AUTHENTICATING' ? tr('auth:signingIn') : tr('auth:checkingYourSession')}</p>
+        : auth.session?.authenticated ? <p>{tr('auth:youAreSignedInOrganizationDataFeaturesWillBe')}</p>
         : <p role={auth.state === 'SIGNED_OUT' ? 'status' : 'alert'}>{
-          auth.logoutPending ? '退出尚未完成，请重试。' : auth.sessionCheckError || (auth.state === 'SESSION_EXPIRED' ? '登录已过期，请重新登录。'
-          : auth.state === 'CONSENT_REQUIRED' ? '需要批准才能继续，请登录或联系管理员。'
-          : auth.state === 'AUTH_ERROR' ? '登录未完成，请重试或联系管理员。' : '登录后查看你的账户。')}</p>}
-      {auth.sessionCheckError ? <button type="button" onClick={()=>void auth.refresh()}>重试确认会话</button> : null}
-      {auth.logoutPending ? <button type="button" onClick={() => void auth.logout()}>重试退出</button> : null}
+          auth.logoutPending ? tr('auth:signoutIsIncompleteTryAgain') : publicText(auth.sessionCheckError) || (auth.state === 'SESSION_EXPIRED' ? tr('auth:yourSessionHasExpiredSignInAgain')
+          : auth.state === 'CONSENT_REQUIRED' ? tr('auth:approvalIsRequiredSignInOrContactYourAdministrator')
+          : auth.state === 'AUTH_ERROR' ? tr('auth:signinWasNotCompletedTryAgainOrContactYour') : tr('auth:signInToViewYourAccount'))}</p>}
+      {auth.sessionCheckError ? <button type="button" onClick={()=>void auth.refresh()}>{tr('auth:checkSessionAgain')}</button> : null}
+      {auth.logoutPending ? <button type="button" onClick={() => void auth.logout()}>{tr('auth:retrySignout')}</button> : null}
       </>}
     </main>
   </div>
 }
 
 function LocalWorkspace() {
+  useTranslation()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     typeof window !== 'undefined' && typeof window.matchMedia === 'function'
       ? window.matchMedia('(max-width: 760px)').matches
@@ -92,10 +96,11 @@ function LocalWorkspace() {
       <main className="chat-main">
         {app.messages.length > 0 ? (
           <header className="conversation-header">
-            <h1>{app.title}</h1>
+            <h1>{publicText(app.title)}</h1>
           </header>
         ) : null}
         <ConversationView
+          projectionContext={{mode:app.effectiveRuntimeMode,conversationId:app.activeConversationId}}
           messages={app.messages}
           sending={app.sending}
           loadingConversation={app.loadingConversation}

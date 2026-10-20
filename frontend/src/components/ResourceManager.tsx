@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { tr, publicText } from '../i18n'
 import {
   Archive,
   BarChart3,
@@ -9,6 +11,7 @@ import {
   Settings,
   Trash2,
   X,
+  UserRound,
 } from 'lucide-react'
 import {
   useCallback,
@@ -30,11 +33,13 @@ import type {
   AccountActions,
 } from '../types'
 import { CloudAccountSettings } from './CloudAccountSettings'
+import { GeneralSettings } from './GeneralSettings'
 
 const SETTINGS_PAGE_SIZE = 20
 
 type SettingsSection =
   | 'general'
+  | 'account'
   | 'conversations'
   | 'reports'
   | 'archived'
@@ -153,7 +158,7 @@ function usePagedResources<T>(
           error:
             error instanceof Error
               ? error.message
-              : '资源加载失败，请稍后重试。',
+              : tr('resources:resourcesCouldNotBeLoadedTryAgainLater'),
         }))
       }
     },
@@ -215,12 +220,12 @@ function conversationTitle(item: ConversationSummary): string {
   return (
     item.title?.trim() ||
     item.latest_analysis_goal?.replace(/^用户提问:\s*/, '').trim() ||
-    '未命名对话'
+    tr('errors:untitledConversation')
   )
 }
 
 function reportTitle(item: ConversationReportItem): string {
-  return item.display_title?.trim() || '销售分析报告'
+  return publicText(item.display_title?.trim()) || tr('reports:salesAnalysisReport')
 }
 
 function selectedItems<T>(
@@ -238,6 +243,7 @@ function removeSucceeded(current: Set<string>, result: BatchOperationResult) {
 }
 
 export function ResourceManager(props: ResourceManagerProps) {
+  useTranslation()
   if (!props.account || props.resourceLoaders) return <LocalResourceManager {...props} />
   const {account, onClose} = props
   return <SettingsFrame onClose={onClose}>
@@ -259,9 +265,10 @@ function LocalResourceManager({
   onBulkRestoreReports,
   onRenameReport,
 }: ResourceManagerProps) {
+  useTranslation()
   const [section, setSection] = useState<SettingsSection>('general')
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | BatchOperationResult | null>(null)
   const [activeConversationSelected, setActiveConversationSelected] = useState(
     new Set<string>(),
   )
@@ -306,17 +313,12 @@ function LocalResourceManager({
   const activeReports = usePagedResources(loadActiveReports, reportKey)
   const archivedReports = usePagedResources(loadArchivedReports, reportKey)
 
-  const showOutcome = (result: BatchOperationResult) => {
-    if (result.failed.length === 0) {
-      setNotice(`已完成 ${result.succeededIds.length} 项操作。`)
-      return
-    }
-    setNotice(
-      `已完成 ${result.succeededIds.length} 项，${result.failed.length} 项失败：${result.failed
-        .map((item) => `${item.id}（${item.reason}）`)
-        .join('；')}`,
-    )
-  }
+  const showOutcome = (result: BatchOperationResult) => setNotice(result)
+  const noticeText=typeof notice==='string' ? publicText(notice) : notice
+    ? notice.failed.length===0 ? tr('resources:completedOperations',{p0:notice.succeededIds.length})
+      : tr('resources:completedOperationsFailed',{p0:notice.succeededIds.length,p1:notice.failed.length,
+        p2:notice.failed.map(item=>tr('resources:failureItem',{id:item.id,reason:publicText(item.reason)}))
+          .join(tr('resources:listSeparator'))}) : ''
 
   const run = async (
     operation: () => Promise<BatchOperationResult>,
@@ -330,7 +332,7 @@ function LocalResourceManager({
       showOutcome(result)
     } catch (error) {
       setNotice(
-        error instanceof Error ? error.message : '操作未完成，请稍后重试。',
+        error instanceof Error ? error.message : tr('resources:theOperationWasNotCompletedTryAgainLater'),
       )
     } finally {
       setBusy(false)
@@ -338,7 +340,7 @@ function LocalResourceManager({
   }
 
   const renameConversationItem = async (item: ConversationSummary) => {
-    const title = window.prompt('输入新的对话标题', conversationTitle(item))?.trim()
+    const title = window.prompt(tr('resources:enterANewConversationTitle'), conversationTitle(item))?.trim()
     if (!title) return
     setBusy(true)
     try {
@@ -351,16 +353,16 @@ function LocalResourceManager({
         ...current,
         title,
       }))
-      setNotice('对话标题已更新。')
+      setNotice(tr('resources:conversationTitleUpdated'))
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : '重命名失败。')
+      setNotice(error instanceof Error ? error.message : tr('resources:couldNotRenameThisResource'))
     } finally {
       setBusy(false)
     }
   }
 
   const renameReportItem = async (item: ConversationReportItem) => {
-    const title = window.prompt('输入新的报表标题', reportTitle(item))?.trim()
+    const title = window.prompt(tr('resources:enterANewReportTitle'), reportTitle(item))?.trim()
     if (!title) return
     setBusy(true)
     try {
@@ -373,35 +375,37 @@ function LocalResourceManager({
         ...current,
         display_title: title,
       }))
-      setNotice('报表标题已更新。')
+      setNotice(tr('resources:reportTitleUpdated'))
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : '重命名失败。')
+      setNotice(error instanceof Error ? error.message : tr('resources:couldNotRenameThisResource'))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <SettingsFrame onClose={onClose} notice={notice} subtitle="完整历史按页加载；大批量操作会自动安全分组执行。">
+    <SettingsFrame onClose={onClose} notice={noticeText}>
         <div className="settings-layout">
-          <nav className="settings-nav" aria-label="设置分类">
-            <SettingsNavButton icon={<Settings size={16} />} id="general" label="常规" current={section} onSelect={setSection} />
-            <SettingsNavButton icon={<MessageSquare size={16} />} id="conversations" label="对话管理" current={section} onSelect={setSection} />
-            <SettingsNavButton icon={<BarChart3 size={16} />} id="reports" label="报表管理" current={section} onSelect={setSection} />
-            <SettingsNavButton icon={<Archive size={16} />} id="archived" label="已归档" current={section} onSelect={setSection} />
-            <SettingsNavButton icon={<Database size={16} />} id="models" label="数据模型" current={section} onSelect={setSection} />
-            <SettingsNavButton icon={<Info size={16} />} id="about" label="关于" current={section} onSelect={setSection} />
+          <nav className="settings-nav" aria-label={tr('auth:settingsCategories')}>
+            <SettingsNavButton icon={<Settings size={16} />} id="general" label={tr('resources:general')} current={section} onSelect={setSection} />
+            {account ? <SettingsNavButton icon={<UserRound size={16} />} id="account" label={tr('auth:account')} current={section} onSelect={setSection} /> : null}
+            <SettingsNavButton icon={<MessageSquare size={16} />} id="conversations" label={tr('resources:conversations')} current={section} onSelect={setSection} />
+            <SettingsNavButton icon={<BarChart3 size={16} />} id="reports" label={tr('resources:reports')} current={section} onSelect={setSection} />
+            <SettingsNavButton icon={<Archive size={16} />} id="archived" label={tr('resources:archived')} current={section} onSelect={setSection} />
+            <SettingsNavButton icon={<Database size={16} />} id="models" label={tr('composer:dataModel')} current={section} onSelect={setSection} />
+            <SettingsNavButton icon={<Info size={16} />} id="about" label={tr('resources:about')} current={section} onSelect={setSection} />
           </nav>
 
           <div className="settings-content">
             {section === 'general' ? (
-              account ? <CloudAccountSettings account={account} /> : <SettingsIntro title="常规" text="资源管理使用独立分页，不影响左侧栏的最近记录。" />
+              <GeneralSettings />
             ) : null}
+            {section==='account' && account ? <CloudAccountSettings account={account} panel="account" /> : null}
 
             {section === 'conversations' ? (
               <ResourceSection
-                title="对话管理"
-                empty="暂无对话"
+                title={tr('resources:conversations')}
+                empty={tr('resources:noConversations')}
                 selectedCount={activeConversationSelected.size}
                 loadedCount={activeConversations.state.items.length}
                 totalCount={activeConversations.state.totalCount}
@@ -424,10 +428,10 @@ function LocalResourceManager({
                         void activeReports.reload()
                         void archivedReports.reload()
                       })
-                    }}><Archive size={15} />批量归档</button>
+                    }}><Archive size={15} />{tr('resources:archiveSelected')}</button>
                     <button className="danger-action" type="button" disabled={busy || activeConversationSelected.size === 0} onClick={() => {
                       const selected = selectedItems(activeConversations.state.items, activeConversationSelected, conversationKey)
-                      if (!window.confirm(`删除选中的 ${selected.length} 个对话及其关联报表？此操作不可撤销。`)) return
+                      if (!window.confirm(tr('resources:deleteSelectedConversationsAndTheirReportsThisCannotBe', {p0: selected.length}))) return
                       void run(() => onBulkDeleteConversations(selected), (result) => {
                         activeConversations.removeIds(result.succeededIds)
                         setActiveConversationSelected((current) => removeSucceeded(current, result))
@@ -436,7 +440,7 @@ function LocalResourceManager({
                         void activeReports.reload()
                         void archivedReports.reload()
                       })
-                    }}><Trash2 size={15} />批量删除</button>
+                    }}><Trash2 size={15} />{tr('resources:deleteSelected')}</button>
                   </>
                 }
               >
@@ -448,8 +452,8 @@ function LocalResourceManager({
 
             {section === 'reports' ? (
               <ResourceSection
-                title="报表管理"
-                empty="暂无报表"
+                title={tr('resources:reports')}
+                empty={tr('resources:noReports')}
                 selectedCount={activeReportSelected.size}
                 loadedCount={activeReports.state.items.length}
                 totalCount={activeReports.state.totalCount}
@@ -468,15 +472,15 @@ function LocalResourceManager({
                         setActiveReportSelected((current) => removeSucceeded(current, result))
                         void archivedReports.reload()
                       })
-                    }}><Archive size={15} />批量归档</button>
+                    }}><Archive size={15} />{tr('resources:archiveSelected')}</button>
                     <button className="danger-action" type="button" disabled={busy || activeReportSelected.size === 0} onClick={() => {
                       const selected = selectedItems(activeReports.state.items, activeReportSelected, reportKey)
-                      if (!window.confirm(`删除选中的 ${selected.length} 个报表？所属对话会保留删除记录。`)) return
+                      if (!window.confirm(tr('resources:deleteSelectedReportsTheirConversationsWillRetainADeletion', {p0: selected.length}))) return
                       void run(() => onBulkDeleteReports(selected), (result) => {
                         activeReports.removeIds(result.succeededIds)
                         setActiveReportSelected((current) => removeSucceeded(current, result))
                       })
-                    }}><Trash2 size={15} />批量删除</button>
+                    }}><Trash2 size={15} />{tr('resources:deleteSelected')}</button>
                   </>
                 }
               >
@@ -489,8 +493,8 @@ function LocalResourceManager({
             {section === 'archived' ? (
               <div className="resource-manager-sections">
                 <ResourceSection
-                  title="已归档对话"
-                  empty="暂无已归档对话"
+                  title={tr('resources:archivedConversations')}
+                  empty={tr('resources:noArchivedConversations')}
                   selectedCount={archivedConversationSelected.size}
                   loadedCount={archivedConversations.state.items.length}
                   totalCount={archivedConversations.state.totalCount}
@@ -511,10 +515,10 @@ function LocalResourceManager({
                           void activeReports.reload()
                           void archivedReports.reload()
                         })
-                      }}><RotateCcw size={15} />批量恢复</button>
+                      }}><RotateCcw size={15} />{tr('resources:restoreSelected')}</button>
                       <button className="danger-action" type="button" disabled={busy || archivedConversationSelected.size === 0} onClick={() => {
                         const selected = selectedItems(archivedConversations.state.items, archivedConversationSelected, conversationKey)
-                        if (!window.confirm(`永久删除选中的 ${selected.length} 个已归档对话？`)) return
+                        if (!window.confirm(tr('resources:permanentlyDeleteSelectedArchivedConversations', {p0: selected.length}))) return
                         void run(() => onBulkDeleteConversations(selected), (result) => {
                           archivedConversations.removeIds(result.succeededIds)
                           setArchivedConversationSelected((current) => removeSucceeded(current, result))
@@ -523,7 +527,7 @@ function LocalResourceManager({
                           void activeReports.reload()
                           void archivedReports.reload()
                         })
-                      }}><Trash2 size={15} />批量删除</button>
+                      }}><Trash2 size={15} />{tr('resources:deleteSelected')}</button>
                     </>
                   }
                 >
@@ -533,8 +537,8 @@ function LocalResourceManager({
                 </ResourceSection>
 
                 <ResourceSection
-                  title="已归档报表"
-                  empty="暂无已归档报表"
+                  title={tr('resources:archivedReports')}
+                  empty={tr('resources:noArchivedReports')}
                   selectedCount={archivedReportSelected.size}
                   loadedCount={archivedReports.state.items.length}
                   totalCount={archivedReports.state.totalCount}
@@ -553,15 +557,15 @@ function LocalResourceManager({
                           setArchivedReportSelected((current) => removeSucceeded(current, result))
                           void activeReports.reload()
                         })
-                      }}><RotateCcw size={15} />批量恢复</button>
+                      }}><RotateCcw size={15} />{tr('resources:restoreSelected')}</button>
                       <button className="danger-action" type="button" disabled={busy || archivedReportSelected.size === 0} onClick={() => {
                         const selected = selectedItems(archivedReports.state.items, archivedReportSelected, reportKey)
-                        if (!window.confirm(`永久删除选中的 ${selected.length} 个已归档报表？`)) return
+                        if (!window.confirm(tr('resources:permanentlyDeleteSelectedArchivedReports', {p0: selected.length}))) return
                         void run(() => onBulkDeleteReports(selected), (result) => {
                           archivedReports.removeIds(result.succeededIds)
                           setArchivedReportSelected((current) => removeSucceeded(current, result))
                         })
-                      }}><Trash2 size={15} />批量删除</button>
+                      }}><Trash2 size={15} />{tr('resources:deleteSelected')}</button>
                     </>
                   }
                 >
@@ -573,10 +577,10 @@ function LocalResourceManager({
             ) : null}
 
             {section === 'models' ? (
-              account ? <CloudAccountSettings account={account} /> : <SettingsIntro title="数据模型" text={`当前资源 namespace：${runtimeMode}。数据模型仍由后端安全发现接口管理。`} />
+              account ? <CloudAccountSettings account={account} panel="data" /> : <SettingsIntro title={tr('composer:dataModel')} text={tr('resources:currentResourceModeDataModelsAreManagedByThe', {p0: tr(runtimeMode==='real'?'resources:modeReal':'resources:modeMock')})} />
             ) : null}
             {section === 'about' ? (
-              <SettingsIntro title="关于" text={account ? 'PowerBIAgent — Power BI 云端数据分析。' : 'PowerBIAgent M5.4.1 — 本地 Power BI 数据分析 Agent。'} />
+              <SettingsIntro title={tr('resources:about')} text={account ? tr('resources:powerbiagentPowerBiCloudDataAnalysis') : tr('resources:powerbiagentLocalPowerBiDataAnalysis')} />
             ) : null}
           </div>
         </div>
@@ -584,15 +588,15 @@ function LocalResourceManager({
   )
 }
 
-function SettingsFrame({onClose, notice, subtitle, children}: {
-  onClose: () => void; notice?: string | null; subtitle?: string; children: ReactNode
+function SettingsFrame({onClose, notice, children}: {
+  onClose: () => void; notice?: string | null; children: ReactNode
 }) {
+  useTranslation()
   return <div className="resource-manager-backdrop" role="presentation">
     <section className="resource-manager settings-hub" role="dialog" aria-modal="true" aria-labelledby="resource-manager-title">
-      <header className="settings-header"><div><span className="resource-manager-eyebrow">用户设置</span>
-        <h2 id="resource-manager-title">设置</h2>{subtitle ? <p>{subtitle}</p> : null}</div>
-        <button type="button" aria-label="关闭设置" onClick={onClose}><X size={19} /></button></header>
-      {notice ? <p className="resource-manager-notice" role="status">{notice}</p> : null}
+      <header className="settings-header"><h2 id="resource-manager-title">{tr('resources:settings')}</h2>
+        <button type="button" aria-label={tr('resources:closeSettings')} onClick={onClose}><X size={19} /></button></header>
+      {notice ? <p className="resource-manager-notice" role="status">{publicText(notice)}</p> : null}
       {children}
     </section>
   </div>
@@ -623,6 +627,7 @@ function SettingsNavButton({
   current: SettingsSection
   onSelect: (section: SettingsSection) => void
 }) {
+  useTranslation()
   return (
     <button
       className={current === id ? 'is-active' : ''}
@@ -636,6 +641,7 @@ function SettingsNavButton({
 }
 
 function SettingsIntro({ title, text }: { title: string; text: string }) {
+  useTranslation()
   return (
     <section className="settings-intro">
       <h3>{title}</h3>
@@ -655,15 +661,16 @@ function ConversationRow({
   onToggle: () => void
   onRename: () => void
 }) {
+  useTranslation()
   return (
     <div className="resource-row">
-      <input aria-label={`选择对话：${conversationTitle(item)}`} type="checkbox" checked={selected} onChange={onToggle} />
+      <input aria-label={tr('resources:selectConversation', {p0: conversationTitle(item)})} type="checkbox" checked={selected} onChange={onToggle} />
       <MessageSquare size={16} />
       <span>{conversationTitle(item)}</span>
       {item.resource_status === 'failed' || item.local_status === 'failed' ? (
-        <small className="failed-label">失败</small>
+        <small className="failed-label">{tr('resources:failed')}</small>
       ) : null}
-      <button className="resource-inline-action" type="button" onClick={onRename}>重命名</button>
+      <button className="resource-inline-action" type="button" onClick={onRename}>{tr('resources:rename')}</button>
     </div>
   )
 }
@@ -679,12 +686,13 @@ function ReportRow({
   onToggle: () => void
   onRename: () => void
 }) {
+  useTranslation()
   return (
     <div className="resource-row">
-      <input aria-label={`选择报表：${reportTitle(item)}`} type="checkbox" checked={selected} onChange={onToggle} />
+      <input aria-label={tr('resources:selectReport', {p0: reportTitle(item)})} type="checkbox" checked={selected} onChange={onToggle} />
       <FileText size={16} />
       <span>{reportTitle(item)}</span>
-      <button className="resource-inline-action" type="button" onClick={onRename}>重命名</button>
+      <button className="resource-inline-action" type="button" onClick={onRename}>{tr('resources:rename')}</button>
     </div>
   )
 }
@@ -718,18 +726,19 @@ function ResourceSection({
   actions: ReactNode
   children: ReactNode
 }) {
+  useTranslation()
   return (
     <section className="resource-section">
       <div className="resource-section-heading">
-        <div><h3>{title}</h3><small>共 {totalCount} 项 · 已加载 {loadedCount} 项</small></div>
-        <button type="button" disabled={loadedCount === 0} onClick={onSelectLoaded}>全选当前已加载</button>
+        <div><h3>{title}</h3><small>{tr('resources:loadedCount', {count:totalCount, loaded:loadedCount})}</small></div>
+        <button type="button" disabled={loadedCount === 0} onClick={onSelectLoaded}>{tr('resources:selectAllLoadedItems')}</button>
       </div>
-      <div className="resource-list" role="region" aria-label={`${title}资源列表`} aria-busy={loading || loadingMore}>
-        {loading ? <p>正在加载…</p> : error ? <p className="resource-error">{error}</p> : loadedCount === 0 ? <p>{empty}</p> : children}
-        {hasMore ? <button className="resource-load-more" type="button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? '正在加载更多…' : '加载更多'}</button> : loadedCount > 0 ? <p className="resource-list-end">已加载全部 {totalCount} 项</p> : null}
+      <div className="resource-list" role="region" aria-label={tr('resources:resourceList', {p0: title})} aria-busy={loading || loadingMore}>
+        {loading ? <p>{tr('resources:loading')}</p> : error ? <p className="resource-error">{publicText(error)}</p> : loadedCount === 0 ? <p>{empty}</p> : children}
+        {hasMore ? <button className="resource-load-more" type="button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? tr('resources:loadingMore') : tr('resources:loadMore')}</button> : loadedCount > 0 ? <p className="resource-list-end">{tr('resources:allLoaded', {count:totalCount})}</p> : null}
       </div>
-      <footer className="resource-toolbar" role="toolbar" aria-label={`${title}操作栏`}>
-        <span>已选择 {selectedCount} / 共 {totalCount} 项</span>
+      <footer className="resource-toolbar" role="toolbar" aria-label={tr('resources:actions', {p0: title})}>
+        <span>{tr('resources:selectionCount', {count:totalCount, selected:selectedCount})}</span>
         <div className="resource-toolbar-actions">{actions}</div>
       </footer>
     </section>

@@ -78,7 +78,7 @@ def main() -> int:
             options = shlex.join(['-o', 'cache_dir=' + cache.as_posix(),
                                   '--basetemp=' + (temp / 'pytest').as_posix()])
             env = os.environ.copy()
-            env.update(PBIAGENT_TEST_ROOT=str(root), TEMP=str(temp), TMP=str(temp),
+            env.update(PBIAGENT_TEST_ROOT=str(root), PBIAGENT_VALIDATION_MILESTONE=args.milestone, TEMP=str(temp), TMP=str(temp),
                        PYTHONUTF8='1', PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1',
                        PYTHONDONTWRITEBYTECODE='1',
                        PBIAGENT_VALIDATION_CACHE=str(cache / 'vite'),

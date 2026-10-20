@@ -404,7 +404,9 @@ def test_time_trend_ticks_are_density_aware_and_labels_are_complete(point_count)
     assert html.count('class="chart-gridline"') >= 4
     assert html.count('class="chart-y-tick"') >= 4
     assert 'class="chart-y-axis-title"' in html
-    assert "销售额（元）" in html
+    # Locale may format an amount; it cannot invent CNY for an untyped axis.
+    assert "销售额" in html
+    assert "销售额（元）" not in html
     assert 'preserveAspectRatio="xMidYMid meet"' in html
 
 

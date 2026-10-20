@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${ui_locale}">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -177,13 +177,13 @@
   <header class="executive-header" data-section="executive_header">
     <div class="brand-lockup">
       <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-      <div><h1>${title}</h1><p class="executive-eyebrow">SALES EXECUTIVE REPORT</p><p class="executive-tagline">经营全景 · 趋势结构 · 客户价值</p></div>
+      <div><h1>${title}</h1><p class="executive-eyebrow">${ui_report_subtitle}</p><p class="executive-tagline">${ui_report_tagline}</p></div>
     </div>
     <div class="header-meta">
-      <div><span>分析期间</span><strong>${analysis_period}</strong></div>
-      <div><span>语义模型 / 来源</span><strong>${semantic_model}<br/>${source_display}</strong></div>
-      <div><span>数据更新时间</span><strong>${freshness}</strong></div>
-      <div><span>生成时间</span><strong>${generated_at}</strong></div>
+      <div><span>${ui_report_period}</span><strong>${analysis_period}</strong></div>
+      <div><span>${ui_report_model_source}</span><strong>${semantic_model}<br/>${source_display}</strong></div>
+      <div><span>${ui_report_refreshed}</span><strong>${freshness}</strong></div>
+      <div><span>${ui_report_generated_at}</span><strong>${generated_at}</strong></div>
     </div>
   </header>
   ${reading_context}

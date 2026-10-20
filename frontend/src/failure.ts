@@ -1,13 +1,14 @@
+import { tr } from './i18n'
 import type { FailureInfo } from './types'
 
 export type CloudDenialReason = 'test_scope_missing' | 'cloud_execution_blocked' | 'cloud_disclosure_blocked' | 'cloud_persistence_blocked'
 
 export function cloudDenialMessage(reason: CloudDenialReason): string {
   switch (reason) {
-    case 'test_scope_missing': return '已登录；测试资源白名单尚未配置，请联系管理员配置已批准的测试资源。'
-    case 'cloud_disclosure_blocked': return '已登录；云端业务数据暂不能交给外部 AI 分析。'
-    case 'cloud_persistence_blocked': return '已登录；云端业务历史与报表留存尚未开放。'
-    default: return '已登录；云端业务验收尚未完成，数据问答与报表暂未开放。'
+    case 'test_scope_missing': return tr('errors:signedInTheApprovedTestResourceListIsNot')
+    case 'cloud_disclosure_blocked': return tr('errors:signedInCloudBusinessDataIsNotApprovedFor')
+    case 'cloud_persistence_blocked': return tr('errors:signedInCloudBusinessHistoryAndReportStorageAre')
+    default: return tr('errors:signedInCloudBusinessAcceptanceIsIncompleteAnalysisAnd')
   }
 }
 
@@ -22,51 +23,51 @@ export function cloudFailureAction(error: {status: number; failure?: FailureInfo
 export function publicFailureMessage(failure: FailureInfo): string {
   switch (failure.code) {
     case 'AUTH_REQUIRED':
-      return '请使用 Microsoft 账号登录。'
+      return tr('errors:pleaseSignInWithYourMicrosoftAccount')
     case 'AUTH_EXPIRED':
-      return '登录已过期，请重新登录。'
+      return tr('auth:yourSessionHasExpiredSignInAgain')
     case 'AUTH_CONSENT_REQUIRED':
-      return '需要批准才能继续，请登录或联系管理员。'
+      return tr('auth:approvalIsRequiredSignInOrContactYourAdministrator')
     case 'AUTH_FORBIDDEN':
-      return '当前账号暂时无法访问，请切换账号或联系管理员。'
+      return tr('errors:thisAccountCannotAccessTheServiceSwitchAccountsOr')
     case 'RESOURCE_NOT_ACCESSIBLE':
-      return '当前账号无法访问这个数据模型，请切换账号或联系管理员。'
+      return tr('errors:thisAccountCannotAccessThisDataModelSwitchAccounts')
     case 'MODEL_RESOLUTION_FAILED':
     case 'SCHEMA_UNAVAILABLE':
-      return '暂时无法读取这个数据模型，请刷新目录后重新选择。'
+      return tr('errors:cannotReadThisModelRefreshTheCatalogAndSelect')
     case 'QUERY_REJECTED':
-      return '云端数据服务无法完成本次查询，请调整问题后重试。'
+      return tr('errors:theCloudDataServiceCouldNotCompleteThisQuery')
     case 'QUERY_TIMEOUT':
-      return '云端数据服务响应超时，请重试。'
+      return tr('errors:theCloudDataServiceTimedOutTryAgain')
     case 'RATE_LIMITED':
-      return '云端数据服务请求较多，请稍后重试。'
+      return tr('errors:theCloudDataServiceIsBusyTryAgainLater')
     case 'UPSTREAM_UNAVAILABLE':
-      return '云端数据服务暂不可用，请稍后重试。'
+      return tr('errors:theCloudDataServiceIsUnavailableTryAgainLater')
     case 'CONTRACT_DRIFT':
-      return '云端数据响应暂时无法验证，请联系管理员。'
+      return tr('errors:theCloudDataResponseCouldNotBeVerifiedContact')
     case 'REPORT_TEMPLATE_INCOMPATIBLE':
-      return '当前数据模型不支持这个报表模板，请选择其他模板或数据模型。'
+      return tr('errors:thisModelDoesNotSupportThisReportTemplateChoose')
     case 'REPORT_TEMPLATE_UNAVAILABLE':
-      return '当前报表模板已失效，请重新选择。'
+      return tr('errors:thisReportTemplateIsNoLongerAvailableSelectIt')
     case 'REPORT_DATA_UNAVAILABLE':
-      return '当前数据无法生成该报表，请调整问题后重试。'
+      return tr('errors:thisDataCannotSupportTheReportAdjustYourQuestion')
     case 'REPORT_EXECUTION_FAILED':
-      return '报表数据查询未完成，请稍后重试。'
+      return tr('errors:theReportDataQueryWasNotCompletedTryAgain')
     case 'REPORT_RENDER_FAILED':
-      return '数据查询已完成，但报表生成失败，请重试生成报表。'
+      return tr('errors:theDataQuerySucceededButReportRenderingFailedTry')
     case 'POWERBI_CONNECTION_LOST':
-      return 'Power BI Desktop 连接已中断，请重新打开数据模型并刷新。'
+      return tr('errors:thePowerBiDesktopConnectionWasLostReopenThe')
     case 'SEMANTIC_MODEL_STALE':
-      return '当前选择的数据模型已关闭或失效，请刷新后重新选择。'
+      return tr('errors:theSelectedDataModelIsNoLongerAvailableRefresh79919f')
     case 'LLM_SERVICE_UNAVAILABLE':
-      return 'AI 分析服务暂不可用，请稍后重试。'
+      return tr('errors:theAiAnalysisServiceIsUnavailableTryAgainLater')
     case 'REQUEST_TIMEOUT':
-      return '本次分析超时，请重试。'
+      return tr('errors:thisAnalysisTimedOutTryAgain')
     case 'VALIDATION_FAILED':
-      return '当前数据无法完成该分析，请调整问题后重试。'
+      return tr('errors:thisDataCannotSupportTheAnalysisAdjustYourQuestion')
     case 'INTERNAL_FAILURE':
-      return '当前请求暂时无法完成，请稍后重试。'
+      return tr('errors:thisRequestCannotBeCompletedRightNowTryAgain')
     default:
-      return '当前请求暂时无法完成，请稍后重试。'
+      return tr('errors:thisRequestCannotBeCompletedRightNowTryAgain')
   }
 }

@@ -235,7 +235,8 @@ async def test_executive_renderer_renders_all_p0_reading_context_fields_in_html(
 
     assert 'data-template-key="sales_executive_report"' in html
     assert "销售经营分析报告" in html
-    assert "SALES EXECUTIVE REPORT" in html
+    assert "销售经营分析" in html
+    assert "SALES EXECUTIVE REPORT" not in html
     assert "2025-01-01 至 2025-06-30" in html
     assert "实际数据覆盖：未知" in reading_context
     assert "区域等于South" in html

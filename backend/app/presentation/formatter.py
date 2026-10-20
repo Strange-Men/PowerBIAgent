@@ -5,6 +5,10 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from enum import Enum
+from babel.numbers import format_decimal, format_percent
+from babel.dates import format_date
+from backend.app.presentation.locale import normalize_locale
+from backend.app.presentation.messages import message
 
 
 class PresentationFormatKind(str, Enum):
@@ -24,7 +28,8 @@ class PresentationFormatter:
     _TWO_PLACES = Decimal("0.01")
 
     def __init__(self, *, locale: str = "zh-CN") -> None:
-        self.locale = locale.strip() or "zh-CN"
+        self.locale = normalize_locale(locale).value
+        self.babel_locale = self.locale.replace("-", "_")
 
     def format_dimension(
         self, value: object, kind: PresentationFormatKind = PresentationFormatKind.AUTO,
@@ -59,31 +64,21 @@ class PresentationFormatter:
         effective = self._infer_kind(value) if kind == PresentationFormatKind.AUTO else kind
         if effective == PresentationFormatKind.INTEGER:
             number = self._decimal(value)
-            return f"{int(number.to_integral_value(rounding=ROUND_HALF_UP)):,}"
+            return format_decimal(number.to_integral_value(rounding=ROUND_HALF_UP), format="#,##0", locale=self.babel_locale)
         if effective in {PresentationFormatKind.DECIMAL, PresentationFormatKind.AMOUNT}:
             number = self._decimal(value).quantize(
                 self._TWO_PLACES, rounding=ROUND_HALF_UP
             )
-            return f"{number:,.2f}"
+            return format_decimal(number, format="#,##0.00", locale=self.babel_locale)
         if effective == PresentationFormatKind.PERCENTAGE:
-            percent = (self._decimal(value) * 100).quantize(
-                self._TWO_PLACES, rounding=ROUND_HALF_UP
-            )
-            rendered = f"{percent:,.2f}".rstrip("0").rstrip(".")
-            return f"{rendered}%"
+            number=(self._decimal(value)*100).quantize(self._TWO_PLACES,rounding=ROUND_HALF_UP)/100
+            return format_percent(number, format="#,##0.##%", locale=self.babel_locale)
         if effective in {PresentationFormatKind.DATE, PresentationFormatKind.MONTH}:
             parsed = self._date(value)
-            if effective == PresentationFormatKind.MONTH:
-                if self.locale.casefold().startswith("zh"):
-                    return f"{parsed.year}年{parsed.month}月"
-                return f"{parsed.year:04d}-{parsed.month:02d}"
-            if self.locale.casefold().startswith("zh"):
-                return f"{parsed.year}年{parsed.month}月{parsed.day}日"
-            return parsed.isoformat()
+            pattern = message("format.month" if effective == PresentationFormatKind.MONTH else "format.date", locale=self.locale)
+            return format_date(parsed, format=pattern, locale=self.babel_locale)
         if isinstance(value, bool):
-            return "是" if self.locale.casefold().startswith("zh") and value else (
-                "否" if self.locale.casefold().startswith("zh") else str(value)
-            )
+            return message("common.yes" if value else "common.no", locale=self.locale)
         return str(value)
 
     @staticmethod

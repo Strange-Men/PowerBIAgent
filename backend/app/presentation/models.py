@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
+from backend.app.presentation.messages import message
+from backend.app.presentation.locale import SupportedLocale
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from backend.app.schemas.numeric_representation import is_finite_number
 
@@ -16,7 +18,7 @@ class PresentationField(BaseModel):
     object_identity: str = Field(min_length=1)
     object_type: Literal["measure", "field"]
     canonical_name: str = Field(min_length=1)
-    locale: str = Field(min_length=1)
+    locale: SupportedLocale
     display_name: str = Field(min_length=1)
     source: Literal[
         "powerbi_metadata",
@@ -93,7 +95,7 @@ class MetricPresentationBlock(BaseModel):
 class TablePresentationBlock(BaseModel):
     type: Literal["table"] = "table"
     data_reference: str
-    title: str = "查询结果"
+    title: str = Field(default_factory=lambda: message("chat.result"))
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -102,7 +104,7 @@ class ChartPresentationBlock(BaseModel):
     type: Literal["chart"] = "chart"
     data_reference: str
     visual_type: Literal["bar", "line"]
-    title: str = "查询结果"
+    title: str = Field(default_factory=lambda: message("chat.result"))
     x_field: str
     y_field: str
 

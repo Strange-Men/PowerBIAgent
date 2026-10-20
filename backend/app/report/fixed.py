@@ -24,6 +24,11 @@ from typing import Any
 from backend.app.schemas.numeric_representation import is_finite_number
 
 from backend.app.report.base import ReportRenderer
+from backend.app.report.localization import report_template_resources
+from backend.app.presentation.messages import message,display_resource
+from backend.app.presentation.formatter import PresentationFormatter
+from backend.app.presentation.locale import current_locale
+from babel.numbers import format_decimal
 from backend.app.report.capability import SectionKey
 from backend.app.report.policy import (
     LayoutPolicy,
@@ -73,7 +78,7 @@ class SalesReportRenderer(ReportRenderer):
         # ── Fixed layout slots (LayoutPolicy).  Every block is built by the
         # renderer only when its sections exist — empty sections never render.
         kpi_block = (
-            '<section class="kpi-grid" aria-label="关键指标">'
+            f"""<section class="kpi-grid" aria-label="{message('report.kpis')}">"""
             + "\n".join(self._kpi_card(item) for item in report.kpis)
             + "</section>"
             if report.kpis
@@ -107,11 +112,12 @@ class SalesReportRenderer(ReportRenderer):
         if generated_at is None:
             raise ValueError("sales_report_generated_at_required")
         footer_items = [
-            f"数据来源：{self._text(report.data_source)}",
-            f"生成时间：{self._text(generated_at.isoformat())}",
+            message("report.source",source=self._text(report.data_source)),
+            message("report.generated",time=self._text(generated_at.isoformat())),
         ]
         html = template.substitute(
-            title=self._text(report.title),
+            **report_template_resources(),
+            title=self._text(display_resource(report.title)),
             kpi_block=kpi_block,
             trend_block=trend_block,
             pair_one_block=pair_one_block,
@@ -144,7 +150,7 @@ class SalesReportRenderer(ReportRenderer):
         return (
             f'<section class="section-card wide" data-section="{key.value}" '
             f'aria-labelledby="{title_id}">'
-            f'<h2 class="section-title" id="{title_id}">{cls._text(chart.title)}</h2>'
+            f'<h2 class="section-title" id="{title_id}">{cls._text(display_resource(chart.title))}</h2>'
             f"{body}"
             "</section>"
         )
@@ -155,7 +161,7 @@ class SalesReportRenderer(ReportRenderer):
         return (
             f'<section class="section-card half" data-section="{key.value}" '
             f'aria-labelledby="{title_id}">'
-            f'<h2 class="section-title" id="{title_id}">{cls._text(chart.title)}</h2>'
+            f'<h2 class="section-title" id="{title_id}">{cls._text(display_resource(chart.title))}</h2>'
             f"{cls._chart_body(chart)}"
             "</section>"
         )
@@ -181,7 +187,7 @@ class SalesReportRenderer(ReportRenderer):
         rendered = [
             cls._half_section(key, chart) for key, chart in present
         ]
-        return '<div class="pair" aria-label="对比区块">' + "\n".join(rendered) + "</div>"
+        return f"""<div class="pair" aria-label="{message('report.comparison')}">""" + "\n".join(rendered) + "</div>"
 
     # ── KPI cards ──
 
@@ -190,7 +196,7 @@ class SalesReportRenderer(ReportRenderer):
         decimals = 2 if kpi.format == "currency" else 0
         return (
             f'<article class="kpi-card" data-kpi="{cls._text(kpi.field)}">'
-            f'<span class="kpi-label">{cls._text(kpi.name)}</span>'
+            f'<span class="kpi-label">{cls._text(display_resource(kpi.name))}</span>'
             f'<span class="kpi-value">{cls._number(kpi.value, decimals=decimals)}</span>'
             "</article>"
         )
@@ -198,7 +204,7 @@ class SalesReportRenderer(ReportRenderer):
     @classmethod
     def _detail_table(cls, table: TableSpec) -> str:
         headers = "".join(
-            f'<th scope="col">{cls._text(item)}</th>' for item in table.columns
+            f'<th scope="col">{cls._text(display_resource(item))}</th>' for item in table.columns
         )
         rows = "".join(
             "<tr>"
@@ -212,7 +218,7 @@ class SalesReportRenderer(ReportRenderer):
         return (
             '<section class="section-card wide" data-section="key_details" '
             'aria-labelledby="section-key-details-title">'
-            f'<h2 class="section-title" id="section-key-details-title">{cls._text(table.title)}</h2>'
+            f'<h2 class="section-title" id="section-key-details-title">{cls._text(display_resource(table.title))}</h2>'
             '<div class="table-wrap"><table><thead><tr>'
             f"{headers}</tr></thead><tbody>{rows}</tbody></table></div></section>"
         )
@@ -256,7 +262,7 @@ class SalesReportRenderer(ReportRenderer):
             gridlines.append(
                 f'<line class="chart-gridline" x1="{pad_left}" y1="{y}" '
                 f'x2="{width - pad_right}" y2="{y}" '
-                f'aria-label="水平网格线 {tick_label}"/>'
+                f'aria-label="{message("report.grid_line",value=tick_label)}"/>'
                 f'<text class="chart-y-tick" x="{pad_left - 12}" y="{y}" '
                 f'dy="4" text-anchor="end">{tick_label}</text>'
             )
@@ -319,6 +325,7 @@ class SalesReportRenderer(ReportRenderer):
                     index=index,
                     last_index=len(points) - 1,
                     tier=tier,
+                    includes_year=index in year_boundaries,
                 ))
 
         direct_labels = ""
@@ -342,19 +349,10 @@ class SalesReportRenderer(ReportRenderer):
                 )
 
         return (
-            f'<div class="chart chart-line" data-chart="time_trend">'
-            f'<svg viewBox="0 0 {width} {height}" role="img" '
-            f'preserveAspectRatio="xMidYMid meet" aria-label="{cls._text(chart.title)}">'
-            f'<text class="chart-y-axis-title" x="24" y="{height / 2:.2f}" '
-            f'text-anchor="middle" transform="rotate(-90 24 {height / 2:.2f})">'
-            f'销售额（元）</text>'
-            f'{"".join(gridlines)}{area}{"".join(circles)}'
-            f'<polyline points="{line_points}" fill="none" '
-            f'stroke="{ThemePolicy.SEQUENTIAL_550}" stroke-width="2.5" '
-            f'stroke-linecap="round" stroke-linejoin="round"/>'
-            f"{''.join(labels)}{direct_labels}"
-            "</svg>"
-            "</div>"
+            f"""<div class="chart chart-line" data-chart="time_trend">"""
+            f"""<svg viewBox="0 0 {width} {height}" role="img" preserveAspectRatio="xMidYMid meet" aria-label="{cls._text(display_resource(chart.title))}">"""
+            f"""<text class="chart-y-axis-title" x="24" y="{height / 2:.2f}" text-anchor="middle" transform="rotate(-90 24 {height / 2:.2f})">{message('report.sales_amount')}</text>{''.join(gridlines)}{area}{''.join(circles)}<polyline points="{line_points}" fill="none" stroke="{ThemePolicy.SEQUENTIAL_550}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>{''.join(labels)}{direct_labels}</svg>"""
+            f"""</div>"""
         )
 
     @classmethod
@@ -366,6 +364,7 @@ class SalesReportRenderer(ReportRenderer):
         index: int,
         last_index: int,
         tier: str,
+        includes_year: bool,
     ) -> str:
         # The plot has symmetric endpoint padding, so centered labels remain
         # inside the SVG while preserving even spacing on the desktop tier.
@@ -373,7 +372,7 @@ class SalesReportRenderer(ReportRenderer):
         upper_lane = (
             tier == "base"
             and index not in {0, last_index}
-            and "年" in period
+            and includes_year
         )
         y = cls._LINE_HEIGHT - (64 if upper_lane else 14)
         lane = "upper" if upper_lane else "baseline"
@@ -452,8 +451,10 @@ class SalesReportRenderer(ReportRenderer):
         match = cls._PERIOD_PATTERN.fullmatch(raw.strip())
         if match is None:
             return raw
-        month = f"{int(match.group(2))}月"
-        return f"{int(match.group(1))}年{month}" if include_year else month
+        from datetime import date
+        from babel.dates import format_date
+        formatter=PresentationFormatter(locale=current_locale())
+        return format_date(date(int(match.group(1)),int(match.group(2)),1),format=message("format.month" if include_year else "format.month_short"),locale=formatter.babel_locale)
 
     # ── Donut chart (category composition) ──
 
@@ -502,7 +503,7 @@ class SalesReportRenderer(ReportRenderer):
         return (
             f'<div class="chart chart-donut" data-chart="{cls._text(chart.business_role)}">'
             f'<div class="donut-svg">'
-            f'<svg viewBox="0 0 260 260" role="img" aria-label="{cls._text(chart.title)}">'
+            f'<svg viewBox="0 0 260 260" role="img" aria-label="{cls._text(display_resource(chart.title))}">'
             f'<circle cx="130" cy="130" r="86" fill="none" '
             f'stroke="{ThemePolicy.TRACK}" stroke-width="34" aria-hidden="true"/>'
             f'{"".join(arcs)}'
@@ -567,7 +568,7 @@ class SalesReportRenderer(ReportRenderer):
             state_class = " negative" if value < 0 else " zero" if value == 0 else ""
             position = item.get("position")
             position_html = (
-                f'<span class="result-position">结果序号 {cls._text(str(position))}</span>'
+                f'<span class="result-position">{message("report.position",position=cls._text(str(position)))}</span>'
                 if isinstance(position, int)
                 else ""
             )

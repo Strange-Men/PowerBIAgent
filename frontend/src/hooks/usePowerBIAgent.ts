@@ -1,3 +1,4 @@
+import { tr } from '../i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ApiError,
@@ -66,7 +67,7 @@ export function compareConversationRecency(
 
 function createSession(
   conversationId: string,
-  title = '新聊天',
+  title = tr('sidebar:newChat'),
 ): ConversationSession {
   const timestamp = localResourceNow()
   return {
@@ -87,15 +88,15 @@ function createSession(
 export function discoveryErrorMessage(errorType: string | null): string | null {
   if (!errorType) return null
   if (errorType === 'powerbi_desktop_not_connected') {
-    return 'Power BI Desktop 未连接，请先打开一个 PBIX 文件。'
+    return tr('chat:powerBiDesktopIsNotConnectedOpenAPbix')
   }
   if (errorType === 'powerbi_multiple_desktop_instances') {
-    return '检测到重复的 Desktop 实例身份，已安全停止模型发现。'
+    return tr('chat:duplicateDesktopInstanceIdentitiesWereDetectedModelDiscoveryWas')
   }
   if (errorType === 'powerbi_desktop_connection_failed') {
-    return '已发现 Power BI Desktop，但当前数据模型无法连接。'
+    return tr('chat:powerBiDesktopWasFoundButItsModelCould')
   }
-  return '暂时无法获取可用数据模型。'
+  return tr('chat:cannotRetrieveAvailableDataModelsRightNow')
 }
 
 export function catalogOptions(items: SemanticModelOption[]): CatalogOption[] {
@@ -109,20 +110,22 @@ export function catalogOptions(items: SemanticModelOption[]): CatalogOption[] {
     seen[item.display_name] = (seen[item.display_name] || 0) + 1
     const label =
       totals[item.display_name] > 1
-        ? `${item.display_name}（实例 ${seen[item.display_name]}）`
+        ? tr('chat:instance', {p0: item.display_name, p1: seen[item.display_name]})
         : item.display_name
     return {
       key: item.key,
+      displayName:item.display_name,
+      instanceNumber:totals[item.display_name]>1 ? seen[item.display_name] : undefined,
       label,
       description: item.agent_compatible
         ? item.source === 'local_desktop'
           ? item.schema_drift
-            ? '模型结构有更新，当前分析能力可用'
-            : '当前已连接且可用于分析'
-          : '开发测试模型'
+            ? tr('chat:modelStructureUpdatedAnalysisIsAvailable')
+            : tr('chat:connectedAndAvailableForAnalysis')
+          : tr('chat:developmentTestModel')
         : item.compatibility_status === 'incompatible'
-          ? '已连接，但缺少当前分析所需的业务字段或指标'
-          : '已连接，但兼容性检查暂不可用',
+          ? tr('chat:connectedButRequiredBusinessFieldsOrMeasuresAreMissing')
+          : tr('chat:connectedButTheCompatibilityCheckIsUnavailable'),
       compatible: item.agent_compatible === true,
       selectable: item.selectable === true,
       schemaDrift: item.schema_drift === true,
@@ -139,14 +142,15 @@ export function reportTemplateCatalogOptions(
     const compatible = status === 'compatible' || status === 'partial'
     const description =
       status === 'partial'
-        ? `${item.description}；部分内容将根据当前数据能力生成。`
+        ? tr('chat:availableDataCapabilitiesDetermineWhichSectionsCanBeGenerated', {p0: item.description})
         : status === 'incompatible'
-          ? '当前数据模型缺少生成该模板所需的数据能力。'
+          ? tr('chat:thisModelLacksTheDataCapabilitiesRequiredByThis')
           : status === 'unavailable'
-            ? '当前报表模板暂不可用。'
+            ? tr('chat:thisReportTemplateIsUnavailable')
             : item.description
     return {
       key: item.template_key,
+      ...(status==='partial' ? {partialDescription:item.description} : {}),
       label: item.display_name,
       description,
       compatible,
@@ -191,7 +195,7 @@ export function withoutDeletedReport(
       report: {
         ...message.report,
         display_title:
-          displayTitle || message.report.display_title || '销售分析报告',
+          displayTitle || message.report.display_title || tr('reports:salesAnalysisReport'),
         availability_status: 'deleted',
         view_reference: '',
         download_reference: '',
@@ -221,7 +225,7 @@ function isAbortError(error: unknown): boolean {
 }
 
 function failureReason(error: unknown): string {
-  return error instanceof Error ? error.message : '操作未完成，请稍后重试。'
+  return error instanceof Error ? error.message : tr('resources:theOperationWasNotCompletedTryAgainLater')
 }
 
 export async function runBoundedBatch(
@@ -374,7 +378,7 @@ export function usePowerBIAgent() {
       setSidebarError(null)
     } catch {
       if (generation === sidebarRefreshGenerationRef.current) {
-        setSidebarError('会话记录暂不可用')
+        setSidebarError(tr('chat:conversationHistoryIsUnavailable'))
       }
     }
   }, [])
@@ -396,9 +400,9 @@ export function usePowerBIAgent() {
       if (!reconciled.selected) clearReportTemplateCatalog()
       setSemanticModelError(
         (reconciled.stale
-          ? '当前选择的数据模型已关闭或失效，请刷新后重新选择。'
+          ? tr('errors:theSelectedDataModelIsNoLongerAvailableRefresh79919f')
           : discoveryErrorMessage(catalog.error_type)) ||
-          (options.length === 0 ? '当前没有可用数据模型。' : null),
+          (options.length === 0 ? tr('composer:noDataModelsAreAvailable') : null),
       )
       await refreshSidebar(catalog.runtime_mode)
     } catch (error) {
@@ -407,7 +411,7 @@ export function usePowerBIAgent() {
       setSelectedSemanticModel(null)
       clearReportTemplateCatalog()
       setSemanticModelError(
-        error instanceof Error ? error.message : '暂时无法获取可用数据模型。',
+        error instanceof Error ? error.message : tr('chat:cannotRetrieveAvailableDataModelsRightNow'),
       )
       await refreshSidebar(initialRuntimeMode)
     } finally {
@@ -437,13 +441,13 @@ export function usePowerBIAgent() {
       reportTemplateModelKeyRef.current = semanticModelKey
       setReportTemplateError(
         catalog.reason_code === 'semantic_model_schema_unavailable'
-          ? '暂时无法获取当前数据模型的结构，请稍后重试。'
+          ? tr('chat:cannotRetrieveThisModelsStructureTryAgainLater')
           : catalog.reason_code === 'no_eligible_report_template'
-            ? '当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。'
+            ? tr('composer:noReportTemplatesMatchThisModelYouCanStill')
             : current && !selected
-              ? '当前报表模板不适用于新选择的数据模型，请重新选择。'
+              ? tr('chat:thisTemplateDoesNotMatchTheNewlySelectedModel')
               : options.length === 0
-                ? '当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。'
+                ? tr('composer:noReportTemplatesMatchThisModelYouCanStill')
                 : null,
       )
     } catch (error) {
@@ -452,7 +456,7 @@ export function usePowerBIAgent() {
       setSelectedReportTemplateState(null)
       setReportTemplateOptions([])
       setReportTemplateError(
-        error instanceof Error ? error.message : '暂时无法获取报表模板。',
+        error instanceof Error ? error.message : tr('chat:cannotRetrieveReportTemplatesRightNow'),
       )
     } finally {
       if (generation === reportTemplateGenerationRef.current) {
@@ -478,17 +482,17 @@ export function usePowerBIAgent() {
       setLLMProfileOptions(catalog.items)
       setLLMProfileError(
         current && !selected
-          ? '当前选择的 AI 模型已失效，请刷新后重新选择。'
+          ? tr('errors:theSelectedAiModelIsUnavailableRefreshAndSelect')
           : selected
             ? null
-            : '当前没有可用的 AI 模型。',
+            : tr('composer:noAiModelsAreAvailable'),
       )
     } catch (error) {
       selectedLLMProfileRef.current = null
       setSelectedLLMProfileState(null)
       setLLMProfileOptions([])
       setLLMProfileError(
-        error instanceof Error ? error.message : '暂时无法获取 AI 模型目录。',
+        error instanceof Error ? error.message : tr('chat:cannotRetrieveTheAiModelCatalogRightNow'),
       )
     } finally {
       setLoadingLLMProfiles(false)
@@ -620,7 +624,7 @@ export function usePowerBIAgent() {
           ...(template ? { report_template_key: template.key } : {}),
         })
         if (response.conversation_id !== conversationId) {
-          throw new Error('服务返回了不匹配的对话身份，已停止写入。')
+          throw new Error(tr('chat:theServiceReturnedAMismatchedConversationIdentityWritingWas'))
         }
         const responseFailed = Boolean(response.failure || response.error_type)
         updateSession(conversationId, (session) => ({
@@ -631,7 +635,7 @@ export function usePowerBIAgent() {
             (request) => request !== id,
           ),
           sending: false,
-          error: responseFailed ? '当前请求未完成。' : null,
+          error: responseFailed ? tr('chat:thisRequestWasNotCompleted') : null,
           status: responseFailed ? 'failed' : 'ready',
           updatedAt: localResourceNow(),
         }))
@@ -649,7 +653,7 @@ export function usePowerBIAgent() {
           setSelectedSemanticModel(null)
           clearReportTemplateCatalog()
           setSemanticModelError(
-            '当前选择的数据模型已关闭或失效，请刷新后重新选择。',
+            tr('errors:theSelectedDataModelIsNoLongerAvailableRefresh79919f'),
           )
         }
         if (
@@ -659,8 +663,8 @@ export function usePowerBIAgent() {
           setSelectedReportTemplate(null)
           setReportTemplateError(
             response.failure.code === 'REPORT_TEMPLATE_INCOMPATIBLE'
-              ? '当前报表模板不适用于新选择的数据模型，请重新选择。'
-              : '当前报表模板已失效，请重新选择。',
+              ? tr('chat:thisTemplateDoesNotMatchTheNewlySelectedModel')
+              : tr('errors:thisReportTemplateIsNoLongerAvailableSelectIt'),
           )
         }
         await refreshSidebar(
@@ -677,7 +681,7 @@ export function usePowerBIAgent() {
           setSelectedSemanticModel(null)
           clearReportTemplateCatalog()
           setSemanticModelError(
-            '当前选择的数据模型已关闭或失效，请刷新后重新选择。',
+            tr('errors:theSelectedDataModelIsNoLongerAvailableRefresh79919f'),
           )
         }
         if (
@@ -688,8 +692,8 @@ export function usePowerBIAgent() {
           setSelectedReportTemplate(null)
           setReportTemplateError(
             error.failure.code === 'REPORT_TEMPLATE_INCOMPATIBLE'
-              ? '当前报表模板不适用于新选择的数据模型，请重新选择。'
-              : '当前报表模板已失效，请重新选择。',
+              ? tr('chat:thisTemplateDoesNotMatchTheNewlySelectedModel')
+              : tr('errors:thisReportTemplateIsNoLongerAvailableSelectIt'),
           )
         }
         if (
@@ -699,12 +703,12 @@ export function usePowerBIAgent() {
         ) {
           selectedLLMProfileRef.current = null
           setSelectedLLMProfileState(null)
-          setLLMProfileError('当前选择的 AI 模型已失效，请刷新后重新选择。')
+          setLLMProfileError(tr('errors:theSelectedAiModelIsUnavailableRefreshAndSelect'))
         }
         const errorText =
           error instanceof Error
             ? error.message
-            : '当前请求无法完成，请稍后重试。'
+            : tr('chat:thisRequestCouldNotBeCompletedTryAgainLater')
         const message: AssistantMessage = {
           id: `error-${id}`,
           role: 'assistant',
@@ -839,7 +843,7 @@ export function usePowerBIAgent() {
         const errorText =
           error instanceof Error
             ? error.message
-            : '无法恢复该对话，请稍后重试。'
+            : tr('chat:cannotRestoreThisConversationTryAgainLater')
         updateSession(conversationId, (session) => ({
           ...session,
           messages: [
@@ -919,7 +923,7 @@ export function usePowerBIAgent() {
   const archive = useCallback(
     async (conversation: ConversationSummary) => {
       if (runningConversationIdsRef.current.has(conversation.conversation_id)) {
-        throw new Error('对话仍在分析，完成后再归档。')
+        throw new Error(tr('chat:analysisIsInProgressArchiveTheConversationWhenIt'))
       }
       cancelHistoryRequest(conversation.conversation_id)
       await archiveConversation(effectiveRuntimeMode, conversation.conversation_id)
@@ -950,7 +954,7 @@ export function usePowerBIAgent() {
   const remove = useCallback(
     async (conversation: ConversationSummary) => {
       if (runningConversationIdsRef.current.has(conversation.conversation_id)) {
-        throw new Error('对话仍在分析，完成后再删除。')
+        throw new Error(tr('chat:analysisIsInProgressDeleteTheConversationWhenIt'))
       }
       cancelHistoryRequest(conversation.conversation_id)
       const persisted =
@@ -1057,7 +1061,7 @@ export function usePowerBIAgent() {
         items.map((item) => item.conversation_id),
         (id) =>
           runningConversationIdsRef.current.has(id)
-            ? Promise.reject(new Error('对话仍在分析，完成后再删除。'))
+            ? Promise.reject(new Error(tr('chat:analysisIsInProgressDeleteTheConversationWhenIt')))
             : deleteConversation(effectiveRuntimeMode, id),
       )
       outcome.succeededIds.forEach(clearConversationLocally)
@@ -1077,7 +1081,7 @@ export function usePowerBIAgent() {
         items.map((item) => item.conversation_id),
         (id) =>
           runningConversationIdsRef.current.has(id)
-            ? Promise.reject(new Error('对话仍在分析，完成后再归档。'))
+            ? Promise.reject(new Error(tr('chat:analysisIsInProgressArchiveTheConversationWhenIt')))
             : archiveConversation(effectiveRuntimeMode, id),
       )
       outcome.succeededIds.forEach(clearConversationLocally)
@@ -1220,7 +1224,7 @@ export function usePowerBIAgent() {
   const messages = activeSession?.messages || []
   const sending = activeSession?.sending || false
   const loadingConversation = activeSession?.loadingHistory || false
-  const title = activeSession?.title || '新聊天'
+  const title = activeSession?.title || tr('sidebar:newChat')
   const hasRestoredHistory = Boolean(activeSession?.restored)
 
   return {
@@ -1251,8 +1255,8 @@ export function usePowerBIAgent() {
     semanticModelCompatibilityNotice:
       selectedSemanticModel && !selectedSemanticModel.compatible
         ? selectedSemanticModel.compatibilityStatus === 'incompatible'
-          ? '当前模型已连接，但缺少 PowerBIAgent 当前分析所需的部分业务字段或指标。'
-          : '当前模型已连接，但暂时无法完成兼容性检查，请稍后重试。'
+          ? tr('chat:theModelIsConnectedButSomeFieldsOrMeasures')
+          : tr('chat:theModelIsConnectedButCompatibilityCannotBeChecked')
         : null,
     selectedReportTemplate,
     reportTemplateOptions,

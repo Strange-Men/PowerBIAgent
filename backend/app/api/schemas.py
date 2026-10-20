@@ -82,6 +82,7 @@ class ReportResponse(BaseModel):
 class ChatResponse(BaseModel):
     """POST /api/v1/chat 响应 — M1.5"""
 
+    presentation_available: bool = False
     request_id: str
     conversation_id: str
     terminal_state: str

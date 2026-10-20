@@ -20,7 +20,8 @@ router = APIRouter(prefix="/api/v1/cloud")
 
 
 def is_product_route(method,path):
-    return ((method,path) in {('POST','/api/v1/cloud/chat'),('POST','/api/v1/cloud/new-chat'),
+    return (method=='POST' and re.fullmatch(r'/api/v1/cloud/presentations/[a-zA-Z0-9_-]{1,64}',path) is not None
+        or (method,path) in {('POST','/api/v1/cloud/chat'),('POST','/api/v1/cloud/new-chat'),
         ('POST','/api/v1/cloud/restore'),('GET','/api/v1/cloud/history'),('GET','/api/v1/cloud/reports')}
         or method=='GET' and re.fullmatch(r'/api/v1/cloud/(?:history/[^/]{1,64}|reports/[^/]{1,64}(?:/download)?)',path) is not None
         or method=='DELETE' and re.fullmatch(r'/api/v1/cloud/(?:history|reports)/[a-zA-Z0-9_-]{1,64}',path) is not None
@@ -145,6 +146,7 @@ class CloudChatRequest(GenerationRequest):
 
 
 async def product_call(operation):
+    from backend.app.presentation.projection import PresentationUnavailableError
     from backend.app.conversation.models import ConversationNotFoundError,ConversationHistoryCorruptionError
     from backend.app.report.resources import ReportNotFoundError,ReportStorageError
     from backend.app.application.conversation_history_service import InvalidConversationCursorError,InvalidConversationQueryError
@@ -152,6 +154,7 @@ async def product_call(operation):
     from backend.app.memory.request_fingerprint import IdempotencyConflictError
     try: return await safe_call(operation)
     except IdempotencyConflictError: raise HTTPException(409,'request_id_conflict') from None
+    except PresentationUnavailableError: raise HTTPException(404,'presentation_recipe_unavailable') from None
     except (ConversationNotFoundError,ReportNotFoundError): raise HTTPException(404,'resource_not_found') from None
     except (InvalidConversationCursorError,InvalidConversationQueryError): raise HTTPException(422,'invalid_cloud_query') from None
     except (ConversationHistoryCorruptionError,ReportStorageError): raise HTTPException(503,'resource_unavailable') from None
@@ -193,6 +196,19 @@ async def chat(request:Request,principal=Depends(require_principal)):
     data['powerbi_mode']='mock' if data['source_mode']=='mock' else 'fabric_iq'
     data['execution_audit']=None
     return public_product(ChatResponse.model_validate(data))
+
+
+class PresentationRequest(GenerationRequest):
+    locale: str=Field(max_length=32)
+
+
+@router.post('/presentations/{request_id}')
+async def presentation(request_id:str,request:Request,principal=Depends(require_principal)):
+    if request.query_params or not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}',request_id):
+        raise HTTPException(422,'invalid_cloud_request')
+    body=await body_as(request,PresentationRequest)
+    service,sid=await product(request)
+    return public_product(await product_call(service.project_presentation(sid,principal,request_id,body.locale,body.expected_generation)))
 
 
 @router.post('/new-chat')
@@ -269,9 +285,13 @@ async def mutate_resource(kind:str,resource_id:str,request:Request,action:str='d
 
 async def report_response(request,principal,report_id,download):
     from fastapi.responses import HTMLResponse
-    if request.query_params or await request.body(): raise HTTPException(422,'invalid_cloud_request')
+    if (set(request.query_params)-{'locale'} or len(request.query_params.multi_items())!=len(request.query_params)
+            or await request.body()): raise HTTPException(422,'invalid_cloud_request')
     service,sid=await product(request)
-    artifact,html=await product_call(service.read_report(sid,principal,report_id))
+    if 'locale' in request.query_params:
+        html=await product_call(service.localized_report(sid,principal,report_id,request.query_params['locale']))
+    else:
+        artifact,html=await product_call(service.read_report(sid,principal,report_id))
     headers={'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",'Cache-Control':'no-store'}
     if download: headers['Content-Disposition']='attachment; filename="report.html"'
     return HTMLResponse(html,headers=headers)

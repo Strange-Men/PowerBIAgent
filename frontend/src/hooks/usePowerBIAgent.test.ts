@@ -65,6 +65,7 @@ describe('report-template catalog selection', () => {
     expect(reportTemplateCatalogOptions(items)).toEqual([
       {
         key: 'sales_report',
+        partialDescription: '适合快速查看关键指标、趋势与分类明细',
         label: '简易模板',
         description: '适合快速查看关键指标、趋势与分类明细；部分内容将根据当前数据能力生成。',
         compatible: true,

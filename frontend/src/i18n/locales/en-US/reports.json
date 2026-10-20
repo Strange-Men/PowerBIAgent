@@ -1,0 +1,14 @@
+{
+  "salesAnalysisReport": "Sales analysis report",
+  "deletedReport": "Deleted report",
+  "htmlReportAttachment": "HTML report attachment",
+  "thisReportWasDeleted": "This report was deleted",
+  "htmlReport": "HTML report",
+  "thisFileCanNoLongerBeViewedOrDownloaded": "This file can no longer be viewed or downloaded",
+  "viewReport": "View report",
+  "downloadHtml": "Download HTML",
+  "simpleTemplate": "Simple sales analysis template",
+  "executiveTemplate": "Professional sales executive template",
+  "simpleDescription": "Generate KPI, trend, and category analysis from sales measures",
+  "executiveDescription": "Executive sales analysis with reading context and audit information"
+}

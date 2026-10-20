@@ -25,6 +25,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, model_validator
 
 from backend.app.presentation.models import PresentationEnvelope
+from backend.app.presentation.recipe import PresentationRecipe
 from backend.app.schemas.failure_contracts import FailureInfo
 
 
@@ -72,6 +73,8 @@ class TurnResultSnapshot(BaseModel):
         default=None,
         description="QueryResult/VerifiedFactSet 的只读展示投影",
     )
+
+    presentation_recipe: PresentationRecipe | None = None
 
     # ── Answer 响应 ──
     answer: Optional[str] = Field(default=None, description="数据问答答案文本")

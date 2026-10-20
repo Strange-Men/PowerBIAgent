@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { tr, publicText } from '../i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, newCloudChat, readCloudCatalog, readCloudConversation, readCloudHistory, readCloudProfiles, readCloudReports, readCloudStatus, readCloudTemplates, restoreCloudChat, selectCloudModel, sendCloudChat } from '../api/client'
 import { chatResponseToMessage, historyItemToMessages } from '../api/adapters'
@@ -13,6 +15,7 @@ import type { BatchOperationResult } from '../types'
 export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckError=null, collapsed=false, onToggle=() => {} }: {
   session: AuthSession; onAuthInvalid: () => void; account?: AccountActions; sessionCheckError?: string | null; collapsed?: boolean; onToggle?: () => void
 }) {
+  useTranslation()
   const [catalog, setCatalog] = useState<CloudCatalog | null>(null)
   const [status, setStatus] = useState<CloudWorkspaceStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -78,14 +81,14 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
         if (syncError instanceof ApiError && cloudFailureAction(syncError)==='auth') {
           setCatalog(null); setStatus(null); setMessages([]); setRecent([]); setReports([])
           setTemplates([]); setTemplate(null); onAuthInvalid()
-        } else setError('暂时无法同步会话，请重试。')
+        } else setError(tr('chat:cannotSynchronizeThisSessionTryAgain'))
       })
     }
     setError(caught instanceof ApiError && caught.denialReason ? cloudDenialMessage(caught.denialReason)
-      : action==='conflict' ? '会话状态已变化，正在同步，请重试。'
+      : action==='conflict' ? tr('chat:theSessionHasChangedSynchronizingPleaseTryAgain')
       : caught instanceof ApiError && caught.failure ? publicFailureMessage(caught.failure)
-      : caught instanceof ApiError && caught.status===0 ? '无法连接到 PowerBIAgent 服务，请检查网络后重试。'
-      : selection ? '当前模型暂不可访问，请刷新目录后重新选择。' : '暂时无法加载数据模型，请重试。')
+      : caught instanceof ApiError && caught.status===0 ? tr('errors:cannotConnectToPowerbiagentCheckYourNetworkAndTry')
+      : selection ? tr('chat:thisModelIsInaccessibleRefreshTheCatalogAndSelect') : tr('chat:cannotLoadDataModelsTryAgain'))
   }, [onAuthInvalid,begin])
 
   const resourceLoaders=useMemo(()=>({
@@ -93,7 +96,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       const current=generation.current
       try {
         const page=await listCloudConversations(resourceStatus,20,cursor)
-        if (current!==generation.current) throw new ApiError('资源请求已失效。',409)
+        if (current!==generation.current) throw new ApiError(tr('chat:thisResourceRequestIsNoLongerValid'),409)
         return page
       } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
     },
@@ -101,7 +104,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       const current=generation.current
       try {
         const page=await listCloudReports(resourceStatus,20,cursor)
-        if (current!==generation.current) throw new ApiError('资源请求已失效。',409)
+        if (current!==generation.current) throw new ApiError(tr('chat:thisResourceRequestIsNoLongerValid'),409)
         return page
       } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
     },
@@ -111,18 +114,18 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
     const current=generation.current
     try {
       const page=await listCloudConversations('active',50,undefined,query)
-      if (current!==generation.current) throw new ApiError('搜索请求已失效。',409)
+      if (current!==generation.current) throw new ApiError(tr('chat:thisSearchRequestIsNoLongerValid'),409)
       return page.items
     } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
   }
 
   const mutate=async (kind: 'history' | 'reports',id: string,action: CloudResourceAction,title?: string) => {
-    if (!session.csrf_token) throw new ApiError('请重新登录。',401)
-    if (sending) throw new ApiError('对话仍在分析，请稍后再管理资源。',409)
+    if (!session.csrf_token) throw new ApiError(tr('chat:pleaseSignInAgain'),401)
+    if (sending) throw new ApiError(tr('chat:analysisIsInProgressManageResourcesWhenItFinishes'),409)
     const {controller,current}=begin()
     try {
       const result=await mutateCloudResource(kind,id,action,serverGeneration.current,session.csrf_token,title,controller.signal)
-      if (current!==generation.current) throw new ApiError('资源请求已失效。',409)
+      if (current!==generation.current) throw new ApiError(tr('chat:thisResourceRequestIsNoLongerValid'),409)
       const next=result.workspace_status
       serverGeneration.current=next.generation
       if (next.conversation_id!==status?.conversation_id) clearConversation()
@@ -146,7 +149,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
         // Reread the current transcript to project report tombstones and titles.
         if (next.conversation_id && next.conversation_id===status?.conversation_id && messages.length) {
           const page=await readCloudConversation(next.conversation_id,controller.signal)
-          if (current!==generation.current) throw new ApiError('资源请求已失效。',409)
+          if (current!==generation.current) throw new ApiError(tr('chat:thisResourceRequestIsNoLongerValid'),409)
           setMessages(page.items.flatMap(historyItemToMessages))
         }
         await loadResources(controller,current)
@@ -162,10 +165,10 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
     for (const id of ids) {
       try { await mutate(kind,id,action); result.succeededIds.push(id) }
       catch (caught) {
-        result.failed.push({id,reason:'操作未完成，请重新加载资源。'})
+        result.failed.push({id,reason:tr('chat:theOperationWasNotCompletedReloadTheResources')})
         if (caught instanceof ApiError && [401,403,409].includes(caught.status)) {
           for (const remaining of ids.slice(result.succeededIds.length+result.failed.length)) {
-            result.failed.push({id:remaining,reason:'资源授权已失效，请重新加载。'})
+            result.failed.push({id:remaining,reason:tr('chat:resourceAuthorizationHasExpiredReloadTheResources')})
           }
           break
         }
@@ -179,7 +182,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       const nextTemplates = await readCloudTemplates(controller.signal)
       if (current !== generation.current) return
       setTemplateError(nextTemplates.reason_code === 'semantic_model_schema_unavailable'
-        ? '暂时无法验证报表模板，请刷新模型后重试。' : null)
+        ? tr('chat:cannotVerifyReportTemplatesRefreshTheModelAndTry') : null)
       setTemplates(nextTemplates.items.map(item => ({key:item.template_key,label:item.display_name,
         description:item.description,compatible:item.selectable,selectable:item.selectable,
         compatibilityStatus:item.compatibility_status})))
@@ -188,7 +191,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       if (caught instanceof ApiError && caught.status === 401) throw caught
       setTemplates([]); setTemplate(null)
       setTemplateError(caught instanceof ApiError && caught.failure ? publicFailureMessage(caught.failure)
-        : '暂时无法验证报表模板，请刷新模型后重试。')
+        : tr('chat:cannotVerifyReportTemplatesRefreshTheModelAndTry'))
     }
   }, [])
 
@@ -328,31 +331,32 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
   const options: CatalogOption[] = (catalog?.items || []).map(item => ({key:item.key,
     label:item.display_name, description:item.workspace_display_name, compatible:true, selectable:true}))
   const selected = options.find(item => item.key === status?.selected_model_key) || null
-  const notice = loading ? '正在加载可访问的云端模型…'
-    : error || sessionCheckError || (catalog?.status === 'partial' ? '已显示可访问模型；部分模型可能未包含在目录中。'
-      + (catalog.authorization_scope_complete === false && (catalog.unverified_count || 0) > 0
-        ? `还有 ${catalog.unverified_count} 个模型尚未验证，请刷新目录后重试。` : '')
-      : catalog?.status === 'forbidden' ? '已登录；当前账号无法读取已批准的模型目录，请切换账号或联系管理员。'
-      : catalog?.status === 'error' ? '数据模型目录暂不可用，请刷新重试。'
+  const notice = loading ? tr('chat:loadingAccessibleCloudModels')
+    : error || sessionCheckError || (catalog?.status === 'partial' ?
+      (catalog.authorization_scope_complete === false && (catalog.unverified_count || 0) > 0
+        ? tr('chat:partialCatalogUnverified', {count:catalog.unverified_count})
+        : tr('chat:accessibleModelsAreShownSomeModelsMayNotBe'))
+      : catalog?.status === 'forbidden' ? tr('chat:youAreSignedInButThisAccountCannotRead')
+      : catalog?.status === 'error' ? tr('chat:theDataModelCatalogIsUnavailableRefreshAndTry')
       : selected && !status?.execution_ready ? cloudDenialMessage('cloud_execution_blocked')
-      : selected ? '已选择当前账号可访问的数据模型。'
-      : !options.length ? '当前没有发现可访问的数据模型。' : '请选择一个数据模型开始。')
-  const executionBlocked = !status?.execution_ready ? '数据问答暂不可用，请稍后重试。' : null
+      : selected ? tr('chat:anAccessibleDataModelIsSelected')
+      : !options.length ? tr('chat:noAccessibleDataModelsWereFound') : tr('chat:selectADataModelToBegin'))
+  const executionBlocked = !status?.execution_ready ? tr('chat:dataAnalysisIsUnavailableTryAgainLater') : null
 
   const content=<>
-    <ConversationView messages={messages} sending={sending} loadingConversation={templatesLoading} restored={restored}
-      welcomeDescription="请选择当前账号可访问的云端模型。" />
+    <ConversationView projectionContext={{mode:"real",cloud:true,csrf:session.csrf_token || "",generation:status?.generation,conversationId:status?.conversation_id,onAuthInvalid}} messages={messages} sending={sending} loadingConversation={templatesLoading} restored={restored}
+      welcomeDescription={tr('chat:selectACloudModelAccessibleToThisAccount')} />
     <Composer key={status?.conversation_id || 'cloud-unselected'} sending={sending} semanticModel={selected} semanticModelOptions={options}
       statusNotice={<div className="cloud-catalog-status">
-        <p className="local-catalog-note" role="status">{notice}</p>
+        <p className="local-catalog-note" role="status">{publicText(notice)}</p>
         {error || catalog?.status === 'error' || catalog?.status === 'forbidden'
-          ? <button type="button" onClick={() => void refresh()}>重新加载数据模型</button> : null}
+          ? <button type="button" onClick={() => void refresh()}>{tr('chat:reloadDataModels')}</button> : null}
       </div>}
       loadingSemanticModels={loading} semanticModelError={null}
-      semanticModelCompatibilityNotice={templatesLoading ? '正在验证模型访问与报表模板…'
-        : selected ? executionBlocked : '请显式选择一个数据模型'}
+      semanticModelCompatibilityNotice={templatesLoading ? tr('chat:verifyingModelAccessAndReportTemplates')
+        : selected ? executionBlocked : tr('chat:selectADataModel')}
       reportTemplate={template} reportTemplateOptions={templates} loadingReportTemplates={templatesLoading}
-      reportTemplateError={templateError} llmProfile={profile} llmProfileOptions={profiles}
+      reportTemplateError={publicText(templateError)} llmProfile={profile} llmProfileOptions={profiles}
       loadingLLMProfiles={loading} llmProfileError={null}
       onSemanticModelChange={option => void choose(option)} onRefreshSemanticModels={refresh}
       onReportTemplateChange={setTemplate} onLLMProfileChange={setProfile}

@@ -1,19 +1,19 @@
 # 08 — 当前及未来开发路线
 
-> **状态：** Settings.version=M6.5；M6.5 FINAL COMPLETE；M5 FINAL/FROZEN有效。
+> **状态：** Settings.version=M6.5.1；M6.5.1 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
 
-## 当前路线 — M6.5 POST-FINAL CLOSURE → M6.5.1
+## 正式路线 — M6.5.1 封板后的阶段
 
 M6.5 FINAL COMPLETE；Final SHA `8e63f0bd770c3ec819a789f13c20128456fec591`；自身
 [Full Validation 39400357886](https://github.com/Strange-Men/PowerBIAgent/actions/runs/39400357886) SUCCESS。
 Remote Audit PASS；封板时 HEAD=origin/main、worktree/staging clean、owned shutdown 成立。
-具体证据见07，唯一交接见09。文档收口提交须自身 CI/Audit/clean，随后 fresh fetch，
-以新 clean main 为已批准 M6.5.1 的 baseline；不混合两个提交。
+具体证据见07，唯一交接见09。文档收口提交 bac2f33 已以自身 Full Validation 39403675734 SUCCESS、Remote Audit/clean/shutdown
+独立成立。M6.5.1 Chinese / English Localization Platform FINAL COMPLETE 按自身 exact-SHA CI/Audit/clean/shutdown 生效；不继承 M6.5 CI。
 
 | 阶段 | 路线与边界 |
 |---|---|
 | M6.5 | FINAL COMPLETE：Cloud Real Business Data Validation |
-| M6.5.1 | Chinese / English Localization Platform；复用现有 display localization，一次分析、两种展示 |
+| M6.5.1 | FINAL COMPLETE：Chinese / English Localization Platform；同一 Facts/ReportSpec 的中英展示，设置/常规/语言 |
 | M6.5.2 | Web / SSO Productization；独立部署/认证/安全设计与授权 |
 | M6.5.3 | VM Remote Deployment & Internal Pilot；用户已配置远程虚拟机作为基础，内部远程 Pilot 不冒充 Enterprise Production Seal |
 | M6.6 | Enterprise Production Readiness Seal；Test B OLS、生产权限/恢复/并发/部署/性能证据 |

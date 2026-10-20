@@ -173,6 +173,55 @@ class CloudProductServiceFactory:
             return await repos.reports.read_html(report_id)
         return await self._read_owned(sid,principal,read)
 
+    async def _presentation_read(self,sid,principal,request_id,*,expected_generation=None,report_id=None,locale='zh-CN'):
+        """Reuse current session-bound witness; presentation performs no IQ call."""
+        from backend.app.application.cloud_workspace_service import CloudSelectionConflict
+        from backend.app.presentation.projection import project_snapshot,render_snapshot_report
+        from backend.app.presentation.localization import JsonDisplayLocalizationRegistry
+        from backend.app.report.resources import ReportNotFoundError
+        async def read(repos):
+            adapter,selection=self._workspace.selected_context(sid,principal)
+            if expected_generation is not None and selection.generation!=expected_generation:
+                raise CloudSelectionConflict()
+            artifact=None
+            effective_id=request_id
+            if report_id is not None:
+                artifact=await repos.report_metadata.get(report_id)
+                if artifact is None: raise ReportNotFoundError('report_not_found')
+                effective_id=artifact.request_id
+            snapshot=await repos.snapshots.get(effective_id,self._mode(sid,principal))
+            if snapshot is None: raise ReportNotFoundError('resource_not_found')
+            binding=await repos.cloud_bindings.get(snapshot.conversation_id)
+            if binding is None:
+                raise AuthFailure('AUTH_FORBIDDEN',403)
+            lease=_ResourceLease(self._auth,self._workspace,sid,principal,selection,adapter=adapter,binding=binding)
+            lease.require_session(sid)
+            recipe=snapshot.presentation_recipe
+            key=recipe.report_spec.semantic_model_key if recipe and recipe.report_spec else recipe.plan.semantic_model_key if recipe else None
+            if key is not None and key!=binding.model_key: raise AuthFailure('AUTH_FORBIDDEN',403)
+            if snapshot.source_mode!=binding.source_mode: raise AuthFailure('AUTH_FORBIDDEN',403)
+            if recipe is not None:
+                source=recipe.report_spec if recipe.report_spec is not None else recipe.result
+                fingerprint=recipe.report_spec.schema_fingerprint if recipe.report_spec is not None else recipe.schema_fingerprint
+                if source.source_mode!=binding.source_mode or fingerprint!=binding.schema_fingerprint:
+                    raise AuthFailure('AUTH_FORBIDDEN',403)
+            if artifact is not None:
+                _,_=await repos.reports.read_html(report_id)
+                renderer=build_report_dispatcher(SalesReportRenderer(),ExecutiveSalesReportRenderer())
+                output=await render_snapshot_report(snapshot,artifact,locale,renderer)
+            else:
+                registry=JsonDisplayLocalizationRegistry(self._auth.settings.presentation_localization_registry_path)
+                output=await project_snapshot(snapshot,locale,registry=registry)
+            lease.require_session(sid)
+            return output
+        return await self._read_owned(sid,principal,read)
+
+    async def project_presentation(self,sid,principal,request_id,locale,expected_generation):
+        return await self._presentation_read(sid,principal,request_id,locale=locale,expected_generation=expected_generation)
+
+    async def localized_report(self,sid,principal,report_id,locale):
+        return await self._presentation_read(sid,principal,None,report_id=report_id,locale=locale)
+
     def _mode(self,sid,principal):
         return self._workspace.data_mode(sid,principal)
 

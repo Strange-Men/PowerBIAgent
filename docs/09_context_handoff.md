@@ -1,8 +1,41 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-> Settings.version=M6.5；M6.5 FINAL COMPLETE；M5 FINAL/FROZEN有效。
+> Settings.version=M6.5.1；M6.5.1 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
 
-## 当前阶段 — M6.5 FINAL COMPLETE（2026-10-20）
+## 当前阶段 — M6.5.1 Chinese / English Localization Platform FINAL COMPLETE
+
+Settings.version=M6.5.1。以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、
+worktree/staging clean 与 owned shutdown 全部成立后生效。自身 SHA/CI/remote receipt 保存在
+仓库外 PBIAgentTest/M6.5.1/Governance；不继承旧 CI，不在自身提交写循环 SHA。
+
+PHASE 0 独立 bac2f33b093fc436615bdadb4670eb950ec1fdc0 / Full Validation 39403675734
+SUCCESS，Remote Audit/clean/shutdown PASS，随后 fresh main 开始 M6.5.1。
+现有 DisplayLocalization/Formatter/Renderer 扩展，唯一 locale zh-CN/en-US 仅 Presentation Context。
+语言入口设置/常规/语言；本地 preference，无账号 DB preference。业务事实、Memory、模型与授权不变。
+immutable recipe 从已验证 Plan/Result/Facts/availability 或最终 ReportSpec 复制，只重投影；
+历史缺 recipe 明示不可切换，不重新分析或从 answer text 提取事实。
+
+最小 native Cloud 通过：m651-scalar-f5acbd3a、m651-grouped-49737563、m651-report-a6777a23。
+每条成功事实分析后 zh/en/zh 投影 factual hash 相同，ZERO IQ/ExecuteQuery；报告一个 KPI、
+一个查询、一次 ExecuteQuery，双语言 view/download 分别一致；既有 Assembly 原始一致性复核保留。
+GROUPED 的非最终 Plan display hints 越界已 failure-first 最小修复，validator/canonical state 不变。
+报告采用既有“只看销售额”限定词；“仅展示 Total Sales”未匹配旧限定词而生成四 KPI 的原件
+仅作补充双语证明，不计入最小单 KPI 验收，不修改 Interpreter/ReportPlanner/registry。
+原 semantic frame 缺 shape 与 RATE_LIMITED 拒绝、测试 fixture 枚举错误、09 标题漂移均保留原件。
+
+本地 fresh Backend 10b01f6d=3839PASS/1SKIP/15既有warnings；Semantic 127a316e=819PASS；
+Golden e4ad24b9=11PASS/1manualSKIP；Frontend 9db4fcee=173PASS；Typecheck/Build 3e28ff9c、
+Lint bc3b3bb1 与 Repository Safety/Architecture/Documentation/Error Ledger/Artifact/Localization/diff PASS。
+源码、fixtures 定义与 bundled resources 属 Git；所有运行证据/截图/测试库只在仓库外。
+owned 5173/5174 已关闭；不删除或复制用户 DB。自动续作已恢复并关闭，避免每日重复。
+详情见 [M6.5.1 milestone](milestones/m6/m6_5_1_chinese_english_localization_platform.md)。
+
+后续路线：M6.5.2 Web / SSO Productization → M6.5.3 VM Remote Deployment & Internal Pilot
+→ M6.6 Enterprise Production Readiness Seal。用户已配置 VM 仅为 M6.5.3 基础；内部 Pilot 不冒充
+Enterprise Production Seal。M5 Frozen Core、12-row/N+1/8-column、relationship cardinality
+CONTRACT_GAP、Test B DEFERRED_BY_TEST_PRINCIPAL → M6.6 保留。完成本轮即 STOP；后续独立授权。
+
+## Historical — M6.5 FINAL COMPLETE（2026-10-20）
 
 Settings.version=M6.5；M6.5 FINAL COMPLETE。公开真实业务数据 Cloud mandatory 已完成。
 Final SHA：`8e63f0bd770c3ec819a789f13c20128456fec591`；自身
@@ -43,8 +76,8 @@ relationship cardinality CONTRACT_GAP已知限制、available horizon超限UNKNO
 后续正式路线：M6.5.1 Chinese / English Localization Platform → M6.5.2 Web / SSO Productization
 → M6.5.3 VM Remote Deployment & Internal Pilot → M6.6 Enterprise Production Readiness Seal。
 用户已配置远程虚拟机，作为 M6.5.3 基础；内部远程 Pilot 不冒充 Enterprise Production Seal。
-本轮先独立完成 documentation closure；自身 CI/Audit/clean 后 fresh fetch，以新 clean main
-进入已批准的 M6.5.1 设计审计与实施，不提前实施 M6.5.2/M6.5.3/M6.6。
+POST-FINAL documentation closure 已独立通过自身 CI/Audit/clean，fresh main 已进入本轮批准的
+M6.5.1；不提前实施 M6.5.2/M6.5.3/M6.6。
 12-row / N+1 / 8-column、relationship cardinality CONTRACT_GAP、Test B
 DEFERRED_BY_TEST_PRINCIPAL → M6.6 与 M5 Frozen Core 全部保留。
 

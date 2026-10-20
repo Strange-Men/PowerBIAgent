@@ -1,6 +1,31 @@
 # 07 — 当前项目状态
 
-> Settings.version=M6.5；M6.5 FINAL COMPLETE；M5 FINAL/FROZEN有效。
+> Settings.version=M6.5.1；M6.5.1 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
+
+## M6.5.1 — Chinese / English Localization Platform FINAL COMPLETE（2026-10-21）
+
+扩展现有 DisplayLocalizationService/Registry/Formatter/Renderer，统一 zh-CN/en-US Presentation
+Context；i18next/react-i18next bundled resources、typed keys、Babel 与 Localization Completeness Gate。
+全局入口为“设置 → 常规 → 语言”；本地持久偏好，无账号 DB preference。已有结果和报告复用
+immutable typed presentation recipe，只重新展示，不重新理解、Grounding、Plan、DAX 或查询。
+缺 recipe 的旧历史明确不可重投影，不反解析旧回答。Locale 不进入事实、Memory、模型或授权 authority。
+
+最小 native Cloud：SCALAR、GROUPED、单 KPI Report 各一次成功事实分析，zh/en/zh 投影 hash/raw
+rows 一致，ZERO 新增 Fabric IQ/ExecuteQuery；Report 一个 KPI、一个查询，双语 view/download
+分别一致。原始 Report Assembly 一致性复核保留，切换不进入 Facts 构建/复核。
+Backend 10b01f6d=3839PASS/1SKIP/15既有warnings；Semantic 127a316e=819PASS；Golden
+ e4ad24b9=11PASS/1manualSKIP；Frontend 9db4fcee=173PASS；Typecheck/Lint/Build 与治理门 PASS。
+失败原件、generic display hints 最小修复与报告既有限定词/默认覆盖边界见
+[M6.5.1 milestone](milestones/m6/m6_5_1_chinese_english_localization_platform.md)。
+
+PHASE 0 独立提交 bac2f33b093fc436615bdadb4670eb950ec1fdc0 / 自身 Full Validation
+39403675734 SUCCESS，Remote Audit/clean/shutdown PASS；不与本轮功能提交混合。
+M6.5.1 发布仅按本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/
+shutdown 全部成立生效，不继承旧 CI；自身 SHA/CI 回执置仓库外 Governance，避免循环自引用。
+M5 Frozen Core、12-row/N+1/8-column、relationship cardinality CONTRACT_GAP、Test B
+DEFERRED_BY_TEST_PRINCIPAL → M6.6 保留。后续为 M6.5.2 Web / SSO Productization →
+M6.5.3 VM Remote Deployment & Internal Pilot → M6.6 Enterprise Production Readiness Seal。
+本轮完成后 STOP；不进入后续阶段。
 
 ## M6.5 FINAL COMPLETE（2026-10-20）
 
@@ -43,8 +68,8 @@ relationship cardinality CONTRACT_GAP已知限制、available horizon超限UNKNO
 后续正式路线：M6.5.1 Chinese / English Localization Platform → M6.5.2 Web / SSO Productization
 → M6.5.3 VM Remote Deployment & Internal Pilot → M6.6 Enterprise Production Readiness Seal。
 用户已配置远程虚拟机，作为 M6.5.3 基础；内部远程 Pilot 不冒充 Enterprise Production Seal。
-本轮先独立完成 documentation closure；自身 CI/Audit/clean 后 fresh fetch，以新 clean main
-进入已批准的 M6.5.1 设计审计与实施，不提前实施 M6.5.2/M6.5.3/M6.6。
+POST-FINAL documentation closure 已独立通过自身 CI/Audit/clean，fresh main 已进入本轮批准的
+M6.5.1；不提前实施 M6.5.2/M6.5.3/M6.6。
 12-row / N+1 / 8-column、relationship cardinality CONTRACT_GAP、Test B
 DEFERRED_BY_TEST_PRINCIPAL → M6.6 与 M5 Frozen Core 全部保留。
 

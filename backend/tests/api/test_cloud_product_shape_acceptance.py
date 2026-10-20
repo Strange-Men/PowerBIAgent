@@ -73,6 +73,24 @@ def test_eight_shapes_in_formal_cloud_chain(factual_product,monkeypatch,shape):
     assert facts and all(f.source_mode=='mock' for f in facts)
     assert c.get('/api/v1/cloud/history/'+s['conversation_id']).json()['items'][0]['answer']==body['answer']
 
+    # Locale is presentation-only. Block every factual boundary after the one
+    # successful analysis, then project its persisted recipe in both languages.
+    async def forbidden(*args,**kwargs):
+        raise AssertionError('locale_reentered_factual_chain')
+    for method in ['get_semantic_model_schema','get_column_members','execute_dax','restore_bound_model']:
+        monkeypatch.setattr(adapter,method,forbidden)
+    monkeypatch.setattr(llm,'generate',forbidden)
+    projections=[]
+    for locale in ['zh-CN','en-US']:
+        from backend.app.presentation.recipe import project_recipe
+        c.portal.call(project_recipe,results[-1]['presentation_recipe'],locale)
+        projection=c.post('/api/v1/cloud/presentations/'+body['request_id'],headers=h,
+            json={'locale':locale,'expected_generation':s['generation']})
+        assert projection.status_code==200,projection.text
+        projections.append(projection.json())
+    assert projections[0]['factual_hash']==projections[1]['factual_hash']
+    assert projections[0]['presentation']['datasets'][0]['rows']==projections[1]['presentation']['datasets'][0]['rows']
+
 
 def test_formal_followup_inherits_only_verified_scope(factual_product,monkeypatch):
     c,app,h,s,identity,facts,llm,results=factual_product
@@ -165,6 +183,22 @@ def test_two_registered_fixed_renderers_through_cloud_resources(factual_product,
     view=c.get('/api/v1/cloud/reports/'+rid)
     assert view.status_code==200 and view.content==c.get('/api/v1/cloud/reports/'+rid+'/download').content
     assert body['report']['template_key']==template and body['is_mock']
+    before_spec=results[-1]['presentation_recipe'].report_spec.model_dump(mode='json')
+    async def no_factual_call(*args,**kwargs):
+        raise AssertionError('report_locale_called_factual_boundary')
+    with monkeypatch.context() as projection:
+        for method in ['get_semantic_model_schema','get_column_members','execute_dax','restore_bound_model']:
+            projection.setattr(adapter,method,no_factual_call)
+        projection.setattr(llm,'generate',no_factual_call)
+        localized=[]
+        for locale in ['zh-CN','en-US']:
+            response=c.get('/api/v1/cloud/reports/'+rid+'?locale='+locale)
+            assert response.status_code==200,response.text
+            assert response.content==c.get('/api/v1/cloud/reports/'+rid+'/download?locale='+locale).content
+            assert ('lang="'+locale+'"') in response.text
+            localized.append(response.content)
+        assert localized[0]!=localized[1]
+        assert results[-1]['presentation_recipe'].report_spec.model_dump(mode='json')==before_spec
     assert c.request('DELETE','/api/v1/cloud/reports/'+rid,headers=h,json={'expected_generation':s['generation']}).status_code==200
     assert c.get('/api/v1/cloud/reports/'+rid+'/download').status_code==404
 

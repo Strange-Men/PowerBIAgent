@@ -551,6 +551,7 @@ class TurnPipeline:
         usage: Optional[Any] = None,
         execution_audit: Optional[dict[str, Any]] = None,
         presentation: Optional[PresentationEnvelope] = None,
+        presentation_recipe=None,
         memory_commit: Optional[bool] = None,
     ) -> dict[str, Any]:
         """构建统一结果字典"""
@@ -592,6 +593,8 @@ class TurnPipeline:
             "allowed_tools": allowed_tools or [],
             "execution_audit": execution_audit,
             "presentation": presentation,
+            "presentation_recipe": presentation_recipe,
+            "presentation_available": presentation_recipe is not None,
         }
 
         if answer_text is not None:
@@ -732,6 +735,7 @@ class TurnPipeline:
             "llm_model": snapshot.llm_model,
             "llm_provider_protocol": snapshot.llm_provider_protocol,
             "presentation": snapshot.presentation,
+            "presentation_available": snapshot.presentation_recipe is not None,
             "idempotent_replay": True,
             "replayed_request_id": snapshot.request_id,
         }
@@ -769,6 +773,7 @@ class TurnPipeline:
             terminal_state=result.get("terminal_state", ""),
             user_message=result.get("user_message"),
             presentation=result.get("presentation"),
+            presentation_recipe=result.get("presentation_recipe"),
             answer=result.get("answer"),
             report=report_snapshot,
             clarification_question=result.get("clarification_question"),

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { tr, publicText } from '../i18n'
 import { Check, ChevronDown, Plus, RefreshCw, Send, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { CatalogOption, LLMProfileOption } from '../types'
@@ -51,6 +53,11 @@ export function Composer({
   onLLMProfileChange,
   onSend,
 }: ComposerProps) {
+  useTranslation()
+  const optionLabel=(option:CatalogOption)=>option.instanceNumber
+    ? tr('chat:instance',{p0:option.displayName,p1:option.instanceNumber}):publicText(option.label)
+  const optionDescription=(option:CatalogOption)=>option.partialDescription
+    ? tr('chat:availableDataCapabilitiesDetermineWhichSectionsCanBeGenerated',{p0:publicText(option.partialDescription)}):publicText(option.description)
   const [value, setValue] = useState('')
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
@@ -113,36 +120,35 @@ export function Composer({
   return (
     <div className="composer-wrap" ref={rootRef}>
       {addMenuOpen ? (
-        <div className="composer-popover add-menu" role="dialog" aria-label="数据与报表选项">
+        <div className="composer-popover add-menu" role="dialog" aria-label={tr('composer:dataAndReportOptions')}>
           <div className="menu-group">
             <div className="menu-heading">
-              <span className="menu-label">数据模型</span>
+              <span className="menu-label">{tr('composer:dataModel')}</span>
               <button
                 className="catalog-refresh"
                 type="button"
                 disabled={loadingSemanticModels}
-                aria-label="刷新数据模型"
+                aria-label={tr('composer:refreshDataModels')}
                 onClick={() => void onRefreshSemanticModels()}
               >
                 <RefreshCw size={14} />
-                刷新
-              </button>
+                {tr('composer:refresh')}</button>
             </div>
             {dataSourceKind === 'cloud' && semanticModelOptions.length > 1 ? (
-              <input className="catalog-filter" type="search" aria-label="筛选数据模型"
-                placeholder="按名称筛选模型" maxLength={200} value={modelFilter}
+              <input className="catalog-filter" type="search" aria-label={tr('composer:filterDataModels')}
+                placeholder={tr('composer:filterModelsByName')} maxLength={200} value={modelFilter}
                 onChange={event => setModelFilter(event.target.value)} />
             ) : null}
             {loadingSemanticModels ? (
-              <p className="menu-empty-state">{dataSourceKind === 'cloud' ? '正在获取云端数据模型…' : '正在获取当前 Desktop 模型…'}</p>
+              <p className="menu-empty-state">{dataSourceKind === 'cloud' ? tr('composer:retrievingCloudDataModels') : tr('composer:retrievingTheCurrentDesktopModels')}</p>
             ) : null}
             {!loadingSemanticModels && semanticModelOptions.length === 0 ? (
               <p className="menu-empty-state">
-                {semanticModelError || '当前没有可用数据模型。'}
+                {semanticModelError || tr('composer:noDataModelsAreAvailable')}
               </p>
             ) : null}
             {!loadingSemanticModels && semanticModelOptions.length > 0 && filteredModels.length === 0 ? (
-              <p className="menu-empty-state">没有匹配的模型，请更换筛选词。</p>
+              <p className="menu-empty-state">{tr('composer:noMatchingModelsTryAnotherSearch')}</p>
             ) : null}
             {filteredModels.map((option, index) => (
               <button
@@ -157,8 +163,8 @@ export function Composer({
                 }}
               >
                 <span>
-                  <strong>{option.label}</strong>
-                  <small id={`model-status-${index}`}>{option.description}</small>
+                  <strong>{optionLabel(option)}</strong>
+                  <small id={`model-status-${index}`}>{optionDescription(option)}</small>
                 </span>
                 {semanticModel?.key === option.key ? <Check size={16} /> : null}
               </button>
@@ -167,19 +173,19 @@ export function Composer({
           <div className="menu-divider" />
           <div className="menu-group">
             <div className="menu-heading">
-              <span className="menu-label">报表模板</span>
+              <span className="menu-label">{tr('composer:reportTemplate')}</span>
               <span className="menu-status">
-                {reportTemplate ? '已选择' : '未选择'}
+                {reportTemplate ? tr('composer:selected') : tr('composer:notSelected')}
               </span>
             </div>
             {loadingReportTemplates ? (
-              <p className="menu-empty-state">正在获取报表模板…</p>
+              <p className="menu-empty-state">{tr('composer:retrievingReportTemplates')}</p>
             ) : null}
             {!loadingReportTemplates && reportTemplateOptions.length === 0 ? (
               <p className="menu-empty-state">
                 {reportTemplateError || (executionBlockedReason
-                  ? '当前数据模型暂无可用报表模板。'
-                  : '当前数据模型暂无适配的报表模板，但仍可正常进行数据问答。')}
+                  ? tr('composer:noReportTemplatesAreAvailableForThisModel')
+                  : tr('composer:noReportTemplatesMatchThisModelYouCanStill'))}
               </p>
             ) : null}
             {reportTemplateOptions.map((option) => (
@@ -197,24 +203,24 @@ export function Composer({
                 }}
               >
                 <span>
-                  <strong>{option.label}</strong>
-                  <small>{option.description}</small>
+                  <strong>{optionLabel(option)}</strong>
+                  <small>{optionDescription(option)}</small>
                 </span>
                 {reportTemplate?.key === option.key ? <Check size={16} /> : null}
               </button>
             ))}
           </div>
           <p className="local-catalog-note">
-            {dataSourceKind === 'cloud' ? '仅显示当前账号可访问的数据模型；请显式选择模型。' : '数据模型来自后端 Desktop discovery；模板仅提供显式选择，问题内容仍决定分析或报表意图。'}
+            {dataSourceKind === 'cloud' ? tr('composer:onlyModelsAccessibleToThisAccountAreShownSelect') : tr('composer:modelsAreDiscoveredFromDesktopChooseATemplateExplicitly')}
           </p>
         </div>
       ) : null}
 
       {modelMenuOpen ? (
-        <div className="composer-popover model-menu" role="listbox" aria-label="选择 AI 模型">
-          {loadingLLMProfiles ? <p className="menu-empty-state">正在获取 AI 模型…</p> : null}
+        <div className="composer-popover model-menu" role="listbox" aria-label={tr('composer:chooseAnAiModel')}>
+          {loadingLLMProfiles ? <p className="menu-empty-state">{tr('composer:retrievingAiModels')}</p> : null}
           {!loadingLLMProfiles && llmProfileOptions.length === 0 ? (
-            <p className="menu-empty-state">{llmProfileError || '当前没有可用的 AI 模型。'}</p>
+            <p className="menu-empty-state">{llmProfileError || tr('composer:noAiModelsAreAvailable')}</p>
           ) : null}
           {llmProfileOptions.map((profile) => (
             <button
@@ -231,7 +237,7 @@ export function Composer({
             >
               <span>
                 <strong>{profile.display_name}</strong>
-                <small>{profile.available ? profile.model : '当前配置不可用'}</small>
+                <small>{profile.available ? profile.model : tr('composer:thisConfigurationIsUnavailable')}</small>
               </span>
               {llmProfile?.profile_key === profile.profile_key ? <Check size={17} /> : null}
             </button>
@@ -245,7 +251,7 @@ export function Composer({
           ref={addButtonRef}
           className={`composer-icon-button ${addMenuOpen ? 'is-active' : ''}`}
           type="button"
-          aria-label={addMenuOpen ? '关闭数据与报表选项' : '打开数据与报表选项'}
+          aria-label={addMenuOpen ? tr('composer:closeDataAndReportOptions') : tr('composer:openDataAndReportOptions')}
           aria-expanded={addMenuOpen}
           onClick={() => {
             setAddMenuOpen((open) => !open)
@@ -258,8 +264,8 @@ export function Composer({
           rows={1}
           value={value}
           disabled={sending}
-          placeholder="询问你的 Power BI 数据"
-          aria-label="询问你的 Power BI 数据"
+          placeholder={tr('composer:askAboutYourPowerBiData')}
+          aria-label={tr('composer:askAboutYourPowerBiData')}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -278,14 +284,14 @@ export function Composer({
             setAddMenuOpen(false)
           }}
         >
-          {llmProfile?.display_name || '选择 AI 模型'}
+          {llmProfile?.display_name || tr('composer:chooseAnAiModel')}
           <ChevronDown size={16} />
         </button>
         <button
           className="send-button"
           type="button"
           disabled={!canSend || Boolean(executionBlockedReason)}
-          aria-label="发送"
+          aria-label={tr('composer:send')}
           onClick={() => void submit()}
         >
           <Send size={18} />
@@ -294,16 +300,16 @@ export function Composer({
       <div className={`composer-selection ${semanticModelCompatibilityNotice ? 'compatibility-warning' : ''}`} aria-live="polite">
         <span>
           {loadingSemanticModels
-            ? '正在连接数据模型'
-            : semanticModel?.label || semanticModelError || (dataSourceKind === 'cloud' && semanticModelOptions.length
-              ? '请选择云端数据模型' : '当前没有可用数据模型')}
+            ? tr('composer:connectingToTheDataModel')
+            : (semanticModel ? optionLabel(semanticModel) : null) || semanticModelError || (dataSourceKind === 'cloud' && semanticModelOptions.length
+              ? tr('composer:selectACloudDataModel') : tr('composer:noDataModelsAvailable'))}
         </span>
         {reportTemplate ? (
-          <span>· 已选 {reportTemplate.label}</span>
+          <span>{tr('composer:selectedTemplate', {name:optionLabel(reportTemplate)})}</span>
         ) : (
-          <span>· 未选择报表模板</span>
+          <span>{tr('composer:noReportTemplateSelected')}</span>
         )}
-        {semanticModelCompatibilityNotice ? <span>{semanticModelCompatibilityNotice}</span> : null}
+        {semanticModelCompatibilityNotice ? <span>{publicText(semanticModelCompatibilityNotice)}</span> : null}
       </div>
     </div>
   )

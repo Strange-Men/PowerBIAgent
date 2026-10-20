@@ -24,6 +24,7 @@ from backend.app.llm.base import (
     LLMTask,
 )
 
+from backend.app.presentation.locale import normalize_locale,SupportedLocale
 from backend.app.presentation.formatter import (
     PresentationFormatKind,
     PresentationFormatter,
@@ -55,7 +56,7 @@ class DisplayLocalization(BaseModel):
     object_identity: str = Field(min_length=1)
     object_type: SemanticObjectType
     canonical_name: str = Field(min_length=1)
-    locale: str = Field(min_length=1)
+    locale: SupportedLocale
     display_name: str = Field(min_length=1, max_length=96)
     source: DisplayLocalizationSource
     schema_identity: str = Field(min_length=64, max_length=64)
@@ -257,6 +258,30 @@ class JsonDisplayLocalizationRegistry:
 class DisplayLocalizationService:
     """Resolve display bindings without granting canonical identity authority."""
 
+    @staticmethod
+    def project_bindings(bindings, *, locale, registry=None):
+        """Project snapshot-owned display identities with ZERO metadata calls.
+
+        No catalog/Grounding construction, translator, or provider is involved.
+        A registry hit must retain the full existing identity/schema binding.
+        """
+        selected = normalize_locale(locale).value
+        projected = {}
+        for field, binding in bindings.items():
+            if binding.locale == selected:
+                projected[field] = binding
+                continue
+            cached = registry.get(semantic_model_key=binding.semantic_model_key,
+                schema_identity=binding.schema_identity, object_identity=binding.object_identity,
+                locale=selected) if registry is not None else None
+            if cached is not None and (cached.canonical_name, cached.object_type) != (binding.canonical_name, binding.object_type):
+                raise DisplayLocalizationError('display_registry_identity_mismatch')
+            projected[field] = cached or binding.model_copy(update={
+                'locale':selected, 'display_name':_humanize(binding.canonical_name),
+                'source':DisplayLocalizationSource.FALLBACK,
+            })
+        return projected
+
     def __init__(
         self,
         catalog: SemanticCatalog,
@@ -276,6 +301,7 @@ class DisplayLocalizationService:
         locale: str,
         table_hints: dict[str, str] | None = None,
     ) -> tuple[DisplayLocalization, ...]:
+        locale=normalize_locale(locale).value
         objects = tuple(
             self._resolve_runtime_object(field, table_hints=table_hints)
             for field in fields
@@ -341,8 +367,9 @@ class DisplayLocalizationService:
         table_hints: dict[str, str] | None = None,
     ) -> dict[tuple[str, str], str]:
         """Localize only member values observed in verified results or filters."""
-        if not locale.casefold().startswith("zh"):
+        if normalize_locale(locale).value != "zh-CN":
             return {}
+        locale=normalize_locale(locale).value
         labels: dict[tuple[str, str], str] = {}
         unresolved: list[tuple[CatalogObject, str, str]] = []
         for field, values in field_values.items():
@@ -572,7 +599,7 @@ def _localized_alias(item: CatalogObject, locale: str) -> str | None:
     }:
         return None
     aliases = tuple(alias.strip() for alias in item.aliases if alias.strip())
-    if locale.casefold().startswith("zh"):
+    if normalize_locale(locale).value == "zh-CN":
         return next((alias for alias in aliases if _contains_cjk(alias)), None)
     return next((alias for alias in aliases if not _contains_cjk(alias)), None)
 

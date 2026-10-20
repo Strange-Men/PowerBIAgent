@@ -8,6 +8,252 @@
 
 schema_version: '1.0'
 entries:
+- id: GOV-651-009
+  title: 版本更新必须保留当前阶段交接定位合同
+  category: GOV
+  first_detected_version: M6.5.1
+  symptom: 09 新交接标题未含当前阶段，版本检查误读历史章节
+  local_evidence: df4de00e full backend 3838PASS/1FAIL；79e28b50 58PASS
+  authoritative_sources:
+  - title: 既有版本一致性与唯一 Handoff 合同
+    reason: 当前阶段必须明确对应 Settings.version，不能让历史章节成为入口
+  root_cause: 文档编辑将当前阶段标题改为当前实施交接，未核对既有定位测试
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 恢复当前阶段标题并标注 M6.5.1；保留原版本检查，不修改 expected 或定位规则
+  regression_tests:
+  - backend/tests/unit/test_settings.py
+  prohibited_patterns:
+  - 删除版本一致性检查以迁就标题漂移
+  prevention_rules:
+  - 更新版本入口后先跑既有 Settings 与文档治理检查
+  related_adr: ADR-005
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: handoff_version_alignment
+    version: M6.5.1
+- id: ERR-651-008
+  title: 展示筛选别名必须限定到最终 Plan 的逐成员集合
+  category: ERR
+  first_detected_version: M6.5.1
+  symptom: Cloud GROUPED 的事实查询成功后被 user_facing_filter_values_invalid 拒绝，ZERO Memory commit
+  local_evidence: m651-grouped-d7230111 安全校验代码；4d88f665 双语言 failure-first RED
+  authoritative_sources:
+  - title: ADR-009 与用户 M6.5.1 Display Identity
+    reason: 展示别名不能扩大或改写最终 canonical filter scope
+  root_cause: Answer builder 将全部 Grounding display hints 写入证据，包含整体集合或最终 Plan 中不存在的成员键
+  failed_attempts:
+  - 7d2ed3a0 与 6d1c4345 的测试 fixture 误用不存在的 IN 枚举；已按既有 IN_SET 合同修正，未改变生产 filter 能力
+  repair_attempt_count: 1
+  final_fix: 生成展示证据前仅保留最终 Plan 中逐成员 exact key；validator 原样保留，注入非 Plan 成员仍被拒绝
+  regression_tests:
+  - backend/tests/unit/test_m6_5_1_localization.py
+  - backend/tests/unit/test_verified_facts.py
+  prohibited_patterns:
+  - 为通过展示验收而跳过 filter evidence 校验或修改事实集合
+  prevention_rules:
+  - display hints 必须在最终 canonical state 后取交集，不能直接当作事实证据
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: cloud_failure_first_display_scope
+    version: M6.5.1
+- id: ERR-651-006
+  title: 英文比较缩写不能匹配度量名称内部字符
+  category: ERR
+  first_detected_version: M6.5.1
+  symptom: Momentum 的合法英文事实展示被误判为 MoM 比较
+  local_evidence: 4f1d12c8 failure-first RED；4e8ebc7c 45PASS
+  authoritative_sources:
+  - title: 用户 M6.5.1 Pure Language 与事实不变量
+    reason: 英文展示不能放宽事实校验，也不能把业务名称误判为比较声明
+  root_cause: 英文缩写 mom 使用任意 substring 匹配
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: MoM 与 YoY 使用完整词边界；真实比较声明仍要求对应 Verified Facts
+  regression_tests:
+  - backend/tests/unit/test_m6_5_1_localization.py
+  - backend/tests/unit/test_verified_facts.py
+  prohibited_patterns:
+  - 将任意名称内连续字符当作英文事实声明
+  prevention_rules:
+  - claim grammar 同时测试业务名称与真正未证明的比较声明
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: failure_first_acronym_boundary
+    version: M6.5.1
+- id: ERR-651-007
+  title: 隔离 Real 验收宿主必须显式准备空测试库
+  category: ERR
+  first_detected_version: M6.5.1
+  symptom: 已登录 Admin 的验收请求在建立 owned resource 时返回 503
+  local_evidence: safe-exception-3f2e58ce 的 OperationalError；owned-empty-db-provisioning-receipt
+  authoritative_sources:
+  - title: 既有 Cloud persistence provisioning 合同
+    reason: DeferredCloudRepositories 不自动创建或迁移生产数据库
+  root_cause: 仓库外测试宿主遗漏 owned empty database schema provisioning
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅对已确认零表的自有公开测试 fixture 显式创建既有 schema；不修改生产初始化行为
+  regression_tests:
+  - backend/tests/api/test_cloud_product_shape_acceptance.py
+  prohibited_patterns:
+  - 为修复测试宿主遗漏而自动迁移生产数据库
+  prevention_rules:
+  - 验收宿主启动前核对 owned fixture schema，仅记录表元数据，不读取业务行或复制数据库
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: owned_fixture_provisioning
+    version: M6.5.1
+- id: ERR-651-005
+  title: 历史展示资源不能依赖当前 UI 选中模型
+  category: ERR
+  first_detected_version: M6.5.1
+  symptom: 切换到另一个模型后，已有合法历史结果的语言投影被拒绝
+  local_evidence: 1f4357ac failure-first RED；d1e4877a 4PASS；2e67a46f full backend 3836PASS/1SKIP
+  authoritative_sources:
+  - title: 用户 M6.5.1 Locale Contract
+    reason: locale 不得影响 model selection authority 或 resource authorization
+  root_cause: 新 projection 路径额外要求当前选择模型等于资源模型，混淆 UI selection 与资源自身 access witness
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 去掉额外 selected-model 相等要求，保留 owner/session/policy/generation、durable binding 和资源自身 exact model/schema/source/current
+    witness 验证；不改变选择，不新增 IQ 调用
+  regression_tests:
+  - backend/tests/api/test_m6_5_1_projection.py
+  prohibited_patterns:
+  - 为语言投影重新选择模型、获取新权限或重新查询元数据
+  prevention_rules:
+  - 资源展示沿用该资源自身的既有精确访问证明，失去证明继续拒绝
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: resource_projection_lease_regression
+    version: M6.5.1
+    evidence: 1f4357ac RED；d1e4877a 4PASS；2e67a46f 3836PASS
+- id: ERR-651-001
+  title: 展示快照需保留 Decimal/date 类型
+  category: ERR
+  first_detected_version: M6.5.1
+  symptom: 历史结果无法无损生成第二语言展示
+  local_evidence: 575d8bed failure-first RED；046b9bd9、d7c9213e 与 decimal roundtrip 证明无事实重算
+  authoritative_sources:
+  - title: 用户 M6.5.1 Localization Platform scope
+    reason: Same Facts / same ReportSpec；locale 只能影响 Presentation Context
+  root_cause: 既有快照只有展示文字，JSON Any 值可能丢失原始 Decimal/date 类型
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在既有 snapshot JSON 附加 typed language-neutral recipe；只复制已验证 authority 数据并保留类型标签
+  regression_tests:
+  - backend/tests/unit/test_m6_5_1_localization.py
+  prohibited_patterns:
+  - 不得从 answer text parse facts 或重新 ExecuteQuery
+  prevention_rules:
+  - 不得从 answer text parse facts 或重新 ExecuteQuery
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: failure_first_localization_regression
+    version: M6.5.1
+    evidence: 575d8bed failure-first RED；046b9bd9、d7c9213e 与 decimal roundtrip 证明无事实重算
+- id: ERR-651-002
+  title: 展示日期信任片段不能吞掉伪数值
+  category: ERR
+  first_detected_version: M6.5.1
+  symptom: 空结果文本中伪造年份数字曾被新 trusted fragment 遮蔽
+  local_evidence: 9835a7e2 full backend negative RED；dd17ac49 47PASS
+  authoritative_sources:
+  - title: 用户 M6.5.1 Localization Platform scope
+    reason: Same Facts / same ReportSpec；locale 只能影响 Presentation Context
+  root_cause: 把宽泛的 rendered_time 片段当作可从任意文本删除的信任证据
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅允许事实及 scope 已证明的完整资源句，保留 poisoned negative test
+  regression_tests:
+  - backend/tests/unit/test_verified_facts.py
+  - backend/tests/unit/test_m6_5_1_localization.py
+  prohibited_patterns:
+  - 不得放宽 numeric allowlist 或修改 negative expected 迎合错误
+  prevention_rules:
+  - 不得放宽 numeric allowlist 或修改 negative expected 迎合错误
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: failure_first_localization_regression
+    version: M6.5.1
+    evidence: 9835a7e2 full backend negative RED；dd17ac49 47PASS
+- id: ERR-651-003
+  title: 报表 display 翻译不能回写技术 identity
+  category: ERR
+  first_detected_version: M6.5.1
+  symptom: data-kpi 技术属性曾被通用转义函数本地化
+  local_evidence: 9835a7e2 full regression RED；dd17ac49 47PASS；e9b12f67 83PASS
+  authoritative_sources:
+  - title: 用户 M6.5.1 Localization Platform scope
+    reason: Same Facts / same ReportSpec；locale 只能影响 Presentation Context
+  root_cause: 将 display_resource 放入通用 _text 导致技术属性和可见文本混用
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 恢复纯 escape；仅明确 title/label 展示边界调用 display_resource，canonical 属性与原始业务成员保持不变；无权威货币的金额轴不注入元单位
+  regression_tests:
+  - backend/tests/unit/test_report_generation.py
+  - backend/tests/unit/test_m6_5_1_localization.py
+  prohibited_patterns:
+  - 不得依据 locale 改 currency 或改 ReportSpec/Facts
+  prevention_rules:
+  - 不得依据 locale 改 currency 或改 ReportSpec/Facts
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: failure_first_localization_regression
+    version: M6.5.1
+    evidence: 9835a7e2 full regression RED；dd17ac49 47PASS；e9b12f67 83PASS
+- id: ERR-651-004
+  title: 展示 recipe 与持久绑定必须使用同一 fingerprint 合同
+  category: ERR
+  first_detected_version: M6.5.1
+  symptom: 新 projection 对合法模型返回 AUTH_FORBIDDEN
+  local_evidence: 2b0c2d7a、d9893ad3 RED；e9b12f67 83PASS，CSRF/generation/revoked witness negatives保留
+  authoritative_sources:
+  - title: 用户 M6.5.1 Localization Platform scope
+    reason: Same Facts / same ReportSpec；locale 只能影响 Presentation Context
+  root_cause: SemanticCatalog fingerprint 与 durable cloud binding 的 schema fingerprint 算法不同，不能混为一谈
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: recipe 从同一 runtime schema 调用既有 compute_schema_fingerprint，与绑定精确匹配；拒绝校验保留
+  regression_tests:
+  - backend/tests/api/test_m6_5_1_projection.py
+  - backend/tests/api/test_cloud_product_shape_acceptance.py
+  prohibited_patterns:
+  - 不得为通过测试跳过 schema/model/source/owner/access witness 校验
+  prevention_rules:
+  - 不得为通过测试跳过 schema/model/source/owner/access witness 校验
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: failure_first_localization_regression
+    version: M6.5.1
+    evidence: 2b0c2d7a、d9893ad3 RED；e9b12f67 83PASS，CSRF/generation/revoked witness negatives保留
 - id: ERR-65-012
   title: 显式table column语言限定被缩为歧义leaf
   category: ERR

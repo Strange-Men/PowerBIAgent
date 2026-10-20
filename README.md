@@ -25,6 +25,8 @@ PowerBIAgent 面向不熟悉 DAX 的业务用户，提供 React 对话界面和 
 - **可控语言模型选择**：支持 DeepSeek、Kimi K2.6 的公开 profile 与离线 Mock；每轮固定所选模型，失败不自动切换 Provider。
 - **离线验证**：Mock、Synthetic 和 Golden 用例覆盖事实链及权限边界，真实 Desktop 与 Cloud 验收独立记录。
 
+M6.5.1 Chinese / English Localization Platform FINAL COMPLETE（按本提交自身 CI/Audit/clean/shutdown 生效）：语言位于“设置 → 常规 → 语言”，已有验证结果和报告仅重投影，不重新执行查询，见 [M6.5.1](docs/milestones/m6/m6_5_1_chinese_english_localization_platform.md)。
+
 ## Architecture
 
 ```mermaid
@@ -171,7 +173,7 @@ python scripts/run_local_validation.py --milestone M6.5 --frontend -- npm run bu
 
 ## Status / Limitations
 
-当前版本：**M6.5**；完整公开真实业务数据的八种查询形状、多轮、两种KPI报告及资源/安全邻接已有Cloud Real证据。M6.5 FINAL COMPLETE，自身 Full Validation 39400357886 SUCCESS，Remote Audit/clean/shutdown 已成立；现有限制及证据见 [07](docs/07_milestones_status_and_open_questions.md)。
+当前版本：**M6.5.1**（Chinese / English Localization Platform，FINAL COMPLETE 按自身 CI/Audit/clean/shutdown 生效）。前序 M6.5 FINAL COMPLETE，八种查询形状、多轮、两种 KPI 报告与资源/安全邻接的 Cloud Real 证据保留；M6.5 自身 Full Validation 39400357886 SUCCESS，不继承为 M6.5.1 CI。现有限制及证据见 [07](docs/07_milestones_status_and_open_questions.md)。
 
 - Fabric IQ 正式边界为 **business rows ≤12、wire=N+1 sentinel、columns ≤8**。超界、CSV、未知或不完整结果在正式 Facts 前拒绝；较大 TopN 或长趋势不能据此宣称完整结果。
 - Cloud 会话与存储仍为 single-process/SQLite/filesystem，尚不是多 worker 企业生产部署。Microsoft 配额、MCP Preview 协议和上游延迟仍有适用限制。

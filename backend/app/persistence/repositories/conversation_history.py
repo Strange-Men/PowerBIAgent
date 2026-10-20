@@ -493,6 +493,7 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 }
             )
         return ConversationHistoryItem(
+            presentation_available=snapshot.presentation_recipe is not None,
             request_id=snapshot.request_id,
             created_at=row.created_at,
             terminal_state=snapshot.terminal_state,

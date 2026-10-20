@@ -82,6 +82,9 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Localization Completeness Gate
+        run: python scripts/check_localization_completeness.py
+
       - name: 8. Frontend tests
         working-directory: frontend
         run: npm test

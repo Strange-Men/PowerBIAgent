@@ -1,0 +1,14 @@
+{
+  "salesAnalysisReport": "销售分析报告",
+  "deletedReport": "已删除报表",
+  "htmlReportAttachment": "HTML 报表附件",
+  "thisReportWasDeleted": "此报表已删除",
+  "htmlReport": "HTML 报表",
+  "thisFileCanNoLongerBeViewedOrDownloaded": "此文件已不可查看或下载",
+  "viewReport": "查看报表",
+  "downloadHtml": "下载 HTML",
+  "simpleTemplate": "简易销售分析模板",
+  "executiveTemplate": "专业销售经营分析模板",
+  "simpleDescription": "基于销售指标快速生成 KPI、趋势与分类分析",
+  "executiveDescription": "适合管理层阅读的专业销售经营分析与审计上下文"
+}

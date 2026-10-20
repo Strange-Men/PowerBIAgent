@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { tr, i18n, normalizeLocale } from '../i18n'
 import type {
   PresentationBlock,
   PresentationCell,
@@ -16,9 +18,9 @@ interface StructuredBlocksProps {
 function displayValue(value: PresentationCell): string {
   if (value === null) return '—'
   if (typeof value === 'number') {
-    return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value)
+    return new Intl.NumberFormat(normalizeLocale(i18n.language), { maximumFractionDigits: 2 }).format(value)
   }
-  if (typeof value === 'boolean') return value ? '是' : '否'
+  if (typeof value === 'boolean') return value ? tr('chat:yes') : tr('chat:no')
   return value
 }
 
@@ -66,10 +68,11 @@ function BarChart({ dataset, block }: {
   dataset: PresentationDataset
   block: Extract<PresentationBlock, { type: 'chart' }>
 }) {
+  useTranslation()
   const series = numericSeries(dataset, block.x_field, block.y_field)
   const max = Math.max(...series.map((item) => Math.abs(item.value)), 1)
   return (
-    <figure className="result-chart" aria-label={`${block.title}柱状图`}>
+    <figure className="result-chart" aria-label={tr('chat:barChart', {p0: block.title})}>
       <figcaption>{block.title}</figcaption>
       <div className="bar-chart">
         {series.map((item, index) => (
@@ -90,6 +93,7 @@ function LineChart({ dataset, block }: {
   dataset: PresentationDataset
   block: Extract<PresentationBlock, { type: 'chart' }>
 }) {
+  useTranslation()
   const series = numericSeries(dataset, block.x_field, block.y_field)
   const values = series.map((item) => item.value)
   const min = Math.min(...values, 0)
@@ -103,9 +107,9 @@ function LineChart({ dataset, block }: {
     })
     .join(' ')
   return (
-    <figure className="result-chart" aria-label={`${block.title}折线图`}>
+    <figure className="result-chart" aria-label={tr('chat:lineChart', {p0: block.title})}>
       <figcaption>{block.title}</figcaption>
-      <svg viewBox="0 0 100 100" role="img" aria-label={`${displayField(dataset, block.y_field)}随${displayField(dataset, block.x_field)}变化`} preserveAspectRatio="none">
+      <svg viewBox="0 0 100 100" role="img" aria-label={tr('chat:by', {p0: displayField(dataset, block.y_field), p1: displayField(dataset, block.x_field)})} preserveAspectRatio="none">
         <line x1="0" y1="92" x2="100" y2="92" />
         <polyline points={points} />
       </svg>
@@ -121,6 +125,7 @@ export function StructuredBlocks({
   fallbackText,
   report,
 }: StructuredBlocksProps) {
+  useTranslation()
   const hasText = presentation.blocks.some((block) => block.type === 'text')
   return (
     <>
@@ -149,7 +154,7 @@ export function StructuredBlocks({
           return (
             <section className="result-table-section" key={`table-${blockIndex}`}>
               <h2>{block.title}</h2>
-              <div className="result-table-scroll" tabIndex={0} aria-label={`${block.title}，可横向滚动`}>
+              <div className="result-table-scroll" tabIndex={0} aria-label={tr('chat:scrollHorizontally', {p0: block.title})}>
                 <table>
                   <thead><tr>{dataset.columns.map((column) => <th scope="col" key={column}>{displayField(dataset, column)}</th>)}</tr></thead>
                   <tbody>{dataset.rows.map((row, rowIndex) => (
@@ -157,7 +162,7 @@ export function StructuredBlocks({
                   ))}</tbody>
                 </table>
               </div>
-              {dataset.truncated ? <p className="result-note">结果较多，当前展示后端返回的前 {dataset.row_count} 行。</p> : null}
+              {dataset.truncated ? <p className="result-note">{tr('chat:truncatedRows', {count:dataset.row_count})}</p> : null}
             </section>
           )
         }

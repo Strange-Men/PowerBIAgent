@@ -6,6 +6,10 @@ ReportDataSnapshot.  This module only produces deterministic display text.
 
 from __future__ import annotations
 
+from backend.app.presentation.messages import message,display_resource
+from backend.app.presentation.locale import current_locale
+from backend.app.presentation.formatter import PresentationFormatter,PresentationFormatKind
+
 from datetime import datetime
 import re
 from zoneinfo import ZoneInfo
@@ -90,13 +94,13 @@ class ReportPresentationProjection(BaseModel):
         for item in self.metric_definitions:
             if item.canonical_measure == canonical_measure:
                 return item.display_name
-        return "业务指标"
+        return message('display.business_measure')
 
     def metric_unit(self, canonical_measure: str) -> str:
         for item in self.metric_definitions:
             if item.canonical_measure == canonical_measure:
                 return item.unit_display
-        return "数值"
+        return message('display.value')
 
 
 class ProfessionalReportPresenter:
@@ -105,16 +109,16 @@ class ProfessionalReportPresenter:
     _OPAQUE_PREFIXES = ("local_desktop:", "local_mcp:", "remote_mcp:", "fabric_iq:")
     _LONG_HEX = re.compile(r"[0-9a-f]{24,}", re.IGNORECASE)
     _FIELD_LABELS = {
-        "Region": "区域",
-        "Category": "品类",
-        "Product": "产品",
-        "Customer": "客户",
-        "YearMonth": "月份",
+        "Region": 'display.region',
+        "Category": 'display.category',
+        "Product": 'display.product',
+        "Customer": 'display.customer',
+        "YearMonth": 'display.month',
     }
     _OPERATOR_LABELS = {
-        "eq": "等于",
-        "in": "属于",
-        "in_set": "属于",
+        "eq": 'display.equals',
+        "in": 'display.is_in',
+        "in_set": 'display.is_in',
     }
 
     def project(self, report: ReportSpec) -> ReportPresentationProjection:
@@ -130,19 +134,21 @@ class ProfessionalReportPresenter:
             item.comparison_basis.status is MetricDefinitionStatus.UNKNOWN
             for item in context.metric_definitions
         )
-        summary = f"{len(metrics)} 项核心指标已绑定 Power BI 度量值"
+        summary = message('display.p_core_measures_bound_to_power_bi', p0=len(metrics))
         if unknown_tax:
-            summary += " · 税务口径：未声明"
+            summary += message('display.tax_basis_not_declared')
         if unknown_comparison:
-            summary += " · 比较基准：未设置"
+            summary += message('display.comparison_basis_not_set')
 
         return ReportPresentationProjection(
             model_display_name=self._model_display_name(snapshot),
             source_display_name=self._source_display_name(snapshot),
-            analysis_period_display=context.analysis_period.display_text,
+            analysis_period_display=(message("report.period_range", start=context.analysis_period.start_date.isoformat(),
+                end=context.analysis_period.end_date.isoformat()) if context.analysis_period.start_date is not None
+                else message("report.all_available")),
             filter_display=self._filter_display(context.active_filters),
             freshness_display=(
-                "暂不可获取"
+                message('display.unavailable')
                 if context.data_freshness.state is ReportFreshnessState.UNKNOWN
                 else self._format_datetime(context.data_freshness.data_updated_at)
             ),
@@ -154,7 +160,7 @@ class ProfessionalReportPresenter:
                 context.metric_definitions,
             ),
             exception_display=(
-                "暂无可验证异常基准"
+                message('display.no_verified_exception_benchmark')
                 if context.exception_assessment.state
                 is ExceptionAssessmentState.CANNOT_DETERMINE
                 else context.exception_assessment.message
@@ -176,9 +182,9 @@ class ProfessionalReportPresenter:
     @staticmethod
     def _availability_display(data_availability, metric_definitions) -> str:
         if not data_availability:
-            return "暂不可确定"
+            return message('display.cannot_determine')
         labels = {
-            item.canonical_measure: item.display_name
+            item.canonical_measure: display_resource(item.display_name)
             for item in metric_definitions
         }
         rendered: list[str] = []
@@ -188,13 +194,12 @@ class ProfessionalReportPresenter:
                 continue
             label = labels.get(horizon.measure, horizon.measure)
             if horizon.status is DataHorizonStatus.EMPTY:
-                rendered.append(f"{label}暂无可观测数据")
+                rendered.append(message('display.no_observable_data_for_p', p0=label))
             elif horizon.latest_period is not None:
                 rendered.append(
-                    f"{label}可观测至{horizon.latest_period.year}年"
-                    f"{horizon.latest_period.month}月"
+                    message('display.p_observable_through_p_p', p0=label, p1=horizon.latest_period.year, p2=horizon.latest_period.month)
                 )
-        return "；".join(rendered) if rendered else "暂不可确定"
+        return "；".join(rendered) if rendered else message('display.cannot_determine')
 
     @classmethod
     def _model_display_name(cls, snapshot) -> str:
@@ -207,50 +212,49 @@ class ProfessionalReportPresenter:
         ):
             return candidate
         if snapshot.source_kind is ReportDataSourceKind.LOCAL_MCP:
-            return "当前 Power BI Desktop 模型"
+            return message('display.current_power_bi_desktop_model')
         if snapshot.source_kind is ReportDataSourceKind.REMOTE_MCP:
-            return "当前 Power BI 语义模型"
+            return message('display.current_power_bi_semantic_model')
         if snapshot.source_kind is ReportDataSourceKind.FABRIC_IQ:
-            return "当前 Power BI 语义模型"
-        return "报表验证模型"
+            return message('display.current_power_bi_semantic_model')
+        return message('display.report_validation_model')
 
     @staticmethod
     def _source_display_name(snapshot) -> str:
         base = (snapshot.source_display_name or "").strip() or {
             ReportDataSourceKind.LOCAL_MCP: "Power BI Desktop",
             ReportDataSourceKind.FABRIC_IQ: "Fabric IQ",
-            ReportDataSourceKind.REMOTE_MCP: "远程 Power BI",
-            ReportDataSourceKind.TEST_FIXTURE: "测试数据",
+            ReportDataSourceKind.REMOTE_MCP: message('display.remote_power_bi'),
+            ReportDataSourceKind.TEST_FIXTURE: message('display.test_data'),
         }[snapshot.source_kind]
-        suffix = "实时查询" if snapshot.source_mode == "real" else "验证模式"
+        suffix = message('display.live_query') if snapshot.source_mode == "real" else message('display.validation_mode')
         return base if suffix in base else f"{base} · {suffix}"
 
     @classmethod
     def _filter_display(cls, filters) -> str:
         if not filters.items:
-            return filters.display_text
+            return display_resource(filters.display_text)
         rendered: list[str] = []
         for item in filters.items:
-            field = cls._FIELD_LABELS.get(item.field, item.field)
-            operator = cls._OPERATOR_LABELS.get(item.operator, item.operator)
+            field = message(cls._FIELD_LABELS[item.field]) if item.field in cls._FIELD_LABELS else item.field
+            operator = message(cls._OPERATOR_LABELS[item.operator]) if item.operator in cls._OPERATOR_LABELS else item.operator
             rendered.append(
-                f"{field}{operator}{'、'.join(str(value) for value in item.values)}"
+                message("report.filter_item",field=field,operator=operator,values=message("common.list_separator").join(str(value) for value in item.values))
             )
         return "；".join(rendered)
 
     @staticmethod
     def _coverage_display(coverage) -> str:
         if coverage.status is ObservedCoverageStatus.EMPTY:
-            return "无返回数据"
+            return message('display.no_data_returned')
         if coverage.status is ObservedCoverageStatus.UNKNOWN:
-            return "未知"
+            return message('display.unknown')
         if coverage.status is ObservedCoverageStatus.NOT_APPLICABLE:
-            return "不适用"
+            return message('display.not_applicable')
         assert coverage.start_date is not None and coverage.end_date is not None
-        state = "完整" if coverage.status is ObservedCoverageStatus.FULL else "部分"
+        state = message('display.complete') if coverage.status is ObservedCoverageStatus.FULL else message('display.partial')
         return (
-            f"{coverage.start_date.year}年{coverage.start_date.month}月–"
-            f"{coverage.end_date.year}年{coverage.end_date.month}月（{state}）"
+            message('display.p_p_p_p_p', p0=coverage.start_date.year, p1=coverage.start_date.month, p2=coverage.end_date.year, p3=coverage.end_date.month, p4=state)
         )
 
     @staticmethod
@@ -258,21 +262,21 @@ class ProfessionalReportPresenter:
         return PresentedMetricDefinition(
             canonical_measure=definition.canonical_measure,
             canonical_source=definition.semantic_source,
-            display_name=definition.display_name,
+            display_name=display_resource(definition.display_name),
             aggregation_display={
-                "semantic_measure": "Power BI 度量值",
-            }.get(definition.aggregation, "模型定义指标"),
+                "semantic_measure": message('display.power_bi_measure'),
+            }.get(definition.aggregation, message('display.model_defined_measure')),
             unit_display={
-                "currency": "金额",
-                "count": "数量",
-            }.get(definition.unit, "数值"),
+                "currency": message('display.amount'),
+                "count": message('display.count'),
+            }.get(definition.unit, message('display.value')),
             tax_basis_display=(
-                "未声明"
+                message('display.not_declared')
                 if definition.tax_basis.status is MetricDefinitionStatus.UNKNOWN
                 else str(definition.tax_basis.value)
             ),
             comparison_basis_display=(
-                "未设置"
+                message('display.not_set')
                 if definition.comparison_basis.status
                 is MetricDefinitionStatus.UNKNOWN
                 else str(definition.comparison_basis.value)
@@ -282,8 +286,8 @@ class ProfessionalReportPresenter:
     @staticmethod
     def _format_datetime(value: datetime | None) -> str:
         if value is None:
-            return "暂不可获取"
+            return message('display.unavailable')
         if value.tzinfo is None or value.utcoffset() is None:
-            return f"{value.strftime('%Y-%m-%d %H:%M')}（时区未声明）"
+            return message('display.p_timezone_not_declared', p0=value.strftime('%Y-%m-%d %H:%M'))
         local_value = value.astimezone(DEFAULT_REPORT_DISPLAY_TIMEZONE)
-        return local_value.strftime("%Y-%m-%d %H:%M") + " 北京时间"
+        return local_value.strftime("%Y-%m-%d %H:%M") + message('display.beijing_time')

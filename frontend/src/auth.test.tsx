@@ -56,6 +56,8 @@ it('signed in account/settings expose safe fields and perform ZERO resource boot
   fireEvent.click(await screen.findByRole('button', {name: 'Synthetic A'}))
   fireEvent.click(screen.getByRole('menuitem', {name: '设置'}))
   expect(screen.getByRole('dialog')).toBeVisible()
+  expect(screen.getByRole('combobox',{name:'语言'})).toBeVisible()
+  fireEvent.click(screen.getByRole('button',{name:'账户'}))
   expect(screen.getByText('a@example.invalid', {selector:'dd'})).toBeVisible()
   expect(screen.queryByText('数据模型')).not.toBeInTheDocument()
   expect(product).not.toHaveBeenCalled()

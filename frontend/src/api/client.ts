@@ -1,3 +1,4 @@
+import { tr } from '../i18n'
 import { apiBaseUrl } from '../config'
 import type {
   ChatRequest,
@@ -24,6 +25,14 @@ import type {
 import { publicFailureMessage } from '../failure'
 import type { CloudDenialReason } from '../failure'
 import type { CloudCatalog, CloudWorkspaceStatus } from '../cloudTypes'
+
+export function projectPresentation(requestId:string,locale:string,mode:RuntimeMode,cloud:boolean,csrf:string,generation:number,signal?:AbortSignal) {
+  return requestJson<{answer:string;presentation:import('../types').PresentationEnvelope;factual_hash:string}>(
+    `${cloud?'/api/v1/cloud/presentations/':'/api/v1/presentations/'}${encodeURIComponent(requestId)}`,{
+      method:'POST',signal,headers:cloud?{'X-CSRF-Token':csrf}:{},
+      body:JSON.stringify(cloud?{locale,expected_generation:generation}:{locale,runtime_mode:mode}),
+    })
+}
 
 interface ErrorPayload {
   detail?: unknown
@@ -84,7 +93,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     })
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error
-    throw new ApiError('无法连接到 PowerBIAgent 服务，请检查网络后重试。', 0)
+    throw new ApiError(tr('errors:cannotConnectToPowerbiagentCheckYourNetworkAndTry'), 0)
   }
 
   if (!response.ok) {
@@ -195,22 +204,22 @@ export async function logoutAuthSession(csrf: string): Promise<void> {
 
 function friendlyHttpError(status: number, errorType?: string): string {
   if (errorType === 'llm_profile_unknown' || errorType === 'llm_profile_unavailable') {
-    return '当前选择的 AI 模型已失效，请刷新后重新选择。'
+    return tr('errors:theSelectedAiModelIsUnavailableRefreshAndSelect')
   }
   if (errorType === 'conversation_history_requires_sqlite') {
-    return '会话持久化未启用，历史记录暂不可用。'
+    return tr('errors:conversationStorageIsDisabledHistoryIsUnavailable')
   }
   if (errorType === 'semantic_model_discovery_unavailable') {
-    return '暂时无法获取 Power BI 数据模型。'
+    return tr('errors:cannotLoadPowerBiDataModelsRightNow')
   }
-  if (status === 404) return '请求的对话或报表已不存在。'
-  if (status === 409) return '该请求与已有请求冲突，请重新发送。'
-  if (status === 422) return '请求内容不完整，请检查后重试。'
-  if (status === 429) return '请求过于频繁，请稍后再试。'
+  if (status === 404) return tr('errors:thisConversationOrReportNoLongerExists')
+  if (status === 409) return tr('errors:thisRequestConflictsWithAnExistingRequestSendIt')
+  if (status === 422) return tr('errors:theRequestIsIncompleteCheckItAndTryAgain')
+  if (status === 429) return tr('errors:tooManyRequestsTryAgainLater')
   if (status === 502 || status === 503 || status === 504) {
-    return '分析服务暂时不可用，请稍后重试。'
+    return tr('errors:theAnalysisServiceIsUnavailableTryAgainLater')
   }
-  return '处理请求时出现问题，请稍后重试。'
+  return tr('errors:somethingWentWrongWhileProcessingYourRequestTryAgain')
 }
 
 export async function discoverSemanticModels(): Promise<SemanticModelCatalog> {
@@ -460,11 +469,11 @@ export async function readCloudConversation(id: string, signal?: AbortSignal): P
   do {
     const query=queryString({limit:50,cursor})
     const page=await requestJson<ConversationHistoryPage>(`/api/v1/cloud/history/${encodeURIComponent(id)}?${query}`,{signal})
-    if (page.conversation_id!==id) throw new ApiError('历史暂不可用，请重试。',503)
+    if (page.conversation_id!==id) throw new ApiError(tr('errors:historyIsUnavailableTryAgain'),503)
     first ||= page
     items.push(...page.items)
     cursor=page.next_cursor || undefined
-    if (cursor && seen.has(cursor)) throw new ApiError('历史暂不可用，请重试。',503)
+    if (cursor && seen.has(cursor)) throw new ApiError(tr('errors:historyIsUnavailableTryAgain'),503)
     if (cursor) seen.add(cursor)
   } while (cursor)
   return {...first!,items,next_cursor:null}

@@ -118,6 +118,7 @@ from backend.app.query_plan.grounding import (
 from backend.app.query_plan.semantic_catalog import (
     GlossaryCatalogError,
     SemanticCatalogBuilder,
+    compute_schema_fingerprint,
 )
 from backend.app.query_plan.state_transition import (
     StateTransitionService,
@@ -167,6 +168,7 @@ from backend.app.report.resources import (
     ReportRepository,
 )
 from backend.app.presentation.builder import StructuredPresentationBuilder
+from backend.app.presentation.recipe import PresentationRecipe
 from backend.app.presentation.localization import (
     BoundedLLMDisplayTranslator,
     DisplayLocalization,
@@ -2141,6 +2143,11 @@ class LLMTurnService:
             answer_text=answer_text,
             report_data=report_data,
             presentation=presentation,
+            presentation_recipe=(PresentationRecipe(plan=query_plan, result=query_result, facts=verified_facts,
+                schema_fingerprint=compute_schema_fingerprint(schema),
+                availability=data_availability, display_bindings=display_bindings or {},
+                causal_boundary=semantic_frame.analysis_goal.value == "EXPLAIN_CHANGE")
+                if verified_facts is not None and answer_text else None),
             execution_audit={
                 **semantic_audit,
                 "canonical_query_plan": query_plan.model_dump(mode="json"),
@@ -2869,6 +2876,7 @@ class LLMTurnService:
             source_mode=self._source_mode,
             collector=collector,
             report_data=report_response,
+            presentation_recipe=PresentationRecipe(report_spec=report_spec_with_ctx),
             presentation=StructuredPresentationBuilder.build_report(
                 report_response["report_id"]
             ),
@@ -3176,6 +3184,7 @@ class LLMTurnService:
         unsupported_reason: Optional[str] = None,
         execution_audit: Optional[dict[str, Any]] = None,
         presentation: Optional[PresentationEnvelope] = None,
+        presentation_recipe: PresentationRecipe | None = None,
     ) -> dict[str, Any]:
         """构建统一结果字典 — 委托给共享 TurnPipeline"""
         usage: Optional[LLMUsageSummary] = None
@@ -3214,6 +3223,7 @@ class LLMTurnService:
             usage=usage,
             execution_audit=execution_audit,
             presentation=presentation,
+            presentation_recipe=presentation_recipe,
         )
 
     # M1.6.3.2: _build_replay 和 _save_snapshot 已移除 — 统一由 TurnPipeline.execute() 管理

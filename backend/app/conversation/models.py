@@ -70,6 +70,7 @@ class SnapshotReportSummary(BaseModel):
 
 
 class ConversationHistoryItem(BaseModel):
+    presentation_available: bool = False
     request_id: str
     created_at: datetime
     terminal_state: str

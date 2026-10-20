@@ -12,6 +12,7 @@ M1.5 更新：
 """
 
 import uuid
+import hashlib
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -216,6 +217,8 @@ async def list_managed_reports(
 @router.get("/api/reports/{report_id}", response_class=HTMLResponse)
 async def view_report(
     report_id: str,
+    request: Request,
+    locale: str | None = Query(default=None,max_length=32),
     repository: ReportRepository = Depends(get_report_repository),
 ):
     """View one repository-managed static HTML report."""
@@ -225,16 +228,22 @@ async def view_report(
         raise HTTPException(status_code=404, detail="report_not_found") from None
     except ReportStorageError:
         raise HTTPException(status_code=500, detail="report_artifact_invalid") from None
+    from backend.app.api.presentation_routes import local_report_projection
+    projected=await local_report_projection(request,artifact,locale)
+    if projected is not None: html=projected
+    display_hash=hashlib.sha256(html.encode("utf-8")).hexdigest()
     return HTMLResponse(
         content=html,
         media_type="text/html",
-        headers={"ETag": f'"{artifact.content_hash}"'},
+        headers={"ETag": f'"{display_hash}"'},
     )
 
 
 @router.get("/api/reports/{report_id}/download")
 async def download_report(
     report_id: str,
+    request: Request,
+    locale: str | None = Query(default=None,max_length=32),
     repository: ReportRepository = Depends(get_report_repository),
 ):
     """Download one repository-managed UTF-8 HTML artifact."""
@@ -244,6 +253,10 @@ async def download_report(
         raise HTTPException(status_code=404, detail="report_not_found") from None
     except ReportStorageError:
         raise HTTPException(status_code=500, detail="report_artifact_invalid") from None
+    from backend.app.api.presentation_routes import local_report_projection
+    projected=await local_report_projection(request,artifact,locale)
+    if projected is not None: html=projected
+    display_hash=hashlib.sha256(html.encode("utf-8")).hexdigest()
     return Response(
         content=html.encode("utf-8"),
         media_type="text/html",
@@ -251,7 +264,7 @@ async def download_report(
             "Content-Disposition": (
                 f'attachment; filename="{artifact.report_id}.html"'
             ),
-            "ETag": f'"{artifact.content_hash}"',
+            "ETag": f'"{display_hash}"',
         },
     )
 
@@ -937,6 +950,7 @@ async def chat(
         usage_dict = None
 
     return ChatResponse(
+        presentation_available=result.get("presentation_available",False),
         request_id=result.get("request_id", ""),
         conversation_id=result.get("conversation_id", ""),
         terminal_state=result.get("terminal_state", "completed"),

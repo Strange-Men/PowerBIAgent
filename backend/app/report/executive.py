@@ -16,6 +16,11 @@ from string import Template
 from typing import Any, Callable
 
 from backend.app.report.base import ReportRenderer
+from backend.app.report.localization import report_template_resources
+from backend.app.presentation.messages import message,display_resource
+from backend.app.presentation.formatter import PresentationFormatter
+from backend.app.presentation.locale import current_locale
+from babel.numbers import format_decimal
 from backend.app.report.executive_contract import EXECUTIVE_TEMPLATE_CONTRACT
 from backend.app.report.presentation import (
     ProfessionalReportPresenter,
@@ -82,8 +87,8 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             self._panel(
                 "hero_sales_trend",
                 "02",
-                "销售趋势",
-                "SALES TREND",
+                message('report.trend'),
+                message('report.trend_subtitle'),
                 self._line_chart(charts["time_trend"], projection),
                 extra_class="hero-panel",
             )
@@ -114,8 +119,8 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             self._panel(
                 "business_structure",
                 "03",
-                "业务结构分析",
-                "BUSINESS STRUCTURE",
+                message('report.structure'),
+                message('report.structure_subtitle'),
                 '<div class="executive-grid structure-grid">'
                 + "".join(structure_cards)
                 + "</div>",
@@ -129,8 +134,8 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             self._panel(
                 "customer_analysis",
                 "04",
-                "客户分析",
-                "CUSTOMER ANALYSIS",
+                message('report.customers'),
+                message('report.customer_subtitle'),
                 '<div class="executive-grid customer-grid">'
                 + "".join(customer_cards)
                 + "</div>",
@@ -155,7 +160,8 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
 
         template = Template(self._TEMPLATE_PATH.read_text(encoding="utf-8"))
         html = template.substitute(
-            title=self._text(context.report_title),
+            **report_template_resources(),
+            title=self._text(display_resource(context.report_title)),
             analysis_period=self._text(projection.analysis_period_display),
             semantic_model=self._text(projection.model_display_name),
             source_display=self._text(projection.source_display_name),
@@ -181,34 +187,36 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         if context is None:
             raise ValueError("executive_report_reading_context_required")
         return (
-            '<section class="reading-context context-strip" '
-            'data-section="reading_context" aria-labelledby="reading-context-title">'
-            '<div class="context-grid">'
-            '<article class="context-card context-card--filter"><span>当前筛选</span>'
-            f'<strong>{cls._text(projection.filter_display)}</strong>'
-            '<span>实际数据覆盖：'
-            f'{cls._text(projection.observed_coverage_display)}</span>'
-            '<span>模型可观测边界：'
-            f'{cls._text(projection.data_availability_display)}</span></article>'
-            '<article class="context-card context-card--definition">'
-            '<span id="reading-context-title">指标口径</span>'
-            f'<strong>{cls._text(projection.metric_summary)}</strong></article>'
-            '<article class="context-card context-card--exception"><span>经营状态</span>'
-            f'<strong>{cls._text(projection.exception_display)}</strong></article>'
-            '</div></section>'
+            f"""<section class="reading-context context-strip" data-section="reading_context" aria-labelledby="reading-context-title">"""
+            f"""<div class="context-grid">"""
+            f"""<article class="context-card context-card--filter">"""
+            f"""<span>{message('report.filters')}</span>"""
+            f"""<strong>{cls._text(projection.filter_display)}</strong>"""
+            f"""<span>{message('report.coverage')}{cls._text(projection.observed_coverage_display)}</span>"""
+            f"""<span>{message('report.availability')}{cls._text(projection.data_availability_display)}</span>"""
+            f"""</article>"""
+            f"""<article class="context-card context-card--definition">"""
+            f"""<span id="reading-context-title">{message('report.definition')}</span>"""
+            f"""<strong>{cls._text(projection.metric_summary)}</strong>"""
+            f"""</article>"""
+            f"""<article class="context-card context-card--exception">"""
+            f"""<span>{message('report.status')}</span>"""
+            f"""<strong>{cls._text(projection.exception_display)}</strong>"""
+            f"""</article>"""
+            f"""</div>"""
+            f"""</section>"""
         )
 
     @classmethod
     def _metric_definition(cls, definition: Any) -> str:
         return (
-            '<div class="metric-definition">'
-            f'<strong>{cls._text(definition.display_name)}</strong>'
-            f'<code>{cls._text(definition.canonical_source)}</code>'
-            f'<span>{cls._text(definition.aggregation_display)} · '
-            f'{cls._text(definition.unit_display)}</span>'
-            f'<small>税务口径：{cls._text(definition.tax_basis_display)}</small>'
-            f'<small>比较基准：{cls._text(definition.comparison_basis_display)}</small>'
-            "</div>"
+            f"""<div class="metric-definition">"""
+            f"""<strong>{cls._text(definition.display_name)}</strong>"""
+            f"""<code>{cls._text(definition.canonical_source)}</code>"""
+            f"""<span>{cls._text(definition.aggregation_display)} · {cls._text(definition.unit_display)}</span>"""
+            f"""<small>{message('report.tax')}{cls._text(definition.tax_basis_display)}</small>"""
+            f"""<small>{message('report.benchmark')}{cls._text(definition.comparison_basis_display)}</small>"""
+            f"""</div>"""
         )
 
     @classmethod
@@ -223,7 +231,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         return cls._panel(
             "kpi_summary",
             "01",
-            "关键指标概览",
+            message('report.kpi_overview'),
             "EXECUTIVE SUMMARY",
             f'<div class="kpi-grid">{cards}</div>',
         )
@@ -242,7 +250,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             f'data-kpi-tone="{slot.tone}">'
             '<span class="kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24" '
             f'focusable="false">{icon}</svg></span><div class="kpi-copy">'
-            f'<span class="kpi-label">{cls._text(kpi.name)}</span>'
+            f'<span class="kpi-label">{cls._text(display_resource(kpi.name))}</span>'
             f'<strong class="kpi-value">{cls._number(kpi.value, decimals)}</strong>'
             f'<small>{cls._text(projection.metric_unit(kpi.field))}</small></div></article>'
         )
@@ -263,7 +271,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             f'<section class="{css}" data-section="{cls._text(section)}">'
             '<div class="panel-heading">'
             f'<span class="section-number">{cls._text(number)}</span>'
-            f'<div><h2>{cls._text(title)}</h2><p>{cls._text(subtitle)}</p></div>'
+            f'<div><h2>{cls._text(display_resource(title))}</h2><p>{cls._text(display_resource(subtitle))}</p></div>'
             f"</div>{body}</section>"
         )
 
@@ -276,7 +284,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
     ) -> str:
         return (
             f'<article class="visual-card" data-business-role="{cls._text(chart.business_role)}">'
-            f'<div class="visual-card-heading"><h3>{cls._text(chart.title)}</h3>'
+            f'<div class="visual-card-heading"><h3>{cls._text(display_resource(chart.title))}</h3>'
             f'<span>{cls._text(projection.metric_label(chart.y_field))} · '
             f'{cls._text(projection.metric_unit(chart.y_field))}</span></div>'
             f'{builder(chart)}</article>'
@@ -347,7 +355,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
             '<div class="executive-line-chart chart-frame">'
             f"{legend}<svg viewBox=\"0 0 {width} {height}\" "
             'preserveAspectRatio="xMidYMid meet" role="img" '
-            f'aria-label="{cls._text(chart.title)}，{len(points)} 个已验证数据点">'
+            f'aria-label="{message("report.points",title=cls._text(display_resource(chart.title)),count=len(points))}">'
             '<g class="trend-grid">' + "".join(grid) + "</g>"
             f'<polygon class="trend-area" points="{area}"/>'
             f'<polyline class="trend-line" points="{polyline}"/>{circles}{ticks}'
@@ -441,18 +449,16 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
                 )
             offset += percent
         legend_note = (
-            f'<p class="legend-note">还有 {len(points) - legend_limit} 项未在图例展开</p>'
+            f'<p class="legend-note">{message("report.legend_more",count=len(points)-legend_limit)}</p>'
             if len(points) > legend_limit
             else ""
         )
         return (
             '<div class="executive-donut chart-frame"><svg viewBox="0 0 200 200" '
-            f'role="img" aria-label="{cls._text(chart.title)}">'
+            f'role="img" aria-label="{cls._text(display_resource(chart.title))}">'
             '<circle class="donut-track" cx="100" cy="100" r="70"></circle>'
             + "".join(segments)
-            + f'<text x="100" y="95" text-anchor="middle">{cls._number(total, 0)}</text>'
-            '<text class="donut-caption" x="100" y="116" text-anchor="middle">总销售额</text>'
-            '</svg><ul class="executive-legend">'
+            + f"""<text x="100" y="95" text-anchor="middle">{cls._number(total, 0)}</text><text class="donut-caption" x="100" y="116" text-anchor="middle">{message('report.total_sales')}</text></svg><ul class="executive-legend">"""
             + "".join(legend)
             + f"</ul>{legend_note}</div>"
         )
@@ -481,7 +487,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
 
     @classmethod
     def _ranking_table(cls, table: TableSpec) -> str:
-        headers = "".join(f'<th scope="col">{cls._text(item)}</th>' for item in table.columns)
+        headers = "".join(f'<th scope="col">{cls._text(display_resource(item))}</th>' for item in table.columns)
         rows = "".join(
             "<tr>"
             + f'<td class="rank-cell">{cls._number(row[0], 0)}</td>'
@@ -492,7 +498,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         )
         return (
             '<article class="visual-card detail-card" data-business-role="top_customers">'
-            f'<div class="visual-card-heading"><h3>{cls._text(table.title)}</h3>'
+            f'<div class="visual-card-heading"><h3>{cls._text(display_resource(table.title))}</h3>'
             '<span>VERIFIED RANKING</span></div><div class="table-wrap"><table>'
             f"<thead><tr>{headers}</tr></thead><tbody>{rows}</tbody></table></div></article>"
         )
@@ -507,22 +513,19 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
         if context is None:
             raise ValueError("executive_report_reading_context_required")
         items = (
-            ("模型标识", projection.canonical_model_identity),
-            ("来源类型", projection.canonical_source_kind.value),
-            ("运行模式", projection.canonical_source_mode),
-            ("查询取得时间", projection.canonical_queried_at),
-            ("快照时间", projection.canonical_snapshot_at),
-            ("生成时间", projection.canonical_generated_at),
+            (message('report.model_id'), projection.canonical_model_identity),
+            (message('report.source_type'), projection.canonical_source_kind.value),
+            (message('report.mode'), projection.canonical_source_mode),
+            (message('report.queried_at'), projection.canonical_queried_at),
+            (message('report.snapshot_at'), projection.canonical_snapshot_at),
+            (message('report.generated_at'), projection.canonical_generated_at),
         )
         body = "".join(
             f'<div><span>{cls._text(label)}</span><strong>{cls._text(value)}</strong></div>'
             for label, value in items
         )
         return (
-            '<footer class="audit-footer" data-section="audit_footer" '
-            f'aria-label="报表审计信息">{body}'
-            '<div class="audit-definitions"><span>指标定义</span>'
-            '<div class="metric-definition-list">'
+            f"""<footer class="audit-footer" data-section="audit_footer" aria-label="{message('report.audit')}">{body}<div class="audit-definitions"><span>{message('report.definitions')}</span><div class="metric-definition-list">"""
             + "".join(
                 cls._metric_definition(item)
                 for item in projection.metric_definitions
@@ -668,7 +671,7 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
 
     @classmethod
     def _number(cls, value: Any, decimals: int) -> str:
-        return escape(format(cls._decimal(value), f",.{decimals}f"), quote=True)
+        return escape(format_decimal(cls._decimal(value),format="#,##0"+("."+"0"*decimals if decimals else ""),locale=PresentationFormatter(locale=current_locale()).babel_locale),quote=True)
 
     @classmethod
     def _axis_number(cls, value: Decimal) -> str:

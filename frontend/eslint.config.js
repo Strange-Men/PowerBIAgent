@@ -9,6 +9,10 @@ export default [
   { ignores: ['dist', 'node_modules'] },
   eslint.configs.recommended,
   {
+    files: ['scripts/*.cjs'],
+    languageOptions: { globals: globals.node },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
       ecmaVersion: 2023,

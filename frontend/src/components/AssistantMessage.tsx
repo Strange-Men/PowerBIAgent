@@ -2,12 +2,19 @@ import { AlertCircle, CircleHelp, Info } from 'lucide-react'
 import type { AssistantMessage as AssistantMessageModel } from '../types'
 import { ReportAttachment } from './ReportAttachment'
 import { StructuredBlocks } from './StructuredBlocks'
+import { usePresentation, type ProjectionContext } from '../hooks/usePresentation'
+import { tr, publicText } from '../i18n'
 
 interface AssistantMessageProps {
   message: AssistantMessageModel
+  projectionContext?: ProjectionContext
 }
 
-export function AssistantMessage({ message }: AssistantMessageProps) {
+export function AssistantMessage({ message, projectionContext }: AssistantMessageProps) {
+  const projection=usePresentation(message,projectionContext)
+  const displayed=projection.value ? {...message,content:projection.value.answer,presentation:projection.value.presentation} : message
+  const waiting=projection.pending
+  const unavailable=projection.failed || (message.restored && !message.presentationAvailable && projection.locale==='en-US')
   const StatusIcon =
     message.kind === 'error'
       ? AlertCircle
@@ -34,14 +41,14 @@ export function AssistantMessage({ message }: AssistantMessageProps) {
         </div>
       ) : null}
       <div className="assistant-content">
-        {message.presentation ? (
+        {waiting ? <p role="status">{tr('resources:loading')}</p> : unavailable ? <p>{tr('chat:projectionUnavailable')}</p> : displayed.presentation ? (
           <StructuredBlocks
-            presentation={message.presentation}
-            fallbackText={message.content}
+            presentation={displayed.presentation}
+            fallbackText={displayed.content}
             report={message.report}
           />
         ) : (
-          <p>{message.content}</p>
+          <p>{publicText(displayed.content)}</p>
         )}
         {message.report && !message.presentation ? (
           <ReportAttachment report={message.report} />

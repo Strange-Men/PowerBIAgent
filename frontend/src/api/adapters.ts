@@ -1,3 +1,4 @@
+import { tr } from '../i18n'
 import type {
   AssistantMessage,
   ChatResponse,
@@ -6,8 +7,8 @@ import type {
 } from '../types'
 import { publicFailureMessage } from '../failure'
 
-const EMPTY_TEXT = '暂无符合条件的数据。你可以调整问题或筛选条件后再试。'
-const ERROR_TEXT = '当前请求无法完成，请检查问题或稍后重试。'
+const emptyText = () => tr('errors:noMatchingDataTryChangingYourQuestionOrFilters')
+const errorText = () => tr('errors:thisRequestCouldNotBeCompletedCheckYourQuestion')
 
 function friendlyBusinessError(response: ChatResponse): string {
   if (response.failure) return publicFailureMessage(response.failure)
@@ -16,24 +17,24 @@ function friendlyBusinessError(response: ChatResponse): string {
     errorType === 'stale_instance' ||
     errorType === 'DESKTOP_STALE_INSTANCE'
   ) {
-    return '当前选择的数据模型已关闭或失效，请刷新模型列表后重新选择。'
+    return tr('errors:theSelectedDataModelIsNoLongerAvailableRefresh')
   }
   if (errorType === 'deepseek_connection_failed' || errorType === 'LLMConnectionError') {
-    return 'AI 分析服务暂不可用，请稍后重试。'
+    return tr('errors:theAiAnalysisServiceIsUnavailableTryAgainLater')
   }
   if (
     response.powerbi_mode === 'local_mcp' &&
     errorType === 'connection_error'
   ) {
-    return 'Power BI Desktop 连接已中断，请确认 Desktop 和数据模型仍处于打开状态。'
+    return tr('errors:thePowerBiDesktopConnectionWasLostCheckThat')
   }
   if (errorType === 'ToolPolicyDeniedError') {
-    return '当前选择的数据模型不可用，请重新选择已连接模型。'
+    return tr('errors:theSelectedDataModelIsUnavailableSelectAConnected')
   }
   if (errorType === 'SemanticInterpretationError') {
-    return '当前数据模型无法支持这个问题，请调整问法或选择其他模型。'
+    return tr('errors:thisModelCannotSupportThisQuestionRephraseItOr')
   }
-  return ERROR_TEXT
+  return errorText()
 }
 
 function contentForResponse(response: ChatResponse): {
@@ -61,9 +62,9 @@ function contentForResponse(response: ChatResponse): {
     return { kind: 'answer', content: response.answer.trim() }
   }
   if (response.report) {
-    return { kind: 'answer', content: '报表已生成，可以查看或下载 HTML 文件。' }
+    return { kind: 'answer', content: tr('errors:yourReportIsReadyViewItOrDownloadThe') }
   }
-  return { kind: 'empty', content: EMPTY_TEXT }
+  return { kind: 'empty', content: emptyText() }
 }
 
 export function chatResponseToMessage(response: ChatResponse): AssistantMessage {
@@ -71,6 +72,7 @@ export function chatResponseToMessage(response: ChatResponse): AssistantMessage 
   return {
     id: response.request_id,
     role: 'assistant',
+    presentationAvailable:response.presentation_available,
     ...content,
     ...(isPresentableReport(response.report) ? { report: response.report } : {}),
     ...(response.presentation ? { presentation: response.presentation } : {}),
@@ -79,6 +81,7 @@ export function chatResponseToMessage(response: ChatResponse): AssistantMessage 
 
 export function historyItemToMessage(item: ConversationHistoryItem): AssistantMessage {
   const response: ChatResponse = {
+    presentation_available:item.presentation_available,
     request_id: item.request_id,
     conversation_id: '',
     terminal_state: item.terminal_state,
@@ -132,6 +135,6 @@ export function isPresentableReport(
 
 export function conversationTitle(value: string | null | undefined): string {
   const normalized = value?.replace(/^用户提问:\s*/, '').trim()
-  if (!normalized) return '未命名对话'
+  if (!normalized) return tr('errors:untitledConversation')
   return normalized.length > 22 ? `${normalized.slice(0, 22)}…` : normalized
 }

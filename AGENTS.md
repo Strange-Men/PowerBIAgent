@@ -6,10 +6,10 @@
 
 ## 当前开发入口
 
-当前版本：**M6.5**（Cloud Real Business Data Validation发布候选）；生效须自身CI/Audit/clean/shutdown。
-M6.4.1为本次稳定基线；M5 FINAL/FROZEN、M6.0–M6.4既有验收保持。
+当前版本：**M6.5.1**（Chinese / English Localization Platform）；M6.5.1 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）。
+M6.5 POST-FINAL 文档收口已独立 CI/Audit/clean/shutdown；M5 FINAL/FROZEN、M6.0–M6.4既有验收保持。
 完整公开数据Cloud八Shape、Oracle、多轮、两KPI模板及资源/安全邻接已验证；详情以07/09为准。
-关系cardinality gap与Test B deferred保留；后续M6.5.1/M6.5.2/M6.6仅路线，不自动实施。
+关系cardinality gap与Test B deferred保留；本轮 M6.5.1 已独立授权；M6.5.2/M6.5.3/M6.6 仅路线，不自动实施。
 07当前状态，08路线，09唯一交接；不重复保存浮动SHA或继承旧CI。下一implementation仍须独立scope。
 
 ## Authority boundary
@@ -105,4 +105,4 @@ failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner 
 
 生产级后端风险优先于功能数量；每个M6 implementation按09重新验证Microsoft官方能力与适用P0边界。ADR-020接受Cloud消费/目录设计，ADR-006已SUPERSEDED。Token只允许Auth/Transport；tenant/principal/ownership与RLS/OLS必须先证明。
 
-*最后更新：2026-10-15 | M6.4 FINAL COMPLETE；M6.4.1 维护发布按自身 CI/Audit/clean 生效；M5 FINAL/FROZEN；当前状态以07/08/09为准*
+*最后更新：2026-10-20 | M6.5 FINAL COMPLETE；M6.5.1 FINAL COMPLETE 按自身 CI/Audit/clean/shutdown 生效；M5 FINAL/FROZEN；当前状态以07/08/09为准*

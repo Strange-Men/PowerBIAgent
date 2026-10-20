@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [M6.5.1] — 2026-10-21（Chinese / English Localization Platform FINAL COMPLETE）
+
+扩展既有 DisplayLocalization 与 Renderer 为 zh-CN/en-US 展示平台；i18next bundled resources、Babel 格式化、typed immutable presentation recipe 与完整性门禁。语言位于“设置 → 常规 → 语言”，不进入事实链、Memory 或授权。SCALAR/GROUPED/单 KPI Report 最小 Cloud Real 已证明切换 ZERO IQ/ExecuteQuery，事实与 ReportSpec 不变。Settings.version=M6.5.1；发布以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效。M5 Frozen Core、12-row/N+1/8-column、relationship gap 与 Test B deferred → M6.6 保留。后续 M6.5.2 Web/SSO、M6.5.3 VM Internal Pilot、M6.6 Enterprise Production Readiness Seal 均不在本轮实施。
+
 ## [M6.5] — 2026-10-20（公开真实业务数据云端验收）
 
 完整Online Retail II单表Sales与独立Raw/Canonical Oracle对账，八QueryShape、五轮追问、两现有KPI模板、资源生命周期、Test A RLS/owner/IDOR及late-stale/policy-revoke经Fabric IQ Cloud Real验证。仅实现explicit literal定向精确成员证明、typed numeric string→Decimal、verified Decimal与proven YEAR结果/展示及语言span的generic correctness兼容；12-row/Facts/Plan/DAX/模板authority不变。

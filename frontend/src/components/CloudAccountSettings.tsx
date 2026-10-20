@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { tr, publicText } from '../i18n'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, readCloudCatalog, readCloudStatus } from '../api/client'
 import type { AccountActions } from '../types'
 import { cloudDenialMessage, publicFailureMessage } from '../failure'
+import { GeneralSettings } from './GeneralSettings'
 
-export function CloudAccountSettings({account}: {account: AccountActions}) {
-  const [tab, setTab] = useState<'account' | 'data'>('account')
+export function CloudAccountSettings({account,panel}: {account: AccountActions;panel?:'account'|'data'}) {
+  useTranslation()
+  const [tab, setTab] = useState<'general' | 'account' | 'data'>('general')
+  const active=panel||tab
+  const refresh=account.refresh
   const [info, setInfo] = useState<{count:number;partial:boolean;selected:string | null} | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -12,8 +18,7 @@ export function CloudAccountSettings({account}: {account: AccountActions}) {
   const abort = useRef<AbortController | null>(null)
   useEffect(() => () => { epoch.current += 1; abort.current?.abort() }, [])
 
-  const load = async () => {
-    setTab('data'); setLoading(true); setError(null); setInfo(null)
+  const fetchData = useCallback(async () => {
     const current = ++epoch.current
     abort.current?.abort()
     const controller = new AbortController()
@@ -31,36 +36,45 @@ export function CloudAccountSettings({account}: {account: AccountActions}) {
       if (current === epoch.current) {
         setError(caught instanceof ApiError && caught.denialReason ? cloudDenialMessage(caught.denialReason)
           : caught instanceof ApiError && caught.failure ? publicFailureMessage(caught.failure)
-          : '暂时无法加载目录，请重试。')
-        if (caught instanceof ApiError && caught.status===401) account.refresh?.()
+          : tr('auth:cannotLoadTheCatalogTryAgain'))
+        if (caught instanceof ApiError && caught.status===401) refresh?.()
       }
     } finally {
       if (current === epoch.current) setLoading(false)
     }
+  },[refresh])
+  const load=()=>{
+    setTab('data');setLoading(true);setError(null);setInfo(null)
+    void fetchData()
   }
 
-  const accountTab = () => {
-    epoch.current += 1; abort.current?.abort(); setLoading(false); setTab('account')
+  const selectTab = (next:'general'|'account') => {
+    epoch.current += 1; abort.current?.abort(); setLoading(false); setTab(next)
   }
-  return <div className="settings-layout">
-    <nav className="settings-nav" aria-label="设置分类">
-      <button type="button" className={tab === 'account' ? 'is-active' : ''} onClick={accountTab}>账户</button>
-      <button type="button" className={tab === 'data' ? 'is-active' : ''} onClick={() => void load()}>数据与模型</button>
-    </nav>
-    <div className="settings-content"><section className="settings-intro account-settings">
-      {tab === 'account' ? <><h3>账户</h3><dl className="account-details">
-        <dt>姓名</dt><dd>{account.session.display_name}</dd>
-        <dt>用户名</dt><dd>{account.session.preferred_username || '未提供'}</dd>
-        <dt>登录状态</dt><dd>{account.session.authenticated ? '已登录' : '未登录'}</dd>
-      </dl><button type="button" onClick={() => void account.logout()}>退出</button></>
-        : <><h3>数据与模型</h3>
-          {loading ? <p role="status">正在加载云端数据模型…</p> : null}
-          {error ? <p role="alert">{error}</p> : null}
-          {info ? <><p>当前账号可访问 {info.count} 个已验证模型。</p>
-            {info.partial ? <p>部分模型可能未包含在目录中。</p> : null}
-            <p>{info.selected || '尚未选择模型，请在对话输入区显式选择。'}</p></> : null}
-          <button type="button" disabled={loading} onClick={() => void load()}>刷新目录</button>
+  const content=active==='general' ? <GeneralSettings /> : <section className="settings-intro account-settings">
+      {active === 'account' ? <><h3>{tr('auth:account')}</h3><dl className="account-details">
+        <dt>{tr('auth:name')}</dt><dd>{account.session.display_name}</dd>
+        <dt>{tr('auth:username')}</dt><dd>{account.session.preferred_username || tr('auth:notProvided')}</dd>
+        <dt>{tr('auth:signinStatus')}</dt><dd>{account.session.authenticated ? tr('auth:signedIn') : tr('auth:signedOut')}</dd>
+      </dl><button type="button" onClick={() => void account.logout()}>{tr('auth:signOut')}</button></>
+        : <><h3>{tr('auth:dataAndModels')}</h3>
+          {loading ? <p role="status">{tr('auth:loadingCloudDataModels')}</p> : null}
+          {error ? <p role="alert">{publicText(error)}</p> : null}
+          {info ? <><p>{tr('resources:verifiedModelCount', {count:info.count})}</p>
+            {info.partial ? <p>{tr('auth:someModelsMayNotBeIncludedInThisCatalog')}</p> : null}
+            <p>{info.selected || tr('auth:noModelSelectedChooseAModelInTheComposer')}</p></> : null}
+          <button type="button" disabled={loading} onClick={() => void load()}>{tr('auth:refreshCatalog')}</button>
         </>}
-    </section></div>
+    </section>
+  if(panel)return content
+  return <div className="settings-layout">
+    <nav className="settings-nav" aria-label={tr('auth:settingsCategories')}>
+      <button type="button" className={tab==='general'?'is-active':''} onClick={()=>selectTab('general')}>{tr('resources:general')}</button>
+      {account.session.authenticated ? <>
+        <button type="button" className={tab==='account'?'is-active':''} onClick={()=>selectTab('account')}>{tr('auth:account')}</button>
+        <button type="button" className={tab==='data'?'is-active':''} onClick={()=>void load()}>{tr('auth:dataAndModels')}</button>
+      </> : null}
+    </nav>
+    <div className="settings-content">{content}</div>
   </div>
 }

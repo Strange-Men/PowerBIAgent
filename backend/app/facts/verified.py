@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 import hashlib
 import json
 import re
@@ -479,7 +480,13 @@ class VerifiedFactSetBuilder:
 
 
 class FactBoundedAnswerBuilder:
-    def build(
+    def build(self, plan, result, facts, **kwargs):
+        from backend.app.presentation.locale import presentation_locale
+        with presentation_locale(kwargs.get("locale", "zh-CN")) as selected:
+            kwargs["locale"]=selected.value
+            return self._build(plan, result, facts, **kwargs)
+
+    def _build(
         self,
         plan: CanonicalQueryPlan,
         result: QueryResult,
@@ -495,6 +502,7 @@ class FactBoundedAnswerBuilder:
     ) -> AnswerSpec:
         # Local import avoids making the factual authority module depend on the
         # presentation package during module initialization.
+        from backend.app.presentation.messages import message
         from backend.app.presentation.formatter import (
             PresentationFormatter,
         )
@@ -513,7 +521,17 @@ class FactBoundedAnswerBuilder:
         parts: list[str] = []
         metrics: dict[str, Any] = {}
         metric_provenance: dict[str, dict[str, str]] = {}
-        filter_labels = user_facing_filter_values or {}
+        # Display hints can outlive a member removed by the final transition,
+        # or name a whole requested set. They cannot expand final filter scope.
+        final_filter_keys = {
+            (item.field, str(value))
+            for item in plan.filters
+            for value in (item.value if isinstance(item.value, (list, tuple)) else [item.value])
+        }
+        filter_labels = {
+            key: label for key, label in (user_facing_filter_values or {}).items()
+            if key in final_filter_keys
+        }
         member_labels = user_facing_member_values or {}
         measure_labels = user_facing_measure_labels or {}
         for canonical, label in measure_labels.items():
@@ -551,14 +569,13 @@ class FactBoundedAnswerBuilder:
                         plan.measures[0], plan.measures[0], bindings
                     )
                     if plan.measures
-                    else "相关"
+                    else message('display.relevant')
                 )
                 parts.append(
-                    f"你查询的{self._render_time_range(plan.time_range, formatter)}"
-                    f"未返回{measure_label}数据，因此目前无法分析该期间。"
+                    message('display.no_p_data_was_returned_for_p', p0=self._render_time_range(plan.time_range, formatter), p1=measure_label)
                 )
             else:
-                parts.append("当前查询范围未返回数据。")
+                parts.append(message('display.no_data_was_returned_for_the_requested'))
         elif plan.top_n is not None:
             ranking = facts.by_type(FactType.RANKING)[0]
             used.append(ranking)
@@ -582,16 +599,14 @@ class FactBoundedAnswerBuilder:
                 for item in ranking.values
             ]
             joined = self._join_items(names)
-            direction = "最高" if plan.sort == "desc" else "最低"
+            direction = message('display.highest') if plan.sort == "desc" else message('display.lowest')
             parts.append(
-                f"{natural_prefix}{measure_label}{direction}的项目依次是{joined}；"
-                f"其中{dimension_text}{direction}，为"
-                f"{self._format_value(first['value'], measure_field, formatter, bindings)}。"
+                message('display.p_the_items_with_the_p_p', p0=natural_prefix, p1=measure_label, p2=direction, p3=joined, p4=dimension_text, p5=direction, p6=self._format_value(first['value'], measure_field, formatter, bindings))
             )
         elif plan.dimensions and not plan.measures:
             entities = facts.by_type(FactType.ENTITY_VALUE)
             used.extend(entities)
-            parts.append(f"共返回{result.row_count}项，完整列表见表格。")
+            parts.append(message('display.returned_p_items_see_the_table_for', p0=result.row_count))
         elif plan.dimensions:
             grouped = facts.by_type(FactType.GROUPED_METRIC)
             primary = [
@@ -609,9 +624,7 @@ class FactBoundedAnswerBuilder:
                 )
                 measure_field = item.source_fields[-1]
                 parts.append(
-                    f"{natural_prefix}{dimension_text}的"
-                    f"{self._field_label(item.measure or measure_field, measure_field, bindings)}"
-                    f"为{self._format_value(item.value, measure_field, formatter, bindings)}。"
+                    message('display.p_p_for_p_is_p', p0=natural_prefix, p1=dimension_text, p2=self._field_label(item.measure or measure_field, measure_field, bindings), p3=self._format_value(item.value, measure_field, formatter, bindings))
                 )
             elif self._is_time_grouped(plan, primary, bindings):
                 parts.append(
@@ -637,12 +650,10 @@ class FactBoundedAnswerBuilder:
                     used.append(maximum)
                     measure_field = maximum.source_fields[-1]
                     parts.append(
-                        f"{self._dimension_text(maximum.dimensions, maximum.source_fields, formatter, bindings, member_labels=member_labels)}"
-                        f"的{self._field_label(maximum.measure or measure_field, measure_field, bindings)}最高，"
-                        f"为{self._format_value(maximum.value, measure_field, formatter, bindings)}。"
+                        message('display.p_has_the_highest_p_at_p', p0=self._dimension_text(maximum.dimensions, maximum.source_fields, formatter, bindings, member_labels=member_labels), p1=self._field_label(maximum.measure or measure_field, measure_field, bindings), p2=self._format_value(maximum.value, measure_field, formatter, bindings))
                     )
                 else:
-                    parts.append(f"共返回{result.row_count}项，完整明细见表格。")
+                    parts.append(message('display.returned_p_items_see_the_table_for_c90631', p0=result.row_count))
         else:
             scalar = facts.by_type(FactType.SCALAR_METRIC)
             used.extend(scalar)
@@ -652,10 +663,9 @@ class FactBoundedAnswerBuilder:
                 if horizon_shortfall and plan.time_range is not None:
                     horizon = data_availability.available_data_horizon
                     assert horizon is not None and horizon.latest_period is not None
-                    time_prefix = f"截至{horizon.latest_period.month}月，"
+                    time_prefix = message('display.through_month_p', p0=horizon.latest_period.month)
                 parts.append(
-                    f"{time_prefix}{self._field_label(item.measure or source_field, source_field, bindings)}"
-                    f"为{self._format_value(item.value, source_field, formatter, bindings)}。"
+                    message('display.p_p_is_p', p0=time_prefix, p1=self._field_label(item.measure or source_field, source_field, bindings), p2=self._format_value(item.value, source_field, formatter, bindings))
                 )
                 if self._is_number(item.value):
                     metrics[item.measure or "metric"] = item.value
@@ -684,7 +694,7 @@ class FactBoundedAnswerBuilder:
             ):
                 parts.append(self._coverage_text(coverage, locale))
         if facts.truncated:
-            parts.append("结果已截断，可能不完整。")
+            parts.append(message('display.the_result_is_truncated_and_may_be'))
         unique_used = list({item.fact_id: item for item in used}.values())
         text = "".join(parts)
         return AnswerSpec(
@@ -737,34 +747,38 @@ class FactBoundedAnswerBuilder:
         *,
         user_facing_filter_values: dict[tuple[str, str], str] | None = None,
     ) -> str:
+        from backend.app.presentation.messages import message
         parts: list[str] = []
         labels = user_facing_filter_values or {}
         if plan.time_range is not None:
             parts.append(cls._render_time_range(plan.time_range, formatter))
         for item in plan.filters:
             values = item.value if isinstance(item.value, (list, tuple)) else [item.value]
-            parts.append("、".join(
+            parts.append(message("common.list_separator").join(
                 formatter.format(labels.get((item.field, str(value)), value))
                 for value in values
             ))
-        return "，".join(parts) + ("，" if parts else "")
+        return message("common.scope_separator").join(parts) + (message("common.scope_separator") if parts else "")
 
     @staticmethod
     def _render_time_range(time_range: TimeRangeSpec, formatter: Any) -> str:
+        from backend.app.presentation.messages import message
+        from backend.app.presentation.formatter import PresentationFormatKind as K
         start, end = time_range.start_date, time_range.end_date
         if start.year == end.year and start.month == end.month:
-            return f"{start.year}年{start.month}月"
+            return formatter.format(start,K.MONTH)
         if start.month == 1 and end.month == 12 and start.year == end.year:
-            return f"{start.year}年"
-        return f"{start.year}年{start.month}月至{end.year}年{end.month}月"
+            return message('format.year_part',year=start.year,locale=formatter.locale)
+        return message('format.month_range',start=formatter.format(start,K.MONTH),end=formatter.format(end,K.MONTH),locale=formatter.locale)
 
     @staticmethod
     def _join_items(items: list[str]) -> str:
+        from backend.app.presentation.messages import message
         if len(items) <= 1:
             return "".join(items)
         if len(items) == 2:
-            return f"{items[0]}和{items[1]}"
-        return "、".join(items[:-1]) + f"和{items[-1]}"
+            return message('display.p_and_p', p0=items[0], p1=items[1])
+        return message("common.list_separator").join(items[:-1]) + message('display.and_p', p0=items[-1])
 
     @classmethod
     def _horizon_prefix(
@@ -775,6 +789,8 @@ class FactBoundedAnswerBuilder:
         *,
         measure_label: str | None = None,
     ) -> tuple[str, bool]:
+        from backend.app.presentation.messages import message
+        from backend.app.presentation.formatter import PresentationFormatKind
         if data_availability is None or data_availability.available_data_horizon is None:
             return "", False
         from backend.app.facts.availability import DataHorizonStatus
@@ -792,8 +808,7 @@ class FactBoundedAnswerBuilder:
         if not shortfall:
             return "", False
         return (
-            f"当前模型中可观测到的{measure}数据截至"
-            f"{horizon.latest_period.year}年{horizon.latest_period.month}月；",
+            message('availability.horizon',measure=measure,period=formatter.format(horizon.latest_period, PresentationFormatKind.MONTH)),
             True,
         )
 
@@ -820,25 +835,25 @@ class FactBoundedAnswerBuilder:
         coverage: ObservedDataCoverage,
         locale: str,
     ) -> str:
+        from backend.app.presentation.messages import message
         if coverage.status is ObservedCoverageStatus.EMPTY:
-            return "实际返回数据覆盖：无返回数据。"
+            return message('display.observed_data_coverage_no_rows_returned')
         if coverage.status is ObservedCoverageStatus.UNKNOWN:
-            return "实际返回数据覆盖：未知。"
+            return message('display.observed_data_coverage_unknown')
         if coverage.status is ObservedCoverageStatus.NOT_APPLICABLE:
             return ""
         assert coverage.start_date is not None and coverage.end_date is not None
-        if locale.casefold().startswith("zh"):
+        if locale == "zh-CN":
             rendered = (
-                f"{coverage.start_date.year}年{coverage.start_date.month}月–"
-                f"{coverage.end_date.year}年{coverage.end_date.month}月"
+                message('display.p_p_p_p', p0=coverage.start_date.year, p1=coverage.start_date.month, p2=coverage.end_date.year, p3=coverage.end_date.month)
             )
         else:
             rendered = (
                 f"{coverage.start_date.year:04d}-{coverage.start_date.month:02d}–"
                 f"{coverage.end_date.year:04d}-{coverage.end_date.month:02d}"
             )
-        state = "完整" if coverage.status is ObservedCoverageStatus.FULL else "部分"
-        return f"实际返回数据覆盖：{rendered}（{state}）。"
+        state = message('display.complete') if coverage.status is ObservedCoverageStatus.FULL else message('display.partial')
+        return message('display.observed_data_coverage_p_p', p0=rendered, p1=state)
 
     @staticmethod
     def _field_label(
@@ -859,6 +874,7 @@ class FactBoundedAnswerBuilder:
         *,
         member_labels: dict[tuple[str, str], str] | None = None,
     ) -> str:
+        from backend.app.presentation.messages import message
         rendered: list[str] = []
         for index, (canonical_name, value) in enumerate(dimensions.items()):
             source_field = source_fields[index]
@@ -870,8 +886,8 @@ class FactBoundedAnswerBuilder:
                 display_value = formatter.format_dimension(value) if kind is None else (
                     formatter.format_dimension(value, kind)
                 )
-            rendered.append(f"{label}{display_value}")
-        return "，".join(rendered)
+            rendered.append(message("display.dimension_value",label=label,value=display_value))
+        return message("common.scope_separator").join(rendered)
 
     @staticmethod
     def _format_value(
@@ -910,6 +926,7 @@ class FactBoundedAnswerBuilder:
         formatter: Any,
         bindings: dict[str, Any],
     ) -> str:
+        from backend.app.presentation.messages import message
         maximum = next(
             (
                 item
@@ -919,7 +936,7 @@ class FactBoundedAnswerBuilder:
             None,
         )
         if maximum is None or not cls._is_number(maximum.value):
-            return f"该期间共返回{facts.row_count}项，完整明细见表格。"
+            return message('display.returned_p_items_for_this_period_see', p0=facts.row_count)
         used.append(maximum)
         measure_field = maximum.source_fields[-1]
         measure_label = cls._field_label(
@@ -927,16 +944,14 @@ class FactBoundedAnswerBuilder:
         )
         peak_index = maximum.source_rows[0]
         summary = (
-            f"该期间{measure_label}在"
-            f"{cls._dimension_text(maximum.dimensions, maximum.source_fields, formatter, bindings)}"
-            f"达到最高点，为{cls._format_value(maximum.value, measure_field, formatter, bindings)}"
+            message('display.during_this_period_p_reached_its_highest', p0=measure_label, p1=cls._dimension_text(maximum.dimensions, maximum.source_fields, formatter, bindings), p2=cls._format_value(maximum.value, measure_field, formatter, bindings))
         )
         after_peak = grouped[peak_index + 1 :]
         if after_peak and any(
             cls._is_number(item.value) and item.value < maximum.value
             for item in after_peak
         ):
-            summary += "，随后回落"
+            summary += message('display.then_declined')
         if (
             len(grouped) >= 2
             and cls._is_number(grouped[-1].value)
@@ -945,11 +960,9 @@ class FactBoundedAnswerBuilder:
         ):
             used.extend([grouped[-2], grouped[-1]])
             summary += (
-                "，并在"
-                f"{cls._dimension_text(grouped[-1].dimensions, grouped[-1].source_fields, formatter, bindings)}"
-                "出现回升"
+                message('display.with_a_recovery_at_p', p0=cls._dimension_text(grouped[-1].dimensions, grouped[-1].source_fields, formatter, bindings))
             )
-        return summary + "。"
+        return summary + message("common.sentence_end")
 
     @staticmethod
     def _is_number(value: Any) -> bool:
@@ -1018,12 +1031,17 @@ class FactOutputValidator:
     _NUMBER = re.compile(
         r"(?<![A-Za-z0-9_.])-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?"
     )
-    _CAUSAL = ("因为", "导致", "原因", "归因于", "由于")
-    _TREND = ("上升", "下降", "增长", "减少", "趋势")
-    _COMPARISON = ("同比", "环比", "百分点", "较上期", "比去年", "比上月")
-    _AVAILABILITY = ("可观测到", "数据截至", "更新到", "更新至")
+    _CAUSAL = ("因为", "导致", "原因", "归因于", "由于", "because", "caused by", "due to", "cause of")
+    _TREND = ("上升", "下降", "增长", "减少", "趋势", "increased", "decreased", "declined", "recovery", "trend")
+    _COMPARISON = ("同比", "环比", "百分点", "较上期", "比去年", "比上月", "year over year", "month over month", "percentage points", "yoy", "mom")
+    _AVAILABILITY = ("可观测到", "数据截至", "更新到", "更新至", "observable", "refreshed through", "updated through")
 
-    def validate_answer(
+    def validate_answer(self, answer, facts, *, locale="zh-CN"):
+        from backend.app.presentation.locale import presentation_locale
+        with presentation_locale(locale):
+            return self._validate_answer(answer, facts)
+
+    def _validate_answer(
         self, answer: AnswerSpec, facts: VerifiedFactSet
     ) -> list[str]:
         errors = self._validate_binding(
@@ -1115,15 +1133,17 @@ class FactOutputValidator:
         row_count: int | None = None,
     ) -> list[str]:
         errors: list[str] = []
+        text = text.casefold()
         claim_text = text
         for fragment in sorted(set(trusted_fragments), key=len, reverse=True):
             if fragment:
-                claim_text = claim_text.replace(fragment, "")
+                claim_text = claim_text.replace(fragment.casefold(), "")
         if any(term in claim_text for term in self._CAUSAL):
             errors.append("unverified_causal_claim")
-        if any(term in text for term in self._COMPARISON):
+        if (any(term in text for term in self._COMPARISON if term not in {"yoy", "mom"})
+                or re.search(r"\b(?:yoy|mom)\b", text)):
             errors.append("unverified_comparison_claim")
-        if any(term in text for term in ("更新到", "更新至")):
+        if any(term in text for term in ("更新到", "更新至", "refreshed through", "updated through")):
             errors.append("unverified_refresh_claim")
         if any(term in text for term in self._TREND) and not any(
             item.provenance.plan_semantics.get("query_shape")
@@ -1133,6 +1153,7 @@ class FactOutputValidator:
             errors.append("unverified_trend_claim")
         ranking_claim = bool(
             "排名" in text
+            or "ranking" in text
             or re.search(r"第\s*\d+\s*位", text)
             or re.search(r"\btop\s*\d*\b", text, re.IGNORECASE)
         )
@@ -1140,7 +1161,7 @@ class FactOutputValidator:
             item.fact_type == FactType.RANKING for item in used
         ):
             errors.append("unverified_ranking_claim")
-        if any(term in text for term in ("最高", "最大")) and not any(
+        if any(term in text for term in ("最高", "最大", "highest", "maximum")) and not any(
             item.fact_type == FactType.MAXIMUM
             or (
                 item.fact_type == FactType.RANKING
@@ -1150,7 +1171,7 @@ class FactOutputValidator:
             for item in used
         ):
             errors.append("unverified_maximum_claim")
-        if any(term in text for term in ("最低", "最小")) and not any(
+        if any(term in text for term in ("最低", "最小", "lowest", "minimum")) and not any(
             item.fact_type == FactType.MINIMUM
             or (
                 item.fact_type == FactType.RANKING
@@ -1169,13 +1190,13 @@ class FactOutputValidator:
             set(contextual_fragments), key=len, reverse=True
         ):
             if fragment:
-                numeric_text = numeric_text.replace(fragment, "")
+                numeric_text = numeric_text.replace(fragment.casefold(), "")
         if row_count is not None:
             count = re.escape(str(row_count))
             numeric_text = re.sub(
                 rf"(?:TopN结果)?共返回\s*{count}\s*项|"
                 rf"该期间共返回\s*{count}\s*项|"
-                rf"结果包含\s*{count}\s*行",
+                rf"结果包含\s*{count}\s*行|returned\s*{count}\s*items|result contains\s*{count}\s*rows",
                 "",
                 numeric_text,
             )
@@ -1196,6 +1217,8 @@ class FactOutputValidator:
         Their numbers are valid only inside the exact deterministic fragment;
         they never enter the business-value allowlist.
         """
+        from backend.app.presentation.messages import message
+        from backend.app.presentation.locale import current_locale
         from backend.app.presentation.query_scope import (
             DeterministicQueryScopeDescriptor,
         )
@@ -1236,7 +1259,7 @@ class FactOutputValidator:
         if user_facing_scope:
             from backend.app.presentation.formatter import PresentationFormatter
 
-            formatter = PresentationFormatter(locale="zh-CN")
+            formatter = PresentationFormatter(locale=current_locale())
             display_filter_values: dict[tuple[str, str], str] = {}
             raw_display_filters = evidence.get("user_facing_filter_values", [])
             if not isinstance(raw_display_filters, list):
@@ -1283,11 +1306,13 @@ class FactOutputValidator:
                         plan.time_range,
                         formatter,
                     )
-                    trusted.append(f"你查询的{rendered_time}未返回")
+                    measure=evidence.get("user_facing_measure")
+                    if isinstance(measure,str) and measure:
+                        trusted.append(message('display.no_p_data_was_returned_for_p',p0=rendered_time,p1=measure))
 
         causal_boundary = evidence.get("causal_analysis_boundary")
         if causal_boundary is not None:
-            expected_boundary = "当前数据可以描述已验证的变化，但不能证明具体原因。"
+            expected_boundary = message("chat.causal_boundary")
             if causal_boundary != "not_proven" or expected_boundary not in answer.answer:
                 errors.append("causal_analysis_boundary_invalid")
             else:
@@ -1321,7 +1346,7 @@ class FactOutputValidator:
                     prefix, _ = FactBoundedAnswerBuilder._horizon_prefix(
                         plan,
                         availability,
-                        PresentationFormatter(locale="zh-CN"),
+                        PresentationFormatter(locale=current_locale()),
                         measure_label=(
                             evidence.get("user_facing_measure")
                             if isinstance(
@@ -1333,7 +1358,7 @@ class FactOutputValidator:
                     if prefix:
                         trusted.append(prefix)
                         if horizon is not None and horizon.latest_period is not None:
-                            trusted.append(f"截至{horizon.latest_period.month}月，")
+                            trusted.append(message('display.through_month_p', p0=horizon.latest_period.month))
             except Exception:
                 errors.append("data_availability_invalid")
         elif any(term in answer.answer for term in self._AVAILABILITY):
@@ -1392,6 +1417,11 @@ class FactOutputValidator:
             fragments.add(str(value))
             parsed = cls._display_date(value)
             if parsed is not None:
+                from backend.app.presentation.formatter import PresentationFormatter,PresentationFormatKind
+                for display_locale in ("zh-CN","en-US"):
+                    formatter=PresentationFormatter(locale=display_locale)
+                    fragments.update({formatter.format(parsed,PresentationFormatKind.DATE),
+                                      formatter.format(parsed,PresentationFormatKind.MONTH)})
                 fragments.update({
                     f"{parsed.year}年{parsed.month}月",
                     f"{parsed.year}年{parsed.month}月{parsed.day}日",

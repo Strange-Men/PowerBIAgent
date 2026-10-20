@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from backend.app.presentation.messages import message
+
 import re
 from datetime import date, datetime
 
@@ -63,7 +65,7 @@ class StructuredPresentationBuilder:
         entities = facts.by_type(FactType.ENTITY_VALUE)
         if (grouped or entities) and dataset.rows:
             blocks.append(
-                TablePresentationBlock(data_reference=result.result_id)
+                TablePresentationBlock(data_reference=result.result_id, title=message("chat.result", locale=locale))
             )
             first = grouped[0] if grouped else None
             if first is not None and len(first.source_fields) >= 2:
@@ -82,9 +84,9 @@ class StructuredPresentationBuilder:
                                 else "bar"
                             ),
                             title=(
-                                cls._chart_title(dataset, x_field, y_field, "趋势")
+                                cls._chart_title(dataset, x_field, y_field, message('display.trend'))
                                 if cls._is_time_series(plan, dataset, x_field, display_bindings)
-                                else cls._chart_title(dataset, x_field, y_field, "对比")
+                                else cls._chart_title(dataset, x_field, y_field, message('display.comparison'))
                             ),
                             x_field=x_field,
                             y_field=y_field,
@@ -96,11 +98,11 @@ class StructuredPresentationBuilder:
         )
 
     @staticmethod
-    def build_report(report_id: str) -> PresentationEnvelope:
+    def build_report(report_id: str, *, locale: str = "zh-CN") -> PresentationEnvelope:
         return PresentationEnvelope(
             blocks=[
                 TextPresentationBlock(
-                    content="报表已生成，可以查看或下载 HTML 文件。"
+                    content=message('display.your_report_is_ready_view_it_or', locale=locale)
                 ),
                 ReportPresentationBlock(report_id=report_id),
             ]
@@ -294,4 +296,4 @@ class StructuredPresentationBuilder:
             item.canonical_field: item.display_name
             for item in dataset.display_fields
         }
-        return f"{labels.get(y_field, y_field)}按{labels.get(x_field, x_field)}{suffix}"
+        return message('display.p_by_p_p', p0=labels.get(y_field, y_field), p1=labels.get(x_field, x_field), p2=suffix)

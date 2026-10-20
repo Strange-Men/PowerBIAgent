@@ -20,7 +20,7 @@ from backend.tests.api.test_cloud_factual_e2e import factual_product
 
 def main():
     configured_root = os.environ.get('PBIAGENT_TEST_ROOT')
-    root = Path(configured_root) / 'M6.4.1/Acceptance' if configured_root else None
+    root = Path(configured_root) / os.environ.get('PBIAGENT_VALIDATION_MILESTONE','M6.5.1') / 'Acceptance' if configured_root else None
     if root is not None:
         root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='synthetic-ui-',dir=root) as folder:

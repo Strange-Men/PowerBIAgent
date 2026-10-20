@@ -143,6 +143,7 @@ export interface PresentationEnvelope {
 }
 
 export interface ChatResponse {
+  presentation_available?: boolean
   request_id: string
   conversation_id: string
   terminal_state: string
@@ -275,6 +276,7 @@ export interface ReportRestoreResult {
 }
 
 export interface ConversationHistoryItem {
+  presentation_available?: boolean
   request_id: string
   created_at: string
   terminal_state: string
@@ -341,6 +343,7 @@ export interface UserMessage {
 }
 
 export interface AssistantMessage {
+  presentationAvailable?: boolean
   id: string
   role: 'assistant'
   kind: AssistantMessageKind
@@ -379,6 +382,9 @@ export interface BatchOperationResult {
 }
 
 export interface CatalogOption {
+  displayName?: string
+  instanceNumber?: number
+  partialDescription?: string
   key: string
   label: string
   description: string

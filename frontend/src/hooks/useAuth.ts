@@ -1,3 +1,4 @@
+import { tr } from '../i18n'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, logoutAuthSession, readAuthSession } from '../api/client'
 import type { AuthSession, AuthState } from '../types'
@@ -50,7 +51,7 @@ export function useAuth() {
     } catch (caught) {
       if (current !== epoch.current) return
       if (!(caught instanceof ApiError) || cloudFailureAction(caught)!=='auth') {
-        setSessionCheckError('暂时无法确认会话，请检查网络后重试。')
+        setSessionCheckError(tr('auth:cannotVerifyYourSessionCheckYourNetworkAndTry'))
         setState(previous=>previous==='SESSION_ESTABLISHING' ? 'AUTH_ERROR' : previous)
         return
       }

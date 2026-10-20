@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { tr, publicText, reportReference } from '../i18n'
 import { Download, ExternalLink, FileText } from 'lucide-react'
 import type { ReportResource } from '../types'
 
@@ -6,32 +8,31 @@ interface ReportAttachmentProps {
 }
 
 export function ReportAttachment({ report }: ReportAttachmentProps) {
+  useTranslation()
   const deleted = report.availability_status === 'deleted'
-  const title = report.display_title?.trim() || '销售分析报告'
+  const title = publicText(report.display_title?.trim()) || tr('reports:salesAnalysisReport')
   return (
     <section
       className={`report-attachment ${deleted ? 'report-attachment-deleted' : ''}`}
-      aria-label={deleted ? '已删除报表' : 'HTML 报表附件'}
+      aria-label={deleted ? tr('reports:deletedReport') : tr('reports:htmlReportAttachment')}
     >
       <div className="report-file-icon" aria-hidden="true">
         <FileText size={22} strokeWidth={1.7} />
       </div>
       <div className="report-file-copy">
         <strong>{title}</strong>
-        <span>{deleted ? '此报表已删除' : 'HTML 报表'}</span>
+        <span>{deleted ? tr('reports:thisReportWasDeleted') : tr('reports:htmlReport')}</span>
       </div>
       {deleted ? (
-        <p className="report-tombstone-copy">此文件已不可查看或下载</p>
+        <p className="report-tombstone-copy">{tr('reports:thisFileCanNoLongerBeViewedOrDownloaded')}</p>
       ) : (
         <div className="report-actions">
-          <a href={report.view_reference} target="_blank" rel="noreferrer">
+          <a href={reportReference(report.view_reference)} target="_blank" rel="noreferrer">
             <ExternalLink size={15} />
-            查看报表
-          </a>
-          <a href={report.download_reference} download>
+            {tr('reports:viewReport')}</a>
+          <a href={reportReference(report.download_reference)} download>
             <Download size={15} />
-            下载 HTML
-          </a>
+            {tr('reports:downloadHtml')}</a>
         </div>
       )}
     </section>

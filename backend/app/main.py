@@ -406,6 +406,8 @@ def create_app(settings: Optional[Settings] = None, *, identity_client: Identity
     app.add_middleware(AuthBoundaryMiddleware)
 
     app.include_router(router)
+    from backend.app.api.presentation_routes import router as presentation_router
+    app.include_router(presentation_router)
     app.include_router(auth_router)
     from backend.app.api.cloud_routes import router as cloud_router
     app.include_router(cloud_router)
