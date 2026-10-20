@@ -1,12 +1,14 @@
 # 07 — 当前项目状态
 
-> Settings.version=M6.5；M6.5发布候选；生效以自身CI/Audit/clean/shutdown为准；M5 FINAL/FROZEN有效。
+> Settings.version=M6.5；M6.5 FINAL COMPLETE；M5 FINAL/FROZEN有效。
 
-## M6.5 收口候选（2026-10-20）
+## M6.5 FINAL COMPLETE（2026-10-20）
 
-Settings.version=M6.5；公开真实业务数据 Cloud mandatory 已完成。发布仅在本提交自身
-Full Validation、Remote Audit、HEAD=origin/main、clean 和 owned service shutdown 全部成立后生效。
-本提交不保存自身 SHA；最终 SHA/CI/Audit 以 main 与外部回执解析，不能继承历史 CI。
+Settings.version=M6.5；M6.5 FINAL COMPLETE。公开真实业务数据 Cloud mandatory 已完成。
+Final SHA：`8e63f0bd770c3ec819a789f13c20128456fec591`；自身
+[Full Validation 39400357886](https://github.com/Strange-Men/PowerBIAgent/actions/runs/39400357886) SUCCESS。
+Remote Audit PASS；封板时 HEAD=origin/main，worktree/staging clean，owned service shutdown 成立。
+本轮 POST-FINAL CLOSURE 只更新文档，其自身 CI/Audit 独立于上述 M6.5 功能封板证据。
 
 完整 Online Retail II flat Sales：1,067,371行，canonical Product=5,131；Raw Source Oracle
 5,305 literals与独立 Canonical Product Oracle并存，174碰撞组审计保留，不修改源数据或旧Oracle。
@@ -31,15 +33,20 @@ RATE_LIMITED原件与现有fresh restore恢复PASS保留；未新增Provider/ret
 
 前序production快照本地Backend3815PASS/1SKIP/15既有warnings，Semantic819PASS，Golden11PASS/
 1manualSKIP，Frontend160PASS，Typecheck/Lint/Build及Security/Ledger/Architecture/Documentation/
-Artifact/diff PASS。seal后仍fresh验证最终candidate并运行自身exact-SHA CI；此前PASS不能冒充Final。
+Artifact/diff PASS。最终发布自身 exact-SHA CI 已 SUCCESS；前序本地证据与远程 CI 分层记录。
 所有assets仅PBIAgentTest/M6.5，正式tests/fixture定义/doc在Git，无PBIX/DB/token/data dump提交。
 Frozen存在明确批准的窄correctness forward-fix，authority/QueryShape/Plan/DAX/12-row保持；
 ERR-65-012仅保留用户当前完整table[column]语言限定，leaf-only触发现有bounded repair，
 runtime仍证明对象；failure-first e0f5b9f7四RED、最小修复9cf029ba专项邻近124PASS。
 relationship cardinality CONTRACT_GAP已知限制、available horizon超限UNKNOWN、refresh UNKNOWN。
 
-后续只预留M6.5.1 Chinese / English Localization Platform、M6.5.2 Web / SSO Productization、
-M6.6 Enterprise Production Readiness Seal。本轮零实施；Final全部成立后STOP。
+后续正式路线：M6.5.1 Chinese / English Localization Platform → M6.5.2 Web / SSO Productization
+→ M6.5.3 VM Remote Deployment & Internal Pilot → M6.6 Enterprise Production Readiness Seal。
+用户已配置远程虚拟机，作为 M6.5.3 基础；内部远程 Pilot 不冒充 Enterprise Production Seal。
+本轮先独立完成 documentation closure；自身 CI/Audit/clean 后 fresh fetch，以新 clean main
+进入已批准的 M6.5.1 设计审计与实施，不提前实施 M6.5.2/M6.5.3/M6.6。
+12-row / N+1 / 8-column、relationship cardinality CONTRACT_GAP、Test B
+DEFERRED_BY_TEST_PRINCIPAL → M6.6 与 M5 Frozen Core 全部保留。
 
 ## Historical — 前序验收进度 — 2026-10-20 temporal correctness closure
 

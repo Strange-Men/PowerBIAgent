@@ -1,22 +1,28 @@
 # 08 — 当前及未来开发路线
 
-> **状态：** Settings.version=M6.5；发布候选以自身CI/Audit/clean/shutdown生效；M5 FINAL/FROZEN有效。
+> **状态：** Settings.version=M6.5；M6.5 FINAL COMPLETE；M5 FINAL/FROZEN有效。
 
-## 当前路线 — M6.5 收口候选
+## 当前路线 — M6.5 POST-FINAL CLOSURE → M6.5.1
 
-Cloud mandatory已成立；Settings.version=M6.5。发布只以本提交自身完整CI、Remote Audit、clean和
-owned shutdown生效；具体证据见07，唯一交接见09。全部成立后STOP，不进入后续实施。
+M6.5 FINAL COMPLETE；Final SHA `8e63f0bd770c3ec819a789f13c20128456fec591`；自身
+[Full Validation 39400357886](https://github.com/Strange-Men/PowerBIAgent/actions/runs/39400357886) SUCCESS。
+Remote Audit PASS；封板时 HEAD=origin/main、worktree/staging clean、owned shutdown 成立。
+具体证据见07，唯一交接见09。文档收口提交须自身 CI/Audit/clean，随后 fresh fetch，
+以新 clean main 为已批准 M6.5.1 的 baseline；不混合两个提交。
 
 | 阶段 | 路线与边界 |
 |---|---|
-| M6.5 | Cloud Real Business Data Validation；完整flat Sales、八Shape/Oracle/产品/安全验收收口 |
-| M6.5.1 | Chinese / English Localization Platform；独立scope，全局语言切换不重新执行业务分析 |
+| M6.5 | FINAL COMPLETE：Cloud Real Business Data Validation |
+| M6.5.1 | Chinese / English Localization Platform；复用现有 display localization，一次分析、两种展示 |
 | M6.5.2 | Web / SSO Productization；独立部署/认证/安全设计与授权 |
+| M6.5.3 | VM Remote Deployment & Internal Pilot；用户已配置远程虚拟机作为基础，内部远程 Pilot 不冒充 Enterprise Production Seal |
 | M6.6 | Enterprise Production Readiness Seal；Test B OLS、生产权限/恢复/并发/部署/性能证据 |
 
-本轮无i18n/SSO/B/S、Provider、schema cache、connection reuse、Favorites、新QueryShape或模板。
-12-row/N+1/8-column CLOSED_AS_EXPLICIT_LIMIT与relationship cardinality gap保留。
-Local完整Real未重复；下一任务须独立scope与fresh Cold Start，历史章节不授予实施权限。
+PHASE 0 不修改 production behavior。M6.5.1 不实施后续三个阶段；不新增 Provider、schema cache、
+connection reuse、QueryShape、Report Template 或部署架构。
+12-row / N+1 / 8-column CLOSED_AS_EXPLICIT_LIMIT、relationship cardinality CONTRACT_GAP、
+Test B DEFERRED_BY_TEST_PRINCIPAL → M6.6 与 M5 Frozen Core 保留。
+历史章节不授予实施权限。
 
 ## Historical — M6.4.1 维护 / 发布判定
 

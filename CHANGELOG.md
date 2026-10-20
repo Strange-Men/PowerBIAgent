@@ -4,7 +4,7 @@
 
 完整Online Retail II单表Sales与独立Raw/Canonical Oracle对账，八QueryShape、五轮追问、两现有KPI模板、资源生命周期、Test A RLS/owner/IDOR及late-stale/policy-revoke经Fabric IQ Cloud Real验证。仅实现explicit literal定向精确成员证明、typed numeric string→Decimal、verified Decimal与proven YEAR结果/展示及语言span的generic correctness兼容；12-row/Facts/Plan/DAX/模板authority不变。
 
-关系cardinality CONTRACT_GAP、Test B DEFERRED_BY_TEST_PRINCIPAL、未知horizon/refresh与配额边界明确保留。当前本地完整回归及治理门PASS；发布须最终candidate验证、本提交自身exact-SHA Full Validation、Remote Audit及clean/shutdown全部成立。M6.5.1本地化、M6.5.2 Web/SSO、M6.6企业生产封板仅预留，不在本轮实施。详见[M6.5验收](docs/milestones/m6/m6_5_cloud_acceptance_matrix.md)。
+关系cardinality CONTRACT_GAP、Test B DEFERRED_BY_TEST_PRINCIPAL、未知horizon/refresh与配额边界明确保留。M6.5 FINAL COMPLETE；Final SHA `8e63f0bd770c3ec819a789f13c20128456fec591`，自身 [Full Validation 39400357886](https://github.com/Strange-Men/PowerBIAgent/actions/runs/39400357886) SUCCESS，Remote Audit PASS，封板时 HEAD=origin/main、worktree/staging clean、shutdown 成立。后续路线为 M6.5.1 Chinese / English Localization Platform、M6.5.2 Web / SSO Productization、M6.5.3 VM Remote Deployment & Internal Pilot、M6.6 Enterprise Production Readiness Seal。用户已配置远程 VM 作为 M6.5.3 基础，内部 Pilot 不冒充企业生产封板。详见[M6.5验收](docs/milestones/m6/m6_5_cloud_acceptance_matrix.md)。
 
 ## [M6.4.1] — 2026-10-15（测试资产治理与封板遗留收口）
 
