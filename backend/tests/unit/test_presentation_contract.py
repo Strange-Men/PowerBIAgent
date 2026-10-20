@@ -11,7 +11,7 @@ from backend.app.presentation.localization import (
 )
 from backend.app.presentation.models import PresentationEnvelope
 from backend.app.query_plan.semantic_catalog import SemanticObjectType
-from backend.app.schemas.data_contracts import CanonicalQueryPlan, QueryResult
+from backend.app.schemas.data_contracts import CanonicalQueryPlan, QueryResult, QueryShape
 
 
 def _plan(*, dimensions: list[str] | None = None) -> CanonicalQueryPlan:
@@ -137,7 +137,7 @@ def test_metric_table_and_chart_references_resolve_to_verified_dataset() -> None
 
 
 def test_date_dimension_selects_line_chart() -> None:
-    plan = _plan(dimensions=["OrderDate"])
+    plan = _plan(dimensions=["OrderDate"]).model_copy(update={"query_shape": QueryShape.TREND})
     result = _result(
         ["Sales[OrderDate]", "[Total Sales]"],
         [["2026-01", 10], ["2026-02", 20]],
@@ -175,6 +175,9 @@ def test_display_fields_and_formatted_rows_do_not_change_canonical_facts() -> No
             kind=PresentationFormatKind.AMOUNT,
         ),
     ])
+    # Month formatting consumes the existing model-scoped grouping proof.
+    display_bindings['Facts[Year Month]'] = display_bindings['Facts[Year Month]'].model_copy(
+        update={'temporal_grain': 'month'})
 
     presentation = StructuredPresentationBuilder.build_answer(
         plan,

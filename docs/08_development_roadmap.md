@@ -1,8 +1,24 @@
 # 08 — 当前及未来开发路线
 
-> **状态：** Settings.version=M6.4.1；稳定基线 M6.4 FINAL COMPLETE；M5 FINAL/FROZEN 有效。
+> **状态：** Settings.version=M6.5；发布候选以自身CI/Audit/clean/shutdown生效；M5 FINAL/FROZEN有效。
 
-## 当前阶段 — M6.4.1 维护 / 发布判定
+## 当前路线 — M6.5 收口候选
+
+Cloud mandatory已成立；Settings.version=M6.5。发布只以本提交自身完整CI、Remote Audit、clean和
+owned shutdown生效；具体证据见07，唯一交接见09。全部成立后STOP，不进入后续实施。
+
+| 阶段 | 路线与边界 |
+|---|---|
+| M6.5 | Cloud Real Business Data Validation；完整flat Sales、八Shape/Oracle/产品/安全验收收口 |
+| M6.5.1 | Chinese / English Localization Platform；独立scope，全局语言切换不重新执行业务分析 |
+| M6.5.2 | Web / SSO Productization；独立部署/认证/安全设计与授权 |
+| M6.6 | Enterprise Production Readiness Seal；Test B OLS、生产权限/恢复/并发/部署/性能证据 |
+
+本轮无i18n/SSO/B/S、Provider、schema cache、connection reuse、Favorites、新QueryShape或模板。
+12-row/N+1/8-column CLOSED_AS_EXPLICIT_LIMIT与relationship cardinality gap保留。
+Local完整Real未重复；下一任务须独立scope与fresh Cold Start，历史章节不授予实施权限。
+
+## Historical — M6.4.1 维护 / 发布判定
 
 M6.4 FINAL COMPLETE；Final SHA `bdbe7189be21ff043340c2025625a9e3398310b0`；自身 [Full Validation 38693083553](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38693083553) SUCCESS，Remote Audit PASS，封板时 HEAD=origin/main、worktree/staging clean。
 

@@ -99,6 +99,11 @@ class LanguageDraft(LLMProvider):
             else dimension_name,
         )
         measures = () if self.shape is QueryShape.ENTITY_LIST else (measure,)
+        # The language draft keeps the user's full qualification. Runtime
+        # Catalog/Grounding still proves the table and field independently.
+        qualified = re.search(r"(?:'[^']+'|[A-Za-z_][A-Za-z0-9_]*)\[[^\]]+\]", message)
+        if qualified and qualified.group(0).rsplit('[', 1)[1][:-1] == dimension:
+            dimension = qualified.group(0)
         dimension_shapes = {
             QueryShape.ENTITY_LIST,
             QueryShape.GROUPED,

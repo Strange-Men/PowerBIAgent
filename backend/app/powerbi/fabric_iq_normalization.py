@@ -6,12 +6,13 @@ import json
 import math
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 from functools import wraps
 from uuid import UUID
 
 from backend.app.powerbi.fabric_iq_contract import fail
 from backend.app.schemas.data_contracts import (
-    ColumnSchema, MeasureSchema, QueryResult, SemanticModelSchema, TableSchema,
+    ColumnSchema, ColumnMembersResult, MeasureSchema, QueryResult, SemanticModelSchema, TableSchema,
 )
 from backend.app.powerbi.base import PowerBIAdapterError
 
@@ -119,6 +120,78 @@ def identity(payload, expected):
     return model
 
 
+@safe_normalization
+def verify_explicit_member_candidates(schema, table, column, literal, candidates):
+    """Existence proof only: exact typed identity, no fuzzy/score selection.
+
+    candidates are internal projections from a separately verified IQ envelope.
+    truncated=True states that this is never a complete member vocabulary.
+    Duplicate exact matches stay duplicate so existing Grounding clarifies.
+    """
+    matches = [c for t in schema.tables if t.name == table
+               for c in t.columns if c.name == column]
+    if (len(matches) != 1 or not isinstance(literal, str) or not literal
+            or len(literal) > 200 or not isinstance(candidates, list) or len(candidates) > 12):
+        raise fail('CONTRACT_DRIFT')
+    values = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict) or not all(k in candidate for k in ('table','column','value')):
+            raise fail('CONTRACT_DRIFT')
+        if (candidate['table'], candidate['column']) == (table, column):
+            value = candidate['value']
+            if type(value) is str and value == literal:
+                values.append(value)
+    return ColumnMembersResult(semantic_model_key=schema.key, table_name=table,
+        field_name=column, values=values, truncated=True, source_mode='real')
+
+
+@safe_normalization
+def normalize_value_search(raw, expected_model, schema, table, column, literal):
+    """Pinned V1 Results response; separate citation proves exact model identity.
+
+    Result keys are search-term buckets, not canonical values. Only Value in an
+    exact table/column candidate can establish existence. Score never selects.
+    MWCRaid is an opaque diagnostic identifier and has no identity authority.
+    """
+    if hasattr(raw, 'model_dump'):
+        raw = raw.model_dump(mode='json', by_alias=True, exclude_none=True)
+    _reject_errors(raw, 'CONTRACT_DRIFT')
+    if raw.get('resultType') != 'complete':
+        raise fail('CONTRACT_DRIFT')
+    structured = raw.get('structuredContent')
+    if not isinstance(structured, dict):
+        raise fail('CONTRACT_DRIFT')
+    _reject_errors(structured, 'CONTRACT_DRIFT')
+    citation = structured.get('artifact_citation')
+    if not isinstance(citation, dict) or guid(citation.get('ArtifactId')) != expected_model:
+        raise fail('CONTRACT_DRIFT')
+    content = raw.get('content')
+    if not isinstance(content, list) or len(content) != 1 or content[0].get('type') != 'text':
+        raise fail('CONTRACT_DRIFT')
+    body = json.loads(content[0]['text'])
+    _reject_errors(body, 'CONTRACT_DRIFT')
+    if body.get('DiagnosticMessages') not in (None, []):
+        raise fail('CONTRACT_DRIFT')
+    if any(body.get(k) for k in ('truncated','hasMore','nextCursor')):
+        raise fail('CONTRACT_DRIFT')
+    results = body.get('Results')
+    if (not isinstance(results, dict) or len(results) != 1
+            or next(iter(results)).casefold() != literal.casefold()):
+        raise fail('CONTRACT_DRIFT')
+    matches = next(iter(results.values()))
+    if not isinstance(matches, list) or len(matches) > 12:
+        raise fail('CONTRACT_DRIFT')
+    projected = []
+    for match in matches:
+        if (not isinstance(match, dict) or not all(k in match for k in ('Table','Column','Value','Score'))
+                or not isinstance(match['Table'], str) or not isinstance(match['Column'], str)
+                or type(match['Score']) not in (int,float) or not math.isfinite(match['Score'])
+                or not 0 <= match['Score'] <= 1):
+            raise fail('CONTRACT_DRIFT')
+        projected.append({'table':match['Table'],'column':match['Column'],'value':match['Value']})
+    return verify_explicit_member_candidates(schema,table,column,literal,projected)
+
+
 def _name(value):
     if not isinstance(value, str) or not value.strip() or any(not c.isprintable() for c in value):
         raise fail("CONTRACT_DRIFT")
@@ -172,12 +245,14 @@ def normalize_schema(raw, model_id, key, epoch):
         if direction is not None and not isinstance(direction, str): raise fail("SCHEMA_UNAVAILABLE")
         relationship_evidence.append({"PK": relation["PK"], "FK": relation["FK"],
                                       "UnidirectionalFilter": direction})
-    return SemanticModelSchema(name=_name(model.get("Name")), key=key, tables=normalized,
+    schema = SemanticModelSchema(name=_name(model.get("Name")), key=key, tables=normalized,
         relationships=[], metadata_source="fabric_iq", session_generation=epoch,
         provider_metadata={"active_relationships": relationship_evidence,
             "unknown": ["hidden", "system_managed", "expression", "hierarchies", "cardinality",
                 "relationship_direction", "security", "refresh_time"],
             "relationship_mapping": "NOT_VERIFIED"})
+    from backend.app.powerbi.member_identity import normalize_declared_columns
+    return normalize_declared_columns(schema)
 
 
 def _cell(value):
@@ -239,7 +314,7 @@ def _column_kind(kind):
     return kind
 
 
-def _typed_cell(value, kind):
+def _typed_cell(value, kind, *, numeric_schema=False):
     kind = _column_kind(kind)
     value = _cell(value)
     if value is None:
@@ -249,6 +324,16 @@ def _typed_cell(value, kind):
         # strings remain rejected. CSV's textual Int32 parser is unchanged.
         return _integer_cell(value, kind, allow_text=kind != "int32")
     elif kind in _NUMBER_TYPES:
+        if type(value) is str and numeric_schema:
+            # TYPED_NUMERIC_STRING_NORMALIZATION: no locale, currency,
+            # grouping, exponent, rounding or intermediate float. The caller
+            # has already proved one exact numeric runtime schema object.
+            if len(value) > 64 or not re.fullmatch(r"-?[0-9]+(?:\.[0-9]+)?", value, flags=re.ASCII):
+                raise fail("CONTRACT_DRIFT")
+            value = Decimal(value)
+            if not value.is_finite():
+                raise fail("CONTRACT_DRIFT")
+            return value
         if type(value) not in {int, float}:
             raise fail("CONTRACT_DRIFT")
     elif kind in _BOOLEAN_TYPES:
@@ -272,7 +357,7 @@ def _csv_cell(value, kind):
     raise fail("CONTRACT_DRIFT")
 
 
-def _schema_result_names(names, schema, key):
+def _schema_result_objects(names, schema, key):
     """Only exact schema identities; no parsing, trimming or alias guesses."""
     if (not isinstance(schema, SemanticModelSchema) or schema.key != key
             or schema.metadata_source != "fabric_iq"):
@@ -286,18 +371,22 @@ def _schema_result_names(names, schema, key):
             for column in table.columns:
                 if not column.is_hidden and not column.is_system_managed and label in (
                         column.name, f"{table.name} {column.name}"):
-                    candidates.append(column.name)
+                    candidates.append(column)
             # Measures have only their exact canonical name. Do not invent
             # table-prefixed measure aliases while fixing column lineage.
             for measure in table.measures:
                 if not measure.is_hidden and not measure.is_system_managed and label == measure.name:
-                    candidates.append(measure.name)
+                    candidates.append(measure)
         if len(candidates) != 1:
             raise fail("CONTRACT_DRIFT")
         normalized.append(candidates[0])
-    if len(normalized) != len(set(normalized)):
+    if len(normalized) != len({obj.name for obj in normalized}):
         raise fail("CONTRACT_DRIFT")
     return normalized
+
+
+def _schema_result_names(names, schema, key):
+    return [obj.name for obj in _schema_result_objects(names, schema, key)]
 
 
 @safe_normalization
@@ -324,6 +413,10 @@ def normalize_query(raw, model_id, request, *, envelope=None, schema=None):
         names.append(_name(column.get("name")))
         types.append(_column_kind(_name(column.get("type"))))
     if len(names) != len(set(names)): raise fail("CONTRACT_DRIFT")
+    objects = _schema_result_objects(names, schema, request.semantic_model_key) if schema is not None else [None] * len(names)
+    numeric_schema = [type(getattr(schema, 'session_generation', None)) is int
+        and obj is not None and isinstance(obj.data_type, str)
+        and obj.data_type.lower() in _NUMBER_TYPES | set(_INTEGER_LIMITS) for obj in objects]
     if envelope is not None and (len(names) > 8 or len(rows) > envelope.wire_limit
             or len(rows) * len(names) > 104
             or any(len(json.dumps(name, ensure_ascii=True).encode("utf-8")) > 66 for name in names)):
@@ -334,7 +427,8 @@ def normalize_query(raw, model_id, request, *, envelope=None, schema=None):
         if envelope is not None and any(
                 len(json.dumps(cell, ensure_ascii=True).encode("utf-8")) > 66 for cell in row):
             raise fail("CONTRACT_DRIFT")
-        typed_rows.append([_typed_cell(cell, kind) for cell, kind in zip(row, types)])
+        typed_rows.append([_typed_cell(cell, kind, numeric_schema=proven)
+            for cell, kind, proven in zip(row, types, numeric_schema)])
     rows = typed_rows
     if embedded_csv is not None:
         try:

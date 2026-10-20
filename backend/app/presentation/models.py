@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from backend.app.schemas.numeric_representation import is_finite_number
 
 
 class PresentationField(BaseModel):
@@ -161,7 +161,7 @@ class PresentationEnvelope(BaseModel):
 
 
 def is_presentation_number(value: object) -> bool:
-    return isinstance(value, (int, float, Decimal)) and not isinstance(value, bool)
+    return is_finite_number(value)
 
 
 def is_presentation_time(value: object) -> bool:

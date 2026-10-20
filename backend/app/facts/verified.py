@@ -30,6 +30,7 @@ from backend.app.schemas.factual_context import (
     ObservedCoverageStatus,
     ObservedDataCoverage,
 )
+from backend.app.schemas.numeric_representation import is_finite_number
 
 
 class FactType(str, Enum):
@@ -503,6 +504,11 @@ class FactBoundedAnswerBuilder:
 
         formatter = PresentationFormatter(locale=locale)
         bindings = dict(display_bindings or {})
+        for field, binding in list(bindings.items()):
+            if binding.canonical_name in plan.dimensions and hasattr(binding, "model_copy"):
+                bindings[field] = binding.model_copy(update={
+                    "format_kind": formatter.dimension_kind(plan, binding),
+                })
         used: list[VerifiedFact] = []
         parts: list[str] = []
         metrics: dict[str, Any] = {}
@@ -600,7 +606,6 @@ class FactBoundedAnswerBuilder:
                     formatter,
                     bindings,
                     member_labels=member_labels,
-                    month=self._is_time_grouped(plan, primary),
                 )
                 measure_field = item.source_fields[-1]
                 parts.append(
@@ -608,7 +613,7 @@ class FactBoundedAnswerBuilder:
                     f"{self._field_label(item.measure or measure_field, measure_field, bindings)}"
                     f"为{self._format_value(item.value, measure_field, formatter, bindings)}。"
                 )
-            elif self._is_time_grouped(plan, primary):
+            elif self._is_time_grouped(plan, primary, bindings):
                 parts.append(
                     self._trend_summary(
                         plan,
@@ -853,24 +858,18 @@ class FactBoundedAnswerBuilder:
         bindings: dict[str, Any],
         *,
         member_labels: dict[tuple[str, str], str] | None = None,
-        month: bool = False,
     ) -> str:
-        from backend.app.presentation.formatter import PresentationFormatKind
-
         rendered: list[str] = []
         for index, (canonical_name, value) in enumerate(dimensions.items()):
             source_field = source_fields[index]
             label = cls._field_label(canonical_name, source_field, bindings)
-            if month:
-                display_value = formatter.format(
-                    value, PresentationFormatKind.MONTH
+            display_value = (member_labels or {}).get((canonical_name, str(value)))
+            if display_value is None:
+                binding = bindings.get(source_field)
+                kind = getattr(binding, "format_kind", None)
+                display_value = formatter.format_dimension(value) if kind is None else (
+                    formatter.format_dimension(value, kind)
                 )
-            else:
-                display_value = (member_labels or {}).get((canonical_name, str(value)))
-                if display_value is None:
-                    display_value = cls._format_value(
-                        value, source_field, formatter, bindings
-                    )
             rendered.append(f"{label}{display_value}")
         return "，".join(rendered)
 
@@ -889,26 +888,17 @@ class FactBoundedAnswerBuilder:
     def _is_time_grouped(
         plan: CanonicalQueryPlan,
         grouped: list[VerifiedFact],
+        bindings: dict[str, Any],
     ) -> bool:
-        dimension_text = " ".join(plan.dimensions).casefold()
-        if any(
-            token in dimension_text
-            for token in ("date", "month", "year", "日期", "月", "年")
-        ):
-            return True
         if not grouped or not plan.dimensions:
             return False
+        if plan.query_shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}:
+            return True
+        binding = bindings.get(grouped[0].source_fields[0])
+        if binding is not None:
+            return getattr(binding, "format_kind", None) in {"date", "month"}
         values = [item.dimensions.get(plan.dimensions[0]) for item in grouped]
-        return all(
-            isinstance(value, (date, datetime))
-            or (
-                isinstance(value, str)
-                and len(value) >= 7
-                and value[:4].isdigit()
-                and value[4] in "-/"
-            )
-            for value in values
-        )
+        return all(isinstance(value, (date, datetime)) for value in values)
 
     @classmethod
     def _trend_summary(
@@ -938,7 +928,7 @@ class FactBoundedAnswerBuilder:
         peak_index = maximum.source_rows[0]
         summary = (
             f"该期间{measure_label}在"
-            f"{cls._dimension_text(maximum.dimensions, maximum.source_fields, formatter, bindings, month=True)}"
+            f"{cls._dimension_text(maximum.dimensions, maximum.source_fields, formatter, bindings)}"
             f"达到最高点，为{cls._format_value(maximum.value, measure_field, formatter, bindings)}"
         )
         after_peak = grouped[peak_index + 1 :]
@@ -956,7 +946,7 @@ class FactBoundedAnswerBuilder:
             used.extend([grouped[-2], grouped[-1]])
             summary += (
                 "，并在"
-                f"{cls._dimension_text(grouped[-1].dimensions, grouped[-1].source_fields, formatter, bindings, month=True)}"
+                f"{cls._dimension_text(grouped[-1].dimensions, grouped[-1].source_fields, formatter, bindings)}"
                 "出现回升"
             )
         return summary + "。"
@@ -1057,7 +1047,12 @@ class FactOutputValidator:
             if item.fact_type == FactType.SCALAR_METRIC
         }
         for key, value in answer.metrics.items():
-            if key not in scalar or scalar[key] != value:
+            if (
+                not is_finite_number(value)
+                or key not in scalar
+                or not is_finite_number(scalar[key])
+                or scalar[key] != value
+            ):
                 errors.append("answer_metric_not_in_verified_facts")
         return list(dict.fromkeys(errors))
 
@@ -1078,9 +1073,13 @@ class FactOutputValidator:
             (item.source_fields[-1], self._json_value(item.value))
             for item in used
             if item.fact_type == FactType.SCALAR_METRIC and item.source_fields
+            and is_finite_number(item.value)
         }
         for kpi in report.kpis:
-            if (kpi.field, self._json_value(kpi.value)) not in metric_pairs:
+            if (
+                not is_finite_number(kpi.value)
+                or (kpi.field, self._json_value(kpi.value)) not in metric_pairs
+            ):
                 errors.append("report_kpi_not_in_verified_facts")
         allowed_fields = set(facts.result_columns)
         for chart in report.charts:
@@ -1356,12 +1355,14 @@ class FactOutputValidator:
                 FactType.MAXIMUM,
                 FactType.MINIMUM,
             }:
-                self._collect_numbers(item.value, allowed)
+                if is_finite_number(item.value):
+                    self._collect_numbers(item.value, allowed)
             elif item.fact_type is FactType.RANKING:
                 for ranked in item.values:
                     if not isinstance(ranked, dict):
                         continue
-                    self._collect_numbers(ranked.get("value"), allowed)
+                    if is_finite_number(ranked.get("value")):
+                        self._collect_numbers(ranked.get("value"), allowed)
         return allowed
 
     @classmethod

@@ -473,7 +473,19 @@ class ReportContractValidator:
             accepted = {
                 value.casefold() for value in item.accepted_data_types
             }
-            if matches[0].data_type.casefold() not in accepted:
+            kind = matches[0].data_type
+            # Runtime Decimal/Integer are numeric schema representations of
+            # the existing registered numeric requirement. Object identity,
+            # query semantics and fact validation remain unchanged.
+            compatible_numeric = (
+                isinstance(kind, str)
+                and (
+                    (kind.casefold() == "decimal" and "double" in accepted)
+                    or (kind.casefold() == "integer" and "int64" in accepted)
+                )
+            )
+            if (not isinstance(kind, str)
+                    or (kind.casefold() not in accepted and not compatible_numeric)):
                 missing.append(
                     "report_contract_data_type_mismatch:"
                     f"{item.object_type.value}:"

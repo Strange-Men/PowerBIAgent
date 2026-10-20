@@ -1020,18 +1020,20 @@ class LLMTurnService:
                 async def _member_lookup(
                     field: Any, limit: int
                 ) -> ColumnMembersResult:
-                    return await self.tool_gateway.execute(
-                        TOOL_NAME_MEMBERS,
-                        exec_ctx,
-                        ColumnMembersRequest(
-                            semantic_model_key=semantic_model_key,
-                            table_name=field.table_name,
-                            field_name=field.canonical_name,
-                            limit=limit,
-                        ),
-                        trace=trace,
-                        controller=controller,
-                    )
+                    from backend.app.application.cloud_literal_context import grounded_literal_scope
+                    with grounded_literal_scope(field, catalog, schema):
+                        return await self.tool_gateway.execute(
+                            TOOL_NAME_MEMBERS,
+                            exec_ctx,
+                            ColumnMembersRequest(
+                                semantic_model_key=semantic_model_key,
+                                table_name=field.table_name,
+                                field_name=field.canonical_name,
+                                limit=limit,
+                            ),
+                            trace=trace,
+                            controller=controller,
+                        )
 
                 with measure_performance("grounding"):
                     grounding = await grounding_service.ground_frame(
@@ -1644,6 +1646,8 @@ class LLMTurnService:
                         query_plan,
                         query_result,
                         dax_semantic_verified=True,
+                        catalog=catalog,
+                        schema=schema,
                     )
                 semantic_audit["result_semantic_inspection"] = (
                     inspection.model_dump(mode="json")
@@ -2493,6 +2497,8 @@ class LLMTurnService:
                         query.query_plan,
                         result,
                         dax_semantic_verified=True,
+                        catalog=catalog,
+                        schema=schema,
                     )
                 fact_sets[query.requirement_key] = VerifiedFactSetBuilder().build(
                     query.query_plan,

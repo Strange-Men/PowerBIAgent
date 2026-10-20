@@ -105,7 +105,7 @@ class KpiValue(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    @field_validator("value")
+    @field_validator("value", mode="before")
     @classmethod
     def validate_value(cls, value: Any) -> Any:
         return _validate_business_number(value)
@@ -117,7 +117,7 @@ class TrendPoint(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    @field_validator("value")
+    @field_validator("value", mode="before")
     @classmethod
     def validate_value(cls, value: Any) -> Any:
         return _validate_business_number(value)
@@ -129,7 +129,7 @@ class GroupedValue(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    @field_validator("value")
+    @field_validator("value", mode="before")
     @classmethod
     def validate_value(cls, value: Any) -> Any:
         return _validate_business_number(value)
@@ -142,7 +142,7 @@ class TopNValue(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    @field_validator("value")
+    @field_validator("value", mode="before")
     @classmethod
     def validate_value(cls, value: Any) -> Any:
         return _validate_business_number(value)

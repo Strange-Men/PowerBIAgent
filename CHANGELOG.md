@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [M6.5] — 2026-10-20（公开真实业务数据云端验收）
+
+完整Online Retail II单表Sales与独立Raw/Canonical Oracle对账，八QueryShape、五轮追问、两现有KPI模板、资源生命周期、Test A RLS/owner/IDOR及late-stale/policy-revoke经Fabric IQ Cloud Real验证。仅实现explicit literal定向精确成员证明、typed numeric string→Decimal、verified Decimal与proven YEAR结果/展示及语言span的generic correctness兼容；12-row/Facts/Plan/DAX/模板authority不变。
+
+关系cardinality CONTRACT_GAP、Test B DEFERRED_BY_TEST_PRINCIPAL、未知horizon/refresh与配额边界明确保留。当前本地完整回归及治理门PASS；发布须最终candidate验证、本提交自身exact-SHA Full Validation、Remote Audit及clean/shutdown全部成立。M6.5.1本地化、M6.5.2 Web/SSO、M6.6企业生产封板仅预留，不在本轮实施。详见[M6.5验收](docs/milestones/m6/m6_5_cloud_acceptance_matrix.md)。
+
 ## [M6.4.1] — 2026-10-15（测试资产治理与封板遗留收口）
 
 仓库外测试资产统一到 PBIAgentTest，448 文件 / 44,252,661 bytes 原件和2,928个误生成临时文件完成存档验证；用户人工清理10旧目录，fresh核对零残留、零活跃旧路径引用、零SHA差异。新增本地validation runner显式隔离pytest/Vite/TypeScript缓存、构建产物和临时目录，CI默认方式不变。

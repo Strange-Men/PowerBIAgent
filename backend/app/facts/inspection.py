@@ -13,6 +13,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from backend.app.schemas.data_contracts import CanonicalQueryPlan, QueryResult, QueryShape
+from backend.app.query_plan.model_semantic_context import ModelSemanticContextBuilder
+from backend.app.query_plan.semantic_catalog import SemanticCatalog
+from backend.app.schemas.data_contracts import SemanticModelSchema
 
 
 class ResultSemanticInspectionError(ValueError):
@@ -43,6 +46,8 @@ class ResultSemanticInspectionGate:
         result: QueryResult,
         *,
         dax_semantic_verified: bool = True,
+        catalog: SemanticCatalog | None = None,
+        schema: SemanticModelSchema | None = None,
     ) -> ResultSemanticInspection:
         if not dax_semantic_verified:
             self._fail("result_scope_dax_verification_missing")
@@ -54,7 +59,7 @@ class ResultSemanticInspectionGate:
         if shape == QueryShape.RANKING:
             self._inspect_ranking(plan, result)
         if shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}:
-            self._inspect_trend(plan, result)
+            self._inspect_trend(plan, result, catalog=catalog, schema=schema)
         if shape == QueryShape.ENTITY_LIST:
             self._inspect_entities(plan, result)
         lineage = hashlib.sha256(json.dumps({
@@ -107,20 +112,54 @@ class ResultSemanticInspectionGate:
             if left_key > right_key:
                 self._fail("result_ranking_tiebreak_order_mismatch")
 
-    def _inspect_trend(self, plan: CanonicalQueryPlan, result: QueryResult) -> None:
+    def _inspect_trend(
+        self, plan: CanonicalQueryPlan, result: QueryResult, *,
+        catalog: SemanticCatalog | None = None,
+        schema: SemanticModelSchema | None = None,
+    ) -> None:
         if not plan.dimensions:
             self._fail("result_trend_dimension_missing")
         temporal_index = self._field_index(result.columns, plan.dimensions[0])
-        values = [self._date_value(row[temporal_index]) for row in result.rows]
+        year_axis = False
+        table = (plan.dimension_tables or {}).get(plan.dimensions[0])
+        axis = None
+        if catalog is not None:
+            if table is None:
+                owners = catalog.field_owners(plan.dimensions[0])
+                table = owners[0] if len(owners) == 1 else None
+            axis = catalog.get(f"field:{table}:{plan.dimensions[0]}") if table else None
+        declared_year = axis is not None and axis.temporal_grouping is not None and axis.temporal_grouping.grain == "year"
+        if declared_year and catalog is not None and schema is not None:
+            try:
+                fresh = ModelSemanticContextBuilder().build(schema)
+            except ValueError as exc:
+                raise ResultSemanticInspectionError("result_trend_authority_invalid") from exc
+            context = catalog.context
+            if (context is None or catalog.schema_drift
+                or catalog.semantic_model_key != plan.semantic_model_key
+                or fresh.semantic_model_key != plan.semantic_model_key
+                or catalog.schema_fingerprint != fresh.schema_fingerprint
+                or context.runtime_identity != fresh.runtime_identity
+                or context.schema_fingerprint != fresh.schema_fingerprint
+                or context.session_generation != fresh.session_generation):
+                self._fail("result_trend_authority_mismatch")
+            if axis is None or not any(item.object_id == axis.object_id for item in fresh.columns):
+                self._fail("result_trend_authority_field_missing")
+            year_axis = True
+        if year_axis:
+            values = [row[temporal_index] for row in result.rows]
+            if any(type(value) is not int or not 1 <= value <= 9999 for value in values):
+                self._fail("result_trend_temporal_value_invalid")
+        else:
+            values = [self._date_value(row[temporal_index]) for row in result.rows]
         if any(left > right for left, right in zip(values, values[1:])):
             self._fail("result_trend_order_mismatch")
         if plan.query_shape == QueryShape.BOUNDED_TREND:
             if plan.time_range is None:
                 self._fail("result_trend_requested_range_missing")
-            if any(
-                value < plan.time_range.start_date or value > plan.time_range.end_date
-                for value in values
-            ):
+            start = plan.time_range.start_date.year if year_axis else plan.time_range.start_date
+            end = plan.time_range.end_date.year if year_axis else plan.time_range.end_date
+            if any(value < start or value > end for value in values):
                 self._fail("result_trend_outside_requested_range")
 
     def _inspect_entities(self, plan: CanonicalQueryPlan, result: QueryResult) -> None:

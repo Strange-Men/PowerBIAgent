@@ -109,6 +109,8 @@ def apply_model_override(context: ModelSemanticContext, objects: dict[str, Catal
             target = objects.get(f"field:{temporal.date_table_name}:{temporal.date_field}")
             if target is None or not any(token in target.data_type.casefold() for token in ("date", "time")):
                 raise GlossaryCatalogError("override_temporal_target_invalid")
+            if item.temporal_grouping is not None and item.temporal_grouping != temporal:
+                raise GlossaryCatalogError("override_temporal_authority_conflict")
         member_aliases: dict[str, str] = {}
         for alias, value in language.member_aliases.items():
             normalized = normalize_semantic_text(alias)
@@ -119,7 +121,7 @@ def apply_model_override(context: ModelSemanticContext, objects: dict[str, Catal
             "aliases": tuple(dict.fromkeys(alias.strip() for alias in language.aliases)),
             "member_aliases": member_aliases, "member_suffixes": tuple(language.member_suffixes),
             "temporal_role": language.temporal_role,
-            "temporal_grouping": language.temporal_grouping or item.temporal_grouping,
+            "temporal_grouping": item.temporal_grouping or language.temporal_grouping,
             "source": SemanticObjectSource.RUNTIME_GLOSSARY,
         })
     if sum(item.temporal_role == "default" for item in result.values()) > 1:

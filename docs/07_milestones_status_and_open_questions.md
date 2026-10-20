@@ -1,8 +1,251 @@
 # 07 — 当前项目状态
 
-> Settings.version=M6.4.1；稳定基线 M6.4 FINAL COMPLETE；M5 FINAL/FROZEN 有效。
+> Settings.version=M6.5；M6.5发布候选；生效以自身CI/Audit/clean/shutdown为准；M5 FINAL/FROZEN有效。
 
-## 当前阶段 — M6.4.1 维护 / 发布判定
+## M6.5 收口候选（2026-10-20）
+
+Settings.version=M6.5；公开真实业务数据 Cloud mandatory 已完成。发布仅在本提交自身
+Full Validation、Remote Audit、HEAD=origin/main、clean 和 owned service shutdown 全部成立后生效。
+本提交不保存自身 SHA；最终 SHA/CI/Audit 以 main 与外部回执解析，不能继承历史 CI。
+
+完整 Online Retail II flat Sales：1,067,371行，canonical Product=5,131；Raw Source Oracle
+5,305 literals与独立 Canonical Product Oracle并存，174碰撞组审计保留，不修改源数据或旧Oracle。
+八QueryShape逐case Fabric IQ真实执行、确定性DAX、Facts/Answer/Memory和Oracle PASS；
+TREND三proven YEAR、BOUNDED_TREND六ordered月；完整25月/43country超过12拒绝，ZERO事实提交。
+wire纯numeric string仅fresh numeric schema+exact lineage+ASCII lexical后直接Decimal；金额scale4
+exact，AOV<=0.0001 GBP，wire精度原样保留。无currency/locale/fuzzy或通用string coercion。
+
+两现有模板显式Total Sales KPI原生生成/view/download/hash/Facts PASS；runtime四KPI eligibility
+只为能力证明，不冒充查询了四KPI。只看月份趋势的请求因现有模板无eligible趋势section而拒绝，
+ZERO DAX/artifact/Facts/Memory；不假称执行了高基数report查询。含“全部”的原negative走既有
+FULL_AVAILABLE并生成四KPI，不满足原negative断言，原件与合同分类审计保留，未改Planner或expected。
+五轮exact measure/filter/time/Oracle PASS；旧固定SCALAR harness失败保留，按既有interpreted-or-
+inherited contract独立审核，未改expected或生产shape semantics。
+
+history/rename/restore/archive/unarchive/browser reload、report delete/tombstone/history delete、
+general ZERO business mutation和stale generation已native验证（lifecycle-8acc52d8.json）。
+真实迟到响应在generation/policy变化后拒绝且ZERO Memory/snapshot（race-c5de68cf.json）。
+Admin/Test A原生Fabric IQ安全fixture分别300/100与Region范围、owner/IDOR/unknown-id等价拒绝
+PASS（security-admin-fd3b0f9b.json / security-test-a-d6b4d3a2.json）；无新权限，Test B DEFERRED_BY_TEST_PRINCIPAL留M6.6。
+RATE_LIMITED原件与现有fresh restore恢复PASS保留；未新增Provider/retry/reuse/cache架构。
+
+前序production快照本地Backend3815PASS/1SKIP/15既有warnings，Semantic819PASS，Golden11PASS/
+1manualSKIP，Frontend160PASS，Typecheck/Lint/Build及Security/Ledger/Architecture/Documentation/
+Artifact/diff PASS。seal后仍fresh验证最终candidate并运行自身exact-SHA CI；此前PASS不能冒充Final。
+所有assets仅PBIAgentTest/M6.5，正式tests/fixture定义/doc在Git，无PBIX/DB/token/data dump提交。
+Frozen存在明确批准的窄correctness forward-fix，authority/QueryShape/Plan/DAX/12-row保持；
+ERR-65-012仅保留用户当前完整table[column]语言限定，leaf-only触发现有bounded repair，
+runtime仍证明对象；failure-first e0f5b9f7四RED、最小修复9cf029ba专项邻近124PASS。
+relationship cardinality CONTRACT_GAP已知限制、available horizon超限UNKNOWN、refresh UNKNOWN。
+
+后续只预留M6.5.1 Chinese / English Localization Platform、M6.5.2 Web / SSO Productization、
+M6.6 Enterprise Production Readiness Seal。本轮零实施；Final全部成立后STOP。
+
+## Historical — 前序验收进度 — 2026-10-20 temporal correctness closure
+
+Settings.version=M6.4.1；M6.5进行中，未stage/commit/push，Final尚未成立。
+最新用户明确授权ResultInspection接受exact model/schema fingerprint/table/column的proven YEAR
+integer axis，以及既有Understanding的generic temporal coverage correction。先前禁止修改该边界的
+STOP已被本次授权替代，历史失败原件保留。新inspection只接受proven year的exact int 1..9999，
+无catalog/schema、drift、wrong identity、bool/float/Decimal/year-string均拒绝；不转换数值或合成日期。
+Data/Report使用现有fresh schema/catalog；Plan/DAX/Facts authority不变。
+
+failure-first f74664f1为24RED；fffb8bc6为64PASS，faf5f783为100PASS，API a9f3a4cd为2PASS。
+发现bounded时间端点一直完整，真正遗漏的是explicit grouping field语言span。既有一次bounded
+repair保留missing_span，并要求dimension literal原样保留；重现57ff1d3c为2RED/4PASS，最小缺轴
+structural check后7bc385b1为51PASS。无runtime canonical补猜、无UCI production lookup。
+
+native Admin Auth/Fabric IQ product-0e705d77：T01三年、B01六个月正式completed/Inspection/Facts/
+Answer/Memory=true，ordered amount与独立Oracle精确一致；结合六Shape既有Real为8/8正例。
+T02该轮RATE_LIMITED不作为超限证明；补充product-9906e4f0的T02为CONTRACT_DRIFT且ZERO
+Facts/Memory，完整25月拒绝成立。B01补跑语言遗漏安全拒绝，保留该失败并继续同根因修复。
+fresh v3 owned host已恢复现有Admin SSO，无Desktop操作；时间audit及下游Cloud验收继续。
+
+多轮、两固定模板、history/restore/rename/archive/reload、resource lifecycle、owner/IDOR、
+Test A RLS adjacency、late/stale/policy revoke、rate-limit/recovery与Final Oracle仍待完成。
+full backend当前运行仅阶段进度，不能计PASS。relationship CONTRACT_GAP与Test B
+DEFERRED_BY_TEST_PRINCIPAL保留；12-row/N+1/8-column不变；Local完整Real不重复。
+所有runtime资产只在PBIAgentTest/M6.5，原始Oracle未覆盖。全部mandatory及fresh Gates后才version
+M6.5/中文commit/push/自身exact-SHA CI/Remote Audit/clean/shutdown，之后STOP。
+
+## 历史停点 — M6.5 Explicit Temporal Binding（已被最新授权替代）（Settings.version=M6.4.1）
+
+**当前边界 STOP：CONTRACT_GAP_YEAR_TREND_INSPECTION / ERR-65-008（2026-10-20）。**
+
+最新用户明确允许existing ModelOverrideRegistry作为server/operator temporal semantic authority。
+配置仅在PBIAgentTest/M6.5/Evidence/20261020-explicit-temporal，经native approved Workspace/model
+selection、exact runtime identity及fresh schema fingerprint验证；Year→year、YearMonth→month、
+Date→existing typed default role，不新增DAY grain。production仅model_override拒绝矛盾runtime
+grouping并保留runtime优先；failure-first326b4df8=2RED/14PASS，c69fa187=107PASS；更新focused
+f55e6532=143PASS（六文件，27.93秒），runner temp_cleanup=true。
+
+普通fresh host/native Auth/Fabric IQ的product-25d5ebdd：T01 binding/completeness通过，年度DAX
+真实返回2009/2010/2011与825685.7600/10303952.4040/9842956.4040，独立Oracle金额一致；
+ResultInspection._date_value拒绝整数年份，result_trend_temporal_value_invalid，ZERO Facts/Memory。
+外部failure-first3d16f63f=1RED；永久boundary test保留原始轴且拒绝inspection绕过。
+B01在semantic_coverage_incomplete拒绝，ZERO工具/Facts/Memory，缺失语言span未被现有observer
+保存，尚未精确诊断；不能算BOUNDED_TREND正例。T02全25月CONTRACT_DRIFT，ZERO Facts/Memory，
+超限负例PASS。六种既有Cloud正例保留，两个trend与下游仍未完成。
+
+本轮用户明确禁止修改ResultInspection，现有inspect仅接收plan/result而无validated grain证明；
+要验证integer year顺序须明确该既有结果验证边界的兼容合同。当前未改Inspection/Plan/DAX/Facts，
+未合成年份日期、未改shape或Oracle、未放宽12-row。ERR-65-006原分组authority阻塞已解除，
+不再作为当前停点；relationship gap与Test B deferred保留。版本M6.4.1，未stage/commit/push/新CI。
+历史完整Backend/Frontend等Gates仅证明其当时快照，不能继承为本轮Final。
+本轮Security4ca76b36、Ledger9325b200、Architecture739fb1aa、Documentationc8735d1e、
+Artifact0c8bdd03及git diff --check PASS；不冒充完整Final Gates。owned host126604/runner126364
+已核对parent与exact外部路径后停止，owned进程0/5173监听0；runner3407ecc9 temp_cleanup=true，
+受控终止exit不是validation PASS。最终治理/cleanup回执见外部closure-audit.json；配置/DB/证据原件保留，
+host restart改变runtime key后原配置fail closed，不自动重绑定。
+
+### 前序 checkpoint — 原 temporal grouping authority STOP（已被最新operator授权取代）
+
+**历史 architecture STOP：CONTRACT_GAP_TEMPORAL_GROUPING_AUTHORITY。**
+最新用户授权已取代此前普通P0机械STOP；ERR-65-005已最小presentation修复，整数category
+原样展示，月份/日期只消费现有canonical/runtime binding。failure-first eee2ae4a四RED；
+c42ab1e4专项167PASS、7d9a7917邻近311PASS；product-5fe5407e G01/M01正式Cloud PASS。
+ENTITY_LIST language维度缺失有界repair及filter shape提示修复后，product-bff94686 E01/F01
+正式Cloud completed、目标shape、Facts/Memory和独立Oracle全部PASS。F01确为FILTERED_AGGREGATION。
+历史金额和ranking正式证据保留；六shape已有正例，TREND/BOUNDED_TREND未PASS。
+两次fresh原始GetSemanticModelSchema只含Name/Type/FormatString，无expression/key/grain；
+Year Integer不证明year temporal grouping，YearMonth DateTime不证明month-start projection。
+现有完整month成员fallback在该25成员列与12-row合同冲突，不能枚举first12/分页/targeted subset自证。
+product-5fe5407e T01在canonical_shape_trend_temporal_dimension_required拒绝，ZERO DAX/Facts/Memory。
+继续这两shape需要当前未获证明的temporal binding或改变现有Grounding/Plan completeness authority；
+按最新用户真正architecture STOP条件停止，不增加Provider/QueryShape/proof，不改Oracle或模型。
+当前代码验证：focused618ee569=175PASS，Semantic428220e3=819PASS，Goldenafece63c=11PASS/1manualSKIP，
+完整后端067ac239=3751PASS/1SKIP/15保留warnings；typecheckc8f1e295、lintb553556f、buildc5a0d9ea PASS。
+Securitya65cd7b6、Ledgerc4dd2f1d、Architecture266b8b1f、Artifactae79ce7e、Documentation56abc4dd PASS；
+前端首轮worker/等待超时d8140c21及低并发972bb141超时原件保留，后端结束后正常命令
+89bf6494独立复核160PASS，无timeout/expected修改。当前本地验证通过，不能当M6.5 Final；
+下游multi-turn/report/resources/security未全验。
+版本仍M6.4.1，未stage/commit/push/新CI。测试资产仅PBIAgentTest/M6.5；owned DB保留。
+本轮Admin经用户选择恢复，后续未要求Desktop。owned host121172/runner113464已核对父进程及
+外部host路径后停止，5173无监听、owned进程0、runner temp_cleanup=true；owned DB与证据保留。
+当前runtime外部driver动态刷新真实production Understanding，无auth/claim/proof注入；最终必须普通启动复验。
+
+以下为本轮checkpoint历史，当前状态以上述最新architecture边界为准。
+2026-10-20最新用户已授权ERR-65-004窄Frozen Decimal compatibility，取代下方历史STOP。
+仅verified numeric representation支持finite Decimal；来源值不转float、不round、不解析string，
+bool/nonfinite/string及无provenance拒绝。Answer metric/Report KPI/FactOutputValidator/展示numeric门
+已failure-first；Report projection模型pre-validator防止Pydantic先coerce bool/string，Renderer直接保留Decimal。
+专项252PASS（1ddba09a）；123 Adapter/presentation/inspection PASS（c44f859c）。完整后端2f8056bd
+3682PASS/1SKIP/15既有warnings属于较早代码快照，后续修复仍须最终重跑，不能冒充Final验证。
+当前Cloud：product-3ebceafa S01与R01 completed/Oracle一致/Memory=true；product-cbb2eb15
+S02 Cancelled Amount与S03 AOV正式Facts/Answer/Memory PASS，AOV沿用<=0.0001 GBP容差。
+E01 Year澄清、G01展示ValueError、M01非verbatim语言证据拒绝未PASS；限流失败保留并paced recovery。
+fresh Year runtime exact/qualified对象可证明，未修改Grounding。owned5173宿主运行，现有Microsoft
+登录自动恢复，无本轮人工登录或Desktop操作。八Shape/下游与Final Gates仍未完成；版本M6.4.1，未提交。
+
+以下为前序checkpoint历史，当前状态以上述最新段与实时证据为准。
+
+2026-10-20最新授权Numeric Authority Closure已实施极窄TYPED_NUMERIC_STRING_NORMALIZATION：
+fresh numeric schema对象/exact lineage/ASCII小数形式/Decimal直接解析/既有检查链；无currency、
+grouping、locale或exponent。failure-first9fbf748a为7FAIL/32PASS；邻近9a383308为168PASS。
+numeric-final-de9f099e实际Cloud三scalar通过：Total Sales与Cancelled Amount精确scale4对账，
+AOV523.3075在<=0.0001 GBP预定容差内，raw wire→Decimal→Oracle记录完整、不增加wire精度。
+当前新STOP：ERR-65-004，Frozen ValidationService只接受int/float，Decimal由既有Facts传入Answer
+后触发answer_metric_non_numeric。正式Cloud S01=execute_dax成功/response_failed/
+answer_validation_failed/Memory commit=false（product-88da72af）；synthetic正式链e9338ba4同根因
+RED保留。Report KPI同类型限制。修复必须改Frozen validator；不把Decimal转float绕过用户合同。
+当前只改Adapter normalization与测试/状态文档，Frozen Core production diff=0；不封板/提交/push，
+版本仍M6.4.1，FullGates未完成。owned5173宿主已停止、runner退出并清理temp；证据均M6.5。
+后续路线按最新授权记入08：M6.5.1 Localization Platform、M6.5.2 Web/SSO、M6.6 Seal，本轮零实施。
+
+2026-10-20当前停点：owned验收宿主5173已恢复，用户一次补充探针完成后现有Admin会话有效；
+同会话自动follow-up无需再次登录/发布。focused-contract-18f2dc1c实际证明15056BL/85123A/France
+exact model/table/column/value；contract-followup-11ee05f6经现有Adapter与Grounding证明15056BL、
+15056bl→15056BL、47503J尾空格→47503J，unknown空候选；full countries仍CONTRACT_DRIFT。
+fresh专项81PASS（6ad58a57）。numeric仍STOP CONTRACT_GAP_NUMERIC_AUTHORITY：三个金额格式
+确认0.0000，Decimal cell是string；ExecuteQuery只有artifactId/daxQueries/maxRows，无outputSchema
+或raw-numeric选项。AOV wire523.3075与独立ratio不同，diagnostic表达式也不能授予精确编码authority。
+官方文档fresh重验未提供此编码合同；不解析展示string、不改Builder/Frozen Core/12-row、不改Oracle。
+本轮无production修改、无业务Facts commit/Cloud写入；八Shape/下游/FullGates仍未完成。
+用户最新允许Provider contract gap STOP；详情见[合同停点](milestones/m6/m6_5_cloud_runtime_contract_stop.md)。
+host保留供后续同会话消费，资产仅PBIAgentTest/M6.5；版本M6.4.1，未stage/commit/push。
+
+2026-10-17新runtime-96e8467e已实际完成原Admin读取：17列/7 measures/零关系；两列声明、
+1,067,371完整行/43国/5,131 canonical商品/25月通过，France/Germany/UK scoped proof通过。
+三个金额measure Schema格式确认0.0000，但实际Decimal cell仍为string（20972594.5680、
+523.3075、-1526667.8600），原numeric validator正确拒绝CONTRACT_DRIFT；四个整数指标对齐。
+canonical StockCode四个lookup为空，后续聚合及full countries检查被RATE_LIMITED，不能当身份
+不一致或completeness PASS。已准备一次缩小的原候选/数值结构补充探针并请求同会话点击，
+不重新登录/发布、不改生产validator/Builder；当前尚未进入republish后的产品八Shape/Gates。
+
+2026-10-17用户明确回复“已重新发布”，确认同一批准测试模型Desktop Replace已完成。
+fresh fetch/main/HEAD=origin/main核对通过，staging空，只有既有授权diff。重新读取官方IQ消费合同，
+新隔离宿主及bounded canonical/numeric驱动位于外部Acceptance/20261017-canonical-real；
+旧collation入口未复用。当前Microsoft登录页超时，已请求一次恢复原Admin会话并运行新探针。
+用户确认不替代runtime Schema、ValueSearch或numeric PASS；尚无本次republish后Cloud结果。
+后续收到探针结果立即继续原授权Cloud验收；Frozen Core/12-row/Provider与版本均保持。
+
+2026-10-16最新用户已授权继续，仅Canonical Product Identity+Numeric Measure Format，取代上次STOP。
+旧profile/Raw Oracle/ValueSearch证据保留。新增独立canonical Oracle5,131 members/174碰撞组，
+完整1,067,371行、metric totals与原Oracle一致；Raw Oracle SHA不变。Adapter按runtime列声明执行
+尾随U+0020→invariant ASCII uppercase→bounded ValueSearch→exact verification，raw provenance列
+不进入产品Grounding。Frozen Core/numeric validator/12-row envelope保持。failure-first10RED已保留，
+专项/集成156PASS，完整后端3602PASS/1SKIP/15既有warnings，Semantic819PASS、Golden11PASS/1manualSKIP及架构/治理门PASS；新operator资产仅外部Model/operator-canonical-v2。
+下一步回归通过后由用户替换同一自建Online Retail II M6.5，回复“已重新发布”后继续Cloud Real。
+旧P0停点保留为历史；按最新STOP条件执行。后续M6.5.1尚无实施授权，版本保持M6.4.1。
+
+
+2026-10-16当前STOP：实际Cloud模型完整行数/四计数指标及explicit ValueSearch已PASS，正式Total Orders
+通过Plan/DAX/Layer3/Facts/Memory。原始StockCode5,305个与Power BI5,131个身份不一致；官方case-
+insensitive/trailing-space语义及真实literal filter/source对账完全复现。原始15056BL=9,646 quantity，
+模型exact member filter=9,772（含15056bl的126），当前raw literal/Oracle与模型member合同冲突。
+按用户“单表暴露新P0 architecture blocker再STOP”停止实施/完整Cloud验收，不修改Core或expected。
+另三个金额measure的¥格式让IQ返回Decimal string，严格拒绝；unformatted数值诊断对齐但非产品PASS。
+详细结论及actual回执见[Cloud runtime STOP](milestones/m6/m6_5_cloud_runtime_contract_stop.md)。
+下方等待登录/发布为前序checkpoint；本次已实际登录和读取新模型，STOP由本段定义。
+
+
+2026-10-16用户确认测试模型已发布。fresh fetch仍为既定main基线，无远端漂移，只有本轮授权diff，
+staging空。官方Fabric IQ GA/delegated/scopes/selector/只读合同已重读；隔离原生Cloud Real宿主及
+新的空测试存储均在PBIAgentTest/M6.5/Acceptance/20261016-cloud-real。旧宿主关闭后Auth会话失效，
+当前等待恢复已批准Admin登录，再验证实际模型Resolve/Schema/控制总数/指标/八Shape。
+用户发布确认不替代runtime模型或业务PASS；下方“未建立”为发布前checkpoint，当前已由本段更新。
+
+用户最新批准完整单表Sales路径，取代此前关系CONTRACT_GAP的停止处置。全部1,067,371行保留，
+不建DimDate/DimCountry/DimProduct/DimCustomer或关系，不造Category/Region。IQ实际relationship
+payload缺cardinality的CONTRACT_GAP保留为已知Cloud capability gap，本轮不normalize或补猜。
+
+完整profile、BUSINESS_METRIC_CONTRACT、独立Oracle和acceptance matrix保留，不重做：
+43国、25月、5,305 StockCodes；missing Customer ID243,007、重复余项34,335及异常/取消行均保留。
+Total Sales expected=20,972,594.5680 GBP，scaled integer与独立Decimal已对账。
+公开数据和全部test/cache/evidence/model资产仅PBIAgentTest/M6.5。
+
+fresh fetch仍main、HEAD=origin/main=`63287db28b519d7043bd762622e7eef586351201`，staging空，
+只有本轮授权改动。用户实际Admin已完成只读IQ探针；工具schema与非空ValueSearch payload已证明：
+artifactId/searchTerms/scope(tableName,columnNames)，Results bucket及Table/Column/Value/Score，
+artifact_citation.ArtifactId和resultType=complete。原空候选及补充非空证据分开保存，不把metadata
+probe计为UCI业务Real PASS。otherWorkspace ZERO request，未新增grant/Provider/Cloud authoring。
+
+唯一correctness最小实现已完成：Cloud service传递当前SemanticFrame中的verbatim explicit literal，
+Adapter scoped ValueSearch，exact model/table/column/value验证后交给既有Grounding。Score不选值；
+fuzzy/wrong-column/unknown不绑定，duplicate exact保留歧义，targeted proof标为truncated以拒绝
+完整词表/日期grain证明。无literal仍full snapshot，>12 fail closed；business12/wireN+1/columns8不变。
+Frozen Core、CanonicalQueryPlan、DAX Builder、VerifiedFactSet、八QueryShape无修改。
+
+failure-first 9RED/18PASS原件保留，最小实现后focused26PASS、Cloud/safety邻近174PASS、
+Adapter/Grounding集成17PASS；Semantic819PASS、Golden11PASS/1manualSKIP、Architecture与Safety PASS。
+首次全后端3570PASS/2FAIL/1SKIP/15既有warnings，两处为新增测试实例与文档当前版本标题问题，
+已最小修正并保留失败回执。多literal exact/unknown/nonexact安全回归128PASS；最终当前代码
+ad98eea6完整后端3575PASS/1SKIP/15既有warnings，前端160PASS、typecheck/lint/build PASS。
+Safety/Ledger/Architecture/Documentation/Artifact治理门PASS，worker启动超时原件保留；全部runner temp清理。
+Owned只读probe已停止、5173无监听；fresh fetch无remote drift、staging空。
+上述automated和已有模型metadata probe不替代Online Retail II Cloud Real。
+
+Cloud测试模型尚未建立。ValueSearch最小实现及完整回归PASS，下一步由operator按[单表步骤](milestones/m6/m6_5_operator_test_model_setup.md)
+一次性创建并发布Online Retail II M6.5到批准的PowerBIAgent-M6-Dev，再继续Resolve→Schema→known-value
+scalar→八Shape→multi-turn→report eligibility→history/resource→security→recovery→Oracle→Full Gates。
+日期grain/模板section仅由实际schema及runtime证明；不能用模型定义注入authority或改模板迎合验收。
+若单表仍证明新P0 architecture blocker再STOP，否则同根因failure-first/minimal fix/regression/Cloud Real。
+
+Local MCP Real不做完整重复；Test B仍DEFERRED_BY_TEST_PRINCIPAL。M6.5未完成，Settings仍M6.4.1，
+未stage/commit/push，无本轮exact-SHA CI/Remote Audit；不进入M6.5.1，不新增cache/reuse/Favorites。
+详细runtime、历史失败及证据见[M6.5专项](milestones/m6/m6_5_cloud_real_business_validation.md)。
+
+## Historical — M6.4.1 维护 / 发布判定
 
 M6.4 FINAL COMPLETE；Final SHA `bdbe7189be21ff043340c2025625a9e3398310b0`；自身 [Full Validation 38693083553](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38693083553) SUCCESS，Remote Audit PASS，封板时 HEAD=origin/main、worktree/staging clean。
 

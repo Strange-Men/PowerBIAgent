@@ -8,6 +8,436 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-65-012
+  title: 显式table column语言限定被缩为歧义leaf
+  category: ERR
+  first_detected_version: M6.5
+  symptom: 明确限定字段的Cloud grouped问题被Understanding缩成裸字段而澄清
+  local_evidence: product-5657fcae明确FactSales字段但frame仅Region，dimension_ambiguous且ZERO DAX Facts Memory；e0f5b9f7 failure-first4RED；893e51bd遗漏re import失败保留；9cf029ba专项邻近124PASS
+  authoritative_sources:
+  - title: 用户M6.5 Final correctness closure持续forward-fix授权
+    reason: 仅修existing semantic evidence compatibility，不改变Grounding或Facts authority
+  - title: ADR-016
+    reason: 显式语义义务不得遗漏，歧义必须在DAX前拒绝
+  root_cause: leaf是用户输入的substring，原verbatim检查不能识别被丢弃的table qualifier
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 当前输入明确qualified dimension时，leaf-only语言draft触发现有slot evidence bounded repair，要求完整原文；不创建canonical对象、不修改runtime binding
+  regression_tests:
+  - backend/tests/unit/test_m6_5_qualified_dimension_evidence.py
+  prohibited_patterns:
+  - 根据表名猜runtime对象或绕过歧义检查
+  - UCI或security fixture生产特例
+  prevention_rules:
+  - 保留完整current-message qualification，runtime仍独立证明对象
+  related_adr: ADR-016
+  related_commits: []
+  # correctness已Cloud复验；monitoring保留至自身提交CI/Audit，无循环SHA声明
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: final_cloud_correctness_reverified
+    version: M6.5
+    evidence: security-admin-fd3b0f9b.json exact qualified Region Cloud PASS；9cf029ba 124PASS
+  - date: '2026-10-20'
+    action: failure_first_minimal_language_compatibility
+    version: M6.5
+- id: ERR-65-009
+  title: bounded temporal完整语言span修复与既有隐式axis兼容
+  category: ERR
+  first_detected_version: M6.5
+  symptom: bounded explicit grouping遗漏导致coverage拒绝
+  local_evidence: product-eec816f2 B01六ordered月Oracle PASS；7ce9b60c 3801PASS/2FAIL；fd0369c5 73PASS
+  authoritative_sources:
+  - title: 用户M6.5 Final temporal correctness closure及同根因forward-fix授权
+    reason: 允许generic correctness，不改变事实authority或query semantics
+  root_cause: 时间端点完整，LLM遗漏field literal；缺轴结构检查过度拒绝既有implicit trend
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仅preserve missing_span及explicit field evidence；structural check只拒绝已有dimension evidence却丢mention，implicit runtime日期路径不变
+  regression_tests:
+  - backend/tests/unit/test_m6_5_temporal_coverage_evidence.py
+  prohibited_patterns:
+  - UCI production特例或expected迎合
+  - 绕过Facts或放宽12-row
+  prevention_rules:
+  - 先failure-first再最小修复，Cloud mandatory完成前不得封板
+  related_adr: ADR-016
+  related_commits: []
+  # correctness已Cloud复验；monitoring保留至自身提交CI/Audit，无循环SHA声明
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: final_cloud_correctness_reverified
+    version: M6.5
+    evidence: product-eec816f2 B01六ordered月 PASS；3815 full backend PASS
+  - date: '2026-10-20'
+    action: failure_first_minimal_generic_compatibility
+    version: M6.5
+- id: ERR-65-010
+  title: 报告既有numeric schema representation兼容
+  category: ERR
+  first_detected_version: M6.5
+  symptom: Cloud三个Decimal及Integer KPI均被既有报告type检查拒绝
+  local_evidence: template-eligibility-diagnostic exact runtime Decimal/Integer且所有KPI type mismatch；4f7829df 3RED/6PASS；e6a5d952 91PASS；be198046 78PASS；product-8bbee2f8 RP01 Cloud PASS
+  authoritative_sources:
+  - title: 用户M6.5 Final temporal correctness closure及同根因forward-fix授权
+    reason: 允许generic correctness，不改变事实authority或query semantics
+  root_cause: ReportContractValidator只承认Double/Int64并对unknown type直接casefold
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 在既有numeric requirement检查允许Decimal对应Double、Integer对应Int64；unknown type继续unavailable；所有identity及template定义不变
+  regression_tests:
+  - backend/tests/unit/test_m6_5_report_numeric_schema_compatibility.py
+  prohibited_patterns:
+  - UCI production特例或expected迎合
+  - 绕过Facts或放宽12-row
+  prevention_rules:
+  - 先failure-first再最小修复，Cloud mandatory完成前不得封板
+  related_adr: ADR-016
+  related_commits: []
+  # correctness已Cloud复验；monitoring保留至自身提交CI/Audit，无循环SHA声明
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: final_cloud_correctness_reverified
+    version: M6.5
+    evidence: product-8bbee2f8 RP01 / product-86648043 RP02两KPI模板 PASS
+  - date: '2026-10-20'
+    action: failure_first_minimal_generic_compatibility
+    version: M6.5
+- id: ERR-65-011
+  title: Cloud targeted literal的已grounded字段语言交接
+  category: ERR
+  first_detected_version: M6.5
+  symptom: 国家 Germany合法语言及Grounding字段后target_literals为空，触发full43拒绝
+  local_evidence: product-e2d522b0 P01d语言国家/Germany完整且ZERO业务DAX/Facts/Memory；51b3f4e2 failure-first1RED；51047493 35PASS
+  authoritative_sources:
+  - title: 用户M6.5 Final temporal correctness closure及同根因forward-fix授权
+    reason: 允许generic correctness，不改变事实authority或query semantics
+  root_cause: Cloud语言context仅识别canonical字段名，未使用existing Grounding callback的exact catalog field
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: existing member lookup callback验证exact catalog/model/schema/field后request-local传搜索literal；不选择字段、runtime ValueSearch exact candidate和existing Grounding仍为authority
+  regression_tests:
+  - backend/tests/unit/test_m6_5_cloud_literal_context.py
+  - backend/tests/unit/test_m6_5_value_search_adapter.py
+  prohibited_patterns:
+  - UCI production特例或expected迎合
+  - 绕过Facts或放宽12-row
+  prevention_rules:
+  - 先failure-first再最小修复，Cloud mandatory完成前不得封板
+  related_adr: ADR-016
+  related_commits: []
+  # correctness已Cloud复验；monitoring保留至自身提交CI/Audit，无循环SHA声明
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: final_cloud_correctness_reverified
+    version: M6.5
+    evidence: product-624a9569五轮scope/Oracle及multiturn-contract-audit PASS
+  - date: '2026-10-20'
+    action: failure_first_minimal_generic_compatibility
+    version: M6.5
+- id: ERR-65-008
+  title: operator已证明year grain但ResultInspection拒绝Integer年份轴
+  category: ERR
+  first_detected_version: M6.5
+  symptom: TREND通过exact模型绑定和completeness，Fabric IQ返回三年正确金额，但result_trend_temporal_value_invalid阻止Facts及Memory
+  local_evidence: product-25d5ebdd T01实际三行2009/2010/2011及scale4金额对齐，validation_failed且ZERO Facts/Memory；外部test_year_inspection_red.py在3d16f63f为1RED；f55e6532六文件focused143PASS；B01 semantic_coverage_incomplete ZERO工具；T02全25月CONTRACT_DRIFT ZERO Facts/Memory
+  authoritative_sources:
+  - title: 用户M6.5 Explicit Temporal Binding + Final Closure
+    reason: 允许existing ModelOverrideRegistry显式绑定，但明确禁止修改ResultInspection及核心事实authority
+  - title: ADR-016
+    reason: 结果时间顺序和bounded范围必须经独立inspection，失败不能进入Answer或Memory
+  root_cause: ResultSemanticInspectionGate._inspect_trend统一调用_date_value，该函数只接受date/datetime或日期月份string；整数年份未被支持。inspect调用仅传plan/result，没有validated catalog grain证明；operator绑定解决completeness但不改变该结果合同
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 用户最新明确批准既有inspection的proven YEAR numeric compatibility；传既有fresh schema/catalog验证exact model/fingerprint/table/column/runtime/generation，only exact int 1..9999，保留值/顺序和bounded范围。f74664f1 failure-first24RED，fffb8bc6为64PASS，faf5f783为100PASS，a9f3a4cd factual API2PASS；product-0e705d77 T01真实Inspection/Facts/Answer/Memory及三年Oracle PASS；无authority仍拒绝
+  regression_tests:
+  - backend/tests/unit/test_m6_5_operator_temporal_binding.py
+  - backend/tests/unit/test_m6_5_temporal_result_compatibility.py
+  - backend/tests/api/test_m6_5_year_inspection_factual_chain.py
+  prohibited_patterns:
+  - 将整数年份改为合成日期以绕过inspection
+  - 用GROUPED或正确DAX结果代替TREND最终PASS
+  - 绕过ResultInspection直接创建Facts或Memory
+  prevention_rules:
+  - operator semantic binding不授予结果验证豁免，representation与已证明grain须沿既有链保守验证
+  - 任何integer axis compatibility都需要可信exact fresh YEAR authority，无authority继续fail closed
+  related_adr: ADR-016
+  related_commits: []
+  # correctness已Cloud复验；monitoring保留至自身提交CI/Audit，无循环SHA声明
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: final_cloud_correctness_reverified
+    version: M6.5
+    evidence: product-0b767c24 T01-final-witness explicit Inspection/Facts/Answer/Memory/Oracle PASS
+  - date: '2026-10-20'
+    action: native_operator_year_binding_pass_result_inspection_boundary_reproduced_no_core_edit
+    version: M6.5
+- id: ERR-65-006
+  title: Cloud primitive temporal type缺少现有trend所需分组authority
+  category: ERR
+  first_detected_version: M6.5
+  symptom: 已证明Year对象与GROUPED事实，但TREND在canonical_shape_trend_temporal_dimension_required前拒绝；BOUNDED_TREND无唯一date及month grouping proof
+  local_evidence: temporal-authority-c5ad16f3与两次fresh raw-temporal-authority-1504b4c8/e7297345仅Name Type FormatString；product-5fe5407e T01 ZERO DAX/Facts/Memory；97ba9510合成authority/completeness邻近35PASS
+  authoritative_sources:
+  - title: 用户M6.5 FINAL CORRECTNESS CLOSURE
+    reason: 不改变Grounding Plan Facts authority或12-row；只有架构authority边界才STOP
+  - title: ADR-016与ADR-020
+    reason: primitive type或display format不能推断temporal grain，IQ metadata不足必须fail closed
+  root_cause: IQ实际schema未提供expression key grain或source binding；Year Integer不证明year grain，YearMonth DateTime不证明month-start projection；现有runtime month fallback要求完整成员集合但该列25成员超过12 business rows，不能first12或分页自证
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 最新用户明确批准existing ModelOverrideRegistry作为server/operator temporal semantic authority。exact Workspace/model、runtime identity及schema fingerprint经native selection验证，配置仅M6.5外部资产；最小修复拒绝矛盾runtime grouping并保留runtime优先。failure-first326b4df8为2RED/14PASS，c69fa187为107PASS，更新focused f55e6532为143PASS；product-25d5ebdd T01实际进入year DAX，原分组authority阻塞已解除，后续ERR-65-008独立inspection阻塞未解决
+  regression_tests:
+  - backend/tests/unit/test_m6_5_temporal_authority_gap.py
+  - backend/tests/unit/test_m6_5_year_projection_boundary.py
+  - backend/tests/unit/test_m6_5_operator_temporal_binding.py
+  prohibited_patterns:
+  - 从Year或YearMonth命名及FormatString推断时间grain
+  - 用25个月first12或targeted subset冒充完整month vocabulary
+  - 把Oracle和Sales.pq设计冒充runtime authority或由client及LLM声明temporal binding
+  prevention_rules:
+  - temporal projection只消费runtime明确authority或已获批准且identity与fingerprint一致的server/operator registry；矛盾或缺失保持closed
+  - matrix正例仅实际目标shape completed且Oracle一致，safe clarification不计正例
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: fresh_raw_schema_missing_grain_and_cloud_trend_fail_closed_architecture_boundary_stop
+    version: M6.5
+  - date: '2026-10-20'
+    action: explicit_user_operator_authority_existing_registry_runtime_conflict_failure_first_cloud_binding_pass
+    version: M6.5
+- id: ERR-65-007
+  title: ENTITY_LIST语言草稿遗漏维度且filter aggregate被理解为scalar
+  category: ERR
+  first_detected_version: M6.5
+  symptom: runtime Year exact存在但entity_list frame dimension_mentions为空；France聚合金额正确但shape scalar不能计FILTERED_AGGREGATION正例
+  local_evidence: product-5fe5407e E01缺mention和F01 scalar；39b796e7合法2RED/2PASS，9452985f误导入collection error保留；9f9c5d32邻近116PASS，a86cee33邻近118PASS；product-bff94686 E01/F01正式Cloud shape Facts Memory Oracle PASS
+  authoritative_sources:
+  - title: 用户M6.5 FINAL CORRECTNESS CLOSURE
+    reason: existing semantic evidence reconciliation允许failure-first修复，不降低verbatim或改变Grounding
+  - title: ADR-016
+    reason: shape槽位必须完整，不能用scalar退化冒充目标shape
+  root_cause: Understanding结构门只检查ranking维度而遗漏entity_list；prompt未明确named-member filter与scalar的既有shape分类，bounded language draft丢失结构信息
+  failed_attempts:
+  - product-3c707497 E01非verbatim被正确拒绝，F01仍scalar；历史失败保留，最终自然合同问题与明确prompt回归
+  repair_attempt_count: 1
+  final_fix: 现有Understanding仅增加entity_list维度mention或unresolved/明确继承必需检查与有界修复；prompt明确实体枚举保留literal、named-member aggregate使用已有filtered_aggregation。对象和member仍runtime证明；未知和非verbatim不得执行
+  regression_tests:
+  - backend/tests/unit/test_m6_5_entity_language_evidence.py
+  prohibited_patterns:
+  - 根据schema或Oracle补入LLM遗漏的canonical字段
+  - 降低verbatim或将clarification和scalar算目标shapePASS
+  prevention_rules:
+  - Understanding仅保留语言证据，缺槽先bounded repair或clarify，runtime仍为identity authority
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: entity_list_failure_first_minimal_language_gate_and_explicit_filter_prompt_cloud_pass
+    version: M6.5
+- id: ERR-65-005
+  title: Integer Year维度被Frozen presentation按名称误判为月份日期
+  category: ERR
+  first_detected_version: M6.5
+  symptom: 正式Cloud按Sales Year分组DAX成功并返回独立Oracle三年金额，Answer generation因presentation_date_invalid拒绝且Memory不commit
+  local_evidence: product-e863ff2f明确answer_generation及presentation_date_invalid；9beaefea四个RED分别以int和Decimal金额复现AnswerBuilder及StructuredPresentationBuilder失败；3c30583a为Decimal全链及邻近357PASS
+  authoritative_sources:
+  - title: 用户M6.5 FINAL CORRECTNESS CLOSURE最新授权
+    reason: 普通correctness持续failure-first最小修复；只有factual authority或架构边界扩大才STOP
+  - title: ADR-016
+    reason: 展示不得根据字段名称猜测或改变已验证维度值及时间grain
+  root_cause: FactBoundedAnswerBuilder._is_time_grouped及StructuredPresentationBuilder._is_time_series_values只凭Year等名称返回true，随后无条件以MONTH格式消费整数2009；int金额也同样失败，独立于Decimal type gate
+  failed_attempts:
+  - 05a153e1旧fixture隐含月份heuristic及新fixture空Answer文本；补齐明确model-scoped grain和合法文本，expected未改
+  - product-3f476b41正式G01成功但脚本按展示顺序比较Oracle错误；改完整分组键值对账和事实排列验证，原失败保留
+  repair_attempt_count: 1
+  final_fix: 删除Answer及Chart按名称或字符串形态猜temporal的重复gate；展示复用canonical time range和runtime Catalog现有temporal grouping，经display binding传递grain；整数category原样展示无千分位。eee2ae4a四RED，c42ab1e4专项167PASS、7d9a7917邻近311PASS；product-5fe5407e G01正式Cloud completed、Memory=true、独立Oracle与展示事实一致。Facts/DAX/Oracle不变，M6.5全矩阵尚未完成
+  regression_tests:
+  - backend/tests/unit/test_m6_5_year_projection_boundary.py
+  prohibited_patterns:
+  - 把整数年份伪造成月份日期或修改expected迎合presentation失败
+  - 把safe refusal当作positive Year grouped验收PASS
+  prevention_rules:
+  - 时间grain展示必须消费真实typed value和已验证scope，不能仅凭Year名称
+  - 同一展示问题用int和Decimal来源分别复现以区分numeric兼容与时间语义根因
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-20'
+    action: fresh_cloud_integer_year_month_format_failure_proved_new_p0_stop
+    version: M6.5
+  - date: '2026-10-20'
+    action: authorized_minimal_temporal_presentation_fix_failure_first_regression_cloud_grouped_pass
+    version: M6.5
+- id: ERR-65-004
+  title: Typed Decimal进入既有Facts后被Frozen Answer和Report numeric validator拒绝
+  category: ERR
+  first_detected_version: M6.5
+  symptom: 窄numeric normalization与三个Cloud金额Oracle对账通过，但正式S01 answer_validation_failed且Memory不commit
+  local_evidence: M6.5外部numeric-final-de9f099e为三scalar raw wire到Decimal到Oracle PASS；product-88da72af正式S01 response_failed；e9338ba4 synthetic正式链同根因RED，9a383308为168邻近PASS
+  authoritative_sources:
+  - title: 用户Numeric Authority Closure与Frozen STOP条件
+    reason: 只允许Adapter normalization直接Decimal解析，不改Frozen Core；若必须改Frozen才STOP
+  - title: 用户Frozen Decimal Compatibility Forward-Fix最新明确授权
+    reason: 后续只允许finite Decimal representation兼容及同根因verified number门，不转float或改变numeric provenance
+  - title: ADR-009
+    reason: Facts与输出验证保留单一authority，不允许Adapter转float或隐藏错误绕过事实合同
+  root_cause: Facts支持Decimal并原样传入Answer metrics，但ValidationService metric provenance与report KPI只接受int或float；新增窄Decimal类型在Frozen validator中不兼容
+  failed_attempts:
+  - 新测试最初导入错误类名导致collection error，99cab20a保留；修正为既有VerifiedFactSetBuilder后获得合法7RED
+  - 外部宿主owned空DB未初始化导致product503，copy及hash验证空副本后既有Alembic初始化；无产品修复
+  - metadata限流导致selection503，失败保留；后续真实S01执行成功才定位Frozen类型拒绝
+  repair_attempt_count: 1
+  final_fix: 用户已明确授权窄Frozen Decimal compatibility；Answer metric和Report KPI支持finite Decimal且来源不转float，FactOutputValidator拒绝bool/string/nonfinite并保留fact binding；Report projection pre-validator拒绝Pydantic先coerce，Renderer直接保留Decimal。f94e7165合法17RED/19PASS后，1ddba09a专项252PASS；product-3ebceafa正式S01和R01 PASS，product-cbb2eb15正式S02/S03 PASS。原失败证据及expected不变；其余Cloud矩阵和Final Gates尚未完成，不发布
+  regression_tests:
+  - backend/tests/unit/test_m6_5_typed_numeric_string.py
+  - backend/tests/api/test_m6_5_decimal_factual_chain.py
+  - backend/tests/unit/test_m6_5_cloud_numeric_text_boundary.py
+  - backend/tests/unit/test_m6_5_decimal_validation.py
+  prohibited_patterns:
+  - Decimal转float绕过Frozen numeric校验或修改expected制造PASS
+  - 删除正式链positive失败测试或将safe refusal计为positive Cloud验收
+  prevention_rules:
+  - 新Adapter类型必须验证QueryResult到Inspection到Facts到Answer及Report到Memory的完整兼容性
+  - Decimal编码只保留runtime实得精度，Oracle容差不能证明更高精度
+  related_adr: ADR-009
+  related_commits: []
+  status: open
+  events:
+  - date: '2026-10-20'
+    action: numeric_adapter_oracle_pass_formal_decimal_validator_rejection_proved_frozen_scope_stop
+    version: M6.5
+  - date: '2026-10-20'
+    action: user_authorized_frozen_decimal_compatibility_failure_first_minimal_fix_formal_cloud_three_amounts_pass
+    version: M6.5
+- id: ERR-65-003
+  title: 原始StockCode literal身份与Power BI文本canonical成员及Oracle合同冲突
+  category: ERR
+  first_detected_version: M6.5
+  symptom: 全部1067371行已保留但source5305个StockCodes在模型变为5131；精确模型15056BL filter包含原始15056bl行，原始literal expected9646而Cloud返回9772 quantity
+  local_evidence: 外部M6.5 Acceptance/20261016-cloud-real/collation-eebadf09为actual lookup和filter；Diagnostics/20261016-cloud-real/literal-source-comparison及stockcode-collation-reconciliation解释全部174个差额；runtime-4eec9f5f保留formatted numeric拒绝和targeted proof PASS；product-counts-998ee225为正式Total Orders PASS与Year零DAX澄清
+  authoritative_sources:
+  - title: 用户Flat Model Cloud Real Path新P0 STOP条件
+    reason: 单表仍暴露新的P0 architecture blocker再STOP，不能自行改变Grounding或Frozen Core
+  - title: Microsoft Power BI Desktop data types官方说明
+    reason: Power BI文本引擎case insensitive并自动去掉trailing spaces；不能将source case-sensitive identity等同runtime canonical member
+  - title: ADR-008及ADR-009
+    reason: runtime证明canonical identity和Facts；Oracle不能暗改expected，model member存在不证明原始literal population
+  root_cause: 全量宽表保留raw rows但Power BI文本编码合并173组case variants及1组trailing-space变体；当前合同要求raw literal/Oracle与既有canonical model member同时一致而未明确source identity与model equivalence。独立金额格式为人民币符号及千分位使IQ返回展示string，numeric authority正确拒绝
+  failed_attempts:
+  - 原生scalar返回Decimal描述但cell是带货币string，首个runtime CONTRACT_DRIFT保留；不解析currency文本或放宽validator
+  - 新canonical Oracle首次直接读取Excel XML binary number遭scale4 guard拒绝，7389f8a5保留；改为与既有Raw Oracle一致的Excel float解码再Decimal，b535a53c完整行数和独立整数Decimal对账PASS，无旧Oracle修改
+  repair_attempt_count: 1
+  final_fix: 用户已追加批准Canonical Product Identity与Numeric Measure Format；新canonical Oracle5131 members及174碰撞组、raw source映射/代表/TopN独立计算，旧Raw Oracle SHA不变；仅runtime声明列最小normalize，candidate仍exact、Core与numeric validator不改；专项156PASS、完整后端3602PASS/1SKIP/15既有warnings，Semantic819PASS、Golden11PASS及治理门PASS；operator同测试模型Replace待执行。此前STOP历史：完成实际runtime/source对账并按用户新P0 STOP，不改production/Core/model或原Oracle。金额unformatted诊断对齐但不是product PASS，explicit ValueSearch exact及unknown负例Cloud Real PASS，版本M6.4.1未发布
+  regression_tests:
+  - backend/tests/unit/test_m6_5_canonical_member_identity.py
+  - backend/tests/unit/test_m6_5_cloud_numeric_text_boundary.py
+  - backend/tests/unit/test_m6_5_explicit_member_proof.py
+  - backend/tests/unit/test_m6_5_value_search_adapter.py
+  prohibited_patterns:
+  - 将Power BI canonical member存在证明冒充原始case-sensitive literal population证明
+  - 将5305 expected暗改5131或修改原始StockCode大小写和尾随空格以制造PASS
+  - 解析货币展示string获取numeric fact或对生产DAX偷偷加零绕过格式
+  prevention_rules:
+  - 进入Cloud Real前独立验证source nominal identity和模型collation equivalence，不由LLM或offline literal授予authority
+  - 新P0先记录reproducer和实际权限边界，再由明确合同scope决定source identity或model equivalence处置
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-16'
+    action: actual_flat_model_exact_member_and_source_collation_collision_proved_user_new_p0_stop
+    version: M6.5
+  - date: '2026-10-16'
+    action: user_authorized_canonical_identity_numeric_format_independent_oracle_and_minimal_adapter_regression
+    version: M6.5
+  - date: '2026-10-17'
+    action: republished_runtime_schema_and_counts_proved_decimal_strings_rejected_canonical_search_empty_focused_probe_pending
+    version: M6.5
+  - date: '2026-10-20'
+    action: fresh_canonical_exact_and_normalized_adapter_grounding_proved_81_regression_pass_numeric_provider_authority_contract_gap_stop
+    version: M6.5
+- id: ERR-65-001
+  title: 完整公开数据的高基数成员及月份证明超出IQ保守快照边界
+  category: ERR
+  first_detected_version: M6.5
+  symptom: 实际profile为43国25月5305产品；get_column_members full快照第13行使Cloud product拒绝，member/time positive验收无法直接成立
+  local_evidence: M6.5外部Acceptance/01f6e7d5为邻近79PASS，bf4e36e9为新增13PASS；四个高基数synthetic审计保持CONTRACT_DRIFT，不是Cloud Real；Profile/20261015-verified-r2完整source Oracle PASS
+  authoritative_sources:
+  - title: 用户M6.5 architecture scope STOP及IQ envelope合同
+    reason: 保持business12和wireN加1，不扩大maxRows或分页，需新architecture scope时停止
+  - title: ADR-008及ADR-020
+    reason: 完整runtime member与当前principal schema为authority，不能用离线source或LLM赋予产品成员证明
+  root_cause: 现有ColumnMembersRequest只有field和limit无literal检索合同，IQ product成员共享wire13而Grounding需要完整snapshot；IQ expression与relationship方向和cardinality还未知，不能将离线模型设计赋予month或星型authority
+  failed_attempts:
+  - 多literal候选合并让France精确候选被france非精确literal经既有normalized路径误用；外部6a6d0869为合法RED，初始fixture失败b6099bba亦保留
+  repair_attempt_count: 1
+  final_fix: 用户最新批准完整单表Sales，保留关系cardinality CONTRACT_GAP为已知限制且不normalize；actual非空ValueSearch字段结构已probe，current-frame verbatim literal经scoped lookup和exact citation/table/column/value校验后交给现有Grounding。targeted proof标truncated保留完整词表拒绝，Score不选择，unknown/fuzzy/wrong-column不绑定、duplicate保持歧义；多literal要求每个各自exact证明后才暴露集合，避免既有normalized路径借用其它literal候选；9RED原件保留，专项128PASS，最终完整后端3575PASS/1SKIP/15既有warnings、前端160PASS及全部治理门PASS。版本M6.4.1，模型未发布，UCI Real尚未运行
+  regression_tests:
+  - backend/tests/unit/test_m6_5_cloud_validation_boundary.py
+  - backend/tests/unit/test_cloud_product_completeness.py
+  - backend/tests/unit/test_m6_5_explicit_member_proof.py
+  - backend/tests/unit/test_m6_5_relationship_contract_gap.py
+  - backend/tests/unit/test_m6_5_cloud_literal_context.py
+  - backend/tests/unit/test_m6_5_value_search_adapter.py
+  prohibited_patterns:
+  - 裁剪公开数据或将first12成员当完整snapshot以制造positive PASS
+  - 超出新用户explicit ValueSearch最小scope扩展Core或第二Grounding，偷偷分页或扩大maxRows
+  - 用offline Oracle或历史合成模型PASS替代UCI Cloud Real八Shape证据
+  prevention_rules:
+  - 高基数member和month证明与business result envelope须分项审计，明确architecture scope后再实现
+  - schema relationship和expression未知保持未知，不能从模型命名或offline设计猜方向和grain
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-15'
+    action: fresh_cold_start_full_public_profile_and_failure_first_architecture_boundary_stop
+    version: M6.5
+  - date: '2026-10-15'
+    action: user_authorized_targeted_value_search_and_runtime_relationship_scope_actual_probe_missing_cardinality_contract_gap_stop
+    version: M6.5
+  - date: '2026-10-15'
+    action: user_authorized_flat_sales_full_model_actual_positive_value_search_probe_minimal_exact_proof_regression_operator_publication_pending
+    version: M6.5
+- id: ERR-65-002
+  title: 并行备用下载覆盖profile工作副本与过度保守整数上界拒绝
+  category: ERR
+  first_detected_version: M6.5
+  symptom: 首次profile遇EOFError，第二次完整profile在cross_max乘rowcount的保守溢出guard拒绝
+  local_evidence: 外部Acceptance/7743441f及9c2d2c1f为原失败；8d30f85e为fresh immutable完整profile和独立Decimal PASS，原失败回执保留
+  authoritative_sources:
+  - title: 用户M6.5数据profile与PBIAgentTest规则
+    reason: 保留原始source与失败证据，实际profile不能假设或默默清洗
+  root_cause: 正在读取的workbook被备用curl下载覆盖；首版guard把独立最大quantity和price及全部rowcount相乘，远大于actual整数aggregate上界
+  failed_attempts:
+  - 备用官方下载90秒timeout，保留外部partial文件，不作为source
+  repair_attempt_count: 1
+  final_fix: 停止备用下载；官方完整ZIP独立copy和SHA及CRC验证，immutable bytes读取；guard分别验证row乘法界及Python整数sum_abs实际聚合界；full1067371行与独立Decimal对账PASS，仅离线script修复，Frozen Core无改动
+  regression_tests:
+  - backend/tests/unit/test_m6_5_cloud_validation_boundary.py
+  prohibited_patterns:
+  - 多下载进程同时写profile source或把部分下载当完整数据
+  - 删除原失败或改metric expected迎合PASS
+  prevention_rules:
+  - 各download attempt独立owned路径，完整CRC及hash后immutable snapshot再profile
+  - signed整数按row和actual aggregate验证，overflow拒绝保留且不能简单关闭validator
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-15'
+    action: preserved_download_profile_failures_crc_sha_immutable_source_integer_decimal_reconciled
+    version: M6.5
 - id: ERR-641-001
   title: PREP性能方向与测试资产复制原件治理需服从当前scope
   category: ERR

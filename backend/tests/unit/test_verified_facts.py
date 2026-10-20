@@ -607,8 +607,16 @@ def test_monthly_answer_summarizes_peak_and_rebound_without_iso_timestamp():
         ],
     )
     facts = VerifiedFactSetBuilder().build(plan, result)
-
-    answer = FactBoundedAnswerBuilder().build(plan, result, facts)
+    # Explicit model-scoped month display proof, rather than a field-name guess.
+    binding = DisplayLocalization(
+        semantic_model_key='model', object_identity='field:Sales:Year Month',
+        object_type=SemanticObjectType.FIELD, canonical_name='Year Month',
+        locale='zh-CN', display_name='月份', source=DisplayLocalizationSource.MODEL_GLOSSARY,
+        schema_identity='b' * 64, data_type='date',
+        format_kind=PresentationFormatKind.MONTH, temporal_grain='month',
+    )
+    answer = FactBoundedAnswerBuilder().build(plan, result, facts,
+        display_bindings={'[Year Month]': binding})
 
     assert "2025年11月" in answer.answer
     assert "达到最高点" in answer.answer

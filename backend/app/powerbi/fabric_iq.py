@@ -12,6 +12,7 @@ from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.powerbi.fabric_iq_contract import fail
 from backend.app.powerbi.fabric_iq_normalization import (
     IQInlineEnvelope, error_code, guid, normalize_query, normalize_schema, unpack,
+    normalize_value_search,
 )
 from backend.app.powerbi.fabric_iq_transport import FabricIQTransport
 from backend.app.powerbi.models import PowerBICompatibilityProbe
@@ -293,6 +294,19 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         matches = [c for t in schema.tables if t.name == request.table_name
                    for c in t.columns if c.name == request.field_name]
         if len(matches) != 1: raise fail("SCHEMA_UNAVAILABLE")
+        from backend.app.application.cloud_literal_context import requested_literals
+        from backend.app.powerbi.member_identity import declaration, canonical_literal
+        contract = declaration(matches[0])
+        if contract and contract['role'] == 'provenance_only':
+            raise fail('RESOURCE_NOT_ACCESSIBLE')
+        literals = requested_literals(request.table_name, request.field_name,
+            input_name=contract['input_name'] if contract else None)
+        if literals and contract:
+            literals = tuple(dict.fromkeys(canonical_literal(value) for value in literals))
+        # Targeted existence proof is allowed for explicit categorical literals
+        # only. Date/month/structural requests retain full-snapshot completeness.
+        if literals and matches[0].data_type.lower() in {'text', 'string'}:
+            return await self._explicit_members(request, schema, literals)
         table = request.table_name.replace("'", "''")
         column = request.field_name.replace("]", "]]")
         reference = f"'{table}'[{column}]"
@@ -308,6 +322,35 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
             table_name=request.table_name, field_name=request.field_name,
             values=[r[0] for r in result.rows[:request.limit]],
             truncated=result.truncated or len(result.rows) > request.limit, source_mode="real")
+
+    async def _explicit_members(self, request, schema, literals):
+        from backend.app.powerbi.fabric_iq_contract import validate_value_search_capability
+        ref = self._binding(request.semantic_model_key)
+        values = []
+        async with self._connection(key=request.semantic_model_key) as connection:
+            validate_value_search_capability(connection._inventory.get('ValueSearch'))
+            for literal in literals:
+                raw = await connection.call('ValueSearch', {'artifactId': ref.semantic_model_id,
+                    'searchTerms': [literal], 'scope': [{'tableName':request.table_name,
+                                                       'columnNames':[request.field_name]}]})
+                proof = normalize_value_search(raw, ref.semantic_model_id, schema,
+                    request.table_name, request.field_name, literal)
+                # Do not lend another literal's candidate to Grounding's
+                # normalized/alias matching. Every current literal must have
+                # its own exact proof before this shared field set is exposed.
+                if not proof.values:
+                    values = []
+                    break
+                values.extend(proof.values)
+                if len(values) > 12:
+                    raise fail('CONTRACT_DRIFT')
+        self._validate()
+        self._binding(request.semantic_model_key)
+        if self._schemas.get(request.semantic_model_key) is not schema:
+            raise fail('CONTRACT_DRIFT')
+        return ColumnMembersResult(semantic_model_key=request.semantic_model_key,
+            table_name=request.table_name,field_name=request.field_name,
+            values=values,truncated=True,source_mode='real')
 
     async def probe_compatibility(self, semantic_model_key):
         await self.health_check()

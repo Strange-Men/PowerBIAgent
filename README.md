@@ -161,17 +161,17 @@ API 请求/响应以当前开发实例 OpenAPI 和[接口契约](docs/04_powerbi
 安装开发依赖后，先将 `PBIAGENT_TEST_ROOT` 设为仓库外独立的 **PBIAgentTest** 绝对路径。本地测试通过 runner 执行，cache、输出与临时文件按 milestone/run 存放；临时目录结束时清理。路径和生命周期规则见 [AGENTS](AGENTS.md)。GitHub CI 保持其现有可移植运行方式。
 
 ```powershell
-python scripts/run_local_validation.py --milestone M6.4.1 -- python -m pytest backend/tests -q
-python scripts/run_local_validation.py --milestone M6.4.1 -- python scripts/check_semantic_compatibility.py
-python scripts/run_local_validation.py --milestone M6.4.1 --frontend -- npm test
-python scripts/run_local_validation.py --milestone M6.4.1 --frontend -- npm run build
+python scripts/run_local_validation.py --milestone M6.5 -- python -m pytest backend/tests -q
+python scripts/run_local_validation.py --milestone M6.5 -- python scripts/check_semantic_compatibility.py
+python scripts/run_local_validation.py --milestone M6.5 --frontend -- npm test
+python scripts/run_local_validation.py --milestone M6.5 --frontend -- npm run build
 ```
 
 自动化验证使用离线 Mock/Synthetic；它不证明真实 Desktop 在线状态、Cloud 权限或真实 OLS deny。运行真实验收前读取对应专项文档并使用独立测试资产，不把真实业务文件或凭据放进 Git。
 
 ## Status / Limitations
 
-当前版本：**M6.4.1**；稳定基线 **M6.4 FINAL COMPLETE**。Local Desktop 与 Fabric IQ Cloud 已通过各自正式验收。本次维护处理测试资产和文档治理，当前发布信息与维护结论以 [07](docs/07_milestones_status_and_open_questions.md) 为准。
+当前版本：**M6.5**；完整公开真实业务数据的八种查询形状、多轮、两种KPI报告及资源/安全邻接已有Cloud Real证据。发布以本提交自身CI与Remote Audit成立为准；现有限制及证据见 [07](docs/07_milestones_status_and_open_questions.md)。
 
 - Fabric IQ 正式边界为 **business rows ≤12、wire=N+1 sentinel、columns ≤8**。超界、CSV、未知或不完整结果在正式 Facts 前拒绝；较大 TopN 或长趋势不能据此宣称完整结果。
 - Cloud 会话与存储仍为 single-process/SQLite/filesystem，尚不是多 worker 企业生产部署。Microsoft 配额、MCP Preview 协议和上游延迟仍有适用限制。

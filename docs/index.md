@@ -42,6 +42,12 @@ M6 Cloud入口：[M6.0 audit / Product/Auth UX / handoff](milestones/m6/m6_0_fab
 [ADR-020 consumption / catalog authority](adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)。
 这是设计合同；current状态/路线/开发交接仍分别以07/08/09为准。
 
+M6.5：[Cloud Real设计与风险](milestones/m6/m6_5_cloud_real_business_validation.md)、
+[BUSINESS_METRIC_CONTRACT](milestones/m6/m6_5_business_metric_contract.md)、
+[Cloud acceptance matrix](milestones/m6/m6_5_cloud_acceptance_matrix.md)。
+actual Cloud验证与新P0停点见[Runtime STOP](milestones/m6/m6_5_cloud_runtime_contract_stop.md)。
+一次性测试model的[operator步骤](milestones/m6/m6_5_operator_test_model_setup.md)不增加产品authoring能力。
+
 | 路径 | Owner / purpose | 何时读取 |
 |---|---|---|
 | `docs/specs/10_frontend_visual_and_interaction_spec.md` | 前端视觉与交互专项规范 | M5 或相关契约任务 |

@@ -4,9 +4,11 @@
 
 ## 当前开发入口
 
-Settings.version=M6.4.1；M6.4 FINAL COMPLETE 是已验证基线；M6.0–M6.3 各自 COMPLETE，IQ_ACCEPTED，M5 FINAL/FROZEN 有效。
-M6.4.1 仅处理仓库外测试资产治理、README 信息架构、current-state 一致性、IQ 保守结果边界明确化及 Test B OLS 证据状态；不实施 Schema cache、connection reuse、Favorites/Preferences，不进入 M6.5。
-当前封板证据以07/09为准，本轮维护发布须自身 exact-SHA CI/Remote Audit/clean。
+当前版本：**M6.5**（Cloud Real Business Data Validation发布候选）；生效须自身CI/Audit/clean/shutdown。
+M6.4.1为本次稳定基线；M5 FINAL/FROZEN、M6.0–M6.4既有验收保持。
+完整公开数据Cloud八Shape、Oracle、多轮、两KPI模板及资源/安全邻接已验证；详情以07/09为准。
+关系cardinality gap与Test B deferred保留；后续M6.5.1/M6.5.2/M6.6仅路线，不自动实施。
+07当前状态，08路线，09唯一交接；不重复保存浮动SHA或继承旧CI。下一implementation仍须独立scope。
 
 ## Cold Start
 

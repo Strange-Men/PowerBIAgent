@@ -22,6 +22,7 @@ from backend.app.report.presentation import (
     ReportPresentationProjection,
 )
 from backend.app.schemas.data_contracts import ChartSpec, KPISpec, ReportSpec, TableSpec
+from backend.app.schemas.numeric_representation import is_finite_number
 
 
 class ExecutiveSalesReportRenderer(ReportRenderer):
@@ -649,12 +650,14 @@ class ExecutiveSalesReportRenderer(ReportRenderer):
 
     @staticmethod
     def _is_number(value: Any) -> bool:
-        return isinstance(value, (int, float, Decimal)) and not isinstance(value, bool)
+        return is_finite_number(value)
 
     @staticmethod
     def _decimal(value: Any) -> Decimal:
-        if isinstance(value, bool):
+        if not is_finite_number(value):
             raise ValueError("executive_report_number_invalid")
+        if isinstance(value, Decimal):
+            return value
         try:
             number = Decimal(str(value))
         except (InvalidOperation, ValueError, TypeError) as exc:

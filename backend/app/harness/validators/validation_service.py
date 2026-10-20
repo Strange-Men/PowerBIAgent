@@ -4,6 +4,8 @@ Application 只依赖此服务，不散落独立验证逻辑。
 """
 
 import re
+from decimal import Decimal
+from fractions import Fraction
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -23,6 +25,7 @@ from backend.app.schemas.data_contracts import (
     UserContext,
 )
 from backend.app.memory.models import MemoryCommitEvidence, StructuredWorkMemory
+from backend.app.schemas.numeric_representation import is_finite_number
 
 
 class ValidationResult(BaseModel):
@@ -952,7 +955,7 @@ class ValidationService:
             return errors
 
         # 提取 QueryResult 列数据（数值 + 非空计数）
-        col_values: dict[str, list[float]] = {}
+        col_values: dict[str, list[int | float | Decimal]] = {}
         col_non_null: dict[str, int] = {}
         for row in result.rows:
             for i, col_name in enumerate(result.columns):
@@ -960,10 +963,8 @@ class ValidationService:
                     val = row[i]
                     if val is not None:
                         col_non_null[col_name] = col_non_null.get(col_name, 0) + 1
-                    try:
-                        col_values.setdefault(col_name, []).append(float(val))
-                    except (ValueError, TypeError):
-                        pass
+                    if is_finite_number(val):
+                        col_values.setdefault(col_name, []).append(val)
 
         ev = answer.evidence or {}
         provenance = ev.get("metric_provenance")
@@ -976,7 +977,7 @@ class ValidationService:
             return errors
 
         for metric_name, metric_value in answer.metrics.items():
-            if not isinstance(metric_value, (int, float)) or isinstance(metric_value, bool):
+            if not is_finite_number(metric_value):
                 errors.append(
                     f"answer_metric_non_numeric: metrics['{metric_name}'] "
                     f"不是合法数值"
@@ -1021,7 +1022,7 @@ class ValidationService:
             # count 使用非空行数（支持字符串列），其他聚合使用数值
             if aggregation == "count":
                 non_null = col_non_null.get(source_field, 0)
-                expected = float(non_null)
+                expected = non_null
             else:
                 expected = _compute_aggregation(vals, aggregation)
             if expected is None:
@@ -1042,14 +1043,14 @@ class ValidationService:
 
             if isinstance(expected, list):
                 # direct: must match one of the values
-                if not any(abs(metric_value - v) < _NUMERIC_TOLERANCE for v in expected):
+                if not any(_numeric_difference(metric_value, v) < _NUMERIC_TOLERANCE for v in expected):
                     errors.append(
                         f"answer_metric_provenance_value_mismatch: "
                         f"metrics['{metric_name}']={metric_value} 不匹配 "
                         f"'{source_field}' 列中任何数值"
                     )
             else:
-                if abs(metric_value - expected) > _NUMERIC_TOLERANCE:
+                if _numeric_difference(metric_value, expected) > _NUMERIC_TOLERANCE:
                     errors.append(
                         f"answer_metric_provenance_value_mismatch: "
                         f"metrics['{metric_name}']={metric_value} "
@@ -1233,7 +1234,7 @@ class ValidationService:
         columns_set = set(result_columns)
 
         # 提取每列可用数值和非空计数
-        col_values: dict[str, list[float]] = {}
+        col_values: dict[str, list[int | float | Decimal]] = {}
         col_non_null_count: dict[str, int] = {}
         for row in result_rows:
             for col_name, idx in col_index.items():
@@ -1241,10 +1242,8 @@ class ValidationService:
                     val = row[idx]
                     if val is not None:
                         col_non_null_count[col_name] = col_non_null_count.get(col_name, 0) + 1
-                    try:
-                        col_values.setdefault(col_name, []).append(float(val))
-                    except (ValueError, TypeError):
-                        pass
+                    if is_finite_number(val):
+                        col_values.setdefault(col_name, []).append(val)
 
         for kpi in kpis:
             field = getattr(kpi, "field", "")
@@ -1274,7 +1273,7 @@ class ValidationService:
                     f"不得作为合法数值"
                 )
                 continue
-            if not isinstance(value, (int, float)):
+            if not is_finite_number(value):
                 errors.append(
                     f"report_kpi_value_non_numeric: KPI '{name}' value 不是数值"
                 )
@@ -1285,17 +1284,17 @@ class ValidationService:
 
             # 直接匹配或聚合匹配
             matched = False
-            if vals and any(abs(value - v) < _NUMERIC_TOLERANCE for v in vals):
+            if vals and any(_numeric_difference(value, v) < _NUMERIC_TOLERANCE for v in vals):
                 matched = True
-            elif vals and abs(value - sum(vals)) < _NUMERIC_TOLERANCE:
+            elif vals and _numeric_difference(value, _compute_aggregation(vals, 'sum')) < _NUMERIC_TOLERANCE:
                 matched = True
-            elif vals and len(vals) > 0 and abs(value - (sum(vals) / len(vals))) < _NUMERIC_TOLERANCE:
+            elif vals and _numeric_difference(value, _compute_aggregation(vals, 'avg')) < _NUMERIC_TOLERANCE:
                 matched = True
-            elif vals and abs(value - len(vals)) < _NUMERIC_TOLERANCE:
+            elif vals and _numeric_difference(value, len(vals)) < _NUMERIC_TOLERANCE:
                 matched = True
             # count 匹配非空行数（适用于字符串列，无需 numeric vals）
             if not matched and non_null_count > 0:
-                if abs(value - non_null_count) < _NUMERIC_TOLERANCE:
+                if _numeric_difference(value, non_null_count) < _NUMERIC_TOLERANCE:
                     matched = True
 
             if not matched:
@@ -1465,7 +1464,15 @@ _NUMERIC_TOLERANCE = 0.01
 _ALLOWED_AGGREGATIONS = {"direct", "sum", "avg", "count", "min", "max"}
 
 
-def _compute_aggregation(values: list[float], aggregation: str) -> float | list[float] | None:
+def _numeric_difference(left, right):
+    # Decimal comparisons retain the exact supplied values, including mixed
+    # float representations, without binary conversion or Decimal rounding.
+    if isinstance(left, (Decimal, Fraction)) or isinstance(right, (Decimal, Fraction)):
+        return abs(Fraction(left) - Fraction(right))
+    return abs(left - right)
+
+
+def _compute_aggregation(values: list[int | float | Decimal], aggregation: str):
     """根据聚合类型从数值列表计算期望值。
 
     direct 返回原列表（匹配任一值）；count 返回非空值数量；
@@ -1477,6 +1484,9 @@ def _compute_aggregation(values: list[float], aggregation: str) -> float | list[
         return None
     if aggregation == "direct":
         return values
+    if aggregation in {"sum", "avg"} and any(isinstance(v, Decimal) for v in values):
+        total = sum(Fraction(v) for v in values)
+        return total if aggregation == "sum" else total / len(values)
     if aggregation == "sum":
         return sum(values)
     if aggregation == "avg":

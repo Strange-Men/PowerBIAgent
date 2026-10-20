@@ -8,6 +8,7 @@ query results, facts, or committed state.
 from __future__ import annotations
 
 import json
+import re
 import unicodedata
 from enum import Enum
 from typing import Any, Literal
@@ -289,6 +290,9 @@ For DATA/REPORT:
   explicit compound. Keep a bare activity noun unresolved when it lacks that
   measurement meaning.
 - “销售额” is a monetary metric mention and an otherwise ungrouped request is scalar.
+  An explicit named-member filter with an aggregate measure is filtered_aggregation;
+  scalar applies when no explicit member filter is requested. The filter field/member
+  still need their own verbatim evidence and independent runtime proof.
   The ordinary English metric noun “sales” likewise denotes monetary sales/revenue;
   quantity requires an explicit units/quantity/volume/items-sold expression. That
   English convention applies only when the user's literal metric wording is English;
@@ -301,6 +305,18 @@ For DATA/REPORT:
   belongs in ranking_intent and does not replace that entity mention. Omit the
   current dimension only when a genuine follow-up explicitly inherits it through
   referenced_context_slots.
+- For entity_list, put the literal field/entity phrase being enumerated in
+  dimension_mentions with identical verbatim dimension evidence. The entity may
+  be a temporal category; enumeration does not make it a time filter. If the
+  phrase is genuinely unclear, preserve it in unresolved_mentions for clarification.
+- Preserve an explicitly qualified table[column] language mention in full,
+  including the table qualifier, in dimension_mentions and matching evidence.
+  Do not reduce it to the column name; runtime still proves that exact object.
+- For trend and bounded_trend, preserve an explicitly named grouping field or
+  entity in dimension_mentions with identical verbatim dimension evidence. A
+  requested month interval is separate time evidence and cannot replace a named
+  grouping field. If only a time grain is written without a field, leave field
+  selection to runtime; do not invent an object name.
 - Distinguish explicit member lists from grouped categories. When the user names two
   or more concrete members and asks for each member's value (for example “华南和华北
   分别是多少”), use member_set. When the same named members are combined into one
@@ -514,7 +530,11 @@ class LLMSemanticInterpreter:
             code = f"semantic_provider_{last_error.error_category.value}"
         else:
             code = "semantic_frame_invalid"
-        raise SemanticInterpretationError(code) from last_error
+        raise SemanticInterpretationError(
+            code,
+            repair_detail=(last_error.repair_detail
+                           if isinstance(last_error, SemanticInterpretationError) else None),
+        ) from last_error
 
     @staticmethod
     def _repair_instruction(last_error: Exception | None) -> str:
@@ -522,6 +542,18 @@ class LLMSemanticInterpreter:
             "\nPrevious output violated the SemanticFrame/evidence contract. "
             "Repair it; do not change or invent user meaning."
         )
+        if (isinstance(last_error, SemanticInterpretationError)
+                and last_error.code == "semantic_coverage_incomplete"):
+            missing = last_error.repair_detail.get("missing_span")
+            if missing:
+                return (base + "\nValidation code: semantic_coverage_incomplete. "
+                        "The veto checker found this exact omitted current-message span: "
+                        + json.dumps(missing, ensure_ascii=False)
+                        + ". Preserve its full verbatim language evidence in the relevant "
+                        "existing slots: a named grouping field belongs in dimension_mentions "
+                        "and identical dimension evidence; a requested time interval belongs "
+                        "in time_mentions/time_intent with both endpoints. "
+                        "Do not bind objects, select a date field, invent dates, or infer facts.")
         if isinstance(last_error, LLMValidationError):
             cause = last_error.__cause__
             if isinstance(cause, ValidationError) and any(
@@ -559,6 +591,16 @@ class LLMSemanticInterpreter:
                 + "fresh_question and leave referenced_context_slots empty."
             )
         if last_error.code in {
+            "entity_list_dimension_mention_required",
+            "trend_dimension_mention_required",
+        }:
+            return (
+                base + "\nValidation code: " + last_error.code + ". "
+                "Copy the requested entity/field phrase verbatim into dimension_mentions "
+                "and identical dimension evidence. If unclear, preserve the literal "
+                "in unresolved_mentions; do not invent or select a canonical object."
+            )
+        if last_error.code in {
             "semantic_changed_slot_invalid",
             "semantic_context_slot_invalid",
         }:
@@ -593,11 +635,13 @@ class LLMSemanticInterpreter:
                 + last_error.code
                 + "."
                 + detail
-                + " Every language mention must be copied as an exact contiguous "
+                + " Every language mention must be copied verbatim as an exact contiguous "
                 + "substring of the current user message and must have a same-slot "
                 + "evidence_spans entry with exactly identical text. For time, "
                 + "time_mentions, time_intent.expression, and the time evidence text "
-                + "must use the same exact contiguous current-message substring."
+                + "must use the same exact contiguous current-message substring. "
+                + "Preserve an explicit table[column] qualifier in full; do not "
+                + "reduce the supplied dimension text to its column name."
             )
         if last_error.code != "semantic_evidence_not_verbatim":
             return base
@@ -659,6 +703,23 @@ class LLMSemanticInterpreter:
             )
         ):
             raise SemanticInterpretationError("semantic_shape_or_unresolved_required")
+        if (frame.query_shape is QueryShape.ENTITY_LIST
+                and not frame.dimension_mentions and not frame.unresolved_mentions
+                and not (
+                    frame.relation in {TurnRelation.FOLLOW_UP, TurnRelation.REPLACE}
+                    and any(slot in {"dimension", "dimensions"}
+                            for slot in frame.referenced_context_slots)
+                )):
+            raise SemanticInterpretationError("entity_list_dimension_mention_required")
+        if (frame.query_shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}
+                and not frame.dimension_mentions and not frame.unresolved_mentions
+                and any(span.slot == "dimension" for span in frame.evidence_spans)
+                and not (
+                    frame.relation in {TurnRelation.FOLLOW_UP, TurnRelation.REPLACE}
+                    and any(slot in {"dimension", "dimensions"}
+                            for slot in frame.referenced_context_slots)
+                )):
+            raise SemanticInterpretationError("trend_dimension_mention_required")
         if frame.query_shape is QueryShape.RANKING:
             if not frame.dimension_mentions and not (
                 frame.relation in {TurnRelation.FOLLOW_UP, TurnRelation.REPLACE}
@@ -913,7 +974,9 @@ class LLMSemanticInterpreter:
         normalized_input = unicodedata.normalize("NFKC", user_input).casefold()
         if not missing or missing not in normalized_input:
             raise SemanticInterpretationError("semantic_coverage_evidence_invalid")
-        raise SemanticInterpretationError("semantic_coverage_incomplete")
+        raise SemanticInterpretationError(
+            "semantic_coverage_incomplete", repair_detail={"missing_span": decision.missing_span}
+        )
 
     @staticmethod
     def _bounded_context(value: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -960,6 +1023,22 @@ class LLMSemanticInterpreter:
                     repair_detail={"slot": span.slot, "text": span.text},
                 )
         required: list[tuple[str, str]] = []
+        # A leaf substring is verbatim but drops an explicit language qualifier.
+        # Request the existing bounded repair; never select a runtime object.
+        qualifications = list(re.finditer(
+            r"(?:'[^'\r\n]{1,100}'|[A-Za-z_][A-Za-z0-9_.]{0,99})\[[^\]\r\n]{1,100}\]",
+            user_input,
+        ))
+        for mention in frame.dimension_mentions:
+            folded = unicodedata.normalize("NFKC", mention).casefold()
+            for match in qualifications:
+                full = match.group(0)
+                leaf = full.rsplit("[", 1)[1][:-1]
+                if folded == unicodedata.normalize("NFKC", leaf).casefold():
+                    raise SemanticInterpretationError(
+                        "semantic_slot_evidence_missing",
+                        repair_detail={"slot": "dimension", "text": full},
+                    )
         required.extend(("measure", item) for item in frame.measure_mentions)
         required.extend(("dimension", item) for item in frame.dimension_mentions)
         required.extend(("member", item) for item in frame.member_mentions)

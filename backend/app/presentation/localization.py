@@ -14,7 +14,7 @@ import re
 import threading
 from enum import Enum
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -61,6 +61,7 @@ class DisplayLocalization(BaseModel):
     schema_identity: str = Field(min_length=64, max_length=64)
     data_type: str = "string"
     format_kind: PresentationFormatKind = PresentationFormatKind.TEXT
+    temporal_grain: Literal["month", "year"] | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -455,12 +456,16 @@ class DisplayLocalizationService:
                 DisplayLocalizationSource.MODEL_GLOSSARY,
             )
         if self.registry is not None:
-            return self.registry.get(
+            cached = self.registry.get(
                 semantic_model_key=self.catalog.semantic_model_key,
                 schema_identity=self.schema_identity,
                 object_identity=item.object_id,
                 locale=locale,
             )
+            if cached is not None:
+                return cached.model_copy(update={
+                    "temporal_grain": item.temporal_grouping.grain if item.temporal_grouping else None,
+                })
         return None
 
     def _binding(
@@ -482,6 +487,7 @@ class DisplayLocalizationService:
             source=source,
             schema_identity=self.schema_identity,
             data_type=item.data_type,
+            temporal_grain=(item.temporal_grouping.grain if item.temporal_grouping else None),
             format_kind=PresentationFormatter.kind_for_metadata(
                 item.data_type,
                 item.format_string,

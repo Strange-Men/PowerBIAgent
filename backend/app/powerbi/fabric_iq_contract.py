@@ -70,3 +70,23 @@ def capability_fingerprint(tools: list[dict]) -> str:
 def safe_capability_evidence(fingerprint, endpoint):
     return {"fingerprint": fingerprint, "client_version": version("mcp"),
             "selector": VARIANT, "endpoint_category": "public" if endpoint == PUBLIC_ENDPOINT else "private_link"}
+
+
+def validate_value_search_capability(tool):
+    """Optional capability checked only when an explicit literal requires it."""
+    if not isinstance(tool, dict) or tool.get('name') != 'ValueSearch':
+        raise fail('CONTRACT_DRIFT')
+    schema = tool.get('inputSchema', {})
+    props = schema.get('properties', {})
+    if (schema.get('type') != 'object' or set(schema.get('required', [])) != {'artifactId','searchTerms'}
+            or _types(props.get('artifactId')) != {'string'}
+            or _types(props.get('searchTerms')) != {'array'}
+            or _types(props['searchTerms'].get('items')) != {'string'}
+            or _types(props.get('scope')) != {'array'}):
+        raise fail('CONTRACT_DRIFT')
+    entry = props['scope'].get('items', {})
+    fields = entry.get('properties', {})
+    if (entry.get('type') != 'object' or _types(fields.get('tableName')) not in ({'string'}, {'string','null'})
+            or _types(fields.get('columnNames')) not in ({'array'}, {'array','null'})
+            or _types(fields['columnNames'].get('items')) != {'string'}):
+        raise fail('CONTRACT_DRIFT')

@@ -15,7 +15,6 @@ from backend.app.presentation.models import (
     TablePresentationBlock,
     TextPresentationBlock,
     is_presentation_number,
-    is_presentation_time,
 )
 from backend.app.presentation.formatter import (
     PresentationFormatKind,
@@ -79,12 +78,12 @@ class StructuredPresentationBuilder:
                             data_reference=result.result_id,
                             visual_type=(
                                 "line"
-                                if cls._is_time_series(plan, dataset, x_field)
+                                if cls._is_time_series(plan, dataset, x_field, display_bindings)
                                 else "bar"
                             ),
                             title=(
                                 cls._chart_title(dataset, x_field, y_field, "趋势")
-                                if cls._is_time_series(plan, dataset, x_field)
+                                if cls._is_time_series(plan, dataset, x_field, display_bindings)
                                 else cls._chart_title(dataset, x_field, y_field, "对比")
                             ),
                             x_field=x_field,
@@ -161,19 +160,14 @@ class StructuredPresentationBuilder:
             missing = [column for column in columns if column not in display_bindings]
             if missing:
                 raise ValueError("presentation_display_binding_missing")
-            x_field = columns[0] if plan.dimensions and columns else None
-            is_time_series = bool(
-                x_field
-                and cls._is_time_series_values(plan, columns, raw_rows, x_field)
-            )
             effective_bindings: list[DisplayLocalization] = []
             for column in columns:
                 binding = display_bindings[column]
                 if binding.semantic_model_key != result.semantic_model_key:
                     raise ValueError("presentation_display_binding_model_mismatch")
-                if column == x_field and is_time_series:
+                if binding.canonical_name in plan.dimensions:
                     binding = binding.model_copy(
-                        update={"format_kind": PresentationFormatKind.MONTH}
+                        update={"format_kind": PresentationFormatter.dimension_kind(plan, binding)}
                     )
                 effective_bindings.append(binding)
                 display_fields.append(PresentationField(
@@ -192,7 +186,9 @@ class StructuredPresentationBuilder:
                 [
                     (display_values or {}).get(
                         (binding.canonical_name, str(value)),
-                        formatter.format(value, binding.format_kind),
+                        (formatter.format_dimension(value, binding.format_kind)
+                         if binding.canonical_name in plan.dimensions
+                         else formatter.format(value, binding.format_kind)),
                     )
                     for value, binding in zip(row, effective_bindings)
                 ]
@@ -271,27 +267,21 @@ class StructuredPresentationBuilder:
         plan: CanonicalQueryPlan,
         dataset: PresentationDataset,
         x_field: str,
+        display_bindings: dict[str, DisplayLocalization] | None = None,
     ) -> bool:
-        dimension_text = " ".join([*plan.dimensions, x_field]).casefold()
-        if any(token in dimension_text for token in ("date", "month", "year", "日期", "月", "年")):
+        if plan.query_shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}:
             return True
+        runtime_binding = (display_bindings or {}).get(x_field)
+        if runtime_binding is not None and runtime_binding.temporal_grain is not None:
+            return True
+        binding = next((field for field in dataset.display_fields
+                        if field.canonical_field == x_field), None)
+        if binding is not None:
+            return binding.format_kind in {"date", "month"}
         x_index = dataset.columns.index(x_field)
         return bool(dataset.rows) and all(
-            is_presentation_time(row[x_index]) for row in dataset.rows
+            isinstance(row[x_index], (date, datetime)) for row in dataset.rows
         )
-
-    @staticmethod
-    def _is_time_series_values(
-        plan: CanonicalQueryPlan,
-        columns: list[str],
-        rows: list[list[object]],
-        x_field: str,
-    ) -> bool:
-        dimension_text = " ".join([*plan.dimensions, x_field]).casefold()
-        if any(token in dimension_text for token in ("date", "month", "year", "日期", "月", "年")):
-            return True
-        x_index = columns.index(x_field)
-        return bool(rows) and all(is_presentation_time(row[x_index]) for row in rows)
 
     @staticmethod
     def _chart_title(

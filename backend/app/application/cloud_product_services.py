@@ -64,8 +64,16 @@ class _NativeCloudTurnService(LLMTurnService):
         lease.require_session(lease._sid)
         lease._workspace.require_execution(lease._sid, lease._principal)
         require_cloud_business_data(lease._workspace,lease._sid,lease._principal)
-        result = await super().execute(*args, **kwargs)
+        from backend.app.application.cloud_literal_context import literal_scope
+        with literal_scope():
+            result = await super().execute(*args, **kwargs)
         lease.require_session(lease._sid)
+        return result
+
+    async def _do_conversation(self, **kwargs):
+        result = await super()._do_conversation(**kwargs)
+        from backend.app.application.cloud_literal_context import capture_frame
+        capture_frame(kwargs['message'], result.get('_semantic_frame'))
         return result
 
 

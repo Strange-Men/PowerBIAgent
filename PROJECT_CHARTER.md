@@ -161,7 +161,7 @@ Frozen 表示已有 authority / contract / architecture boundary 不再随意重
 failure-first minimal forward-fix 修复 correctness bug。禁止第二 Planner / Grounding / Memory，
 禁止重设计 deterministic factual chain；M6 优先经 Adapter / Repository / Service 扩展，能扩展就不重构 Core。
 
-M6 生产级后端 P0 identity/auth/namespace/ownership/IDOR/token/RLS/OLS/fail-closed 优先，P1 分布式/持久化/恢复/部署风险与路线由 docs/08、docs/09 定义。M6.1 COMPLETE、M6.2 COMPLETE、M6.3 Security COMPLETE；M6.4 FINAL COMPLETE，Fabric IQ correctness IQ_ACCEPTED；本轮 M6.4.1 维护仅治理测试资产及封板遗留状态。M5 Frozen Core 继续有效；后续实施仍须用户批准具体 scope 并完成 09 前置条件。
+M6 生产级后端 P0 identity/auth/namespace/ownership/IDOR/token/RLS/OLS/fail-closed 优先，P1 分布式/持久化/恢复/部署风险与路线由 docs/08、docs/09 定义。M6.1 COMPLETE、M6.2 COMPLETE、M6.3 Security COMPLETE；M6.4 FINAL COMPLETE，Fabric IQ correctness IQ_ACCEPTED；M6.4.1 治理维护已作为后续基线，M6.5当前授权与停点仅见07/09。M5 Frozen Core 继续有效；后续实施仍须用户批准具体 scope 并完成 09 前置条件。
 当前状态仅见 docs/07，路线仅见 docs/08，Cold Start Handoff 仅见 docs/09；本文件不另设 current-state authority。
 
 *最后更新：2026-10-15 | 产品使命与长期架构规则；当前状态以07/08/09及自身exact-SHA CI为准，M6.4 FINAL COMPLETE；M6.4.1 按独立维护 scope 实施*

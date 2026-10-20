@@ -26,6 +26,29 @@ class PresentationFormatter:
     def __init__(self, *, locale: str = "zh-CN") -> None:
         self.locale = locale.strip() or "zh-CN"
 
+    def format_dimension(
+        self, value: object, kind: PresentationFormatKind = PresentationFormatKind.AUTO,
+    ) -> str:
+        """Category labels preserve integers without metric grouping separators."""
+        if isinstance(value, int) and not isinstance(value, bool):
+            if kind in {PresentationFormatKind.AUTO, PresentationFormatKind.INTEGER}:
+                return str(value)
+        return self.format(value, kind)
+
+    @staticmethod
+    def dimension_kind(plan, binding) -> PresentationFormatKind:
+        """Project only existing canonical/runtime grain; never infer from a name."""
+        kind = binding.format_kind
+        grain = getattr(binding, "temporal_grain", None)
+        if (grain is None and getattr(plan.query_shape, "value", None) in {"trend", "bounded_trend"}
+                and plan.time_range is not None
+                and binding.canonical_name == plan.time_range.date_field
+                and binding.canonical_name in plan.dimensions):
+            grain = plan.time_range.grain
+        if grain == "month":
+            return PresentationFormatKind.MONTH
+        return kind
+
     def format(
         self,
         value: object,
