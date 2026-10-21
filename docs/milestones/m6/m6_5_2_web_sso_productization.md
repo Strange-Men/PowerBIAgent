@@ -180,6 +180,19 @@ model hardcode/weakened validator/Frozen factual drift/M6.5.3或M6.6 implementat
 
 ## Release closure
 
+首个产品提交b195612a7fb1d0b71b9e8750d344cbb0aec1f9ca的CI39558741067失败：
+Artifact Governance → local_state_missing。该目录被Git忽略，clean checkout无runtime state；
+原Security/Ledger/Architecture/Documentation通过，后续gates skipped，不继承为FINAL证明。
+按用户明确forward-fix，仅修artifact审计语义：absent state继续source-tree扫描，无artifacts则
+PASS；existing valid state PASS，partial/malformed/unauthorized/orphan/pending cleanup/ownership
+residual仍FAIL。永久测试failure-first a0b54ab2为3RED/13PASS，fixture与owned测试目录分离；
+无CI mkdir、无validator降低、无M6.5.2产品功能修改。新提交仍须自身完整exact-SHA CI。
+治理专项da84aaf3=16PASS；fresh Artifact674ece92、Backend adb0ecb8=3908PASS/1SKIP/
+15既有warnings、Semantic43edefc4=819PASS、Golden6855c79d=11PASS/1manualSKIP；
+Auth/Catalog/Product7f05c90e=51/31/31PASS、治理0a77fc1e PASS、正式npm test2bafe96e=
+181PASS、Typecheck2d53e57a、Lint422a4436、Build73477f55、UI Localization81f065af=48PASS。
+中文forward-fix提交`M6.5.2_修复无运行状态的CI产物治理`，仍按自身CI/Audit/clean/shutdown生效。
+
 全部Real与fresh gates通过后Settings.version=M6.5.2、07/08/09/README/CHANGELOG收口。
 中文提交`M6.5.2_Web与SSO产品化`，fetch无drift、whitelist staging、ordinary push main。
 FINAL COMPLETE仅在自身exact-SHA Full Validation、Remote Audit、HEAD=origin/main、staging空/

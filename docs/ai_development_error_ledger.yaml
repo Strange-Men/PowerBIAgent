@@ -8,6 +8,33 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-652-010
+  title: Artifact Gate须允许无runtime state的clean checkout并继续source扫描
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: exact-SHA CI39558741067在Artifact Governance报local_state_missing，后续gates skipped
+  local_evidence: a0b54ab2为3RED/13PASS，da84aaf3为16PASS；674ece92 Artifact PASS；adb0ecb8 Full Backend3908PASS/1SKIP；原CI失败保留
+  authoritative_sources:
+  - title: 用户M6.5.2 Final CI forward-fix合同
+    reason: clean checkout无runtime state应PASS，已有state与source-tree artifacts仍严格审计，不造假目录
+  root_cause: ignored local_state不属于clean Git checkout，Gate错误要求目录存在且提前返回跳过source扫描
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: absent state继续source-tree审计；现有state保留全部检查，非directory明确FAIL；无CI mkdir或产品行为修改
+  regression_tests:
+  - backend/tests/unit/persistence/test_artifact_governance.py
+  prohibited_patterns:
+  - CI创建假local_state掩盖合同问题
+  - 无state时跳过source-tree artifact检查
+  prevention_rules:
+  - portable gate区分无runtime state与已有malformed/residual state
+  related_adr: ADR-012
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: exact_sha_ci_failure_first
+    version: M6.5.2
 - id: ERR-652-007
   title: Report metadata引用与模型schema引用不能共用身份假设
   category: ERR

@@ -305,3 +305,37 @@ async def _record(target: list[str], resource_id: str) -> None:
 
 async def _residuals(items: list[str]) -> list[str]:
     return items
+
+
+def test_clean_source_checkout_without_runtime_state_passes(tmp_path):
+    import subprocess
+    project = tmp_path / 'clean-checkout'
+    subprocess.run(['git', 'init', str(project)], check=True, capture_output=True)
+    assert not (project / 'local_state').exists()
+    assert audit_artifacts(project).passed
+
+
+def test_missing_state_does_not_skip_source_tree_artifact_audit(tmp_path):
+    import subprocess
+    project = tmp_path / 'clean-checkout'
+    subprocess.run(['git', 'init', str(project)], check=True, capture_output=True)
+    (project / 'stray.json').write_text('{}')
+    result = audit_artifacts(project)
+    assert not result.passed
+    assert 'runtime_artifact_in_source_tree:stray.json' in result.violations
+
+
+def test_partial_runtime_state_fails(tmp_path):
+    state = tmp_path / 'local_state'
+    (state / 'reports').mkdir(parents=True)
+    result = audit_artifacts(tmp_path, inspect_source_tree=False)
+    assert not result.passed
+    for name in ('persistence', 'runtime', 'archive'):
+        assert f'local_state_directory_missing:{name}' in result.violations
+
+
+def test_runtime_state_file_is_malformed(tmp_path):
+    (tmp_path / 'local_state').write_text('synthetic')
+    result = audit_artifacts(tmp_path, inspect_source_tree=False)
+    assert not result.passed
+    assert 'local_state_not_directory' in result.violations

@@ -38,8 +38,16 @@ def audit_artifacts(
     state_root = (local_state_root or project_root / "local_state").resolve()
     violations: list[str] = []
     if not state_root.exists():
-        violations.append("local_state_missing")
-        return ArtifactGovernanceResult(tuple(violations))
+        # A clean source checkout has no runtime state to audit. Source-tree
+        # artifacts still fail, including when no local_state was provisioned.
+        if inspect_source_tree:
+            _audit_source_tree(project_root, violations)
+        return ArtifactGovernanceResult(tuple(sorted(set(violations))))
+    if not state_root.is_dir():
+        violations.append("local_state_not_directory")
+        if inspect_source_tree:
+            _audit_source_tree(project_root, violations)
+        return ArtifactGovernanceResult(tuple(sorted(set(violations))))
 
     for required in sorted(ALLOWED_LOCAL_STATE_DIRECTORIES):
         if not (state_root / required).is_dir():
