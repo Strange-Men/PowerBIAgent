@@ -23,6 +23,8 @@ from backend.app.powerbi.cloud_catalog_transport import FabricCatalogTransport
 from backend.app.powerbi.base import PowerBIAdapterError
 from backend.app.powerbi.fabric_iq_contract import fail
 from backend.app.schemas.data_contracts import UserContext
+from backend.app.application.cloud_operation import cloud_operation, cloud_stage, current_operation
+from backend.app.report.registry import ReportTemplateCatalogResponse
 
 
 class CloudWorkspaceStatus(BaseModel):
@@ -33,6 +35,10 @@ class CloudWorkspaceStatus(BaseModel):
     blockers: tuple[Literal["numeric_contract", "query_completeness", "operator_approval"], ...] = (
         "numeric_contract", "query_completeness")
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class VerifiedCloudSelectionStatus(CloudWorkspaceStatus):
+    report_templates: ReportTemplateCatalogResponse
 
 
 class CloudSelectionConflict(ValueError):
@@ -169,19 +175,35 @@ class CloudWorkspaceService:
 
     async def _verify_exact_resource(self, sid, principal, ws, model):
         if self._auth.settings.fabric_test_mode or self._synthetic_product: return
+        current = self._context(sid, principal)
+        scope = current_operation()
+        proof = (id(self),sid,principal,ws,model,current.generation)
+        if scope is not None and proof in scope.exact_access:
+            self._validate(sid,principal)
+            return
         try:
             async with self._rest_factory(self._auth, sid, principal) as rest:
-                await rest.verify_resource(ws)
                 await rest.verify_resource(ws, model, 'SemanticModel')
             self._validate(sid, principal)
-        except BaseException:
+            if scope is not None: scope.exact_access.add(proof)
+        except BaseException as error:
             current = self._contexts.get(sid)
             proof = current.authorization if current else None
-            if proof and (proof.workspace_id, proof.model_id) == (ws, model):
+            if proof and (proof.workspace_id, proof.model_id) == (ws, model) and self._revoked(error):
                 current.keys.discard(proof.semantic_model_key)
                 self._clear_selection(current)
             raise
 
+    @staticmethod
+    def _revoked(error):
+        for _ in range(8):
+            if getattr(error,'error_type',None) == 'RESOURCE_NOT_ACCESSIBLE': return True
+            if isinstance(error,AuthFailure) and error.code=='AUTH_FORBIDDEN': return True
+            if error.__context__ is None: break
+            error = error.__context__
+        return False
+
+    @cloud_operation
     async def select(self, sid, principal, key, *, expected_generation=None):
         current = self._context(sid, principal)
         async with self._metadata_operation(current):
@@ -195,8 +217,9 @@ class CloudWorkspaceService:
                 raise CloudSelectionConflict()
             if key not in current.keys:
                 async with self._rest_factory(self._auth, sid, principal) as rest:
-                    await rest.verify_resource(candidate.workspace_id)
                     await rest.verify_resource(candidate.workspace_id, candidate.item_id, candidate.kind)
+                if candidate.kind == 'SemanticModel':
+                    current_operation().exact_access.add((id(self),sid,principal,candidate.workspace_id,candidate.item_id,current.generation))
                 self._validate(sid, principal)
                 from backend.app.harness.runtime.tool_gateway import ToolSpec
                 async def bind(_):
@@ -229,8 +252,9 @@ class CloudWorkspaceService:
                 if not self._synthetic_product and current.selected == key and current.schema_fingerprint not in (None, fingerprint):
                     raise fail('CONTRACT_DRIFT')
             except BaseException as error:
-                current.keys.discard(key)
-                if current.selected == key: self._clear_selection(current)
+                if self._revoked(error) or 'CONTRACT_DRIFT' in str(error):
+                    current.keys.discard(key)
+                    if current.selected == key: self._clear_selection(current)
                 if isinstance(error, ToolExecutionError) and isinstance(error.__context__, AuthFailure):
                     raise error.__context__
                 raise
@@ -243,7 +267,16 @@ class CloudWorkspaceService:
             current.authorization = _ResourceAuthorization(principal.tenant_id, principal.principal_id,
                 ws, model, key, fingerprint, 'mock' if current.adapter.is_mock else 'real',
                 current.generation, principal.authorization_epoch)
-            return self.status(sid, principal)
+            # No permission or schema proof crosses the operation boundary.
+            # Only the user-facing template projection is returned with selection.
+            current_operation().exact_access.add((id(self),sid,principal,ws,model,current.generation))
+            return self.status(sid,principal)
+
+    @cloud_operation
+    async def select_with_templates(self,sid,principal,key,*,expected_generation):
+        selected=await self.select(sid,principal,key,expected_generation=expected_generation)
+        templates=await self.templates(sid,principal)
+        return VerifiedCloudSelectionStatus(**selected.model_dump(),report_templates=templates)
 
     def status(self, sid, principal):
         current = self._context(sid, principal)
@@ -251,6 +284,15 @@ class CloudWorkspaceService:
         return CloudWorkspaceStatus(selected_model_key=current.selected,
             conversation_id=current.conversation_id, generation=current.generation,
             execution_ready=ready, blockers=() if ready else ('operator_approval',))
+
+    @cloud_operation
+    async def open_resource_link(self,sid,principal,url,*,expected_generation):
+        from backend.app.application.cloud_resource_link import parse_resource_link
+        ws,item,kind=parse_resource_link(url)
+        current=self._context(sid,principal)
+        if self._auth.settings.fabric_test_mode: raise AuthFailure('AUTH_FORBIDDEN',403)
+        key=current.catalog_pages.resource_selector(ws,item,kind)
+        return await self.select_with_templates(sid,principal,key,expected_generation=expected_generation)
 
     def _capability(self, current, name, *, binding=None):
         if self._synthetic_product and current.adapter.is_mock:
@@ -329,6 +371,7 @@ class CloudWorkspaceService:
     def data_mode(self,sid,principal):
         return RuntimeDataMode.MOCK if self._context(sid,principal).adapter.is_mock else RuntimeDataMode.REAL
 
+    @cloud_operation
     async def bound_projection(self, sid, principal):
         from backend.app.persistence.cloud_bindings import CloudConversationBinding
         from backend.app.query_plan.semantic_catalog import compute_schema_fingerprint
@@ -354,6 +397,7 @@ class CloudWorkspaceService:
                 workspace_id=ws,model_id=model,schema_fingerprint=compute_schema_fingerprint(schema),
                 source_mode='mock' if current.adapter.is_mock else 'real')
 
+    @cloud_operation
     async def revalidate_binding(self, sid, principal, binding, *, select=False, expected_generation=None):
         from backend.app.query_plan.semantic_catalog import compute_schema_fingerprint
         from backend.app.powerbi.fabric_iq import FabricIQPowerBIAdapter
@@ -394,9 +438,10 @@ class CloudWorkspaceService:
                 self._validate(sid,principal)
                 if key!=binding.model_key or schema.key!=key or compute_schema_fingerprint(schema)!=binding.schema_fingerprint:
                     raise AuthFailure('AUTH_FORBIDDEN',403)
-            except BaseException:
-                current.keys.discard(binding.model_key)
-                if current.selected == binding.model_key: self._clear_selection(current)
+            except BaseException as error:
+                if self._revoked(error) or isinstance(error,AuthFailure):
+                    current.keys.discard(binding.model_key)
+                    if current.selected == binding.model_key: self._clear_selection(current)
                 raise
             if select:
                 current.keys.add(key)
@@ -429,6 +474,7 @@ class CloudWorkspaceService:
             raise AuthFailure("AUTH_FORBIDDEN", 403)
         return current.adapter, self.status(sid, principal)
 
+    @cloud_operation
     async def templates(self, sid, principal):
         from backend.app.application.report_template_compatibility_service import ReportTemplateCompatibilityService
         from backend.app.report.registry import ReportTemplateCatalogResponse

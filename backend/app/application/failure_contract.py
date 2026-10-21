@@ -149,10 +149,13 @@ def map_public_failure(
         "RATE_LIMITED": FailureRecoveryAction.RETRY,
         "UPSTREAM_UNAVAILABLE": FailureRecoveryAction.RETRY,
         "CONTRACT_DRIFT": FailureRecoveryAction.NONE,
+        "LLM_SERVICE_UNAVAILABLE": FailureRecoveryAction.RETRY,
+        "PERSISTENCE_UNAVAILABLE": FailureRecoveryAction.RETRY,
+        "INTERNAL_FAILURE": FailureRecoveryAction.RETRY,
     }
     if known_error in cloud_actions:
         return _failure(PublicFailureCode(known_error), public_stage, cloud_actions[known_error],
-                        retryable=known_error in {"QUERY_TIMEOUT", "RATE_LIMITED", "UPSTREAM_UNAVAILABLE"})
+                        retryable=known_error in {"QUERY_TIMEOUT", "RATE_LIMITED", "UPSTREAM_UNAVAILABLE", "LLM_SERVICE_UNAVAILABLE", "PERSISTENCE_UNAVAILABLE", "INTERNAL_FAILURE"})
     if known_error in _TIMEOUT_ERRORS:
         return _failure(
             PublicFailureCode.REQUEST_TIMEOUT,

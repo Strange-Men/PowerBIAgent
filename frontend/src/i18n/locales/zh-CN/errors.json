@@ -56,5 +56,6 @@
   "clarification_unsupported_semantic_request": "当前模型或查询能力不支持该业务条件，请调整后重试。",
   "reportTemplateRequired": "请明确要使用的报表模板。",
   "turnRelationRequired": "请说明这是一个独立问题，还是要修改上一轮条件。",
-  "externalFactsUnavailable": "我目前没有可验证的实时外部数据，无法确认具体商家、营业状态、天气、行情或新闻。你可以提供可信来源，或让我帮你整理不依赖实时信息的通用选择方法。"
+  "externalFactsUnavailable": "我目前没有可验证的实时外部数据，无法确认具体商家、营业状态、天气、行情或新闻。你可以提供可信来源，或让我帮你整理不依赖实时信息的通用选择方法。",
+  "persistenceUnavailable": "历史或报表存储暂不可用，请稍后重试。"
 }

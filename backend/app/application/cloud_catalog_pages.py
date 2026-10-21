@@ -72,6 +72,14 @@ class CurrentPrincipalCatalog:
         if value is None: raise AuthFailure('AUTH_FORBIDDEN', 403)
         return value
 
+    def resource_selector(self,workspace_id,item_id,kind):
+        """Parsed selector only; selection still requires Microsoft proof."""
+        self._prune()
+        if len(self._candidates)>=2000: raise fail('UPSTREAM_UNAVAILABLE')
+        key=token_urlsafe(32)
+        self._candidates[key]=CatalogCandidate(workspace_id,item_id,kind,'',monotonic()+300)
+        return key
+
     async def workspaces(self, rest, *, query='', cursor=None):
         return await self._page(rest, '/workspaces', 'Workspace', None, query, cursor)
 

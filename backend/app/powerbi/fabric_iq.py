@@ -15,6 +15,7 @@ from backend.app.powerbi.fabric_iq_normalization import (
     normalize_value_search,
 )
 from backend.app.powerbi.fabric_iq_transport import FabricIQTransport
+from backend.app.application.cloud_operation import current_operation, cloud_stage
 from backend.app.powerbi.models import PowerBICompatibilityProbe
 from backend.app.schemas.data_contracts import (
     ColumnMembersResult, DAXRequest, PowerBIError,
@@ -125,7 +126,7 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
                 self._bindings.clear()
                 self._schemas.clear()
                 self._auth.logout(self._sid, None)
-            elif code in {'AUTH_FORBIDDEN','RESOURCE_NOT_ACCESSIBLE','SCHEMA_UNAVAILABLE','MODEL_RESOLUTION_FAILED'}:
+            elif code in {'RESOURCE_NOT_ACCESSIBLE','AUTH_FORBIDDEN'}:
                 affected = [key] if key is not None else [k for k, ref in self._bindings.items()
                     if resource == (ref.workspace_id, ref.semantic_model_id)]
                 for affected_key in affected:
@@ -198,7 +199,9 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
                 raise fail('MODEL_RESOLUTION_FAILED')
             model_workspace = guid(resolved.get('workspaceId'))
         self._validate()
-        return await self.bind_catalog_model(model_workspace, model_id)
+        return await self._resolve_authorized_url(
+            f'https://app.powerbi.com/groups/{model_workspace}/datasets/{model_id}/details',
+            reuse=True, resolved_identity=(model_workspace,model_id))
 
     def bound_resource_identity(self, key):
         ref = self._binding(key)
@@ -231,19 +234,29 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
             raise fail('CONTRACT_DRIFT')
         return schema.model_copy(deep=True)
 
-    async def _resolve_authorized_url(self, url, *, reuse=False, restored_key=None):
+    @cloud_stage('iq_resolve','fabric_iq')
+    async def _resolve_authorized_url(self, url, *, reuse=False, restored_key=None, resolved_identity=None):
         self._validate()
         expected_workspace, expected_model = _bootstrap_identity(url)
         self._test_policy.model(expected_workspace, expected_model)
         async with self._connection(resource=(expected_workspace, expected_model)) as connection:
-            resolved, resource = unpack(await connection.call("ResolveFabricItem", {"fabricItemId": url}), "MODEL_RESOLUTION_FAILED")
-            if (resource is not None or resolved.get("itemType") != "SemanticModel"
-                    or guid(resolved.get("fabricItemId")) != expected_model
-                    or guid(resolved.get("workspaceId")) != expected_workspace):
-                raise fail("MODEL_RESOLUTION_FAILED")
+            if resolved_identity is None:
+                resolved, resource = unpack(await connection.call("ResolveFabricItem", {"fabricItemId": url}), "MODEL_RESOLUTION_FAILED")
+                if (resource is not None or resolved.get("itemType") != "SemanticModel"
+                        or guid(resolved.get("fabricItemId")) != expected_model
+                        or guid(resolved.get("workspaceId")) != expected_workspace):
+                    # A mismatched exact identity invalidates that proof; an
+                    # ordinary metadata/service failure does not revoke access.
+                    for bound_key,bound_ref in tuple(self._bindings.items()):
+                        if (bound_ref.workspace_id,bound_ref.semantic_model_id)==(expected_workspace,expected_model):
+                            self._bindings.pop(bound_key,None)
+                            self._schemas.pop(bound_key,None)
+                    raise fail("MODEL_RESOLUTION_FAILED")
+            elif resolved_identity != (expected_workspace,expected_model):
+                raise fail('MODEL_RESOLUTION_FAILED')
             self._validate()
             self._test_policy.model(expected_workspace, expected_model)
-            raw = await connection.call("GetSemanticModelSchema", {"artifactId": expected_model})
+            raw = await self._read_schema(connection,expected_model)
             old = next((ref for ref in self._bindings.values()
                 if ref.workspace_id == expected_workspace and ref.semantic_model_id == expected_model), None) if reuse else None
             key = restored_key or (old.server_model_key if old else "fabric_iq:" + token_urlsafe(32))
@@ -254,21 +267,34 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         ref = CloudSemanticModelRef(key, p.tenant_id, p.principal_id, expected_workspace, expected_model,
             schema.name, p.session_epoch, p.authorization_epoch)
         self._bindings[key], self._schemas[key] = ref, schema
+        scope = current_operation()
+        if scope is not None: scope.schemas[(id(self),key,p)] = schema.model_copy(deep=True)
         return ref
 
+    @cloud_stage('iq_schema','fabric_iq')
+    async def _read_schema(self,connection,model_id):
+        return await connection.call('GetSemanticModelSchema',{'artifactId':model_id})
+
+    @cloud_stage('iq_schema','fabric_iq')
     async def get_semantic_model_schema(self, semantic_model_key):
         ref = self._binding(semantic_model_key)
+        scope = current_operation()
+        proof = (id(self),semantic_model_key,self._principal)
+        if scope is not None and proof in scope.schemas:
+            return scope.schemas[proof].model_copy(deep=True)
         async with self._connection(key=semantic_model_key) as connection:
             raw = await connection.call("GetSemanticModelSchema", {"artifactId": ref.semantic_model_id})
             schema = normalize_schema(raw, ref.semantic_model_id, semantic_model_key, ref.authorization_epoch)
         self._validate()
         self._binding(semantic_model_key)
         self._schemas[semantic_model_key] = schema
+        if scope is not None: scope.schemas[proof] = schema.model_copy(deep=True)
         return schema.model_copy(deep=True)
 
     async def execute_dax(self, request):
         return await self._execute_query(request)
 
+    @cloud_stage('iq_execute','fabric_iq')
     async def _execute_query(self, request, *, projected_columns=None):
         # projected_columns is supplied only by the two server-owned fixed
         # diagnostic/member projections below, never by a public DAX request.

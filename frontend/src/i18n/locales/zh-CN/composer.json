@@ -42,5 +42,9 @@
   "connectingToTheDataModel": "正在连接数据模型",
   "selectACloudDataModel": "请选择云端数据模型",
   "noDataModelsAvailable": "当前没有可用数据模型",
-  "noReportTemplateSelected": "· 未选择报表模板"
+  "noReportTemplateSelected": "· 未选择报表模板",
+  "openResourceLink": "通过 Power BI / Fabric 链接打开数据资源",
+  "resourceLink": "Power BI / Fabric 资源链接",
+  "resourceLinkHint": "链接仅用于定位资源；当前账号仍须通过 Microsoft 访问验证。部分链接可能不受支持。",
+  "openResource": "验证并打开"
 }

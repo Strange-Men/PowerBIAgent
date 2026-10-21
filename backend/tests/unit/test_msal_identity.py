@@ -151,3 +151,14 @@ def test_msal_authority_discovery_network_failure_is_not_auth_rejection(monkeypa
     monkeypatch.setattr(msal,'ConfidentialClientApplication',unavailable)
     with pytest.raises(AuthFailure) as caught: identity.initiate()
     assert caught.value.status==503 and caught.value.code=='UPSTREAM_UNAVAILABLE'
+
+
+@pytest.mark.parametrize('method',['get_accounts','remove_account'])
+def test_local_credential_destroy_always_purges_on_discovery_network_failure(msal_flow,monkeypatch,method):
+    from requests.exceptions import ConnectionError
+    identity,flow,context,_=msal_flow
+    identity.complete(flow,{'state':flow['state'],'code':'synthetic-code'},context)
+    def unavailable(*args,**kwargs): raise ConnectionError('private-network-details')
+    monkeypatch.setattr(context.client,method,unavailable)
+    identity.destroy(context)
+    assert not context.cache._cache and context.account_id is None

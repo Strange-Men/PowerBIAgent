@@ -116,6 +116,12 @@ async def test_adapter_denial_invalidates_only_affected_resource_unless_auth_exp
     if code in {'AUTH_EXPIRED','AUTH_REQUIRED'}:
         assert adapter.binding_count==0
         with pytest.raises(AuthFailure): auth.require_session(session.session_id)
+    elif code=='SCHEMA_UNAVAILABLE':
+        # M6.5.2_FIX: metadata unavailable is not an access denial. The failed
+        # request above still raises, and cannot authorize a factual response.
+        assert a.server_model_key in adapter._bindings
+        assert b.server_model_key in adapter._bindings
+        assert auth.require_session(session.session_id).principal==session.principal
     else:
         assert a.server_model_key not in adapter._bindings
         assert b.server_model_key in adapter._bindings

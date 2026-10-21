@@ -305,6 +305,17 @@ For DATA/REPORT:
   belongs in ranking_intent and does not replace that entity mention. Omit the
   current dimension only when a genuine follow-up explicitly inherits it through
   referenced_context_slots.
+- Treat English result structure independently from tense and politeness. An
+  aggregate restricted to a named member has query_shape=filtered_aggregation,
+  even when the user asks for one total with "what is/what were/how much".
+  A time interval on that aggregate remains a separate time restriction; it does
+  not turn the request into scalar, grouped, or a time series. Preserve the exact
+  member and interval evidence without inventing their canonical fields.
+- In "by <category>" grouping language, preserve the literal category as a
+  dimension mention and its exact dimension evidence. A calendar grain used for
+  grouping is not itself a named member or a time-range filter. Use grouped for
+  category totals unless the current message explicitly requests an ordered
+  series/trend. Never add filter_mentions merely because a grouping noun is temporal.
 - For entity_list, put the literal field/entity phrase being enumerated in
   dimension_mentions with identical verbatim dimension evidence. The entity may
   be a temporal category; enumeration does not make it a time filter. If the

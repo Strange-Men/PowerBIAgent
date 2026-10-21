@@ -83,6 +83,11 @@ class ReportTemplateCompatibilityService:
                 items=[], reason_code="semantic_model_schema_unavailable",
             )
 
+        return self.project_schema(schema)
+
+    def project_schema(self, schema: SemanticModelSchema) -> ReportTemplateCatalogResponse:
+        """Pure projection of a schema verified in the caller's current operation."""
+        profile = build_semantic_model_profile(schema)
         candidates = tuple(
             item for item in self._registry.descriptors
             if item.domains.intersection(profile.domains)

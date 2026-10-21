@@ -8,10 +8,11 @@ import type { CloudCatalogEntry, CloudCatalogPage } from '../cloudTypes'
 import type { CatalogOption } from '../types'
 
 /** Reuses Composer's existing compact menu, search, row and status classes. */
-export function CloudCatalogPicker({onSelect, onClose, onFailure}: {
+export function CloudCatalogPicker({onSelect, onClose, onFailure, onOpenLink}: {
   onSelect: (option: CatalogOption) => Promise<boolean>
   onClose: () => void
   onFailure: (error: unknown) => void
+  onOpenLink?: (url: string) => Promise<boolean>
 }) {
   useTranslation()
   const [workspace, setWorkspace] = useState<CloudCatalogEntry | null>(null)
@@ -21,6 +22,8 @@ export function CloudCatalogPicker({onSelect, onClose, onFailure}: {
   const [loading, setLoading] = useState(true)
   const [selecting, setSelecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [link, setLink] = useState('')
+  const [linkOpen, setLinkOpen] = useState(false)
   const epoch = useRef(0)
   const active = useRef<AbortController | null>(null)
   const cancelActive = useCallback(() => { epoch.current++; active.current?.abort() }, [])
@@ -60,6 +63,18 @@ export function CloudCatalogPicker({onSelect, onClose, onFailure}: {
     } finally { setSelecting(false) }
   }
   return <div className="menu-group" aria-busy={loading || selecting}>
+    {onOpenLink ? <>
+      <button type="button" className="menu-option" disabled={selecting} onClick={()=>setLinkOpen(!linkOpen)}>{tr('composer:openResourceLink')}</button>
+      {linkOpen ? <div className="menu-group">
+        <input className="catalog-filter" type="url" maxLength={2048} value={link} disabled={selecting}
+          aria-label={tr('composer:resourceLink')} onChange={event=>setLink(event.target.value)}/>
+        <p className="menu-empty-state">{tr('composer:resourceLinkHint')}</p>
+        <button className="catalog-refresh" type="button" disabled={!link.trim() || selecting} onClick={()=>{
+          setSelecting(true)
+          void onOpenLink(link.trim()).then(ok=>{if(ok) onClose()}).finally(()=>setSelecting(false))
+        }}>{tr('composer:openResource')}</button>
+      </div> : null}
+    </> : null}
     <div className="menu-heading">
       {workspace ? <button className="catalog-refresh" type="button" aria-label={tr('composer:backToWorkspaces')}
         disabled={selecting} onClick={()=>{invalidate();setWorkspace(null);setQuery('')}}><ChevronLeft size={16}/>{publicText(workspace.display_name)}</button>

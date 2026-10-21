@@ -35,6 +35,7 @@ export interface CloudCatalogPage {
 }
 
 export interface CloudWorkspaceStatus {
+  report_templates?: import('./types').ReportTemplateCatalog | null
   selected_model_key: string | null
   conversation_id: string | null
   generation: number

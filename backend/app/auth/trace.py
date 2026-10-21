@@ -6,6 +6,7 @@ _EVENTS = frozenset({
     'flow_consumed', 'token_exchange_success', 'id_token_verified',
     'session_created', 'session_cookie_emitted', 'redirect_complete',
     'session_lookup_success', 'canonical_origin', 'account_resolved',
+    'credential_cleanup_network_unavailable',
 })
 
 

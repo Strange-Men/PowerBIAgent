@@ -11,6 +11,7 @@ from backend.app.powerbi.fabric_iq_contract import fail
 from backend.app.powerbi.base import PowerBIAdapterError
 from backend.app.powerbi.fabric_iq_normalization import guid
 from backend.app.powerbi.fabric_iq_transport import install_fabric_log_redaction
+from backend.app.application.cloud_operation import cloud_stage
 
 BASE = "https://api.fabric.microsoft.com/v1"
 
@@ -100,6 +101,7 @@ class FabricCatalogTransport:
         return [{k: row[k] for k in ('id', 'displayName', 'workspaceId', 'type') if k in row}
                 for row in body['value']], token
 
+    @cloud_stage('resource_verify','microsoft_rest')
     async def verify_resource(self, workspace_id, item_id=None, kind=None):
         """Exact Microsoft GET; client identifiers are only untrusted selectors."""
         workspace_id = guid(workspace_id)
@@ -126,6 +128,7 @@ class FabricCatalogTransport:
                 self.test_scope_complete = False
         return rows
 
+    @cloud_stage('catalog_rest','microsoft_rest')
     async def _get(self, path, params):
         for attempt in range(3):
             self.validate()

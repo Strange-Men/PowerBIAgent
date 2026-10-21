@@ -33,6 +33,108 @@ def service(harness):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('code', ['RATE_LIMITED','QUERY_TIMEOUT','UPSTREAM_UNAVAILABLE'])
+async def test_fix_transient_rest_preserves_selected_binding(harness, code):
+    _, session, _, _ = harness
+    workspace, rest = service(harness)
+    sid, p = session.session_id, session.principal
+    try:
+        page = await workspace.browse(sid, p)
+        resources = await workspace.browse(sid, p, workspace_key=page.items[0].key)
+        selected = await workspace.select(sid,p,resources.items[0].key,expected_generation=0)
+        async def unavailable(*args): raise fail(code)
+        rest.verify_resource = unavailable
+        with pytest.raises(Exception,match=code):
+            await workspace.select(sid,p,selected.selected_model_key,expected_generation=selected.generation)
+        assert workspace.status(sid,p).model_dump(exclude={'report_templates'}) == selected.model_dump(exclude={'report_templates'})
+    finally: await workspace.aclose()
+
+
+@pytest.mark.asyncio
+async def test_fix_selection_has_one_exact_rest_resolve_and_schema(harness):
+    _, session, transport, _ = harness
+    workspace, rest = service(harness)
+    sid, p = session.session_id, session.principal
+    try:
+        page = await workspace.browse(sid,p)
+        resources = await workspace.browse(sid,p,workspace_key=page.items[0].key)
+        rest.calls.clear(); transport.calls.clear()
+        await workspace.select(sid,p,resources.items[0].key,expected_generation=0)
+        assert rest.calls.count((WORKSPACE,MODEL,'SemanticModel')) == 1
+        assert [name for name,_ in transport.calls].count('ResolveFabricItem') == 1
+        assert [name for name,_ in transport.calls].count('GetSemanticModelSchema') == 1
+    finally: await workspace.aclose()
+
+
+@pytest.mark.asyncio
+async def test_fix_operation_reuses_proof_but_next_request_revalidates(harness):
+    from backend.app.application.cloud_operation import operation_scope, current_operation
+    _, session, transport, _ = harness
+    workspace, rest = service(harness)
+    sid,p=session.session_id,session.principal
+    try:
+        page=await workspace.browse(sid,p)
+        resources=await workspace.browse(sid,p,workspace_key=page.items[0].key)
+        rest.calls.clear();transport.calls.clear()
+        with operation_scope() as proof:
+            selected=await workspace.select(sid,p,resources.items[0].key,expected_generation=0)
+            await workspace.bound_projection(sid,p)
+            await workspace.templates(sid,p)
+            assert rest.calls.count((WORKSPACE,MODEL,'SemanticModel'))==1
+            assert [name for name,_ in transport.calls].count('GetSemanticModelSchema')==1
+        assert not proof.active and not proof.schemas and not proof.exact_access
+        assert current_operation() is None
+        await workspace.select(sid,p,selected.selected_model_key,expected_generation=selected.generation)
+        assert rest.calls.count((WORKSPACE,MODEL,'SemanticModel'))==2
+        assert [name for name,_ in transport.calls].count('GetSemanticModelSchema')==2
+    finally: await workspace.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('inaccessible',[False,True])
+async def test_fix_link_binds_without_workspace_membership_and_fails_closed(harness,inaccessible):
+    _,session,transport,_=harness
+    workspace,rest=service(harness)
+    rest.removed=inaccessible
+    try:
+        url=f'https://app.powerbi.com/groups/{WORKSPACE}/datasets/{MODEL}/details'
+        if inaccessible:
+            with pytest.raises(Exception,match='RESOURCE_NOT_ACCESSIBLE'):
+                await workspace.open_resource_link(session.session_id,session.principal,url,expected_generation=0)
+            assert transport.calls==[]
+        else:
+            result=await workspace.open_resource_link(session.session_id,session.principal,url,expected_generation=0)
+            assert result.execution_ready
+            assert rest.calls==[(WORKSPACE,MODEL,'SemanticModel')]
+    finally: await workspace.aclose()
+
+
+@pytest.mark.asyncio
+async def test_fix_report_link_uses_exact_model_mapping_without_workspace_membership(harness):
+    from backend.tests.unit.test_m6_5_2_report_mapping import REPORT
+    _,session,transport,_=harness
+    workspace,rest=service(harness)
+    original=transport.call
+    async def call(name,args):
+        if name=='ResolveFabricItem' and '/reports/' in args['fabricItemId']:
+            return {'fabricItemId':REPORT,'workspaceId':WORKSPACE,'itemType':'Report'}
+        if name=='GetReportMetadata': return {'SemanticModel':{'Id':MODEL},'ReportMetadata':{'Id':REPORT}}
+        return await original(name,args)
+    transport.call=call
+    transport.validate_report_metadata_capability=lambda:None
+    async def verify(ws,item=None,kind=None): rest.calls.append((ws,item,kind))
+    rest.verify_resource=verify
+    try:
+        selected=await workspace.open_resource_link(session.session_id,session.principal,
+            f'https://app.powerbi.com/groups/{WORKSPACE}/reports/{REPORT}',expected_generation=0)
+        adapter,_=workspace.selected_context(session.session_id,session.principal)
+        assert adapter.bound_resource_identity(selected.selected_model_key)==(WORKSPACE,MODEL)
+        assert rest.calls==[(WORKSPACE,REPORT,'Report'),(WORKSPACE,MODEL,'SemanticModel')]
+        assert [name for name,_ in transport.calls].count('GetSemanticModelSchema')==1
+    finally: await workspace.aclose()
+
+
+@pytest.mark.asyncio
 async def test_normal_catalog_does_not_bind_then_exact_selection_allows_query_only(harness):
     auth, session, transport, _ = harness
     workspace, rest = service(harness)

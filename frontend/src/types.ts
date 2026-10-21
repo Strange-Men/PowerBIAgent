@@ -34,6 +34,7 @@ export type PublicFailureCode =
   | 'REQUEST_TIMEOUT'
   | 'VALIDATION_FAILED'
   | 'INTERNAL_FAILURE'
+  | 'PERSISTENCE_UNAVAILABLE'
 
 export type FailureStage =
   | 'auth'

@@ -56,5 +56,6 @@
   "clarification_unsupported_semantic_request": "The current model or query capability does not support this business condition. Adjust it and try again.",
   "reportTemplateRequired": "Specify the report template to use.",
   "turnRelationRequired": "Specify whether this is a new question or a change to the previous conditions.",
-  "externalFactsUnavailable": "I do not have verifiable live external data to confirm specific businesses, opening status, weather, market prices, or news. Provide a trusted source, or ask for general selection methods that do not depend on live information."
+  "externalFactsUnavailable": "I do not have verifiable live external data to confirm specific businesses, opening status, weather, market prices, or news. Provide a trusted source, or ask for general selection methods that do not depend on live information.",
+  "persistenceUnavailable": "History or report storage is unavailable. Try again later."
 }

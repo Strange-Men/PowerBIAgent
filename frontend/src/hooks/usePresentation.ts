@@ -26,7 +26,7 @@ export function usePresentation(message: AssistantMessage, context?: ProjectionC
     const controller=new AbortController()
     let active=true
     void projectPresentation(message.id,locale,mode,cloud,csrf,generation,controller.signal)
-      .then(value=>{if(active)setProjected({key,answer:value.answer,presentation:value.presentation})})
+      .then(value=>{if(active){setProjected({key,answer:value.answer,presentation:value.presentation});setFailed(null)}})
       .catch(error=>{if(active && error?.name!=='AbortError'){
         setFailed(key)
         if(error?.status===401)onAuthInvalid?.()

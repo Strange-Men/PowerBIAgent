@@ -12,6 +12,8 @@ import { CloudCatalogPicker } from './CloudCatalogPicker'
 import { cloudDenialMessage, cloudFailureAction, publicFailureMessage } from '../failure'
 import { listCloudConversations, listCloudReports, mutateCloudResource, type CloudResourceAction } from '../api/client'
 import type { BatchOperationResult } from '../types'
+import { openCloudResourceLink } from '../api/client'
+type CloudOperation = 'catalog' | 'selection' | 'chat' | 'template' | 'history' | 'report' | 'resource_mutation' | 'presentation'
 
 export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckError=null, collapsed=false, onToggle=() => {} }: {
   session: AuthSession; onAuthInvalid: () => void; account?: AccountActions; sessionCheckError?: string | null; collapsed?: boolean; onToggle?: () => void
@@ -27,6 +29,13 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
   const [templates, setTemplates] = useState<CatalogOption[]>([])
   const [template, setTemplate] = useState<CatalogOption | null>(null)
   const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [modelSelectionLoading, setModelSelectionLoading] = useState(false)
+  const [conversationRestoreLoading, setConversationRestoreLoading] = useState(false)
+  const [reloadModels, setReloadModels] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const [reportError, setReportError] = useState<string | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [reportsLoading, setReportsLoading] = useState(false)
   const [templateError, setTemplateError] = useState<string | null>(null)
   const [messages,setMessages]=useState<ConversationMessage[]>([])
   const [sending,setSending]=useState(false)
@@ -47,26 +56,62 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
 
   const clearConversation=() => { setMessages([]); setSending(false); setRestored(false) }
 
-  const loadResources=useCallback(async (controller: AbortController,current: number) => {
-    const [history,artifacts]=await Promise.all([readCloudHistory(controller.signal),readCloudReports(controller.signal)])
-    if (current!==generation.current) return
-    setRecent(history.items.slice(0,8)); setReports(artifacts.items.slice(0,8))
-    return history.items
+  const loadResources=useCallback(async (controller: AbortController,current: number,kind?: 'history'|'report') => {
+    const history=kind==='report' ? Promise.resolve(undefined) : (async()=>{
+      setHistoryLoading(true)
+      try {
+        const page=await readCloudHistory(controller.signal)
+        if(current===generation.current){setRecent(page.items.slice(0,8));setHistoryError(null)}
+        return page.items
+      } catch(caught) {
+        if(current===generation.current)setHistoryError(tr('chat:conversationHistoryIsUnavailable'))
+        throw caught
+      } finally {if(current===generation.current)setHistoryLoading(false)}
+    })()
+    const reports=kind==='history' ? Promise.resolve() : (async()=>{
+      setReportsLoading(true)
+      try {
+        const page=await readCloudReports(controller.signal)
+        if(current===generation.current){setReports(page.items.slice(0,8));setReportError(null)}
+      } catch(caught) {
+        if(current===generation.current)setReportError(tr('chat:reportListUnavailable'))
+        throw caught
+      } finally {if(current===generation.current)setReportsLoading(false)}
+    })()
+    const results=await Promise.allSettled([history,reports])
+    if(current!==generation.current)return
+    for(const result of results){
+      if(result.status==='rejected' && result.reason instanceof ApiError && cloudFailureAction(result.reason)==='auth')throw result.reason
+    }
+    return results[0].status==='fulfilled' ? results[0].value : undefined
   },[])
 
-  const failure = useCallback((caught: unknown, selection: boolean, resourceKey?: string) => {
+  const failure = useCallback((caught: unknown, operation: CloudOperation, resourceKey?: string) => {
     const action=caught instanceof ApiError ? cloudFailureAction(caught) : 'recoverable'
+    const message=caught instanceof ApiError && caught.denialReason ? cloudDenialMessage(caught.denialReason, productMode.current)
+      : action==='conflict' ? tr('chat:theSessionHasChangedSynchronizingPleaseTryAgain')
+      : caught instanceof ApiError && caught.failure ? publicFailureMessage(caught.failure)
+      : caught instanceof ApiError && caught.status===0 ? tr('errors:cannotConnectToPowerbiagentCheckYourNetworkAndTry')
+      : operation==='catalog' ? tr('chat:cannotLoadDataModelsTryAgain')
+      : action==='resource' ? tr('chat:thisModelIsInaccessibleRefreshTheCatalogAndSelect')
+      : tr('chat:thisRequestCouldNotBeCompletedTryAgainLater')
+    if (action!=='auth' && ['history','report','presentation','resource_mutation'].includes(operation)) {
+      if (operation==='history') setHistoryError(message)
+      else setReportError(message)
+      return
+    }
+    setReloadModels(operation==='catalog' || action==='resource')
     if (action==='auth') {
       generation.current++; active.current?.abort()
       setMessages([]); setRecent([]); setReports([]); setStatus(null); setSending(false); setRestored(false)
       setCatalog(null); setProfiles([]); setProfile(null); setTemplates([]); setTemplate(null)
-      setLoading(false); setTemplatesLoading(false)
+      setLoading(false); setTemplatesLoading(false); setModelSelectionLoading(false); setConversationRestoreLoading(false)
       onAuthInvalid()
     } else if (action==='resource') {
       generation.current++; active.current?.abort()
       setSending(false); setLoading(false); setTemplatesLoading(false)
       if (resourceKey) setCatalog(previous=>previous ? {...previous,items:previous.items.filter(item=>item.key!==resourceKey)} : previous)
-      if (selection) {
+      if (operation!=='catalog') {
         setStatus(previous=>previous && resourceKey && previous.selected_model_key!==resourceKey ? previous : null)
         setMessages([]); setRestored(false); setTemplates([]); setTemplate(null)
       }
@@ -87,13 +132,9 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
         } else setError(tr('chat:cannotSynchronizeThisSessionTryAgain'))
       })
     }
-    setError(caught instanceof ApiError && caught.denialReason ? cloudDenialMessage(caught.denialReason, productMode.current)
-      : action==='conflict' ? tr('chat:theSessionHasChangedSynchronizingPleaseTryAgain')
-      : caught instanceof ApiError && caught.failure ? publicFailureMessage(caught.failure)
-      : caught instanceof ApiError && caught.status===0 ? tr('errors:cannotConnectToPowerbiagentCheckYourNetworkAndTry')
-      : selection ? tr('chat:thisModelIsInaccessibleRefreshTheCatalogAndSelect') : tr('chat:cannotLoadDataModelsTryAgain'))
+    setError(message)
   }, [onAuthInvalid,begin])
-  const catalogFailure = useCallback((caught: unknown) => failure(caught, false), [failure])
+  const catalogFailure = useCallback((caught: unknown) => failure(caught, 'catalog'), [failure])
 
   const resourceLoaders=useMemo(()=>({
     conversations:async (resourceStatus: 'active' | 'archived',cursor?: string) => {
@@ -102,7 +143,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
         const page=await listCloudConversations(resourceStatus,20,cursor)
         if (current!==generation.current) throw new ApiError(tr('chat:thisResourceRequestIsNoLongerValid'),409)
         return page
-      } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
+      } catch (caught) { if (current===generation.current) failure(caught,'history'); throw caught }
     },
     reports:async (resourceStatus: 'active' | 'archived',cursor?: string) => {
       const current=generation.current
@@ -110,7 +151,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
         const page=await listCloudReports(resourceStatus,20,cursor)
         if (current!==generation.current) throw new ApiError(tr('chat:thisResourceRequestIsNoLongerValid'),409)
         return page
-      } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
+      } catch (caught) { if (current===generation.current) failure(caught,'report'); throw caught }
     },
   }),[failure])
 
@@ -120,7 +161,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       const page=await listCloudConversations('active',50,undefined,query)
       if (current!==generation.current) throw new ApiError(tr('chat:thisSearchRequestIsNoLongerValid'),409)
       return page.items
-    } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
+    } catch (caught) { if (current===generation.current) failure(caught,'history'); throw caught }
   }
 
   const mutate=async (kind: 'history' | 'reports',id: string,action: CloudResourceAction,title?: string) => {
@@ -159,9 +200,9 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
         await loadResources(controller,current)
       }
       void synchronize().catch(caught => {
-        if (current===generation.current) failure(caught,true)
+        if (current===generation.current) failure(caught,'resource_mutation')
       })
-    } catch (caught) { if (current===generation.current) failure(caught,true); throw caught }
+    } catch (caught) { if (current===generation.current) failure(caught,'resource_mutation'); throw caught }
   }
 
   const bulk=async (kind: 'history' | 'reports',ids: string[],action: CloudResourceAction): Promise<BatchOperationResult> => {
@@ -227,14 +268,10 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
         setNoWorkspaceAccess(workspaces.items.length === 0 && !workspaces.partial)
       }
       if (nextStatus.execution_ready || models.value.persistence_enabled) {
-        const history=await loadResources(controller,current)
-        if (current!==generation.current) return
-        if (nextStatus.conversation_id && history?.some(item=>item.conversation_id===nextStatus.conversation_id)) {
-          const page=await readCloudConversation(nextStatus.conversation_id,controller.signal)
-          if (current!==generation.current) return
-          if (page.conversation_id!==nextStatus.conversation_id) throw new Error('History mismatch')
-          setMessages(page.items.flatMap(historyItemToMessages)); setRestored(true)
-        }
+        void loadResources(controller,current).catch(caught=>{
+          if(current===generation.current)failure(caught,'history')
+        })
+
       }
       if (nextStatus.selected_model_key && models.value.items.some(item => item.key === nextStatus.selected_model_key)) {
         setTemplatesLoading(true)
@@ -242,7 +279,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       }
     } catch (caught) {
       if (current !== generation.current) return
-      failure(caught, false)
+      failure(caught, 'catalog')
     } finally {
       if (current === generation.current) { setLoading(false); setTemplatesLoading(false) }
     }
@@ -264,24 +301,28 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
   }, [load])
 
   const refresh = async () => {
-    setLoading(true); setError(null); setTemplateError(null)
+    setLoading(true); setError(null); setReloadModels(false); setTemplateError(null)
     await load()
   }
 
-  const choose = async (option: CatalogOption) => {
+  const choose = async (option: CatalogOption, resourceUrl?: string) => {
     if (!session.csrf_token || !catalog || (!catalog.product_mode && !catalog.items.some(item => item.key === option.key))) return false
     const { controller, current } = begin()
     clearConversation()
-    setError(null); setTemplate(null); setTemplates([]); setTemplateError(null); setTemplatesLoading(true)
+    setError(null); setTemplate(null); setTemplates([]); setTemplateError(null); setModelSelectionLoading(true); setReloadModels(false)
     try {
       let nextStatus: CloudWorkspaceStatus
       try {
-        nextStatus = await selectCloudModel(option.key, session.csrf_token, serverGeneration.current, controller.signal)
+        nextStatus = resourceUrl
+          ? await openCloudResourceLink(resourceUrl,session.csrf_token,serverGeneration.current,controller.signal)
+          : await selectCloudModel(option.key, session.csrf_token, serverGeneration.current, controller.signal)
       } catch (caught) {
         if (!(caught instanceof ApiError) || caught.status !== 409 || current !== generation.current) throw caught
         const latest = await readCloudStatus(controller.signal)
         if (current !== generation.current) return false
-        nextStatus = await selectCloudModel(option.key, session.csrf_token, latest.generation, controller.signal)
+        nextStatus = resourceUrl
+          ? await openCloudResourceLink(resourceUrl,session.csrf_token,latest.generation,controller.signal)
+          : await selectCloudModel(option.key, session.csrf_token, latest.generation, controller.signal)
       }
       if (current !== generation.current) return false
       if (catalog.product_mode) {
@@ -292,21 +333,24 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       } else if (nextStatus.selected_model_key !== option.key) throw new Error('Selection mismatch')
       setStatus(nextStatus)
       serverGeneration.current = nextStatus.generation
-      await loadTemplates(controller, current)
+      if (nextStatus.report_templates) {
+        setTemplates(nextStatus.report_templates.items.map(item=>({key:item.template_key,label:item.display_name,
+          description:item.description,compatible:item.selectable,selectable:item.selectable,compatibilityStatus:item.compatibility_status})))
+      } else await loadTemplates(controller, current)
       return current === generation.current
     } catch (caught) {
       if (current !== generation.current) return false
-      failure(caught, true, option.key)
+      failure(caught, 'selection', option.key)
       return false
     } finally {
-      if (current === generation.current) setTemplatesLoading(false)
+      if (current === generation.current) { setTemplatesLoading(false); setModelSelectionLoading(false) }
     }
   }
 
   const changeConversation=async (id?: string) => {
     if (!status || (!id && !status.execution_ready) || !session.csrf_token) return
     const {controller,current}=begin()
-    clearConversation(); setError(null); setTemplates([]); setTemplate(null); setTemplatesLoading(true)
+    clearConversation(); setError(null); setTemplates([]); setTemplate(null); setTemplatesLoading(true); setConversationRestoreLoading(Boolean(id))
     try {
       const next=id ? await restoreCloudChat(id,serverGeneration.current,session.csrf_token,controller.signal)
         : await newCloudChat(serverGeneration.current,session.csrf_token,controller.signal)
@@ -326,8 +370,8 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       await loadTemplates(controller,current)
     } catch (caught) {
       if (current!==generation.current) return
-      failure(caught,true)
-    } finally { if (current===generation.current) setTemplatesLoading(false) }
+      failure(caught,'history')
+    } finally { if (current===generation.current) { setTemplatesLoading(false); setConversationRestoreLoading(false) } }
   }
 
   const send=async (content: string) => {
@@ -335,7 +379,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
     const conversation=status.conversation_id
     const {controller,current}=begin()
     const requestId=crypto.randomUUID()
-    setSending(true); setError(null)
+    setSending(true); setError(null); setReloadModels(false)
     setMessages(previous=>[...previous,{id:`user-${requestId}`,role:'user',content}])
     try {
       const response=await sendCloudChat({message:content,request_id:requestId,expected_generation:serverGeneration.current,
@@ -346,7 +390,7 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       await loadResources(controller,current)
     } catch (caught) {
       if (current!==generation.current) return
-      failure(caught,true,status.selected_model_key || undefined)
+      failure(caught,'chat',status.selected_model_key || undefined)
     } finally { if (current===generation.current) setSending(false) }
   }
 
@@ -368,20 +412,25 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       : !options.length ? tr('chat:noAccessibleDataModelsWereFound') : tr('chat:selectADataModelToBegin'))
   const executionBlocked = !status?.execution_ready ? tr('chat:dataAnalysisIsUnavailableTryAgainLater') : null
 
+  const retryResources=(kind: 'history'|'report') => {
+    const controller=new AbortController()
+    void loadResources(controller,generation.current,kind).catch(caught=>failure(caught,kind))
+  }
   const content=<>
-    <ConversationView projectionContext={{mode:"real",cloud:true,csrf:session.csrf_token || "",generation:status?.generation,conversationId:status?.conversation_id,onAuthInvalid}} messages={messages} sending={sending} loadingConversation={templatesLoading} restored={restored}
+    <ConversationView projectionContext={{mode:"real",cloud:true,csrf:session.csrf_token || "",generation:status?.generation,conversationId:status?.conversation_id,onAuthInvalid}} messages={messages} sending={sending} loadingConversation={conversationRestoreLoading} restored={restored}
       welcomeDescription={tr('chat:selectACloudModelAccessibleToThisAccount')} />
     <Composer key={status?.conversation_id || 'cloud-unselected'} sending={sending} semanticModel={selected} semanticModelOptions={options}
-      cloudModelPicker={catalog?.product_mode ? close=><CloudCatalogPicker onSelect={choose} onClose={close} onFailure={catalogFailure}/> : undefined}
+      cloudModelPicker={catalog?.product_mode ? close=><CloudCatalogPicker onSelect={choose} onClose={close} onFailure={catalogFailure}
+        onOpenLink={url=>choose({key:'resource-link',label:'',description:'',compatible:true,selectable:true},url)}/> : undefined}
       statusNotice={<div className="cloud-catalog-status">
         <p className="local-catalog-note" role="status">{publicText(notice)}</p>
-        {error || catalog?.status === 'error' || catalog?.status === 'forbidden'
+        {reloadModels || catalog?.status === 'error' || catalog?.status === 'forbidden'
           ? <button type="button" onClick={() => void refresh()}>{tr('chat:reloadDataModels')}</button> : null}
       </div>}
       loadingSemanticModels={loading} semanticModelError={noWorkspaceAccess ? tr('composer:noWorkspaceAccess') : null}
-      semanticModelCompatibilityNotice={templatesLoading ? tr('chat:verifyingModelAccessAndReportTemplates')
+      semanticModelCompatibilityNotice={modelSelectionLoading ? tr('chat:verifyingModelAccessAndReportTemplates')
         : selected ? executionBlocked : tr('chat:selectADataModel')}
-      reportTemplate={template} reportTemplateOptions={templates} loadingReportTemplates={templatesLoading}
+      reportTemplate={template} reportTemplateOptions={templates} loadingReportTemplates={templatesLoading || modelSelectionLoading}
       reportTemplateError={publicText(templateError)} llmProfile={profile} llmProfileOptions={profiles}
       loadingLLMProfiles={loading} llmProfileError={null}
       onSemanticModelChange={option => void choose(option)} onRefreshSemanticModels={refresh}
@@ -407,6 +456,9 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       onBulkDeleteReports={items=>bulk('reports',items.map(item=>item.report_id),'delete')}
       onBulkArchiveReports={items=>bulk('reports',items.map(item=>item.report_id),'archive')}
       onBulkRestoreReports={items=>bulk('reports',items.map(item=>item.report_id),'unarchive')} />
-    <main className="chat-main">{content}</main>
+    <main className="chat-main">{content}
+      {historyError ? <p className="local-catalog-note" role="status">{historyError} <button disabled={historyLoading} onClick={()=>retryResources('history')}>{tr('chat:retrySidebarResources')}</button></p> : null}
+      {reportError ? <p className="local-catalog-note" role="status">{reportError} <button disabled={reportsLoading} onClick={()=>retryResources('report')}>{tr('chat:retrySidebarResources')}</button></p> : null}
+    </main>
   </div>
 }

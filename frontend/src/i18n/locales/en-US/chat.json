@@ -63,5 +63,7 @@
   "analysisIsInProgressDeleteTheConversationWhenIt": "Analysis is in progress. Delete the conversation when it finishes.",
   "theModelIsConnectedButSomeFieldsOrMeasures": "The model is connected, but some fields or measures required for analysis are missing.",
   "theModelIsConnectedButCompatibilityCannotBeChecked": "The model is connected, but compatibility cannot be checked. Try again later.",
-  "partialCatalogUnverified": "Accessible models are shown; {{count}} models remain unverified. Refresh the catalog and try again."
+  "partialCatalogUnverified": "Accessible models are shown; {{count}} models remain unverified. Refresh the catalog and try again.",
+  "retrySidebarResources": "Retry sidebar resources",
+  "reportListUnavailable": "The report list is unavailable. Try again."
 }

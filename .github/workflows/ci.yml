@@ -82,6 +82,18 @@ jobs:
       - name: Product Authorization Gate
         run: python -m pytest backend/tests/unit/test_m6_5_2_product_authorization.py backend/tests/unit/test_m6_5_2_product_selection.py backend/tests/unit/test_m6_5_2_report_mapping.py -q
 
+      - name: Cloud Runtime Stability Gate
+        run: python -m pytest backend/tests/unit/test_m6_5_2_product_selection.py backend/tests/unit/test_m6_5_2_fix_resource_link.py backend/tests/api/test_cloud_product_api.py -q
+
+      - name: Failure Classification Gate
+        run: python -m pytest backend/tests/api/test_m6_5_2_fix_failure_trace.py -q
+
+      - name: Metadata Amplification Gate
+        run: python -m pytest backend/tests/unit/test_m6_5_2_product_selection.py backend/tests/unit/test_m6_5_2_report_mapping.py -q
+
+      - name: English Natural Query Gate
+        run: python -m pytest backend/tests/unit/test_m6_5_2_fix_english.py backend/tests/unit/test_cross_language_grounding.py -q
+
       # ── Frontend validation ──────────────────────────────────────
       - name: Setup Node.js 24 LTS
         uses: actions/setup-node@v7

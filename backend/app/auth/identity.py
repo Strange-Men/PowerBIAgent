@@ -116,8 +116,14 @@ class MsalIdentityClient:
     def destroy(self, context):
         if not isinstance(context, MsalContext):
             return
-        for account in context.client.get_accounts():
-            context.client.remove_account(account)
-        # Purge all credentials, including pending/partially populated caches.
-        context.cache.deserialize("{}")
-        context.account_id = None
+        try:
+            for account in context.client.get_accounts():
+                context.client.remove_account(account)
+        except RequestException:
+            # MSAL may perform instance discovery even on cache operations.
+            # Network availability cannot prevent local credential destruction.
+            auth_trace('credential_cleanup_network_unavailable', False)
+        finally:
+            # Purge all credentials, including pending/partially populated caches.
+            context.cache.deserialize("{}")
+            context.account_id = None

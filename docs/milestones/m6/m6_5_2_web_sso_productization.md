@@ -199,3 +199,160 @@ FINAL COMPLETE仅在自身exact-SHA Full Validation、Remote Audit、HEAD=origin
 worktree clean/owned shutdown全部成立后生效。自身SHA/CI/remote receipt在仓库外，避免循环引用。
 完成立即STOP。下一阶段仅记录M6.5.3 VM Remote Deployment & Internal Pilot与M6.6 Enterprise
 Production Readiness Seal；不实施。
+
+## M6.5.2_FIX — Cloud Product Runtime & Pilot Readiness Closure
+
+2026-10-21 用户独立授权；baseline `ef6f754fb619ef832d002aa7f4a8587f233cef83`。
+Cold Start fresh fetch/main/HEAD=origin/main/clean/staging empty；Settings.version 保持 M6.5.2。
+本节为后续 FIX，前文原验收为历史，不继承其 CI 或英文/配额结论。
+本地门与Normal Product Cloud Real已完成；FINAL COMPLETE仅按下述自身exact-SHA
+Full Validation、Remote Audit、clean/shutdown条件全部成立后生效。
+
+### Reality Audit / failure-first
+
+- templatesLoading 被传给 loadingConversation；selection boolean 将未知 Chat503 误报模型
+  不可访问，所有 error 显示 reload-model；History/Report Promise.all 污染主链。
+  024fc0e7=8RED/26PASS，0851f6f0=34PASS；后续独立 loading/retry/恢复回归一并全量。
+- select/bound_projection/templates 重复 REST/Schema；任意 REST 失败清 selection。
+  f5911ecc=4RED/10PASS；c0b25501 typed failure/trace RED；8cf0e76d 链接 parser 缺失 RED。
+- Real DeepSeek english_before 的纯英文 GROUPED/RANKING draft 正常，但具名成员半年
+  aggregate 错为 SCALAR；通用 grammar guidance 后 english_after 为 FILTERED_AGGREGATION。
+  不写入 UCI/Total Sales 特例，不改 evidence validator、Grounding、日期/成员 authority。
+- b15d008b 证明投影失败后同消息成功仍残留 failed；成功清除此状态，Facts 不变。
+  首轮 native body 中断另源于验收 observer 的 audit rename 文件锁，不冒充产品根因。
+  observer 后续写回执异常不影响产品请求；runtime-closure 原件保留。
+- 首轮 Backend85dfd111=3914PASS/17FAIL/1SKIP，未计 PASS。模板投影先放在 service status
+  破坏旧 equality，改为 API selection 专用响应；exact403/404 拒绝仍失效。
+  SCHEMA_UNAVAILABLE 按当前用户合同保留 binding，原失败请求仍 raises；对应旧断言增补
+  preservation 分支，未将失败改为成功或删除负例。mismatched exact identity 仍撤销 proof。
+  report_atomic_store_failed 在长本地测试根复现；短独立 D:/PBIAgentTest 的 f92372ba 中
+  report tests 恢复通过，未改 report/storage authority 或 expected。未读/移动用户 DB。
+- 初次 typecheck e7925221 缺 link CatalogOption.description，补齐后 build/typecheck PASS。
+
+### 安全合同与官方能力重验
+
+仅复用 Adapter/Service/Repository/ToolGateway，新增 ContextVar operation proof 容器。
+proof key 含 service/adapter identity、session、validated principal/epoch、exact workspace/model、
+generation；Schema 验证 key/fingerprint/epoch。finally 失效清空，子任务继承的已结束 scope
+也不能再用。每个 factual HTTP request fresh REST/Schema；当前 operation 内 prepare/Core
+schema/template/durable lease 复用 proof。session/owner/policy/epoch/generation 与 late/stale
+checks 每次仍执行，无 global 或跨请求 permission cache。
+
+selection 同响应返回 template projection；独立 template API 仍 fresh IQ Schema。
+Report metadata 证明 exact model GUID，Resolve 该 GUID 独立证明 Workspace；不立即重复
+Resolve 同一 model URL，Schema 仍验证 exact artifact。12 rows/N+1/8 columns 不变。
+
+structured trace 仅固定 request_id/operation/stage/failure_code/retryable/provider/HTTP category。
+stage 覆盖 catalog_rest/resource_verify/iq_resolve/iq_schema/iq_execute/llm/persistence/
+presentation/internal；包裹的 IQ 原因不被 persistence 覆盖。无 exception repr、credential、
+prompt、DAX、rows、schema 或 PII。HTTP category 为 API 响应类别，不冒充 Microsoft 原始状态。
+未知异常明确 INTERNAL_FAILURE，LLM/Persistence 分别保留专属公开 failure code。
+
+2026-10-21 重读官方合同：
+
+- [Get Semantic Model](https://learn.microsoft.com/en-us/rest/api/fabric/semanticmodel/items/get-semantic-model)：
+  caller 需 item read；固定 exact item path，严格 ID/type/workspace。直接 item proof 不再
+  额外要求 Workspace membership GET。
+- [Fabric IQ MCP](https://learn.microsoft.com/en-us/fabric/iq/connectors/fabric-iq-mcp)：delegated caller
+  原权限与 RLS/OLS 保留；selector 不授予权限，Schema/result 合同不变。
+- [Get Dataset](https://learn.microsoft.com/en-us/rest/api/power-bi/datasets/get-dataset)：可按 caller
+  permission 访问其他 Workspace model；本轮未增加第二 data plane 或 auth scopes。
+
+optional link entry 是用户对 ADR-020 第5条 discovery UX 的明确补充；主目录保留，不要求普通
+用户必须输入链接，不宣称列出所有 individual-share。仅 HTTPS exact allowlisted Microsoft host
+与带 Workspace GUID 的 reports/datasets/semanticmodels 路径；foreign host、credentials/port、
+未知 query、fragment、malformed identity 拒绝，不 fetch URL。Report mapping 与 model exact
+proof 独立；前端无 permission authority。short/share links、groups/me 或缺 exact identity 的
+URL 不猜，Microsoft REST/IQ 无法证明即 fail closed。individual-share 专用 principal/resource
+未提供，synthetic/官方合同覆盖，Real Pending 保留。
+
+### Fresh gates（本地，不继承历史）
+
+| Run | 结果 |
+|---|---|
+| 11fdc76d | Backend3947PASS/1SKIP/15既有warnings |
+| 07af082f | 补MSAL网络清理回归后Backend3949PASS/1SKIP/17warnings；新增两例相同MSAL提示，未隐藏 |
+| ee126006 | Semantic819PASS |
+| cf3ea2f0 | Golden11PASS/1manualSKIP |
+| 5e1c69c3 | Frontend19files/191PASS |
+| 16238a20 / 3cd68aa7 | Typecheck/Build、Lint PASS |
+| e4321b2d | Security/Architecture/Documentation/Ledger/Artifact/Localization PASS，最终文档后须重跑 |
+| b32bc272 | 更新FIX文档后的六项治理门PASS，后续文档变更仍须重跑 |
+| c8efd0c8 | Auth51/Catalog31/Product39/Runtime43/Failure13/Amplification31/English91 PASS |
+| f4c19717 | 最终代码后重跑：Auth53/Catalog31/Product39/Runtime43/Failure13/Amplification31/English91 PASS |
+| 68eb124f | 最终代码后Golden11PASS/1manualSKIP |
+| 3a016a50 / 98eb6835 / cacbc626 | 最终代码后Typecheck/Lint/Build PASS |
+| 7a1d9464 | 补Real边界与working diff审计后六项治理门PASS |
+| 72622c14 | 最终代码后Semantic819PASS |
+| 8e7aac3b | Frontend18files/157PASS但CloudWorkspace线程启动timeout，整轮FAIL；原件保留，原命令独立重跑，不调timeout/断言 |
+| 36e5e6f8 | 原完整Frontend命令独立重跑19files/191PASS，无代码或validator修改 |
+
+runner/cache/temp/receipt 均在仓库外 PBIAgentTest；早期长根
+D:/AAA_Workfile/PBIAgentTest/M6.5.2FIX，最终本地门为短独立 D:/PBIAgentTest/M6.5.2FIX。
+不迁移旧证据或用户 DB；Real 自建 synthetic host DB 的 ownership 明确。
+
+### Real / release（仅按自身发布门生效）
+
+Normal FABRIC_TEST_MODE=false，无 allowlist；final-native 为 native Auth/IQ/DeepSeek。
+登录前网络 ERR_CONNECTION_CLOSED 与 Auth initiate UPSTREAM_UNAVAILABLE 原件保留，均无
+callback，不计首登成功。恢复后浏览器选 Admin，native flow/token/ID/account/session 均通过。
+normal-product-first-failure 保留最终六条中的失败：前五条SCALAR×3/GROUPED/RANKING均
+completed/Memory commit、原文不改、zh/en投影与零新增IQ、每次Chat Schema1；第六条France
+H1 2011为clarification_required/ZERO commit，原因是模型没有default temporal role，非
+English evidence或shape validator错误。独立Understanding实测generic guidance后该问题
+draft为FILTERED_AGGREGATION，但draft不能授予canonical date authority。
+
+现有Grounding明确禁止即使单一typed date也自动推断默认日期；负例
+test_missing_metadata_never_defaults_single_measure_or_date保留。用户随后明确批准通过现有
+operator registry声明Sales[Date]。date-approved宿主先fresh exact REST/Resolve/Schema，
+核对typed field、exact workspace/model/resource fingerprint与语义上下文fingerprint，再写
+仓库外operator配置，并由既有SemanticCatalogBuilder校验。两份fingerprint各按原合同
+使用，不混用。没有修改Grounding、registry解析器、evidence validator或生产模型特例；
+新key/fingerprint不匹配仍fail closed，不把单个模型角色变成通用默认日期。
+
+date-approved/english-product-final中的六条纯英文均completed/Memory commit且为正式
+SCALAR×3/GROUPED/RANKING/FILTERED_AGGREGATION，原文保持、zh/en Assistant投影语言正确、
+每次Chat Schema1、locale ZERO IQ且Memory immutable；Report generate/双语view/download、
+History restore/read、stale/forged均PASS。该长流程末尾switch使用开场5分钟前的Catalog
+selector，正确403使整轮原回执FAIL，原件保留，不计整轮PASS或延长TTL。
+
+date-approved/adjacency-product-final独立fresh回执17项PASS：重启后原生Admin重新登录，
+owner History/Report恢复与读取、fresh Catalog后switch200/新conversation/空Memory、
+stale/forged拒绝、logout与五类protected resource401；该阶段ZERO ExecuteQuery。
+这是修正验收selector生命周期后补验失败检查，不修改生产授权或expected。
+
+remaining-product-final 独立回执PASS：中文问题原文+英文Assistant、既有单KPI模板生成、
+zh/en view/download、读取零ExecuteQuery、History restore/read、stale/forged fail closed、
+模型切换新conversation/空Memory、logout及五类protected resource401。
+所有调用使用浏览器原生登录产生的session，在同一宿主正常HTTP endpoint执行；未注入
+Auth/IQ/LLM mock，未读取用户持久化DB。individual-share专用资源仍Real Pending。
+
+宿主shutdown另暴露MSAL get_accounts/remove_account可能触发instance discovery网络失败，
+本地cache purge不能被它阻断。93fbb58d两例failure-first RED，988a801a因新trace事件未注册
+仍失败；补固定事件allowlist后07af082f完整后端PASS。finally始终清cache/account_id，
+仅吞已知RequestException并输出固定安全event，不降低认证验证或记录异常内容。
+临时429/503保留model/conversation/catalog由failure-first注入矩阵证明；未主动制造
+Microsoft限流。individual-share专用资源按用户允许保留Real Pending，不伪造真实分享PASS。
+M6.5.2_FIX FINAL COMPLETE仅在本提交自身exact-SHA Full Validation、Remote Audit、
+HEAD=origin/main、clean/shutdown全部成立后生效，最终自身SHA/CI回执保存仓库外。
+验收owned backend/Vite已正常shutdown，8000/5173无listener；原生logout界面截图在仓库外。
+
+### 基线到M6.5.2_FIX最终diff审计
+
+基线为用户指定ef6f754fb619ef832d002aa7f4a8587f233cef83；审计时fresh fetch无remote drift，
+42个授权文件按白名单staging，远端须再比对文件清单。A runtime correctness：CloudWorkspace
+loading、侧栏隔离、presentation
+重试恢复及MSAL本地销毁。B failure handling：operation上下文、公开typed code、bounded trace。
+C proof dedupe：workspace service、Fabric IQ Adapter、template schema projection；D English
+semantics：仅Understanding通用prompt；E shared-resource discovery：严格URL parser、catalog
+selector、API与Composer compact UI；F tests：negative/回归及四个CI门；G docs：07/09/
+CHANGELOG/本milestone/Error Ledger；H accidental drift=0。
+
+Settings.version保持M6.5.2。未改TurnPipeline、Grounding、CanonicalQueryPlan、DAX builder、
+ResultInspection、VerifiedFactSet、Memory/Report factual authority或requested/observed/horizon。
+未增加Test Allowlist依赖、permission长期cache、第二事实链、模型专用language逻辑或RLS/OLS
+放宽。旧SCHEMA_UNAVAILABLE测试分支按本轮明确合同修正为保留binding，但当前失败仍raise；
+access denial和forged identity的negative断言继续保留。
+
+保留 cardinality CONTRACT_GAP、Test B OLS deferred→M6.6、single-process/SQLite/filesystem/
+in-memory coordination、refresh freshness UNKNOWN；不进入 M6.5.3/M6.6。

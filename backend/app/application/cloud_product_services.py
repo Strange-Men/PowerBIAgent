@@ -10,6 +10,7 @@ from backend.app.report.executive import ExecutiveSalesReportRenderer
 from backend.app.report.fixed import SalesReportRenderer
 from backend.app.report.registry import build_report_dispatcher
 from backend.app.application.cloud_product_runtime import require_cloud_business_data, require_native_workspace
+from backend.app.application.cloud_operation import cloud_operation, cloud_stage
 
 
 class _SelectionLease:
@@ -358,6 +359,8 @@ class CloudProductServiceFactory:
             return {'resource':result,'workspace_status':self._workspace.status(sid,principal)}
         return await self._read_owned(sid,principal,mutate,restores_selection=True)
 
+    @cloud_operation
+    @cloud_stage('persistence','persistence')
     async def prepare(self, sid, principal):
         # The three independent operator grants precede Core and storage.
         require_native_workspace(self._workspace)
@@ -403,6 +406,7 @@ class CloudProductServiceFactory:
         return PreparedCloudProduct(turn, repositories, selection.conversation_id,
                                     selection.selected_model_key, lease)
 
+    @cloud_operation
     async def chat(self,sid,principal,message,*,expected_generation,request_id,llm_profile_key=None,report_template_key=None):
         self._workspace.require_execution(sid,principal)
         current=self._workspace.status(sid,principal)

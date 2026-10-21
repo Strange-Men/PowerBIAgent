@@ -11,10 +11,12 @@ from backend.app.application.failure_contract import map_public_failure
 from backend.app.application.cloud_workspace_service import CloudSelectionConflict
 from backend.app.harness.errors import ToolExecutionError, ToolTimeoutError
 from backend.app.powerbi.base import PowerBIAdapterError
+from backend.app.application.cloud_operation import cloud_operation, operation_scope, trace_failure
 
 CONTROL_PLANE_ROUTES = frozenset({
     ("GET", "/api/v1/cloud/catalog"), ("GET", "/api/v1/cloud/status"),
     ("POST", "/api/v1/cloud/selection"), ("GET", "/api/v1/cloud/llm-profiles"),
+    ("POST", "/api/v1/cloud/selection/link"),
     ("GET", "/api/v1/cloud/report-templates"),
     ("GET", "/api/v1/cloud/catalog/workspaces"), ("GET", "/api/v1/cloud/catalog/resources"),
 })
@@ -39,20 +41,23 @@ async def workspace(request: Request, *, allowed_query=()):
     return service, request.cookies.get(request.app.state.settings.auth_cookie_name)
 
 
-async def safe_call(operation):
-    try: return await operation
+@cloud_operation
+async def safe_call(operation, context='catalog'):
+    try:
+        with operation_scope(): return await operation
     except CloudSelectionConflict:
         raise HTTPException(409, "cloud_selection_changed") from None
     except (PowerBIAdapterError, ToolExecutionError, ToolTimeoutError) as error:
-        cause = error.__context__ if isinstance(error, ToolExecutionError) else error
+        cause = (error.__context__ or error) if isinstance(error, ToolExecutionError) else error
         if isinstance(cause, AuthFailure): raise cause
-        code = getattr(cause, "error_type", "UPSTREAM_UNAVAILABLE")
+        code = 'QUERY_TIMEOUT' if isinstance(error,ToolTimeoutError) else getattr(cause, "error_type", "INTERNAL_FAILURE")
         failure = map_public_failure(terminal_state="tool_failed", stage="tool_execution", error_type=code)
         detail = {"failure": failure.model_dump(mode="json")}
         if getattr(cause, 'denial_reason', None) == 'test_scope_missing':
             detail['denial_reason'] = 'test_scope_missing'
         status = 403 if code in {'RESOURCE_NOT_ACCESSIBLE','AUTH_FORBIDDEN'} else 503
         if getattr(cause, 'denial_reason', None) == 'test_scope_missing': status = 503
+        trace_failure(context,error,failure,status)
         raise HTTPException(status, detail) from None
 
 
@@ -101,7 +106,7 @@ async def select(request: Request, principal=Depends(require_principal)):
                 or not 0 <= body["expected_generation"] <= 2**53 - 1):
             raise ValueError()
     except (ValueError, UnicodeError): raise HTTPException(422, "invalid_cloud_request") from None
-    return await safe_call(service.select(sid, principal, body["key"], expected_generation=body["expected_generation"]))
+    return await safe_call(service.select_with_templates(sid, principal, body["key"], expected_generation=body["expected_generation"]), context='selection')
 
 
 @router.get("/llm-profiles")
@@ -119,7 +124,7 @@ async def llm_profiles(request: Request, principal=Depends(require_principal)):
 @router.get("/report-templates")
 async def templates(request: Request, principal=Depends(require_principal)):
     service, sid = await workspace(request)
-    return await safe_call(service.templates(sid, principal))
+    return await safe_call(service.templates(sid, principal), context='template')
 
 
 async def product(request):
@@ -163,6 +168,19 @@ class RestoreRequest(GenerationRequest):
     conversation_id: str=Field(min_length=1,max_length=64,pattern=r'^[a-zA-Z0-9_-]+$')
 
 
+class ResourceLinkRequest(GenerationRequest):
+    url: str=Field(min_length=1,max_length=2048)
+
+
+@router.post('/selection/link')
+async def open_resource_link(request:Request,principal=Depends(require_principal)):
+    service,sid=await workspace(request)
+    body=await body_as(request,ResourceLinkRequest)
+    try:
+        return await safe_call(service.open_resource_link(sid,principal,body.url,expected_generation=body.expected_generation), context='selection')
+    except ValueError: raise HTTPException(422,'unsupported_cloud_resource_link') from None
+
+
 class CloudChatRequest(GenerationRequest):
     message: str=Field(min_length=1,max_length=2000)
     request_id: str=Field(min_length=1,max_length=64,pattern=r'^[a-zA-Z0-9_-]+$')
@@ -170,22 +188,36 @@ class CloudChatRequest(GenerationRequest):
     report_template_key: str|None=Field(default=None,max_length=64,pattern=r'^[a-z0-9][a-z0-9._-]*$')
 
 
-async def product_call(operation):
+@cloud_operation
+async def product_call(operation, context='chat'):
     from backend.app.presentation.projection import PresentationUnavailableError
     from backend.app.conversation.models import ConversationNotFoundError,ConversationHistoryCorruptionError
     from backend.app.report.resources import ReportNotFoundError,ReportStorageError
     from backend.app.application.conversation_history_service import InvalidConversationCursorError,InvalidConversationQueryError
     from backend.app.llm.base import LLMProviderError
     from backend.app.memory.request_fingerprint import IdempotencyConflictError
-    try: return await safe_call(operation)
+    try: return await safe_call(operation,context)
     except IdempotencyConflictError: raise HTTPException(409,'request_id_conflict') from None
     except PresentationUnavailableError: raise HTTPException(404,'presentation_recipe_unavailable') from None
     except (ConversationNotFoundError,ReportNotFoundError): raise HTTPException(404,'resource_not_found') from None
     except (InvalidConversationCursorError,InvalidConversationQueryError): raise HTTPException(422,'invalid_cloud_query') from None
-    except (ConversationHistoryCorruptionError,ReportStorageError): raise HTTPException(503,'resource_unavailable') from None
-    except LLMProviderError: raise HTTPException(503,'provider_unavailable') from None
+    except (ConversationHistoryCorruptionError,ReportStorageError) as error:
+        raise typed_product_failure(error,'PERSISTENCE_UNAVAILABLE','persistence',context) from None
+    except LLMProviderError as error:
+        raise typed_product_failure(error,'LLM_SERVICE_UNAVAILABLE','llm',context) from None
     except (AuthFailure,HTTPException): raise
-    except Exception: raise HTTPException(503,'cloud_product_unavailable') from None
+    except Exception as error:
+        from sqlalchemy.exc import SQLAlchemyError
+        code = 'PERSISTENCE_UNAVAILABLE' if isinstance(error,SQLAlchemyError) else 'INTERNAL_FAILURE'
+        raise typed_product_failure(error,code,'persistence' if code=='PERSISTENCE_UNAVAILABLE' else 'internal',context) from None
+
+
+def typed_product_failure(error,code,stage,context='chat'):
+    if not hasattr(error,'cloud_stage'):
+        error.cloud_stage, error.cloud_provider = stage, stage
+    failure=map_public_failure(terminal_state='failed',stage=stage,error_type=code)
+    trace_failure(context,error,failure,503)
+    return HTTPException(503,{'failure':failure.model_dump(mode='json')})
 
 
 def public_product(value):
@@ -233,14 +265,14 @@ async def presentation(request_id:str,request:Request,principal=Depends(require_
         raise HTTPException(422,'invalid_cloud_request')
     body=await body_as(request,PresentationRequest)
     service,sid=await product(request)
-    return public_product(await product_call(service.project_presentation(sid,principal,request_id,body.locale,body.expected_generation)))
+    return public_product(await product_call(service.project_presentation(sid,principal,request_id,body.locale,body.expected_generation), context='presentation'))
 
 
 @router.post('/new-chat')
 async def new_chat(request:Request,principal=Depends(require_principal)):
     body=await body_as(request,GenerationRequest)
     ws,sid=await workspace(request)
-    return await safe_call(ws.new_chat(sid,principal,body.expected_generation))
+    return await safe_call(ws.new_chat(sid,principal,body.expected_generation), context='chat')
 
 
 @router.post('/restore')
@@ -248,7 +280,7 @@ async def restore(request:Request,principal=Depends(require_principal)):
     if request.query_params: raise HTTPException(422,'invalid_cloud_request')
     body=await body_as(request,RestoreRequest)
     service,sid=await product(request)
-    return await product_call(service.restore(sid,principal,body.conversation_id,body.expected_generation))
+    return await product_call(service.restore(sid,principal,body.conversation_id,body.expected_generation), context='history')
 
 
 def page_query(request,*,managed=False,search=False):
@@ -276,19 +308,19 @@ def page_query(request,*,managed=False,search=False):
 @router.get('/history')
 async def history(request:Request,principal=Depends(require_principal)):
     service,sid=await product(request)
-    return public_product(await product_call(service.list_history(sid,principal,**page_query(request,managed=True,search=True))))
+    return public_product(await product_call(service.list_history(sid,principal,**page_query(request,managed=True,search=True)), context='history'))
 
 
 @router.get('/history/{conversation_id}')
 async def history_detail(conversation_id:str,request:Request,principal=Depends(require_principal)):
     service,sid=await product(request)
-    return public_product(await product_call(service.read_history(sid,principal,conversation_id,**page_query(request))))
+    return public_product(await product_call(service.read_history(sid,principal,conversation_id,**page_query(request)), context='history'))
 
 
 @router.get('/reports')
 async def reports(request:Request,principal=Depends(require_principal)):
     service,sid=await product(request)
-    return public_product(await product_call(service.list_reports(sid,principal,**page_query(request,managed=True))))
+    return public_product(await product_call(service.list_reports(sid,principal,**page_query(request,managed=True)), context='report'))
 
 
 class RenameResourceRequest(GenerationRequest):
@@ -305,7 +337,7 @@ async def mutate_resource(kind:str,resource_id:str,request:Request,action:str='d
     if action=='rename' and kind=='history' and len(body.title)>80:
         raise HTTPException(422,'invalid_cloud_request')
     service,sid=await product(request)
-    return public_product(await product_call(service.mutate_resource(sid,principal,kind,resource_id,action,**body.model_dump())))
+    return public_product(await product_call(service.mutate_resource(sid,principal,kind,resource_id,action,**body.model_dump()), context='resource_mutation'))
 
 
 async def report_response(request,principal,report_id,download):
@@ -314,9 +346,9 @@ async def report_response(request,principal,report_id,download):
         raise HTTPException(422,'invalid_cloud_request')
     service,sid=await product(request)
     if 'locale' in request.query_params:
-        html=await product_call(service.localized_report(sid,principal,report_id,request.query_params['locale']))
+        html=await product_call(service.localized_report(sid,principal,report_id,request.query_params['locale']), context='report')
     else:
-        artifact,html=await product_call(service.read_report(sid,principal,report_id))
+        artifact,html=await product_call(service.read_report(sid,principal,report_id), context='report')
     headers={'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",'Cache-Control':'no-store'}
     if download: headers['Content-Disposition']='attachment; filename="report.html"'
     return HTMLResponse(html,headers=headers)

@@ -2,6 +2,34 @@
 
 > Settings.version=M6.5.2；M6.5.2 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
 
+## M6.5.2_FIX — Cloud Product Runtime & Pilot Readiness Closure FINAL COMPLETE
+
+本节仅在本提交自身exact-SHA Full Validation、Remote Audit、HEAD=origin/main、
+staging/worktree clean与owned shutdown全部成立后生效；不继承基线CI。
+
+Settings.version 保持 M6.5.2；独立 runtime FIX，不进入 M6.5.3/M6.6。
+selection/template/history restore/sending loading 分离；operation-typed failure 保留真实 code，
+临时 Chat/LLM/IQ 失败保留 model/conversation，History/Report 独立 loading/error/retry。
+当前 operation 复用 exact REST/IQ schema proof，selection 同响应返回模板投影；后续 factual
+request 仍 fresh current-access，无跨请求 permission cache。英文仅补通用 language guidance，
+不改 Grounding、八 Shape、DAX、Facts/Memory/Report authority。Composer + 可选 Microsoft
+链接入口严格解析 exact selector，再验证 delegated access/Report mapping/Schema/binding。
+无法证明 exact access 即拒绝；未提供可证明的 individual-share 专用资源，相关 Real Pending。
+
+Full Backend07af082f=3949PASS/1SKIP/17warnings（含新增MSAL两例同类warning），
+Golden68eb124f=11PASS/1manualSKIP，Semantic72622c14=819PASS，Frontend36e5e6f8=191PASS。
+Typecheck3a016a50/Buildcacbc626、Lint98eb6835、治理7a1d9464及七组门f4c19717 PASS。
+Frontend8e7aac3b线程启动timeout整轮FAIL保留，独立原命令重跑通过，未调timeout/断言。
+自动Admin原生登录、六条纯英文SCALAR×3/GROUPED/RANKING/FILTERED_AGGREGATION Real PASS；
+Report双语generate/view/download、History、locale零执行、原文保持、模型切换新conversation/
+空Memory、stale/forged及logout401 PASS。France H1先正确clarification/ZERO commit，用户
+明确批准后经live exact binding与fingerprint声明Sales[Date]默认角色，再完成正式英文验收。
+配置仅在现有operator registry，不写生产模型特例或推断默认日期。长验收中的过期Catalog
+selector403保留，刷新目录后switch200；不延长TTL。MSAL网络失败仍finally清凭据。
+临时429/503状态保留由故障注入矩阵证明，不主动制造Microsoft限流；individual-share专用
+Real Pending保留。发布自身SHA/CI/Remote Audit回执在仓库外PBIAgentTest/M6.5.2FIX。
+详情见M6.5.2 milestone的FIX补充；后续仅独立授权scope，STOP。
+
 ## M6.5.2 — Web / SSO Productization FINAL COMPLETE（2026-10-21）
 
 Normal Product 与 Test Policy 分离：正常模式使用 validated Microsoft principal → current resource

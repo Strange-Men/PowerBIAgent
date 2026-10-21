@@ -144,6 +144,7 @@ function parseFailure(value: unknown): FailureInfo | undefined {
 }
 
 const PUBLIC_FAILURE_CODES = new Set([
+  'PERSISTENCE_UNAVAILABLE',
   'AUTH_REQUIRED', 'AUTH_EXPIRED', 'AUTH_CONSENT_REQUIRED', 'AUTH_FORBIDDEN',
   'RESOURCE_NOT_ACCESSIBLE', 'MODEL_RESOLUTION_FAILED', 'SCHEMA_UNAVAILABLE',
   'QUERY_REJECTED', 'QUERY_TIMEOUT', 'RATE_LIMITED', 'UPSTREAM_UNAVAILABLE', 'CONTRACT_DRIFT',
@@ -429,6 +430,10 @@ export const readCloudStatus = (signal?: AbortSignal) =>
 export const selectCloudModel = (key: string, csrf: string, expectedGeneration: number, signal?: AbortSignal) =>
   requestJson<CloudWorkspaceStatus>('/api/v1/cloud/selection', {
     method: 'POST', body: JSON.stringify({ key, expected_generation: expectedGeneration }), headers: { 'X-CSRF-Token': csrf }, signal,
+  })
+export const openCloudResourceLink = (url: string, csrf: string, expectedGeneration: number, signal?: AbortSignal) =>
+  requestJson<CloudWorkspaceStatus>('/api/v1/cloud/selection/link', {
+    method:'POST',body:JSON.stringify({url,expected_generation:expectedGeneration}),headers:{'X-CSRF-Token':csrf},signal,
   })
 export const readCloudProfiles = (signal?: AbortSignal) =>
   requestJson<LLMProfileCatalog>('/api/v1/cloud/llm-profiles', { signal })

@@ -42,5 +42,9 @@
   "connectingToTheDataModel": "Connecting to the data model",
   "selectACloudDataModel": "Select a cloud data model",
   "noDataModelsAvailable": "No data models available",
-  "noReportTemplateSelected": "· No report template selected"
+  "noReportTemplateSelected": "· No report template selected",
+  "openResourceLink": "Open a data resource via Power BI / Fabric link",
+  "resourceLink": "Power BI / Fabric resource link",
+  "resourceLinkHint": "Links locate resources. Microsoft must verify access for your current account. Some links may be unsupported.",
+  "openResource": "Verify and open"
 }

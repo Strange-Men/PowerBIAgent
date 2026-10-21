@@ -2,7 +2,36 @@
 
 > Settings.version=M6.5.2；M6.5.2 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
 
-## 当前阶段 — M6.5.2 Web / SSO Productization FINAL COMPLETE
+## 当前阶段 — M6.5.2_FIX：Cloud Product Runtime & Pilot Readiness Closure FINAL COMPLETE
+
+仅在本提交自身exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown
+全部成立后生效；最终自身SHA与远端回执保存在仓库外PBIAgentTest/M6.5.2FIX，不继承旧CI。
+
+Settings.version=M6.5.2；独立 runtime FIX，后续 M6.5.3/M6.6 仍须独立 scope。
+loading/failure/侧栏隔离、operation proof 去重、安全 trace、通用英文 grammar guidance 与
+Composer + optional exact resource link 已实施。link 不授予权限，直接 item GET 不额外要求
+Workspace membership，Report mapping 与 Schema/identity/fingerprint 仍必须独立验证。
+未提供可证明的 individual-share 专用 principal/resource，Real Pending 不伪造 PASS。
+原 cardinality gap、Test B deferred、single-process 与 UNKNOWN freshness 保留。
+
+Fresh Backend07af082f=3949PASS/1SKIP/17warnings（新增两例MSAL同类warning），
+Golden68eb124f=11PASS/1manualSKIP，Semantic72622c14=819PASS，Frontend36e5e6f8=191PASS；
+Typecheck3a016a50/Buildcacbc626、Lint98eb6835、治理7a1d9464及七组门f4c19717 PASS。
+Frontend8e7aac3b worker启动timeout整轮FAIL保留，原命令独立重跑通过，无timeout/断言放宽。
+自动Admin原生登录、六条纯英文（含GROUPED/RANKING/FILTERED_AGGREGATION）、双语Report、
+History、locale零执行、原文保持、模型切换新conversation/空Memory、stale/forged、logout401 PASS。
+France H1先因缺默认日期authority正确clarification/ZERO commit；用户批准后live核对exact
+model/schema及两份既有fingerprint，通过现有operator registry声明Sales[Date]默认角色。
+这是exact binding配置，不是通用模型默认列；新key/fingerprint失配仍fail closed，不改
+Grounding、不从列名猜日期。配置在仓库外owned验收根，不提交真实metadata/用户DB。
+长流程复用过期selector403保留，fresh Catalog后switch200；不改TTL。重启再登录后owner
+History/Report恢复、切换与logout邻接全部PASS且ZERO ExecuteQuery。临时429/503保留状态
+由故障注入矩阵证明，未主动制造Microsoft限流。MSAL网络异常仍finally清本地凭据。
+owned backend/Vite按发布合同shutdown；保留原warnings/失败和individual-share Real Pending。
+Settings.version=M6.5.2；下一阶段仍需独立scope，STOP。
+详见 [FIX 补充](milestones/m6/m6_5_2_web_sso_productization.md)。
+
+## M6.5.2 既有基线 — Web / SSO Productization FINAL COMPLETE
 
 Settings.version=M6.5.2。发布仅按本提交自身 exact-SHA Full Validation、Remote Audit、
 HEAD=origin/main、worktree/staging clean、owned shutdown 全部成立后生效。

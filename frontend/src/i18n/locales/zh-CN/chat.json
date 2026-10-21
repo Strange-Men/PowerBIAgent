@@ -63,5 +63,7 @@
   "analysisIsInProgressDeleteTheConversationWhenIt": "对话仍在分析，完成后再删除。",
   "theModelIsConnectedButSomeFieldsOrMeasures": "当前模型已连接，但缺少 PowerBIAgent 当前分析所需的部分业务字段或指标。",
   "theModelIsConnectedButCompatibilityCannotBeChecked": "当前模型已连接，但暂时无法完成兼容性检查，请稍后重试。",
-  "partialCatalogUnverified": "已显示可访问模型；还有 {{count}} 个模型尚未验证，请刷新目录后重试。"
+  "partialCatalogUnverified": "已显示可访问模型；还有 {{count}} 个模型尚未验证，请刷新目录后重试。",
+  "retrySidebarResources": "重试侧栏资源",
+  "reportListUnavailable": "报表列表暂不可用，请重试。"
 }

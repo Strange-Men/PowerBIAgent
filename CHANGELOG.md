@@ -2,6 +2,17 @@
 
 ## [M6.5.2] — 2026-10-21（Web / SSO Productization FINAL COMPLETE）
 
+### M6.5.2_FIX — Cloud Product Runtime & Pilot Readiness Closure
+
+FINAL COMPLETE仅按本提交自身exact-SHA Full Validation、Remote Audit、clean/shutdown成立后生效。
+自动Admin原生登录、六条纯英文（含GROUPED/RANKING/FILTERED_AGGREGATION）、Report/History/
+locale/安全邻接PASS。France H1默认日期缺失先保持clarification/ZERO commit，用户批准后
+通过现有operator registry核对live exact model/fingerprint并绑定Sales[Date]，再正式通过。
+修复MSAL网络故障阻断本地凭据清理；过期selector仍拒绝，刷新目录后模型切换PASS。
+修复 selection/restoring loading 混用、临时失败误报模型不可访问、侧栏失败污染主链、重复
+metadata proof；补安全 structured trace、通用英文结构说明与 Composer + optional exact URL。
+不升版本、不改 Frozen factual chain、不依赖 Test Allowlist；individual-share 专用 Real Pending。
+
 正常产品与Test Policy/allowlist解耦，独立operator披露/留存策略；current-principal Workspace/Model/Report有界目录、显式exact resource selection与server binding。修复canonical登录Origin/Vite Host、真实Report envelope映射、HTTP body disconnect、撤权后selection status；默认Vitest隔离threads保持原测试覆盖。复用Composer+ compact UI，UserRound/LogOut与Settings行样式统一。
 
 Native Admin Normal无allowlist的SCALAR/GROUPED/Report、locale零新增IQ/ExecuteQuery、verbatim/restore、模型隔离与logout、后端重启一次重登恢复均PASS。Fresh Backend3904PASS/1SKIP、Semantic819PASS、Golden11PASS/1manualSKIP、正式frontend181PASS及全部治理/授权门PASS；失败和既有warnings保留。Settings.version=M6.5.2，发布仅按自身exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown全部成立生效。Frozen factual boundary、12-row/N+1/8-column、relationship gap与Test B deferred→M6.6保留；下一阶段仅M6.5.3/M6.6路线，不实施。详见[M6.5.2](docs/milestones/m6/m6_5_2_web_sso_productization.md)。

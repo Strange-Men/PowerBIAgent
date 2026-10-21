@@ -13,6 +13,17 @@ beforeEach(()=>{
   vi.mocked(api.readCloudWorkspaces).mockResolvedValue(page('Workspace A','Workspace'))
   vi.mocked(api.readCloudResources).mockResolvedValue(page('Model A','SemanticModel','next'))
 })
+it('opens an explicit link without selecting a workspace candidate',async()=>{
+  const open=vi.fn().mockResolvedValue(true),close=vi.fn(),select=vi.fn()
+  render(<CloudCatalogPicker onSelect={select} onOpenLink={open} onClose={close} onFailure={vi.fn()}/> )
+  fireEvent.click(screen.getByRole('button',{name:'通过 Power BI / Fabric 链接打开数据资源'}))
+  const url='https://app.powerbi.com/groups/00000000-0000-0000-0000-000000000011/datasets/00000000-0000-0000-0000-000000000010/details'
+  fireEvent.change(screen.getByRole('textbox',{name:'Power BI / Fabric 资源链接'}),{target:{value:url}})
+  fireEvent.click(screen.getByRole('button',{name:'验证并打开'}))
+  await waitFor(()=>expect(open).toHaveBeenCalledWith(url))
+  expect(select).not.toHaveBeenCalled()
+  expect(close).toHaveBeenCalledOnce()
+})
 it('lazily enters a workspace, pages metadata and explicitly selects one resource',async()=>{
   const select=vi.fn().mockResolvedValue(true), close=vi.fn()
   render(<CloudCatalogPicker onSelect={select} onClose={close} onFailure={vi.fn()} />)

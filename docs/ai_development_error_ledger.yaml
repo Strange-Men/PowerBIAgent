@@ -8,6 +8,124 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-652-014
+  title: MSAL销毁中的网络异常不能阻止本地凭据清空
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: native shutdown中get_accounts触发instance discovery网络超时，后续cache purge未执行
+  local_evidence: final-native原shutdown失败保留；93fbb58d新增销毁负例2RED；988a801a trace事件未注册失败保留；07af082f完整后端3949PASS与1SKIP
+  authoritative_sources:
+  - title: MSAL ClientApplication remove_account与本地Token边界
+    reason: 本地session与credential销毁不能依赖外部网络；不放宽认证或授权
+  root_cause: remove_account循环先于cache清空，异常跳过清理
+  failed_attempts:
+  - 新增bounded trace事件首次未加入固定allowlist，已补齐
+  repair_attempt_count: 2
+  final_fix: RequestException固定事件分类，finally无条件purge cache并清account_id；其他异常仍传播
+  regression_tests:
+  - backend/tests/unit/test_msal_identity.py
+  prohibited_patterns:
+  - 用旧token或扩大scope绕过网络失败
+  - destroy失败时保留credential cache
+  prevention_rules:
+  - logout与shutdown独立证明本地session失效和credential清理，网络失败不能改变authority
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: credential_cleanup_network_failure_first
+    version: M6.5.2
+- id: ERR-652-011
+  title: Cloud临时失败不得清模型或污染Catalog与Chat
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: 选模型误显恢复对话，未知Chat503被误报模型不可访问，侧栏503触发模型重载
+  local_evidence: 024fc0e7为8RED与26PASS；f5911ecc为4RED与10PASS；5e1c69c3前端191PASS；11fdc76d后端3947PASS
+  authoritative_sources:
+  - title: 用户M6.5.2_FIX runtime与failure classification合同
+    reason: operation和failure code必须独立，只有真实access拒绝可失效资源，临时上游故障不能当撤权
+  root_cause: templatesLoading复用恢复状态；selection boolean和Promise.all把侧栏与主链耦合；REST catch清除所有selection
+  failed_attempts:
+  - service status承载模板投影破坏旧equality，已收窄为API selection专用响应
+  repair_attempt_count: 2
+  final_fix: 独立loading与侧栏retry，typed operation和公开code保留，request-scoped proof去重，安全bounded structured trace区分REST/IQ/LLM/Persistence/internal
+  regression_tests:
+  - frontend/src/components/CloudWorkspace.test.tsx
+  - backend/tests/unit/test_m6_5_2_product_selection.py
+  - backend/tests/api/test_m6_5_2_fix_failure_trace.py
+  prohibited_patterns:
+  - 用selection boolean推断普通503为模型不可访问
+  - 全局或跨请求permission cache
+  - 日志记录credential或业务prompt和rows
+  prevention_rules:
+  - 每个factual请求fresh exact access，operation结束清空proof；owner/epoch/generation/policy检查仍逐次执行
+  - metadata失败请求仍拒绝，SCHEMA_UNAVAILABLE不等于access denial；mismatched identity仍撤销proof
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: cloud_runtime_failure_first
+    version: M6.5.2
+- id: ERR-652-012
+  title: 英文单个aggregate的成员和时间限制不得误解为无筛选SCALAR
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: Real英文半年具名成员问题输出SCALAR语言draft；旧英文GROUPED失败未验收
+  local_evidence: english_before保留错误shape；english_after三目标draft通过；f4c19717 English91PASS；date-approved六条Cloud英文正式shape全部完成；France H1先缺默认日期clarification与ZERO commit，用户批准后exact live operator绑定再通过
+  authoritative_sources:
+  - title: 用户纯英文Cloud Real与LLM understands Runtime proves合同
+    reason: 不得用中文或中英混写替代英文验收，不可降低evidence validator或写模型特例
+  root_cause: understanding prompt对英文疑问句单个total与filtered aggregate结构区分不充分
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 通用英语result structure guidance，独立成员时间筛选与category grouping；不改canonical authority或validator
+  regression_tests:
+  - backend/tests/unit/test_m6_5_2_fix_english.py
+  prohibited_patterns:
+  - UCI或Total Sales专属补丁
+  - LLM draft或安全clarification冒充目标Real shape通过
+  prevention_rules:
+  - 纯英文GROUPED/RANKING/FILTERED_AGGREGATION必须核对最终verified recipe与verbatim和locale独立性
+  - 默认日期缺权威声明时不能推断；operator registry绑定须经确认并校验exact model及live fingerprint，不冒充English Real通过
+  related_adr: ADR-018
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: english_real_failure_first
+    version: M6.5.2
+- id: ERR-652-013
+  title: 本地验收observer路径和过期selector不得制造产品失败
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: Windows audit rename文件锁中断native响应body；长本地测试根导致synthetic report_atomic_store_failed
+  local_evidence: runtime-closure原observer失败保留；85dfd111报告测试失败；短根f92372ba报告恢复；11fdc76d全量3947PASS；8e7aac3b worker启动失败保留，36e5e6f8原命令191PASS；date-approved长流程过期selector403原件保留，fresh Catalog补验17项PASS
+  authoritative_sources:
+  - title: 仓库外测试资产和不伪造Real PASS合同
+    reason: observer不能成为产品authority，环境失败保留原件并在相同断言下fresh重跑
+  root_cause: 外部读取audit文件与replace冲突；本地milestone路径加长触及Windows限制；长验收复用已超过5分钟TTL的Catalog selector
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 外部owned observer隔离写回执异常，runner用短独立PBIAgentTest根；长流程切模型前fresh Catalog，不改产品存储或授权TTL
+  regression_tests:
+  - backend/tests/api/test_cloud_factual_e2e.py
+  - backend/tests/api/test_cloud_resource_lifecycle.py
+  - frontend/src/hooks/usePresentation.recovery.test.tsx
+  prohibited_patterns:
+  - 修改报告expected掩盖文件写入失败
+  - 失败或中断回执计PASS
+  prevention_rules:
+  - synthetic来源与ownership明确，回执只含boolean和count或hash，所有最终门fresh通过
+  - Catalog selector只是有界有效期的入口，过期拒绝必须保留，验收先fresh目录再验证模型切换
+  related_adr: ADR-012
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: owned_acceptance_environment_diagnosis
+    version: M6.5.2
 - id: ERR-652-010
   title: Artifact Gate须允许无runtime state的clean checkout并继续source扫描
   category: ERR

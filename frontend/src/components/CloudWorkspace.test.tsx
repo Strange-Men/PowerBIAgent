@@ -90,6 +90,42 @@ describe('Synthetic Cloud product wiring',()=>{
     fireEvent.change(input,{target:{value:'合成销售问题'}})
     fireEvent.click(screen.getByRole('button',{name:'发送'}))
   }
+  it('model selection verifies templates without restoring a conversation',async()=>{
+    let finish!: (value: CloudWorkspaceStatus)=>void
+    vi.mocked(api.selectCloudModel).mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+    render(<CloudWorkspace session={session} onAuthInvalid={vi.fn()} />)
+    await screen.findByText('请显式选择一个数据模型')
+    fireEvent.click(screen.getByRole('button',{name:'打开数据与报表选项'}))
+    fireEvent.click(screen.getByRole('button',{name:/模型甲/}))
+    expect(screen.queryByText('正在恢复对话')).not.toBeInTheDocument()
+    expect(screen.getByText('正在验证模型访问与报表模板…')).toBeInTheDocument()
+    expect(api.restoreCloudChat).not.toHaveBeenCalled()
+    expect(api.readCloudConversation).not.toHaveBeenCalled()
+    await act(async()=>finish(ready))
+  })
+  it.each(['RATE_LIMITED','QUERY_TIMEOUT','UPSTREAM_UNAVAILABLE','LLM_SERVICE_UNAVAILABLE',undefined])(
+    'temporary chat failure %s preserves the model and has no catalog retry',async code=>{
+      enable()
+      vi.mocked(api.sendCloudChat).mockRejectedValue(new api.ApiError('private',503,undefined,
+        code ? {code,stage:'tool_execution',retryable:true,recovery_action:'retry'} as never : undefined))
+      render(<CloudWorkspace session={session} onAuthInvalid={vi.fn()} />)
+      await screen.findByText('模型甲'); await submit()
+      await waitFor(()=>expect(api.sendCloudChat).toHaveBeenCalledOnce())
+      await waitFor(()=>expect(screen.queryByText('正在分析数据')).not.toBeInTheDocument())
+      expect(screen.getByText('模型甲')).toBeInTheDocument()
+      expect(screen.getByText('合成销售问题')).toBeInTheDocument()
+      expect(screen.queryByText('当前模型暂不可访问，请刷新目录后重新选择。')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button',{name:'重新加载数据模型'})).not.toBeInTheDocument()
+    })
+  it.each(['history','reports'])('%s 503 does not fail catalog or chat',async kind=>{
+    enable()
+    vi.mocked(kind==='history' ? api.readCloudHistory : api.readCloudReports).mockRejectedValue(new api.ApiError('private',503))
+    render(<CloudWorkspace session={session} onAuthInvalid={vi.fn()} />)
+    await screen.findByText('模型甲')
+    expect(screen.queryByRole('button',{name:'重新加载数据模型'})).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox',{name:'询问你的 Power BI 数据'}),{target:{value:'重试'}})
+    expect(screen.getByRole('button',{name:'发送'})).toBeEnabled()
+  })
   it('Cloud rename does not reread unrelated transcript and both resource projections',async()=>{
     enable()
     vi.mocked(api.listCloudConversations).mockResolvedValue({items:[summary],next_cursor:null,total_count:1} as never)

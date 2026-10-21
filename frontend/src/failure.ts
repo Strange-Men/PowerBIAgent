@@ -15,7 +15,8 @@ export function cloudDenialMessage(reason: CloudDenialReason, productMode = fals
 export function cloudFailureAction(error: {status: number; failure?: FailureInfo; denialReason?: CloudDenialReason}): 'auth' | 'resource' | 'blocked' | 'conflict' | 'recoverable' {
   if (error.status===401 || ['AUTH_REQUIRED','AUTH_EXPIRED'].includes(error.failure?.code || '')) return 'auth'
   if (error.denialReason) return 'blocked'
-  if (error.status===403) return 'resource'
+  if (error.failure?.code==='RESOURCE_NOT_ACCESSIBLE') return 'resource'
+  if (!error.failure && [403,404].includes(error.status)) return 'resource'
   if (error.status===409) return 'conflict'
   return 'recoverable'
 }
@@ -65,6 +66,8 @@ export function publicFailureMessage(failure: FailureInfo): string {
       return tr('errors:thisAnalysisTimedOutTryAgain')
     case 'VALIDATION_FAILED':
       return tr('errors:thisDataCannotSupportTheAnalysisAdjustYourQuestion')
+    case 'PERSISTENCE_UNAVAILABLE':
+      return tr('errors:persistenceUnavailable')
     case 'INTERNAL_FAILURE':
       return tr('errors:thisRequestCannotBeCompletedRightNowTryAgain')
     default:
