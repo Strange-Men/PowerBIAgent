@@ -44,6 +44,8 @@ class CloudModelOption(BaseModel):
 
 class CloudModelCatalog(BaseModel):
     status: Literal["ready", "partial", "empty", "forbidden", "error"]
+    product_mode: bool = False
+    persistence_enabled: bool = False
     runtime_mode: Literal["real"] = "real"
     items: list[CloudModelOption] = Field(default_factory=list)
     workspace_scope_complete: bool = False

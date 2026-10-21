@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { CatalogOption, LLMProfileOption } from '../types'
 
 interface ComposerProps {
+  cloudModelPicker?: (close: () => void) => ReactNode
   statusNotice?: ReactNode
   dataSourceKind?: 'desktop' | 'cloud'
   executionBlockedReason?: string | null
@@ -30,6 +31,7 @@ interface ComposerProps {
 }
 
 export function Composer({
+  cloudModelPicker,
   statusNotice,
   dataSourceKind = 'desktop',
   executionBlockedReason = null,
@@ -121,7 +123,7 @@ export function Composer({
     <div className="composer-wrap" ref={rootRef}>
       {addMenuOpen ? (
         <div className="composer-popover add-menu" role="dialog" aria-label={tr('composer:dataAndReportOptions')}>
-          <div className="menu-group">
+          {cloudModelPicker ? cloudModelPicker(() => setAddMenuOpen(false)) : <div className="menu-group">
             <div className="menu-heading">
               <span className="menu-label">{tr('composer:dataModel')}</span>
               <button
@@ -169,7 +171,7 @@ export function Composer({
                 {semanticModel?.key === option.key ? <Check size={16} /> : null}
               </button>
             ))}
-          </div>
+          </div>}
           <div className="menu-divider" />
           <div className="menu-group">
             <div className="menu-heading">
@@ -301,7 +303,7 @@ export function Composer({
         <span>
           {loadingSemanticModels
             ? tr('composer:connectingToTheDataModel')
-            : (semanticModel ? optionLabel(semanticModel) : null) || semanticModelError || (dataSourceKind === 'cloud' && semanticModelOptions.length
+            : (semanticModel ? optionLabel(semanticModel) : null) || semanticModelError || (dataSourceKind === 'cloud' && (semanticModelOptions.length || cloudModelPicker)
               ? tr('composer:selectACloudDataModel') : tr('composer:noDataModelsAvailable'))}
         </span>
         {reportTemplate ? (

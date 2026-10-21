@@ -90,3 +90,13 @@ def validate_value_search_capability(tool):
             or _types(fields.get('columnNames')) not in ({'array'}, {'array','null'})
             or _types(fields['columnNames'].get('items')) != {'string'}):
         raise fail('CONTRACT_DRIFT')
+
+
+def validate_report_metadata_capability(tool):
+    """Optional discovery capability, checked only for a selected Report."""
+    if not isinstance(tool, dict) or tool.get('name') != 'GetReportMetadata':
+        raise fail('CONTRACT_DRIFT')
+    schema = tool.get('inputSchema', {})
+    if (schema.get('type') != 'object' or set(schema.get('required', [])) != {'reportObjectId'}
+            or _types(schema.get('properties', {}).get('reportObjectId')) != {'string'}):
+        raise fail('CONTRACT_DRIFT')

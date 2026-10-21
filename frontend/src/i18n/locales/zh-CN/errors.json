@@ -1,4 +1,5 @@
 {
+  "modelAccessRequiresVerification": "数据模型的访问尚未验证，请重新选择数据模型。",
   "noMatchingDataTryChangingYourQuestionOrFilters": "暂无符合条件的数据。你可以调整问题或筛选条件后再试。",
   "thisRequestCouldNotBeCompletedCheckYourQuestion": "当前请求无法完成，请检查问题或稍后重试。",
   "theSelectedDataModelIsNoLongerAvailableRefresh": "当前选择的数据模型已关闭或失效，请刷新模型列表后重新选择。",

@@ -7,6 +7,8 @@ export interface CloudModel {
 }
 
 export interface CloudCatalog {
+  product_mode?: boolean
+  persistence_enabled?: boolean
   status: 'ready' | 'partial' | 'empty' | 'forbidden' | 'error'
   runtime_mode: 'real'
   items: CloudModel[]
@@ -17,6 +19,19 @@ export interface CloudCatalog {
   coverage_scope?: 'workspace_membership_and_configured_seeds' | 'approved_test_resources'
   inaccessible_count: number
   error_type: string | null
+}
+
+export interface CloudCatalogEntry {
+  key: string
+  display_name: string
+  kind: 'Workspace' | 'SemanticModel' | 'Report'
+}
+
+export interface CloudCatalogPage {
+  items: CloudCatalogEntry[]
+  next_cursor: string | null
+  partial: boolean
+  coverage: 'workspace_membership_only'
 }
 
 export interface CloudWorkspaceStatus {

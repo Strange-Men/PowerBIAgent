@@ -1,6 +1,46 @@
 # 07 — 当前项目状态
 
-> Settings.version=M6.5.1；M6.5.1 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
+> Settings.version=M6.5.2；M6.5.2 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
+
+## M6.5.2 — Web / SSO Productization FINAL COMPLETE（2026-10-21）
+
+Normal Product 与 Test Policy 分离：正常模式使用 validated Microsoft principal → current resource
+access → exact server-side verification → server-owned binding；query、external LLM disclosure、
+business persistence 独立控制。后两者要求 operator Product Policy，默认关闭。Test Mode 与
+FABRIC_TEST_ALLOWLIST 保留；关闭 Test Mode 不授予披露或留存权限。
+
+Composer “+ → 数据与报表选项”复用 compact popover，按 Workspace → Semantic Model / Report
+浏览、搜索、分页、刷新，显式选择才 Resolve/Schema/fingerprint/binding。Report metadata 的
+SemanticModel.Id 与 ReportMetadata.Id / Report citation 严格验证，再按 exact model GUID
+Resolve 其 Workspace；无名称映射、Report workspace 假设或模型 hardcode。首登 canonical
+origin 与 Vite Host proxy 修复，保留 response_mode=query、state/nonce/PKCE 和服务端 token。
+
+Native Admin、Normal FABRIC_TEST_MODE=false、无 allowlist：一次 Login/session200、目录两种
+入口、Online Retail II SCALAR/GROUPED、Report generate/view/download、双语投影零新增 IQ/
+ExecuteQuery、user_message verbatim、History restore、模型切换新 conversation/无旧 Memory、
+forged/stale fail closed PASS。后端重启后一次重登恢复 owner History/Report，summary 零 IQ，
+restore/view/download200 且 ExecuteQuery 增量0；logout 后 protected resources401。
+英文 GROUPED 的 clarification/semantic validation failure 与 RATE_LIMITED 原件保留，不计 PASS；
+本轮 GROUPED 正例使用既有明确中文输入，未改变事实链或限制用户输入语言。
+
+Fresh Backend f8eadecc=3904PASS/1SKIP/15既有warnings；Semantic f865313a=819PASS；
+Golden 5b8807ad=11PASS/1manualSKIP；正式 npm test ac349296=18files/181PASS。
+Auth/Catalog/Product gates df2c3114=51/31/31PASS，UI Localization82a8cbdc=48PASS；
+Typecheck642269a1、Lint d4db6dd4、Build fffd09a1 与治理门 db2735e0 PASS。
+1,500 metadata/前端1,200 metadata证明50行首屏、分页/搜索、取消/迟到保护、bounded loading，
+selection前 Schema=Resolve=ExecuteQuery=0。断连与资源邻近1b6b7438=54PASS。
+Vitest隔离threads保留原测试集合/断言/覆盖；两worker并行181PASS。重叠full gates时一条UI
+等待超时原件17ca212a保留，机器可用内存约410MB；串行正式命令fresh181PASS，无timeout修改。
+
+最终diff分类A Auth/B Product Authorization/C Catalog binding/D frontend/E tests/F docs，G=0。
+Frozen factual chain、八Shape、DAX、Facts/Memory/Report authority与12-row/N+1/8-column不变。
+relationship cardinality CONTRACT_GAP、Test B DEFERRED_BY_TEST_PRINCIPAL → M6.6 保留。
+
+自身 Final SHA/CI/Remote Audit 回执仅在仓库外 PBIAgentTest/M6.5.2，避免提交循环自引用。
+发布须全部exact-SHA CI/Audit/clean/shutdown条件成立，不继承M6.5.1 CI。
+详见 [M6.5.2 milestone](milestones/m6/m6_5_2_web_sso_productization.md)。
+下一阶段仅记录 M6.5.3 VM Remote Deployment & Internal Pilot、M6.6 Enterprise Production
+Readiness Seal；本轮完成立即STOP，不实施后续阶段。
 
 ## M6.5.1 — Chinese / English Localization Platform FINAL COMPLETE（2026-10-21）
 

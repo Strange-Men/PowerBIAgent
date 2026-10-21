@@ -11,6 +11,7 @@ vi.mock('../api/client', async importOriginal => ({
   sendCloudChat:vi.fn(),readCloudHistory:vi.fn(),readCloudReports:vi.fn(),readCloudConversation:vi.fn(),
   newCloudChat:vi.fn(),restoreCloudChat:vi.fn(),
   listCloudConversations:vi.fn(),listCloudReports:vi.fn(),mutateCloudResource:vi.fn(),
+  readCloudWorkspaces:vi.fn(),readCloudResources:vi.fn(),
 }))
 const status: CloudWorkspaceStatus = {selected_model_key:null,conversation_id:null,generation:0,
   execution_ready:false,blockers:['numeric_contract','query_completeness']}
@@ -28,6 +29,52 @@ beforeEach(() => {
   vi.mocked(api.readCloudTemplates).mockResolvedValue({items:[],reason_code:'no_eligible_report_template'} as never)
   vi.mocked(api.readCloudHistory).mockResolvedValue({items:[]} as never)
   vi.mocked(api.readCloudReports).mockResolvedValue({items:[]} as never)
+})
+
+describe('Normal product catalog integration',()=>{
+  const bootstrap={status:'partial',product_mode:true,persistence_enabled:true,items:[]}
+  const account={session,state:'SIGNED_IN' as const,login:vi.fn(),logout:vi.fn().mockResolvedValue(undefined)}
+  const ready={...status,selected_model_key:'server-model',conversation_id:'server-new',generation:1,execution_ready:true,blockers:[]}
+  const bound={...bootstrap,items:[{key:'server-model',display_name:'Exact semantic model',workspace_display_name:'Workspace'}]}
+  beforeEach(()=>{
+    vi.mocked(api.readCloudCatalog).mockResolvedValue(bootstrap as never)
+    vi.mocked(api.readCloudWorkspaces).mockResolvedValue({items:[{key:'workspace-key',display_name:'Workspace',kind:'Workspace'}],partial:false,next_cursor:null} as never)
+    vi.mocked(api.readCloudResources).mockResolvedValue({items:[{key:'report-candidate',display_name:'Report entry',kind:'Report'}],partial:false,next_cursor:null} as never)
+  })
+  it('starts with a normal empty state and binds the server model from an explicit report choice',async()=>{
+    vi.mocked(api.selectCloudModel).mockImplementation(async()=>{
+      vi.mocked(api.readCloudCatalog).mockResolvedValue(bound as never)
+      return ready
+    })
+    render(<CloudWorkspace session={session} onAuthInvalid={vi.fn()} />)
+    await waitFor(()=>expect(api.readCloudWorkspaces).toHaveBeenCalledOnce())
+    expect(api.readCloudTemplates).not.toHaveBeenCalled()
+    expect(api.selectCloudModel).not.toHaveBeenCalled()
+    expect(api.readCloudResources).not.toHaveBeenCalled()
+    expect(screen.queryByText(/测试资源白名单|测试权限未批准/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button',{name:'打开数据与报表选项'}))
+    fireEvent.click(await screen.findByRole('button',{name:'Workspace'}))
+    fireEvent.click(await screen.findByRole('button',{name:'Report entry'}))
+    await screen.findByText('Exact semantic model')
+    expect(api.selectCloudModel).toHaveBeenCalledWith('report-candidate','synthetic-proof',0,expect.any(AbortSignal))
+    expect(screen.queryByText('Report entry')).not.toBeInTheDocument()
+    expect(api.sendCloudChat).not.toHaveBeenCalled()
+  })
+  it('can restore owned history after relogin before selecting a new model',async()=>{
+    vi.mocked(api.readCloudHistory).mockResolvedValue({items:[{conversation_id:'owned-old',title:'Owned history',source_mode:'real'}]} as never)
+    vi.mocked(api.restoreCloudChat).mockImplementation(async()=>{
+      vi.mocked(api.readCloudCatalog).mockResolvedValue(bound as never)
+      return {...ready,conversation_id:'owned-old'}
+    })
+    vi.mocked(api.readCloudConversation).mockResolvedValue({conversation_id:'owned-old',items:[{
+      request_id:'owned-request',user_message:'Old question',answer:'Owned answer',terminal_state:'completed',response_type:'answer'}]} as never)
+    render(<CloudWorkspace session={session} account={account} onAuthInvalid={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button',{name:'Owned history'}))
+    expect(await screen.findByText('Owned answer')).toBeVisible()
+    expect(api.restoreCloudChat).toHaveBeenCalledWith('owned-old',0,'synthetic-proof',expect.any(AbortSignal))
+    expect(api.selectCloudModel).not.toHaveBeenCalled()
+    expect(api.sendCloudChat).not.toHaveBeenCalled()
+  })
 })
 
 describe('Synthetic Cloud product wiring',()=>{

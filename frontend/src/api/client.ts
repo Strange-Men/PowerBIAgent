@@ -24,7 +24,7 @@ import type {
 } from '../types'
 import { publicFailureMessage } from '../failure'
 import type { CloudDenialReason } from '../failure'
-import type { CloudCatalog, CloudWorkspaceStatus } from '../cloudTypes'
+import type { CloudCatalog, CloudCatalogPage, CloudWorkspaceStatus } from '../cloudTypes'
 
 export function projectPresentation(requestId:string,locale:string,mode:RuntimeMode,cloud:boolean,csrf:string,generation:number,signal?:AbortSignal) {
   return requestJson<{answer:string;presentation:import('../types').PresentationEnvelope;factual_hash:string}>(
@@ -420,6 +420,10 @@ export async function listRecentReports(
 
 export const readCloudCatalog = (signal?: AbortSignal) =>
   requestJson<CloudCatalog>('/api/v1/cloud/catalog', { signal })
+export const readCloudWorkspaces = (query = '', cursor?: string, signal?: AbortSignal) =>
+  requestJson<CloudCatalogPage>('/api/v1/cloud/catalog/workspaces?' + queryString({query, cursor}), {signal})
+export const readCloudResources = (workspaceKey: string, kind: 'SemanticModel' | 'Report', query = '', cursor?: string, signal?: AbortSignal) =>
+  requestJson<CloudCatalogPage>('/api/v1/cloud/catalog/resources?' + queryString({workspace_key:workspaceKey, kind, query, cursor}), {signal})
 export const readCloudStatus = (signal?: AbortSignal) =>
   requestJson<CloudWorkspaceStatus>('/api/v1/cloud/status', { signal })
 export const selectCloudModel = (key: string, csrf: string, expectedGeneration: number, signal?: AbortSignal) =>

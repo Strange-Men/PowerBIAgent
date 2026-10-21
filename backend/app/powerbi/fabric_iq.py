@@ -167,6 +167,39 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         url = f"https://app.powerbi.com/groups/{workspace_id}/datasets/{model_id}/details"
         return await self._resolve_authorized_url(url, reuse=True)
 
+    async def bind_catalog_report(self, workspace_id, report_id):
+        """Report is an entry point; only exact Microsoft model metadata binds.
+
+        The Report payload proves the model ID; exact Microsoft Resolve proves
+        its workspace. Missing identity never falls back to a name match.
+        """
+        self._validate()
+        workspace_id, report_id = guid(workspace_id), guid(report_id)
+        self._test_policy.report(workspace_id, report_id)
+        async with self._connection(resource=(workspace_id, report_id)) as connection:
+            connection.validate_report_metadata_capability()
+            resolved, resource = unpack(await connection.call('ResolveFabricItem', {'fabricItemId':
+                f'https://app.powerbi.com/groups/{workspace_id}/reports/{report_id}'}), 'MODEL_RESOLUTION_FAILED')
+            if (resource is not None or resolved.get('itemType') != 'Report'
+                    or guid(resolved.get('fabricItemId')) != report_id
+                    or guid(resolved.get('workspaceId')) != workspace_id):
+                raise fail('MODEL_RESOLUTION_FAILED')
+            from backend.app.powerbi.fabric_report_metadata import report_model_id
+            model_id = report_model_id(await connection.call('GetReportMetadata',
+                {'reportObjectId': report_id}), report_id)
+        # The report payload proves the model GUID, not its workspace. Resolve
+        # that exact GUID through Microsoft; never assume the report workspace.
+        # Test Mode keeps its URL-scoped allowlist and refuses an unscoped GUID.
+        async with self._connection() as connection:
+            resolved, resource = unpack(await connection.call('ResolveFabricItem',
+                {'fabricItemId': model_id}), 'MODEL_RESOLUTION_FAILED')
+            if (resource is not None or resolved.get('itemType') != 'SemanticModel'
+                    or guid(resolved.get('fabricItemId')) != model_id):
+                raise fail('MODEL_RESOLUTION_FAILED')
+            model_workspace = guid(resolved.get('workspaceId'))
+        self._validate()
+        return await self.bind_catalog_model(model_workspace, model_id)
+
     def bound_resource_identity(self, key):
         ref = self._binding(key)
         return ref.workspace_id, ref.semantic_model_id

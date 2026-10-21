@@ -31,6 +31,14 @@ class _SelectionLease:
             raise AuthFailure("AUTH_FORBIDDEN", 403)
         return record
 
+    async def revalidate_resource(self):
+        """Microsoft access is re-proven at a long-running durable commit."""
+        self.require_session(self._sid)
+        if not self._auth.settings.fabric_test_mode and not self._workspace._synthetic_product:
+            await self._workspace.select(self._sid, self._principal,
+                self._selection.selected_model_key, expected_generation=self._selection.generation)
+        self.require_session(self._sid)
+
 
 class _ResourceLease(_SelectionLease):
     """Reuse the adapter's current access witness at each storage boundary."""
@@ -46,6 +54,13 @@ class _ResourceLease(_SelectionLease):
                 str(self._binding.workspace_id),str(self._binding.model_id)):
             raise AuthFailure('AUTH_FORBIDDEN',403)
         return record
+
+    async def revalidate_resource(self):
+        self.require_session(self._sid)
+        if not self._auth.settings.fabric_test_mode and not self._workspace._synthetic_product:
+            await self._workspace.revalidate_binding(self._sid, self._principal, self._binding,
+                expected_generation=self._selection.generation)
+        self.require_session(self._sid)
 
 
 class _NativeCloudTurnService(LLMTurnService):
@@ -140,7 +155,8 @@ class CloudProductServiceFactory:
                 page=await repos.history_service.list_archived(mode,limit=limit,cursor=cursor)
             else:
                 page=await repos.history_service.list_recent(mode,limit=limit,cursor=cursor)
-            for item in page.items: await self._authorize(repos,sid,principal,item.conversation_id,access_proofs=access_proofs)
+            for item in page.items: await self._authorize(repos,sid,principal,item.conversation_id,
+                access_proofs=access_proofs,metadata_only=True)
             return page
         return await self._read_owned(sid,principal,read)
 
@@ -174,13 +190,14 @@ class CloudProductServiceFactory:
         return await self._read_owned(sid,principal,read)
 
     async def _presentation_read(self,sid,principal,request_id,*,expected_generation=None,report_id=None,locale='zh-CN'):
-        """Reuse current session-bound witness; presentation performs no IQ call."""
+        """Revalidate access; a new login restores metadata, never reexecutes facts."""
         from backend.app.application.cloud_workspace_service import CloudSelectionConflict
         from backend.app.presentation.projection import project_snapshot,render_snapshot_report
         from backend.app.presentation.localization import JsonDisplayLocalizationRegistry
         from backend.app.report.resources import ReportNotFoundError
         async def read(repos):
-            adapter,selection=self._workspace.selected_context(sid,principal)
+            current=self._workspace._context(sid,principal)
+            adapter,selection=current.adapter,self._workspace.status(sid,principal)
             if expected_generation is not None and selection.generation!=expected_generation:
                 raise CloudSelectionConflict()
             artifact=None
@@ -194,6 +211,22 @@ class CloudProductServiceFactory:
             binding=await repos.cloud_bindings.get(snapshot.conversation_id)
             if binding is None:
                 raise AuthFailure('AUTH_FORBIDDEN',403)
+            await self._workspace._verify_exact_resource(sid, principal,
+                str(binding.workspace_id), str(binding.model_id))
+            try:
+                adapter.bound_resource_identity(binding.model_key)
+            except AuthFailure:
+                raise
+            except Exception as error:
+                from backend.app.powerbi.fabric_iq import FabricIQPowerBIAdapter
+                from backend.app.powerbi.base import PowerBIAdapterError
+                # Only a native new-login adapter with no historical key may
+                # reacquire metadata. Permission failures are never recovery.
+                if not (isinstance(adapter, FabricIQPowerBIAdapter)
+                        and isinstance(error, PowerBIAdapterError)
+                        and error.error_type == 'RESOURCE_NOT_ACCESSIBLE'):
+                    raise
+                await self._workspace.revalidate_binding(sid,principal,binding)
             lease=_ResourceLease(self._auth,self._workspace,sid,principal,selection,adapter=adapter,binding=binding)
             lease.require_session(sid)
             recipe=snapshot.presentation_recipe
@@ -213,6 +246,9 @@ class CloudProductServiceFactory:
                 registry=JsonDisplayLocalizationRegistry(self._auth.settings.presentation_localization_registry_path)
                 output=await project_snapshot(snapshot,locale,registry=registry)
             lease.require_session(sid)
+            await self._workspace._verify_exact_resource(sid, principal,
+                str(binding.workspace_id), str(binding.model_id))
+            lease.require_session(sid)
             return output
         return await self._read_owned(sid,principal,read)
 
@@ -225,14 +261,20 @@ class CloudProductServiceFactory:
     def _mode(self,sid,principal):
         return self._workspace.data_mode(sid,principal)
 
-    async def _authorize(self,repos,sid,principal,conversation_id,*,access_proofs=None):
+    async def _authorize(self,repos,sid,principal,conversation_id,*,access_proofs=None,metadata_only=False):
         binding=await repos.cloud_bindings.get(conversation_id)
         if binding is None: raise AuthFailure('AUTH_FORBIDDEN',403)
-        self._workspace.require_persistence(sid,principal,binding=binding)
         # Owned binding/grant checks still run for every row. Only a fresh
         # access proof from this same HTTP operation can cover the same exact
         # model and schema. No state survives this list request.
         proof=(binding.workspace_id,binding.model_id,binding.schema_fingerprint,binding.source_mode)
+        if metadata_only and not self._auth.settings.fabric_test_mode and not self._workspace._synthetic_product:
+            if access_proofs is None or proof not in access_proofs:
+                await self._workspace.authorize_persisted_summary(sid,principal,binding)
+            self._workspace.require_persistence(sid,principal)
+            self._validate_identity(sid,principal)
+            if access_proofs is not None: access_proofs.add(proof)
+            return binding
         if access_proofs is None or proof not in access_proofs:
             await self._workspace.revalidate_binding(sid,principal,binding)
         self._validate_identity(sid,principal)
@@ -244,11 +286,12 @@ class CloudProductServiceFactory:
         async def restore(repos):
             binding=await repos.cloud_bindings.get(conversation_id)
             if binding is None: raise AuthFailure('AUTH_FORBIDDEN',403)
-            self._workspace.require_persistence(sid,principal,binding=binding)
             # Prove the owner history root exists before restoring selection.
             await repos.history_service.get_history(self._mode(sid,principal),conversation_id,limit=1)
-            return await self._workspace.revalidate_binding(sid,principal,binding,select=True,
+            result = await self._workspace.revalidate_binding(sid,principal,binding,select=True,
                 expected_generation=expected_generation)
+            self._workspace.require_persistence(sid,principal,binding=binding)
+            return result
         return await self._read_owned(sid,principal,restore,restores_selection=True)
 
     async def list_reports(self,sid,principal,*,limit,cursor=None,status='active'):
@@ -256,7 +299,8 @@ class CloudProductServiceFactory:
             access_proofs=set()
             page=await repos.history_service.list_managed_reports(self._mode(sid,principal),status=status,limit=limit,cursor=cursor)
             for item in page.items:
-                binding=await self._authorize(repos,sid,principal,item.conversation_id,access_proofs=access_proofs)
+                binding=await self._authorize(repos,sid,principal,item.conversation_id,
+                    access_proofs=access_proofs,metadata_only=True)
                 artifact=await repos.report_metadata.get(item.report_id)
                 if artifact is None or (artifact.semantic_model_key,artifact.schema_fingerprint,artifact.source_mode)!=(
                         binding.model_key,binding.schema_fingerprint,binding.source_mode):

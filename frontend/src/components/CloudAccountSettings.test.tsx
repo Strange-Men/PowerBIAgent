@@ -11,6 +11,16 @@ const account = {session:{identity_mode:'ENTRA_BFF' as const,authenticated:true,
   login:vi.fn(),logout:vi.fn().mockResolvedValue(undefined)}
 
 describe('Cloud account settings', () => {
+  it('describes lazy product discovery without claiming a verified catalog count',async()=>{
+    vi.mocked(api.readCloudCatalog).mockResolvedValue({status:'partial',product_mode:true,items:[]} as never)
+    vi.mocked(api.readCloudStatus).mockResolvedValue({selected_model_key:null} as never)
+    render(<CloudAccountSettings account={account} panel="data" />)
+    fireEvent.click(screen.getByRole('button',{name:'刷新目录'}))
+    expect(await screen.findByText('在输入框的“+”菜单中浏览工作区，并选择语义模型或报表。')).toBeVisible()
+    expect(screen.queryByText(/可访问 0 个已验证模型/)).not.toBeInTheDocument()
+    await act(async()=>{await setLocale('en-US')})
+    expect(screen.getByText('Browse workspaces and choose a semantic model or report in the composer’s + menu.')).toBeVisible()
+  })
   it('requests identity recovery on expired catalog without fetching status',async()=>{
     const refresh=vi.fn()
     vi.mocked(api.readCloudCatalog).mockRejectedValueOnce(new api.ApiError('PRIVATE_EXPIRED',401))

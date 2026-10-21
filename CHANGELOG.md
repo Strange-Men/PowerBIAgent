@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [M6.5.2] — 2026-10-21（Web / SSO Productization FINAL COMPLETE）
+
+正常产品与Test Policy/allowlist解耦，独立operator披露/留存策略；current-principal Workspace/Model/Report有界目录、显式exact resource selection与server binding。修复canonical登录Origin/Vite Host、真实Report envelope映射、HTTP body disconnect、撤权后selection status；默认Vitest隔离threads保持原测试覆盖。复用Composer+ compact UI，UserRound/LogOut与Settings行样式统一。
+
+Native Admin Normal无allowlist的SCALAR/GROUPED/Report、locale零新增IQ/ExecuteQuery、verbatim/restore、模型隔离与logout、后端重启一次重登恢复均PASS。Fresh Backend3904PASS/1SKIP、Semantic819PASS、Golden11PASS/1manualSKIP、正式frontend181PASS及全部治理/授权门PASS；失败和既有warnings保留。Settings.version=M6.5.2，发布仅按自身exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown全部成立生效。Frozen factual boundary、12-row/N+1/8-column、relationship gap与Test B deferred→M6.6保留；下一阶段仅M6.5.3/M6.6路线，不实施。详见[M6.5.2](docs/milestones/m6/m6_5_2_web_sso_productization.md)。
+
 ## [M6.5.1] — 2026-10-21（Chinese / English Localization Platform FINAL COMPLETE）
 
 扩展既有 DisplayLocalization 与 Renderer 为 zh-CN/en-US 展示平台；i18next bundled resources、Babel 格式化、typed immutable presentation recipe 与完整性门禁。语言位于“设置 → 常规 → 语言”，不进入事实链、Memory 或授权。SCALAR/GROUPED/单 KPI Report 最小 Cloud Real 已证明切换 ZERO IQ/ExecuteQuery，事实与 ReportSpec 不变。Settings.version=M6.5.1；发布以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效。M5 Frozen Core、12-row/N+1/8-column、relationship gap 与 Test B deferred → M6.6 保留。后续 M6.5.2 Web/SSO、M6.5.3 VM Internal Pilot、M6.6 Enterprise Production Readiness Seal 均不在本轮实施。

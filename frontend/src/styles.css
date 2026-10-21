@@ -1493,6 +1493,11 @@ input:focus-visible {
   background: #f3f3f3;
 }
 
+.catalog-refresh[aria-pressed="true"] {
+  background: #f3f3f3;
+  color: #202020;
+}
+
 .catalog-refresh:disabled {
   cursor: default;
   opacity: 0.55;

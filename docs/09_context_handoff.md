@@ -1,39 +1,62 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-> Settings.version=M6.5.1；M6.5.1 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
+> Settings.version=M6.5.2；M6.5.2 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
 
-## 当前阶段 — M6.5.1 Chinese / English Localization Platform FINAL COMPLETE
+## 当前阶段 — M6.5.2 Web / SSO Productization FINAL COMPLETE
 
-Settings.version=M6.5.1。以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、
-worktree/staging clean 与 owned shutdown 全部成立后生效。自身 SHA/CI/remote receipt 保存在
-仓库外 PBIAgentTest/M6.5.1/Governance；不继承旧 CI，不在自身提交写循环 SHA。
+Settings.version=M6.5.2。发布仅按本提交自身 exact-SHA Full Validation、Remote Audit、
+HEAD=origin/main、worktree/staging clean、owned shutdown 全部成立后生效。
+自身SHA/CI/Remote Audit在仓库外PBIAgentTest/M6.5.2，不继承旧CI或写循环SHA。
 
-PHASE 0 独立 bac2f33b093fc436615bdadb4670eb950ec1fdc0 / Full Validation 39403675734
-SUCCESS，Remote Audit/clean/shutdown PASS，随后 fresh main 开始 M6.5.1。
-现有 DisplayLocalization/Formatter/Renderer 扩展，唯一 locale zh-CN/en-US 仅 Presentation Context。
-语言入口设置/常规/语言；本地 preference，无账号 DB preference。业务事实、Memory、模型与授权不变。
-immutable recipe 从已验证 Plan/Result/Facts/availability 或最终 ReportSpec 复制，只重投影；
-历史缺 recipe 明示不可切换，不重新分析或从 answer text 提取事实。
+Normal Product 与 Test Policy 分离：正常模式使用 validated Microsoft principal → current resource
+access → exact server-side verification → server-owned binding；query、external LLM disclosure、
+business persistence 独立控制。后两者要求 operator Product Policy，默认关闭。Test Mode 与
+FABRIC_TEST_ALLOWLIST 保留；关闭 Test Mode 不授予披露或留存权限。
 
-最小 native Cloud 通过：m651-scalar-f5acbd3a、m651-grouped-49737563、m651-report-a6777a23。
-每条成功事实分析后 zh/en/zh 投影 factual hash 相同，ZERO IQ/ExecuteQuery；报告一个 KPI、
-一个查询、一次 ExecuteQuery，双语言 view/download 分别一致；既有 Assembly 原始一致性复核保留。
-GROUPED 的非最终 Plan display hints 越界已 failure-first 最小修复，validator/canonical state 不变。
-报告采用既有“只看销售额”限定词；“仅展示 Total Sales”未匹配旧限定词而生成四 KPI 的原件
-仅作补充双语证明，不计入最小单 KPI 验收，不修改 Interpreter/ReportPlanner/registry。
-原 semantic frame 缺 shape 与 RATE_LIMITED 拒绝、测试 fixture 枚举错误、09 标题漂移均保留原件。
+Composer “+ → 数据与报表选项”复用 compact popover，按 Workspace → Semantic Model / Report
+浏览、搜索、分页、刷新，显式选择才 Resolve/Schema/fingerprint/binding。Report metadata 的
+SemanticModel.Id 与 ReportMetadata.Id / Report citation 严格验证，再按 exact model GUID
+Resolve 其 Workspace；无名称映射、Report workspace 假设或模型 hardcode。首登 canonical
+origin 与 Vite Host proxy 修复，保留 response_mode=query、state/nonce/PKCE 和服务端 token。
 
-本地 fresh Backend 10b01f6d=3839PASS/1SKIP/15既有warnings；Semantic 127a316e=819PASS；
-Golden e4ad24b9=11PASS/1manualSKIP；Frontend 9db4fcee=173PASS；Typecheck/Build 3e28ff9c、
-Lint bc3b3bb1 与 Repository Safety/Architecture/Documentation/Error Ledger/Artifact/Localization/diff PASS。
-源码、fixtures 定义与 bundled resources 属 Git；所有运行证据/截图/测试库只在仓库外。
-owned 5173/5174 已关闭；不删除或复制用户 DB。自动续作已恢复并关闭，避免每日重复。
-详情见 [M6.5.1 milestone](milestones/m6/m6_5_1_chinese_english_localization_platform.md)。
+Native Admin、Normal FABRIC_TEST_MODE=false、无 allowlist：一次 Login/session200、目录两种
+入口、Online Retail II SCALAR/GROUPED、Report generate/view/download、双语投影零新增 IQ/
+ExecuteQuery、user_message verbatim、History restore、模型切换新 conversation/无旧 Memory、
+forged/stale fail closed PASS。后端重启后一次重登恢复 owner History/Report，summary 零 IQ，
+restore/view/download200 且 ExecuteQuery 增量0；logout 后 protected resources401。
+英文 GROUPED 的 clarification/semantic validation failure 与 RATE_LIMITED 原件保留，不计 PASS；
+本轮 GROUPED 正例使用既有明确中文输入，未改变事实链或限制用户输入语言。
 
-后续路线：M6.5.2 Web / SSO Productization → M6.5.3 VM Remote Deployment & Internal Pilot
-→ M6.6 Enterprise Production Readiness Seal。用户已配置 VM 仅为 M6.5.3 基础；内部 Pilot 不冒充
-Enterprise Production Seal。M5 Frozen Core、12-row/N+1/8-column、relationship cardinality
-CONTRACT_GAP、Test B DEFERRED_BY_TEST_PRINCIPAL → M6.6 保留。完成本轮即 STOP；后续独立授权。
+Fresh Backend f8eadecc=3904PASS/1SKIP/15既有warnings；Semantic f865313a=819PASS；
+Golden 5b8807ad=11PASS/1manualSKIP；正式 npm test ac349296=18files/181PASS。
+Auth/Catalog/Product gates df2c3114=51/31/31PASS，UI Localization82a8cbdc=48PASS；
+Typecheck642269a1、Lint d4db6dd4、Build fffd09a1 与治理门 db2735e0 PASS。
+1,500 metadata/前端1,200 metadata证明50行首屏、分页/搜索、取消/迟到保护、bounded loading，
+selection前 Schema=Resolve=ExecuteQuery=0。断连与资源邻近1b6b7438=54PASS。
+Vitest隔离threads保留原测试集合/断言/覆盖；两worker并行181PASS。重叠full gates时一条UI
+等待超时原件17ca212a保留，机器可用内存约410MB；串行正式命令fresh181PASS，无timeout修改。
+
+最终diff分类A Auth/B Product Authorization/C Catalog binding/D frontend/E tests/F docs，G=0。
+Frozen factual chain、八Shape、DAX、Facts/Memory/Report authority与12-row/N+1/8-column不变。
+relationship cardinality CONTRACT_GAP、Test B DEFERRED_BY_TEST_PRINCIPAL → M6.6 保留。
+
+Normal operator配置：ENTRA_BFF + fabric_iq；FABRIC_TEST_MODE=false，无需
+FABRIC_TEST_ALLOWLIST。ALLOW_EXTERNAL_LLM_DISCLOSURE与ALLOW_BUSINESS_PERSISTENCE
+按组织策略独立显式配置，默认false；secret仅经原安全配置，token仅Auth/Transport。
+Test Mode继续使用allowlist。Origin/callback同源，query callback保持；不重配Entra权限。
+Catalog仅current-principal workspace membership coverage，individual shares可能不列出。
+进入Composer +选择模型/报表；History summary重登后无需选模型，restore/full read重验绑定。
+部署仍single-process/SQLite/filesystem；无多worker企业生产承诺。
+
+Local automated、native Admin Real、remote exact-SHA CI分层记录；本轮Real只使用owned公开数据
+验收DB，不读取/复制/迁移用户DB。全部tests/cache/temp/evidence仅PBIAgentTest/M6.5.2。
+UI复用既有Sidebar/User menu/Settings/Composer+，General→Language原位置、UserRound头像与
+LogOut图标。user_message语言与Presentation locale独立，verbatim保存和恢复，locale不进入
+Understanding/Grounding/Plan/DAX/Facts/Memory factual authority。
+
+下一阶段仅M6.5.3 VM Remote Deployment & Internal Pilot和M6.6 Enterprise Production Readiness
+Seal，须独立scope。本轮FINAL COMPLETE后立即STOP；不继续implementation。
+详情见 [M6.5.2 milestone](milestones/m6/m6_5_2_web_sso_productization.md)。
 
 ## Historical — M6.5 FINAL COMPLETE（2026-10-20）
 

@@ -25,7 +25,7 @@ PowerBIAgent 面向不熟悉 DAX 的业务用户，提供 React 对话界面和 
 - **可控语言模型选择**：支持 DeepSeek、Kimi K2.6 的公开 profile 与离线 Mock；每轮固定所选模型，失败不自动切换 Provider。
 - **离线验证**：Mock、Synthetic 和 Golden 用例覆盖事实链及权限边界，真实 Desktop 与 Cloud 验收独立记录。
 
-M6.5.1 Chinese / English Localization Platform FINAL COMPLETE（按本提交自身 CI/Audit/clean/shutdown 生效）：语言位于“设置 → 常规 → 语言”，已有验证结果和报告仅重投影，不重新执行查询，见 [M6.5.1](docs/milestones/m6/m6_5_1_chinese_english_localization_platform.md)。
+M6.5.2 Web / SSO Productization FINAL COMPLETE（按本提交自身 CI/Audit/clean/shutdown 生效）：Microsoft 登录后从输入框“+”浏览工作区、语义模型与报表；历史和报表支持重登恢复。语言仍位于“设置 → 常规 → 语言”，已有事实仅重投影，见 [M6.5.2](docs/milestones/m6/m6_5_2_web_sso_productization.md)。
 
 ## Architecture
 
@@ -127,7 +127,7 @@ Local MCP 实机协议基线为 `@microsoft/powerbi-modeling-mcp@0.5.0-beta.12`�
 
 ### Fabric IQ Cloud
 
-Cloud 需要 operator 先完成 Entra 同源登录、Workspace 范围、应用策略与隔离存储配置。浏览器 Origin 与 OAuth callback 必须一致，不混用 `localhost` 与 `127.0.0.1`。普通用户通过 Microsoft 登录、模型目录与对话页面使用产品。
+Cloud 需要 operator 完成 Entra 同源登录、应用策略与隔离存储配置。Normal Product 使用 `FABRIC_TEST_MODE=false`，无需 `FABRIC_TEST_ALLOWLIST`；目录与选择由当前 Microsoft principal 的精确资源访问证明。Test Mode 继续保留 allowlist。外部 LLM 披露和业务留存分别受 `ALLOW_EXTERNAL_LLM_DISCLOSURE` / `ALLOW_BUSINESS_PERSISTENCE` 控制，默认关闭。浏览器 Origin 与 callback 同源；登录后在输入框“+”浏览 Workspace → Semantic Model / Report，显式选择才加载 schema。
 
 完整边界见[Cloud ADR](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)、[Auth 文档](docs/milestones/m6/m6_1_entra_identity_login_session.md)和[开发交接](docs/09_context_handoff.md)。登录或授权失败时，先区分应用策略与 Microsoft 资源访问，不直接扩大 Workspace 权限。
 
@@ -173,7 +173,7 @@ python scripts/run_local_validation.py --milestone M6.5 --frontend -- npm run bu
 
 ## Status / Limitations
 
-当前版本：**M6.5.1**（Chinese / English Localization Platform，FINAL COMPLETE 按自身 CI/Audit/clean/shutdown 生效）。前序 M6.5 FINAL COMPLETE，八种查询形状、多轮、两种 KPI 报告与资源/安全邻接的 Cloud Real 证据保留；M6.5 自身 Full Validation 39400357886 SUCCESS，不继承为 M6.5.1 CI。现有限制及证据见 [07](docs/07_milestones_status_and_open_questions.md)。
+当前版本：**M6.5.2**（Web / SSO Productization，FINAL COMPLETE 按自身 CI/Audit/clean/shutdown 生效）。正常产品目录、显式模型/报表选择、独立Product Policy、登录与重启恢复已验证；既有八Shape、事实/Memory/Report authority保持。下一阶段仅M6.5.3 VM Remote Deployment & Internal Pilot、M6.6 Enterprise Production Readiness Seal。证据见 [07](docs/07_milestones_status_and_open_questions.md)。
 
 - Fabric IQ 正式边界为 **business rows ≤12、wire=N+1 sentinel、columns ≤8**。超界、CSV、未知或不完整结果在正式 Facts 前拒绝；较大 TopN 或长趋势不能据此宣称完整结果。
 - Cloud 会话与存储仍为 single-process/SQLite/filesystem，尚不是多 worker 企业生产部署。Microsoft 配额、MCP Preview 协议和上游延迟仍有适用限制。

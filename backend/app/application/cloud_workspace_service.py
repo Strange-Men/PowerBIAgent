@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict
 from backend.app.application.cloud_catalog_service import CloudCatalogService
 from backend.app.auth.models import AuthFailure
 from backend.app.config.cloud_test_policy import CloudTestPolicy
+from backend.app.config.cloud_product_policy import CloudProductAuthorizationPolicy
+from backend.app.application.cloud_catalog_pages import CurrentPrincipalCatalog
 from backend.app.harness.errors import ToolExecutionError
 from backend.app.harness.models import HarnessConfig
 from backend.app.harness.runtime.tool_gateway import ToolExecutionContext, ToolGateway
@@ -18,6 +20,7 @@ from backend.app.harness.tool_registry import SchemaInput, TOOL_NAME_SCHEMA, reg
 from backend.app.intent.models import IntentType
 from backend.app.memory.models import RuntimeDataMode
 from backend.app.powerbi.cloud_catalog_transport import FabricCatalogTransport
+from backend.app.powerbi.base import PowerBIAdapterError
 from backend.app.powerbi.fabric_iq_contract import fail
 from backend.app.schemas.data_contracts import UserContext
 
@@ -41,6 +44,20 @@ class _BindingKey(BaseModel):
     model_config=ConfigDict(extra='forbid',frozen=True)
 
 
+@dataclass(frozen=True)
+class _ResourceAuthorization:
+    tenant_id: str
+    principal_id: str
+    workspace_id: str
+    model_id: str
+    semantic_model_key: str
+    schema_fingerprint: str
+    source_mode: str
+    generation: int
+    authorization_epoch: int
+    evidence: str = 'current-principal exact resource + IQ schema'
+
+
 @dataclass
 class _SessionWorkspace:
     principal: object
@@ -50,6 +67,10 @@ class _SessionWorkspace:
     selected: str | None = None
     conversation_id: str | None = None
     generation: int = 0
+    catalog_pages: CurrentPrincipalCatalog = field(default_factory=CurrentPrincipalCatalog)
+    schema_fingerprint: str | None = None
+    selected_display_name: str | None = None
+    authorization: _ResourceAuthorization | None = None
 
 
 class CloudWorkspaceService:
@@ -61,7 +82,7 @@ class CloudWorkspaceService:
         self._closed = False
         # Explicit offline host composition; never inferred from adapter flags.
         self._synthetic_product = synthetic_product is True
-        self._product_policy = CloudTestPolicy(auth.settings)
+        self._product_policy = CloudProductAuthorizationPolicy(auth.settings)
 
     @property
     def context_count(self): return len(self._contexts)
@@ -84,6 +105,8 @@ class CloudWorkspaceService:
     @staticmethod
     def _clear_selection(current):
         current.selected = current.conversation_id = None
+        current.schema_fingerprint = current.selected_display_name = None
+        current.authorization = None
         current.generation += 1
 
     @asynccontextmanager
@@ -101,6 +124,13 @@ class CloudWorkspaceService:
     async def catalog(self, sid, principal):
         await self.prune()
         current = self._context(sid, principal)
+        if not self._auth.settings.fabric_test_mode and not self._synthetic_product:
+            from backend.app.application.cloud_catalog_service import CloudModelCatalog, CloudModelOption
+            # Bootstrap performs no REST enumeration, IQ Resolve or Schema.
+            items = [CloudModelOption(key=current.selected, display_name=current.selected_display_name,
+                workspace_display_name='Microsoft Fabric')] if current.selected and current.selected_display_name else []
+            return CloudModelCatalog(status='partial', items=items, product_mode=True,
+                persistence_enabled=self._product_policy.storage_enabled())
         async with self._metadata_operation(current) as deadline:
             self._validate(sid, principal)
             try:
@@ -122,13 +152,69 @@ class CloudWorkspaceService:
                 self._clear_selection(current)
             return catalog
 
+    async def browse(self, sid, principal, *, workspace_key=None, kind='SemanticModel', query='', cursor=None):
+        current = self._context(sid, principal)
+        if self._auth.settings.fabric_test_mode: raise AuthFailure('AUTH_FORBIDDEN', 403)
+        async with self._metadata_operation(current):
+            self._validate(sid, principal)
+            async with self._rest_factory(self._auth, sid, principal) as rest:
+                if workspace_key is None:
+                    page = await current.catalog_pages.workspaces(rest, query=query, cursor=cursor)
+                else:
+                    ws = current.catalog_pages.workspace(workspace_key)
+                    await rest.verify_resource(ws)
+                    page = await current.catalog_pages.resources(rest, workspace_key, kind=kind, query=query, cursor=cursor)
+            self._validate(sid, principal)
+            return page
+
+    async def _verify_exact_resource(self, sid, principal, ws, model):
+        if self._auth.settings.fabric_test_mode or self._synthetic_product: return
+        try:
+            async with self._rest_factory(self._auth, sid, principal) as rest:
+                await rest.verify_resource(ws)
+                await rest.verify_resource(ws, model, 'SemanticModel')
+            self._validate(sid, principal)
+        except BaseException:
+            current = self._contexts.get(sid)
+            proof = current.authorization if current else None
+            if proof and (proof.workspace_id, proof.model_id) == (ws, model):
+                current.keys.discard(proof.semantic_model_key)
+                self._clear_selection(current)
+            raise
+
     async def select(self, sid, principal, key, *, expected_generation=None):
         current = self._context(sid, principal)
         async with self._metadata_operation(current):
             self._validate(sid, principal)
-            if key not in current.keys: raise AuthFailure("AUTH_FORBIDDEN", 403)
+            candidate = None
+            if key not in current.keys:
+                if self._auth.settings.fabric_test_mode or self._synthetic_product:
+                    raise AuthFailure('AUTH_FORBIDDEN', 403)
+                candidate = current.catalog_pages.candidate(key)
             if expected_generation is not None and expected_generation != current.generation:
                 raise CloudSelectionConflict()
+            if key not in current.keys:
+                async with self._rest_factory(self._auth, sid, principal) as rest:
+                    await rest.verify_resource(candidate.workspace_id)
+                    await rest.verify_resource(candidate.workspace_id, candidate.item_id, candidate.kind)
+                self._validate(sid, principal)
+                from backend.app.harness.runtime.tool_gateway import ToolSpec
+                async def bind(_):
+                    method = current.adapter.bind_catalog_model if candidate.kind == 'SemanticModel' else current.adapter.bind_catalog_report
+                    ref = await method(candidate.workspace_id, candidate.item_id)
+                    return _BindingKey(model_key=ref.server_model_key)
+                gateway = ToolGateway()
+                gateway.register(ToolSpec(name='bind_selected_cloud_resource', input_model=_BindingKey,
+                    output_model=_BindingKey, handler=bind, max_retries=0, read_only=True,
+                    allowed_intents=[IntentType.DATA_QUESTION], supported_modes=[RuntimeDataMode.REAL]))
+                result = await gateway.execute('bind_selected_cloud_resource', ToolExecutionContext(
+                    runtime_mode=RuntimeDataMode.REAL, intent=IntentType.DATA_QUESTION,
+                    user=UserContext(allowed_tools=['bind_selected_cloud_resource'])), _BindingKey(model_key=key))
+                self._validate(sid, principal)
+                key = result.model_key
+                current.keys.add(key)
+            ws, model = current.adapter.bound_resource_identity(key)
+            await self._verify_exact_resource(sid, principal, ws, model)
             gateway = ToolGateway()
             register_schema_tool(gateway, current.adapter, HarnessConfig.from_settings(self._auth.settings))
             context = ToolExecutionContext(runtime_mode=RuntimeDataMode.REAL,
@@ -138,6 +224,10 @@ class CloudWorkspaceService:
                 schema = await gateway.execute(TOOL_NAME_SCHEMA, context, SchemaInput(semantic_model_key=key))
                 self._validate(sid, principal)
                 if schema.key != key: raise fail("CONTRACT_DRIFT")
+                from backend.app.query_plan.semantic_catalog import compute_schema_fingerprint
+                fingerprint = compute_schema_fingerprint(schema)
+                if not self._synthetic_product and current.selected == key and current.schema_fingerprint not in (None, fingerprint):
+                    raise fail('CONTRACT_DRIFT')
             except BaseException as error:
                 current.keys.discard(key)
                 if current.selected == key: self._clear_selection(current)
@@ -148,6 +238,11 @@ class CloudWorkspaceService:
                 self._clear_selection(current)
                 current.selected = key
                 current.conversation_id = str(uuid4())
+            current.schema_fingerprint = fingerprint
+            current.selected_display_name = schema.name
+            current.authorization = _ResourceAuthorization(principal.tenant_id, principal.principal_id,
+                ws, model, key, fingerprint, 'mock' if current.adapter.is_mock else 'real',
+                current.generation, principal.authorization_epoch)
             return self.status(sid, principal)
 
     def status(self, sid, principal):
@@ -161,11 +256,31 @@ class CloudWorkspaceService:
         if self._synthetic_product and current.adapter.is_mock:
             return True
         if binding is not None:
-            return self._product_policy.capability(binding.workspace_id, binding.model_id, name)
+            if self._auth.settings.fabric_test_mode:
+                return self._product_policy.capability(binding.workspace_id, binding.model_id, name, binding_verified=True)
+            key = getattr(binding, 'model_key', current.selected)
+            try:
+                identity = current.adapter.bound_resource_identity(key)
+            except Exception:
+                return False
+            verified = identity == (str(binding.workspace_id), str(binding.model_id))
+            return self._product_policy.capability(binding.workspace_id, binding.model_id, name, binding_verified=verified)
         if current.selected is None or current.selected not in current.keys:
             return False
-        ws, model = current.adapter.bound_resource_identity(current.selected)
-        return self._product_policy.capability(ws, model, name)
+        try:
+            ws, model = current.adapter.bound_resource_identity(current.selected)
+        except (AuthFailure, PowerBIAdapterError):
+            current.keys.discard(current.selected)
+            self._clear_selection(current)
+            return False
+        proof = current.authorization
+        verified = proof is not None and (
+            proof.tenant_id, proof.principal_id, proof.workspace_id, proof.model_id,
+            proof.semantic_model_key, proof.schema_fingerprint, proof.generation, proof.authorization_epoch
+        ) == (current.principal.tenant_id, current.principal.principal_id, ws, model,
+            current.selected, current.schema_fingerprint, current.generation, current.principal.authorization_epoch)
+        return self._product_policy.capability(ws, model, name,
+            binding_verified=verified)
 
     def policy_snapshot(self):
         return self._product_policy.snapshot()
@@ -195,6 +310,22 @@ class CloudWorkspaceService:
         if not granted:
             raise AuthFailure('AUTH_FORBIDDEN',403,denial_reason='cloud_persistence_blocked')
 
+    async def authorize_persisted_summary(self, sid, principal, binding):
+        """Owner-scoped list metadata is not executable Memory restoration.
+
+        Fresh REST access authorizes a historical summary without eagerly
+        resolving/schema-loading every model in the user's history at login.
+        Restore, execution and full factual reads still require native schema.
+        """
+        self.require_persistence(sid, principal)
+        if binding.source_mode != self.data_mode(sid, principal).value:
+            raise AuthFailure('AUTH_FORBIDDEN', 403)
+        await self._verify_exact_resource(sid, principal, str(binding.workspace_id), str(binding.model_id))
+        self._validate(sid, principal)
+        if not self._product_policy.capability(str(binding.workspace_id), str(binding.model_id),
+                'business_persistence', binding_verified=True):
+            raise AuthFailure('AUTH_FORBIDDEN', 403, denial_reason='cloud_persistence_blocked')
+
     def data_mode(self,sid,principal):
         return RuntimeDataMode.MOCK if self._context(sid,principal).adapter.is_mock else RuntimeDataMode.REAL
 
@@ -205,6 +336,8 @@ class CloudWorkspaceService:
         async with self._metadata_operation(current):
             self._validate(sid, principal)
             if current.selected not in current.keys: raise AuthFailure('AUTH_FORBIDDEN',403)
+            ws, model = current.adapter.bound_resource_identity(current.selected)
+            await self._verify_exact_resource(sid, principal, ws, model)
             gateway = ToolGateway()
             register_schema_tool(gateway,current.adapter,HarnessConfig.from_settings(self._auth.settings))
             schema = await gateway.execute(TOOL_NAME_SCHEMA,ToolExecutionContext(runtime_mode=RuntimeDataMode.REAL,
@@ -212,6 +345,10 @@ class CloudWorkspaceService:
                     allowed_semantic_models=[current.selected])),SchemaInput(semantic_model_key=current.selected))
             self._validate(sid,principal)
             if schema.key!=current.selected: raise fail('CONTRACT_DRIFT')
+            if not self._synthetic_product and compute_schema_fingerprint(schema) != current.schema_fingerprint:
+                current.keys.discard(current.selected)
+                self._clear_selection(current)
+                raise fail('CONTRACT_DRIFT')
             ws, model = current.adapter.bound_resource_identity(current.selected)
             return CloudConversationBinding(conversation_id=current.conversation_id,model_key=current.selected,
                 workspace_id=ws,model_id=model,schema_fingerprint=compute_schema_fingerprint(schema),
@@ -228,6 +365,7 @@ class CloudWorkspaceService:
                 raise CloudSelectionConflict()
             if binding.source_mode != ('mock' if current.adapter.is_mock else 'real'):
                 raise AuthFailure('AUTH_FORBIDDEN',403)
+            await self._verify_exact_resource(sid, principal, str(binding.workspace_id), str(binding.model_id))
             # Wrap provider Resolve+Schema in the same metadata ToolGateway.
             native_iq=isinstance(current.adapter, FabricIQPowerBIAdapter)
             async def restore(_):
@@ -264,6 +402,11 @@ class CloudWorkspaceService:
                 current.keys.add(key)
                 self._clear_selection(current)
                 current.selected,current.conversation_id=key,binding.conversation_id
+                current.schema_fingerprint = binding.schema_fingerprint
+                current.selected_display_name = schema.name
+                current.authorization = _ResourceAuthorization(principal.tenant_id, principal.principal_id,
+                    str(binding.workspace_id), str(binding.model_id), key, binding.schema_fingerprint,
+                    binding.source_mode, current.generation, principal.authorization_epoch)
             return self.status(sid,principal)
 
     async def new_chat(self,sid,principal,expected_generation):
@@ -274,6 +417,9 @@ class CloudWorkspaceService:
             if current.selected not in current.keys: raise AuthFailure('AUTH_FORBIDDEN',403)
             current.generation+=1
             current.conversation_id=str(uuid4())
+            if current.authorization is not None:
+                from dataclasses import replace
+                current.authorization = replace(current.authorization, generation=current.generation)
             return self.status(sid,principal)
 
     def selected_context(self, sid, principal):

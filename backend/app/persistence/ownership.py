@@ -74,6 +74,12 @@ class _ScopedAsyncSession(AsyncSession):
 @event.listens_for(Session, "before_commit")
 def _validate_commit(session):
     _validate_session(session)
+    revalidate = session.info.get('resource_owner_async_validate')
+    if revalidate is not None:
+        # SQLAlchemy's async driver bridge keeps the transaction uncommitted
+        # while the same Cloud boundary checks Microsoft. Failure rolls back.
+        session.connection().connection.run_async(lambda _: revalidate())
+        _validate_session(session)
 
 
 @event.listens_for(Session, "before_flush")
@@ -157,7 +163,8 @@ class PrincipalScopedRepositoryFactory:
                 validate()
         sessions = async_sessionmaker(bind=self._sessions.kw["bind"],
             class_=_ScopedAsyncSession, expire_on_commit=False,
-            info={"resource_owner_id": scope.owner_id, "resource_owner_validate": validate})
+            info={"resource_owner_id": scope.owner_id, "resource_owner_validate": validate,
+                  'resource_owner_async_validate': getattr(auth, 'revalidate_resource', None)})
         from backend.app.persistence.repositories.memory import SQLiteMemoryRepository
         from backend.app.persistence.repositories.snapshot import SQLiteSnapshotRepository
         from backend.app.persistence.repositories.conversation_history import SQLiteConversationHistoryRepository

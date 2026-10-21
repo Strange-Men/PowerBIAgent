@@ -205,6 +205,10 @@ class FabricIQConnection:
         self._resource = resource
         self._inventory = {t["name"]: t for t in inventory}
 
+    def validate_report_metadata_capability(self):
+        from backend.app.powerbi.fabric_iq_contract import validate_report_metadata_capability
+        validate_report_metadata_capability(self._inventory.get('GetReportMetadata'))
+
     async def call(self, name, arguments):
         self._validate()
         if self._test_policy is not None: self._test_policy.iq_call(name, arguments, resource=self._resource)

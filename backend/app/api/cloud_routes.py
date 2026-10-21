@@ -3,6 +3,7 @@ import json
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.requests import ClientDisconnect
 
 from backend.app.auth.dependencies import require_principal
 from backend.app.auth.models import AuthFailure
@@ -15,6 +16,7 @@ CONTROL_PLANE_ROUTES = frozenset({
     ("GET", "/api/v1/cloud/catalog"), ("GET", "/api/v1/cloud/status"),
     ("POST", "/api/v1/cloud/selection"), ("GET", "/api/v1/cloud/llm-profiles"),
     ("GET", "/api/v1/cloud/report-templates"),
+    ("GET", "/api/v1/cloud/catalog/workspaces"), ("GET", "/api/v1/cloud/catalog/resources"),
 })
 router = APIRouter(prefix="/api/v1/cloud")
 
@@ -28,11 +30,12 @@ def is_product_route(method,path):
         or method=='POST' and re.fullmatch(r'/api/v1/cloud/(?:history|reports)/[a-zA-Z0-9_-]{1,64}/(?:rename|archive|unarchive)',path) is not None)
 
 
-async def workspace(request: Request):
+async def workspace(request: Request, *, allowed_query=()):
     service = getattr(request.app.state, "cloud_workspace_service", None)
     if service is None: raise AuthFailure("AUTH_FORBIDDEN", 403)
-    if request.query_params: raise HTTPException(422, "invalid_cloud_request")
-    if request.method == "GET" and await request.body(): raise HTTPException(422, "invalid_cloud_request")
+    if any(k not in allowed_query or len(request.query_params.getlist(k)) != 1 for k in request.query_params):
+        raise HTTPException(422, "invalid_cloud_request")
+    if request.method == "GET" and await bounded_body(request, 0): raise HTTPException(422, "invalid_cloud_request")
     return service, request.cookies.get(request.app.state.settings.auth_cookie_name)
 
 
@@ -59,6 +62,23 @@ async def catalog(request: Request, principal=Depends(require_principal)):
     return await safe_call(service.catalog(sid, principal))
 
 
+@router.get('/catalog/workspaces')
+@router.get('/catalog/resources')
+async def browse_catalog(request: Request, principal=Depends(require_principal)):
+    resource = request.url.path.endswith('/resources')
+    allowed = {'query', 'cursor'} | ({'workspace_key', 'kind'} if resource else set())
+    service, sid = await workspace(request, allowed_query=allowed)
+    query, cursor = request.query_params.get('query', ''), request.query_params.get('cursor')
+    workspace_key = request.query_params.get('workspace_key')
+    kind = request.query_params.get('kind', 'SemanticModel')
+    if (len(query) > 100 or cursor is not None and not 1 <= len(cursor) <= 100
+            or resource and (workspace_key is None or not 1 <= len(workspace_key) <= 100)
+            or kind not in {'SemanticModel', 'Report'}):
+        raise HTTPException(422, 'invalid_cloud_request')
+    return await safe_call(service.browse(sid, principal, workspace_key=workspace_key,
+        kind=kind, query=query, cursor=cursor))
+
+
 @router.get("/status")
 async def status(request: Request, principal=Depends(require_principal)):
     service, sid = await workspace(request)
@@ -68,10 +88,7 @@ async def status(request: Request, principal=Depends(require_principal)):
 @router.post("/selection")
 async def select(request: Request, principal=Depends(require_principal)):
     service, sid = await workspace(request)
-    raw = bytearray()
-    async for chunk in request.stream():
-        if len(raw) + len(chunk) > 1024: raise HTTPException(422, "invalid_cloud_request")
-        raw.extend(chunk)
+    raw = await bounded_body(request, 1024)
     def unique_object(pairs):
         result = dict(pairs)
         if len(result) != len(pairs): raise ValueError()
@@ -106,18 +123,26 @@ async def templates(request: Request, principal=Depends(require_principal)):
 
 
 async def product(request):
-    if request.method=='GET' and await request.body(): raise HTTPException(422,'invalid_cloud_request')
+    if request.method=='GET' and await bounded_body(request,0): raise HTTPException(422,'invalid_cloud_request')
     service=getattr(request.app.state,'cloud_product_services',None)
     if service is None: raise AuthFailure('AUTH_FORBIDDEN',403)
     return service,request.cookies.get(request.app.state.settings.auth_cookie_name)
 
 
+async def bounded_body(request, limit):
+    raw=bytearray()
+    try:
+        async for chunk in request.stream():
+            if len(raw)+len(chunk)>limit: raise HTTPException(422,'invalid_cloud_request')
+            raw.extend(chunk)
+    except ClientDisconnect:
+        raise HTTPException(400,'invalid_cloud_request') from None
+    return raw
+
+
 async def body_as(request,model):
     from pydantic import ValidationError
-    raw=bytearray()
-    async for chunk in request.stream():
-        if len(raw)+len(chunk)>12000: raise HTTPException(422,'invalid_cloud_request')
-        raw.extend(chunk)
+    raw=await bounded_body(request,12000)
     def unique(pairs):
         value=dict(pairs)
         if len(value)!=len(pairs): raise ValueError()
@@ -285,8 +310,8 @@ async def mutate_resource(kind:str,resource_id:str,request:Request,action:str='d
 
 async def report_response(request,principal,report_id,download):
     from fastapi.responses import HTMLResponse
-    if (set(request.query_params)-{'locale'} or len(request.query_params.multi_items())!=len(request.query_params)
-            or await request.body()): raise HTTPException(422,'invalid_cloud_request')
+    if (set(request.query_params)-{'locale'} or len(request.query_params.multi_items())!=len(request.query_params)):
+        raise HTTPException(422,'invalid_cloud_request')
     service,sid=await product(request)
     if 'locale' in request.query_params:
         html=await product_call(service.localized_report(sid,principal,report_id,request.query_params['locale']))

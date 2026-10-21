@@ -1,28 +1,24 @@
 # 08 — 当前及未来开发路线
 
-> **状态：** Settings.version=M6.5.1；M6.5.1 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
+> **状态：** Settings.version=M6.5.2；M6.5.2 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
 
-## 正式路线 — M6.5.1 封板后的阶段
+## 正式路线 — M6.5.2 封板后的阶段
 
-M6.5 FINAL COMPLETE；Final SHA `8e63f0bd770c3ec819a789f13c20128456fec591`；自身
-[Full Validation 39400357886](https://github.com/Strange-Men/PowerBIAgent/actions/runs/39400357886) SUCCESS。
-Remote Audit PASS；封板时 HEAD=origin/main、worktree/staging clean、owned shutdown 成立。
-具体证据见07，唯一交接见09。文档收口提交 bac2f33 已以自身 Full Validation 39403675734 SUCCESS、Remote Audit/clean/shutdown
-独立成立。M6.5.1 Chinese / English Localization Platform FINAL COMPLETE 按自身 exact-SHA CI/Audit/clean/shutdown 生效；不继承 M6.5 CI。
+M6.5.2 Web / SSO Productization FINAL COMPLETE 按自身exact-SHA CI、Remote Audit、
+HEAD=origin/main、clean/shutdown生效。具体状态与fresh证据见07，唯一交接见09。
 
 | 阶段 | 路线与边界 |
 |---|---|
 | M6.5 | FINAL COMPLETE：Cloud Real Business Data Validation |
-| M6.5.1 | FINAL COMPLETE：Chinese / English Localization Platform；同一 Facts/ReportSpec 的中英展示，设置/常规/语言 |
-| M6.5.2 | Web / SSO Productization；独立部署/认证/安全设计与授权 |
-| M6.5.3 | VM Remote Deployment & Internal Pilot；用户已配置远程虚拟机作为基础，内部远程 Pilot 不冒充 Enterprise Production Seal |
-| M6.6 | Enterprise Production Readiness Seal；Test B OLS、生产权限/恢复/并发/部署/性能证据 |
+| M6.5.1 | FINAL COMPLETE：Chinese / English Localization Platform |
+| M6.5.2 | FINAL COMPLETE：Web / SSO Productization；current-principal Catalog、独立Product Policy、SSO、恢复与compact UX |
+| M6.5.3 | VM Remote Deployment & Internal Pilot；仅路线，独立授权后实施；用户已配置VM作为基础 |
+| M6.6 | Enterprise Production Readiness Seal；仅路线，Test B OLS、生产权限/恢复/并发/部署/性能证据 |
 
-PHASE 0 不修改 production behavior。M6.5.1 不实施后续三个阶段；不新增 Provider、schema cache、
-connection reuse、QueryShape、Report Template 或部署架构。
-12-row / N+1 / 8-column CLOSED_AS_EXPLICIT_LIMIT、relationship cardinality CONTRACT_GAP、
-Test B DEFERRED_BY_TEST_PRINCIPAL → M6.6 与 M5 Frozen Core 保留。
-历史章节不授予实施权限。
+本轮不实施VM部署、distributed sessions/cache、Redis/PostgreSQL/HA或M6.6架构。
+内部远程Pilot不冒充Enterprise Production Seal。12-row/N+1/8-column、relationship cardinality
+CONTRACT_GAP、Test B DEFERRED_BY_TEST_PRINCIPAL → M6.6 与M5 Frozen Core保留。
+完成本轮立即STOP。历史章节不授予实施权限。
 
 ## Historical — M6.4.1 维护 / 发布判定
 

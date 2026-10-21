@@ -60,6 +60,9 @@ jobs:
       - name: 4. Documentation governance
         run: python scripts/check_documentation_governance.py
 
+      - name: Artifact Governance Gate
+        run: python scripts/check_artifact_governance.py
+
       # ── Tests ────────────────────────────────────────────────────
       - name: 5. Semantic Compatibility Gate
         run: python scripts/check_semantic_compatibility.py
@@ -69,6 +72,15 @@ jobs:
 
       - name: 7. Golden Cases
         run: python -m backend.app.harness.cases
+
+      - name: Auth Productization Gate
+        run: python -m pytest backend/tests/api/test_m6_5_2_auth_productization.py backend/tests/api/test_auth_security.py backend/tests/unit/test_msal_identity.py -q
+
+      - name: Catalog Scalability Gate
+        run: python -m pytest backend/tests/unit/test_m6_5_2_catalog_scalability.py backend/tests/unit/test_m6_5_2_catalog_transport.py backend/tests/api/test_m6_5_2_catalog_boundary.py -q
+
+      - name: Product Authorization Gate
+        run: python -m pytest backend/tests/unit/test_m6_5_2_product_authorization.py backend/tests/unit/test_m6_5_2_product_selection.py backend/tests/unit/test_m6_5_2_report_mapping.py -q
 
       # ── Frontend validation ──────────────────────────────────────
       - name: Setup Node.js 24 LTS
@@ -84,6 +96,10 @@ jobs:
 
       - name: Localization Completeness Gate
         run: python scripts/check_localization_completeness.py
+
+      - name: UI Localization Gate
+        working-directory: frontend
+        run: npx vitest run src/components/CloudCatalogPicker.test.tsx src/components/CloudWorkspace.test.tsx src/components/CloudAccountSettings.test.tsx src/components/Sidebar.test.tsx src/authProxy.test.ts
 
       - name: 8. Frontend tests
         working-directory: frontend

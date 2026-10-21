@@ -7,6 +7,7 @@ import {
   FileText,
   Folder,
   LoaderCircle,
+  LogOut,
   MessageSquare,
   MoreHorizontal,
   PanelLeftClose,
@@ -314,12 +315,12 @@ export function Sidebar({
         </button>
       </div>
 
-      {!account || cloudExecutionReady ? <nav className="sidebar-primary" aria-label={tr('sidebar:mainNavigation')}>
-        <button type="button" onClick={onNewChat} title={tr('sidebar:newChat')}><Plus size={20} /><span>{tr('sidebar:newChat')}</span></button>
+      {!account || cloudExecutionReady || resourceLoaders ? <nav className="sidebar-primary" aria-label={tr('sidebar:mainNavigation')}>
+        {!account || cloudExecutionReady ? <button type="button" onClick={onNewChat} title={tr('sidebar:newChat')}><Plus size={20} /><span>{tr('sidebar:newChat')}</span></button> : null}
         {!account || resourceLoaders ? <button type="button" onClick={() => { if (collapsed) onToggle(); setSearchOpen(true) }} title={tr('sidebar:searchChats')}><Search size={19} /><span>{tr('sidebar:searchChats')}</span></button> : null}
       </nav> : null}
 
-      {!collapsed && searchOpen && (!account || cloudExecutionReady) ? (
+      {!collapsed && searchOpen && (!account || cloudExecutionReady || resourceLoaders) ? (
         <section className="sidebar-search" aria-label={tr('sidebar:searchChats')}>
           <div className="sidebar-search-heading"><strong>{tr('sidebar:searchChats')}</strong><button type="button" aria-label={tr('sidebar:closeSearch')} onClick={() => setSearchOpen(false)}><X size={16} /></button></div>
           <form onSubmit={(event) => { event.preventDefault(); void runSearch() }}>
@@ -333,7 +334,7 @@ export function Sidebar({
         </section>
       ) : null}
 
-      {!account || cloudExecutionReady ? <div className="sidebar-scroll">
+      {!account || cloudExecutionReady || resourceLoaders ? <div className="sidebar-scroll">
         <section className="sidebar-section project-section"><span className="sidebar-label">{tr('sidebar:projects')}</span><div className="project-card" title={tr('sidebar:powerBiSalesAnalysis')}><Folder size={18} /><span>{tr('sidebar:powerBiSalesAnalysis')}</span></div></section>
         <section className="sidebar-section collapsible-section">
           <button className="sidebar-section-toggle" type="button" aria-expanded={reportsOpen} onClick={() => setReportsOpen((open) => !open)}><span>{tr('sidebar:recentReports')}</span><ChevronDown className={reportsOpen ? 'is-open' : ''} size={15} /></button>
@@ -377,11 +378,11 @@ export function Sidebar({
         {account && !account.session.authenticated ? <button className="account-settings-trigger" type="button" aria-label={tr('resources:settings')} onClick={()=>setResourceManagerOpen(true)}><Settings size={17} /><span>{tr('resources:settings')}</span></button> : null}
         {userMenuOpen && !collapsed ? <div className="account-menu" role="menu" aria-label={tr('sidebar:userMenu')}>
           <button type="button" role="menuitem" onClick={() => { setResourceManagerOpen(true); setUserMenuOpen(false) }}><Settings size={16} />{tr('resources:settings')}</button>
-          {account?.session.authenticated ? <button type="button" role="menuitem" onClick={() => void account.logout()}>{tr('auth:signOut')}</button> : null}
+          {account?.session.authenticated ? <button type="button" role="menuitem" onClick={() => void account.logout()}><LogOut size={16} />{tr('auth:signOut')}</button> : null}
         </div> : null}
         {account && !account.session.authenticated ?
           <button className="account-card" type="button" aria-label={tr('sidebar:signInWithMicrosoft')} title={tr('sidebar:signInWithMicrosoft')} disabled={['AUTHENTICATING', 'SESSION_ESTABLISHING'].includes(account.state)} onClick={account.login}><span className="account-avatar"><UserRound size={16} /></span><span className="account-copy"><strong>{tr('sidebar:signInWithMicrosoft')}</strong></span></button>
-          : <button className="account-card" type="button" title={account?.session.display_name || tr('sidebar:powerbiagentUser')} aria-label={account?.session.display_name || tr('sidebar:powerbiagentUser')} aria-haspopup="menu" aria-expanded={userMenuOpen} onClick={() => { if (collapsed) onToggle(); setUserMenuOpen((open) => !open) }}><span className="account-avatar">{account ? account.session.display_name?.slice(0, 2) : <UserRound size={16} />}</span><span className="account-copy"><strong>{account?.session.display_name || 'PowerBIAgent'}</strong><small>{account ? account.session.preferred_username : tr('sidebar:internalUser')}</small></span></button>}
+          : <button className="account-card" type="button" title={account?.session.display_name || tr('sidebar:powerbiagentUser')} aria-label={account?.session.display_name || tr('sidebar:powerbiagentUser')} aria-haspopup="menu" aria-expanded={userMenuOpen} onClick={() => { if (collapsed) onToggle(); setUserMenuOpen((open) => !open) }}><span className="account-avatar"><UserRound size={16} /></span><span className="account-copy"><strong>{account?.session.display_name || 'PowerBIAgent'}</strong><small>{account ? account.session.preferred_username : tr('sidebar:internalUser')}</small></span></button>}
       </div>
     </aside>
     {resourceManagerOpen ? <ResourceManager account={account} resourceLoaders={resourceLoaders} runtimeMode={runtimeMode} onClose={() => setResourceManagerOpen(false)} onRenameConversation={onRename} onBulkDeleteConversations={onBulkDeleteConversations} onBulkArchiveConversations={onBulkArchiveConversations} onBulkRestoreConversations={onBulkRestoreConversations} onBulkDeleteReports={onBulkDeleteReports} onBulkArchiveReports={onBulkArchiveReports} onBulkRestoreReports={onBulkRestoreReports} onRenameReport={onRenameReport} /> : null}

@@ -64,6 +64,57 @@ class FabricCatalogTransport:
         self._test_policy.workspace(workspace_id)
         return await self._pages(f"/workspaces/{guid(workspace_id)}/reports", recursive=True)
 
+    async def catalog_page(self, path, continuation=None):
+        """One current-principal metadata page, never an IQ/schema operation."""
+        import re
+        if (self._test_policy.enabled or not re.fullmatch(
+                r'/workspaces(?:/[0-9a-f-]{36}/(?:semanticModels|reports))?', path)):
+            raise fail('RESOURCE_NOT_ACCESSIBLE')
+        params = {} if path == '/workspaces' else {'recursive': 'true'}
+        if continuation is not None:
+            if not isinstance(continuation, str) or not 1 <= len(continuation) <= 8192:
+                raise fail('CONTRACT_DRIFT')
+            params['continuationToken'] = continuation
+        body = await self._get(path, params)
+        if (not isinstance(body, dict) or not isinstance(body.get('value'), list)
+                or any(not isinstance(row, dict) for row in body['value'])
+                or len(body['value']) > 5000 or body.get('error') or body.get('errors')):
+            raise fail('CONTRACT_DRIFT')
+        token, uri = body.get('continuationToken'), body.get('continuationUri')
+        if token is None:
+            if uri is not None: raise fail('CONTRACT_DRIFT')
+        elif not isinstance(token, str) or not 1 <= len(token) <= 8192 or token == continuation:
+            raise fail('CONTRACT_DRIFT')
+        if uri is not None:
+            try:
+                parsed = urlsplit(uri)
+                query = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=3)
+            except (ValueError, TypeError): raise fail('CONTRACT_DRIFT') from None
+            if (parsed.scheme != 'https' or parsed.netloc != 'api.fabric.microsoft.com'
+                    or parsed.path != '/v1' + path or parsed.fragment
+                    or query.get('continuationToken') != [token]
+                    or any(k not in {'continuationToken', 'recursive'} for k in query)
+                    or ('recursive' in query and query['recursive'] != ['true'])):
+                raise fail('CONTRACT_DRIFT')
+        self.validate()
+        return [{k: row[k] for k in ('id', 'displayName', 'workspaceId', 'type') if k in row}
+                for row in body['value']], token
+
+    async def verify_resource(self, workspace_id, item_id=None, kind=None):
+        """Exact Microsoft GET; client identifiers are only untrusted selectors."""
+        workspace_id = guid(workspace_id)
+        path = '/workspaces/' + workspace_id
+        if item_id is not None:
+            if kind not in {'SemanticModel', 'Report'}: raise fail('RESOURCE_NOT_ACCESSIBLE')
+            item_id = guid(item_id)
+            path += ('/semanticModels/' if kind == 'SemanticModel' else '/reports/') + item_id
+        body = await self._get(path, {})
+        if (not isinstance(body, dict) or guid(body.get('id')) != (item_id or workspace_id)
+                or (item_id is not None and (guid(body.get('workspaceId')) != workspace_id or body.get('type') != kind))):
+            raise fail('CONTRACT_DRIFT')
+        self.validate()
+        return {k: body[k] for k in ('id', 'displayName', 'workspaceId', 'type') if k in body}
+
     async def _approved_items(self, paths):
         rows = []
         for path in paths:
@@ -79,7 +130,9 @@ class FabricCatalogTransport:
         for attempt in range(3):
             self.validate()
             self._test_policy.rest_path(path)
-            scopes = DELEGATED_SCOPES if self._test_policy.enabled and len(path.split('/')) == 5 else CATALOG_SCOPES
+            # Exact item GET requires Item.Read.All in either mode; workspace
+            # enumeration requires Workspace.Read.All. Both are existing grants.
+            scopes = DELEGATED_SCOPES if len(path.split('/')) == 5 else CATALOG_SCOPES
             token = await asyncio.to_thread(self._auth.get_delegated_token,
                 self._sid, self._principal, scopes)
             self.validate()

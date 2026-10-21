@@ -11,7 +11,7 @@ export function CloudAccountSettings({account,panel}: {account: AccountActions;p
   const [tab, setTab] = useState<'general' | 'account' | 'data'>('general')
   const active=panel||tab
   const refresh=account.refresh
-  const [info, setInfo] = useState<{count:number;partial:boolean;selected:string | null} | null>(null)
+  const [info, setInfo] = useState<{count:number;partial:boolean;product:boolean;selected:string | null} | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const epoch = useRef(0)
@@ -29,7 +29,7 @@ export function CloudAccountSettings({account,panel}: {account: AccountActions;p
       const status = await readCloudStatus(controller.signal)
       if (current !== epoch.current) return
       if (catalog.status === 'error' || catalog.status === 'forbidden') throw new Error('Catalog unavailable')
-      setInfo({count:catalog.items.length,partial:catalog.status === 'partial',
+      setInfo({count:catalog.items.length,partial:catalog.status === 'partial',product:catalog.product_mode === true,
         selected:catalog.items.find(item => item.key === status.selected_model_key)?.display_name || null})
       window.dispatchEvent(new Event('powerbiagent-cloud-catalog-updated'))
     } catch (caught) {
@@ -60,8 +60,8 @@ export function CloudAccountSettings({account,panel}: {account: AccountActions;p
         : <><h3>{tr('auth:dataAndModels')}</h3>
           {loading ? <p role="status">{tr('auth:loadingCloudDataModels')}</p> : null}
           {error ? <p role="alert">{publicText(error)}</p> : null}
-          {info ? <><p>{tr('resources:verifiedModelCount', {count:info.count})}</p>
-            {info.partial ? <p>{tr('auth:someModelsMayNotBeIncludedInThisCatalog')}</p> : null}
+          {info ? <><p>{info.product ? tr('auth:browseModelsInComposer') : tr('resources:verifiedModelCount', {count:info.count})}</p>
+            {info.partial && !info.product ? <p>{tr('auth:someModelsMayNotBeIncludedInThisCatalog')}</p> : null}
             <p>{info.selected || tr('auth:noModelSelectedChooseAModelInTheComposer')}</p></> : null}
           <button type="button" disabled={loading} onClick={() => void load()}>{tr('auth:refreshCatalog')}</button>
         </>}

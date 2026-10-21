@@ -8,6 +8,7 @@ import logging
 from backend.app.auth.identity import CATALOG_SCOPES, DELEGATED_SCOPES, IdentityClient
 from backend.app.auth.models import AuthFailure, PrincipalContext
 from backend.app.auth.stores import InMemoryAuthFlowStore, InMemoryAuthSessionStore
+from backend.app.auth.trace import auth_trace
 from backend.app.config.settings import Settings
 
 
@@ -58,16 +59,20 @@ class AuthService:
             except Exception:
                 self.identity.destroy(context)
                 raise
+            auth_trace('flow_created')
             return key, payload["auth_uri"]
 
     def complete(self, correlation: str | None, response: dict, old_session: str | None):
         with self._lock:
             current = self.flows.peek(correlation)
+            auth_trace('state_match', bool(current and compare_digest(
+                str(response.get('state', '')), current.payload.get('state', ''))))
             if current and not compare_digest(str(response.get('state', '')), current.payload.get('state', '')):
                 raise SupersededAuthFlow()
             if not correlation and self.sessions.lookup(old_session)[0] is not None:
                 raise SupersededAuthFlow()
             flow = self.flows.consume(correlation)
+            auth_trace('flow_consumed', flow is not None)
             # Clear old identity even when a subsequent callback fails.
             self.sessions.invalidate(old_session)
             if not flow:
@@ -95,6 +100,7 @@ class AuthService:
                     preferred_username=display(claims.get("preferred_username")) or None,
                     session_epoch=self._epoch, authorization_epoch=self._epoch)
                 session = self.sessions.create(principal, result.context, self.settings.auth_session_ttl)
+                auth_trace('session_created')
                 return session, flow.return_to
             except Exception:
                 self.identity.destroy(flow.context)

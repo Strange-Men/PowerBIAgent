@@ -12,6 +12,7 @@ from backend.app.auth.boundary import failure_response
 from backend.app.auth.dependencies import get_auth_service
 from backend.app.auth.models import AuthFailure, SessionDTO
 from backend.app.auth.service import SupersededAuthFlow
+from backend.app.auth.trace import auth_trace
 from backend.app.config.settings import IdentityMode
 
 router = APIRouter(prefix="/auth")
@@ -31,6 +32,15 @@ def clear_cookie(response, name, settings):
 @router.get("/login")
 def login(request: Request, return_to: str = "/"):
     service = get_auth_service(request)
+    if return_to != '/':
+        raise AuthFailure('AUTH_FORBIDDEN', 400)
+    # Correlation cookies are host scoped. Canonicalize BEFORE creating the
+    # flow so a localhost callback cannot lose a cookie set on 127.0.0.1.
+    # The destination is fixed operator configuration, never a client URL.
+    canonical = str(request.base_url).rstrip('/') == service.settings.auth_allowed_origin
+    auth_trace('canonical_origin', canonical)
+    if not canonical:
+        return RedirectResponse(service.settings.auth_allowed_origin + '/auth/login', status_code=302)
     try:
         key, uri = service.start(return_to, request.cookies.get(FLOW_COOKIE))
     except AuthFailure:
@@ -47,6 +57,8 @@ def login(request: Request, return_to: str = "/"):
 def callback(request: Request):
     service = get_auth_service(request)
     settings = service.settings
+    auth_trace('callback_received')
+    auth_trace('flow_cookie_present', bool(request.cookies.get(FLOW_COOKIE)))
     # Never persist code, claims or upstream error descriptions in browser URL.
     try:
         params = request.query_params
@@ -57,6 +69,7 @@ def callback(request: Request):
                                            request.cookies.get(settings.auth_cookie_name))
         response = RedirectResponse(target, status_code=302)
         cookie(response, settings.auth_cookie_name, session.session_id, settings, settings.auth_session_ttl)
+        auth_trace('session_cookie_emitted')
     except SupersededAuthFlow:
         return RedirectResponse('/', status_code=302)
     except Exception as error:
@@ -68,6 +81,7 @@ def callback(request: Request):
         service.set_notice(key, code)
         cookie(response, NOTICE_COOKIE, key, settings, settings.auth_flow_ttl)
     clear_cookie(response, FLOW_COOKIE, settings)
+    auth_trace('redirect_complete')
     return response
 
 
@@ -84,7 +98,12 @@ def session(request: Request):
             response = JSONResponse({**json.loads(response.body), "state": "AUTH_ERROR"}, status_code=401)
         clear_cookie(response, NOTICE_COOKIE, settings)
         return response
-    record = service.require_session(request.cookies.get(settings.auth_cookie_name))
+    try:
+        record = service.require_session(request.cookies.get(settings.auth_cookie_name))
+    except AuthFailure:
+        auth_trace('session_lookup_success', False)
+        raise
+    auth_trace('session_lookup_success')
     return SessionDTO(identity_mode="ENTRA_BFF", authenticated=True,
         display_name=record.principal.display_name, preferred_username=record.principal.preferred_username,
         state="SIGNED_IN", csrf_token=record.csrf_token, expires_in=max(1, int(record.expires_at - time())))

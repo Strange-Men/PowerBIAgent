@@ -8,6 +8,256 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-652-007
+  title: Report metadata引用与模型schema引用不能共用身份假设
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: 原生Report Catalog selection返回503，GetReportMetadata envelope被模型citation规则拒绝
+  local_evidence: report-envelope-shape-safe-audit证明SemanticModel.Id与ReportMetadata.Id；26d1d07b为1RED/11PASS；focused-report-receipt原生selection200且ZERO ExecuteQuery
+  authoritative_sources:
+  - title: Microsoft Fabric IQ GetReportMetadata与ResolveFabricItem官方工具合同
+    reason: Report metadata提供模型GUID，exact GUID Resolve提供独立workspace identity，Report citation不能当模型citation
+  root_cause: 使用模型schema unpack假设小写semanticModel.ArtifactId及模型citation，真实Report envelope使用大写SemanticModel.Id与Report citation
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 单独Report identity normalization严格核对ReportMetadata.Id与citation，再Resolve exact model GUID取得workspace，沿用原Resolve/Schema/binding；事实envelope规则未改变
+  regression_tests:
+  - backend/tests/unit/test_m6_5_2_report_mapping.py
+  prohibited_patterns:
+  - 以Report workspace或名称猜测模型身份
+  - 放宽事实schema/query citation校验适配Report metadata
+  prevention_rules:
+  - 不同tool envelope须验证其实际identity target，跨workspace映射须独立exact proof
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: native_report_envelope_failure_first
+    version: M6.5.2
+- id: ERR-652-008
+  title: Windows Vitest fork启动握手偶发超时
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: 全量fork两轮在不同文件执行前worker启动等待60秒超时，整体FAIL
+  local_evidence: 3007f60a与b93619bd失败保留；5ccd87e6涉事两文件fork25PASS；ac18527e与cf943076线程全量18files/181PASS
+  authoritative_sources:
+  - title: Vitest4.1.11 PoolRunner与用户正式默认命令稳定化合同
+    reason: waitForStart在run请求之前失败，不能修改测试断言或用历史部分PASS冒充全量通过
+  root_cause: Windows child-process pool启动生命周期不稳定；无法归因为单个测试或assertion失败，确切OS触发未证
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 仓库配置隔离threads pool保留相同test discovery与file scheduling；正式npm test固定runner config loader，不提高timeout或关闭isolation
+  regression_tests:
+  - frontend/src/hooks/usePowerBIAgent.test.ts
+  - frontend/src/hooks/usePowerBIAgent.race.test.tsx
+  - frontend/vite.config.ts
+  prohibited_patterns:
+  - 删除测试或容忍worker未启动的部分PASS
+  - 无证据无限提高timeout
+  prevention_rules:
+  - 正式CI与本地完整frontend命令均须通过，隔离和覆盖保持
+  related_adr: ADR-017
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: windows_worker_lifecycle_diagnosis
+    version: M6.5.2
+- id: ERR-652-009
+  title: IQ撤权清除binding后Workspace status须失效selection
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: IQ403清除adapter binding后status读取旧key抛RESOURCE_NOT_ACCESSIBLE
+  local_evidence: 9a2f58ec为113PASS/1RED；6ccbc1d0邻近120PASS
+  authoritative_sources:
+  - title: 用户M6.5.2撤权fail-closed与server binding合同
+    reason: adapter拒绝后不能保留可执行selection或将status作为未分类异常
+  root_cause: Workspace capability读取binding未处理已失效的adapter proof
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: capability仅捕获AuthFailure/PowerBIAdapterError清除旧selection并增加generation，返回不可执行；事实链未改
+  regression_tests:
+  - backend/tests/unit/test_m6_5_2_product_selection.py
+  prohibited_patterns:
+  - adapter binding撤销后仍显示执行就绪
+  prevention_rules:
+  - 撤权负例同时核对adapter与Workspace status及ZERO新事实执行
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: native_binding_revoke_status_regression
+    version: M6.5.2
+- id: ERR-652-005
+  title: Cloud请求断连不得作为未处理ASGI异常记录
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: 原生前端取消展示请求时，body读取抛ClientDisconnect并输出ASGI异常
+  local_evidence: a0f44310原断连RED；d3ef4c0b四个GET断连RED/14PASS；cc0c5c43 ASGI断连/资源/Report邻近57PASS
+  authoritative_sources:
+  - title: 用户M6.5.2 cancellation与late response合同
+    reason: 未收齐body的断连不允许执行或业务commit，取消也不能变为未处理server异常
+  root_cause: POST与GET body读取未完整分类Starlette ClientDisconnect
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 所有Cloud GET/POST共享bounded body读取将ClientDisconnect转为固定400拒绝；Report重复读取移除，原size/JSON duplicate/DTO与async cancellation保留；ASGI服务调用ZERO
+  regression_tests:
+  - backend/tests/api/test_m6_5_2_catalog_boundary.py
+  - backend/tests/api/test_cloud_control_plane.py
+  - backend/tests/api/test_cloud_product_api.py
+  prohibited_patterns:
+  - 吞掉async cancellation或用残缺body继续执行
+  prevention_rules:
+  - 流式body边界必须有断连与超限负例
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: native_disconnect_failure_first
+    version: M6.5.2
+- id: ERR-652-006
+  title: Product policy snapshot不得依赖Test Allowlist变化
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: Normal Product在flight lease会因无关Test Allowlist变化被拒绝
+  local_evidence: 37293da3为1RED与7PASS，normal snapshot仍包含test scope
+  authoritative_sources:
+  - title: 用户M6.5.2 Test Policy与Product Policy分离
+    reason: 普通产品授权及其在flight一致性均不以测试allowlist为authority
+  root_cause: capability分离后snapshot仍无条件嵌入CloudTestPolicy.snapshot
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: snapshot按Test与Product模式分支；Product仅包含独立部署flags，模式切换仍改变snapshot
+  regression_tests:
+  - backend/tests/unit/test_m6_5_2_product_authorization.py
+  prohibited_patterns:
+  - Normal Product lease间接依赖测试allowlist配置或变化
+  prevention_rules:
+  - policy capability与snapshot必须使用相同模式authority
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: product_snapshot_independence_failure_first
+    version: M6.5.2
+- id: ERR-652-004
+  title: 新登录历史metadata恢复不能捕获权限拒绝并尝试恢复
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: 旧展示权限负例由403变成503，因为generic recovery catch尝试调用禁止的restore
+  local_evidence: 1ec8da1e既有projection负例RED；a3475a00 projection与native binding focused PASS
+  authoritative_sources:
+  - title: M6.5.1展示隔离与M6.5.2资源重验合同
+    reason: 无历史key的新登录metadata恢复不能重解释AuthFailure
+  root_cause: presentation新登录分支catch Exception过宽，将明确授权拒绝当作metadata缺失
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: AuthFailure直接传播；仅native Fabric IQ adapter的RESOURCE_NOT_ACCESSIBLE允许重新取得exact metadata，旧synthetic拒绝不触发restore
+  regression_tests:
+  - backend/tests/api/test_m6_5_1_projection.py
+  - backend/tests/unit/test_m6_5_2_product_selection.py
+  prohibited_patterns:
+  - generic catch将授权拒绝变为恢复或其他执行
+  prevention_rules:
+  - 新登录恢复必须限定native类型和missing binding类别，既有权限负例保持403与ZERO事实调用
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: existing_projection_negative_regression
+    version: M6.5.2
+- id: ERR-652-003
+  title: Vite简写代理改写Host导致canonical登录重定向循环
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: 原生UI点击登录后重复auth login 302，canonical_origin=false，未发生token exchange
+  local_evidence: product-9faf32d1安全trace；b3febff7真实Vite代理RED；009c55f3代理回归PASS；修复后实际跳转Microsoft
+  authoritative_sources:
+  - title: 用户M6.5.2一次登录与同源BFF合同
+    reason: origin校验必须针对浏览器Host，代理不能静默换成upstream Host
+  root_cause: 新增canonical origin guard与既有Vite字符串简写代理不兼容，后者changeOrigin改写Host
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: auth代理显式changeOrigin=false保留浏览器Host；未信任任意forwarded header或放宽origin校验
+  regression_tests:
+  - frontend/src/authProxy.test.ts
+  - backend/tests/api/test_m6_5_2_auth_productization.py
+  prohibited_patterns:
+  - 以重复登录或关闭origin校验掩盖代理集成回归
+  prevention_rules:
+  - BFF登录origin改动必须经实际代理Host回归与原生callback trace验证
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: native_proxy_failure_first
+    version: M6.5.2
+- id: ERR-652-001
+  title: 非同源登录入口丢失host-scoped OAuth flow cookie
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: 从127.0.0.1创建flow再回localhost callback无法建立首次session；真实人工问题根因尚待trace证明
+  local_evidence: 3b6f46f3三个RED；e950a4af Auth与native MSAL 51PASS，10条既有warning
+  authoritative_sources:
+  - title: Microsoft code flow、MSAL response mode与用户M6.5.2单次登录合同
+    reason: correlation cookie必须在配置callback同源主机创建；不能用第二次登录掩盖失败
+  root_cause: login未在创建flow前固定origin；cookie主机与配置callback主机不一致
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 先302固定operator origin再创建flow；fixed-enum与bool Auth Trace；未放宽state PKCE nonce tenant account签名或改form_post
+  regression_tests:
+  - backend/tests/api/test_m6_5_2_auth_productization.py
+  - backend/tests/api/test_auth_security.py
+  - backend/tests/unit/test_msal_identity.py
+  prohibited_patterns:
+  - 未经真实trace将合成origin复现冒充人工故障的已证根因
+  - 为消warning机械切form_post或记录code token cookie身份字段
+  prevention_rules:
+  - 登录flow在配置origin创建；真实首登仍需一次callback与session成功证据
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: synthetic_origin_failure_first_and_native_auth_regression
+    version: M6.5.2
+- id: ERR-652-002
+  title: Cloud长任务提交仅复核缓存binding不足以证明当前Microsoft访问
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: 合成Microsoft撤权后现有owner与generation检查仍允许durable binding写入
+  local_evidence: 354d6fb2为1RED与2PASS；417dce91提交回滚及owner lifecycle 29PASS；02fdcce1相关58PASS
+  authoritative_sources:
+  - title: 用户M6.5.2 per-request与long-running commit current access合同
+    reason: 当前Microsoft访问与owner namespace或旧Schema proof独立
+  - title: SQLAlchemy async event driver bridge
+    reason: 在既有owner before_commit hook使用官方run_async等待同一Workspace边界复验
+  root_cause: 原lease只检查session policy generation与adapter缓存identity，没有提交前的current access请求
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Normal Product commit前复用原Workspace精确资源及Schema验证，拒绝或drift使事务回滚；Test与非Cloud路径保持原合同
+  regression_tests:
+  - backend/tests/unit/test_m6_5_2_product_selection.py
+  - backend/tests/unit/persistence/test_m63_ownership.py
+  - backend/tests/api/test_cloud_resource_lifecycle.py
+  prohibited_patterns:
+  - 用owner或旧Catalog binding冒充当前Microsoft权限
+  - 建立第二Auth或绕过Frozen事实Memory authority
+  prevention_rules:
+  - 合成长任务撤权负例必须检查ZERO durable write及事务回滚，Real与offline分层记录
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-21'
+    action: native_owner_commit_revalidation_failure_first
+    version: M6.5.2
 - id: GOV-651-009
   title: 版本更新必须保留当前阶段交接定位合同
   category: GOV

@@ -12,6 +12,7 @@ import msal
 from requests.exceptions import RequestException
 
 from backend.app.auth.models import AuthFailure, PrincipalContext
+from backend.app.auth.trace import auth_trace
 from backend.app.config.settings import PowerBIMode, Settings
 
 POWERBI_RESOURCE = "https://analysis.windows.net/powerbi/api"
@@ -74,6 +75,7 @@ class MsalIdentityClient:
 
     def complete(self, flow, response, context):
         result = context.client.acquire_token_by_auth_code_flow(flow, response)
+        auth_trace('token_exchange_success', 'access_token' in result and 'id_token' in result)
         if "access_token" not in result or "id_token" not in result:
             code = ("AUTH_CONSENT_REQUIRED" if result.get("error") in {
                 "consent_required", "interaction_required"
@@ -84,11 +86,14 @@ class MsalIdentityClient:
         claims = jwt.decode(token, signing_key, algorithms=["RS256"],
             issuer=self.issuer, audience=self.settings.entra_client_id,
             options={"require": ["exp", "iat", "nbf", "iss", "aud", "sub", "nonce", "tid", "oid"]})
+        auth_trace('id_token_verified')
         accounts = [a for a in context.client.get_accounts()
                     if a.get("local_account_id") == claims.get("oid")
                     and a.get("realm") == claims.get("tid")]
         if len(accounts) != 1:
+            auth_trace('account_resolved', False)
             raise AuthFailure("AUTH_FORBIDDEN", 403)
+        auth_trace('account_resolved')
         context.account_id = accounts[0]["home_account_id"]
         return IdentityResult(claims, context)
 

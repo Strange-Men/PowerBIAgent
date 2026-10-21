@@ -4,10 +4,10 @@
 
 ## 当前开发入口
 
-当前版本：**M6.5.1**（Chinese / English Localization Platform）；M6.5.1 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）。
+当前版本：**M6.5.2**（Web / SSO Productization）；M6.5.2 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）。
 M6.5 POST-FINAL 文档收口已独立 CI/Audit/clean/shutdown；M5 FINAL/FROZEN、M6.0–M6.4既有验收保持。
 完整公开数据Cloud八Shape、Oracle、多轮、两KPI模板及资源/安全邻接已验证；详情以07/09为准。
-关系cardinality gap与Test B deferred保留；本轮 M6.5.1 已独立授权；M6.5.2/M6.5.3/M6.6 仅路线，不自动实施。
+关系cardinality gap与Test B deferred保留；M6.5.2 Web / SSO Productization 本轮独立授权已收口；M6.5.3/M6.6 仅路线，不自动实施。
 07当前状态，08路线，09唯一交接；不重复保存浮动SHA或继承旧CI。下一implementation仍须独立scope。
 
 ## Cold Start

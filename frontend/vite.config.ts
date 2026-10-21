@@ -12,13 +12,17 @@ export default defineConfig({
     proxy: {
       '/api': 'http://127.0.0.1:8000',
       '/health': 'http://127.0.0.1:8000',
-      '/auth': 'http://127.0.0.1:8000',
+      // The BFF validates the browser origin before creating its login flow.
+      '/auth': { target: 'http://127.0.0.1:8000', changeOrigin: false },
     },
   },
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     css: true,
+    // Isolated threads avoid intermittent Windows child-process startup timeouts.
+    // Keep the same test discovery and existing file scheduling contract.
+    pool: 'threads',
     fileParallelism: false,
   },
 })

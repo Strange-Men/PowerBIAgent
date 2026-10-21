@@ -11,6 +11,13 @@ from backend.tests.unit.test_fabric_iq_adapter import harness, principal  # noqa
 
 def workspace(harness, **kwargs):
     auth, session, transport, _ = harness
+    # These legacy control-plane tests exercise acceptance-mode denial and
+    # eager authorization. Normal product lazy selection has its own matrix.
+    if auth.settings.fabric_test_allowlist is None:
+        from backend.app.config.cloud_test_policy import CloudTestAllowlist
+        from backend.tests.unit.test_fabric_iq_adapter import WORKSPACE
+        auth.settings.fabric_test_mode = True
+        auth.settings.fabric_test_allowlist = CloudTestAllowlist(workspaces=[{'workspace_id': WORKSPACE}])
     factory = FabricIQAdapterFactory(auth.settings, auth, transport_factory=lambda *args: transport)
     return CloudWorkspaceService(auth, factory, rest_factory=lambda *args: RestContext(), **kwargs)
 

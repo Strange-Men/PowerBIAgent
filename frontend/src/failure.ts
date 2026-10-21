@@ -3,12 +3,12 @@ import type { FailureInfo } from './types'
 
 export type CloudDenialReason = 'test_scope_missing' | 'cloud_execution_blocked' | 'cloud_disclosure_blocked' | 'cloud_persistence_blocked'
 
-export function cloudDenialMessage(reason: CloudDenialReason): string {
+export function cloudDenialMessage(reason: CloudDenialReason, productMode = false): string {
   switch (reason) {
     case 'test_scope_missing': return tr('errors:signedInTheApprovedTestResourceListIsNot')
     case 'cloud_disclosure_blocked': return tr('errors:signedInCloudBusinessDataIsNotApprovedFor')
     case 'cloud_persistence_blocked': return tr('errors:signedInCloudBusinessHistoryAndReportStorageAre')
-    default: return tr('errors:signedInCloudBusinessAcceptanceIsIncompleteAnalysisAnd')
+    default: return productMode ? tr('errors:modelAccessRequiresVerification') : tr('errors:signedInCloudBusinessAcceptanceIsIncompleteAnalysisAnd')
   }
 }
 
