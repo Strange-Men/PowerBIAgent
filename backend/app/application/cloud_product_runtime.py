@@ -23,7 +23,7 @@ def require_cloud_business_data(workspace,sid,principal):
 class DeferredCloudRepositories:
     """Compose existing owner repositories lazily, without creating/migrating DBs.
 
-    Startup and denied requests never open business persistence. Explicit
+    Startup inspects schema metadata only. Denied requests never open repositories. Explicit
     operator grants and owner/exact-resource leases guard permitted access.
     """
     def __init__(self, auth, workspace, settings):
@@ -35,6 +35,9 @@ class DeferredCloudRepositories:
         self._workspace.require_persistence(sid, principal)
         if self._settings.persistence_backend != PersistenceBackend.SQLITE:
             raise AuthFailure('AUTH_FORBIDDEN',403)
+        from backend.app.persistence.readiness import check_persistence
+        import asyncio
+        (await asyncio.to_thread(check_persistence, self._settings)).require_ready()
         # No schema creation, migration, legacy assignment or default fallback.
         if self._repositories is None:
             from backend.app.persistence.database import create_engine, create_session_factory

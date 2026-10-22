@@ -56,6 +56,25 @@ const llmProps = {
   onLLMProfileChange: vi.fn(),
 }
 
+it.each([1,3,5])('anchors both menus to the input independently of %i status lines',lines=>{
+  const {container,rerender}=render(<Composer {...llmProps} sending={false} semanticModel={semanticModel}
+    semanticModelOptions={[semanticModel]} loadingSemanticModels={false} semanticModelError={null}
+    reportTemplate={null} reportTemplateOptions={[]} loadingReportTemplates={false} reportTemplateError={null}
+    onSemanticModelChange={vi.fn()} onRefreshSemanticModels={vi.fn()} onReportTemplateChange={vi.fn()} onSend={vi.fn()}
+    statusNotice={<p data-testid="status-lines">{Array(lines).fill('status').join('\n')}</p>}
+    semanticModelCompatibilityNotice={Array(lines).fill('warning').join('\n')}/> )
+  fireEvent.click(screen.getByRole('button',{name:'打开数据与报表选项'}))
+  const anchor=container.querySelector('.composer-anchor')
+  expect(anchor).not.toBeNull()
+  expect(container.querySelector('.add-menu')?.parentElement).toBe(anchor)
+  expect(container.querySelector('.composer')?.parentElement).toBe(anchor)
+  expect(anchor?.contains(screen.getByTestId('status-lines'))).toBe(false)
+  expect(anchor?.contains(container.querySelector('.composer-selection'))).toBe(false)
+  fireEvent.click(screen.getByRole('button',{name:/DeepSeek/}))
+  expect(container.querySelector('.model-menu')?.parentElement).toBe(anchor)
+  rerender(<></>)
+})
+
 function renderComposer(options: CatalogOption[] = [semanticModel]) {
   const onSend = vi.fn().mockResolvedValue(undefined)
   const onSemanticModelChange = vi.fn()

@@ -2,6 +2,27 @@
 
 > Settings.version=M6.5.2；M6.5.2 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
 
+## M6.5.2_FIX2 — Persistence Readiness + Cloud UX Layout Closure FINAL COMPLETE
+
+本轮独立授权，Settings.version=M6.5.2；仅在本提交自身exact-SHA Full Validation、Remote
+Audit、HEAD=origin/main、clean/staging clean及owned shutdown全部成立后FINAL COMPLETE生效。
+三个根因：Sidebar resource errors leaked into chat-main；Composer popover anchored to
+variable-height wrapper；Cloud Normal Product SQLite schema readiness missing。
+startup只读schema metadata，旧/空DB明确PERSISTENCE_SCHEMA_OUTDATED，LLM/ExecuteQuery前
+fail closed；helper只按Settings实际路径显式upgrade，不删库、不自动迁移、不改变旧资源owner。
+真实DB已备份并forward升级c2e4f6a8b130→ab64d10e7f20；8表1024行原列摘要一致，完整性/FK PASS。
+History/Report错误回各自Sidebar单行状态；Composer两菜单共用独立anchor/320px bounded/8px。
+真实.env凭据+实际本地DB、普通uvicorn与npm dev、Normal Admin/DeepSeek/Fabric IQ浏览器
+完整流程PASS：两指定英文查询、Report/View/Download、刷新/旧History、双语与Logout；
+重启后一次重登、未选模型即恢复summary PASS。REAL_BROWSER_ACCEPTANCE=PASS；DB
+revision=ab64d10e7f20；FABRIC_TEST_MODE=false；POWERBI_MODE=fabric_iq；无Mock/测试宿主。
+正常模式以进程显式启用公开operator flags，未改Secret；真实日志相关错误计数0。
+Backend04fe25ad=3959PASS/1SKIP/22warnings，Semantic819PASS，Golden11PASS/1manualSKIP，
+Frontend196PASS，Typecheck/Lint/Build及治理门PASS。原TTL失败、首次报告措辞validation拒绝、
+旧源码中止与治理RED全部保留；不继承旧CI。详情见M6.5.2 milestone的FIX2补充。
+后续M6.5.3必须Deploy→explicit migration→readiness→backend start→health ready，仍仅路线。
+fresh证据与失败保留于仓库外PBIAgentTest/M652F2（本轮短路径别名）及M6.5.2_FIX2/Backup。
+
 ## M6.5.2_FIX — Cloud Product Runtime & Pilot Readiness Closure FINAL COMPLETE
 
 本节仅在本提交自身exact-SHA Full Validation、Remote Audit、HEAD=origin/main、

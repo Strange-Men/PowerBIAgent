@@ -563,13 +563,19 @@ async def health(
             reasons.append("powerbi_local_mcp_requires_openai_compatible_llm")
             reasons.append("powerbi_local_mcp_requires_deepseek")
 
-    response.status_code = 200 if ready else 503
-    status = "ok" if ready else "not_ready"
+    persistence = getattr(request.app.state, 'persistence_readiness', None)
+    operational = ready and (persistence is None or persistence.ready)
+    if persistence is not None and not persistence.ready:
+        reasons.append(persistence.reason.lower())
+    response.status_code = 200 if operational else 503
+    status = "ok" if operational else "not_ready"
 
     return HealthResponse(
         status=status,
         ready=ready,
         configuration_ready=ready,
+        persistence_ready=persistence.ready if persistence is not None else None,
+        persistence_reason=persistence.reason if persistence is not None else None,
         powerbi_live_connected=False,
         reasons=reasons,
         app_name=settings.app_name,

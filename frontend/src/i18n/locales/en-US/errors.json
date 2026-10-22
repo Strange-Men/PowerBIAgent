@@ -57,5 +57,6 @@
   "reportTemplateRequired": "Specify the report template to use.",
   "turnRelationRequired": "Specify whether this is a new question or a change to the previous conditions.",
   "externalFactsUnavailable": "I do not have verifiable live external data to confirm specific businesses, opening status, weather, market prices, or news. Provide a trusted source, or ask for general selection methods that do not depend on live information.",
-  "persistenceUnavailable": "History or report storage is unavailable. Try again later."
+  "persistenceUnavailable": "History or report storage is unavailable. Try again later.",
+  "persistenceSchemaOutdated": "Local persistence requires a database migration before it can be used."
 }

@@ -68,6 +68,8 @@ export function publicFailureMessage(failure: FailureInfo): string {
       return tr('errors:thisDataCannotSupportTheAnalysisAdjustYourQuestion')
     case 'PERSISTENCE_UNAVAILABLE':
       return tr('errors:persistenceUnavailable')
+    case 'PERSISTENCE_SCHEMA_OUTDATED':
+      return tr('errors:persistenceSchemaOutdated')
     case 'INTERNAL_FAILURE':
       return tr('errors:thisRequestCannotBeCompletedRightNowTryAgain')
     default:

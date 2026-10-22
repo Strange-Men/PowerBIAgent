@@ -121,6 +121,8 @@ export function Composer({
 
   return (
     <div className="composer-wrap" ref={rootRef}>
+      {statusNotice}
+      <div className="composer-anchor">
       {addMenuOpen ? (
         <div className="composer-popover add-menu" role="dialog" aria-label={tr('composer:dataAndReportOptions')}>
           {cloudModelPicker ? cloudModelPicker(() => setAddMenuOpen(false)) : <div className="menu-group">
@@ -247,7 +249,6 @@ export function Composer({
         </div>
       ) : null}
 
-      {statusNotice}
       <div className="composer">
         <button
           ref={addButtonRef}
@@ -298,6 +299,7 @@ export function Composer({
         >
           <Send size={18} />
         </button>
+      </div>
       </div>
       <div className={`composer-selection ${semanticModelCompatibilityNotice ? 'compatibility-warning' : ''}`} aria-live="polite">
         <span>

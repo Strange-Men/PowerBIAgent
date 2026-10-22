@@ -38,6 +38,8 @@ type ActionMenu =
   | { anchor: HTMLButtonElement; id: string; type: 'report' }
 
 interface SidebarProps {
+  historyStatus?: {error: string | null; loading: boolean; retry: () => void}
+  reportStatus?: {error: string | null; loading: boolean; retry: () => void}
   resourceLoaders?: ResourcePageLoaders
   cloudExecutionReady?: boolean
   account?: AccountActions
@@ -78,6 +80,13 @@ interface SidebarProps {
   ) => Promise<BatchOperationResult>
 }
 
+function ResourceStatus({error,loading,retry}: {error: string | null; loading: boolean; retry: () => void}) {
+  return <p className="sidebar-state sidebar-resource-status" role="status">
+    <span title={publicText(error)}>{publicText(error)}</span>
+    <button type="button" disabled={loading} onClick={retry} aria-label={tr('chat:retrySidebarResources')}><RotateCcw size={13}/></button>
+  </p>
+}
+
 function displayTitle(conversation: ConversationSummary): string {
   return conversation.title?.trim() || conversation.latest_analysis_goal?.replace(/^用户提问:\s*/, '').trim() || tr('errors:untitledConversation')
 }
@@ -102,6 +111,8 @@ function SidebarLeadingIcon({ status }: { status: ConversationResourceStatus }) 
 }
 
 export function Sidebar({
+  historyStatus,
+  reportStatus,
   resourceLoaders,
   cloudExecutionReady=false,
   account,
@@ -338,7 +349,8 @@ export function Sidebar({
         <section className="sidebar-section project-section"><span className="sidebar-label">{tr('sidebar:projects')}</span><div className="project-card" title={tr('sidebar:powerBiSalesAnalysis')}><Folder size={18} /><span>{tr('sidebar:powerBiSalesAnalysis')}</span></div></section>
         <section className="sidebar-section collapsible-section">
           <button className="sidebar-section-toggle" type="button" aria-expanded={reportsOpen} onClick={() => setReportsOpen((open) => !open)}><span>{tr('sidebar:recentReports')}</span><ChevronDown className={reportsOpen ? 'is-open' : ''} size={15} /></button>
-          {reportsOpen && reports.length === 0 ? <p className="sidebar-state">{tr('sidebar:noRecentReports')}</p> : reportsOpen ? reports.map((report) => isUsableReport(report) ? (
+          {reportsOpen && reportStatus?.error ? <ResourceStatus {...reportStatus} /> : null}
+          {reportsOpen && !reportStatus?.error && reports.length === 0 ? <p className="sidebar-state">{tr('sidebar:noRecentReports')}</p> : reportsOpen ? reports.map((report) => isUsableReport(report) ? (
             <div className="sidebar-item-row" data-report-actions key={report.report_id}>
               <a className="sidebar-item" href={reportReference(report.view_reference)} target="_blank" rel="noreferrer" title={tr('sidebar:view', {p0: report.display_title || tr('reports:salesAnalysisReport')})}><FileText size={17} /><span>{publicText(report.display_title) || tr('reports:salesAnalysisReport')}</span></a>
               {!account || resourceLoaders ? <button className="conversation-actions-trigger" type="button" aria-label={tr('sidebar:manageReport', {p0: report.display_title || tr('reports:salesAnalysisReport')})} aria-haspopup="menu" aria-expanded={actionMenu?.type === 'report' && actionMenu.id === report.report_id} onClick={(event) => {
@@ -368,8 +380,9 @@ export function Sidebar({
         </section>
         <section className="sidebar-section collapsible-section recent-section">
           <button className="sidebar-section-toggle" type="button" aria-expanded={recentOpen} onClick={() => setRecentOpen((open) => !open)}><span>{tr('sidebar:recentConversations')}</span><ChevronDown className={recentOpen ? 'is-open' : ''} size={15} /></button>
+          {recentOpen && historyStatus?.error ? <ResourceStatus {...historyStatus} /> : null}
           {recentOpen && error ? <p className="sidebar-state">{publicText(error)}</p> : null}
-          {recentOpen && !error && conversations.length === 0 ? <p className="sidebar-state">{tr('sidebar:noRecentConversations')}</p> : null}
+          {recentOpen && !error && !historyStatus?.error && conversations.length === 0 ? <p className="sidebar-state">{tr('sidebar:noRecentConversations')}</p> : null}
           {recentOpen ? <div className="recent-conversation-list">{conversationRows(conversations)}</div> : null}
           {actionError ? <p className="sidebar-state sidebar-state-error" role="alert">{publicText(actionError)}</p> : null}
         </section>

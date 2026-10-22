@@ -35,6 +35,7 @@ export type PublicFailureCode =
   | 'VALIDATION_FAILED'
   | 'INTERNAL_FAILURE'
   | 'PERSISTENCE_UNAVAILABLE'
+  | 'PERSISTENCE_SCHEMA_OUTDATED'
 
 export type FailureStage =
   | 'auth'

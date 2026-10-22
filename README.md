@@ -131,6 +131,26 @@ Cloud 需要 operator 完成 Entra 同源登录、应用策略与隔离存储配
 
 完整边界见[Cloud ADR](docs/adr/ADR-020_fabric_iq_cloud_consumption_and_catalog_authority.md)、[Auth 文档](docs/milestones/m6/m6_1_entra_identity_login_session.md)和[开发交接](docs/09_context_handoff.md)。登录或授权失败时，先区分应用策略与 Microsoft 资源访问，不直接扩大 Workspace 权限。
 
+### M6.5.2_FIX2 — Persistence Readiness + Cloud UX Layout Closure
+
+Cloud Normal Product（ENTRA_BFF + fabric_iq + ALLOW_BUSINESS_PERSISTENCE=true +
+SQLite）在 startup 只读检查 schema revision、正式资源表与文件系统可用性；不执行迁移或
+`create_all`。`/health` 分开返回 `configuration_ready` 与 `persistence_ready`，登录后的
+Cloud status 保留安全 revision diagnostics。旧/空 DB 返回 `PERSISTENCE_SCHEMA_OUTDATED`，
+在 LLM、ExecuteQuery、Facts、Memory 前拒绝业务执行。完成迁移后须重启 backend。
+
+部署/operator 顺序：停止 workers → 备份现有 DB → 使用相同工作目录和 Settings 环境执行
+`python scripts/prepare_persistence.py --upgrade` → 验证 current=head → backend start →
+health ready。只检查可省略 `--upgrade`；helper 非就绪返回非零。目标完全来自
+`Settings.persistence_database_path`，支持 `PERSISTENCE_DATABASE_PATH`，不使用
+`alembic.ini` 的默认 DB。不得通过删库、重建或 reseed 解决旧 schema。
+
+M6.5.3 的部署合同同样是 Deploy → explicit Alembic migration → persistence readiness →
+backend start → health ready；migration ≠ application startup。本轮不实施 M6.5.3。
+
+History/Report 登录后异步加载，各自错误与 retry 只在对应 Sidebar 资源区；Composer
+数据菜单与 LLM 菜单共用输入栏 anchor、320px bounded width 和 8px vertical offset。
+
 ## Project Structure
 
 ```text

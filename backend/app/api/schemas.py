@@ -159,6 +159,8 @@ class HealthResponse(BaseModel):
     status: str
     ready: bool = Field(description="兼容字段：等同 configuration_ready")
     configuration_ready: bool = Field(description="当前配置可创建所选运行模式")
+    persistence_ready: bool | None = None
+    persistence_reason: str | None = None
     powerbi_live_connected: bool = Field(
         default=False,
         description="是否已由本次请求实时验证 Power BI 连接；Health 不探测，恒为 false",

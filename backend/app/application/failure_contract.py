@@ -151,6 +151,7 @@ def map_public_failure(
         "CONTRACT_DRIFT": FailureRecoveryAction.NONE,
         "LLM_SERVICE_UNAVAILABLE": FailureRecoveryAction.RETRY,
         "PERSISTENCE_UNAVAILABLE": FailureRecoveryAction.RETRY,
+        "PERSISTENCE_SCHEMA_OUTDATED": FailureRecoveryAction.NONE,
         "INTERNAL_FAILURE": FailureRecoveryAction.RETRY,
     }
     if known_error in cloud_actions:

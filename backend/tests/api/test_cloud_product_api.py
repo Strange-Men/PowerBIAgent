@@ -125,7 +125,7 @@ def test_report_template_generation_view_download_and_owner_relogin(cloud_produc
     response=c.post('/api/v1/cloud/chat',headers=h,json={'message':'生成销售报告','request_id':'synthetic-report',
         'report_template_key':'sales_report','expected_generation':s['generation']})
     assert response.status_code==200,response.text
-    report=response.json()['report'];assert report and response.json()['is_mock']
+    report=response.json()['report'];assert report and response.json()['is_mock'], response.text
     rid=report['report_id']
     assert report['view_reference']=='/api/v1/cloud/reports/'+rid
     assert report['download_reference']=='/api/v1/cloud/reports/'+rid+'/download'

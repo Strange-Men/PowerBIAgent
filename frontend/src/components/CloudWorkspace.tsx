@@ -64,7 +64,8 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
         if(current===generation.current){setRecent(page.items.slice(0,8));setHistoryError(null)}
         return page.items
       } catch(caught) {
-        if(current===generation.current)setHistoryError(tr('chat:conversationHistoryIsUnavailable'))
+        if(current===generation.current)setHistoryError(caught instanceof ApiError && caught.failure
+          ? publicFailureMessage(caught.failure) : tr('chat:conversationHistoryIsUnavailable'))
         throw caught
       } finally {if(current===generation.current)setHistoryLoading(false)}
     })()
@@ -74,7 +75,8 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
         const page=await readCloudReports(controller.signal)
         if(current===generation.current){setReports(page.items.slice(0,8));setReportError(null)}
       } catch(caught) {
-        if(current===generation.current)setReportError(tr('chat:reportListUnavailable'))
+        if(current===generation.current)setReportError(caught instanceof ApiError && caught.failure
+          ? publicFailureMessage(caught.failure) : tr('chat:reportListUnavailable'))
         throw caught
       } finally {if(current===generation.current)setReportsLoading(false)}
     })()
@@ -262,16 +264,15 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       productMode.current = models.value.product_mode === true
       setStatus(nextStatus)
       serverGeneration.current = nextStatus.generation
-      if (models.value.product_mode) {
-        const workspaces = await readCloudWorkspaces('', undefined, controller.signal)
-        if (current !== generation.current) return
-        setNoWorkspaceAccess(workspaces.items.length === 0 && !workspaces.partial)
-      }
       if (nextStatus.execution_ready || models.value.persistence_enabled) {
         void loadResources(controller,current).catch(caught=>{
           if(current===generation.current)failure(caught,'history')
         })
-
+      }
+      if (models.value.product_mode) {
+        const workspaces = await readCloudWorkspaces('', undefined, controller.signal)
+        if (current !== generation.current) return
+        setNoWorkspaceAccess(workspaces.items.length === 0 && !workspaces.partial)
       }
       if (nextStatus.selected_model_key && models.value.items.some(item => item.key === nextStatus.selected_model_key)) {
         setTemplatesLoading(true)
@@ -410,7 +411,9 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       : selected && !status?.execution_ready ? cloudDenialMessage('cloud_execution_blocked')
       : selected ? tr('chat:anAccessibleDataModelIsSelected')
       : !options.length ? tr('chat:noAccessibleDataModelsWereFound') : tr('chat:selectADataModelToBegin'))
-  const executionBlocked = !status?.execution_ready ? tr('chat:dataAnalysisIsUnavailableTryAgainLater') : null
+  const executionBlocked = status?.persistence_ready === false
+    ? tr(status.persistence_reason === 'PERSISTENCE_SCHEMA_OUTDATED' ? 'errors:persistenceSchemaOutdated' : 'errors:persistenceUnavailable')
+    : !status?.execution_ready ? tr('chat:dataAnalysisIsUnavailableTryAgainLater') : null
 
   const retryResources=(kind: 'history'|'report') => {
     const controller=new AbortController()
@@ -441,6 +444,8 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
   if (!account) return content
   return <div className="app-shell">
     <Sidebar key={status?.execution_ready ? 'ready' : 'blocked'} account={account} collapsed={collapsed} onToggle={onToggle} runtimeMode="real"
+      historyStatus={{error:historyError,loading:historyLoading,retry:()=>retryResources('history')}}
+      reportStatus={{error:reportError,loading:reportsLoading,retry:()=>retryResources('report')}}
       resourceLoaders={status?.execution_ready || catalog?.persistence_enabled ? resourceLoaders : undefined}
       cloudExecutionReady={Boolean(status?.execution_ready)} activeConversationId={status?.conversation_id || null}
       conversations={recent} reports={reports} error={null} onNewChat={()=>void changeConversation()}
@@ -456,9 +461,6 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
       onBulkDeleteReports={items=>bulk('reports',items.map(item=>item.report_id),'delete')}
       onBulkArchiveReports={items=>bulk('reports',items.map(item=>item.report_id),'archive')}
       onBulkRestoreReports={items=>bulk('reports',items.map(item=>item.report_id),'unarchive')} />
-    <main className="chat-main">{content}
-      {historyError ? <p className="local-catalog-note" role="status">{historyError} <button disabled={historyLoading} onClick={()=>retryResources('history')}>{tr('chat:retrySidebarResources')}</button></p> : null}
-      {reportError ? <p className="local-catalog-note" role="status">{reportError} <button disabled={reportsLoading} onClick={()=>retryResources('report')}>{tr('chat:retrySidebarResources')}</button></p> : null}
-    </main>
+    <main className="chat-main">{content}</main>
   </div>
 }

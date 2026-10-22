@@ -74,6 +74,26 @@ def test_metadata_file_mismatch_and_cleanup_intent_fail(governed_state):
     assert "artifact_cleanup_pending:report_delete_intents:1" in result.violations
 
 
+def test_principal_report_directory_uses_registered_exact_owner(governed_state):
+    project,state=governed_state
+    owner='entra:'+('1'*64)
+    report_id='rpt_'+('2'*32)
+    root=state/'reports'/owner.replace(':','_')
+    root.mkdir()
+    (root/(report_id+'.html')).write_text('synthetic',encoding='utf-8')
+    with sqlite3.connect(state/'persistence'/'powerbiagent.db') as conn:
+        conn.execute('CREATE TABLE resource_owners(owner_id TEXT PRIMARY KEY)')
+        conn.execute('INSERT INTO resource_owners VALUES (?)',(owner,))
+        conn.execute("ALTER TABLE report_artifacts ADD COLUMN owner_id TEXT DEFAULT 'local:legacy'")
+        conn.execute('INSERT INTO report_artifacts(report_id,relative_path,owner_id) VALUES (?,?,?)',
+            (report_id,report_id+'.html',owner))
+    assert audit_artifacts(project,inspect_source_tree=False).passed
+    (root/('rpt_'+('3'*32)+'.html')).write_text('orphan',encoding='utf-8')
+    assert any('orphan_report_html' in item for item in audit_artifacts(project,inspect_source_tree=False).violations)
+    (state/'reports'/('entra_'+('4'*64))).mkdir()
+    assert any('unauthorized_report_directory' in item for item in audit_artifacts(project,inspect_source_tree=False).violations)
+
+
 def test_active_test_ownership_and_cleanup_failure_fail(governed_state):
     project, state = governed_state
     (state / "runtime" / "artifact_ownership.json").write_text(

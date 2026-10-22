@@ -8,6 +8,117 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-652-018
+  title: Artifact治理未识别正式principal报表分目录
+  category: ERR
+  first_detected_version: M6.5.2_FIX2
+  symptom: 真实本地Normal报告生成成功，但Artifact Governance误报report_file_missing和unauthorized_report_directory
+  local_evidence: 69d5559f真实gate失败；4aca84e6永久用例RED；4d0165fc专项26PASS与4df229a4真实gate PASS
+  authoritative_sources:
+  - title: ADR-012及既有PrincipalScopedRepositoryFactory正式owner路径合同
+    reason: 只读治理应验证实际owner分目录，不能删真实产品文件迎合旧flat假设
+  root_cause: 既有audit只按reports根下flat文件核对metadata，未消费resource_owners和owner_id
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: 只允许正式registered entra hash namespace且严格匹配owner路径，保留legacy flat检查；孤儿文件、未知或嵌套目录和symlink继续拒绝
+  regression_tests:
+  - backend/tests/unit/persistence/test_artifact_governance.py
+  prohibited_patterns:
+  - 为使治理通过删除真实报告或忽略所有principal子目录
+  prevention_rules:
+  - Artifact Governance同时证明正式产品目录与孤儿或未注册namespace负例
+  related_adr: ADR-012
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-22'
+    action: native_product_artifact_governance_failure_first
+    version: M6.5.2_FIX2
+- id: ERR-652-015
+  title: Cloud Normal Product缺少SQLite schema启动就绪检查
+  category: ERR
+  first_detected_version: M6.5.2_FIX2
+  symptom: Auth与Catalog成功但History和Report及Chat首次访问才返回PERSISTENCE_UNAVAILABLE
+  local_evidence: 645be674六RED；a3c618f1专项19PASS；4dc35829状态投影四RED，bd4e4f8e邻近门PASS；真实旧DB副本与本机forward升级后8表1024行原列摘要一致，回执在外部MigrationProof
+  authoritative_sources:
+  - title: 用户M6.5.2_FIX2 persistence lifecycle合同
+    reason: migration属于operator部署生命周期，startup不能自动修改schema
+  root_cause: DeferredCloudRepositories只在首次访问打开DB，未验证current与repository head
+  failed_attempts:
+  - 初版只有status GET携带readiness，selection替换状态会丢失UI阻断；永久负例后统一全部状态响应投影
+  repair_attempt_count: 2
+  final_fix: 唯一metadata-only readiness检查；旧或空DB明确拒绝；Settings-aware显式helper迁移；health与全部Cloud状态响应独立公开安全revision
+  regression_tests:
+  - backend/tests/unit/persistence/test_readiness.py
+  - backend/tests/unit/persistence/test_m63_migration.py
+  prohibited_patterns:
+  - FastAPI startup自动upgrade或create_all
+  - 删库或reseed替代forward migration
+  - 使用alembic.ini默认DB替代Settings实际路径
+  prevention_rules:
+  - Deploy后显式migration再readiness与启动，Chat在LLM和ExecuteQuery前fail closed
+  related_adr: ADR-012
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-22'
+    action: persistence_readiness_failure_first
+    version: M6.5.2_FIX2
+- id: ERR-652-016
+  title: Sidebar资源错误泄漏到chat-main
+  category: ERR
+  first_detected_version: M6.5.2_FIX2
+  symptom: History和Report失败在聊天左下角新增错误块，污染主聊天布局
+  local_evidence: be8b2218资源局部展示两RED；ef74981f专项56PASS；真实浏览器几何桌面及移动端资源503不改变chat-main
+  authoritative_sources:
+  - title: 用户M6.5.2_FIX2前端设计合同
+    reason: 各资源错误只归属对应Sidebar区域
+  root_cause: CloudWorkspace在chat-main末尾直接渲染historyError和reportError
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: Sidebar资源区单行灰色状态与独立retry icon，登录后异步加载且无需先选模型
+  regression_tests:
+  - frontend/src/components/CloudWorkspace.test.tsx
+  - scripts/manual_smoke/persistence_layout_browser_acceptance.mjs
+  prohibited_patterns:
+  - 在chat-main展示History或Report列表错误块
+  prevention_rules:
+  - 资源503不得改变聊天画布或使Catalog失效
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-22'
+    action: sidebar_resource_failure_first
+    version: M6.5.2_FIX2
+- id: ERR-652-017
+  title: Composer菜单锚定可变高度wrapper且宽度不一致
+  category: ERR
+  first_detected_version: M6.5.2_FIX2
+  symptom: 状态文字行数改变时popover漂移，数据和LLM菜单宽度不同
+  local_evidence: be8b2218锚定三RED；ef74981f专项56PASS；外部Visual geometry覆盖1280和390宽度与1/3/5行
+  authoritative_sources:
+  - title: 用户M6.5.2_FIX2 Composer anchor合同
+    reason: 只锚定输入栏，统一bounded宽度和vertical offset
+  root_cause: absolute菜单以包含status和selection的composer-wrap为基准
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: composer-anchor仅包含两菜单与输入栏，共用320px bounded宽度与8px offset
+  regression_tests:
+  - frontend/src/components/Composer.test.tsx
+  - scripts/manual_smoke/persistence_layout_browser_acceptance.mjs
+  prohibited_patterns:
+  - 按文字高度动态计算位置
+  - 将菜单absolute锚定composer-wrap
+  prevention_rules:
+  - DOM结构和真实浏览器geometry同时验证独立anchor
+  related_adr: ADR-020
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-22'
+    action: composer_anchor_failure_first
+    version: M6.5.2_FIX2
 - id: ERR-652-014
   title: MSAL销毁中的网络异常不能阻止本地凭据清空
   category: ERR

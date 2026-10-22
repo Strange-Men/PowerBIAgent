@@ -123,6 +123,7 @@ def _audit_database_and_reports(state_root: Path, violations: list[str]) -> None
     database = state_root / "persistence" / "powerbiagent.db"
     reports_root = state_root / "reports"
     managed_files: set[str] = set()
+    owner_directories: set[str] = set()
     if database.exists():
         try:
             with sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True) as conn:
@@ -133,16 +134,29 @@ def _audit_database_and_reports(state_root: Path, violations: list[str]) -> None
                     ).fetchall()
                 }
                 if "report_artifacts" in tables:
+                    columns = {row[1] for row in conn.execute('PRAGMA table_info(report_artifacts)')}
+                    if 'owner_id' in columns and 'resource_owners' in tables:
+                        owners = {row[0] for row in conn.execute('SELECT owner_id FROM resource_owners')}
+                        owner_directories = {owner.replace(':', '_') for owner in owners
+                            if isinstance(owner, str) and re.fullmatch(r'entra:[0-9a-f]{64}', owner)}
+                    owner_column = 'owner_id' if 'owner_id' in columns else "'local:legacy'"
                     rows = conn.execute(
-                        "SELECT report_id, relative_path FROM report_artifacts"
+                        f"SELECT report_id, relative_path, {owner_column} FROM report_artifacts"
                     ).fetchall()
-                    for report_id, relative_path in rows:
+                    for report_id, relative_path, owner_id in rows:
                         expected = f"{report_id}.html"
                         if relative_path != expected or not _REPORT_FILE.fullmatch(expected):
                             violations.append(f"report_metadata_path_invalid:{report_id}")
                             continue
+                        if owner_id != 'local:legacy':
+                            directory = owner_id.replace(':', '_') if isinstance(owner_id, str) else ''
+                            if directory not in owner_directories:
+                                violations.append(f'report_owner_invalid:{report_id}')
+                                continue
+                            expected = f'{directory}/{expected}'
                         managed_files.add(expected)
-                        if not (reports_root / expected).is_file():
+                        target = reports_root / expected
+                        if not target.is_file() or target.is_symlink():
                             violations.append(f"report_file_missing:{report_id}")
                 for table in (
                     "conversation_delete_intents",
@@ -155,15 +169,25 @@ def _audit_database_and_reports(state_root: Path, violations: list[str]) -> None
         except (OSError, sqlite3.Error):
             violations.append("persistence_governance_read_failed")
 
-    if reports_root.is_dir():
-        for path in reports_root.iterdir():
+    def audit_directory(directory):
+        for path in directory.iterdir():
+            relative = path.relative_to(reports_root).as_posix()
+            if path.is_symlink():
+                violations.append(f"unauthorized_report_artifact:{relative}")
+                continue
             if path.is_file() and path.suffix.casefold() == ".html":
-                if path.name not in managed_files:
-                    violations.append(f"orphan_report_html:{path.name}")
+                if relative not in managed_files:
+                    violations.append(f"orphan_report_html:{relative}")
             elif path.is_file():
-                violations.append(f"unauthorized_report_artifact:{path.name}")
+                violations.append(f"unauthorized_report_artifact:{relative}")
             elif path.is_dir():
-                violations.append(f"unauthorized_report_directory:{path.name}")
+                if directory == reports_root and path.name in owner_directories:
+                    audit_directory(path)
+                else:
+                    violations.append(f"unauthorized_report_directory:{relative}")
+
+    if reports_root.is_dir():
+        audit_directory(reports_root)
 
 
 def _audit_source_tree(project_root: Path, violations: list[str]) -> None:

@@ -2,7 +2,31 @@
 
 > Settings.version=M6.5.2；M6.5.2 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
 
-## 当前阶段 — M6.5.2_FIX：Cloud Product Runtime & Pilot Readiness Closure FINAL COMPLETE
+## 当前阶段 — M6.5.2_FIX2：Persistence Readiness + Cloud UX Layout Closure FINAL COMPLETE
+
+本轮独立授权，Settings.version保持M6.5.2；仅按本提交自身exact-SHA Full Validation、
+Remote Audit、HEAD=origin/main、worktree/staging clean与owned shutdown全部成立后生效。
+唯一readiness读取SQLite revision/table metadata并探测artifact root；startup不upgrade/create_all。
+旧/空DB返回PERSISTENCE_SCHEMA_OUTDATED；产品Chat在Core/LLM/ExecuteQuery前拒绝。
+同一工作目录及Settings环境显式运行`python scripts/prepare_persistence.py --upgrade`；目标
+严格来自PERSISTENCE_DATABASE_PATH/Settings，不继承alembic.ini默认URL。先停workers与备份，
+current=head后重启；health区分configuration_ready/persistence_ready，revision可安全诊断。
+本机真实DB已备份并forward到ab64d10e7f20；8张旧表1024行原列内容摘要一致，无owner重分配。
+History/Report登录后无须先选模型，各自异步加载及局部retry；错误不进入chat-main。
+两种Composer菜单仅锚定输入栏，320px bounded宽度/8px offset，文本行数不参与定位。
+Normal真实浏览器/DeepSeek/IQ/真实本地DB完整验收PASS；普通uvicorn与npm dev，真实.env
+凭据和既有local_state DB，公开Normal operator flags仅在启动进程显式配置，未改Secret。
+重启后一次Microsoft重登、模型选择前History/Report恢复，两指定英文查询、Report/View/
+Download、refresh/旧History、zh/en与Logout PASS。REAL_BROWSER_ACCEPTANCE=PASS；
+REAL_LOCAL_DB_REVISION=ab64d10e7f20；FABRIC_TEST_MODE=false；POWERBI_MODE=fabric_iq。
+无Mock、synthetic runtime、test-only DB或allowlist dependency；相关真实日志错误0。
+Backend04fe25ad=3959PASS/1SKIP/22warnings；Semantic819、Golden11/1manualSKIP、Frontend196
+及Typecheck/Lint/Build/治理门PASS。失败与warning保留，详见milestone；自身CI不可继承。
+证据与发布回执仅在外部PBIAgentTest/M652F2和M6.5.2_FIX2/Backup，避免循环自身SHA。
+M6.5.3部署必须Deploy→explicit Alembic migration→readiness→backend start→health ready。
+migration ≠ application startup；本轮不实施M6.5.3/M6.6。
+
+## 既有阶段 — M6.5.2_FIX：Cloud Product Runtime & Pilot Readiness Closure FINAL COMPLETE
 
 仅在本提交自身exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown
 全部成立后生效；最终自身SHA与远端回执保存在仓库外PBIAgentTest/M6.5.2FIX，不继承旧CI。

@@ -35,6 +35,8 @@ export interface CloudCatalogPage {
 }
 
 export interface CloudWorkspaceStatus {
+  persistence_ready?: boolean
+  persistence_reason?: string | null
   report_templates?: import('./types').ReportTemplateCatalog | null
   selected_model_key: string | null
   conversation_id: string | null

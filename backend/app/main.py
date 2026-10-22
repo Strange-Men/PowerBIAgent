@@ -144,9 +144,20 @@ async def lifespan(app: FastAPI):
         app.state.settings = get_settings()
 
     settings: Settings = app.state.settings
+    from backend.app.persistence.readiness import check_persistence, required
+    app.state.persistence_readiness = (
+        await asyncio.to_thread(check_persistence, settings)
+        if required(settings) and app.state.cloud_runtime_factory is None else None
+    )
+    if app.state.persistence_readiness is not None:
+        import logging
+        result = app.state.persistence_readiness
+        logging.getLogger(__name__).info(
+            'persistence_readiness ready=%s reason=%s current_revision=%s expected_revision=%s',
+            result.ready, result.reason, result.current_revision, result.expected_revision)
     if settings.identity_mode == IdentityMode.ENTRA_BFF:
         # Native service composition is safe while execution remains closed;
-        # no business storage is opened and no external generation occurs.
+        # Only schema readiness is inspected; no business rows or generation.
         service = AuthService(settings, app.state.identity_client or MsalIdentityClient(settings))
         app.state.auth_service = service
         from backend.app.powerbi.fabric_iq import FabricIQAdapterFactory

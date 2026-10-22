@@ -87,7 +87,16 @@ async def browse_catalog(request: Request, principal=Depends(require_principal))
 @router.get("/status")
 async def status(request: Request, principal=Depends(require_principal)):
     service, sid = await workspace(request)
-    return service.status(sid, principal)
+    return public_workspace_status(request, service.status(sid, principal))
+
+
+def public_workspace_status(request, value):
+    """Every selection/state response retains the independent storage gate."""
+    result = value.model_dump(mode='json') if hasattr(value, 'model_dump') else dict(value)
+    readiness = getattr(request.app.state, 'persistence_readiness', None)
+    if readiness is not None:
+        result.update(readiness.public())
+    return result
 
 
 @router.post("/selection")
@@ -106,7 +115,8 @@ async def select(request: Request, principal=Depends(require_principal)):
                 or not 0 <= body["expected_generation"] <= 2**53 - 1):
             raise ValueError()
     except (ValueError, UnicodeError): raise HTTPException(422, "invalid_cloud_request") from None
-    return await safe_call(service.select_with_templates(sid, principal, body["key"], expected_generation=body["expected_generation"]), context='selection')
+    return public_workspace_status(request, await safe_call(service.select_with_templates(
+        sid, principal, body["key"], expected_generation=body["expected_generation"]), context='selection'))
 
 
 @router.get("/llm-profiles")
@@ -131,6 +141,10 @@ async def product(request):
     if request.method=='GET' and await bounded_body(request,0): raise HTTPException(422,'invalid_cloud_request')
     service=getattr(request.app.state,'cloud_product_services',None)
     if service is None: raise AuthFailure('AUTH_FORBIDDEN',403)
+    readiness = getattr(request.app.state, 'persistence_readiness', None)
+    if readiness is not None and not readiness.ready:
+        from backend.app.persistence.readiness import PersistenceNotReady
+        raise typed_product_failure(PersistenceNotReady(readiness),readiness.reason,'persistence')
     return service,request.cookies.get(request.app.state.settings.auth_cookie_name)
 
 
@@ -177,7 +191,8 @@ async def open_resource_link(request:Request,principal=Depends(require_principal
     service,sid=await workspace(request)
     body=await body_as(request,ResourceLinkRequest)
     try:
-        return await safe_call(service.open_resource_link(sid,principal,body.url,expected_generation=body.expected_generation), context='selection')
+        return public_workspace_status(request, await safe_call(service.open_resource_link(
+            sid,principal,body.url,expected_generation=body.expected_generation), context='selection'))
     except ValueError: raise HTTPException(422,'unsupported_cloud_resource_link') from None
 
 
@@ -190,6 +205,7 @@ class CloudChatRequest(GenerationRequest):
 
 @cloud_operation
 async def product_call(operation, context='chat'):
+    from backend.app.persistence.readiness import PersistenceNotReady
     from backend.app.presentation.projection import PresentationUnavailableError
     from backend.app.conversation.models import ConversationNotFoundError,ConversationHistoryCorruptionError
     from backend.app.report.resources import ReportNotFoundError,ReportStorageError
@@ -198,6 +214,8 @@ async def product_call(operation, context='chat'):
     from backend.app.memory.request_fingerprint import IdempotencyConflictError
     try: return await safe_call(operation,context)
     except IdempotencyConflictError: raise HTTPException(409,'request_id_conflict') from None
+    except PersistenceNotReady as error:
+        raise typed_product_failure(error,error.readiness.reason,'persistence',context) from None
     except PresentationUnavailableError: raise HTTPException(404,'presentation_recipe_unavailable') from None
     except (ConversationNotFoundError,ReportNotFoundError): raise HTTPException(404,'resource_not_found') from None
     except (InvalidConversationCursorError,InvalidConversationQueryError): raise HTTPException(422,'invalid_cloud_query') from None
@@ -272,7 +290,7 @@ async def presentation(request_id:str,request:Request,principal=Depends(require_
 async def new_chat(request:Request,principal=Depends(require_principal)):
     body=await body_as(request,GenerationRequest)
     ws,sid=await workspace(request)
-    return await safe_call(ws.new_chat(sid,principal,body.expected_generation), context='chat')
+    return public_workspace_status(request, await safe_call(ws.new_chat(sid,principal,body.expected_generation), context='chat'))
 
 
 @router.post('/restore')
@@ -280,7 +298,8 @@ async def restore(request:Request,principal=Depends(require_principal)):
     if request.query_params: raise HTTPException(422,'invalid_cloud_request')
     body=await body_as(request,RestoreRequest)
     service,sid=await product(request)
-    return await product_call(service.restore(sid,principal,body.conversation_id,body.expected_generation), context='history')
+    return public_workspace_status(request, await product_call(service.restore(
+        sid,principal,body.conversation_id,body.expected_generation), context='history'))
 
 
 def page_query(request,*,managed=False,search=False):
@@ -337,7 +356,10 @@ async def mutate_resource(kind:str,resource_id:str,request:Request,action:str='d
     if action=='rename' and kind=='history' and len(body.title)>80:
         raise HTTPException(422,'invalid_cloud_request')
     service,sid=await product(request)
-    return public_product(await product_call(service.mutate_resource(sid,principal,kind,resource_id,action,**body.model_dump()), context='resource_mutation'))
+    result = public_product(await product_call(service.mutate_resource(sid,principal,kind,resource_id,action,**body.model_dump()), context='resource_mutation'))
+    if 'workspace_status' in result:
+        result['workspace_status'] = public_workspace_status(request, result['workspace_status'])
+    return result
 
 
 async def report_response(request,principal,report_id,download):

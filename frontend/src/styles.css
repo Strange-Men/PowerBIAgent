@@ -1300,13 +1300,39 @@ input:focus-visible {
 }
 
 .composer-wrap {
-  position: relative;
+  --composer-popover-width: 320px;
   z-index: 10;
   flex: 0 0 auto;
   width: min(960px, calc(100% - 48px));
   margin: 0 auto;
   padding: 16px 0 20px;
   background: linear-gradient(to bottom, rgb(255 255 255 / 0%), #fff 24%);
+}
+
+.composer-anchor {
+  position: relative;
+}
+
+.sidebar-resource-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sidebar-resource-status span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sidebar-resource-status button {
+  display: grid;
+  flex: 0 0 auto;
+  padding: 3px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
 }
 
 .composer {
@@ -1422,7 +1448,8 @@ input:focus-visible {
 
 .composer-popover {
   position: absolute;
-  bottom: calc(100% - 10px);
+  bottom: calc(100% + 8px);
+  width: min(var(--composer-popover-width), calc(100vw - 32px));
   max-height: min(480px, 65dvh);
   max-width: 100%;
   overflow-y: auto;
@@ -1435,13 +1462,11 @@ input:focus-visible {
 }
 
 .add-menu {
-  left: 4px;
-  width: 290px;
+  left: 0;
 }
 
 .model-menu {
-  right: 58px;
-  width: 220px;
+  right: 0;
 }
 
 .menu-group {
@@ -1710,9 +1735,7 @@ input:focus-visible {
   }
 
   .add-menu {
-    right: 0;
     left: 0;
-    width: auto;
   }
 
   .model-menu {

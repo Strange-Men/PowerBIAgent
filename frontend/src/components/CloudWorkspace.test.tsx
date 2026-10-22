@@ -41,6 +41,22 @@ describe('Normal product catalog integration',()=>{
     vi.mocked(api.readCloudWorkspaces).mockResolvedValue({items:[{key:'workspace-key',display_name:'Workspace',kind:'Workspace'}],partial:false,next_cursor:null} as never)
     vi.mocked(api.readCloudResources).mockResolvedValue({items:[{key:'report-candidate',display_name:'Report entry',kind:'Report'}],partial:false,next_cursor:null} as never)
   })
+  it.each(['history','report'] as const)('keeps %s failure in its own sidebar resource section before model selection',async kind=>{
+    const error=new api.ApiError('private',503,undefined,{code:'PERSISTENCE_SCHEMA_OUTDATED',stage:'internal',retryable:false,recovery_action:'none'})
+    vi.mocked(kind==='history' ? api.readCloudHistory : api.readCloudReports).mockRejectedValue(error)
+    render(<CloudWorkspace session={session} account={account} onAuthInvalid={vi.fn()} />)
+    const message=await screen.findByText('本地存储尚未完成升级，请完成数据库迁移后重试。')
+    expect(message.closest('.sidebar-section')).toBeInTheDocument()
+    expect(message.closest('.chat-main')).toBeNull()
+    expect(message.closest('.sidebar-section')?.textContent).toContain(kind==='history' ? '最近对话' : '最近报表')
+    expect(api.readCloudHistory).toHaveBeenCalledOnce()
+    expect(api.readCloudReports).toHaveBeenCalledOnce()
+    expect(api.selectCloudModel).not.toHaveBeenCalled()
+    expect(api.readCloudTemplates).not.toHaveBeenCalled()
+    fireEvent.click(message.parentElement!.querySelector('button')!)
+    await waitFor(()=>expect(kind==='history' ? api.readCloudHistory : api.readCloudReports).toHaveBeenCalledTimes(2))
+    expect(kind==='history' ? api.readCloudReports : api.readCloudHistory).toHaveBeenCalledOnce()
+  })
   it('starts with a normal empty state and binds the server model from an explicit report choice',async()=>{
     vi.mocked(api.selectCloudModel).mockImplementation(async()=>{
       vi.mocked(api.readCloudCatalog).mockResolvedValue(bound as never)

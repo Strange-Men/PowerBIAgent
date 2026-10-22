@@ -49,7 +49,14 @@ class AuthBoundaryMiddleware(BaseHTTPMiddleware):
                 await run_in_threadpool(service.csrf, request.cookies.get(settings.auth_cookie_name),
                                         request.headers.get("origin"), request.headers.get("x-csrf-token"))
             if path == "/health":
-                response = JSONResponse({"status": "ok", "identity_mode": "ENTRA_BFF", "ready": True})
+                persistence = getattr(request.app.state, 'persistence_readiness', None)
+                ready = persistence is None or persistence.ready
+                payload = {"status": "ok" if ready else "not_ready", "identity_mode": "ENTRA_BFF",
+                           "ready": ready, "configuration_ready": True,
+                           "reasons": [] if ready else [persistence.reason.lower()]}
+                if persistence is not None:
+                    payload.update(persistence.public())
+                response = JSONResponse(payload, status_code=200 if ready else 503)
             elif path.startswith("/api/") or path in {"/api", "/docs", "/redoc", "/openapi.json"}:
                 await run_in_threadpool(service.require_session, request.cookies.get(settings.auth_cookie_name))
                 from backend.app.api.cloud_routes import CONTROL_PLANE_ROUTES, is_product_route

@@ -4,6 +4,85 @@
 Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）。Settings.version=M6.5.2。
 用户于 2026-10-21 明确授权本阶段；不得进入 M6.5.3 / M6.6。
 
+## M6.5.2_FIX2 — Persistence Readiness + Cloud UX Layout Closure（2026-10-22）
+
+独立scope；Settings.version保持M6.5.2，不进入M6.5.3。fresh fetch后main/HEAD/origin/main为
+用户指定4a19aa5基线且worktree/staging clean。首次fetch网络失败后重试成功，不继承旧CI。
+
+根因A：Sidebar resource errors leaked into chat-main。History与Report各自在Sidebar资源区
+显示compact单行状态和retry icon；主聊天不渲染资源错误。登录后异步summary不依赖模型选择，
+资源failure不会阻塞Catalog、选择或Chat UI。
+
+根因B：Composer popover anchored to variable-height wrapper。独立composer-anchor仅含
+输入栏与两菜单，statusNotice在前、selection在后。统一320px bounded width/border/radius/
+shadow/8px offset，数据左对齐、LLM右对齐；不根据文字高度计算。
+
+根因C：Cloud Normal Product SQLite schema readiness missing。唯一check_persistence只读
+revision与正式table metadata，验证DB可访问和artifact root可创建/写；旧或空DB显式
+PERSISTENCE_SCHEMA_OUTDATED。native startup记录安全revision，health与Cloud status区分
+configuration与persistence；Chat路由在服务/LLM/ExecuteQuery/Facts/Memory前fail closed。
+允许的资源操作仍经原有principal/ownership/policy，readiness不赋权。
+
+operator helper显式`--upgrade`调用现有Alembic forward migration，目标来自当前Settings，
+不依赖ini默认值；支持自定义路径和特殊字符。无删库、重建或reseed，无startup自动迁移。
+本机真实DB先SQLite一致性备份并完整性验证；副本copy/hash核对后升级并比较8表1024行
+旧列内容摘要；随后真实DB升级到ab64d10e7f20并重复原列摘要、integrity与FK验证，全部PASS。
+legacy资源保留local:legacy owner，不自动归给登录principal。
+
+永久测试涵盖旧/空/head与缺表、artifact不可写、exact环境自定义路径/default untouched、
+代表性Conversation/Memory/Snapshot/Report旧行保留与新owner/binding表可用。
+failure-first后端645be674=6RED；前端be8b2218=5RED/51PASS；ef74981f=56PASS，
+a3c618f1后端专项19PASS；前端全量488b5fd5=196PASS，Typechecka80e033f/Lint9a1e508a/
+Buildc6af8bd9 PASS。外部Visual真实Chromium几何1280/390宽度、1/3/5行、两菜单等宽8px、
+资源503主canvas不变PASS。synthetic仅辅助，不能替代本机Normal真实浏览器验收。
+长证据目录下两报表邻近测试ToolExecutionError失败保留，短目录M652F2同测试通过，未改
+validator/断言/timeout；M652F2是本轮test runner短路径别名，原备份仍M6.5.2_FIX2。
+
+Microsoft当前官方[Fabric IQ合同](https://learn.microsoft.com/fabric/iq/connectors/fabric-iq-mcp)
+fresh重验：delegated current-principal、RLS/OLS及只读消费保持；没有新权限、Provider或
+事实链变更。[Alembic官方](https://alembic.sqlalchemy.org/en/latest/cookbook.html)支持显式
+programmatic Config/upgrade。M6.5.3合同：Deploy→explicit migration→readiness→backend
+start→health ready；migration ≠ application startup，仅路线不实施。
+
+真实本地Normal报告暴露既有Artifact Governance仍按flat文件查找，误报正式principal目录。
+69d5559f失败和4aca84e6永久RED保留；只读audit按registered owner匹配真实namespace，
+未注册目录/嵌套目录/孤儿文件继续拒绝，symlink明确拒绝。4d0165fc专项26PASS、4df229a4
+真实Artifact gate PASS；不删除或迁走真实产品报告。后端完整门在该最小治理修复后重跑。
+1ef59f22完整后端3957PASS/1SKIP/22warnings；增加空文件DB用例后e22aa59a专项9PASS。
+b5c6dcd4完整门3958PASS/1SKIP但既有Local MCP短TTL用例一FAIL，整轮FAIL保留；b053cdea
+同例独立原命令PASS。未修改Local Provider、TTL、sleep、断言或timeout，完整门再次fresh重跑。
+Semantic41eb5912=819PASS，Goldend95510dc=11PASS/1manualSKIP；Persistence/Cloud Runtime/
+Failure Classification/Metadata Amplification/English Natural Query组合8f7a10fe=424PASS/1SKIP。
+Securitydcc7e1c9、Architecture949130ef、Documentationbc70c5ce、Ledgercf83f742、
+Localizationa3be8597 PASS；最终文档及staging后再核对治理。
+最终diff发现selection响应会覆盖readiness提示，4dc35829永久四RED；统一status/selection/
+link/new-chat/restore/resource mutation的API状态投影后bd4e4f8e邻近PASS。
+c3979089旧源码完整门主动中止，不计PASS；owned process/temp均已清理，按最终源码重新运行。
+不改Workspace service或factual authority；普通uvicorn已重启，真实产品流程独立重验。
+
+最终后端04fe25ad=3959PASS/1SKIP/22warnings，runner temp_cleanup=true；最终状态响应邻近
+bd4e4f8e=35PASS。无Local Provider/TTL/sleep/断言/timeout修改，先前失败与中止保留。
+
+REAL_BROWSER_ACCEPTANCE=PASS；REAL_LOCAL_DB_REVISION=ab64d10e7f20；
+FABRIC_TEST_MODE=false；POWERBI_MODE=fabric_iq。使用真实.env凭据、既有真实本地DB、普通
+`python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000`（仅关闭敏感access log）
+与`npm run dev`。公开Normal operator flags仅在进程显式启用，Secret未修改；没有测试宿主、
+Mock、synthetic runtime、test-only DB或allowlist dependency。最终代码重启后一次真实Admin
+登录，未选模型时History/Report summary自动恢复；选择Online Retail II，指定总额和year
+英文问题、正式Report、浏览器View/Download、refresh/旧History、en-US/zh-CN与Logout均PASS。
+最新三正式快照均completed/real/deepseek/is_mock=false/Memory committed；只记录安全元数据。
+真实backend-final.log中PERSISTENCE_UNAVAILABLE/RESOURCE_NOT_ACCESSIBLE/cloud_failure/ERROR
+均0；既有MSAL warning保留。最终再次核对8张旧表1024行原列摘要、integrity/FK全PASS。
+首次额外措辞`Generate a report with the Total Sales KPI.`出现SemanticInterpretationError/
+VALIDATION_FAILED，ZERO Memory；截图原件保留。改用既有明确正式报告措辞后通过，并在最终
+代码重启后的新登录会话完整复跑成功；未修订理解/事实链或隐去失败。
+浏览器Microsoft账户页的控制读取timeout通过重新绑定及DOM读取恢复，不改认证配置。
+真实截图、下载hash、geometry、native launch manifest与acceptance JSON均在外部RealBrowser。
+
+M6.5.2_FIX2 FINAL COMPLETE仅在自身exact-SHA Full Validation、Remote Audit、
+HEAD=origin/main、worktree/staging clean及owned shutdown全部成立后生效；不继承旧CI。
+备份/迁移回执在外部M6.5.2_FIX2，自动验证及真实浏览器证据在外部M652F2。
+
 ## Initial Reality Audit 与 continuation
 
 2026-10-21 `git fetch origin` 成功，main、HEAD 与 origin/main 均为
