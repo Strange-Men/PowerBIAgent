@@ -6,7 +6,7 @@ from backend.app.intent.semantic_interpreter import SemanticFrame, SemanticEvide
 
 
 def frame(literal,field='Country'):
-    return SemanticFrame(mode='data',query_shape='scalar',member_mentions=(literal,),
+    return SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(), mode='data',query_shape='scalar',member_mentions=(literal,),
         filter_mentions=(SemanticFilterMention(field_mention=field,member_mention=literal,evidence_span=literal),),
         evidence_spans=(SemanticEvidenceSpan(slot='query_shape',text='查询'),
             SemanticEvidenceSpan(slot='member',text=literal),SemanticEvidenceSpan(slot='filter',text=literal)))
@@ -36,7 +36,7 @@ def test_general_or_unbacked_member_never_becomes_targeted_input():
         capture_frame('查询 Country Germany',frame('France'))
         assert requested_literals('Sales','Country')==()
     with literal_scope():
-        capture_frame('有哪些 Country',SemanticFrame(mode='data',query_shape='entity_list',
+        capture_frame('有哪些 Country',SemanticFrame(relation='fresh_question', changed_slots=(), referenced_context_slots=(), mode='data',query_shape='entity_list',
             dimension_mentions=('Country',),evidence_spans=(SemanticEvidenceSpan(slot='dimension',text='Country'),
                 SemanticEvidenceSpan(slot='query_shape',text='有哪些'))))
         assert requested_literals('Sales','Country')==()

@@ -108,7 +108,7 @@ async def test_multiple_literals_each_require_independent_exact_proof(harness,ou
             return response(literal, values=values)
         return await original(name,args)
     transport.call=search
-    draft=SemanticFrame(mode='data',query_shape='member_set',filter_mentions=(
+    draft=SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(), mode='data',query_shape='member_set',filter_mentions=(
         SemanticFilterMention(field_mention='Category',member_mention='France',evidence_span='France'),
         SemanticFilterMention(field_mention='Category',member_mention=second,evidence_span=second)))
     with literal_scope():
@@ -143,7 +143,7 @@ async def test_existing_grounding_consumes_targeted_runtime_proof(harness,outcom
     if outcome=='fuzzy': candidates[0]['Value']='France extended'
     transport.query=response(values=candidates)
     message='查询 Count，Category France'
-    draft=SemanticFrame(mode='data',query_shape='scalar',measure_mentions=('Count',),
+    draft=SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(), mode='data',query_shape='scalar',measure_mentions=('Count',),
         filter_mentions=(SemanticFilterMention(field_mention='Category',member_mention='France',evidence_span='France'),),
         evidence_spans=(SemanticEvidenceSpan(slot='measure',text='Count'),
             SemanticEvidenceSpan(slot='filter',text='France'),SemanticEvidenceSpan(slot='query_shape',text='查询')))

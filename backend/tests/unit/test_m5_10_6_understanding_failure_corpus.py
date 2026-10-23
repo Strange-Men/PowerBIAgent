@@ -267,6 +267,9 @@ async def test_c_ground_frame_binds_only_runtime_verified_members(
         ),
     )
     frame = SemanticFrame(
+            relation=TurnRelation.FRESH_QUESTION,
+            changed_slots=(),
+            referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.SCALAR,
         measure_mentions=("销售额",),
@@ -317,6 +320,9 @@ async def test_d_generic_sales_does_not_accept_hallucinated_ranking_shape() -> N
     draft = await _interpret(
         question,
         SemanticFrame(
+            relation=TurnRelation.FRESH_QUESTION,
+            changed_slots=(),
+            referenced_context_slots=(),
             mode=SemanticInterpretationMode.DATA,
             query_shape=None,
             time_mentions=("2026年",),
@@ -344,6 +350,9 @@ async def test_d_generic_sales_does_not_accept_hallucinated_ranking_shape() -> N
 async def test_d_adversarial_scalar_to_ranking_requires_ranking_structure() -> None:
     question = "2026年销售额情况"
     hallucinated = SemanticFrame(
+            relation=TurnRelation.FRESH_QUESTION,
+            changed_slots=(),
+            referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.RANKING,
         measure_mentions=("销售额",),
@@ -374,6 +383,9 @@ async def test_d_adversarial_scalar_to_ranking_requires_ranking_structure() -> N
 async def test_d_omitted_region_filter_is_coverage_failure() -> None:
     question = "2026年华南销售额是多少"
     omitted_filter = SemanticFrame(
+            relation=TurnRelation.FRESH_QUESTION,
+            changed_slots=(),
+            referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.SCALAR,
         measure_mentions=("销售额",),
@@ -398,6 +410,9 @@ async def test_d_omitted_region_filter_is_coverage_failure() -> None:
 async def test_d_filter_field_evidence_cannot_be_invented_outside_current_message() -> None:
     question = "华南销售额是多少"
     forged_field = SemanticFrame(
+            relation=TurnRelation.FRESH_QUESTION,
+            changed_slots=(),
+            referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.SCALAR,
         measure_mentions=("销售额",),
@@ -428,6 +443,9 @@ async def test_e_clear_scalar_is_a_language_frame_not_a_query_plan(question: str
     draft = await _interpret(
         question,
         SemanticFrame(
+            relation=TurnRelation.FRESH_QUESTION,
+            changed_slots=(),
+            referenced_context_slots=(),
             mode=SemanticInterpretationMode.DATA,
             query_shape=QueryShape.SCALAR,
             measure_mentions=("销售额",),
@@ -487,6 +505,9 @@ async def test_g_why_decline_is_explain_change_not_a_filter_guess() -> None:
     draft = await _interpret(
         question,
         SemanticFrame(
+            relation=TurnRelation.FRESH_QUESTION,
+            changed_slots=(),
+            referenced_context_slots=(),
             mode=SemanticInterpretationMode.DATA,
             query_shape=QueryShape.SCALAR,
             measure_mentions=("销售额",),

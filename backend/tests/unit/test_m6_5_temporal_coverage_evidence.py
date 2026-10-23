@@ -52,7 +52,7 @@ def test_implicit_temporal_axis_remains_subject_to_existing_runtime_binding(shap
 
 @pytest.mark.asyncio
 async def test_final_coverage_failure_preserves_evidence_without_creating_facts():
-    frame = SemanticFrame.model_validate({'mode': 'data', 'query_shape': 'scalar',
+    frame = SemanticFrame.model_validate({'relation': 'fresh_question', 'changed_slots': [], 'referenced_context_slots': [], 'mode': 'data', 'query_shape': 'scalar',
         'measure_mentions': ['销售额'], 'evidence_spans': [
             {'slot': 'measure', 'text': '销售额'}, {'slot': 'query_shape', 'text': '多少'}]})
     with pytest.raises(SemanticInterpretationError) as caught:

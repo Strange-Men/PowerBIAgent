@@ -50,7 +50,7 @@ class _EmptyOutput(BaseModel):
 
 async def _understand_as_scalar(**_: object) -> dict[str, object]:
     return {
-        "_semantic_frame": SemanticFrame(
+        "_semantic_frame": SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
             mode=SemanticInterpretationMode.DATA,
             query_shape=QueryShape.SCALAR,
             measure_mentions=("销售额",),

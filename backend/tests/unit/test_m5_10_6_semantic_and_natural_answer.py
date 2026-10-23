@@ -92,7 +92,7 @@ def test_unseen_general_language_enters_open_interpreter_not_business_default():
 
 
 def test_semantic_frame_mode_is_the_only_general_business_boundary():
-    business = SemanticFrame(
+    business = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.SCALAR,
         measure_mentions=("销售额",),
@@ -101,7 +101,7 @@ def test_semantic_frame_mode_is_the_only_general_business_boundary():
             SemanticEvidenceSpan(slot="measure", text="销售额"),
         ),
     )
-    general = SemanticFrame(
+    general = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.GENERAL,
         general_fact_scope=GeneralFactScope.TIME_STABLE_OR_NONFACTUAL,
         general_answer="当然，我们聊点轻松的。",
@@ -113,7 +113,7 @@ def test_semantic_frame_mode_is_the_only_general_business_boundary():
 @pytest.mark.asyncio
 async def test_open_interpreter_emits_one_frame_then_veto_only_coverage():
     provider = _QueuedProvider(
-        SemanticFrame(
+        SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
             mode=SemanticInterpretationMode.DATA,
             query_shape=QueryShape.SCALAR,
             measure_mentions=("华南销售额",),
@@ -144,7 +144,7 @@ async def test_open_interpreter_emits_one_frame_then_veto_only_coverage():
     [
         (
             "你怎样帮助我理解一张报表",
-            SemanticFrame(
+            SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.GENERAL,
                 general_fact_scope=GeneralFactScope.TIME_STABLE_OR_NONFACTUAL,
                 general_answer="我可以解释指标、筛选、趋势和需要核验的问题。",
@@ -153,7 +153,7 @@ async def test_open_interpreter_emits_one_frame_then_veto_only_coverage():
         ),
         (
             "帮我分析这张报表里今年销售额为什么下降",
-            SemanticFrame(
+            SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=QueryShape.SCALAR,
                 measure_mentions=("销售额",),
@@ -166,7 +166,7 @@ async def test_open_interpreter_emits_one_frame_then_veto_only_coverage():
         ),
         (
             "当前报表销售额最高的区域",
-            SemanticFrame(
+            SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=QueryShape.SCALAR,
                 measure_mentions=("销售额",),

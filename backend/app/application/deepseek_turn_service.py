@@ -112,6 +112,8 @@ from backend.app.query_plan.completeness import (
 )
 from backend.app.query_plan.grounding import (
     BoundedLLMObjectSelector,
+    GroundingEvidenceError,
+    GroundingOutcome,
     GroundingStatus,
     SemanticGroundingService,
 )
@@ -648,9 +650,6 @@ class LLMTurnService:
 
         unsupported_reason = deterministic_unsupported_reason(message)
         if unsupported_reason is not None:
-            await self.pipeline.clear_pending_clarification(
-                effective_conv_id, runtime_mode
-            )
             trace.record(
                 "request_completed",
                 trace_id=trace_id,
@@ -1019,6 +1018,16 @@ class LLMTurnService:
                     today=self._application_today,
                 )
 
+                async def _retain_pending(outcome, required_missing_slots=()):
+                    partial = PendingClarificationService().merge(
+                        previous=pending_clarification, outcome=outcome,
+                        user_input=message, conversation_id=effective_conv_id,
+                        request_id=effective_req_id, semantic_model_key=semantic_model_key,
+                        schema_fingerprint=catalog.schema_fingerprint, runtime_mode=runtime_mode,
+                        intent=intent.intent.value, committed=semantic_committed,
+                        semantic_frame=semantic_frame, required_missing_slots=required_missing_slots)
+                    await self.pipeline.save_pending_clarification(partial.context, runtime_mode)
+
                 async def _member_lookup(
                     field: Any, limit: int
                 ) -> ColumnMembersResult:
@@ -1037,17 +1046,29 @@ class LLMTurnService:
                             controller=controller,
                         )
 
-                with measure_performance("grounding"):
-                    grounding = await grounding_service.ground_frame(
-                        semantic_input,
-                        semantic_frame,
-                        semantic_committed,
-                        _member_lookup,
-                        pending=pending_clarification,
-                        query_shape=(
-                            grounding_query_shape
-                        ),
-                    )
+                from backend.app.powerbi.fabric_iq import FabricIQPowerBIAdapter
+                if isinstance(self.powerbi, FabricIQPowerBIAdapter):
+                    async def _member_discovery(literal):
+                        return await self.tool_gateway.execute(TOOL_NAME_MEMBERS, exec_ctx,
+                            ColumnMembersRequest(semantic_model_key=semantic_model_key,search_literal=literal),
+                            trace=trace,controller=controller)
+                    grounding_service.member_discovery = _member_discovery
+
+                try:
+                    with measure_performance("grounding"):
+                        grounding = await grounding_service.ground_frame(
+                            semantic_input,
+                            semantic_frame,
+                            semantic_committed,
+                            _member_lookup,
+                            pending=pending_clarification,
+                            query_shape=(
+                                grounding_query_shape
+                            ),
+                        )
+                except GroundingEvidenceError as exc:
+                    await _retain_pending(exc.outcome)
+                    raise exc.cause
                 semantic_audit["grounded_delta"] = (
                     grounding.delta.model_dump(mode="json")
                     if grounding.delta is not None
@@ -1142,10 +1163,12 @@ class LLMTurnService:
                     and item.canonical_object is not None
                     and item.phrase.strip()
                 }
+                # Persist the latest grounded attempt before every subsequent
+                # validation/execution failure boundary. Only successful commit
+                # or an explicit semantic reset can discharge this context.
+                if grounding.pending_eligible or pending_clarification is not None:
+                    await _retain_pending(grounding)
                 if not grounding.pending_eligible:
-                    await self.pipeline.clear_pending_clarification(
-                        effective_conv_id, runtime_mode
-                    )
                     await self.pipeline.mark_memory_failed(
                         effective_req_id,
                         runtime_mode,
@@ -1258,8 +1281,8 @@ class LLMTurnService:
                     # A clarification chain owns only explicitly verified slots;
                     # unrelated committed business slots cannot leak into it.
                     transition_base = None
-                    await self.pipeline.clear_pending_clarification(
-                        effective_conv_id, runtime_mode
+                    await self.pipeline.save_pending_clarification(
+                        clarification_merge.context, runtime_mode
                     )
                 if transition_delta is None:
                     raise ValueError("semantic_grounding_delta_missing")
@@ -1432,9 +1455,15 @@ class LLMTurnService:
                     shape_report.model_dump(mode="json")
                 )
             except CanonicalShapeCompletenessError as e:
-                await self.pipeline.clear_pending_clarification(
-                    effective_conv_id, runtime_mode
-                )
+                missing_slot = ('time' if e.clarification_reason is ClarificationReason.INCOMPLETE_TIME_RANGE
+                    else 'filter' if e.clarification_reason in {
+                        ClarificationReason.FILTER_FIELD_UNRESOLVED, ClarificationReason.INCOMPLETE_MEMBER_SET}
+                    else 'measure' if e.clarification_reason is ClarificationReason.MEASURE_UNRESOLVED
+                    else 'dimension')
+                await _retain_pending(GroundingOutcome(status=GroundingStatus.UNRESOLVED,
+                    delta=grounding.delta, object_results=grounding.object_results,
+                    member_results=grounding.member_results,clarification_reason=e.clarification_reason),
+                    [missing_slot])
                 await self.pipeline.mark_memory_failed(
                     effective_req_id,
                     runtime_mode,
@@ -2108,6 +2137,7 @@ class LLMTurnService:
                 source_mode=self._source_mode, collector=collector,
             )
 
+        await self.pipeline.clear_pending_clarification(effective_conv_id, runtime_mode)
         controller.transition(TurnState.COMPLETED)
         semantic_audit.update({
             "dax_executed": True,
@@ -2857,6 +2887,7 @@ class LLMTurnService:
                 collector=collector,
             )
 
+        await self.pipeline.clear_pending_clarification(effective_conv_id, runtime_mode)
         controller.transition(TurnState.COMPLETED)
         trace.record(
             "request_completed",

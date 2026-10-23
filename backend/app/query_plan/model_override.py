@@ -53,13 +53,14 @@ def resolve_model_override(context: ModelSemanticContext, raw: dict[str, Any]) -
         registry = ModelOverrideRegistry.model_validate(raw)
     except ValueError as exc:
         raise GlossaryCatalogError("override_registry_invalid") from exc
-    selected = [entry for entry in registry.overrides if entry.semantic_model_key == context.semantic_model_key]
+    selected = [entry for entry in registry.overrides
+                if entry.semantic_model_key in {context.semantic_model_key, context.resource_identity}]
     if not selected:
         return None
     if len(selected) != 1:
         raise GlossaryCatalogError("override_model_identity_conflict")
     binding = selected[0]
-    if binding.runtime_identity != context.runtime_identity:
+    if binding.runtime_identity not in {context.runtime_identity, context.resource_identity}:
         raise GlossaryCatalogError("override_model_identity_mismatch")
     if binding.schema_fingerprint != context.schema_fingerprint:
         raise GlossaryCatalogError("override_schema_fingerprint_mismatch")
@@ -77,8 +78,8 @@ def resolve_model_override(context: ModelSemanticContext, raw: dict[str, Any]) -
             raise GlossaryCatalogError("override_object_conflict")
         objects[object_id] = language
     return ModelBusinessOverride(
-        version=2, semantic_model_key=binding.semantic_model_key,
-        runtime_identity=binding.runtime_identity,
+        version=2, semantic_model_key=context.semantic_model_key,
+        runtime_identity=context.runtime_identity,
         schema_fingerprint=binding.schema_fingerprint, objects=objects,
     ).model_dump(exclude_none=True)
 

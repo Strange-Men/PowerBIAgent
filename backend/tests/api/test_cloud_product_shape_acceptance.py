@@ -34,7 +34,7 @@ def test_eight_shapes_in_formal_cloud_chain(factual_product,monkeypatch,shape):
     original=llm.generate
     async def generate(request,output_type):
         if output_type is SemanticFrame and shape in {QueryShape.MEMBER_SET,QueryShape.FILTERED_AGGREGATION}:
-            frame=SemanticFrame(mode='data',query_shape=shape,measure_mentions=('PassRatio',),
+            frame=SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(), mode='data',query_shape=shape,measure_mentions=('PassRatio',),
                 member_mentions=('甲站','乙站'),filter_mentions=tuple(SemanticFilterMention(
                     member_mention=value,evidence_span=value) for value in ('甲站','乙站')),
                 evidence_spans=(SemanticEvidenceSpan(slot='measure',text='PassRatio'),
@@ -111,7 +111,7 @@ def test_formal_followup_inherits_only_verified_scope(factual_product,monkeypatc
             from backend.app.query_plan.grounding import SemanticEquivalenceVeto
             return LLMResponse(content='{}',model='mock-llm',structured=SemanticEquivalenceVeto(decision='ACCEPT',mismatch='NONE'))
         if output_type is SemanticFrame and '那办公用品呢' in request.messages[-1]['content']:
-            return LLMResponse(content='{}',model='mock-llm',structured=SemanticFrame(mode='data',
+            return LLMResponse(content='{}',model='mock-llm',structured=SemanticFrame(changed_slots=(), mode='data',
                 relation=TurnRelation.FOLLOW_UP,query_shape=QueryShape.SCALAR,
                 referenced_context_slots=('measure',),
                 filter_mentions=(SemanticFilterMention(field_mention=None,member_mention='办公用品',evidence_span='办公用品'),),

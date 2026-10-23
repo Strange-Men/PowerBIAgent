@@ -1,5 +1,15 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
+## 当前工作 — FIX3 Round 1 收口后 STOP
+
+根因与回归映射见 [Round 1 audit](milestones/m6/m6_5_2_fix3_round1_audit.md)。
+Online Retail 四条和目录选取的「PBI_实战1_快速穿越」四条已通过真实产品链路，
+未给陌生模型增加 hardcode/glossary/override。发布须自身 exact-SHA CI 与 Remote Audit。
+用户明确要求保留主页服务用于人工提问；不以 shutdown 作为本轮演示交付条件。
+`.env.example` 用户确认无真实凭据并授权原样提交；Rescue 保留。
+Getting Started 模型的格式化货币返回被严格拒绝，留 locale/format backlog，不放宽 Facts。
+本轮完成即 STOP；不继续 Round 2/FIX4，不重复 Full Backend 或扩展验收矩阵。
+
 > Settings.version=M6.5.2；M6.5.2 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
 
 ## 当前阶段 — M6.5.2_FIX2：Persistence Readiness + Cloud UX Layout Closure FINAL COMPLETE

@@ -122,6 +122,15 @@ class GroundingOutcome(BaseModel):
     pending_eligible: bool = True
 
 
+class GroundingEvidenceError(Exception):
+    """Retain proved partial slots while the existing tool failure propagates."""
+
+    def __init__(self, cause: Exception, outcome: GroundingOutcome):
+        super().__init__(type(cause).__name__)
+        self.cause = cause
+        self.outcome = outcome
+
+
 class CandidateSelection(BaseModel):
     outcome: Literal["RESOLVED", "AMBIGUOUS", "UNRESOLVED"]
     candidate_id: str | None = None
@@ -1403,10 +1412,12 @@ class SemanticGroundingService:
         *,
         selector: BoundedLLMObjectSelector | None = None,
         today: Callable[[], date] = date.today,
+        member_discovery: Callable[[str], Awaitable[ColumnMembersResult]] | None = None,
     ):
         self.catalog = catalog
         self.objects = ObjectGrounder(catalog, selector)
         self.time = TimeGrounder(today)
+        self.member_discovery = member_discovery
 
     def ground_time_scope(
         self,
@@ -1527,6 +1538,19 @@ class SemanticGroundingService:
         # by SemanticFrame evidence. Preserve them even when another required
         # slot is still unresolved so a pending chain can be completed without
         # asking the user to repeat TopN/direction.
+        original_lookup = member_lookup
+
+        def evidence_failure(exc: Exception) -> GroundingEvidenceError:
+            return GroundingEvidenceError(exc, GroundingOutcome(
+                status=GroundingStatus.UNRESOLVED, delta=delta,
+                object_results=list(object_results), member_results=list(member_results)))
+
+        async def member_lookup(field: CatalogObject, limit: int) -> ColumnMembersResult:
+            try:
+                return await original_lookup(field, limit)
+            except Exception as exc:
+                raise evidence_failure(exc) from exc
+
         if frame.ranking_intent is not None:
             delta.sort = frame.ranking_intent.direction
             delta.sort_specified = frame.ranking_intent.direction is not None
@@ -1686,6 +1710,17 @@ class SemanticGroundingService:
                 # trend shape, not another interpretation of the input text.
                 delta.dimension_order = "asc"
 
+        # A current exact qualified date reference is explicit user evidence,
+        # even when the language draft retained only the year in time_mentions.
+        # This does not infer an omitted date role from a field/table name.
+        date_evidence = " ".join(frame.time_mentions)
+        for obj in self.catalog.by_type(SemanticObjectType.FIELD):
+            if "date" not in obj.data_type.casefold() and "time" not in obj.data_type.casefold():
+                continue
+            for reference in (f"{obj.table_name}[{obj.canonical_name}]",
+                    f"'{obj.table_name}'[{obj.canonical_name}]"):
+                if reference in user_input:
+                    date_evidence += " " + reference
         temporal_date_result: ObjectGroundingResult | None = None
         if (
             effective_shape in {QueryShape.TREND, QueryShape.BOUNDED_TREND}
@@ -1696,7 +1731,7 @@ class SemanticGroundingService:
             # runtime metadata; the LLM must not invent a schema-level month
             # field merely to make the request executable.
             temporal_date_result = self._resolve_date_field(
-                " ".join(frame.time_mentions) or user_input
+                date_evidence or user_input
             )
             object_results.append(temporal_date_result)
             if (
@@ -1711,7 +1746,6 @@ class SemanticGroundingService:
                     [],
                     reason=ClarificationReason.INCOMPLETE_TIME_RANGE,
                     delta=delta,
-                    pending_eligible=False,
                 )
             grouping_result = self._resolve_temporal_grouping(
                 temporal_date_result.canonical_object,
@@ -1750,7 +1784,6 @@ class SemanticGroundingService:
                         else ClarificationReason.DIMENSION_UNRESOLVED
                     ),
                     delta=delta,
-                    pending_eligible=False,
                 )
             grouping = grouping_result.canonical_object
             grounded_dimensions.append(grouping.canonical_name)
@@ -1796,6 +1829,9 @@ class SemanticGroundingService:
             for member in frame.member_mentions
             if member not in represented
         )
+        if not mentions and pending is not None and frame.relation is not TurnRelation.FRESH_QUESTION:
+            mentions.extend((item.field_mention,item.member_mention,item.operator)
+                for item in pending.member_obligations)
         grounded_filters: list[StructuredFilter] = []
         filter_field_ids: set[str] = set()
         for field_mention, member_mention, operator in mentions:
@@ -1813,8 +1849,48 @@ class SemanticGroundingService:
             proven_member: MemberGroundingResult | None = None
             runtime_literal_field: ObjectGroundingResult | None = None
             runtime_literal_complete_no_match = False
+            if not field_mention and self.member_discovery is not None:
+                # Resolve the language role against the full eligible catalog,
+                # independently of ValueSearch's non-exhaustive hit list. The
+                # existing object grounder remains the only selector authority.
+                semantic_field = await self.objects.select_bounded(
+                    member_mention, user_input, SemanticObjectType.FIELD, "filter_field"
+                )
+                try:
+                    candidates = await self.member_discovery(member_mention)
+                except Exception as exc:
+                    raise evidence_failure(exc) from exc
+                # ValueSearch proves existence, never absence in other fields.
+                # The independent full-catalog semantic decision must agree;
+                # multiple exact hits still require clarification.
+                ids = tuple(dict.fromkeys(
+                    f"field:{item.table_name}:{item.field_name}"
+                    for item in candidates.field_candidates
+                    if candidates.semantic_model_key == self.catalog.semantic_model_key
+                    and candidates.source_mode == "real"
+                    and item.canonical_value == member_mention
+                    and self.catalog.get(f"field:{item.table_name}:{item.field_name}") is not None
+                ))
+                if (len(ids) == 1 and semantic_field.status == GroundingStatus.RESOLVED
+                        and semantic_field.canonical_object is not None
+                        and semantic_field.canonical_object.object_id == ids[0]):
+                    runtime_literal_field = semantic_field.model_copy(update={
+                        "method": "catalog_semantics_runtime_exact_member"})
+                    field = semantic_field.canonical_object
+                    proven_member = MemberGrounder.resolve(field, member_mention,
+                        ColumnMembersResult(semantic_model_key=self.catalog.semantic_model_key,
+                            table_name=field.table_name, field_name=field.canonical_name,
+                            values=[member_mention], truncated=True, source_mode="real"))
+                else:
+                    status = GroundingStatus.AMBIGUOUS if len(ids) > 1 else GroundingStatus.UNRESOLVED
+                    object_results.append(ObjectGroundingResult(status=status,role="filter_field",
+                        phrase=member_mention,candidate_ids=ids,method="runtime_member_candidates_non_exhaustive"))
+                    return self._clarification(status,object_results,member_results,
+                        clarification_question(ClarificationReason.FILTER_FIELD_UNRESOLVED),[],
+                        reason=ClarificationReason.FILTER_FIELD_UNRESOLVED,delta=delta)
             if (
                 not field_mention
+                and runtime_literal_field is None
                 and committed is None
                 and pending is None
                 and effective_shape not in {
@@ -1894,9 +1970,11 @@ class SemanticGroundingService:
                 runtime_matches: list[
                     tuple[CatalogObject, MemberGroundingResult]
                 ] = []
+                competing_fields_excluded = True
                 for object_id in field_result.candidate_ids:
                     candidate = self.catalog.get(object_id)
                     if candidate is None:
+                        competing_fields_excluded = False
                         continue
                     candidate_members = await member_lookup(candidate, 100)
                     member_match = MemberGrounder.resolve(
@@ -1904,7 +1982,9 @@ class SemanticGroundingService:
                     )
                     if member_match.status == GroundingStatus.RESOLVED:
                         runtime_matches.append((candidate, member_match))
-                if len(runtime_matches) == 1:
+                    elif candidate_members.truncated:
+                        competing_fields_excluded = False
+                if len(runtime_matches) == 1 and competing_fields_excluded:
                     field_result = ObjectGrounder._resolved(
                         "filter_field",
                         member_mention,
@@ -2014,9 +2094,13 @@ class SemanticGroundingService:
             frame.relation in {TurnRelation.FOLLOW_UP, TurnRelation.REPLACE}
             and {"time", "time_range"}.intersection(frame.referenced_context_slots)
         ) else None
-        if frame.time_intent is not None:
+        time_intent = frame.time_intent or (
+            pending.time_obligation if pending is not None
+            and frame.relation is not TurnRelation.FRESH_QUESTION else None
+        )
+        if time_intent is not None:
             date_result = temporal_date_result or self._resolve_date_field(
-                " ".join(frame.time_mentions)
+                date_evidence
             )
             if temporal_date_result is None:
                 object_results.append(date_result)
@@ -2031,16 +2115,16 @@ class SemanticGroundingService:
                     delta=delta,
                 )
             time_range = self.time.ground(
-                frame.time_intent.expression,
+                time_intent.expression,
                 date_result.canonical_object,
-                frame.time_intent,
+                time_intent,
                 reference_time_range=reference_time_range,
             )
             if time_range is None:
                 question = (
-                    f"请明确是哪一年的{frame.time_intent.month}月。"
-                    if frame.time_intent.kind is TimeIntentKind.ABSOLUTE_MONTH
-                    and frame.time_intent.year is None
+                    f"请明确是哪一年的{time_intent.month}月。"
+                    if time_intent.kind is TimeIntentKind.ABSOLUTE_MONTH
+                    and time_intent.year is None
                     else clarification_question(ClarificationReason.INCOMPLETE_TIME_RANGE)
                 )
                 return self._clarification(
@@ -3206,6 +3290,17 @@ class SemanticGroundingService:
                 "multiple_explicit_date_roles",
             )
 
+        if self.catalog.context is not None:
+            relationship_ids = {
+                evidence.object_id for evidence in self.catalog.context.temporal_candidates
+                if evidence.kind == "active_relationship_key"
+            }
+            relationship_dates = tuple(obj for obj in date_fields if obj.object_id in relationship_ids)
+            if len(relationship_dates) == 1:
+                return ObjectGrounder._resolved("date_field", user_input, relationship_dates[0], "runtime_relationship_date_role")
+            if len(relationship_dates) > 1:
+                return ObjectGrounder._ambiguous("date_field", user_input, relationship_dates, "runtime_relationship_date_ambiguity")
+
         defaults = tuple(
             obj for obj in date_fields if obj.temporal_role == "default"
         )
@@ -3223,17 +3318,6 @@ class SemanticGroundingService:
                 defaults,
                 "multiple_default_temporal_roles",
             )
-
-        if self.catalog.context is not None:
-            relationship_ids = {
-                evidence.object_id for evidence in self.catalog.context.temporal_candidates
-                if evidence.kind == "active_relationship_key"
-            }
-            relationship_dates = tuple(obj for obj in date_fields if obj.object_id in relationship_ids)
-            if len(relationship_dates) == 1:
-                return ObjectGrounder._resolved("date_field", user_input, relationship_dates[0], "runtime_relationship_date_role")
-            if len(relationship_dates) > 1:
-                return ObjectGrounder._ambiguous("date_field", user_input, relationship_dates, "runtime_relationship_date_ambiguity")
 
         grouping_targets: dict[str, CatalogObject] = {}
         for obj in self.catalog.by_type(SemanticObjectType.FIELD):

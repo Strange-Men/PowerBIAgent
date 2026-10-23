@@ -353,6 +353,34 @@ def _is_test_safe(filepath: str, line: str) -> bool:
     return False
 
 
+def _normalize_example_client_placeholder(filepath: str, line: str) -> str:
+    """Normalize a human-readable placeholder, never exempt the entire line."""
+    if filepath != ".env.example":
+        return line
+    match = re.fullmatch(
+        r'''(\s*(?:[A-Za-z_][A-Za-z0-9_]*_)?CLIENT_SECRET\s*=\s*)(?P<quote>['"]?)(?P<value><[^\r\n]+>)(?P=quote)(?P<suffix>\s*(?:#.*)?)''',
+        line, re.IGNORECASE,
+    )
+    if match is None:
+        return line
+    value = match.group("value")[1:-1]
+    depth = 0
+    for char in match.group("value"):
+        depth += (char == "<") - (char == ">")
+        if depth < 0:
+            return line
+    if depth:
+        return line
+    # Brackets alone never prove a placeholder. Require human instructions;
+    # an opaque credential-shaped run remains suspicious even inside a label.
+    readable = bool(re.search(r"[\u4e00-\u9fff]", value) or re.fullmatch(
+        r"(?:your[_ ]|example[_ ]|placeholder)[A-Za-z_ ]*", value, re.IGNORECASE))
+    opaque = re.search(r"[A-Za-z0-9_~.+/=-]{20,}", value)
+    if not readable or opaque:
+        return line
+    return match.group(1) + "REPLACE_ME" + match.group("suffix")
+
+
 def check_obvious_secrets(files: list[str]) -> list[dict]:
     """检查 3：明显真实 Secret。"""
     findings = []
@@ -367,12 +395,13 @@ def check_obvious_secrets(files: list[str]) -> list[dict]:
         except OSError:
             continue
         for i, line in enumerate(lines, start=1):
-            if _is_python_variable_ref(line):
+            if Path(filepath).name not in {".env", ".env.example"} and _is_python_variable_ref(line):
                 continue  # Python 变量/属性引用，非 Secret 字面量
             if _is_test_safe(filepath, line):
                 continue  # 测试目录中允许使用安全标记
             if _is_scan_pattern_definition(filepath, line):
                 continue  # secret-scan: 扫描器自身规则定义豁免
+            line = _normalize_example_client_placeholder(filepath, line)
             for pattern, description in OBVIOUS_SECRET_PATTERNS:
                 if re.search(pattern, line, re.IGNORECASE):
                     findings.append({

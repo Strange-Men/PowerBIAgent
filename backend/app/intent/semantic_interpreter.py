@@ -248,8 +248,12 @@ For DATA/REPORT:
 - query_shape is exactly one of scalar, entity_list, grouped, ranking, member_set,
   filtered_aggregation, trend, bounded_trend, or null when genuinely unclear.
 - Mentions are the user's literal language, never schema names or canonical IDs unless
-  the user literally wrote them. Never output DAX, a date field, a canonical member,
+  the user literally wrote them. Never output DAX, an inferred date field, a canonical member,
   a numeric answer, business facts, or committed state.
+- When the user explicitly specifies a date field for a time filter, preserve its
+  verbatim wording in time_mentions as language evidence. It is not a canonical
+  binding. Do not turn that field into a grouping dimension unless the user asks
+  to group, list, or show a trend along it. Runtime validates its identity and type.
 - relation is fresh_question, follow_up, replace, or unclear. Use changed_slots and
   referenced_context_slots to describe a follow-up; do not merge state yourself.
 - A deictic or conversational continuation that clearly builds on the previous
@@ -293,6 +297,8 @@ For DATA/REPORT:
   An explicit named-member filter with an aggregate measure is filtered_aggregation;
   scalar applies when no explicit member filter is requested. The filter field/member
   still need their own verbatim evidence and independent runtime proof.
+  A date interval or an explicit date-field choice alone is a time restriction,
+  not a named-member filter: an ungrouped total with only time is scalar.
   The ordinary English metric noun “sales” likewise denotes monetary sales/revenue;
   quantity requires an explicit units/quantity/volume/items-sold expression. That
   English convention applies only when the user's literal metric wording is English;
@@ -321,8 +327,10 @@ For DATA/REPORT:
   be a temporal category; enumeration does not make it a time filter. If the
   phrase is genuinely unclear, preserve it in unresolved_mentions for clarification.
 - Preserve an explicitly qualified table[column] language mention in full,
-  including the table qualifier, in dimension_mentions and matching evidence.
-  Do not reduce it to the column name; runtime still proves that exact object.
+  including its qualifier, in the requested language slot and matching evidence.
+  Qualification alone never asks for grouping. A grouping subject belongs in
+  dimension_mentions; a date-field choice for a time restriction belongs in
+  time_mentions. Do not reduce it to the column name; runtime proves the object.
 - For trend and bounded_trend, preserve an explicitly named grouping field or
   entity in dimension_mentions with identical verbatim dimension evidence. A
   requested month interval is separate time evidence and cannot replace a named
@@ -500,6 +508,10 @@ class LLMSemanticInterpreter:
                 frame = response.structured
                 if not isinstance(frame, SemanticFrame):
                     raise SemanticInterpretationError("semantic_frame_missing")
+                if frame.mode is not SemanticInterpretationMode.GENERAL and not {
+                    "relation", "changed_slots", "referenced_context_slots"
+                }.issubset(frame.model_fields_set):
+                    raise SemanticInterpretationError("semantic_conversation_fields_required")
                 if forced_mode is not None and frame.mode is not forced_mode:
                     frame = SemanticFrame.model_validate({
                         **frame.model_dump(),
@@ -516,7 +528,7 @@ class LLMSemanticInterpreter:
                     })
                 frame = self._validate_relation_continuity(
                     frame,
-                    context["committed"],
+                    context["pending"] or context["committed"],
                     previous_user_message=previous_user_message,
                     require_review=attempt == 0,
                 )
@@ -684,6 +696,13 @@ class LLMSemanticInterpreter:
     def _validate_structure(frame: SemanticFrame) -> None:
         if frame.mode is SemanticInterpretationMode.GENERAL:
             return
+        if (frame.mode is SemanticInterpretationMode.DATA
+                and frame.relation is TurnRelation.FRESH_QUESTION
+                and frame.query_shape is QueryShape.FILTERED_AGGREGATION
+                and frame.time_intent is not None
+                and not frame.filter_mentions and not frame.member_mentions
+                and not frame.dimension_mentions):
+            raise SemanticInterpretationError("time_only_aggregate_requires_scalar")
         if (
             frame.mode is SemanticInterpretationMode.REPORT
             and frame.output_mode == "report"
@@ -1002,6 +1021,8 @@ class LLMSemanticInterpreter:
             "sort",
             "top_n",
             "missing_slots",
+            "time_obligation",
+            "member_obligations",
         }
         return {key: value[key] for key in allowed if key in value}
 

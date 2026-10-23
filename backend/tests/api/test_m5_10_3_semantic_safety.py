@@ -97,7 +97,7 @@ class _SemanticSafetyProvider(LLMProvider):
     def _frame(self) -> SemanticFrame:
         message = self._message()
         if self.active == "general":
-            return SemanticFrame(
+            return SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.GENERAL,
                 general_fact_scope=GeneralFactScope.TIME_STABLE_OR_NONFACTUAL,
                 general_answer="复盘可以帮助识别偏差并沉淀经验。",

@@ -90,10 +90,10 @@ class FactualMockLLM(MockLLMProvider):
         self.tasks.append(request.task.value)
         if output_type is SemanticFrame:
             report = '生成' in request.messages[-1]['content']
-            structured = (SemanticFrame(mode=SemanticInterpretationMode.REPORT,
+            structured = (SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(), mode=SemanticInterpretationMode.REPORT,
                 output_mode='report', unresolved_mentions=('销售',),
                 evidence_spans=(SemanticEvidenceSpan(slot='unresolved',text='销售'),))
-                if report else SemanticFrame(mode=SemanticInterpretationMode.DATA,
+                if report else SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(), mode=SemanticInterpretationMode.DATA,
                     query_shape=QueryShape.SCALAR, measure_mentions=('Total Sales',),
                     evidence_spans=(SemanticEvidenceSpan(slot='measure',text='Total Sales'),
                         SemanticEvidenceSpan(slot='query_shape',text='Total Sales'))))

@@ -234,7 +234,7 @@ async def test_compound_member_cannot_be_reused_as_filter_field(
 ) -> None:
     """A member token is not independent evidence for a field token."""
 
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.SCALAR,
         measure_mentions=("销售额",),
@@ -269,7 +269,7 @@ async def test_literal_runtime_member_proves_unique_filter_field_before_llm_gues
         _catalog(),
         selector=BoundedLLMObjectSelector(_AmbiguousFieldProvider()),
     )
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.SCALAR,
         measure_mentions=("销售额",),
@@ -350,7 +350,7 @@ async def test_same_name_grouping_uses_bounded_runtime_owner_selection() -> None
         catalog,
         selector=BoundedLLMObjectSelector(_DimensionOwnerProvider()),
     )
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.GROUPED,
         measure_mentions=("销售额",),
@@ -448,7 +448,7 @@ async def test_active_many_to_one_relationship_overrides_wrong_same_name_owner()
         catalog,
         selector=BoundedLLMObjectSelector(_FactOwnerProvider()),
     )
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.GROUPED,
         measure_mentions=("销售额",),
@@ -555,7 +555,7 @@ def _category_owner_catalog(*, dimension_tables: tuple[str, ...], relationships:
 
 
 def _category_frame() -> SemanticFrame:
-    return SemanticFrame(
+    return SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.GROUPED,
         measure_mentions=("sales amount",),
@@ -737,7 +737,7 @@ async def test_normalized_literal_member_binds_unique_runtime_field_before_llm()
     service = SemanticGroundingService(
         catalog, selector=BoundedLLMObjectSelector(provider)
     )
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.SCALAR,
         measure_mentions=("sales amount",),

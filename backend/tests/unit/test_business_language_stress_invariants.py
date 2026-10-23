@@ -63,7 +63,7 @@ async def test_cross_domain_grouping_binds_only_runtime_objects(
     dimension_text: str,
     dimension: str,
 ) -> None:
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.GROUPED,
         measure_mentions=(measure_text,),
@@ -116,7 +116,7 @@ def test_catalog_domain_words_live_only_in_test_runtime_metadata(
 
 
 def test_general_location_recommendation_has_zero_business_slots() -> None:
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.GENERAL,
         general_fact_scope=GeneralFactScope.REQUIRES_CURRENT_EXTERNAL_FACTS,
         general_answer="我没有实时地点工具，但可以按预算和偏好帮你整理选择标准。",

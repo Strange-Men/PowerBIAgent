@@ -91,6 +91,19 @@ class SemanticCatalog(BaseModel):
     def by_type(self, object_type: SemanticObjectType) -> tuple[CatalogObject, ...]:
         return tuple(obj for obj in self.objects if obj.object_type == object_type)
 
+    @property
+    def capabilities(self):
+        from backend.app.query_plan.model_semantic_context import capability_profile
+        if self.context is None:
+            return None
+        profile = capability_profile(self.context)
+        if profile.default_temporal_authority == "UNKNOWN":
+            bound = [obj for obj in self.objects if obj.temporal_role == "default"]
+            if bound:
+                profile = profile.model_copy(update={"default_temporal_authority":
+                    "PROVEN" if len(bound) == 1 else "AMBIGUOUS"})
+        return profile
+
     def get(self, object_id: str) -> CatalogObject | None:
         return next((obj for obj in self.objects if obj.object_id == object_id), None)
 
@@ -178,6 +191,8 @@ class SemanticCatalog(BaseModel):
             records.append(record)
         return {
             "semantic_model_key": self.semantic_model_key,
+            "provider_evidence": [e.model_dump(mode="json") for e in context.provider_evidence] if context else [],
+            "capabilities": self.capabilities.model_dump(mode="json") if self.capabilities else None,
             "schema_fingerprint": self.schema_fingerprint,
             "session_generation": context.session_generation if context else None,
             "candidates": records,

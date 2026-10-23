@@ -90,7 +90,7 @@ def _semantic_frame(
     ),
 ) -> SemanticFrame:
     if mode is SemanticInterpretationMode.GENERAL:
-        return SemanticFrame(
+        return SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
             mode=mode,
             general_fact_scope=general_fact_scope,
             general_answer=general_answer,

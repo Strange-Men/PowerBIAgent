@@ -472,7 +472,7 @@ class TestM24RealSourceModeSnapshotReplay:
                 source_mode="real",
                 is_mock=False,
             )
-            result["_semantic_frame"] = SemanticFrame(
+            result["_semantic_frame"] = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=None,
                 unresolved_mentions=("总销售额",),

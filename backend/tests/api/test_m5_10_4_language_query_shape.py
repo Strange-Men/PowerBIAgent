@@ -71,7 +71,7 @@ class _OpenLanguageDraft(runtime_tests.LanguageDraft):
         ]
         if ranking is not None:
             spans.append(SemanticEvidenceSpan(slot="ranking", text=evidence))
-        return SemanticFrame(
+        return SemanticFrame(changed_slots=(),
             mode=SemanticInterpretationMode.DATA,
             relation=(
                 TurnRelation.FOLLOW_UP
@@ -197,7 +197,7 @@ async def test_unverifiable_shape_evidence_is_zero_dax_and_zero_memory(
 
     class _InvalidEvidenceDraft(_OpenLanguageDraft):
         def semantic_frame(self):
-            return SemanticFrame(
+            return SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=QueryShape.RANKING,
                 measure_mentions=(self.domain.measure,),

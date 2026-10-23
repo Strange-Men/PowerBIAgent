@@ -244,9 +244,27 @@ class ColumnMembersRequest(BaseModel):
     """经 ToolGateway 执行的有界只读成员查询。"""
 
     semantic_model_key: str = Field(..., min_length=1)
-    table_name: str = Field(..., min_length=1)
-    field_name: str = Field(..., min_length=1)
+    table_name: str | None = Field(default=None, min_length=1)
+    field_name: str | None = Field(default=None, min_length=1)
+    search_literal: str | None = Field(default=None, min_length=1, max_length=200)
     limit: int = Field(default=100, ge=1, le=200)
+
+    @model_validator(mode="after")
+    def validate_member_scope(self):
+        if self.search_literal is not None:
+            if self.table_name is not None or self.field_name is not None:
+                raise ValueError("discovery_field_scope_forbidden")
+        elif self.table_name is None or self.field_name is None:
+            raise ValueError("member_field_scope_required")
+        return self
+
+
+class MemberFieldCandidate(BaseModel):
+    """Exact existence evidence, never proof of exhaustive field discovery."""
+
+    table_name: str
+    field_name: str
+    canonical_value: str
 
 
 class ColumnMembersResult(BaseModel):
@@ -258,6 +276,7 @@ class ColumnMembersResult(BaseModel):
     values: list[Any] = Field(default_factory=list)
     truncated: bool = False
     source_mode: Literal["mock", "real"] = "mock"
+    field_candidates: list[MemberFieldCandidate] = Field(default_factory=list, max_length=12)
 
 
 # =============================================================================

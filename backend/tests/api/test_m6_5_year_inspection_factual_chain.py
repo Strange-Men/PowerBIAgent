@@ -26,7 +26,7 @@ def test_formal_year_result_is_inspected_before_facts_and_commit(factual_product
     async def language(request, output_type):
         if output_type is SemanticFrame:
             return LLMResponse(content='{}', model='mock-llm', structured=SemanticFrame.model_validate({
-                'mode': 'data', 'query_shape': 'trend', 'analysis_goal': 'TREND',
+                'relation': 'fresh_question', 'changed_slots': [], 'referenced_context_slots': [], 'mode': 'data', 'query_shape': 'trend', 'analysis_goal': 'TREND',
                 'measure_mentions': ['Amount'], 'dimension_mentions': ['FiscalYear'],
                 'evidence_spans': [{'slot': 'measure', 'text': 'Amount'},
                                    {'slot': 'dimension', 'text': 'FiscalYear'},

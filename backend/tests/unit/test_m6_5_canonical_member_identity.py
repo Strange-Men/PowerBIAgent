@@ -85,7 +85,7 @@ async def test_existing_grounding_consumes_normalized_literal_without_core_chang
     catalog=SemanticCatalogBuilder().build_from_context(ModelSemanticContextBuilder().build(adapter._schemas[ref.server_model_key]))
     from backend.app.intent.semantic_interpreter import SemanticFrame, SemanticFilterMention, SemanticEvidenceSpan
     message='查询 Count，Code '+literal
-    draft=SemanticFrame(mode='data',query_shape='scalar',measure_mentions=('Count',),
+    draft=SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(), mode='data',query_shape='scalar',measure_mentions=('Count',),
         filter_mentions=(SemanticFilterMention(field_mention='Code',member_mention=literal,evidence_span=literal),),
         evidence_spans=(SemanticEvidenceSpan(slot='measure',text='Count'),
             SemanticEvidenceSpan(slot='filter',text=literal),SemanticEvidenceSpan(slot='query_shape',text='查询')))

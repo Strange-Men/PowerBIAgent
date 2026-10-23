@@ -42,7 +42,7 @@ def test_unknown_query_shape_is_rejected_by_frame_contract() -> None:
 
 
 def test_ranking_frame_preserves_incomplete_structure_for_clarification() -> None:
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.RANKING,
         measure_mentions=("销售额",),
@@ -84,7 +84,7 @@ def test_router_never_owns_business_query_shape(question: str) -> None:
 
 def test_general_frame_cannot_smuggle_business_slots() -> None:
     with pytest.raises(ValidationError):
-        SemanticFrame(
+        SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
             mode=SemanticInterpretationMode.GENERAL,
             general_fact_scope=GeneralFactScope.TIME_STABLE_OR_NONFACTUAL,
             general_answer="当然。",

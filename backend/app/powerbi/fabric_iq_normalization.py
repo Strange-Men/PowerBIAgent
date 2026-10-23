@@ -189,6 +189,24 @@ def normalize_value_search(raw, expected_model, schema, table, column, literal):
                 or not 0 <= match['Score'] <= 1):
             raise fail('CONTRACT_DRIFT')
         projected.append({'table':match['Table'],'column':match['Column'],'value':match['Value']})
+    if table is None and column is None:
+        # A complete response envelope is not an exhaustive field inventory.
+        # Keep candidates separate from executable column-member values.
+        candidates = []
+        for candidate in projected:
+            fields = [c for t in schema.tables if t.name == candidate['table']
+                      for c in t.columns if c.name == candidate['column']]
+            if len(fields) != 1:
+                raise fail('CONTRACT_DRIFT')
+            if type(candidate['value']) is str and candidate['value'] == literal:
+                from backend.app.powerbi.member_identity import declaration
+                contract = declaration(fields[0])
+                if contract and contract['role'] == 'provenance_only':
+                    continue
+                candidates.append({'table_name':candidate['table'],
+                    'field_name':candidate['column'],'canonical_value':candidate['value']})
+        return ColumnMembersResult(semantic_model_key=schema.key,table_name='',field_name='',
+            values=[],truncated=True,source_mode='real',field_candidates=candidates)
     return verify_explicit_member_candidates(schema,table,column,literal,projected)
 
 
@@ -224,6 +242,7 @@ def normalize_schema(raw, model_id, key, epoch):
             cn.add(cname)
             column_dtos.append(ColumnSchema(name=cname, data_type=ctype, is_hidden=None,
                 is_system_managed=None, is_key=None, description=column.get("Description"),
+                display_name=column.get("DisplayName"), expression=column.get("Expression"),
                 format_string=column.get("FormatString")))
         for measure in measures:
             if not isinstance(measure, dict): raise fail("SCHEMA_UNAVAILABLE")
@@ -231,10 +250,12 @@ def normalize_schema(raw, model_id, key, epoch):
             if mname in mn: raise fail("CONTRACT_DRIFT")
             mn.add(mname)
             measure_dtos.append(MeasureSchema(name=mname, data_type=measure.get("Type"),
-                expression=None, is_hidden=None, is_system_managed=None,
+                expression=measure.get("Expression"), display_name=measure.get("DisplayName"),
+                is_hidden=None, is_system_managed=None,
                 format_string=measure.get("FormatString"), description=measure.get("Description")))
         normalized.append(TableSchema(name=name, columns=column_dtos, measures=measure_dtos,
-            is_hidden=None, is_system_managed=None, description=table.get("Description")))
+            is_hidden=None, is_system_managed=None, description=table.get("Description"),
+            display_name=table.get("DisplayName")))
     relationship_evidence = []
     for relation in relations:
         if not isinstance(relation, dict): raise fail("SCHEMA_UNAVAILABLE")
@@ -248,6 +269,16 @@ def normalize_schema(raw, model_id, key, epoch):
     schema = SemanticModelSchema(name=_name(model.get("Name")), key=key, tables=normalized,
         relationships=[], metadata_source="fabric_iq", session_generation=epoch,
         provider_metadata={"active_relationships": relationship_evidence,
+            "metadata_observations": {
+                "relationships": "PROVIDED" if "ActiveRelationships" in definition else "NOT_PROVIDED",
+                "hierarchies": "PROVIDED" if any("Hierarchies" in t for t in tables) else "NOT_PROVIDED",
+                "expressions": "PROVIDED" if any("Expression" in item for t in tables
+                    for item in [*t.get("Columns", []), *t.get("Measures", [])]) else "NOT_PROVIDED",
+                "report_model_binding": "NOT_OBSERVED", "cardinality": "NOT_PROVIDED",
+            },
+            # Unmapped declarations remain hints, never canonical hierarchy edges.
+            "hierarchy_declarations": [{"table":t["Name"],"declarations":t["Hierarchies"]}
+                for t in tables if "Hierarchies" in t],
             "unknown": ["hidden", "system_managed", "expression", "hierarchies", "cardinality",
                 "relationship_direction", "security", "refresh_time"],
             "relationship_mapping": "NOT_VERIFIED"})

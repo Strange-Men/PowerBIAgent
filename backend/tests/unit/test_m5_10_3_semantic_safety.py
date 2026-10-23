@@ -105,7 +105,7 @@ def test_correction_relation_is_owned_by_the_understanding_frame(
     ["华南不是最高的区域", "销售额不是负数", "库存不是空的"],
 )
 def test_plain_negation_has_no_deterministic_phrase_classifier(message: str) -> None:
-    frame = SemanticFrame(
+    frame = SemanticFrame(changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         relation=TurnRelation.UNCLEAR,
         query_shape=None,

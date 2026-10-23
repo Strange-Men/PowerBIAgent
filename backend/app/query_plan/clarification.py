@@ -13,7 +13,7 @@ from typing import Iterable
 from pydantic import BaseModel
 
 from backend.app.intent.models import TurnRelation
-from backend.app.intent.semantic_interpreter import SemanticFrame
+from backend.app.intent.semantic_interpreter import SemanticFilterMention, SemanticFrame
 from backend.app.memory.models import (
     PendingClarificationContext,
     PendingSemanticSlot,
@@ -69,7 +69,8 @@ class PendingClarificationService:
         if semantic_frame is not None:
             relation = semantic_frame.relation
         if previous is not None and (
-            previous.semantic_model_key != semantic_model_key
+            previous.conversation_id != conversation_id
+            or previous.semantic_model_key != semantic_model_key
             or previous.schema_fingerprint != schema_fingerprint
             or previous.runtime_mode != runtime_mode
             or previous.intent != intent
@@ -84,6 +85,8 @@ class PendingClarificationService:
         dimension_order = previous.dimension_order if previous else None
         filters = list(previous.filters) if previous else []
         time_range = previous.time_range if previous else None
+        time_obligation = previous.time_obligation if previous else None
+        member_obligations = list(previous.member_obligations) if previous else []
         sort = previous.sort if previous else None
         top_n = previous.top_n if previous else None
         query_shape = previous.query_shape if previous else None
@@ -135,6 +138,7 @@ class PendingClarificationService:
                 dimension_order = None
             if changed.intersection({"filter", "filters", "member"}):
                 filters = []
+                member_obligations = []
             if changed.intersection({"time", "time_range"}):
                 time_range = None
             if changed.intersection({"ranking", "sort"}):
@@ -145,6 +149,19 @@ class PendingClarificationService:
                 query_shape = None
 
         delta = outcome.delta or GroundedSemanticDelta()
+        if semantic_frame is not None and semantic_frame.time_intent is not None:
+            time_obligation = semantic_frame.time_intent
+        if semantic_frame is not None:
+            current_members = list(semantic_frame.filter_mentions)
+            represented = {item.member_mention for item in current_members}
+            current_members.extend(SemanticFilterMention(member_mention=value,evidence_span=value)
+                for value in semantic_frame.member_mentions if value not in represented)
+            for item in current_members:
+                if item not in member_obligations:
+                    member_obligations.append(item)
+        member_obligations = [item for item in member_obligations
+            if not any(result.status is GroundingStatus.RESOLVED
+                and result.requested_value == item.member_mention for result in outcome.member_results)]
         if delta.query_shape is not None:
             query_shape = delta.query_shape
         resolved_measures = self._resolved_names(outcome, "measure")
@@ -179,7 +196,7 @@ class PendingClarificationService:
         if delta.measures is not None:
             measures = list(delta.measures)
         elif resolved_measures:
-            measures = resolved_measures[:1]
+            measures = list(dict.fromkeys(resolved_measures))
         if delta.dimensions is not None:
             dimensions = list(delta.dimensions)
             dimension_tables = {
@@ -213,13 +230,17 @@ class PendingClarificationService:
             filters.append(current)
         if delta.clear_filters:
             filters = []
+            member_obligations = []
         for field in delta.remove_filter_fields:
             filters = [item for item in filters if item.field != field]
 
         if delta.time_specified:
             time_range = delta.time_range
+            if time_range is not None:
+                time_obligation = None
         elif delta.clear_time:
             time_range = None
+            time_obligation = None
         if delta.sort_specified:
             sort = delta.sort
         elif delta.clear_sort:
@@ -253,6 +274,22 @@ class PendingClarificationService:
         missing = self._missing_slots(
             measures, dimensions, sort, top_n, outcome, query_shape
         )
+        # An unrelated replacement cannot discharge an unresolved required slot.
+        if previous is not None:
+            resolved_slots = {
+                "measure": bool(measures) and "measure" not in blocked_roles,
+                "dimension": bool(dimensions) and not ({"dimension", "ranking_dimension"} & blocked_roles),
+                "filter": bool(grounded_filters) or delta.clear_filters,
+                "time": (delta.time_specified and delta.time_range is not None) or delta.clear_time,
+                "analysis": delta.sort_specified or delta.clear_sort,
+            }
+            for slot in previous.missing_slots:
+                if not resolved_slots.get(slot, False) and slot not in missing:
+                    missing.append(slot)
+        if time_obligation is not None and "time" not in missing:
+            missing.append("time")
+        if member_obligations and "filter" not in missing:
+            missing.append("filter")
         for slot in required_missing_slots:
             if slot not in missing:
                 missing.append(slot)
@@ -281,6 +318,8 @@ class PendingClarificationService:
             dimension_order=dimension_order if dimensions else None,
             filters=filters,
             time_range=time_range,
+            time_obligation=time_obligation,
+            member_obligations=tuple(member_obligations),
             sort=sort,
             top_n=top_n,
             missing_slots=missing,

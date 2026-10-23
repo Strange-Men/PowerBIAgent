@@ -13,4 +13,22 @@ profiles:
         grain: month
         date_field: Date
         date_table_name: Date
-overrides: []
+# Previously approved operator temporal declaration, revalidated by exact live
+# resource identity and schema fingerprint. No model-name activation.
+overrides:
+  - semantic_model_key: fabric_iq:a3f2cc0e-6fe5-4060-a264-415815c56c4b:1610cbf8-5d0d-4940-9198-caaac4f43af6
+    runtime_identity: fabric_iq:a3f2cc0e-6fe5-4060-a264-415815c56c4b:1610cbf8-5d0d-4940-9198-caaac4f43af6
+    schema_fingerprint: 60eb4617d7c5868bbf8ecf2b0093b35398455785703af0bde46361fb14612b03
+    objects:
+      field:Sales:Date:
+        temporal_role: default
+      field:Sales:Year:
+        temporal_grouping:
+          grain: year
+          date_field: Date
+          date_table_name: Sales
+      field:Sales:YearMonth:
+        temporal_grouping:
+          grain: month
+          date_field: Date
+          date_table_name: Sales

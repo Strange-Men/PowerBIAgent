@@ -21,6 +21,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.app.intent.models import TimeIntentDraft
+from backend.app.intent.semantic_interpreter import SemanticFilterMention
 from backend.app.schemas.data_contracts import QueryShape, StructuredFilter, TimeRangeSpec
 
 
@@ -67,12 +69,15 @@ class PendingClarificationContext(BaseModel):
     schema_fingerprint: str = Field(min_length=64, max_length=64)
     intent: Literal["data_question", "report_generation"] = "data_question"
     query_shape: Optional[QueryShape] = None
-    measures: list[str] = Field(default_factory=list, max_length=1)
+    measures: list[str] = Field(default_factory=list)
     dimensions: list[str] = Field(default_factory=list, max_length=1)
     dimension_tables: dict[str, str] = Field(default_factory=dict)
     dimension_order: Optional[Literal["asc", "desc"]] = None
     filters: list[StructuredFilter] = Field(default_factory=list)
     time_range: Optional[TimeRangeSpec] = None
+    # Language obligation only: no canonical date identity or execution right.
+    time_obligation: Optional["TimeIntentDraft"] = None
+    member_obligations: tuple[SemanticFilterMention, ...] = ()
     sort: Optional[Literal["asc", "desc"]] = None
     top_n: Optional[int] = Field(default=None, ge=1)
     missing_slots: list[PendingSemanticSlot] = Field(default_factory=list)

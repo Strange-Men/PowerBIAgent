@@ -69,9 +69,46 @@ class TemporalEvidence(MetadataRecord):
     date_object_id: str | None = None
 
 
+class ProviderEvidence(MetadataRecord):
+    """Observed declaration only; never a canonical relationship or date role."""
+    kind: str
+    level: Literal["AUTHORITATIVE", "LINGUISTIC_HINT", "UNKNOWN"]
+    source: str
+    observation: Literal["PROVIDED", "NOT_PROVIDED", "NOT_OBSERVED"]
+    declarations: tuple[tuple[str, str], ...] = ()
+
+
+class SemanticModelCapabilityProfile(MetadataRecord):
+    """Read-only evidence inventory. No selection, planning or execution methods."""
+    schema_fingerprint: str
+    scalar_measures: tuple[str, ...]
+    grouping_fields: tuple[str, ...]
+    temporal_candidates: tuple[str, ...]
+    default_temporal_authority: Literal["PROVEN", "AMBIGUOUS", "UNKNOWN"]
+    relationship_evidence: Literal["CANONICAL", "ENDPOINT_DECLARATIONS_ONLY", "UNKNOWN"]
+    exact_member_search: Literal["PROVEN", "UNKNOWN"]
+    template_compatibility: Literal["UNKNOWN"] = "UNKNOWN"
+
+
+def capability_profile(context: "ModelSemanticContext") -> SemanticModelCapabilityProfile:
+    topology = {item.object_id for item in context.temporal_candidates
+                if item.kind == "active_relationship_key"}
+    return SemanticModelCapabilityProfile(
+        schema_fingerprint=context.schema_fingerprint,
+        scalar_measures=tuple(item.object_id for item in context.measures),
+        grouping_fields=tuple(item.object_id for item in context.columns),
+        temporal_candidates=tuple(sorted({item.object_id for item in context.temporal_candidates})),
+        default_temporal_authority="PROVEN" if len(topology) == 1 else "AMBIGUOUS" if topology else "UNKNOWN",
+        relationship_evidence="CANONICAL" if context.relationships else
+            "ENDPOINT_DECLARATIONS_ONLY" if any(e.kind == "relationship_endpoints" for e in context.provider_evidence) else "UNKNOWN",
+        exact_member_search="PROVEN" if any(e.kind == "exact_member_search" and e.level == "AUTHORITATIVE"
+            for e in context.provider_evidence) else "UNKNOWN")
+
+
 class ModelSemanticContext(MetadataRecord):
     semantic_model_key: str
     runtime_identity: str
+    resource_identity: str | None = None
     schema_fingerprint: str
     session_generation: int | None = None
     metadata_source: Literal["adapter", "local_mcp", "mock", "fabric_iq"]
@@ -81,6 +118,7 @@ class ModelSemanticContext(MetadataRecord):
     relationships: tuple[RuntimeRelationship, ...]
     hierarchies: tuple[RuntimeHierarchy, ...]
     temporal_candidates: tuple[TemporalEvidence, ...]
+    provider_evidence: tuple[ProviderEvidence, ...] = ()
     ai_instructions: None = None
     synonyms: tuple[()] = ()
     linguistic_schema: None = None
@@ -200,11 +238,53 @@ class ModelSemanticContextBuilder:
         fingerprint = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         return ModelSemanticContext(
             semantic_model_key=schema.key, runtime_identity=identity, schema_fingerprint=fingerprint,
+            resource_identity=self._resource_identity(schema),
+            provider_evidence=self._provider_evidence(schema),
             session_generation=schema.session_generation, metadata_source=schema.metadata_source,
             tables=tuple(tables), columns=tuple(columns), measures=tuple(measures),
             relationships=tuple(relationships), hierarchies=tuple(hierarchies),
             temporal_candidates=tuple(sorted(set(temporal), key=lambda item: item.model_dump_json())),
         )
+
+    @staticmethod
+    def _provider_evidence(schema: SemanticModelSchema) -> tuple[ProviderEvidence, ...]:
+        metadata = schema.provider_metadata
+        result = []
+        for relation in metadata.get("active_relationships", []):
+            result.append(ProviderEvidence(kind="relationship_endpoints",level="AUTHORITATIVE",
+                source=schema.metadata_source + ":ActiveRelationships",observation="PROVIDED",
+                declarations=tuple((key,str(relation[key])) for key in ("PK","FK") if key in relation)))
+            if relation.get("UnidirectionalFilter"):
+                result.append(ProviderEvidence(kind="relationship_direction_text",level="LINGUISTIC_HINT",
+                    source=schema.metadata_source + ":ActiveRelationships",observation="PROVIDED",
+                    declarations=(("text",relation["UnidirectionalFilter"]),)))
+        for name, observation in metadata.get("metadata_observations", {}).items():
+            result.append(ProviderEvidence(kind=name,level="LINGUISTIC_HINT" if observation == "PROVIDED" else "UNKNOWN",
+                source=schema.metadata_source + ":schema",observation=observation))
+        if metadata.get("exact_member_search") is True:
+            result.append(ProviderEvidence(kind="exact_member_search",level="AUTHORITATIVE",
+                source=schema.metadata_source + ":tools/list",observation="PROVIDED"))
+        for hierarchy in metadata.get("hierarchy_declarations", []):
+            result.append(ProviderEvidence(kind="hierarchy_declaration",level="LINGUISTIC_HINT",
+                source=schema.metadata_source + ":schema",observation="PROVIDED",
+                declarations=(("table",hierarchy["table"]),
+                    ("declaration",json.dumps(hierarchy["declarations"],ensure_ascii=False,sort_keys=True)))))
+        if metadata.get("report_model_evidence"):
+            result.append(ProviderEvidence(kind="report_model_binding",level="AUTHORITATIVE",
+                source=schema.metadata_source + ":GetReportMetadata+Resolve",observation="PROVIDED",
+                declarations=tuple(sorted(metadata["report_model_evidence"].items()))))
+        return tuple(result)
+
+    @staticmethod
+    def _resource_identity(schema: SemanticModelSchema) -> str | None:
+        resource = schema.provider_metadata.get("resource_identity")
+        if schema.metadata_source != "fabric_iq" or not isinstance(resource, dict):
+            return None
+        from uuid import UUID
+        workspace, model = resource.get("workspace_id"), resource.get("model_id")
+        if any(not isinstance(value, str) or str(UUID(value)) != value for value in (workspace, model)):
+            raise ValueError("runtime_resource_identity_invalid")
+        return f"fabric_iq:{workspace}:{model}"
 
     @staticmethod
     def _is_date(item: RuntimeObject) -> bool:

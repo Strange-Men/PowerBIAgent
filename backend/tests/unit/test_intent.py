@@ -51,7 +51,7 @@ class TestIntentType:
 
 class TestIntentPromptReportBoundary:
     def test_report_frame_is_language_only_and_has_no_template_or_fact_slots(self):
-        frame = SemanticFrame(
+        frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
             mode=SemanticInterpretationMode.REPORT,
             output_mode="report",
             unresolved_mentions=("销售",),

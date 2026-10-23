@@ -22,7 +22,7 @@ async def test_english_target_shapes_preserve_evidence(message,shape,dimensions,
     spans += [{'slot':'filter','text':item['evidence_span']} for item in filters]
     if filters: spans += [{'slot':'member','text':'France'},{'slot':'time','text':'first half of 2011'}]
     if shape=='ranking': spans += [{'slot':'ranking','text':'top 5'}]
-    frame=SemanticFrame.model_validate(dict(mode='data',query_shape=shape,measure_mentions=[measure],
+    frame=SemanticFrame.model_validate(dict(relation='fresh_question', changed_slots=[], referenced_context_slots=[], mode='data',query_shape=shape,measure_mentions=[measure],
         dimension_mentions=dimensions,filter_mentions=filters,evidence_spans=spans,**extra))
     interpreted=await LLMSemanticInterpreter(_FrameProvider(frame)).interpret(message)
     draft=build_grounding_draft(interpreted,user_input=message,semantic_model_key='synthetic')

@@ -261,6 +261,9 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
                 if ref.workspace_id == expected_workspace and ref.semantic_model_id == expected_model), None) if reuse else None
             key = restored_key or (old.server_model_key if old else "fabric_iq:" + token_urlsafe(32))
             schema = normalize_schema(raw, expected_model, key, self._principal.authorization_epoch)
+            self._semantic_capabilities(schema, connection)
+            schema.provider_metadata["resource_identity"] = {
+                "workspace_id": expected_workspace, "model_id": expected_model}
         self._validate()
         self._test_policy.model(expected_workspace, expected_model)
         p = self._principal
@@ -285,11 +288,24 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
         async with self._connection(key=semantic_model_key) as connection:
             raw = await connection.call("GetSemanticModelSchema", {"artifactId": ref.semantic_model_id})
             schema = normalize_schema(raw, ref.semantic_model_id, semantic_model_key, ref.authorization_epoch)
+            self._semantic_capabilities(schema, connection)
+            schema.provider_metadata["resource_identity"] = {
+                "workspace_id": ref.workspace_id, "model_id": ref.semantic_model_id}
         self._validate()
         self._binding(semantic_model_key)
         self._schemas[semantic_model_key] = schema
         if scope is not None: scope.schemas[proof] = schema.model_copy(deep=True)
         return schema.model_copy(deep=True)
+
+    @staticmethod
+    def _semantic_capabilities(schema, connection):
+        from backend.app.powerbi.base import PowerBIAdapterError
+        from backend.app.powerbi.fabric_iq_contract import validate_value_search_capability
+        try:
+            validate_value_search_capability(getattr(connection, '_inventory', {}).get('ValueSearch'))
+        except PowerBIAdapterError:
+            return
+        schema.provider_metadata['exact_member_search'] = True
 
     async def execute_dax(self, request):
         return await self._execute_query(request)
@@ -350,6 +366,19 @@ class FabricIQPowerBIAdapter(PowerBIAdapter):
     async def get_column_members(self, request):
         self._binding(request.semantic_model_key)
         schema = self._schemas[request.semantic_model_key]
+        if request.search_literal is not None:
+            from backend.app.powerbi.fabric_iq_contract import validate_value_search_capability
+            ref = self._binding(request.semantic_model_key)
+            async with self._connection(key=request.semantic_model_key) as connection:
+                validate_value_search_capability(connection._inventory.get('ValueSearch'))
+                raw = await connection.call('ValueSearch', {'artifactId':ref.semantic_model_id,
+                    'searchTerms':[request.search_literal]})
+                proof = normalize_value_search(raw,ref.semantic_model_id,schema,None,None,request.search_literal)
+            self._validate()
+            self._binding(request.semantic_model_key)
+            if self._schemas.get(request.semantic_model_key) is not schema:
+                raise fail('CONTRACT_DRIFT')
+            return proof
         matches = [c for t in schema.tables if t.name == request.table_name
                    for c in t.columns if c.name == request.field_name]
         if len(matches) != 1: raise fail("SCHEMA_UNAVAILABLE")

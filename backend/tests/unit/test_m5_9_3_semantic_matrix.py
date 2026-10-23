@@ -114,7 +114,7 @@ def test_ranking_matrix_preserves_chinese_and_numeric_top_n_shape(
     assert decision.route == QuestionRoute.LLM_SEMANTIC_INTERPRETATION
     assert decision.query_shape is None
     top_n = 10 if "十" in question else 3
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.RANKING,
         measure_mentions=((next((item[4] for item in MODEL_TERMS if item[0] == model), "指标")),),
@@ -192,7 +192,7 @@ async def test_grouping_filter_firewall_matrix(
     async def no_lookup(*_):
         raise AssertionError("GROUPED wording must not invoke member lookup")
 
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.GROUPED,
         measure_mentions=(measure,),

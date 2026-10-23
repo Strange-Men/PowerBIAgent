@@ -1,5 +1,15 @@
 # 07 — 当前项目状态
 
+## M6.5.2_FIX3 Round 1 — 核心问数收口
+
+仅 Semantic Model Understanding / Conversation Correctness，Settings.version 不变。
+[Round 1 audit](milestones/m6/m6_5_2_fix3_round1_audit.md) 记录本轮证据与边界。
+Online Retail 四条及无专用 override 的「PBI_实战1_快速穿越」四条 Real 均正确完成；
+Entra、DeepSeek、Fabric IQ、SQLite 均为真实链路，FABRIC_TEST_MODE=false。
+发布只按本提交自身 exact-SHA CI、Remote Audit 和 HEAD=origin/main 成立，不继承旧 CI。
+`.env.example` 按用户确认原样提交；Rescue 保留。产品服务按用户要求留作人工演示。
+格式化货币 wire 值继续严格拒绝，作为 locale/format backlog；不进入 Round 2/FIX4。
+
 > Settings.version=M6.5.2；M6.5.2 FINAL COMPLETE（以本提交自身 exact-SHA Full Validation、Remote Audit、HEAD=origin/main、clean/shutdown 全部成立后生效）；M5 FINAL/FROZEN有效。
 
 ## M6.5.2_FIX2 — Persistence Readiness + Cloud UX Layout Closure FINAL COMPLETE

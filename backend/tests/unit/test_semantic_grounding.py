@@ -683,7 +683,7 @@ class TestMemberAndTimeGrounding:
 
         outcome = await grounding.ground_frame(
             "火星区销售额是多少",
-            SemanticFrame(
+            SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=QueryShape.SCALAR,
                 measure_mentions=("销售额",),
@@ -941,7 +941,7 @@ class TestMemberAndTimeGrounding:
 
     @pytest.mark.asyncio
     async def test_explain_change_yearless_month_requires_year_before_execution(self):
-        frame = SemanticFrame(
+        frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
             mode=SemanticInterpretationMode.DATA,
             query_shape=QueryShape.SCALAR,
             measure_mentions=("销售额",),
@@ -973,7 +973,7 @@ class TestMemberAndTimeGrounding:
         async def no_lookup(*_):
             raise AssertionError("this sequence has no member lookup")
 
-        first_frame = SemanticFrame(
+        first_frame = SemanticFrame(changed_slots=(), referenced_context_slots=(),
             mode=SemanticInterpretationMode.DATA,
             relation=TurnRelation.FRESH_QUESTION,
             query_shape=QueryShape.SCALAR,
@@ -2768,7 +2768,7 @@ class TestSemanticCorrectnessFailureReproducers:
             catalog, today=lambda: date(2026, 9, 20)
         ).ground_frame(
             "最近6个月出勤率趋势",
-            SemanticFrame(
+            SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=QueryShape.BOUNDED_TREND,
                 measure_mentions=("出勤率",),
@@ -2823,7 +2823,7 @@ class TestSemanticCorrectnessFailureReproducers:
 
         outcome = await SemanticGroundingService(catalog).ground_frame(
             "出勤率趋势",
-            SemanticFrame(
+            SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=QueryShape.TREND,
                 measure_mentions=("出勤率",),
@@ -2837,7 +2837,7 @@ class TestSemanticCorrectnessFailureReproducers:
         )
 
         assert outcome.status == GroundingStatus.UNRESOLVED
-        assert outcome.pending_eligible is False
+        assert outcome.pending_eligible is True  # unresolved grouping remains a non-executable obligation
         assert outcome.clarification_reason == ClarificationReason.DIMENSION_UNRESOLVED
         assert any(
             item.method == "temporal_grouping_for_date_binding_missing"
@@ -2888,7 +2888,7 @@ class TestSemanticCorrectnessFailureReproducers:
             selector=BoundedLLMObjectSelector(provider),
         ).ground_frame(
             "销售额趋势",
-            SemanticFrame(
+            SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=QueryShape.TREND,
                 measure_mentions=("Total Sales",),
@@ -2952,7 +2952,7 @@ class TestSemanticCorrectnessFailureReproducers:
             catalog, selector=BoundedLLMObjectSelector(provider)
         ).ground_frame(
             "2025 H2 sales trend by month",
-            SemanticFrame(
+            SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=QueryShape.BOUNDED_TREND,
                 measure_mentions=("Total Sales",),
@@ -3865,7 +3865,7 @@ class TestM582QueryShapes:
 
         plan = await execute(
             "销售额是多少",
-            SemanticFrame(
+            SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=QueryShape.SCALAR,
                 measure_mentions=("销售额",),
@@ -3881,7 +3881,7 @@ class TestM582QueryShapes:
 
         plan = await execute(
             "那各地区呢",
-            SemanticFrame(
+            SemanticFrame(changed_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 relation=TurnRelation.FOLLOW_UP,
                 query_shape=QueryShape.GROUPED,
@@ -3902,7 +3902,7 @@ class TestM582QueryShapes:
 
         plan = await execute(
             "最高的是哪个",
-            SemanticFrame(
+            SemanticFrame(changed_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 relation=TurnRelation.FOLLOW_UP,
                 query_shape=QueryShape.RANKING,
@@ -4110,7 +4110,7 @@ class TestPendingClarificationContract:
         )
         fresh = self._merge_with_frame(
             outcome,
-            SemanticFrame(
+            SemanticFrame(changed_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 relation=TurnRelation.FRESH_QUESTION,
                 referenced_context_slots=("measure", "dimensions"),

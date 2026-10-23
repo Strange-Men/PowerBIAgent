@@ -177,7 +177,7 @@ class LanguageDraft(LLMProvider):
                 ),
             )
             evidence.append(SemanticEvidenceSpan(slot="time", text=time_text))
-        return SemanticFrame(
+        return SemanticFrame(changed_slots=(), referenced_context_slots=(),
             mode=SemanticInterpretationMode.DATA,
             relation=TurnRelation.FRESH_QUESTION,
             query_shape=self.shape,

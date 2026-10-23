@@ -36,7 +36,7 @@ from backend.app.schemas.data_contracts import QueryShape
 
 
 def _general(answer: str = "可以，我们聊聊。") -> SemanticFrame:
-    return SemanticFrame(
+    return SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.GENERAL,
         general_fact_scope=GeneralFactScope.TIME_STABLE_OR_NONFACTUAL,
         general_answer=answer,
@@ -44,7 +44,7 @@ def _general(answer: str = "可以，我们聊聊。") -> SemanticFrame:
 
 
 def _scalar() -> SemanticFrame:
-    return SemanticFrame(
+    return SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.SCALAR,
         measure_mentions=("销售额",),
@@ -202,7 +202,7 @@ async def test_complete_same_topic_ranking_is_allowed_as_follow_up() -> None:
 
 @pytest.mark.asyncio
 async def test_repeated_fresh_ranking_is_normalized_by_continuity_invariant() -> None:
-    fresh = SemanticFrame(
+    fresh = SemanticFrame(referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         relation=TurnRelation.FRESH_QUESTION,
         query_shape=QueryShape.RANKING,
@@ -271,7 +271,7 @@ async def test_repeated_fresh_ranking_is_normalized_by_continuity_invariant() ->
 
 @pytest.mark.asyncio
 async def test_changed_slots_alone_do_not_prove_continuity() -> None:
-    fresh = SemanticFrame(
+    fresh = SemanticFrame(referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         relation=TurnRelation.FRESH_QUESTION,
         query_shape=QueryShape.SCALAR,
@@ -310,7 +310,7 @@ async def test_changed_slots_alone_do_not_prove_continuity() -> None:
 
 @pytest.mark.asyncio
 async def test_unrelated_ranking_topic_stays_fresh() -> None:
-    fresh = SemanticFrame(
+    fresh = SemanticFrame(changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         relation=TurnRelation.FRESH_QUESTION,
         query_shape=QueryShape.RANKING,
@@ -354,7 +354,7 @@ async def test_unrelated_ranking_topic_stays_fresh() -> None:
 
 @pytest.mark.asyncio
 async def test_explicit_reset_keeps_same_topic_ranking_fresh() -> None:
-    frame = SemanticFrame(
+    frame = SemanticFrame(changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         relation=TurnRelation.FRESH_QUESTION,
         query_shape=QueryShape.RANKING,
@@ -399,7 +399,7 @@ async def test_explicit_reset_keeps_same_topic_ranking_fresh() -> None:
 
 @pytest.mark.asyncio
 async def test_repeated_fresh_explicit_replacement_is_normalized() -> None:
-    fresh = SemanticFrame(
+    fresh = SemanticFrame(referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         relation=TurnRelation.FRESH_QUESTION,
         query_shape=None,
@@ -487,7 +487,7 @@ async def test_explicit_reset_or_different_complete_topic_stays_fresh(
     ]
     if time_text is not None:
         spans.append(SemanticEvidenceSpan(slot="time", text=time_text))
-    frame = SemanticFrame(
+    frame = SemanticFrame(changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         relation=TurnRelation.FRESH_QUESTION,
         query_shape=QueryShape.SCALAR,
@@ -529,7 +529,7 @@ async def test_explicit_reset_or_different_complete_topic_stays_fresh(
 
 @pytest.mark.asyncio
 async def test_yearless_named_month_non_verbatim_mention_gets_exact_repair() -> None:
-    invalid = SemanticFrame(
+    invalid = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.TREND,
         measure_mentions=("销售额",),
@@ -574,7 +574,7 @@ async def test_yearless_named_month_non_verbatim_mention_gets_exact_repair() -> 
 @pytest.mark.asyncio
 async def test_report_mode_is_forced_without_creating_template_authority() -> None:
     provider = _QueueProvider(
-        SemanticFrame(
+        SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
             mode=SemanticInterpretationMode.DATA,
             query_shape=None,
             unresolved_mentions=("销售",),
@@ -596,7 +596,7 @@ async def test_report_mode_is_forced_without_creating_template_authority() -> No
 @pytest.mark.asyncio
 async def test_pure_report_output_frame_does_not_require_data_query_shape() -> None:
     provider = _QueueProvider(
-        SemanticFrame(
+        SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
             mode=SemanticInterpretationMode.REPORT,
             query_shape=None,
             output_mode="report",
@@ -648,7 +648,7 @@ async def test_follow_up_relation_and_changed_slots_are_language_only() -> None:
 
 @pytest.mark.asyncio
 async def test_non_verbatim_semantic_evidence_fails_closed_after_one_repair() -> None:
-    invalid = SemanticFrame(
+    invalid = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.SCALAR,
         measure_mentions=("revenue",),
@@ -668,7 +668,7 @@ async def test_non_verbatim_semantic_evidence_fails_closed_after_one_repair() ->
 
 @pytest.mark.asyncio
 async def test_exact_evidence_repair_receives_specific_violation_and_recovers() -> None:
-    invalid = SemanticFrame(
+    invalid = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.TREND,
         measure_mentions=("销售额",),
@@ -726,7 +726,7 @@ def test_explain_change_evidence_matrix_uses_only_verbatim_anchors(
     shape_evidence: str,
     goal: AnalysisGoal,
 ) -> None:
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.TREND,
         measure_mentions=(measure,),
@@ -756,7 +756,7 @@ def test_semantically_equivalent_non_verbatim_evidence_remains_rejected(
     question: str,
     forged_evidence: str,
 ) -> None:
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.TREND,
         evidence_spans=(

@@ -20,7 +20,7 @@ from backend.app.schemas.data_contracts import QueryShape
 
 
 def _frame() -> SemanticFrame:
-    return SemanticFrame(
+    return SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.RANKING,
         measure_mentions=("净营收",),
@@ -73,7 +73,7 @@ def test_projection_is_noncanonical_language_carrier_only() -> None:
 
 
 def test_projection_never_creates_an_unmentioned_member_filter() -> None:
-    frame = SemanticFrame(
+    frame = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
         mode=SemanticInterpretationMode.DATA,
         query_shape=QueryShape.SCALAR,
         measure_mentions=("销售额",),

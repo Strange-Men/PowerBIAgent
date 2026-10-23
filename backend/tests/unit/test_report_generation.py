@@ -766,7 +766,7 @@ class _ReportLanguageProvider(LLMProvider):
     async def generate(self, request: LLMRequest, output_type: type) -> LLMResponse:
         self.calls.append(request)
         if output_type is SemanticFrame:
-            structured = SemanticFrame(
+            structured = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.REPORT,
                 query_shape=None,
                 output_mode="report",
@@ -800,7 +800,7 @@ class _PureReportLanguageProvider(_ReportLanguageProvider):
             self.calls.append(request)
             return LLMResponse(
                 content="{}",
-                structured=SemanticFrame(
+                structured=SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                     mode=SemanticInterpretationMode.REPORT,
                     query_shape=None,
                     output_mode="report",
@@ -822,7 +822,7 @@ class _TimeScopedReportLanguageProvider(_ReportLanguageProvider):
     async def generate(self, request: LLMRequest, output_type: type) -> LLMResponse:
         self.calls.append(request)
         if output_type is SemanticFrame:
-            structured = SemanticFrame(
+            structured = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.REPORT,
                 query_shape=None,
                 output_mode="report",
@@ -852,7 +852,7 @@ class _VagueTimeReportLanguageProvider(_ReportLanguageProvider):
         self.calls.append(request)
         question = "生成最近几个月的销售经营分析报表"
         if output_type is SemanticFrame:
-            structured = SemanticFrame(
+            structured = SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.REPORT,
                 query_shape=None,
                 output_mode="report",

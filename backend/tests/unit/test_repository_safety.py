@@ -134,6 +134,28 @@ class TestRealSecretRejected:
         )
 
 
+@pytest.mark.parametrize('path,value,expected', [
+    ('.env.example','<请填入应用注册中生成的客户端密码>',False),
+    ('.env.example','<your client secret>',False),
+    ('.env.example','"<请填入客户端密码>"',False),
+    ('.env.example','<请复制 <应用注册> 中的 <客户端密码值>>',False),
+    ('.env.example','<请复制 <'+('Z'*40)+'>>',True),
+    ('.env.example','<'+('Z'*40)+'>',True),
+    ('.env.example','<示例 '+('Z'*40)+'>',True),
+    ('.env.example','Z'*40,True),
+    ('.env.example',('Z'*40)+' # comment',True),
+    ('.env','<请填入客户端密码>',True),
+    ('.env','Z'*40,True),
+    ('.env.example','<请填入客户端密码> # token='+('Z'*40),True),
+])
+def test_example_placeholder_never_exempts_real_or_suspicious_credentials(monkeypatch,tmp_path,path,value,expected):
+    import scripts.check_repository_safety as scanner
+    monkeypatch.setattr(scanner,'REPO_ROOT',tmp_path)
+    (tmp_path/path).write_text('entra_client_'+'secret='+value+'\n',encoding='utf-8')
+    findings=scanner.check_obvious_secrets([path])+scanner.check_forbidden_filenames([path])
+    assert bool(findings) is expected
+
+
 class TestFrontendSecretRejected:
     """检查：前端出现 Secret 被拒绝"""
 

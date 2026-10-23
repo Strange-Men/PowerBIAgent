@@ -213,7 +213,7 @@ async def test_zero_override_cross_language_shapes_at_chat_boundary(monkeypatch,
                     end_date="2025-03-31",
                 )
                 spans.append(SemanticEvidenceSpan(slot="time", text=time_text))
-            return SemanticFrame(
+            return SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=shape,
                 measure_mentions=measures,
@@ -321,7 +321,7 @@ async def test_zero_override_abstention_never_reaches_dax_or_memory(monkeypatch,
             else:
                 dimensions = ("经营分区",)
                 spans.append(SemanticEvidenceSpan(slot="dimension", text="经营分区"))
-            return SemanticFrame(
+            return SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=frame_shape,
                 measure_mentions=(metric,),
