@@ -8,6 +8,69 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-652-020
+  title: Fabric IQ formatted numeric wire rejected as contract drift
+  category: ERR
+  first_detected_version: M6.5.2_FIX4
+  symptom: 陌生模型 numeric schema 的货币/千分位返回如 $12,345.67 在 ResultInspection 前被 CONTRACT_DRIFT 拒绝，ZERO Facts/commit
+  local_evidence: FIX3 Getting Started 模型 receipt 记录 currency_formatted；本轮 test_m6_5_cloud_numeric_text_boundary 正负例
+  authoritative_sources:
+  - title: 用户 FIX4 formatted numeric 合同
+    reason: 仅 runtime schema 已证明 numeric 时允许明确 currency/grouping/decimal 形式，直接 Decimal，保持 fail closed
+  root_cause: _typed_cell 只接受纯 ASCII 小数，未消费 format string/分隔符证据
+  failed_attempts: []
+  repair_attempt_count: 0
+  final_fix: numeric_text_style 从 format string 提取 separator；支持明确 currency symbol 与严格 US/EU grouping；无 format 时仅接受 US/EU 一致解析；拒绝 exponent/percent/歧义 locale/malformed grouping；无 float
+  regression_tests:
+  - backend/tests/unit/test_m6_5_cloud_numeric_text_boundary.py
+  - backend/tests/unit/test_fabric_iq_cell_contract.py
+  prohibited_patterns:
+  - 通用 strip/float 解析
+  - 对非 numeric schema 或未知 locale 放行 formatted string
+  prevention_rules:
+  - numeric string 归一化必须同时有 runtime schema 证明与严格 lexical 形式证明
+  related_adr: ADR-016
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-23'
+    action: formatted_numeric_failure_first
+    version: M6.5.2_FIX4
+- id: ERR-652-019
+  title: Semantic Understanding 多重概率 veto 与全 Catalog selector 预算导致 DAX 前失败
+  category: ERR
+  first_detected_version: M6.5.2_FIX4
+  symptom: 语义正确的 frame 因 coverage/evidence 漏标失败；200+ 字段模型因 candidate >128/64KB 直接 UNRESOLVED；同一问题触发 6-12 次 semantic LLM
+  local_evidence: FIX3 Real semantic_coverage_incomplete 与 round1 audit；本轮 candidate retrieval、stress harness 与 semantic compatibility 820 PASS
+  authoritative_sources:
+  - title: 用户 FIX4 根因审计与 Lean SemanticFrame / ONE bounded resolution 合同
+    reason: 安全验证保留，但由 deterministic structural validation 取代概率 veto；retrieval 只返回 existing Catalog IDs
+  root_cause: Understanding contract 过度约束；没有 candidate retrieval；Grounding 逐 slot 概率判定；Fabric IQ provider PK/FK 未被 temporal authority 消费且 unique date field 早退不可达
+  failed_attempts: []
+  repair_attempt_count: 0
+  final_fix: Lean SemanticFrame + deterministic evidence/time/ranking/lexical coverage；optional evidence_spans 不作第二 veto；SemanticCandidateRetriever；ONE BoundedSemanticResolution；deterministic binding/relationship owner/month axis；provider-declared date endpoint 与 unique runtime date field；multi-measure token-set identity、proper-named filter shape normalization、dimension-table fieldless member proof
+  regression_tests:
+  - backend/tests/unit/test_deepseek_intent_service.py
+  - backend/tests/unit/test_semantic_grounding.py
+  - backend/tests/unit/test_candidate_retrieval.py
+  - backend/tests/unit/test_natural_language_semantic_stress.py
+  - backend/tests/api/test_chat.py
+  prohibited_patterns:
+  - 第二 coverage LLM veto
+  - 按 slot 独立 LLM selector
+  - 全 Catalog 直送 LLM 或在 catalog 超预算时直接失败
+  - 用模型名/字段名/benchmark oracle hardcode 修 case
+  prevention_rules:
+  - 大型 catalog 必须先 bounded retrieval；LLM 只能从现有 candidate IDs 选择
+  - 所有 semantic LLM 输出必须经独立 runtime 证明
+  - 新失败先按 first-wrong-layer 聚类，禁止 case-by-case patch
+  related_adr: ADR-008
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-23'
+    action: semantic_core_refactor_failure_first
+    version: M6.5.2_FIX4
 - id: ERR-652-018
   title: Artifact治理未识别正式principal报表分目录
   category: ERR

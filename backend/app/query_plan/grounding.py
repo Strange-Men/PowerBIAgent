@@ -34,9 +34,19 @@ from backend.app.intent.temporal_expression import (
 )
 from backend.app.llm.base import LLMProvider, LLMProviderError, LLMRequest, LLMTask
 from backend.app.memory.models import PendingClarificationContext, StructuredWorkMemory
+from backend.app.query_plan.candidate_retrieval import (
+    Role,
+    SemanticCandidateRetriever,
+    lexical_support,
+)
 from backend.app.query_plan.clarification_reasons import (
     ClarificationReason,
     clarification_question,
+)
+from backend.app.query_plan.semantic_resolution import (
+    BoundedSemanticResolver,
+    ResolutionDecision,
+    ResolutionSlot,
 )
 from backend.app.query_plan.semantic_catalog import (
     CatalogObject,
@@ -120,6 +130,7 @@ class GroundingOutcome(BaseModel):
     clarification_reason: ClarificationReason | None = None
     intent_disagreements: list[str] = Field(default_factory=list)
     pending_eligible: bool = True
+    resolution_method: str = ""
 
 
 class GroundingEvidenceError(Exception):
@@ -216,6 +227,10 @@ class BoundedLLMObjectSelector:
 
     def __init__(self, provider: LLMProvider):
         self._provider = provider
+
+    @property
+    def provider(self) -> LLMProvider:
+        return self._provider
 
     async def select_member(
         self, requested_value: str, field: CatalogObject, members: ColumnMembersResult,
@@ -716,6 +731,38 @@ class ObjectGrounder:
             return self._resolved(role, phrase, aliases[0], "alias_exact")
         if len(aliases) > 1:
             return self._ambiguous(role, phrase, aliases, "alias_conflict")
+
+        if object_type is SemanticObjectType.MEASURE and normalized.isascii():
+            phrase_tokens = set(re.findall(r"[a-z0-9]+", normalized))
+            if 1 <= len(phrase_tokens) <= 4:
+                # Ordinary metric wording ("quantity", "on-hand units") may be
+                # the whole-token subset of one canonical metric name.  This is
+                # lexical identity normalization, not a semantic family guess;
+                # multiple containing measures stay ambiguous.
+                matches = []
+                for obj in objects:
+                    tokens = {
+                        token
+                        for term in (
+                            obj.canonical_name,
+                            obj.display_name,
+                            *obj.aliases,
+                        )
+                        if term
+                        for token in re.findall(
+                            r"[a-z0-9]+", normalize_semantic_text(term)
+                        )
+                    }
+                    if phrase_tokens.issubset(tokens):
+                        matches.append(obj)
+                if len(matches) == 1:
+                    return self._resolved(
+                        role, phrase, matches[0], "canonical_token_set"
+                    )
+                if len(matches) > 1:
+                    return self._ambiguous(
+                        role, phrase, matches, "canonical_token_ambiguous"
+                    )
 
         return ObjectGroundingResult(
             status=GroundingStatus.UNRESOLVED,
@@ -1411,6 +1458,7 @@ class SemanticGroundingService:
         catalog: SemanticCatalog,
         *,
         selector: BoundedLLMObjectSelector | None = None,
+        resolver: BoundedSemanticResolver | None = None,
         today: Callable[[], date] = date.today,
         member_discovery: Callable[[str], Awaitable[ColumnMembersResult]] | None = None,
     ):
@@ -1418,6 +1466,11 @@ class SemanticGroundingService:
         self.objects = ObjectGrounder(catalog, selector)
         self.time = TimeGrounder(today)
         self.member_discovery = member_discovery
+        self.retriever = SemanticCandidateRetriever(catalog)
+        provider = getattr(selector, "provider", None)
+        self.resolver = resolver or (
+            BoundedSemanticResolver(provider) if provider is not None else None
+        )
 
     def ground_time_scope(
         self,
@@ -1493,6 +1546,301 @@ class SemanticGroundingService:
             delta=delta,
             object_results=[date_result],
         )
+
+    async def _resolve_object_slots(
+        self,
+        user_input: str,
+        frame: SemanticFrame,
+        member_lookup: MemberLookup,
+        *,
+        dimension_role: SemanticObjectRole,
+    ) -> tuple[
+        dict[tuple[str, str], ObjectGroundingResult],
+        str,
+        dict[tuple[str, str], MemberGroundingResult],
+        set[tuple[str, str]],
+    ]:
+        """Retrieve candidates for every unresolved slot and resolve them once.
+
+        Deterministic exact/mention/relationship evidence wins first.  Only the
+        remaining slots enter the single bounded semantic resolution call.
+        """
+
+        resolved: dict[tuple[str, str], ObjectGroundingResult] = {}
+        slots: dict[tuple[str, str], ResolutionSlot] = {}
+        member_proofs: dict[tuple[str, str], MemberGroundingResult] = {}
+        complete_no_match: set[tuple[str, str]] = set()
+        ids = {
+            "measure": "m",
+            "dimension": "d",
+            "ranking_dimension": "r",
+            "filter_field": "f",
+        }
+        counter: dict[str, int] = {}
+
+        measure_tables: set[str] = set()
+        for mention in frame.measure_mentions:
+            deterministic = self.objects.resolve_phrase(
+                mention, SemanticObjectType.MEASURE, "measure"
+            )
+            if (
+                deterministic.status is GroundingStatus.RESOLVED
+                and deterministic.canonical_object is not None
+            ):
+                measure_tables.add(deterministic.canonical_object.table_name)
+        explicit_filter_fields = {
+            item.field_mention
+            for item in frame.filter_mentions
+            if item.field_mention
+        }
+
+        measure_constraint = (
+            "SemanticFrame proves an explicit current-turn measure replacement: "
+            "the current phrase is present and denotes the changed measure slot. "
+            "This does not prove which candidate matches and does not waive "
+            "AMBIGUOUS or UNRESOLVED when candidates do not uniquely fit."
+            if frame.relation is not TurnRelation.FRESH_QUESTION
+            and "measure" in frame.changed_slots
+            else ""
+        )
+
+        async def request(
+            phrase: str,
+            role: Role,
+            search_terms: tuple[str, ...] = (),
+            constraint: str = "",
+        ) -> None:
+            key = (role, phrase)
+            if key in resolved or key in slots or not phrase.strip():
+                return
+            object_type = (
+                SemanticObjectType.MEASURE
+                if role == "measure"
+                else SemanticObjectType.FIELD
+            )
+            result = self.objects.resolve_phrase(phrase, object_type, role)
+            if result.status == GroundingStatus.UNRESOLVED:
+                result = self.objects.find_mentions(phrase, object_type, role)
+            result = await self._select_same_name_candidate(
+                result,
+                user_input,
+                object_type,
+                role,
+                language_hints=(phrase,),
+                compatible_measure_tables=(
+                    tuple(sorted(measure_tables))
+                    if role in {"dimension", "ranking_dimension"}
+                    else ()
+                ),
+                allow_llm=False,
+            )
+            if result.status in {
+                GroundingStatus.RESOLVED,
+                GroundingStatus.CONFIG_CONFLICT,
+            }:
+                resolved[key] = result
+                return
+            if result.method.startswith(
+                "runtime_measure_relationship_dimension_owner"
+            ) or result.method in {"description_conflict", "display_conflict"}:
+                # Deterministic evidence already proved that no unique owner
+                # exists; a semantic selector must not overrule it.
+                resolved[key] = result
+                return
+            if result.status == GroundingStatus.AMBIGUOUS and 2 <= len(
+                result.candidate_ids
+            ) <= 12:
+                candidates = tuple(
+                    item
+                    for candidate_id in result.candidate_ids
+                    if (item := self.catalog.get(candidate_id)) is not None
+                )
+                if candidates:
+                    prefix = ids[role]
+                    index = counter.get(prefix, 0)
+                    counter[prefix] = index + 1
+                    slots[key] = ResolutionSlot(
+                        slot_id=f"{prefix}{index}",
+                        role=role,
+                        phrase=phrase,
+                        candidates=candidates,
+                        search_terms=search_terms,
+                        selection_constraint=constraint,
+                    )
+                    return
+            if result.status == GroundingStatus.AMBIGUOUS:
+                # More than twelve identical-name competitors is genuine
+                # ambiguity; a bounded selector would silently hide candidates.
+                resolved[key] = result
+                return
+            if (
+                role == "filter_field"
+                and phrase not in explicit_filter_fields
+                and measure_tables
+                and self.member_discovery is None
+            ):
+                # Exact/normalized runtime membership across reachable
+                # dimension keys is deterministic evidence; it must precede
+                # the bounded semantic resolution call.
+                (
+                    runtime_field,
+                    runtime_member,
+                    runtime_complete_no_match,
+                ) = await self._resolve_unique_runtime_literal_member_field(
+                    phrase, member_lookup, tuple(sorted(measure_tables))
+                )
+                if runtime_field is not None:
+                    resolved[key] = runtime_field
+                    if runtime_member is not None:
+                        member_proofs[key] = runtime_member
+                    return
+                if runtime_complete_no_match:
+                    complete_no_match.add(key)
+                    resolved[key] = ObjectGroundingResult(
+                        status=GroundingStatus.UNRESOLVED,
+                        role=role,
+                        phrase=phrase,
+                        method="runtime_complete_literal_member_no_match",
+                    )
+                    return
+            retrieved = self.retriever.retrieve(
+                role=role,
+                phrase=phrase,
+                search_terms=search_terms,
+            )
+            if not retrieved.candidates:
+                resolved[key] = ObjectGroundingResult(
+                    status=GroundingStatus.UNRESOLVED,
+                    role=role,
+                    phrase=phrase,
+                    method=retrieved.method,
+                )
+                return
+            prefix = ids[role]
+            index = counter.get(prefix, 0)
+            counter[prefix] = index + 1
+            slots[key] = ResolutionSlot(
+                slot_id=f"{prefix}{index}",
+                role=role,
+                phrase=phrase,
+                candidates=retrieved.candidates,
+                search_terms=search_terms,
+                selection_constraint=constraint,
+            )
+
+        for mention in frame.measure_mentions:
+            await request(
+                mention,
+                "measure",
+                frame.measure_search_terms,
+                measure_constraint,
+            )
+        for mention in frame.dimension_mentions:
+            await request(mention, dimension_role, frame.dimension_search_terms)
+        filter_phrases: list[str] = []
+        for item in frame.filter_mentions:
+            filter_phrases.append(item.field_mention or item.member_mention)
+        filter_phrases.extend(frame.member_mentions)
+        for phrase in dict.fromkeys(filter_phrases):
+            await request(phrase, "filter_field", frame.dimension_search_terms)
+        if not slots:
+            return (
+                resolved,
+                "deterministic_grounding",
+                member_proofs,
+                complete_no_match,
+            )
+        if self.resolver is None:
+            for key, slot in slots.items():
+                resolved[key] = ObjectGroundingResult(
+                    status=GroundingStatus.UNRESOLVED,
+                    role=slot.role,
+                    phrase=slot.phrase,
+                    candidate_ids=tuple(
+                        item.object_id for item in slot.candidates
+                    ),
+                    method="bounded_resolution_unavailable",
+                )
+            return (
+                resolved,
+                "bounded_resolution_unavailable",
+                member_proofs,
+                complete_no_match,
+            )
+        resolution = await self.resolver.resolve(
+            self.catalog,
+            user_input,
+            tuple(slots.values()),
+            relation=frame.relation.value,
+            changed_slots=frame.changed_slots,
+        )
+        for key, slot in slots.items():
+            decision: ResolutionDecision | None = resolution.decisions.get(
+                slot.slot_id
+            )
+            if decision is None:
+                resolved[key] = ObjectGroundingResult(
+                    status=GroundingStatus.UNRESOLVED,
+                    role=slot.role,
+                    phrase=slot.phrase,
+                    candidate_ids=tuple(
+                        item.object_id for item in slot.candidates
+                    ),
+                    method=f"{resolution.method}_missing_decision",
+                )
+                continue
+            if decision.outcome == "RESOLVED":
+                selected = self.catalog.get(decision.candidate_id or "")
+                allowed = {item.object_id for item in slot.candidates}
+                if selected is None or selected.object_id not in allowed:
+                    resolved[key] = ObjectGroundingResult(
+                        status=GroundingStatus.UNRESOLVED,
+                        role=slot.role,
+                        phrase=slot.phrase,
+                        candidate_ids=tuple(allowed),
+                        method=f"{resolution.method}_unknown_candidate",
+                    )
+                    continue
+                if (
+                    slot.role == "measure"
+                    and len(slot.candidates) > 1
+                    and slot.phrase.isascii()
+                    and " " not in slot.phrase.strip()
+                    and len(slot.phrase.strip()) >= 3
+                    and not lexical_support(slot.phrase, selected)
+                ):
+                    # A bare generic ASCII noun that no candidate metadata
+                    # supports is not a unique metric.  The semantic model's
+                    # preference cannot create identity evidence.
+                    resolved[key] = ObjectGroundingResult(
+                        status=GroundingStatus.AMBIGUOUS,
+                        role=slot.role,
+                        phrase=slot.phrase,
+                        candidate_ids=tuple(allowed),
+                        method=(
+                            f"{resolution.method}_metadata_unproven"
+                        ),
+                    )
+                    continue
+                resolved[key] = ObjectGroundingResult(
+                    status=GroundingStatus.RESOLVED,
+                    role=slot.role,
+                    phrase=slot.phrase,
+                    canonical_object=selected,
+                    candidate_ids=tuple(allowed),
+                    method=resolution.method,
+                )
+                continue
+            resolved[key] = ObjectGroundingResult(
+                status=GroundingStatus(decision.outcome),
+                role=slot.role,
+                phrase=slot.phrase,
+                candidate_ids=tuple(
+                    item.object_id for item in slot.candidates
+                ),
+                method=resolution.method,
+            )
+        return resolved, resolution.method, member_proofs, complete_no_match
 
     async def ground_frame(
         self,
@@ -1572,22 +1920,33 @@ class SemanticGroundingService:
                 reason=ClarificationReason.MEASURE_UNRESOLVED,
             )
 
+        dimension_role: SemanticObjectRole = (
+            "ranking_dimension"
+            if effective_shape == QueryShape.RANKING
+            else "dimension"
+        )
+        (
+            pre_resolution,
+            resolution_method,
+            member_proofs,
+            complete_no_match,
+        ) = await self._resolve_object_slots(
+            user_input, frame, member_lookup, dimension_role=dimension_role
+        )
+
         async def bind_object(
             mention: str,
             object_type: SemanticObjectType,
             role: SemanticObjectRole,
             *,
             compatible_measure_tables: tuple[str, ...] = (),
-            selection_constraint: str = "",
         ) -> ObjectGroundingResult:
-            result = await self.objects.select_bounded(
-                mention,
-                user_input,
-                object_type,
-                role,
-                language_hints=(mention,),
-                selection_constraint=selection_constraint,
-            )
+            resolved = pre_resolution.get((role, mention))
+            if resolved is not None:
+                return resolved
+            result = self.objects.resolve_phrase(mention, object_type, role)
+            if result.status == GroundingStatus.UNRESOLVED:
+                result = self.objects.find_mentions(mention, object_type, role)
             return await self._select_same_name_candidate(
                 result,
                 user_input,
@@ -1595,29 +1954,18 @@ class SemanticGroundingService:
                 role,
                 language_hints=(mention,),
                 compatible_measure_tables=compatible_measure_tables,
+                allow_llm=False,
             )
 
         measure_required = effective_shape != QueryShape.ENTITY_LIST
         measure_missing = False
         grounded_measures: list[str] = []
         grounded_measure_tables: set[str] = set()
-        measure_selection_constraint = ""
-        if (
-            frame.relation is not TurnRelation.FRESH_QUESTION
-            and "measure" in frame.changed_slots
-        ):
-            measure_selection_constraint = (
-                "SemanticFrame proves an explicit current-turn measure replacement: "
-                "the current phrase is present and denotes the changed measure slot. "
-                "This does not prove which candidate matches and does not waive "
-                "AMBIGUOUS or UNRESOLVED when candidates do not uniquely fit."
-            )
         for mention in frame.measure_mentions:
             result = await bind_object(
                 mention,
                 SemanticObjectType.MEASURE,
                 "measure",
-                selection_constraint=measure_selection_constraint,
             )
             object_results.append(result)
             if self._requires_clarification(result) or result.canonical_object is None:
@@ -1664,11 +2012,6 @@ class SemanticGroundingService:
                 in normalized_contextual
             )
 
-        dimension_role: SemanticObjectRole = (
-            "ranking_dimension"
-            if effective_shape == QueryShape.RANKING
-            else "dimension"
-        )
         grounded_dimensions: list[str] = []
         for mention in frame.dimension_mentions:
             result = await bind_object(
@@ -1752,21 +2095,11 @@ class SemanticGroundingService:
                 grain="month",
                 phrase=user_input,
             )
-            if (
-                grouping_result.status is GroundingStatus.UNRESOLVED
-                and self.objects.selector is not None
-            ):
-                # Some imported PBIX schemas do not expose calculated-column
-                # expressions. In that case, the existing bounded runtime
-                # proof (complete, <=100, all values exact month starts) may
-                # establish the grouping for this request without mutating
-                # catalog metadata or trusting the LLM with grain authority.
-                runtime_grouping = await self._runtime_month_grouping(
-                    user_input,
-                    member_lookup,
-                    evidence_phrase=user_input,
-                )
-                grouping_result = runtime_grouping
+            if grouping_result.status is GroundingStatus.UNRESOLVED:
+                # Imported PBIX schemas may omit calculated-column expressions.
+                # A complete bounded runtime member set whose values are all
+                # month starts can still prove the grain deterministically.
+                grouping_result = await self._prove_month_axis(member_lookup)
             object_results.append(grouping_result)
             if (
                 self._requires_clarification(grouping_result)
@@ -1846,15 +2179,23 @@ class SemanticGroundingService:
                     pending_eligible=False,
                 )
             field_result: ObjectGroundingResult
-            proven_member: MemberGroundingResult | None = None
-            runtime_literal_field: ObjectGroundingResult | None = None
-            runtime_literal_complete_no_match = False
+            proven_member = member_proofs.get(
+                ("filter_field", member_mention)
+            )
+            runtime_literal_field = (
+                pre_resolution.get(("filter_field", member_mention))
+                if proven_member is not None
+                else None
+            )
+            runtime_literal_complete_no_match = (
+                ("filter_field", member_mention) in complete_no_match
+            )
             if not field_mention and self.member_discovery is not None:
-                # Resolve the language role against the full eligible catalog,
-                # independently of ValueSearch's non-exhaustive hit list. The
-                # existing object grounder remains the only selector authority.
-                semantic_field = await self.objects.select_bounded(
-                    member_mention, user_input, SemanticObjectType.FIELD, "filter_field"
+                # The bounded resolution already chose a filter field from
+                # runtime metadata.  ValueSearch independently proves exact
+                # membership; neither side grants the other authority.
+                semantic_field = await bind_object(
+                    member_mention, SemanticObjectType.FIELD, "filter_field"
                 )
                 try:
                     candidates = await self.member_discovery(member_mention)
@@ -1891,6 +2232,7 @@ class SemanticGroundingService:
             if (
                 not field_mention
                 and runtime_literal_field is None
+                and not runtime_literal_complete_no_match
                 and committed is None
                 and pending is None
                 and effective_shape not in {
@@ -1945,6 +2287,7 @@ class SemanticGroundingService:
                     for item in (field_mention, member_mention)
                     if item
                 ),
+                allow_llm=False,
             )
             if (
                 runtime_literal_complete_no_match
@@ -2098,7 +2441,15 @@ class SemanticGroundingService:
             pending.time_obligation if pending is not None
             and frame.relation is not TurnRelation.FRESH_QUESTION else None
         )
-        if time_intent is not None:
+        time_expression = time_intent.expression if time_intent is not None else None
+        if time_expression is None and frame.time_mentions:
+            joined = " ".join(frame.time_mentions)
+            if self.time.is_explicit(joined):
+                # The frame preserved a concrete time expression without the
+                # optional structured draft; TimeGrounder remains the only
+                # executor and rejects an incomplete expression below.
+                time_expression = joined
+        if time_expression is not None:
             date_result = temporal_date_result or self._resolve_date_field(
                 date_evidence
             )
@@ -2115,7 +2466,7 @@ class SemanticGroundingService:
                     delta=delta,
                 )
             time_range = self.time.ground(
-                time_intent.expression,
+                time_expression,
                 date_result.canonical_object,
                 time_intent,
                 reference_time_range=reference_time_range,
@@ -2123,7 +2474,8 @@ class SemanticGroundingService:
             if time_range is None:
                 question = (
                     f"请明确是哪一年的{time_intent.month}月。"
-                    if time_intent.kind is TimeIntentKind.ABSOLUTE_MONTH
+                    if time_intent is not None
+                    and time_intent.kind is TimeIntentKind.ABSOLUTE_MONTH
                     and time_intent.year is None
                     else clarification_question(ClarificationReason.INCOMPLETE_TIME_RANGE)
                 )
@@ -2177,6 +2529,7 @@ class SemanticGroundingService:
             delta=delta,
             object_results=object_results,
             member_results=member_results,
+            resolution_method=resolution_method,
         )
 
     async def ground(
@@ -2935,6 +3288,7 @@ class SemanticGroundingService:
         *,
         language_hints: tuple[str, ...] = (),
         compatible_measure_tables: tuple[str, ...] = (),
+        allow_llm: bool = True,
     ) -> ObjectGroundingResult:
         """Select an owner only when runtime candidates share one name.
 
@@ -3049,6 +3403,8 @@ class SemanticGroundingService:
                 )
         if result.status != GroundingStatus.AMBIGUOUS or self.objects.selector is None:
             return result
+        if not allow_llm:
+            return result
         return await self.objects.select_bounded(
             result.phrase or user_input,
             user_input,
@@ -3081,7 +3437,7 @@ class SemanticGroundingService:
             item.object_id: item.table_name
             for item in self.catalog.context.columns
         }
-        dimension_object_ids: set[str] = set()
+        dimension_tables: set[str] = set()
         fact_tables = set(measure_tables)
         for relationship in self.catalog.context.relationships:
             if not relationship.is_active:
@@ -3100,18 +3456,18 @@ class SemanticGroundingService:
                 and to_cardinality == "one"
                 and to_table is not None
             ):
-                dimension_object_ids.add(relationship.to_object_id)
+                dimension_tables.add(to_table)
             if (
                 to_table in fact_tables
                 and to_cardinality == "many"
                 and from_cardinality == "one"
                 and from_table is not None
             ):
-                dimension_object_ids.add(relationship.from_object_id)
+                dimension_tables.add(from_table)
         candidates = tuple(
             obj
             for obj in self.catalog.by_type(SemanticObjectType.FIELD)
-            if obj.object_id in dimension_object_ids
+            if obj.table_name in dimension_tables
             and any(
                 token in obj.data_type.casefold()
                 for token in ("string", "text")
@@ -3176,6 +3532,89 @@ class SemanticGroundingService:
         # the caller return a stable member-no-match instead of oscillating
         # between field-unresolved and member-no-match.
         return None, None, True
+
+    async def _prove_month_axis(
+        self, member_lookup: MemberLookup
+    ) -> ObjectGroundingResult:
+        """Prove a unique month-grain axis from complete runtime member values.
+
+        No language model chooses the grain.  Every eligible date-like field is
+        checked against a complete bounded member set; exactly one field whose
+        values are all month starts is the only executable answer.
+        """
+
+        candidates = sorted(
+            (
+                obj
+                for obj in self.catalog.by_type(SemanticObjectType.FIELD)
+                if "date" in obj.data_type.casefold()
+                or "time" in obj.data_type.casefold()
+            ),
+            key=lambda obj: (
+                0 if obj.temporal_grouping is not None else 1,
+                0 if "month" in (
+                    obj.canonical_name + " " + (obj.display_name or "")
+                    + " " + (obj.description or "")
+                ).casefold() else 1,
+                obj.object_id,
+            ),
+        )[:12]
+        proven: list[CatalogObject] = []
+        for field in candidates:
+            members = await member_lookup(field, 100)
+            if (
+                members.truncated
+                or not members.values
+                or len(members.values) > 100
+                or members.semantic_model_key != self.catalog.semantic_model_key
+                or (members.table_name, members.field_name)
+                != (field.table_name, field.canonical_name)
+            ):
+                continue
+            valid = True
+            for value in members.values:
+                try:
+                    timestamp = (
+                        datetime.fromisoformat(value)
+                        if isinstance(value, str)
+                        else value
+                    )
+                    if not isinstance(timestamp, (date, datetime)) or timestamp.day != 1:
+                        valid = False
+                        break
+                    if isinstance(timestamp, datetime) and any((
+                        timestamp.hour,
+                        timestamp.minute,
+                        timestamp.second,
+                        timestamp.microsecond,
+                    )):
+                        valid = False
+                        break
+                except (TypeError, ValueError):
+                    valid = False
+                    break
+            if valid:
+                proven.append(field)
+        if len(proven) == 1:
+            return ObjectGrounder._resolved(
+                "dimension",
+                proven[0].canonical_name,
+                proven[0],
+                "runtime_complete_month_axis",
+            )
+        if len(proven) > 1:
+            return ObjectGrounder._ambiguous(
+                "dimension",
+                "month axis",
+                proven,
+                "runtime_multiple_month_axes",
+            )
+        return ObjectGroundingResult(
+            status=GroundingStatus.UNRESOLVED,
+            role="dimension",
+            phrase="month axis",
+            method="runtime_month_axis_unproven",
+        )
 
     async def _runtime_month_grouping(
         self,
@@ -3350,8 +3789,37 @@ class SemanticGroundingService:
                 "multiple_temporal_grouping_date_bindings",
             )
 
-        if self.catalog.context is not None:
-            return ObjectGrounder._ambiguous("date_field", user_input, date_fields, "unproven_default_date_role")
+        primary_dates, endpoint_dates = self._provider_declared_date_roles(
+            date_fields
+        )
+        if len(primary_dates) == 1:
+            return ObjectGrounder._resolved(
+                "date_field",
+                user_input,
+                primary_dates[0],
+                "provider_declared_primary_date_role",
+            )
+        if len(primary_dates) > 1:
+            return ObjectGrounder._ambiguous(
+                "date_field",
+                user_input,
+                primary_dates,
+                "provider_declared_primary_date_ambiguity",
+            )
+        if len(endpoint_dates) == 1:
+            return ObjectGrounder._resolved(
+                "date_field",
+                user_input,
+                endpoint_dates[0],
+                "provider_declared_relationship_date_role",
+            )
+        if len(endpoint_dates) > 1:
+            return ObjectGrounder._ambiguous(
+                "date_field",
+                user_input,
+                endpoint_dates,
+                "provider_declared_relationship_date_ambiguity",
+            )
 
         glossary_dates = tuple(
             obj
@@ -3379,6 +3847,56 @@ class SemanticGroundingService:
             date_fields,
             "unproven_default_date_role",
         )
+
+    def _provider_declared_date_roles(
+        self, date_fields: tuple[CatalogObject, ...]
+    ) -> tuple[tuple[CatalogObject, ...], tuple[CatalogObject, ...]]:
+        """Consume provider-declared relationship endpoints as temporal evidence.
+
+        PK/FK declarations prove object endpoints, not cardinality or filter
+        direction.  A single date column that is a declared primary key, or a
+        single date endpoint across active relationships, is nevertheless
+        uniquely provable as a temporal role.  Multiple distinct endpoints
+        remain ambiguous.
+        """
+
+        if self.catalog.context is None:
+            return (), ()
+        by_reference = {
+            (obj.table_name, obj.canonical_name): obj for obj in date_fields
+        }
+        primary: dict[str, CatalogObject] = {}
+        endpoints: dict[str, CatalogObject] = {}
+        for evidence in self.catalog.context.provider_evidence:
+            if evidence.kind != "relationship_endpoints":
+                continue
+            for key, raw in evidence.declarations:
+                reference = self._provider_reference(raw)
+                if reference is None:
+                    continue
+                obj = by_reference.get(reference)
+                if obj is None:
+                    continue
+                endpoints[obj.object_id] = obj
+                if key == "PK":
+                    primary[obj.object_id] = obj
+        return tuple(primary.values()), tuple(endpoints.values())
+
+    @staticmethod
+    def _provider_reference(value: str) -> tuple[str, str] | None:
+        text = value.strip()
+        match = re.fullmatch(
+            r"(?:'((?:[^']|'')+)'|([^\[\]]+))\[([^\]\r\n]+)\]", text
+        )
+        if match is not None:
+            table = (match.group(1) or match.group(2) or "").replace("''", "'")
+            column = match.group(3)
+            return (table, column) if table and column else None
+        if "." in text:
+            table, _, column = text.rpartition(".")
+            table, column = table.strip().strip("'"), column.strip().strip("'")
+            return (table, column) if table and column else None
+        return None
 
     def _resolve_temporal_grouping(
         self,

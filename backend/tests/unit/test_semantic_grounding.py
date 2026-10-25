@@ -46,9 +46,15 @@ from backend.app.query_plan.grounding import (
     TimeGrounder,
 )
 from backend.app.llm.base import LLMProvider, LLMResponse
+from backend.app.query_plan.semantic_resolution import (
+    ResolutionDecision,
+    ResolutionResponse,
+)
 from backend.app.query_plan.semantic_catalog import (
+    CatalogObject,
     compute_schema_fingerprint,
     GlossaryCatalogError,
+    SemanticCatalog,
     SemanticCatalogBuilder,
     SemanticObjectType,
 )
@@ -500,8 +506,27 @@ class _SelectionProvider(LLMProvider):
     async def generate(self, request, output_type):
         self.calls += 1
         self.requests.append(request)
-        assert output_type is CandidateSelection
         content = request.messages[-1]["content"]
+        if output_type is ResolutionResponse:
+            payload = json.loads(content)
+            decisions = []
+            for slot in payload["slots"]:
+                ids = {item["candidate_id"] for item in slot["candidates"]}
+                target = self.candidate_id if self.candidate_id in ids else None
+                decisions.append(ResolutionDecision(
+                    slot_id=slot["slot_id"],
+                    outcome=(
+                        self.outcome if target is not None
+                        else "UNRESOLVED"
+                    ),
+                    candidate_id=target,
+                ))
+            return LLMResponse(
+                content="{}",
+                structured=ResolutionResponse(decisions=tuple(decisions)),
+                model="selector-adversarial",
+            )
+        assert output_type is CandidateSelection
         matched_phrase = (
             json.loads(content)["requested_value"]
             if content.startswith("{")
@@ -534,9 +559,29 @@ class _ReplacementConstraintProvider(LLMProvider):
         return False
 
     async def generate(self, request, output_type):
-        assert output_type is CandidateSelection
         content = request.messages[-1]["content"]
         constrained = "explicit current-turn measure replacement" in content
+        if output_type is ResolutionResponse:
+            payload = json.loads(content)
+            decisions = []
+            for slot in payload["slots"]:
+                ids = {item["candidate_id"] for item in slot["candidates"]}
+                target = (
+                    "measure:Sales:Total Quantity"
+                    if constrained and "measure:Sales:Total Quantity" in ids
+                    else None
+                )
+                decisions.append(ResolutionDecision(
+                    slot_id=slot["slot_id"],
+                    outcome="RESOLVED" if target else "UNRESOLVED",
+                    candidate_id=target,
+                ))
+            return LLMResponse(
+                content="{}",
+                structured=ResolutionResponse(decisions=tuple(decisions)),
+                model="replacement-constraint",
+            )
+        assert output_type is CandidateSelection
         return LLMResponse(
             content="{}",
             structured=CandidateSelection(
@@ -548,6 +593,103 @@ class _ReplacementConstraintProvider(LLMProvider):
             ),
             model="replacement-constraint",
         )
+
+
+@pytest.mark.asyncio
+async def test_measure_token_set_identity_is_lexical_and_ambiguity_preserving():
+    catalog = SemanticCatalog(
+        semantic_model_key="model",
+        schema_fingerprint="a" * 64,
+        objects=(
+            CatalogObject(
+                object_id="measure:Sales:On Hand Units",
+                canonical_name="On Hand Units",
+                object_type=SemanticObjectType.MEASURE,
+                table_name="Sales",
+                data_type="decimal",
+            ),
+            CatalogObject(
+                object_id="measure:Sales:Reserved Units",
+                canonical_name="Reserved Units",
+                object_type=SemanticObjectType.MEASURE,
+                table_name="Sales",
+                data_type="decimal",
+            ),
+        ),
+    )
+    grounder = ObjectGrounder(catalog)
+    resolved = grounder.resolve_phrase(
+        "on-hand units", SemanticObjectType.MEASURE, "measure"
+    )
+    assert resolved.status is GroundingStatus.RESOLVED
+    assert resolved.canonical_object.object_id == "measure:Sales:On Hand Units"
+    ambiguous = grounder.resolve_phrase(
+        "units", SemanticObjectType.MEASURE, "measure"
+    )
+    assert ambiguous.status is GroundingStatus.AMBIGUOUS
+
+
+@pytest.mark.asyncio
+async def test_bare_generic_measure_noun_cannot_rely_on_unsupported_resolver_choice():
+    catalog = SemanticCatalog(
+        semantic_model_key="model",
+        schema_fingerprint="a" * 64,
+        objects=(
+            CatalogObject(
+                object_id="measure:Sales:On Hand Units",
+                canonical_name="On Hand Units",
+                object_type=SemanticObjectType.MEASURE,
+                table_name="Sales",
+                data_type="decimal",
+            ),
+            CatalogObject(
+                object_id="measure:Sales:Reserved Units",
+                canonical_name="Reserved Units",
+                object_type=SemanticObjectType.MEASURE,
+                table_name="Sales",
+                data_type="decimal",
+            ),
+        ),
+    )
+
+    class Provider(LLMProvider):
+        provider_name = "generic-noun"
+        is_mock = False
+
+        async def generate(self, request, output_type):
+            payload = json.loads(request.messages[-1]["content"])
+            decisions = [
+                ResolutionDecision(
+                    slot_id=slot["slot_id"],
+                    outcome="RESOLVED",
+                    candidate_id="measure:Sales:On Hand Units",
+                )
+                for slot in payload["slots"]
+            ]
+            return LLMResponse(
+                content="{}",
+                structured=ResolutionResponse(decisions=tuple(decisions)),
+                model="generic-noun",
+            )
+
+    async def no_lookup(*_):
+        raise AssertionError("no member lookup")
+
+    outcome = await SemanticGroundingService(
+        catalog,
+        selector=BoundedLLMObjectSelector(Provider()),
+    ).ground_frame(
+        "What is the inventory?",
+        SemanticFrame(mode="data", query_shape="scalar", measure_mentions=("inventory",)),
+        None,
+        no_lookup,
+    )
+
+    assert outcome.status is GroundingStatus.AMBIGUOUS
+    assert any(
+        item.method.endswith("metadata_unproven")
+        for item in outcome.object_results
+    )
 
 
 class TestMemberAndTimeGrounding:
@@ -2818,8 +2960,14 @@ class TestSemanticCorrectnessFailureReproducers:
             include_month_group=False,
         )
 
-        async def no_lookup(*_):
-            raise AssertionError("failed grouping must not query members")
+        async def daily_lookup(field, limit):
+            return ColumnMembersResult(
+                semantic_model_key=catalog.semantic_model_key,
+                table_name=field.table_name,
+                field_name=field.canonical_name,
+                values=["2025-01-02T00:00:00", "2025-01-03T00:00:00"],
+                source_mode="real",
+            )
 
         outcome = await SemanticGroundingService(catalog).ground_frame(
             "出勤率趋势",
@@ -2833,14 +2981,14 @@ class TestSemanticCorrectnessFailureReproducers:
                 ),
             ),
             None,
-            no_lookup,
+            daily_lookup,
         )
 
         assert outcome.status == GroundingStatus.UNRESOLVED
         assert outcome.pending_eligible is True  # unresolved grouping remains a non-executable obligation
         assert outcome.clarification_reason == ClarificationReason.DIMENSION_UNRESOLVED
         assert any(
-            item.method == "temporal_grouping_for_date_binding_missing"
+            item.method == "runtime_month_axis_unproven"
             for item in outcome.object_results
         )
 
@@ -2870,16 +3018,22 @@ class TestSemanticCorrectnessFailureReproducers:
         provider = _SelectionProvider("field:Date:YearMonth")
 
         async def lookup(field, limit):
-            assert field.object_id == "field:Date:YearMonth"
             assert limit == 100
-            return ColumnMembersResult(
-                semantic_model_key=schema.key,
-                table_name="Date",
-                field_name="YearMonth",
-                values=[
+            if field.object_id == "field:Date:YearMonth":
+                values = [
                     "2025-01-01T00:00:00",
                     "2025-02-01T00:00:00",
-                ],
+                ]
+            else:
+                values = [
+                    "2025-01-02T00:00:00",
+                    "2025-01-03T00:00:00",
+                ]
+            return ColumnMembersResult(
+                semantic_model_key=schema.key,
+                table_name=field.table_name,
+                field_name=field.canonical_name,
+                values=values,
                 source_mode="real",
             )
 
@@ -2916,7 +3070,7 @@ class TestSemanticCorrectnessFailureReproducers:
         assert outcome.delta.dimension_tables == {"YearMonth": "Date"}
         assert outcome.delta.dimension_order == "asc"
         assert any(
-            item.method == "runtime_complete_month_members"
+            item.method == "runtime_complete_month_axis"
             for item in outcome.object_results
         )
 

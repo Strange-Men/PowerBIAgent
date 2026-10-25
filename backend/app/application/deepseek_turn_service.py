@@ -1082,6 +1082,7 @@ class LLMTurnService:
                     if grounding.clarification_reason is not None
                     else None
                 )
+                semantic_audit["resolution_method"] = grounding.resolution_method
                 grounded_delta = grounding.delta
                 explicit_slots: list[str] = []
                 if grounded_delta is not None:

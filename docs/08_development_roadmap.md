@@ -20,6 +20,10 @@ HEAD=origin/main、clean/shutdown生效。具体状态与fresh证据见07，唯�
 CONTRACT_GAP、Test B DEFERRED_BY_TEST_PRINCIPAL → M6.6 与M5 Frozen Core保留。
 完成本轮立即STOP。历史章节不授予实施权限。
 
+M6.5.2_FIX4 是 M6.5.2 内的独立 semantic FIX，不改变上述路线、版本或后续阶段授权：
+Lean SemanticFrame + candidate retrieval + ONE bounded resolution + deterministic
+temporal/member/numeric proof。它不新增 M6.5.3/M6.6 实施权限。
+
 ## Historical — M6.4.1 维护 / 发布判定
 
 M6.4 FINAL COMPLETE；Final SHA `bdbe7189be21ff043340c2025625a9e3398310b0`；自身 [Full Validation 38693083553](https://github.com/Strange-Men/PowerBIAgent/actions/runs/38693083553) SUCCESS，Remote Audit PASS，封板时 HEAD=origin/main、worktree/staging clean。

@@ -62,6 +62,10 @@ from backend.app.schemas.data_contracts import (
     TableSchema,
 )
 from backend.app.query_plan.grounding import CandidateSelection, SemanticEquivalenceVeto
+from backend.app.query_plan.semantic_resolution import (
+    ResolutionDecision,
+    ResolutionResponse,
+)
 
 
 def _coverage_response() -> SemanticCoverageDecision:
@@ -149,14 +153,62 @@ def _current_understanding_text(request: LLMRequest) -> str:
     return content.split(marker, 1)[1].split("\n", 1)[0]
 
 
+def _resolution_response(
+    request: LLMRequest,
+    aliases: dict[str, str],
+    *,
+    unresolved: set[str] | None = None,
+) -> ResolutionResponse:
+    payload = json.loads(request.messages[-1]["content"])
+    unresolved = unresolved or set()
+    decisions = []
+    for slot in payload["slots"]:
+        phrase = slot["requested_phrase"]
+        candidates = slot["candidates"]
+        by_id = {item["candidate_id"] for item in candidates}
+        if phrase in unresolved:
+            decisions.append(ResolutionDecision(
+                slot_id=slot["slot_id"], outcome="UNRESOLVED"
+            ))
+            continue
+        target = aliases.get(phrase, phrase)
+        match = next(
+            (
+                item["candidate_id"]
+                for item in candidates
+                if item["canonical_name"] == target
+                or item.get("display_name") == target
+            ),
+            None,
+        )
+        if match is None and phrase in by_id:
+            match = phrase
+        decisions.append(ResolutionDecision(
+            slot_id=slot["slot_id"],
+            outcome="RESOLVED" if match else "UNRESOLVED",
+            candidate_id=match,
+        ))
+    return ResolutionResponse(decisions=tuple(decisions))
+
+
 def _bounded_selection(
     request: LLMRequest,
     aliases: dict[str, str],
     *,
     unresolved: set[str] | None = None,
-) -> CandidateSelection:
+    output_type=None,
+) -> CandidateSelection | ResolutionResponse:
     content = request.messages[-1]["content"]
     unresolved = unresolved or set()
+    if output_type is ResolutionResponse:
+        return _resolution_response(request, aliases, unresolved=unresolved)
+    if content.startswith("{"):
+        try:
+            payload = json.loads(content)
+        except (TypeError, ValueError):
+            payload = None
+        if isinstance(payload, dict) and "slots" in payload:
+            return _resolution_response(request, aliases, unresolved=unresolved)
     if content.startswith("{"):
         payload = json.loads(content)
         phrase = payload["requested_value"]
@@ -1406,7 +1458,7 @@ class _M533MultiTurnProvider(_M24ScriptedDeepSeekProvider):
             )
         if request.task == LLMTask.SEMANTIC_SELECTION:
             content = request.messages[-1]["content"]
-            member_call = content.startswith("{")
+            member_call = content.startswith("{") and '"slots"' not in content
             structured = _bounded_selection(
                 request,
                 (
@@ -3194,7 +3246,7 @@ class TestM24DeepSeekLocalChat:
                 )
 
                 provider.active = "failed"
-                provider.fail_query_plan_once = True
+                provider.fail_intent_once = True
                 scalar = await client.post("/api/v1/chat", json={
                     "message": "总销售额是多少？",
                     "conversation_id": "m55-query-plan-fallback",
@@ -3371,11 +3423,10 @@ class TestM24DeepSeekLocalChat:
             assert replay.status_code == 200
             assert replay.json()["idempotent_replay"] is True
             assert replay.json()["source_mode"] == "real"
-            assert len(provider.calls) == 3
+            assert len(provider.calls) == 2
             assert all(call.task is not LLMTask.DAX for call in provider.calls)
             assert [call.task for call in provider.calls] == [
                 LLMTask.UNDERSTANDING,
-                LLMTask.UNDERSTANDING_COVERAGE,
                 LLMTask.ANSWER,
             ]
             assert adapter.schema_calls == 1
@@ -3480,7 +3531,7 @@ class TestM24DeepSeekLocalChat:
             assert data["terminal_state"] == "tool_failed"
             assert data["error_type"] == "preview_row_data_missing"
             assert data["source_mode"] == "real"
-            assert len(provider.calls) == 2
+            assert len(provider.calls) == 1
             assert all(call.task != LLMTask.DAX for call in provider.calls)
             assert adapter.dax_calls == 1
 
@@ -3509,7 +3560,7 @@ class TestM24DeepSeekLocalChat:
             }
             assert adapter.schema_calls == 1
             assert adapter.dax_calls == 0
-            assert len(provider.calls) == 2
+            assert len(provider.calls) == 1
 
 
 class _M582ShapeProvider(LLMProvider):
@@ -4117,7 +4168,6 @@ class TestM582ProductionRoutingAndShapes:
         assert service.powerbi.dax_calls == 0
         assert [call.task for call in provider.calls] == [
             LLMTask.UNDERSTANDING,
-            LLMTask.UNDERSTANDING_COVERAGE,
         ]
 
     @pytest.mark.asyncio
@@ -4251,11 +4301,10 @@ class TestM25BusinessGoldenOffline:
         assert f"[{dimension}]" in memory.last_dax
         assert adapter.schema_calls == 1
         assert adapter.dax_calls == 1
-        assert len(provider.calls) == 3
+        assert len(provider.calls) == 2
         assert all(call.task is not LLMTask.DAX for call in provider.calls)
         assert [call.task for call in provider.calls] == [
             LLMTask.UNDERSTANDING,
-            LLMTask.UNDERSTANDING_COVERAGE,
             LLMTask.ANSWER,
         ]
         assert data["execution_audit"]["llm_dax_call_count"] == 0

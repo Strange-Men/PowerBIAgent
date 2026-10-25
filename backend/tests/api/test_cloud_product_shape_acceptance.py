@@ -98,7 +98,30 @@ def test_formal_followup_inherits_only_verified_scope(factual_product,monkeypatc
     async def followup(request,output_type):
         if request.task.value=='semantic_selection':
             from backend.app.query_plan.grounding import CandidateSelection
+            from backend.app.query_plan.semantic_resolution import (
+                ResolutionDecision, ResolutionResponse,
+            )
             content=request.messages[-1]['content']
+            if content.startswith('{') and '"slots"' in content:
+                payload=json.loads(content)
+                decisions=[]
+                for slot in payload['slots']:
+                    ids={item['candidate_id'] for item in slot['candidates']}
+                    target=(
+                        'field:Sales:Category'
+                        if slot['role'] in {'filter_field','dimension'}
+                        and 'field:Sales:Category' in ids
+                        else None
+                    )
+                    decisions.append(ResolutionDecision(
+                        slot_id=slot['slot_id'],
+                        outcome='RESOLVED' if target else 'UNRESOLVED',
+                        candidate_id=target,
+                    ))
+                return LLMResponse(
+                    content='{}',model='mock-llm',
+                    structured=ResolutionResponse(decisions=tuple(decisions)),
+                )
             if content.startswith('{'):
                 payload=json.loads(content)
                 candidate=next(item for item in payload['candidates'] if item['value']==payload['requested_value'])

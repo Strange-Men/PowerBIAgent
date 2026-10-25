@@ -15,10 +15,12 @@ from backend.app.facts.availability import (
     DataAvailabilityContext,
     DataHorizonStatus,
 )
+from backend.app.intent.models import TimeIntentDraft, TimeIntentKind
 from backend.app.intent.question_router import QuestionRoute, QuestionRouter
 from backend.app.intent.semantic_interpreter import (
     GeneralFactScope,
     LLMSemanticInterpreter,
+    RankingIntent,
     SemanticCoverageDecision,
     SemanticEvidenceSpan,
     SemanticFrame,
@@ -111,7 +113,7 @@ def test_semantic_frame_mode_is_the_only_general_business_boundary():
 
 
 @pytest.mark.asyncio
-async def test_open_interpreter_emits_one_frame_then_veto_only_coverage():
+async def test_open_interpreter_emits_one_frame_without_a_second_veto():
     provider = _QueuedProvider(
         SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
             mode=SemanticInterpretationMode.DATA,
@@ -122,7 +124,6 @@ async def test_open_interpreter_emits_one_frame_then_veto_only_coverage():
                 SemanticEvidenceSpan(slot="measure", text="华南销售额"),
             ),
         ),
-        SemanticCoverageDecision(decision="ACCEPT"),
     )
     draft = await LLMSemanticInterpreter(provider).interpret(
         "谢谢，再帮我看一下华南销售额"
@@ -132,7 +133,6 @@ async def test_open_interpreter_emits_one_frame_then_veto_only_coverage():
     assert draft.general_answer == ""
     assert [call.task for call in provider.calls] == [
         LLMTask.UNDERSTANDING,
-        LLMTask.UNDERSTANDING_COVERAGE,
     ]
     assert "华南销售额" in provider.calls[0].messages[-1]["content"]
     assert provider.calls[0].metadata == {}
@@ -157,9 +157,16 @@ async def test_open_interpreter_emits_one_frame_then_veto_only_coverage():
                 mode=SemanticInterpretationMode.DATA,
                 query_shape=QueryShape.SCALAR,
                 measure_mentions=("销售额",),
+                time_mentions=("今年",),
+                time_intent=TimeIntentDraft(
+                    kind=TimeIntentKind.RELATIVE_YEAR,
+                    expression="今年",
+                    relative_offset=0,
+                ),
                 evidence_spans=(
                     SemanticEvidenceSpan(slot="query_shape", text="销售额"),
                     SemanticEvidenceSpan(slot="measure", text="销售额"),
+                    SemanticEvidenceSpan(slot="time", text="今年"),
                 ),
             ),
             SemanticInterpretationMode.DATA,
@@ -168,11 +175,17 @@ async def test_open_interpreter_emits_one_frame_then_veto_only_coverage():
             "当前报表销售额最高的区域",
             SemanticFrame(relation="fresh_question", changed_slots=(), referenced_context_slots=(),
                 mode=SemanticInterpretationMode.DATA,
-                query_shape=QueryShape.SCALAR,
+                query_shape=QueryShape.RANKING,
                 measure_mentions=("销售额",),
+                dimension_mentions=("区域",),
+                ranking_intent=RankingIntent(
+                    direction="desc", top_n=None, evidence_span="最高"
+                ),
                 evidence_spans=(
-                    SemanticEvidenceSpan(slot="query_shape", text="销售额"),
+                    SemanticEvidenceSpan(slot="query_shape", text="最高"),
                     SemanticEvidenceSpan(slot="measure", text="销售额"),
+                    SemanticEvidenceSpan(slot="dimension", text="区域"),
+                    SemanticEvidenceSpan(slot="ranking", text="最高"),
                 ),
             ),
             SemanticInterpretationMode.DATA,
@@ -184,15 +197,12 @@ async def test_understanding_boundary_uses_bounded_semantic_frame(
     frame,
     expected_mode,
 ):
-    responses = [frame]
-    if frame.mode is not SemanticInterpretationMode.GENERAL:
-        responses.append(SemanticCoverageDecision(decision="ACCEPT"))
-    provider = _QueuedProvider(*responses)
+    provider = _QueuedProvider(frame)
 
     answer = await LLMSemanticInterpreter(provider).interpret(user_input)
 
     assert answer.mode is expected_mode
-    assert len(provider.calls) == (1 if expected_mode is SemanticInterpretationMode.GENERAL else 2)
+    assert len(provider.calls) == 1
     request = provider.calls[0]
     assert request.task is LLMTask.UNDERSTANDING
     assert user_input in request.messages[-1]["content"]

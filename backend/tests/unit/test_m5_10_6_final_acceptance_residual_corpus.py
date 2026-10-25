@@ -35,6 +35,10 @@ from backend.app.query_plan.grounding import (
     SemanticGroundingService,
     TimeGrounder,
 )
+from backend.app.query_plan.semantic_resolution import (
+    ResolutionDecision,
+    ResolutionResponse,
+)
 from backend.app.query_plan.model_semantic_context import (
     ModelSemanticContext,
     RuntimeObject,
@@ -55,6 +59,35 @@ from backend.app.schemas.data_contracts import (
     TimeRangeMode,
     TimeRangeSpec,
 )
+
+
+def _resolution_response(
+    output_type,
+    request,
+    *,
+    candidate_id: str | None = None,
+    outcome: str = "RESOLVED",
+) -> LLMResponse | None:
+    if output_type is not ResolutionResponse:
+        return None
+    payload = json.loads(request.messages[-1]["content"])
+    decisions = []
+    for slot in payload["slots"]:
+        ids = {item["candidate_id"] for item in slot["candidates"]}
+        target = candidate_id if candidate_id in ids else None
+        actual = outcome if outcome != "RESOLVED" else (
+            "RESOLVED" if target else "UNRESOLVED"
+        )
+        decisions.append(ResolutionDecision(
+            slot_id=slot["slot_id"],
+            outcome=actual,
+            candidate_id=target if actual == "RESOLVED" else None,
+        ))
+    return LLMResponse(
+        content="{}",
+        structured=ResolutionResponse(decisions=tuple(decisions)),
+        model="residual-red",
+    )
 
 
 class _FrameProvider(LLMProvider):
@@ -80,6 +113,11 @@ class _FrameProvider(LLMProvider):
 
 class _AmbiguousFieldProvider(LLMProvider):
     async def generate(self, request, output_type):
+        batch = _resolution_response(
+            output_type, request, outcome="AMBIGUOUS"
+        )
+        if batch is not None:
+            return batch
         assert output_type is CandidateSelection
         return LLMResponse(
             content="{}",
@@ -98,6 +136,11 @@ class _AmbiguousFieldProvider(LLMProvider):
 
 class _DimensionOwnerProvider(LLMProvider):
     async def generate(self, request, output_type):
+        batch = _resolution_response(
+            output_type, request, candidate_id="field:Product:Product"
+        )
+        if batch is not None:
+            return batch
         assert output_type is CandidateSelection
         return LLMResponse(
             content="{}",
@@ -120,6 +163,11 @@ class _DimensionOwnerProvider(LLMProvider):
 
 class _FactOwnerProvider(LLMProvider):
     async def generate(self, request, output_type):
+        batch = _resolution_response(
+            output_type, request, candidate_id="field:Sales:Product"
+        )
+        if batch is not None:
+            return batch
         assert output_type is CandidateSelection
         return LLMResponse(
             content="{}",
@@ -145,6 +193,11 @@ class _SelectedCandidateProvider(LLMProvider):
         self.candidate_id = candidate_id
 
     async def generate(self, request, output_type):
+        batch = _resolution_response(
+            output_type, request, candidate_id=self.candidate_id
+        )
+        if batch is not None:
+            return batch
         assert output_type is CandidateSelection
         return LLMResponse(
             content="{}",
@@ -170,6 +223,12 @@ class _UnresolvedCandidateProvider(LLMProvider):
         self.calls = 0
 
     async def generate(self, request, output_type):
+        batch = _resolution_response(
+            output_type, request, outcome="UNRESOLVED"
+        )
+        if batch is not None:
+            self.calls += 1
+            return batch
         assert output_type is CandidateSelection
         self.calls += 1
         return LLMResponse(

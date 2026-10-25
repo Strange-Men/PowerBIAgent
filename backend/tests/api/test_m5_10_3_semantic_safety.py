@@ -52,7 +52,58 @@ class _SemanticSafetyProvider(LLMProvider):
             structured = SemanticCoverageDecision(decision="ACCEPT")
         elif request.task is LLMTask.SEMANTIC_SELECTION:
             content = request.messages[-1]["content"]
-            if "角色：measure" in content and "最挣钱" in content:
+            if content.startswith("{") and '"slots"' in content:
+                from backend.app.query_plan.semantic_resolution import (
+                    ResolutionDecision, ResolutionResponse,
+                )
+                payload = json.loads(content)
+                decisions = []
+                for slot in payload["slots"]:
+                    phrase = slot["requested_phrase"]
+                    role = slot["role"]
+                    ids = {
+                        item["candidate_id"]: item["canonical_name"]
+                        for item in slot["candidates"]
+                    }
+                    target = None
+                    if role == "measure" and not any(
+                        word in phrase for word in ("挣钱", "赚钱", "盈利")
+                    ):
+                        target = next(
+                            (
+                                candidate_id
+                                for candidate_id, name in ids.items()
+                                if name == "Total Sales"
+                            ),
+                            None,
+                        )
+                    elif role in {"dimension", "ranking_dimension"}:
+                        target = next(
+                            (
+                                candidate_id
+                                for candidate_id, name in ids.items()
+                                if name == "Product"
+                            ),
+                            None,
+                        )
+                    elif role == "filter_field" and any(
+                        word in phrase for word in ("华南", "华北", "火星区")
+                    ):
+                        target = next(
+                            (
+                                candidate_id
+                                for candidate_id, name in ids.items()
+                                if name == "Region"
+                            ),
+                            None,
+                        )
+                    decisions.append(ResolutionDecision(
+                        slot_id=slot["slot_id"],
+                        outcome="RESOLVED" if target else "UNRESOLVED",
+                        candidate_id=target,
+                    ))
+                structured = ResolutionResponse(decisions=tuple(decisions))
+            elif "角色：measure" in content and "最挣钱" in content:
                 structured = CandidateSelection(outcome="UNRESOLVED")
             elif "角色：ranking_dimension" in content and "产品" in content:
                 structured = CandidateSelection(

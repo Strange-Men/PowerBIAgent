@@ -1,6 +1,35 @@
 # 09 — 下一开发者 / AI Cold Start Handoff
 
-## 当前工作 — FIX3 Round 1 收口后 STOP
+## 当前工作 — M6.5.2_FIX4 Semantic Core Refactor
+
+Settings.version 保持 M6.5.2；本轮只改语义前半段与 Fabric IQ formatted numeric。
+根因、架构、验证和限制见
+[FIX4 milestone](milestones/m6/m6_5_2_fix4_semantic_core.md)。审计结论不是继续补
+case，而是：
+
+1. Understanding 改为 Lean SemanticFrame + deterministic evidence/time/ranking/coverage，
+   删除第二 coverage LLM 与 relation review LLM；
+2. 新增 provider-neutral `SemanticCandidateRetriever`，大型模型不再因全 Catalog
+   128/64KB 预算直接 UNRESOLVED；
+3. 所有未决 object slot 合并为一次 `BoundedSemanticResolution`，之后全部确定性绑定；
+4. temporal 消费 provider-declared PK/FK date endpoint，并恢复 unique runtime date
+   field 的可达性；trend month axis 由完整 member values 确定性证明；
+5. Fabric IQ numeric schema + formatted wire string 严格解析为 Decimal，保留 fail-closed。
+
+生产调用链仍为 TurnPipeline → SemanticFrame → Grounding → StateTransition →
+CanonicalQueryPlan → Deterministic DAX → Inspection → VerifiedFactSet → Answer/Report。
+未改 QueryShape、DAX/Facts authority、ValueSearch 合同、12-row/N+1/8-column。
+Legacy `SemanticGroundingService.ground` 仅保留为 historical/test-only，不在 production
+call graph；下一轮若清理需单独授权和 test migration。
+
+Real-LLM 48-case stress（真实 DeepSeek + synthetic semantic metadata）最终
+39 PASS / 9 correct clarification / 0 unexpected FAIL，clusters 为空；Full Backend
+final candidate 4054 PASS/1 SKIP/22 existing warnings；receipt 在仓库外
+`PBIAgentTest/M6.5.2FIX4/Real/llm-stress-48-v5-final.json`。Real Cloud
+browser stress 需要交互式 Microsoft 登录；本轮不把未完成的 Real Cloud 计为 PASS。
+下一 implementation 仍须独立 scope；M6.5.3/M6.6 不自动实施。
+
+## 前序工作 — FIX3 Round 1 收口后 STOP
 
 根因与回归映射见 [Round 1 audit](milestones/m6/m6_5_2_fix3_round1_audit.md)。
 Online Retail 四条和目录选取的「PBI_实战1_快速穿越」四条已通过真实产品链路，

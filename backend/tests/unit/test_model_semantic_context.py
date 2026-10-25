@@ -119,11 +119,27 @@ def test_profile_requires_explicit_exact_binding_and_stale_is_rejected():
         resolve_model_override(ctx, registry)
 
 
-def test_missing_metadata_never_defaults_single_measure_or_date():
+def test_missing_metadata_never_defaults_measure_but_unique_date_is_provable():
     schema = SemanticModelSchema(name="Minimal", key="minimal", tables=[TableSchema(name="T", columns=[ColumnSchema(name="D", data_type="DateTime")], measures=[MeasureSchema(name="M")])])
     result = ObjectGrounder(catalog(schema)).resolve_phrase("unknown", SemanticObjectType.MEASURE, "measure")
     assert result.status == GroundingStatus.UNRESOLVED
-    assert SemanticGroundingService(catalog(schema))._resolve_date_field("今年").status != GroundingStatus.RESOLVED
+    date = SemanticGroundingService(catalog(schema))._resolve_date_field("今年")
+    assert date.status == GroundingStatus.RESOLVED
+    assert date.method == "unique_runtime_date_field"
+
+
+def test_multiple_runtime_date_fields_without_evidence_stay_ambiguous():
+    schema = SemanticModelSchema(name="Minimal", key="minimal", tables=[TableSchema(
+        name="T",
+        columns=[
+            ColumnSchema(name="CreatedAt", data_type="DateTime"),
+            ColumnSchema(name="ShippedAt", data_type="DateTime"),
+        ],
+        measures=[MeasureSchema(name="M")],
+    )])
+    date = SemanticGroundingService(catalog(schema))._resolve_date_field("今年")
+    assert date.status == GroundingStatus.AMBIGUOUS
+    assert date.method == "unproven_default_date_role"
 
 
 def test_duplicate_names_preserve_ownership_and_ambiguity():

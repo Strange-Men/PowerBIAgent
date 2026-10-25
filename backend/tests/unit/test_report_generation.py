@@ -1196,7 +1196,6 @@ async def test_production_turn_uses_capability_resolved_queries_and_replays():
     assert repository.store_count == 1
     assert [call.task.value for call in provider.calls] == [
         "understanding",
-        "understanding_coverage",
         "report_intent",
     ]
     assert replay["idempotent_replay"] is True
@@ -1985,7 +1984,6 @@ async def test_report_template_required_gate_follows_understanding_but_precedes_
     assert result["tool_sequence"] == []
     assert [call.task for call in provider.calls] == [
         LLMTask.UNDERSTANDING,
-        LLMTask.UNDERSTANDING_COVERAGE,
     ]
     assert adapter.schema_count == 0
     assert adapter.execute_count == 0

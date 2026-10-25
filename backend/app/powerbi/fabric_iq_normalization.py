@@ -301,6 +301,212 @@ _INTEGER_LIMITS = {
 _NUMBER_TYPES = {"double", "decimal", "float", "currency"}
 _TEXT_TYPES = {"string", "datetime", "date", "time"}
 _BOOLEAN_TYPES = {"boolean", "bool"}
+_CURRENCY_SYMBOLS = ("$", "€", "£", "¥", "￥", "₩", "₹", "₽")
+_NUMERIC_TEXT_LIMIT = 64
+
+
+@dataclass(frozen=True)
+class NumericTextStyle:
+    """Runtime format evidence for one proven numeric output column."""
+
+    group_sep: str | None
+    decimal_sep: str | None
+    percent: bool = False
+    source: str = "unknown"
+
+
+def numeric_text_style(format_string: str | None) -> NumericTextStyle:
+    """Derive a strict numeric style from an existing Power BI format string.
+
+    Only separator roles and a percent marker are consumed.  The format string
+    is never used to reinterpret a value's unit or business meaning.
+    """
+
+    if not isinstance(format_string, str) or not format_string.strip():
+        return NumericTextStyle(None, None, source="absent")
+    text = re.sub(r'"[^"]*"', "", format_string)
+    text = re.sub(r"\\.", "", text)
+    percent = "%" in text
+    placeholders = re.findall(r"[0#.,]", text)
+    if not placeholders:
+        return NumericTextStyle(None, None, percent=percent, source="no_placeholders")
+    last_placeholder = max(
+        index for index, char in enumerate(text) if char in "0#"
+    )
+    decimal_sep: str | None = None
+    for index, char in enumerate(text):
+        if char not in ".," or index > last_placeholder:
+            continue
+        suffix = text[index + 1:]
+        prefix = text[:index]
+        if suffix and re.fullmatch(r"[0#]+", suffix):
+            if len(suffix) == 3 and prefix.endswith("#"):
+                # Conventional thousands grouping (#,##0 / #.##0), not a
+                # three-place decimal suffix.
+                continue
+            decimal_sep = char
+    if decimal_sep is None:
+        separators = [char for char in text if char in ".,"]
+        if not separators:
+            return NumericTextStyle(None, None, percent=percent, source="plain")
+        # A lone separator followed by exactly three placeholders, with a '#'
+        # before it, is the conventional grouping form (#,##0).
+        index = text.find(separators[0])
+        suffix = text[index + 1:]
+        if (
+            len(suffix) == 3
+            and re.fullmatch(r"[0#]{3}", suffix)
+            and "#" in text[:index]
+        ):
+            return NumericTextStyle(
+                separators[0], None, percent=percent, source="grouping_only"
+            )
+        return NumericTextStyle(None, separators[0], percent=percent, source="decimal_only")
+    group_sep = None
+    for char in (".", ","):
+        if char != decimal_sep and char in text:
+            group_sep = char
+    return NumericTextStyle(
+        group_sep, decimal_sep, percent=percent, source="separators"
+    )
+
+
+def _currency_number(value: str) -> tuple[str, str | None] | None:
+    """Remove at most one supported currency symbol and one outer sign."""
+
+    if not isinstance(value, str) or value != value.strip():
+        return None
+    text = value
+    if not text or len(text) > _NUMERIC_TEXT_LIMIT:
+        return None
+    sign = ""
+    if text[:1] in {"+", "-"}:
+        sign, text = text[0], text[1:].strip()
+    symbol = None
+    for item in _CURRENCY_SYMBOLS:
+        if text.startswith(item):
+            symbol = item
+            text = text[len(item):].lstrip()
+            break
+        if text.endswith(item):
+            symbol = item
+            text = text[:-len(item)].rstrip()
+            break
+    if any(character in text for character in _CURRENCY_SYMBOLS):
+        return None
+    if text[:1] in {"+", "-"}:
+        # A sign between the symbol and the digits is accepted; a second sign
+        # on an already-signed value is not.  A leading plus is not part of the
+        # proven formatting contract.
+        if sign or text[0] == "+":
+            return None
+        sign, text = text[0], text[1:].strip()
+    if sign == "+" or not text:
+        return None
+    return sign + text, symbol
+
+
+def _decimal_from_parts(
+    integer: str, fraction: str | None, group_sep: str | None
+) -> Decimal | None:
+    if not integer or (
+        fraction is not None
+        and not re.fullmatch(r"[0-9]+", fraction, flags=re.ASCII)
+    ):
+        return None
+    if fraction is not None and not fraction:
+        return None
+    sign = ""
+    if integer[:1] in {"+", "-"}:
+        sign, integer = integer[0], integer[1:]
+    if group_sep is not None and group_sep in integer:
+        pattern = r"\d{1,3}(?:" + re.escape(group_sep) + r"\d{3})+"
+        if not re.fullmatch(pattern, integer, flags=re.ASCII):
+            return None
+        integer = integer.replace(group_sep, "")
+    elif not re.fullmatch(r"[0-9]+", integer, flags=re.ASCII):
+        return None
+    cleaned = sign + integer + (f".{fraction}" if fraction is not None else "")
+    try:
+        result = Decimal(cleaned)
+    except Exception:
+        return None
+    return result if result.is_finite() else None
+
+
+def _parse_with_style(number: str, style: NumericTextStyle) -> Decimal | None:
+    if style.percent:
+        return None
+    if style.decimal_sep is not None:
+        if style.decimal_sep in number:
+            parts = number.split(style.decimal_sep)
+            if len(parts) != 2:
+                return None
+            integer, fraction = parts
+            if any(separator in fraction for separator in (",", ".")):
+                return None
+            return _decimal_from_parts(integer, fraction, style.group_sep)
+        # No decimal part.  Only the declared grouping separator may remain.
+        other = "." if style.group_sep == "," else ","
+        if style.group_sep is None:
+            return _decimal_from_parts(number, None, None)
+        if other in number:
+            return None
+        return _decimal_from_parts(number, None, style.group_sep)
+    if any(separator in number for separator in (",", ".")):
+        if style.group_sep is None:
+            return None
+        implied_decimal = "." if style.group_sep == "," else ","
+        if implied_decimal in number:
+            integer, _, fraction = number.rpartition(implied_decimal)
+            if any(char in fraction for char in (",", ".")):
+                return None
+            return _decimal_from_parts(integer, fraction, style.group_sep)
+        if style.group_sep not in number:
+            return None
+        other = "." if style.group_sep == "," else ","
+        if other in number:
+            return None
+        return _decimal_from_parts(number, None, style.group_sep)
+    return _decimal_from_parts(number, None, None)
+
+
+def _parse_proven_numeric(value: str, style: NumericTextStyle) -> Decimal | None:
+    """Strict formatted-number parser for a proven numeric schema object.
+
+    The value must be one supported currency symbol plus an unambiguous digit
+    grouping/decimal form.  No locale guess, exponent, percent, grouping
+    repair, or intermediate float is allowed.
+    """
+
+    parsed = _currency_number(value)
+    if parsed is None:
+        return None
+    number, symbol = parsed
+    if style.source in {"absent", "no_placeholders", "unknown"}:
+        if symbol is None:
+            # No format and no currency marker: preserve the sealed plain
+            # decimal contract; separators need explicit locale evidence.
+            if not re.fullmatch(
+                r"-?[0-9]+(?:\.[0-9]+)?", number, flags=re.ASCII
+            ):
+                return None
+            try:
+                result = Decimal(number)
+            except Exception:
+                return None
+            return result if result.is_finite() else None
+        # A currency marker is explicit formatting evidence.  Without a format
+        # string, accept only when US and EU parses agree.
+        results = [
+            _parse_with_style(number, NumericTextStyle(",", ".", source="us")),
+            _parse_with_style(number, NumericTextStyle(".", ",", source="eu")),
+        ]
+        values = [item for item in results if item is not None]
+        if not values or len(set(values)) != 1:
+            return None
+        return values[0]
+    return _parse_with_style(number, style)
 
 
 @dataclass(frozen=True)
@@ -345,7 +551,7 @@ def _column_kind(kind):
     return kind
 
 
-def _typed_cell(value, kind, *, numeric_schema=False):
+def _typed_cell(value, kind, *, numeric_schema=False, numeric_style=None):
     kind = _column_kind(kind)
     value = _cell(value)
     if value is None:
@@ -356,15 +562,15 @@ def _typed_cell(value, kind, *, numeric_schema=False):
         return _integer_cell(value, kind, allow_text=kind != "int32")
     elif kind in _NUMBER_TYPES:
         if type(value) is str and numeric_schema:
-            # TYPED_NUMERIC_STRING_NORMALIZATION: no locale, currency,
-            # grouping, exponent, rounding or intermediate float. The caller
-            # has already proved one exact numeric runtime schema object.
-            if len(value) > 64 or not re.fullmatch(r"-?[0-9]+(?:\.[0-9]+)?", value, flags=re.ASCII):
+            # TYPED_NUMERIC_STRING_NORMALIZATION: the caller proved one exact
+            # numeric runtime schema object.  A supported currency symbol and
+            # a strict grouping/decimal form may then be parsed directly to
+            # Decimal.  No float, locale guess, exponent or percent.
+            style = numeric_style or NumericTextStyle(None, None)
+            parsed = _parse_proven_numeric(value, style)
+            if parsed is None:
                 raise fail("CONTRACT_DRIFT")
-            value = Decimal(value)
-            if not value.is_finite():
-                raise fail("CONTRACT_DRIFT")
-            return value
+            return parsed
         if type(value) not in {int, float}:
             raise fail("CONTRACT_DRIFT")
     elif kind in _BOOLEAN_TYPES:
@@ -375,14 +581,22 @@ def _typed_cell(value, kind, *, numeric_schema=False):
     return value
 
 
-def _csv_cell(value, kind):
+def _csv_cell(value, kind, *, numeric_schema=False, numeric_style=None):
     kind = _column_kind(kind)
     if kind in _TEXT_TYPES: return value
     if value == "": return None
     try:
         if kind in _INTEGER_LIMITS:
             return _integer_cell(value, kind)
-        if kind in _NUMBER_TYPES: return _typed_cell(float(value), kind)
+        if kind in _NUMBER_TYPES:
+            if numeric_schema and isinstance(value, str):
+                parsed = _parse_proven_numeric(
+                    value, numeric_style or NumericTextStyle(None, None)
+                )
+                if parsed is None:
+                    raise fail("CONTRACT_DRIFT")
+                return parsed
+            return _typed_cell(float(value), kind)
         if kind in _BOOLEAN_TYPES and value.lower() in {"true", "false"}: return value.lower() == "true"
     except (ValueError, OverflowError): pass
     raise fail("CONTRACT_DRIFT")
@@ -448,6 +662,10 @@ def normalize_query(raw, model_id, request, *, envelope=None, schema=None):
     numeric_schema = [type(getattr(schema, 'session_generation', None)) is int
         and obj is not None and isinstance(obj.data_type, str)
         and obj.data_type.lower() in _NUMBER_TYPES | set(_INTEGER_LIMITS) for obj in objects]
+    numeric_styles = [
+        numeric_text_style(getattr(obj, "format_string", None))
+        for obj in objects
+    ]
     if envelope is not None and (len(names) > 8 or len(rows) > envelope.wire_limit
             or len(rows) * len(names) > 104
             or any(len(json.dumps(name, ensure_ascii=True).encode("utf-8")) > 66 for name in names)):
@@ -458,8 +676,8 @@ def normalize_query(raw, model_id, request, *, envelope=None, schema=None):
         if envelope is not None and any(
                 len(json.dumps(cell, ensure_ascii=True).encode("utf-8")) > 66 for cell in row):
             raise fail("CONTRACT_DRIFT")
-        typed_rows.append([_typed_cell(cell, kind, numeric_schema=proven)
-            for cell, kind, proven in zip(row, types, numeric_schema)])
+        typed_rows.append([_typed_cell(cell, kind, numeric_schema=proven, numeric_style=style)
+            for cell, kind, proven, style in zip(row, types, numeric_schema, numeric_styles)])
     rows = typed_rows
     if embedded_csv is not None:
         try:
@@ -469,7 +687,17 @@ def normalize_query(raw, model_id, request, *, envelope=None, schema=None):
         csv_rows = []
         for row in parsed[1:]:
             if len(row) != len(names): raise fail("CONTRACT_DRIFT")
-            csv_rows.append([_csv_cell(value, kind) for value, kind in zip(row, types)])
+            csv_rows.append([
+                _csv_cell(
+                    value,
+                    kind,
+                    numeric_schema=proven,
+                    numeric_style=style,
+                )
+                for value, kind, proven, style in zip(
+                    row, types, numeric_schema, numeric_styles
+                )
+            ])
         if csv_rows[:len(rows)] != rows: raise fail("CONTRACT_DRIFT")
         rows = csv_rows
     flags = []

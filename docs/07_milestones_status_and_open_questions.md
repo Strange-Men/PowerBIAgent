@@ -1,5 +1,28 @@
 # 07 — 当前项目状态
 
+## M6.5.2_FIX4 — Semantic Model Understanding / Grounding Core Refactor
+
+Settings.version 保持 M6.5.2；本轮独立 scope，只重构语义前半段与 Fabric IQ formatted
+numeric，不新增 QueryShape/Provider/DAX/Facts authority。详见
+[FIX4 milestone](milestones/m6/m6_5_2_fix4_semantic_core.md)。
+
+三个核心根因已按代码证据确认：Understanding 的 coverage/evidence/relation 多重概率
+veto；全 Catalog 直送 selector 导致 128/64KB 硬失败；Grounding 逐 slot LLM 与 Fabric IQ
+PK/FK 未消费、唯一 runtime date field 早退不可达。第四项真实 blocker 是 formatted
+numeric `$12,345.67` 被严格拒绝。
+
+实施：Lean SemanticFrame；确定性 time/ranking/evidence/lexical coverage；新增
+SemanticCandidateRetriever；所有未决 object slot 合并为一次 BoundedSemanticResolution；
+确定性 binding/relationship owner/fieldless runtime proof；deterministic month axis；
+provider-declared date endpoint 与 unique runtime date field；严格 formatted numeric
+Decimal parser。Understanding per turn 1 次 LLM，典型 grounding 0–1 次 batch LLM。
+
+验证：Semantic Compatibility 821 PASS；Architecture/Repository Safety/Error Ledger/
+Documentation/Artifact/Golden PASS；Real-LLM 48-case stress 最终 39 PASS/9 correct
+clarification/0 unexpected FAIL，failure clusters 为空；Full Backend final candidate
+4054 PASS/1 SKIP/22 existing warnings。Real Cloud browser stress 需要交互式 Microsoft 登录，
+未伪造 PASS；人工 smoke 条件由本轮 final Full Backend/CI 与已启动产品决定。
+
 ## M6.5.2_FIX3 Round 1 — 核心问数收口
 
 仅 Semantic Model Understanding / Conversation Correctness，Settings.version 不变。

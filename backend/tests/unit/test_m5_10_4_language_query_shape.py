@@ -61,9 +61,9 @@ def test_ranking_frame_preserves_incomplete_structure_for_clarification() -> Non
 
 
 def test_understanding_prompt_requires_literal_ranking_entity_evidence() -> None:
-    assert "entities being ranked" in UNDERSTANDING_SYSTEM_PROMPT
+    assert "ranked entity" in UNDERSTANDING_SYSTEM_PROMPT
     assert "dimension_mentions" in UNDERSTANDING_SYSTEM_PROMPT
-    assert "exact dimension evidence span" in UNDERSTANDING_SYSTEM_PROMPT
+    assert "ranking_intent carries direction and top_n" in UNDERSTANDING_SYSTEM_PROMPT
 
 
 @pytest.mark.parametrize(

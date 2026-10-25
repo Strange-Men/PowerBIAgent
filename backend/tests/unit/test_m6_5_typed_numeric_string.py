@@ -41,8 +41,19 @@ def test_exact_numeric_schema_lineage_normalizes_directly_to_decimal(text):
     assert any(type(f.value) is Decimal and f.value == value for f in facts.facts)
 
 
+@pytest.mark.parametrize('text,expected', [
+    ('¥20,972,594.5680', Decimal('20972594.5680')),
+    ('£10', Decimal('10')),
+    ('$10', Decimal('10')),
+])
+def test_supported_currency_markers_use_strict_numeric_normalization(text, expected):
+    actual = normalize(text, model=bound_schema())
+    assert actual.rows == [[expected]]
+    assert type(actual.rows[0][0]) is Decimal
+
+
 @pytest.mark.parametrize('text', [
-    '¥20,972,594.5680', '20,972,594.5680', '£10', '$10', '12,34',
+    '20,972,594.5680', '12,34',
     'NaN', 'Infinity', '-Infinity', 'amount', '10 GBP', ' 10', '10 ',
     '+10', '.5', '10.', '１0', '10\n', '1e3', '1E-4', '0'*65,
 ])

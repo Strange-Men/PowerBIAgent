@@ -25,6 +25,10 @@ from backend.app.persistence.artifact_ownership import ArtifactOwnershipRegistry
 from backend.app.powerbi.base import PowerBIAdapter
 from backend.app.presentation.localization import DisplayTranslationResponse
 from backend.app.query_plan.grounding import CandidateSelection, SemanticEquivalenceVeto
+from backend.app.query_plan.semantic_resolution import (
+    ResolutionDecision,
+    ResolutionResponse,
+)
 from backend.app.schemas.data_contracts import ColumnMembersResult, QueryPlan, QueryResult, QueryShape, TableSchema, ColumnSchema
 from backend.tests.fixtures.semantic_context_domains import domains
 
@@ -194,6 +198,49 @@ class LanguageDraft(LLMProvider):
         content = request.messages[-1]["content"]
         if content.startswith("{"):
             payload = json.loads(content)
+            if "slots" in payload:
+                decisions = []
+                for slot in payload["slots"]:
+                    role = slot["role"]
+                    phrase = slot["requested_phrase"]
+                    candidates = slot["candidates"]
+                    target = None
+                    if phrase == "不存在的指标":
+                        decisions.append(ResolutionDecision(
+                            slot_id=slot["slot_id"], outcome="UNRESOLVED"
+                        ))
+                        continue
+                    if role == "measure":
+                        target = self.domain.measure
+                    elif role in {"dimension", "ranking_dimension"}:
+                        target = (
+                            self.domain.month
+                            if self.shape in {
+                                QueryShape.TREND,
+                                QueryShape.BOUNDED_TREND,
+                            }
+                            and phrase not in {
+                                self.domain.dimension,
+                                self.domain.dimension_text,
+                            }
+                            else self.domain.dimension
+                        )
+                    elif role == "filter_field":
+                        target = self.domain.dimension
+                    match = next(
+                        (
+                            item["candidate_id"]
+                            for item in candidates
+                            if item["canonical_name"] == target
+                        ),
+                        None,
+                    )
+                    decisions.append(ResolutionDecision(
+                        slot_id=slot["slot_id"],
+                        outcome="RESOLVED" if match else "UNRESOLVED",
+                        candidate_id=match,
+                    ))
+                return ResolutionResponse(decisions=tuple(decisions))
             requested = payload["requested_value"]
             candidate = next(
                 (

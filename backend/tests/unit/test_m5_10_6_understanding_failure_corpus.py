@@ -97,6 +97,31 @@ class _MemberChoiceProvider(LLMProvider):
     async def generate(self, request, output_type):
         self.calls.append(request)
         content = request.messages[-1]["content"]
+        if output_type.__name__ == "ResolutionResponse":
+            from backend.app.query_plan.semantic_resolution import (
+                ResolutionDecision, ResolutionResponse,
+            )
+            payload = json.loads(content)
+            decisions = []
+            for slot in payload["slots"]:
+                target = next(
+                    (
+                        item["candidate_id"]
+                        for item in slot["candidates"]
+                        if item["canonical_name"] == "Region"
+                    ),
+                    None,
+                )
+                decisions.append(ResolutionDecision(
+                    slot_id=slot["slot_id"],
+                    outcome="RESOLVED" if target else "UNRESOLVED",
+                    candidate_id=target,
+                ))
+            return LLMResponse(
+                content="{}",
+                structured=ResolutionResponse(decisions=tuple(decisions)),
+                model="failure-corpus",
+            )
         if output_type is SemanticEquivalenceVeto:
             payload = json.loads(content)
             return LLMResponse(

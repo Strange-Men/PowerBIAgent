@@ -269,12 +269,37 @@ async def test_fieldless_member_combines_independent_catalog_semantics_and_exact
     order = []
 
     class ExistingSelector:
-        async def select(self, phrase, user_input, candidates, committed_context, **kwargs):
+        @property
+        def provider(self):
+            return self
+
+        async def generate(self, request, output_type):
+            from backend.app.llm.base import LLMResponse
+            from backend.app.query_plan.semantic_resolution import (
+                ResolutionDecision, ResolutionResponse,
+            )
             order.append('catalog')
-            assert {obj.canonical_name for obj in candidates} >= {'Item', 'Other'}
-            return ObjectGroundingResult(role='filter_field', phrase=phrase,
-                status='RESOLVED' if semantic_choice else 'AMBIGUOUS',
-                canonical_object=catalog.get(f'field:Events:{semantic_choice}') if semantic_choice else None)
+            payload = json.loads(request.messages[-1]['content'])
+            decisions = []
+            for slot in payload['slots']:
+                ids = [item['candidate_id'] for item in slot['candidates']]
+                target = (
+                    f'field:Events:{semantic_choice}' if semantic_choice else None
+                )
+                decisions.append(ResolutionDecision(
+                    slot_id=slot['slot_id'],
+                    outcome=(
+                        'RESOLVED'
+                        if target in ids
+                        else 'UNRESOLVED' if target is None else 'UNRESOLVED'
+                    ),
+                    candidate_id=target if target in ids else None,
+                ))
+            return LLMResponse(
+                content='{}',
+                structured=ResolutionResponse(decisions=tuple(decisions)),
+                model='synthetic',
+            )
 
     async def discovery(literal):
         order.append('runtime')
