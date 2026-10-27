@@ -47,6 +47,9 @@ it.each(['zh-CN','en-US'] as const)('uses native Cloud routes and resource lifec
       const id = ++serial
       pending.set(id, resolve)
       if (init?.method==='DELETE' && input.startsWith('/api/v1/cloud/reports/')) deletionAck.set(id,reportDeletion)
+      if (init?.method==='POST' && input==='/api/v1/cloud/resources/batch'
+          && typeof init.body==='string' && JSON.parse(init.body).kind==='reports'
+          && JSON.parse(init.body).action==='delete') deletionAck.set(id,reportDeletion)
       requests.push(input)
       child.stdin.write(JSON.stringify({ id, path: input, method: init?.method || 'GET',
         headers: { Origin: 'http://localhost:5173', ...init?.headers }, body: init?.body }) + '\n')

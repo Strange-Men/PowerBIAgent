@@ -24,7 +24,7 @@ import type {
 } from '../types'
 import { publicFailureMessage } from '../failure'
 import type { CloudDenialReason } from '../failure'
-import type { CloudCatalog, CloudCatalogPage, CloudWorkspaceStatus } from '../cloudTypes'
+import type { CloudCatalog, CloudCatalogPage, CloudResourceBatchResponse, CloudWorkspaceStatus } from '../cloudTypes'
 
 export function projectPresentation(requestId:string,locale:string,mode:RuntimeMode,cloud:boolean,csrf:string,generation:number,signal?:AbortSignal) {
   return requestJson<{answer:string;presentation:import('../types').PresentationEnvelope;factual_hash:string}>(
@@ -465,6 +465,14 @@ export const listCloudConversations = (status: 'active' | 'archived', limit=20, 
 export const listCloudReports = (status: ReportResourceStatus, limit=20, cursor?: string, signal?: AbortSignal) =>
   requestJson<ReportResourcePage>(`/api/v1/cloud/reports?${queryString({status,limit,cursor})}`,{signal})
 export type CloudResourceAction = 'rename' | 'archive' | 'unarchive' | 'delete'
+export type CloudBatchAction = Exclude<CloudResourceAction, 'rename'>
+export const mutateCloudResourcesBatch = (kind: 'history' | 'reports', action: CloudBatchAction,
+  ids: string[], expectedGeneration: number, csrf: string, signal?: AbortSignal) =>
+  requestJson<CloudResourceBatchResponse>('/api/v1/cloud/resources/batch',{
+    method:'POST',
+    body:JSON.stringify({kind,action,resource_ids:ids,expected_generation:expectedGeneration}),
+    headers:{'X-CSRF-Token':csrf},signal,
+  })
 export const mutateCloudResource = (kind: 'history' | 'reports', id: string, action: CloudResourceAction,
   expectedGeneration: number, csrf: string, title?: string, signal?: AbortSignal) =>
   requestJson<{workspace_status: CloudWorkspaceStatus}>(`/api/v1/cloud/${kind}/${encodeURIComponent(id)}${action==='delete'?'':'/'+action}`,{

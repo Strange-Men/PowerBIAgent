@@ -44,3 +44,28 @@ export interface CloudWorkspaceStatus {
   execution_ready: boolean
   blockers: Array<'numeric_contract' | 'query_completeness' | 'operator_approval'>
 }
+
+export interface CloudResourceBatchFailure {
+  resource_id: string
+  code: string
+  reason: string
+  recovery: string
+}
+
+export interface CloudResourceBatchResponse {
+  kind: 'history' | 'reports'
+  action: 'delete' | 'archive' | 'unarchive'
+  resource_ids: string[]
+  succeeded_ids: string[]
+  failed: CloudResourceBatchFailure[]
+  workspace_status: CloudWorkspaceStatus
+  batch: {
+    resource_count: number
+    success_count: number
+    failure_count: number
+    proof_count: number
+    authorization_ms: number
+    persistence_ms: number
+    batch_total_ms: number
+  }
+}

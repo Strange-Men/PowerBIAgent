@@ -27,7 +27,8 @@ router = APIRouter(prefix="/api/v1/cloud")
 def is_product_route(method,path):
     return (method=='POST' and re.fullmatch(r'/api/v1/cloud/presentations/[a-zA-Z0-9_-]{1,64}',path) is not None
         or (method,path) in {('POST','/api/v1/cloud/chat'),('POST','/api/v1/cloud/new-chat'),
-        ('POST','/api/v1/cloud/restore'),('GET','/api/v1/cloud/history'),('GET','/api/v1/cloud/reports')}
+        ('POST','/api/v1/cloud/restore'),('GET','/api/v1/cloud/history'),('GET','/api/v1/cloud/reports'),
+        ('POST','/api/v1/cloud/resources/batch')}
         or method=='GET' and re.fullmatch(r'/api/v1/cloud/(?:history/[^/]{1,64}|reports/[^/]{1,64}(?:/download)?)',path) is not None
         or method=='DELETE' and re.fullmatch(r'/api/v1/cloud/(?:history|reports)/[a-zA-Z0-9_-]{1,64}',path) is not None
         or method=='POST' and re.fullmatch(r'/api/v1/cloud/(?:history|reports)/[a-zA-Z0-9_-]{1,64}/(?:rename|archive|unarchive)',path) is not None)
@@ -384,6 +385,28 @@ async def reports(request:Request,principal=Depends(require_principal)):
 
 class RenameResourceRequest(GenerationRequest):
     title: str=Field(min_length=1,max_length=120)
+
+
+class BatchResourceRequest(GenerationRequest):
+    kind: str=Field(pattern=r'^(history|reports)$')
+    action: str=Field(pattern=r'^(delete|archive|unarchive)$')
+    resource_ids: list[str]=Field(min_length=1,max_length=50)
+
+
+@router.post('/resources/batch')
+async def batch_resources(request:Request,principal=Depends(require_principal)):
+    if request.query_params: raise HTTPException(422,'invalid_cloud_request')
+    body=await body_as(request,BatchResourceRequest)
+    if (len(set(body.resource_ids))!=len(body.resource_ids)
+            or any(not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}',item) for item in body.resource_ids)):
+        raise HTTPException(422,'invalid_cloud_request')
+    service,sid=await product(request)
+    result=public_product(await product_call(service.batch_mutate_resources(
+        sid,principal,body.kind,body.action,body.resource_ids,
+        expected_generation=body.expected_generation), context='resource_mutation'))
+    if 'workspace_status' in result:
+        result['workspace_status']=public_workspace_status(request,result['workspace_status'])
+    return result
 
 
 @router.post('/{kind}/{resource_id}/{action}')

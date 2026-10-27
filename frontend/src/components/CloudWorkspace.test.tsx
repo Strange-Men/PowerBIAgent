@@ -11,6 +11,7 @@ vi.mock('../api/client', async importOriginal => ({
   sendCloudChat:vi.fn(),readCloudHistory:vi.fn(),readCloudReports:vi.fn(),readCloudConversation:vi.fn(),
   newCloudChat:vi.fn(),restoreCloudChat:vi.fn(),
   listCloudConversations:vi.fn(),listCloudReports:vi.fn(),mutateCloudResource:vi.fn(),
+  mutateCloudResourcesBatch:vi.fn(),
   readCloudWorkspaces:vi.fn(),readCloudResources:vi.fn(),
 }))
 const status: CloudWorkspaceStatus = {selected_model_key:null,conversation_id:null,generation:0,
@@ -204,7 +205,12 @@ describe('Synthetic Cloud product wiring',()=>{
     vi.mocked(api.listCloudConversations).mockResolvedValue({items:[],next_cursor:null,total_count:0} as never)
     vi.mocked(api.listCloudReports).mockImplementation(async resourceStatus=>({
       items:resourceStatus==='active'?[report]:[],next_cursor:null,total_count:resourceStatus==='active'?1:0} as never))
-    vi.mocked(api.mutateCloudResource).mockResolvedValue({workspace_status:ready})
+    vi.mocked(api.mutateCloudResourcesBatch).mockResolvedValue({
+      kind:'reports',action:'delete',resource_ids:[report.report_id],succeeded_ids:[report.report_id],
+      failed:[],workspace_status:ready,
+      batch:{resource_count:1,success_count:1,failure_count:0,proof_count:1,
+        authorization_ms:1,persistence_ms:1,batch_total_ms:2},
+    })
     render(<CloudWorkspace session={session} account={account} onAuthInvalid={vi.fn()} />)
     await screen.findByText('模型甲')
     fireEvent.click(screen.getByRole('button',{name:'Synthetic A'}))
@@ -215,7 +221,7 @@ describe('Synthetic Cloud product wiring',()=>{
     vi.mocked(api.readCloudReports).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
     vi.spyOn(window,'confirm').mockReturnValue(true)
     fireEvent.click(screen.getByRole('button',{name:'批量删除'}))
-    await waitFor(()=>expect(api.mutateCloudResource).toHaveBeenCalled())
+    await waitFor(()=>expect(api.mutateCloudResourcesBatch).toHaveBeenCalled())
     await waitFor(()=>expect(screen.queryByRole('checkbox',{name:'选择报表：合成报表'})).not.toBeInTheDocument())
     expect(screen.getByText('已完成 1 项操作。')).toBeInTheDocument()
     await act(async()=>finish({items:[]} as never))

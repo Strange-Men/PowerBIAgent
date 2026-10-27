@@ -9,8 +9,9 @@ import { Sidebar } from './Sidebar'
 import { Composer } from './Composer'
 import { ConversationView } from './ConversationView'
 import { CloudCatalogPicker } from './CloudCatalogPicker'
-import { cloudDenialMessage, cloudFailureAction, publicFailureMessage } from '../failure'
-import { listCloudConversations, listCloudReports, mutateCloudResource, type CloudResourceAction } from '../api/client'
+import { cloudDenialMessage, cloudFailureAction, publicFailureMessage, resourceFailureMessage } from '../failure'
+import { listCloudConversations, listCloudReports, mutateCloudResource,
+  mutateCloudResourcesBatch, type CloudBatchAction, type CloudResourceAction } from '../api/client'
 import type { BatchOperationResult } from '../types'
 import { openCloudResourceLink } from '../api/client'
 type CloudOperation = 'catalog' | 'selection' | 'chat' | 'template' | 'history' | 'report' | 'resource_mutation' | 'presentation'
@@ -207,21 +208,64 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
     } catch (caught) { if (current===generation.current) failure(caught,'resource_mutation'); throw caught }
   }
 
-  const bulk=async (kind: 'history' | 'reports',ids: string[],action: CloudResourceAction): Promise<BatchOperationResult> => {
-    const result: BatchOperationResult={succeededIds:[],failed:[]}
-    for (const id of ids) {
-      try { await mutate(kind,id,action); result.succeededIds.push(id) }
-      catch (caught) {
-        result.failed.push({id,reason:tr('chat:theOperationWasNotCompletedReloadTheResources')})
-        if (caught instanceof ApiError && [401,403,409].includes(caught.status)) {
-          for (const remaining of ids.slice(result.succeededIds.length+result.failed.length)) {
-            result.failed.push({id:remaining,reason:tr('chat:resourceAuthorizationHasExpiredReloadTheResources')})
+  const bulk=async (kind: 'history' | 'reports',ids: string[],action: CloudBatchAction): Promise<BatchOperationResult> => {
+    if (!session.csrf_token) throw new ApiError(tr('chat:pleaseSignInAgain'),401)
+    if (sending) throw new ApiError(tr('chat:analysisIsInProgressManageResourcesWhenItFinishes'),409)
+    if (!ids.length) return {succeededIds:[],failed:[]}
+    const {controller,current}=begin()
+    let expected=serverGeneration.current
+    let retried=false
+    while (true) {
+      try {
+        const response=await mutateCloudResourcesBatch(
+          kind,action,ids,expected,session.csrf_token,controller.signal)
+        if (current!==generation.current) throw new ApiError(tr('chat:thisResourceRequestIsNoLongerValid'),409)
+        const next=response.workspace_status
+        serverGeneration.current=next.generation
+        if (next.conversation_id!==status?.conversation_id) clearConversation()
+        setStatus(next)
+        const succeeded=new Set(response.succeeded_ids)
+        if (kind==='reports') {
+          if (action==='delete' || action==='archive') {
+            setReports(items=>items.filter(item=>!succeeded.has(item.report_id)))
           }
-          break
+          if (action==='delete') {
+            setMessages(items=>items.map(item=>item.role==='assistant' && item.report && succeeded.has(item.report.report_id)
+              ? {...item,report:{...item.report,availability_status:'deleted'}} : item))
+          }
+        } else if (action==='delete' || action==='archive') {
+          setRecent(items=>items.filter(item=>!succeeded.has(item.conversation_id)))
         }
+        // One committed batch, one resource-list refresh.  Never per item.
+        void loadResources(controller,current).catch(caught=>{
+          if (current===generation.current) failure(caught,'resource_mutation')
+        })
+        return {
+          succeededIds:response.succeeded_ids,
+          failed:response.failed.map(item=>({id:item.resource_id,reason:resourceFailureMessage(item.code)})),
+        }
+      } catch (caught) {
+        if (current!==generation.current) throw caught
+        // Only the batch-start / controlled stale generation is recoverable.
+        // 401/403 are real failures and are never rewritten as expired batches.
+        if (caught instanceof ApiError && caught.status===409 && !retried) {
+          retried=true
+          try {
+            const latest=await readCloudStatus(controller.signal)
+            if (current!==generation.current) throw caught
+            expected=latest.generation
+            serverGeneration.current=latest.generation
+            setStatus(latest)
+            continue
+          } catch (syncError) {
+            if (current===generation.current) failure(syncError,'resource_mutation')
+            throw syncError
+          }
+        }
+        failure(caught,'resource_mutation')
+        throw caught
       }
     }
-    return result
   }
 
   const loadTemplates = useCallback(async (controller: AbortController, current: number) => {

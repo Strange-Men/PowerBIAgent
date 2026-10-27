@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.app.persistence.serialization import domain_to_json
+from backend.app.presentation.messages import display_resource
 from backend.app.schemas.data_contracts import RenderedReport, ReportSpec
 
 if TYPE_CHECKING:
@@ -374,7 +375,11 @@ class InMemoryReportRepository(ReportRepository):
                 request_id=request_id,
             )
             self._items[report_id] = (artifact, content)
-            self._display_titles[report_id] = _normalize_display_title(report.title)
+            # Presentation metadata only: the canonical ReportSpec title stays
+            # authoritative; the stored label follows the request locale.
+            self._display_titles[report_id] = _normalize_display_title(
+                display_resource(report.title)
+            )
             return artifact
 
     async def get(self, report_id: str) -> ReportArtifact:
@@ -540,7 +545,9 @@ class LocalReportRepository(ReportRepository):
                         conversation_id=conversation_id,
                         request_id=request_id,
                         relative_path=relative_path,
-                        display_title=report.title,
+                        # Locale projection at creation time; a later manual
+                        # rename is never overwritten by a locale switch.
+                        display_title=display_resource(report.title),
                     )
                 except Exception:
                     # Metadata persistence failed — clean up the temp HTML

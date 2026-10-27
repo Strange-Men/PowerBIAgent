@@ -21,6 +21,19 @@ export function cloudFailureAction(error: {status: number; failure?: FailureInfo
   return 'recoverable'
 }
 
+export function resourceFailureMessage(code: string): string {
+  switch (code) {
+    case 'RESOURCE_NOT_FOUND':
+      return tr('errors:thisConversationOrReportNoLongerExists')
+    case 'RESOURCE_NOT_ACCESSIBLE':
+      return tr('errors:thisAccountCannotAccessThisDataModelSwitchAccounts')
+    case 'PERSISTENCE_UNAVAILABLE':
+      return tr('errors:persistenceUnavailable')
+    default:
+      return tr('resources:theOperationWasNotCompletedTryAgainLater')
+  }
+}
+
 export function publicFailureMessage(failure: FailureInfo): string {
   switch (failure.code) {
     case 'AUTH_REQUIRED':

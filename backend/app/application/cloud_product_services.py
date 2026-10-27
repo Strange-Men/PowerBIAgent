@@ -84,6 +84,42 @@ class _MetadataResourceLease(_ResourceLease):
         self.require_session(self._sid)
 
 
+def _batch_proof_key(binding):
+    """One access witness per durable binding, never per selected row."""
+    return (str(binding.workspace_id), str(binding.model_id),
+            binding.schema_fingerprint, binding.source_mode)
+
+
+class _BatchMetadataLease(_MetadataResourceLease):
+    """Metadata lease whose Microsoft proof is shared across one batch.
+
+    Reuses the FIX5 metadata-only authorization.  The proof still comes from
+    this exact request/principal; it is never a cross-request permission cache.
+    """
+
+    def __init__(self, *args, proofs, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._proofs = proofs
+
+    async def revalidate_resource(self):
+        self.require_session(self._sid)
+        if not self._auth.settings.fabric_test_mode and not self._workspace._synthetic_product:
+            proof = _batch_proof_key(self._binding)
+            if proof not in self._proofs:
+                await self._workspace.authorize_persisted_summary(
+                    self._sid, self._principal, self._binding)
+                self._proofs.add(proof)
+        self.require_session(self._sid)
+
+
+@dataclass(frozen=True)
+class _BatchBundle:
+    """Reuse one owner-scoped repository bundle for a binding generation."""
+
+    lease: _BatchMetadataLease
+    repositories: object
+
+
 class _NativeCloudTurnService(LLMTurnService):
     """Enforce Cloud policy even for direct server-side embedding.
 
@@ -397,6 +433,149 @@ class CloudProductServiceFactory:
             )
             return {'resource':result,'workspace_status':status}
         return await self._read_owned(sid,principal,mutate,restores_selection=True)
+
+    async def _batch_bundle(self,bundles,sid,principal,binding,selection,proofs):
+        """One metadata lease/repository bundle per binding and workspace state."""
+        key=(str(binding.workspace_id),str(binding.model_id),binding.model_key,
+             binding.schema_fingerprint,binding.source_mode,selection.generation,
+             selection.selected_model_key,selection.conversation_id)
+        bundle=bundles.get(key)
+        if bundle is None:
+            adapter=self._workspace._context(sid,principal).adapter
+            lease=_BatchMetadataLease(self._auth,self._workspace,sid,principal,selection,
+                adapter=adapter,binding=binding,proofs=proofs)
+            repositories=await self._repositories.for_session(lease,sid,principal)
+            bundle=_BatchBundle(lease,repositories)
+            bundles[key]=bundle
+        return bundle
+
+    async def batch_mutate_resources(self,sid,principal,kind,action,resource_ids,*,expected_generation):
+        """Bounded partial-success mutation for explicitly selected resources.
+
+        Reuses the existing single-resource primitives.  Owner identity, durable
+        binding coherence, persistence capability and current Microsoft access
+        are proven for every resource; only the exact-resource access proof is
+        shared per durable binding.  One failed resource never aborts its peers.
+        """
+        from backend.app.application.cloud_workspace_service import CloudSelectionConflict
+        from backend.app.conversation.models import (
+            ConversationHistoryCorruptionError, ConversationNotFoundError)
+        from backend.app.harness.errors import ToolExecutionError, ToolTimeoutError
+        from backend.app.powerbi.base import PowerBIAdapterError
+        from backend.app.report.resources import ReportNotFoundError, ReportStorageError
+        if kind not in {'history','reports'} or action not in {'delete','archive','unarchive'}:
+            raise AuthFailure('AUTH_FORBIDDEN',403)
+        ids=list(dict.fromkeys(resource_ids))
+        if not ids or len(ids)!=len(resource_ids):
+            raise AuthFailure('AUTH_FORBIDDEN',403)
+
+        def item_failure(resource_id,code,recovery):
+            return {'resource_id':resource_id,'code':code,
+                    'reason':code.lower(),'recovery':recovery}
+
+        async def batch(repos):
+            started=monotonic()
+            proofs=set()
+            bundles={}
+            succeeded=[]
+            failed=[]
+            authorization_ms=persistence_ms=0.0
+            tracked=self._workspace.status(sid,principal)
+            if tracked.generation!=expected_generation:
+                raise CloudSelectionConflict()
+            for resource_id in ids:
+                item_started=monotonic()
+                try:
+                    self._validate_identity(sid,principal)
+                    current=self._workspace.status(sid,principal)
+                    if (current.generation,current.conversation_id)!=(tracked.generation,tracked.conversation_id):
+                        raise CloudSelectionConflict()
+                    artifact=None
+                    conversation_id=resource_id
+                    if kind=='reports':
+                        artifact=await (repos.report_metadata.get_for_delete(resource_id) if action=='delete'
+                            else repos.report_metadata.get(resource_id))
+                        if artifact is None: raise ReportNotFoundError('report_not_found')
+                        conversation_id=artifact.conversation_id
+                    # FIX6: metadata access proof is shared per durable binding;
+                    # owner/binding/capability checks still run for every item.
+                    binding=await self._authorize(repos,sid,principal,conversation_id,
+                        access_proofs=proofs,metadata_only=True)
+                    authorization_ms+=round((monotonic()-item_started)*1000,2)
+                    if artifact is not None and (artifact.semantic_model_key,artifact.schema_fingerprint,artifact.source_mode)!=(
+                            binding.model_key,binding.schema_fingerprint,binding.source_mode):
+                        raise AuthFailure('AUTH_FORBIDDEN',403)
+                    current=self._workspace.status(sid,principal)
+                    if (current.generation,current.conversation_id)!=(tracked.generation,tracked.conversation_id):
+                        raise CloudSelectionConflict()
+                    # Removing the selected conversation is an explicit workspace
+                    # generation change, not a conflict with the batch baseline.
+                    if kind=='history' and action in {'archive','delete'} and current.conversation_id==resource_id:
+                        current=await self._workspace.new_chat(sid,principal,current.generation)
+                    tracked=current
+                    bundle=await self._batch_bundle(bundles,sid,principal,binding,current,proofs)
+                    lease,bundle_repos=bundle.lease,bundle.repositories
+                    service=bundle_repos.history_service if kind=='history' else bundle_repos.reports
+                    method='restore' if action=='unarchive' else action
+                    if kind=='history':
+                        args=(self._mode(sid,principal),resource_id)
+                    else:
+                        args=(resource_id,)
+                        if action in {'archive','unarchive'}: args+=(self._mode(sid,principal).value,)
+                    mutation_started=monotonic()
+                    await getattr(service,method)(*args)
+                    if kind=='history' and action=='delete':
+                        await bundle_repos.cloud_bindings.delete(resource_id)
+                    persistence_ms+=round((monotonic()-mutation_started)*1000,2)
+                    lease.require_session(sid)
+                    if action!='delete':
+                        await self._authorize(bundle_repos,sid,principal,conversation_id,
+                            access_proofs=proofs,metadata_only=True)
+                    succeeded.append(resource_id)
+                except CloudSelectionConflict:
+                    raise
+                except AuthFailure as error:
+                    if error.code in {'AUTH_REQUIRED','AUTH_EXPIRED'}:
+                        raise
+                    # A lost session/principal is batch-global.  A resource or
+                    # binding refusal only fails this item; peers continue.
+                    self._validate_identity(sid,principal)
+                    failed.append(item_failure(resource_id,'RESOURCE_NOT_ACCESSIBLE','reselect_model'))
+                except (ReportNotFoundError,ConversationNotFoundError):
+                    failed.append(item_failure(resource_id,'RESOURCE_NOT_FOUND','reload_resources'))
+                except (ReportStorageError,ConversationHistoryCorruptionError):
+                    failed.append(item_failure(resource_id,'PERSISTENCE_UNAVAILABLE','retry'))
+                except (PowerBIAdapterError,ToolExecutionError,ToolTimeoutError) as error:
+                    cause=(error.__context__ or error) if isinstance(error,ToolExecutionError) else error
+                    code='QUERY_TIMEOUT' if isinstance(error,ToolTimeoutError) else getattr(cause,'error_type','INTERNAL_FAILURE')
+                    if isinstance(cause,AuthFailure) and cause.code in {'AUTH_REQUIRED','AUTH_EXPIRED'}:
+                        raise cause
+                    if code in {'AUTH_REQUIRED','AUTH_EXPIRED'}:
+                        raise AuthFailure(code)
+                    if code in {'RESOURCE_NOT_ACCESSIBLE','AUTH_FORBIDDEN'}:
+                        failed.append(item_failure(resource_id,'RESOURCE_NOT_ACCESSIBLE','reselect_model'))
+                    elif code in {'QUERY_TIMEOUT','RATE_LIMITED','UPSTREAM_UNAVAILABLE'}:
+                        failed.append(item_failure(resource_id,'UPSTREAM_UNAVAILABLE','retry'))
+                    else:
+                        failed.append(item_failure(resource_id,'INTERNAL_FAILURE','retry'))
+                except Exception as error:
+                    from sqlalchemy.exc import SQLAlchemyError
+                    code='PERSISTENCE_UNAVAILABLE' if isinstance(error,SQLAlchemyError) else 'INTERNAL_FAILURE'
+                    failed.append(item_failure(resource_id,code,'retry'))
+            status=self._workspace.status(sid,principal)
+            timing={'kind':kind,'action':action,'resource_count':len(ids),
+                'success_count':len(succeeded),'failure_count':len(failed),
+                'proof_count':len(proofs),'authorization_ms':round(authorization_ms,2),
+                'persistence_ms':round(persistence_ms,2),
+                'batch_total_ms':round((monotonic()-started)*1000,2)}
+            # Local development trace only: counts and durations, never titles,
+            # members, rows, prompts or credentials.
+            logging.getLogger('powerbiagent.cloud').info(
+                'cloud_batch_mutation_timing %s',json.dumps(timing,separators=(',',':')))
+            return {'kind':kind,'action':action,'resource_ids':ids,
+                'succeeded_ids':succeeded,'failed':failed,
+                'workspace_status':status,'batch':timing}
+        return await self._read_owned(sid,principal,batch,restores_selection=True)
 
     @cloud_operation
     @cloud_stage('persistence','persistence')
