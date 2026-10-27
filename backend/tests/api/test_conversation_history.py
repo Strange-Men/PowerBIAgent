@@ -392,3 +392,87 @@ def test_report_delete_api_is_explicit_and_not_a_toolgateway_capability() -> Non
         "delete" not in name and "rename" not in name and "archive" not in name
         for name in allowed_tools
     )
+
+
+def test_cloud_transcript_page_is_canonical_oldest_first(tmp_path: Path) -> None:
+    """The transcript page is chronological even when turn timestamps tie.
+
+    Regression: restore rendered A/B/C as C/B/A because the history page was
+    newest-first.  The canonical order is defined once, at the repository, as
+    oldest -> newest with ``id`` as the stable tie-break.
+    """
+
+    from backend.app.persistence.repositories.conversation_history import (
+        SQLiteConversationHistoryRepository,
+    )
+
+    db_path = tmp_path / "ordered.db"
+
+    async def _seed_and_read():
+        settings = Settings(
+            persistence_backend=PersistenceBackend.SQLITE,
+            persistence_database_path=str(db_path),
+        )
+        engine = create_engine(settings, echo=False)
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        await configure_engine(engine)
+        session_factory = create_session_factory(engine)
+        same_time = datetime(2026, 8, 20, 12, 0, 0)
+        async with session_factory() as session:
+            async with session.begin():
+                session.add(
+                    ConversationModel(
+                        conversation_id="ordered",
+                        runtime_mode="real",
+                        created_at=same_time,
+                        updated_at=same_time,
+                    )
+                )
+                for index, label in enumerate(("A", "B", "C")):
+                    request_id = f"ord-{index}"
+                    snapshot = TurnResultSnapshot(
+                        request_id=request_id,
+                        conversation_id="ordered",
+                        intent="data_question",
+                        response_type="answer",
+                        terminal_state="completed",
+                        answer=label,
+                        memory_commit=True,
+                        final_memory_version=1,
+                        is_mock=False,
+                        source_mode="real",
+                        request_fingerprint_hash=hashlib.sha256(
+                            request_id.encode()
+                        ).hexdigest(),
+                    )
+                    session.add(
+                        ResultSnapshotModel(
+                            request_id=request_id,
+                            runtime_mode="real",
+                            conversation_id="ordered",
+                            request_fingerprint_hash=(
+                                snapshot.request_fingerprint_hash
+                            ),
+                            terminal_state="completed",
+                            response_type="answer",
+                            payload_json=domain_to_json(snapshot),
+                            created_at=same_time,
+                        )
+                    )
+        repository = SQLiteConversationHistoryRepository(
+            session_factory=session_factory
+        )
+        first = await repository.get_history(
+            RuntimeDataMode.REAL, "ordered", limit=2, after=None
+        )
+        second = await repository.get_history(
+            RuntimeDataMode.REAL, "ordered", limit=2, after=first.next_position
+        )
+        await dispose_engine(engine)
+        return first, second
+
+    first, second = asyncio.run(_seed_and_read())
+    assert [item.answer for item in first.items] == ["A", "B"]
+    assert first.next_position is not None
+    assert [item.answer for item in second.items] == ["C"]

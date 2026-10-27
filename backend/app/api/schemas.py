@@ -102,7 +102,11 @@ class ChatResponse(BaseModel):
     )
     clarification_question: Optional[str] = Field(
         default=None,
-        description="clarification 场景的追问问题",
+        description="clarification 场景的追问问题（fallback；前端优先使用原因码）",
+    )
+    clarification_reason: Optional[str] = Field(
+        default=None,
+        description="稳定的澄清原因码，由前端按当前 locale 展示",
     )
     unsupported_reason: Optional[str] = Field(
         default=None,
@@ -183,6 +187,10 @@ class HealthResponse(BaseModel):
     real_mode_configuration_complete: bool
     real_mode_reasons: list[str] = Field(default_factory=list)
     harness_mode: str
+    runtime_build_id: str = Field(
+        default="",
+        description="当前运行 worktree 的安全构建标识（git HEAD + dirty 指纹），用于确认验证的是新代码",
+    )
     timestamp: str
 
 

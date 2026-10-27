@@ -14,7 +14,11 @@ export function AssistantMessage({ message, projectionContext }: AssistantMessag
   const projection=usePresentation(message,projectionContext)
   const displayed=projection.value ? {...message,content:projection.value.answer,presentation:projection.value.presentation} : message
   const waiting=projection.pending
-  const unavailable=projection.failed || (message.restored && !message.presentationAvailable && projection.locale==='en-US')
+  // Historical records never lose their persisted answer to a projection
+  // warning. A failed re-projection keeps the original content visible and
+  // only adds a non-blocking note beside it — and only when the reader really
+  // did switch language, never for an unrelated first-load failure.
+  const languageSwitchUnavailable=projection.languageSwitched
   const StatusIcon =
     message.kind === 'error'
       ? AlertCircle
@@ -41,7 +45,7 @@ export function AssistantMessage({ message, projectionContext }: AssistantMessag
         </div>
       ) : null}
       <div className="assistant-content">
-        {waiting ? <p role="status">{tr('resources:loading')}</p> : unavailable ? <p>{tr('chat:projectionUnavailable')}</p> : displayed.presentation ? (
+        {waiting ? <p role="status">{tr('resources:loading')}</p> : displayed.presentation ? (
           <StructuredBlocks
             presentation={displayed.presentation}
             fallbackText={displayed.content}
@@ -50,6 +54,9 @@ export function AssistantMessage({ message, projectionContext }: AssistantMessag
         ) : (
           <p>{publicText(displayed.content)}</p>
         )}
+        {languageSwitchUnavailable && !waiting ? (
+          <p className="assistant-note">{tr('chat:projectionUnavailable')}</p>
+        ) : null}
         {message.report && !message.presentation ? (
           <ReportAttachment report={message.report} />
         ) : null}

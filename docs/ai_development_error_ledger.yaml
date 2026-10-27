@@ -8,6 +8,101 @@
 
 schema_version: '1.0'
 entries:
+- id: ERR-652-023
+  title: Trend time axis leaked into a non-trend follow-up and produced an unsupported trend answer
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: 趋势问题之后的 follow-up「What are the sales and quantity for product 15056BL?」仍以 INTERNAL_FAILURE 结束；其余阶段全部 ok，末端 answer_validation 报 unverified_trend_claim
+  local_evidence: local_state/runtime/diagnostics/turns.jsonl 本 build 的 request f412fde3；内存 failure_reason=['unverified_trend_claim']；离线复现 state_transition 继承 YearMonth 与 FactBoundedAnswerBuilder._is_time_grouped 产生 'recovery' 文案
+  authoritative_sources:
+  - title: ADR-009 factual claim boundary
+    reason: 趋势语言需要趋势权威；非趋势 plan 不得被描述为趋势，且不得降低 validator
+  root_cause: follow-up 把上一个 bounded_trend 的时间轴（YearMonth）继续继承进 query_shape=filtered_aggregation 的计划；日期分组触发答案构造器的趋势摘要（declined/recovery），而事实权威只按 plan query_shape 承认趋势，因此判定 unverified_trend_claim，随后 response_failed→INTERNAL_FAILURE
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: state transition 在 delta.dimensions 缺省时，若上一 shape 为 trend/bounded_trend 而当前 shape 不再是 trend，则不继承该时间轴（维度清空）；trend→trend follow-up 仍保留时间轴；ranking→非 ranking 等既有路径不变
+  regression_tests:
+  - backend/tests/unit/test_m6_5_2_fix5_real_cloud_closure.py
+  prohibited_patterns:
+  - 把上一分析的固定时间轴当作通用 follow-up 上下文继承
+  - 通过放宽 validator 趋势判定来掩盖错误的 plan 分组
+  prevention_rules:
+  - 由某个 analysis shape 拥有的轴（如趋势时间轴）不得泄漏到不再是该 shape 的 follow-up
+  - 答案文案的趋势表述必须与 plan query_shape 权威一致
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-27'
+    action: discovered
+    version: M6.5.2
+  - date: '2026-10-27'
+    action: mitigation
+    version: M6.5.2
+- id: ERR-652-022
+  title: History transcript page was newest-first so restore rendered C/B/A
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: 原提问顺序 A→B→C，restore 后呈现 C→B→A；同轮 FIX5 real-cloud 验收确认记录倒置
+  local_evidence: backend/tests/api/test_conversation_history.py 与 backend/tests/unit/persistence/test_conversation_history.py 新增 chronological regression
+  authoritative_sources:
+  - title: FIX5 唯一 canonical order 约定
+    reason: 会话记录只应有一个 canonical 顺序 oldest→newest，由仓库定义，前端按序 append
+  root_cause: SQLiteConversationHistoryRepository.get_history 以 created_at DESC、id DESC 分页并返回 newest-first，前端 readCloudConversation 按页顺序 flatMap 渲染，未定义 canonical 顺序
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: get_history 改为 created_at ASC、id ASC 且 cursor 向前推进（stored_time > cursor_time 或同刻 id > row_id），page items 即 oldest→newest；前端仅按收到顺序 append/render，不再原地 reverse
+  regression_tests:
+  - backend/tests/api/test_conversation_history.py
+  - backend/tests/unit/persistence/test_conversation_history.py
+  - frontend/src/api/client.test.ts
+  prohibited_patterns:
+  - 在 UI 层反转已返回的数组来掩盖后端顺序未定义
+  - 用非确定性 tie-break 排序会话记录
+  prevention_rules:
+  - 时间戳可能相同时必须使用稳定 tie-break（created_at + id）
+  - canonical 顺序只能在仓库层定义一次
+  related_adr: ''
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-27'
+    action: discovered
+    version: M6.5.2
+  - date: '2026-10-27'
+    action: mitigation
+    version: M6.5.2
+- id: ERR-652-021
+  title: Localized answer rejected because fact validation recomputed scope in zh-CN
+  category: ERR
+  first_detected_version: M6.5.2
+  symptom: 英文请求（France H1 2011、月度趋势 Jan–Jun 2011、product 15056BL）在 ANSWER_GENERATION 之后以 INTERNAL_FAILURE 结束；无 scope 的 ranking 问题通过
+  local_evidence: local_state/runtime/diagnostics/turns.jsonl 本轮 5 条真实请求；三例 failure_stage=answer_validation、failure_reason=user_facing_scope_mismatch；离线复现 en-US 上下文 validate_answer 返回 user_facing_scope_mismatch/unverified_numeric_claim
+  authoritative_sources:
+  - title: ADR-009 factual claim boundary
+    reason: scope 由确定性 descriptor 生成，validator 必须在同一 locale 下做精确匹配，不得降低
+  root_cause: FactOutputValidator.validate_answer 硬编码 locale="zh-CN"，在请求 locale(en-US) 下生成的回答被以 zh-CN 重算 user_facing_scope，任意非空本地化 scope 必然 mismatch，且日期数字因此不再被 trusted 而触发 unverified_numeric_claim
+  failed_attempts: []
+  repair_attempt_count: 1
+  final_fix: validate_answer 默认 locale 跟随 current_locale()，显式 locale 覆盖仍优先；scope 精确匹配、数字 allowlist 与 facts 权威不变
+  regression_tests:
+  - backend/tests/unit/test_m6_5_2_fix5_real_cloud_closure.py
+  prohibited_patterns:
+  - 校验器用固定 locale 重算 request-locale 渲染的确定性字符串
+  - 通过放宽 scope 精确匹配来掩盖 locale 不一致
+  prevention_rules:
+  - 任何比较 request-locale 渲染结果的校验入口必须继承 current_locale()
+  - 本地化路径的默认 locale 不得硬编码
+  related_adr: ADR-009
+  related_commits: []
+  status: monitoring
+  events:
+  - date: '2026-10-27'
+    action: discovered
+    version: M6.5.2
+  - date: '2026-10-27'
+    action: mitigation
+    version: M6.5.2
 - id: ERR-652-020
   title: Fabric IQ formatted numeric wire rejected as contract drift
   category: ERR

@@ -519,8 +519,10 @@ class TestNamespaceAndHistory:
             limit=2,
             cursor=first.next_cursor,
         )
-        assert [x.request_id for x in first.items] == ["req-c", "req-b"]
-        assert [x.request_id for x in second.items] == ["req-a"]
+        # Canonical transcript order is oldest -> newest; identical timestamps
+        # are broken deterministically by insertion id.
+        assert [x.request_id for x in first.items] == ["req-a", "req-b"]
+        assert [x.request_id for x in second.items] == ["req-c"]
 
 
 class TestReportHistory:

@@ -244,6 +244,17 @@ class TurnPipeline:
         trace_id = str(uuid.uuid4())
         trace = TraceRecorder(self.config)
 
+        # FIRST-WRONG-LAYER: correlate the request-scoped diagnostic recorder
+        # (bound by the route) with this turn's generated identities.
+        from backend.app.core.turn_diagnostics import current_diagnostics
+        _diagnostics = current_diagnostics()
+        if _diagnostics is not None:
+            try:
+                _diagnostics.note_trace(trace_id)
+                _diagnostics.conversation_id = effective_conv_id
+            except Exception:
+                _diagnostics = None
+
         # ── 幂等检查 ──
         with measure_performance("persistence"):
             snapshot = await self.snapshot_store.get(effective_req_id, runtime_mode)
@@ -547,6 +558,7 @@ class TurnPipeline:
         answer_text: Optional[str] = None,
         report_data: Optional[dict[str, Any]] = None,
         clarification_question: Optional[str] = None,
+        clarification_reason: Optional[str] = None,
         unsupported_reason: Optional[str] = None,
         usage: Optional[Any] = None,
         execution_audit: Optional[dict[str, Any]] = None,
@@ -603,6 +615,8 @@ class TurnPipeline:
             result["report"] = report_data
         if clarification_question is not None:
             result["clarification_question"] = clarification_question
+        if clarification_reason is not None:
+            result["clarification_reason"] = clarification_reason
         if unsupported_reason is not None:
             result["unsupported_reason"] = unsupported_reason
 
@@ -716,6 +730,7 @@ class TurnPipeline:
             "answer": snapshot.answer,
             "report": report_dict,
             "clarification_question": snapshot.clarification_question,
+            "clarification_reason": snapshot.clarification_reason,
             "unsupported_reason": snapshot.unsupported_reason,
             "error_type": snapshot.error_type,
             "failure": (
@@ -777,6 +792,7 @@ class TurnPipeline:
             answer=result.get("answer"),
             report=report_snapshot,
             clarification_question=result.get("clarification_question"),
+            clarification_reason=result.get("clarification_reason"),
             unsupported_reason=result.get("unsupported_reason"),
             error_type=result.get("error_type"),
             failure=result.get("failure"),

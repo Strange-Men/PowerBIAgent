@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { tr, publicText } from '../i18n'
+import { tr, publicText, i18n, normalizeLocale } from '../i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, newCloudChat, readCloudCatalog, readCloudWorkspaces, readCloudConversation, readCloudHistory, readCloudProfiles, readCloudReports, readCloudStatus, readCloudTemplates, restoreCloudChat, selectCloudModel, sendCloudChat } from '../api/client'
 import { chatResponseToMessage, historyItemToMessages } from '../api/adapters'
@@ -384,7 +384,8 @@ export function CloudWorkspace({ session, onAuthInvalid, account, sessionCheckEr
     setMessages(previous=>[...previous,{id:`user-${requestId}`,role:'user',content}])
     try {
       const response=await sendCloudChat({message:content,request_id:requestId,expected_generation:serverGeneration.current,
-        llm_profile_key:profile?.profile_key,report_template_key:template?.key},session.csrf_token,controller.signal)
+        llm_profile_key:profile?.profile_key,report_template_key:template?.key,
+        locale:normalizeLocale(i18n.language)},session.csrf_token,controller.signal)
       if (current!==generation.current) return
       if (response.conversation_id!==conversation || response.request_id!==requestId) throw new Error('Response mismatch')
       setMessages(previous=>[...previous,chatResponseToMessage(response)])

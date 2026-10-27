@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { chatResponseToMessage, historyItemToMessages, isUsableReport } from './adapters'
+import { i18n } from '../i18n'
 import type { ChatResponse, ReportResource } from '../types'
 
 function response(overrides: Partial<ChatResponse> = {}): ChatResponse {
@@ -60,6 +61,39 @@ describe('chatResponseToMessage', () => {
     expect(message.kind).toBe('empty')
     expect(message.content).toContain('暂无符合条件的数据')
     expect(message.report).toBeUndefined()
+  })
+
+  it('localizes a clarification by stable reason code and keeps the text as fallback', async () => {
+    const clarification = response({
+      terminal_state: 'clarification_required',
+      response_type: 'clarification',
+      answer: null,
+      clarification_question: '未能确定筛选字段，请同时说明字段和值。',
+      clarification_reason: 'filter_field_unresolved',
+    })
+
+    await i18n.changeLanguage('en-US')
+    expect(chatResponseToMessage(clarification).content).toBe(
+      'Unable to identify the filter field. Specify both the field and its value.',
+    )
+
+    await i18n.changeLanguage('zh-CN')
+    expect(chatResponseToMessage(clarification).content).toBe(
+      '未能确定筛选字段，请同时说明字段和值。',
+    )
+
+    const legacy = chatResponseToMessage(response({
+      ...clarification,
+      clarification_reason: 'reason_removed_in_a_newer_backend',
+    }))
+    expect(legacy.content).toBe('未能确定筛选字段，请同时说明字段和值。')
+    expect(legacy.kind).toBe('clarification')
+
+    expect(chatResponseToMessage(response({
+      ...clarification,
+      clarification_question: '请明确要使用的报表模板。',
+      clarification_reason: 'report_template_required',
+    })).content).toBe('请明确要使用的报表模板。')
   })
 
   it('does not expose an internal error type as message content', () => {

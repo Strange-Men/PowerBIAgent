@@ -17,6 +17,8 @@ class ClarificationReason(str, Enum):
     RANKING_INFORMATION_INCOMPLETE = "ranking_information_incomplete"
     MEASURE_UNRESOLVED = "measure_unresolved"
     UNSUPPORTED_SEMANTIC_REQUEST = "unsupported_semantic_request"
+    TURN_RELATION_REQUIRED = "turn_relation_required"
+    REPORT_TEMPLATE_REQUIRED = "report_template_required"
 
 
 _QUESTIONS: dict[ClarificationReason, str] = {
@@ -31,6 +33,8 @@ _QUESTIONS: dict[ClarificationReason, str] = {
     ClarificationReason.RANKING_INFORMATION_INCOMPLETE: "排名信息不完整，请明确指标、维度、排序方向和数量。",
     ClarificationReason.MEASURE_UNRESOLVED: "未能确定业务指标，请明确要查询的指标。",
     ClarificationReason.UNSUPPORTED_SEMANTIC_REQUEST: "当前模型或查询能力不支持该业务条件，请调整后重试。",
+    ClarificationReason.TURN_RELATION_REQUIRED: "请说明这是一个独立问题，还是要修改上一轮条件。",
+    ClarificationReason.REPORT_TEMPLATE_REQUIRED: "请明确要使用的报表模板。",
 }
 
 

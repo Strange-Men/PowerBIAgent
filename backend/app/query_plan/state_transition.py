@@ -33,6 +33,17 @@ class FilterTransition(str, Enum):
     CLEAR = "CLEAR"
 
 
+_TREND_SHAPES = frozenset({QueryShape.TREND.value, QueryShape.BOUNDED_TREND.value})
+
+
+def _is_trend_shape(value: object) -> bool:
+    """Whether an analysis shape owns a trend time axis (shape value or enum)."""
+
+    if isinstance(value, QueryShape):
+        return value in {QueryShape.TREND, QueryShape.BOUNDED_TREND}
+    return value in _TREND_SHAPES
+
+
 class InheritanceMode(str, Enum):
     """Deterministic meaning of omitted slots for the current turn."""
 
@@ -193,6 +204,7 @@ class StateTransitionService:
         previous_dimensions = list(committed.dimensions) if committed else []
         previous_dimension_tables = self._previous_dimension_tables(committed)
         previous_dimension_order = self._previous_dimension_order(committed)
+        previous_shape = self._previous_query_shape(committed)
         previous_filters = self._previous_filters(committed)
         previous_time = self._previous_time(committed)
         previous_sort = committed.sort if committed else None
@@ -215,16 +227,25 @@ class StateTransitionService:
             )
 
         if delta.dimensions is None:
-            dimensions = previous_dimensions if inherit_omitted else []
+            # A trend analysis owns its time axis.  When the current turn is no
+            # longer a trend, that axis belonged to the previous analysis and
+            # must not leak into this one: the result would be an unrelated date
+            # series, and the factual authority refuses to let an answer
+            # describe a non-trend plan as a trend.
+            inherits_dimensions = inherit_omitted and not (
+                _is_trend_shape(previous_shape)
+                and not _is_trend_shape(query_shape)
+            )
+            dimensions = previous_dimensions if inherits_dimensions else []
             dimension_tables = (
                 {**previous_dimension_tables, **delta.dimension_tables}
-                if inherit_omitted else dict(delta.dimension_tables)
+                if inherits_dimensions else dict(delta.dimension_tables)
             )
             dimension_transition = (
                 SlotTransition.KEEP
-                if inherit_omitted or not previous_dimensions else SlotTransition.CLEAR
+                if inherits_dimensions or not previous_dimensions else SlotTransition.CLEAR
             )
-            dimension_order = previous_dimension_order if inherit_omitted else None
+            dimension_order = previous_dimension_order if inherits_dimensions else None
         elif not delta.dimensions:
             dimensions = []
             dimension_tables = dict(delta.dimension_tables)
@@ -290,6 +311,13 @@ class StateTransitionService:
                 if inherit_omitted or previous_time is None else SlotTransition.CLEAR
             )
 
+        # A previous ranking owns its sort/top_n.  A follow-up whose shape is no
+        # longer a ranking must not inherit them as a hidden ranking: those
+        # operators are explicitly cleared instead.
+        keeps_ranking = inherit_omitted and (
+            query_shape is QueryShape.RANKING or previous_top_n is None
+        )
+
         if delta.clear_sort:
             sort = None
             sort_transition = SlotTransition.CLEAR
@@ -300,10 +328,10 @@ class StateTransitionService:
                 if sort == previous_sort else SlotTransition.REPLACE
             )
         else:
-            sort = previous_sort if inherit_omitted else None
+            sort = previous_sort if keeps_ranking else None
             sort_transition = (
                 SlotTransition.KEEP
-                if inherit_omitted or previous_sort is None else SlotTransition.CLEAR
+                if keeps_ranking or previous_sort is None else SlotTransition.CLEAR
             )
 
         if delta.clear_top_n:
@@ -316,10 +344,10 @@ class StateTransitionService:
                 if top_n == previous_top_n else SlotTransition.REPLACE
             )
         else:
-            top_n = previous_top_n if inherit_omitted else None
+            top_n = previous_top_n if keeps_ranking else None
             top_n_transition = (
                 SlotTransition.KEEP
-                if inherit_omitted or previous_top_n is None else SlotTransition.CLEAR
+                if keeps_ranking or previous_top_n is None else SlotTransition.CLEAR
             )
 
         if top_n is not None and sort is None:
@@ -436,3 +464,12 @@ class StateTransitionService:
             return None
         raw = committed.last_query_plan.get("dimension_order")
         return raw if raw in {"asc", "desc"} else None
+
+    @staticmethod
+    def _previous_query_shape(
+        committed: StructuredWorkMemory | None,
+    ) -> str | None:
+        if committed is None or committed.last_query_plan is None:
+            return None
+        raw = committed.last_query_plan.get("query_shape")
+        return raw if isinstance(raw, str) else None

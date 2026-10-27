@@ -262,7 +262,17 @@ _FRAMING_TERMS = tuple(
     )
 )
 _RESIDUAL_CJK = re.compile(r"[㐀-䶿一-鿿]{2,}")
-_RESIDUAL_WORD = re.compile(r"[a-z][a-z0-9_]{1,}", re.IGNORECASE)
+# One residual token: word or code-like literal.  A leading digit must stay
+# visible (product codes, years), not be silently treated as punctuation.
+_RESIDUAL_WORD = re.compile(r"[a-z0-9][a-z0-9_]{1,}", re.IGNORECASE)
+# Language-level measurement nouns whose silent loss changes what is measured.
+# They are not model identities and never bind a catalog object; they only keep
+# an explicitly requested measurement family visible to the coverage gate.
+_MATERIAL_MEASURE_WORDS = frozenset({
+    "quantity", "quantities", "volume", "volumes", "units", "unit",
+    "count", "counts", "items", "orders", "revenue", "profit", "margin",
+    "cost", "price", "discount", "sales",
+})
 _NEGATED = re.compile(
     r"(?:不是|而不是|并非|并不是|不叫|别用|不要)\s*"
     r"[^，,。；;是]{1,40}"
@@ -274,14 +284,66 @@ _NEGATED_EN = re.compile(
 )
 
 
+_SENTENCE_PREFIX = " \t\r\n\"'“”‘’«»([{〔【（《—–-"
+_SENTENCE_BREAK = ".!?;:。！？；：…¶"
+
+
+def _is_sentence_initial(normalized: str, start: int) -> bool:
+    """Whether this occurrence is only capitalized by sentence position.
+
+    A request verb that opens the message ("Switch that to ...") carries no
+    naming evidence; only a capital that is not explained by sentence position
+    may be treated as a proper-named spelling.
+    """
+
+    index = start - 1
+    while index >= 0 and normalized[index] in _SENTENCE_PREFIX:
+        index -= 1
+    return index < 0 or normalized[index] in _SENTENCE_BREAK
+
+
+def is_material_literal(value: str, source_text: str) -> bool:
+    """Whether a residual literal carries business identity the frame omitted.
+
+    Deterministic evidence only: digits, a proper-named spelling, a quoted
+    literal, a CJK business term, or an explicit measurement-family noun.
+    Ordinary lowercase English framing nouns ("model", "dataset", "amount")
+    are not material: they belong in candidate retrieval/resolution, not in a
+    fatal ``unresolved_mentions`` veto.
+    """
+
+    candidate = value.strip()
+    if not candidate:
+        return False
+    if any(char.isdigit() for char in candidate):
+        return True
+    normalized = unicodedata.normalize("NFKC", source_text)
+    if f'"{candidate}"' in normalized or f"'{candidate}'" in normalized:
+        return True
+    if any("㐀" <= char <= "鿿" for char in candidate):
+        return True
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9_])" + re.escape(candidate) + r"(?![A-Za-z0-9_])",
+        re.IGNORECASE,
+    )
+    for match in pattern.finditer(normalized):
+        token = match.group(0)
+        if token != token.lower() and not _is_sentence_initial(
+            normalized, match.start()
+        ):
+            return True
+    return candidate.casefold() in _MATERIAL_MEASURE_WORDS
+
+
 def uncovered_content(text: str, covered: tuple[str, ...]) -> str | None:
-    """Return the first business-looking residual not covered by the frame.
+    """Return the first material residual not covered by the frame.
 
     Coverage is lexical only: the exact slot values are removed from the
-    current message, then a small language-level framing vocabulary.  What
-    remains must be a name, category, metric or other business term that the
-    LLM failed to preserve.  The caller sends it through the existing bounded
-    repair; this function never binds or guesses.
+    current message, then a small language-level framing vocabulary.  Only
+    material identity evidence (digits, proper names, quoted literals, CJK
+    business terms, measurement nouns) may veto the frame.  A generic English
+    noun must continue into candidate retrieval/resolution instead of becoming
+    a fatal unresolved mention.  This function never binds or guesses.
     """
 
     normalized = unicodedata.normalize("NFKC", text).casefold()
@@ -311,6 +373,10 @@ def uncovered_content(text: str, covered: tuple[str, ...]) -> str | None:
             return candidate
     for match in _RESIDUAL_WORD.finditer(remaining):
         candidate = match.group(0).strip()
-        if len(candidate) >= 2 and candidate not in _FRAMING_TERMS:
+        if (
+            len(candidate) >= 2
+            and candidate not in _FRAMING_TERMS
+            and is_material_literal(candidate, text)
+        ):
             return candidate
     return None

@@ -443,7 +443,7 @@ export const readCloudTemplates = (signal?: AbortSignal) =>
 
 export const sendCloudChat = (body: {
   message: string; request_id: string; expected_generation: number
-  llm_profile_key?: string; report_template_key?: string
+  llm_profile_key?: string; report_template_key?: string; locale?: string
 }, csrf: string, signal?: AbortSignal) => requestJson<ChatResponse>('/api/v1/cloud/chat', {
   method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf},signal,
 })

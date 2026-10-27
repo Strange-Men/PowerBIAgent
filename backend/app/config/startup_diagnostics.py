@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from backend.app.config.runtime_build import runtime_build_identity
 from backend.app.config.settings import Settings
 
 
@@ -67,4 +68,5 @@ def safe_startup_summary(settings: Settings) -> dict[str, object]:
             settings.is_local_real_configuration_complete
         ),
         "real_mode_reasons": settings.local_real_configuration_reasons,
+        **runtime_build_identity().public(),
     }

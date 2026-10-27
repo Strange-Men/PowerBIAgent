@@ -13,8 +13,8 @@ from backend.app.schemas.data_contracts import CanonicalQueryPlan, FilterOperato
 
 class DeterministicQueryScopeDescriptor:
     def build(self, plan, **kwargs):
-        from backend.app.presentation.locale import presentation_locale
-        with presentation_locale(kwargs.get("locale", "zh-CN")) as selected:
+        from backend.app.presentation.locale import current_locale, presentation_locale
+        with presentation_locale(kwargs.get("locale", current_locale().value)) as selected:
             kwargs["locale"]=selected.value
             return self._build(plan, **kwargs)
 

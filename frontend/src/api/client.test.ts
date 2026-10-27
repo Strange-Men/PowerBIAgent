@@ -42,6 +42,19 @@ describe('Cloud same-origin bounded product requests',()=>{
     expect(fetchMock).toHaveBeenCalledTimes(11)
     expect(fetchMock.mock.calls.every(call=>call[1].signal===controller.signal)).toBe(true)
   })
+  it('returns the transcript in the server canonical order across pages',async()=>{
+    // The backend page is oldest -> newest; the client must append, never
+    // reverse, so a restored conversation renders A/B/C instead of C/B/A.
+    let page=0
+    const fetchMock=vi.fn().mockImplementation(()=>Promise.resolve(new Response(JSON.stringify({
+      conversation_id:'synthetic',
+      items:page===0?[{request_id:'A'},{request_id:'B'}]:[{request_id:'C'}],
+      next_cursor:page++===0?'page-2':null,
+    }),{status:200})))
+    vi.stubGlobal('fetch',fetchMock)
+    const history=await readCloudConversation('synthetic')
+    expect(history.items.map(item=>item.request_id)).toEqual(['A','B','C'])
+  })
   it('keeps CSRF, abort and server generation without client ownership fields',async()=>{
     const fetchMock=vi.fn().mockResolvedValue(new Response('{}',{status:200}))
     vi.stubGlobal('fetch',fetchMock)

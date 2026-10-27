@@ -144,6 +144,25 @@ async def lifespan(app: FastAPI):
         app.state.settings = get_settings()
 
     settings: Settings = app.state.settings
+    # Secret-safe build identity: proves which worktree this process serves.
+    from backend.app.config.runtime_build import runtime_build_identity
+    import logging as _logging
+    # The `powerbiagent` namespace carries the safe startup identity and the
+    # FIRST-WRONG-LAYER diagnostics; without an explicit handler those INFO
+    # lines would be swallowed by the default root WARNING level.
+    _pba_logger = _logging.getLogger('powerbiagent')
+    if not _pba_logger.handlers:
+        _pba_handler = _logging.StreamHandler()
+        _pba_handler.setFormatter(
+            _logging.Formatter('%(levelname)s %(name)s %(message)s'))
+        _pba_logger.addHandler(_pba_handler)
+        _pba_logger.setLevel((settings.log_level or 'info').upper())
+        _pba_logger.propagate = False
+    _build = runtime_build_identity()
+    _logging.getLogger('powerbiagent.runtime').info(
+        'runtime_build head=%s dirty=%s fingerprint=%s build_id=%s',
+        _build.head, _build.dirty, _build.fingerprint, _build.build_id,
+    )
     from backend.app.persistence.readiness import check_persistence, required
     app.state.persistence_readiness = (
         await asyncio.to_thread(check_persistence, settings)

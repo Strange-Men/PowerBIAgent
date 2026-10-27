@@ -19,8 +19,11 @@ async def test_product_failure_is_typed_and_trace_is_bounded(error,code,caplog):
     assert 'SENSITIVE_SENTINEL' not in caplog.text
     traces=[record.cloud_failure for record in caplog.records if hasattr(record,'cloud_failure')]
     assert len(traces)==1
-    assert set(traces[0])=={'request_id','operation','stage','failure_code','retryable','provider','http_status_category'}
+    assert set(traces[0])=={'request_id','operation','stage','failure_code','retryable','provider','exception_class','http_status_category'}
     assert traces[0]['failure_code']==code
+    # FIRST-WRONG-LAYER: the exception *class* is retained, its message never is.
+    assert traces[0]['exception_class']==type(error).__name__
+    assert 'SENSITIVE_SENTINEL' not in str(traces[0])
 
 
 @pytest.mark.asyncio

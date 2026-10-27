@@ -1,5 +1,8 @@
 """Compose existing M5 services with M6.3 ownership; no alternate factual chain."""
+import json
+import logging
 from dataclasses import dataclass
+from time import monotonic
 
 from backend.app.application.deepseek_turn_service import LLMTurnService
 from backend.app.auth.models import AuthFailure
@@ -61,6 +64,23 @@ class _ResourceLease(_SelectionLease):
         if not self._auth.settings.fabric_test_mode and not self._workspace._synthetic_product:
             await self._workspace.revalidate_binding(self._sid, self._principal, self._binding,
                 expected_generation=self._selection.generation)
+        self.require_session(self._sid)
+
+
+class _MetadataResourceLease(_ResourceLease):
+    """Resource metadata mutations prove current access, not schema identity.
+
+    Rename/archive/delete change ownership-scoped metadata.  The current
+    Microsoft resource access, the durable owner binding and the persistence
+    capability are still proven, but no semantic schema is restored and no
+    schema fingerprint is recomputed.
+    """
+
+    async def revalidate_resource(self):
+        self.require_session(self._sid)
+        if not self._auth.settings.fabric_test_mode and not self._workspace._synthetic_product:
+            await self._workspace.authorize_persisted_summary(
+                self._sid, self._principal, self._binding)
         self.require_session(self._sid)
 
 
@@ -321,6 +341,8 @@ class CloudProductServiceFactory:
         if kind not in {'history','reports'} or action not in {'rename','archive','unarchive','delete'}:
             raise AuthFailure('AUTH_FORBIDDEN',403)
         async def mutate(repos):
+            timing = {'kind': kind, 'action': action, 'schema_restore': False}
+            started = monotonic()
             if self._workspace.status(sid,principal).generation!=expected_generation:
                 raise CloudSelectionConflict()
             artifact=None
@@ -330,7 +352,11 @@ class CloudProductServiceFactory:
                     else repos.report_metadata.get(resource_id))
                 if artifact is None: raise ReportNotFoundError('report_not_found')
                 conversation_id=artifact.conversation_id
-            binding=await self._authorize(repos,sid,principal,conversation_id)
+            # FIX5: metadata mutations prove current Microsoft resource access
+            # and persistence capability.  Semantic schema identity is not part
+            # of a rename/archive/delete decision and is never restored here.
+            binding=await self._authorize(repos,sid,principal,conversation_id,metadata_only=True)
+            timing['authorization_ms'] = round((monotonic()-started)*1000, 2)
             if artifact is not None and (artifact.semantic_model_key,artifact.schema_fingerprint,artifact.source_mode)!=(
                     binding.model_key,binding.schema_fingerprint,binding.source_mode):
                 raise AuthFailure('AUTH_FORBIDDEN',403)
@@ -339,9 +365,10 @@ class CloudProductServiceFactory:
             if kind=='history' and action in {'archive','delete'} and current.conversation_id==resource_id:
                 current=await self._workspace.new_chat(sid,principal,expected_generation)
             adapter=self._workspace._context(sid,principal).adapter
-            lease=_ResourceLease(self._auth,self._workspace,sid,principal,current,adapter=adapter,binding=binding)
+            lease=_MetadataResourceLease(self._auth,self._workspace,sid,principal,current,adapter=adapter,binding=binding)
             writable=await self._repositories.for_session(lease,sid,principal)
             lease.require_session(sid)
+            timing['preparation_ms'] = round((monotonic()-started)*1000, 2)
             service=writable.history_service if kind=='history' else writable.reports
             method='restore' if action=='unarchive' else action
             if kind=='history':
@@ -350,13 +377,25 @@ class CloudProductServiceFactory:
                 args=(resource_id,)
                 if action in {'archive','unarchive'}: args+=(self._mode(sid,principal).value,)
             if action=='rename': args+=(title,)
+            mutation_started = monotonic()
             result=await getattr(service,method)(*args)
             if kind=='history' and action=='delete': await writable.cloud_bindings.delete(resource_id)
+            timing['persistence_ms'] = round((monotonic()-mutation_started)*1000, 2)
             lease.require_session(sid)
             # Current access, not history ownership, authorizes the response.
-            if action!='delete': await self._authorize(writable,sid,principal,conversation_id)
+            response_started = monotonic()
+            if action!='delete': await self._authorize(writable,sid,principal,conversation_id,metadata_only=True)
             lease.require_session(sid)
-            return {'resource':result,'workspace_status':self._workspace.status(sid,principal)}
+            status = self._workspace.status(sid,principal)
+            timing['response_refresh_ms'] = round((monotonic()-response_started)*1000, 2)
+            timing['total_ms'] = round((monotonic()-started)*1000, 2)
+            # Local development trace only: operation names and durations,
+            # never titles, members, rows, prompts or credentials.
+            logging.getLogger('powerbiagent.cloud').info(
+                'cloud_mutation_timing %s',
+                json.dumps(timing, separators=(',', ':')),
+            )
+            return {'resource':result,'workspace_status':status}
         return await self._read_owned(sid,principal,mutate,restores_selection=True)
 
     @cloud_operation

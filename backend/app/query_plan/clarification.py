@@ -36,6 +36,7 @@ class ClarificationMergeResult(BaseModel):
     complete: bool
     executable_delta: GroundedSemanticDelta | None = None
     clarification_question: str
+    clarification_reason: ClarificationReason | None = None
 
 
 class PendingClarificationService:
@@ -344,6 +345,7 @@ class PendingClarificationService:
             complete=complete,
             executable_delta=executable,
             clarification_question=self._question(missing, outcome),
+            clarification_reason=self._reason(missing, outcome),
         )
 
     @staticmethod
@@ -471,3 +473,36 @@ class PendingClarificationService:
                 return outcome.clarification_question
             return "请明确要使用的时间范围。"
         return outcome.clarification_question or "请补充完成当前查询所需的信息。"
+
+    @staticmethod
+    def _reason(
+        missing: Iterable[PendingSemanticSlot], outcome: GroundingOutcome
+    ) -> ClarificationReason | None:
+        """Stable reason code for the same deterministic missing-slot decision."""
+
+        slots = set(missing)
+        if not slots:
+            return outcome.clarification_reason
+        if {"measure", "dimension"}.issubset(slots):
+            return ClarificationReason.MEASURE_UNRESOLVED
+        if "measure" in slots:
+            if slots == {"measure"} and outcome.clarification_reason is not None:
+                return outcome.clarification_reason
+            return ClarificationReason.MEASURE_UNRESOLVED
+        if "dimension" in slots:
+            if slots == {"dimension"} and outcome.clarification_reason is not None:
+                return outcome.clarification_reason
+            return ClarificationReason.DIMENSION_UNRESOLVED
+        if "filter" in slots:
+            if slots == {"filter"} and outcome.clarification_reason is not None:
+                return outcome.clarification_reason
+            return ClarificationReason.FILTER_FIELD_UNRESOLVED
+        if "time" in slots:
+            if slots == {"time"} and outcome.clarification_reason is not None:
+                return outcome.clarification_reason
+            return ClarificationReason.INCOMPLETE_TIME_RANGE
+        if "analysis" in slots:
+            return ClarificationReason.RANKING_INFORMATION_INCOMPLETE
+        if "template" in slots:
+            return ClarificationReason.REPORT_TEMPLATE_REQUIRED
+        return outcome.clarification_reason

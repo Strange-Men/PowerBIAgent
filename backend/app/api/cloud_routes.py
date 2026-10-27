@@ -12,6 +12,7 @@ from backend.app.application.cloud_workspace_service import CloudSelectionConfli
 from backend.app.harness.errors import ToolExecutionError, ToolTimeoutError
 from backend.app.powerbi.base import PowerBIAdapterError
 from backend.app.application.cloud_operation import cloud_operation, operation_scope, trace_failure
+from backend.app.config.runtime_build import runtime_build_identity
 
 CONTROL_PLANE_ROUTES = frozenset({
     ("GET", "/api/v1/cloud/catalog"), ("GET", "/api/v1/cloud/status"),
@@ -201,6 +202,10 @@ class CloudChatRequest(GenerationRequest):
     request_id: str=Field(min_length=1,max_length=64,pattern=r'^[a-zA-Z0-9_-]+$')
     llm_profile_key: str|None=Field(default=None,max_length=64,pattern=r'^[a-z0-9][a-z0-9._-]*$')
     report_template_key: str|None=Field(default=None,max_length=64,pattern=r'^[a-z0-9][a-z0-9._-]*$')
+    # Presentation context only.  The current request selects the language of a
+    # newly generated answer/presentation; it never becomes a semantic,
+    # execution or ownership input.
+    locale: str|None=Field(default=None,max_length=32)
 
 
 @cloud_operation
@@ -257,20 +262,55 @@ def public_product(value):
 @router.post('/chat')
 async def chat(request:Request,principal=Depends(require_principal)):
     from backend.app.api.schemas import ChatResponse
+    from backend.app.presentation.locale import presentation_locale
+    from backend.app.memory.models import RuntimeDataMode
+    from backend.app.core.turn_diagnostics import (
+        TurnDiagnosticRecorder, bind_diagnostics, emit_diagnostic)
     if request.query_params: raise HTTPException(422,'invalid_cloud_request')
     body=await body_as(request,CloudChatRequest)
     service,sid=await product(request)
-    result=await product_call(service.chat(sid,principal,**body.model_dump()))
+    mode=service._mode(sid,principal)
+    recorder=TurnDiagnosticRecorder(
+        request_id=body.request_id,
+        runtime_build_id=runtime_build_identity().build_id,
+        operation='chat',
+        provider='mock' if mode==RuntimeDataMode.MOCK else 'fabric_iq',
+        synthetic=mode==RuntimeDataMode.MOCK)
+    try:
+        with bind_diagnostics(recorder):
+            with presentation_locale(body.locale):
+                result=await product_call(service.chat(sid,principal,**body.model_dump(exclude={'locale'})))
+    except HTTPException as error:
+        emit_diagnostic(recorder.finalize(
+            terminal_state='failed', **_failure_summary(error.detail)))
+        raise
+    except BaseException as error:
+        recorder.fail(error)
+        emit_diagnostic(recorder.finalize(terminal_state='failed'))
+        raise
     # Existing factual presentation contract; never expose raw execution traces.
     usage=result.get('usage')
     data={k:result[k] for k in ChatResponse.model_fields if k in result}
-    data['source_mode']=service._mode(sid,principal).value
+    data['source_mode']=mode.value
     data['is_mock']=data['source_mode']=='mock'
     data['usage']=usage.to_dict() if hasattr(usage,'to_dict') else usage
     data['llm_mode']='mock' if data['is_mock'] else request.app.state.settings.llm_mode.value
     data['powerbi_mode']='mock' if data['source_mode']=='mock' else 'fabric_iq'
     data['execution_audit']=None
+    emit_diagnostic(recorder.finalize(
+        terminal_state=result.get('terminal_state'),
+        conversation_id=result.get('conversation_id'),
+        **_failure_summary(result.get('failure'))))
     return public_product(ChatResponse.model_validate(data))
+
+
+def _failure_summary(failure) -> dict:
+    """Bounded failure identity from a public failure payload or HTTP detail."""
+    if isinstance(failure, dict) and isinstance(failure.get('failure'), dict):
+        failure=failure['failure']
+    if hasattr(failure,'model_dump'): failure=failure.model_dump(mode='json')
+    if not isinstance(failure, dict): return {'failure_code':None,'failure_stage':None}
+    return {'failure_code':failure.get('code'),'failure_stage':failure.get('stage')}
 
 
 class PresentationRequest(GenerationRequest):

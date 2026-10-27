@@ -20,6 +20,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from backend.app.core.turn_diagnostics import (
+    MEMBER_DISCOVERY as _DIAG_MEMBER,
+    mark_stage as _diag_mark,
+)
 from backend.app.intent.models import (
     IntentSpec,
     TimeIntentDraft,
@@ -1613,6 +1617,16 @@ class SemanticGroundingService:
             key = (role, phrase)
             if key in resolved or key in slots or not phrase.strip():
                 return
+            if (
+                role == "filter_field"
+                and phrase not in explicit_filter_fields
+                and self.member_discovery is not None
+            ):
+                # FIX5 ValueSearch-first: a fieldless member literal has no
+                # linguistic reason to retrieve its field lexically.  Runtime
+                # member existence narrows the fields, then one bounded role
+                # decision may choose only inside that proven set.
+                return
             object_type = (
                 SemanticObjectType.MEASURE
                 if role == "measure"
@@ -2190,21 +2204,24 @@ class SemanticGroundingService:
             runtime_literal_complete_no_match = (
                 ("filter_field", member_mention) in complete_no_match
             )
-            if not field_mention and self.member_discovery is not None:
-                # The bounded resolution already chose a filter field from
-                # runtime metadata.  ValueSearch independently proves exact
-                # membership; neither side grants the other authority.
-                semantic_field = await bind_object(
-                    member_mention, SemanticObjectType.FIELD, "filter_field"
-                )
+            if self.member_discovery is not None:
+                # FIX5 ValueSearch-first member resolution.  Runtime ValueSearch
+                # proves that the exact literal exists inside each returned
+                # field; it never proves absence elsewhere.  A single
+                # runtime-proven field binds directly.  Multiple proven fields
+                # enter one bounded role decision whose candidates are exactly
+                # the runtime-proven set, so the semantic model cannot invent
+                # or prefer any other field.
+                #
+                # A business role noun in an explicit field mention may score
+                # those candidates, but it never overrides runtime exact member
+                # evidence: the literal is only proved to live in the field(s)
+                # ValueSearch returned for it.
                 try:
                     candidates = await self.member_discovery(member_mention)
                 except Exception as exc:
                     raise evidence_failure(exc) from exc
-                # ValueSearch proves existence, never absence in other fields.
-                # The independent full-catalog semantic decision must agree;
-                # multiple exact hits still require clarification.
-                ids = tuple(dict.fromkeys(
+                proven_ids = tuple(dict.fromkeys(
                     f"field:{item.table_name}:{item.field_name}"
                     for item in candidates.field_candidates
                     if candidates.semantic_model_key == self.catalog.semantic_model_key
@@ -2212,23 +2229,138 @@ class SemanticGroundingService:
                     and item.canonical_value == member_mention
                     and self.catalog.get(f"field:{item.table_name}:{item.field_name}") is not None
                 ))
-                if (len(ids) == 1 and semantic_field.status == GroundingStatus.RESOLVED
-                        and semantic_field.canonical_object is not None
-                        and semantic_field.canonical_object.object_id == ids[0]):
-                    runtime_literal_field = semantic_field.model_copy(update={
-                        "method": "catalog_semantics_runtime_exact_member"})
-                    field = semantic_field.canonical_object
-                    proven_member = MemberGrounder.resolve(field, member_mention,
-                        ColumnMembersResult(semantic_model_key=self.catalog.semantic_model_key,
-                            table_name=field.table_name, field_name=field.canonical_name,
-                            values=[member_mention], truncated=True, source_mode="real"))
-                else:
-                    status = GroundingStatus.AMBIGUOUS if len(ids) > 1 else GroundingStatus.UNRESOLVED
-                    object_results.append(ObjectGroundingResult(status=status,role="filter_field",
-                        phrase=member_mention,candidate_ids=ids,method="runtime_member_candidates_non_exhaustive"))
-                    return self._clarification(status,object_results,member_results,
-                        clarification_question(ClarificationReason.FILTER_FIELD_UNRESOLVED),[],
-                        reason=ClarificationReason.FILTER_FIELD_UNRESOLVED,delta=delta)
+                # FIRST-WRONG-LAYER ValueSearch evidence: counts only, never the
+                # member literal or any field/row business value.
+                _diag_mark(_DIAG_MEMBER, detail="value_search",
+                           member_literal_present=bool(member_mention),
+                           field_explicit=bool(field_mention),
+                           hit_count=len(candidates.field_candidates),
+                           field_count=len(proven_ids))
+                if not proven_ids and not field_mention:
+                    object_results.append(ObjectGroundingResult(
+                        status=GroundingStatus.UNRESOLVED,
+                        role="filter_field",
+                        phrase=member_mention,
+                        method="runtime_value_search_no_match",
+                    ))
+                    return self._clarification(
+                        GroundingStatus.UNRESOLVED,
+                        object_results,
+                        member_results,
+                        clarification_question(ClarificationReason.MEMBER_NO_MATCH),
+                        [],
+                        reason=ClarificationReason.MEMBER_NO_MATCH,
+                        delta=delta,
+                    )
+                if proven_ids:
+                    proven_ids = self._runtime_member_field_scope(
+                        proven_ids, tuple(sorted(grounded_measure_tables))
+                    )
+                    # An explicitly named field keeps authority only when the
+                    # same runtime proof places the literal in it.
+                    explicit_field = (
+                        pre_resolution.get(("filter_field", field_mention))
+                        if field_mention
+                        else None
+                    )
+                    explicit_object = (
+                        explicit_field.canonical_object
+                        if explicit_field is not None
+                        else None
+                    )
+                    if explicit_object is not None:
+                        explicit_id = (
+                            f"field:{explicit_object.table_name}:"
+                            f"{explicit_object.canonical_name}"
+                        )
+                        if explicit_id in proven_ids:
+                            proven_ids = (explicit_id,)
+                # When an explicit field was named but runtime ValueSearch proves
+                # no usable field, no runtime field is bound here; the lexical
+                # authority below decides instead of a fabricated no-match.
+                if len(proven_ids) == 1:
+                    runtime_literal_field = ObjectGrounder._resolved(
+                        "filter_field",
+                        member_mention,
+                        self.catalog.get(proven_ids[0]),
+                        "runtime_value_search_unique_field",
+                    )
+                elif proven_ids:
+                    selected = None
+                    proven_fields = tuple(
+                        item
+                        for object_id in proven_ids
+                        if (item := self.catalog.get(object_id)) is not None
+                    )
+                    if self.resolver is not None and proven_fields:
+                        resolution = await self.resolver.resolve(
+                            self.catalog,
+                            user_input,
+                            (ResolutionSlot(
+                                slot_id="f0",
+                                role="filter_field",
+                                phrase=member_mention,
+                                candidates=proven_fields,
+                                selection_constraint=(
+                                    "Runtime ValueSearch already proved this exact "
+                                    "literal exists in every supplied candidate field. "
+                                    "Choose only the field meant by the user's "
+                                    "business language; do not prefer or invent any "
+                                    "field outside this runtime-proven set."
+                                ),
+                            ),),
+                            relation=frame.relation.value,
+                            changed_slots=frame.changed_slots,
+                        )
+                        decision = resolution.decisions.get("f0")
+                        if (
+                            decision is not None
+                            and decision.outcome == "RESOLVED"
+                            and decision.candidate_id in proven_ids
+                        ):
+                            selected = self.catalog.get(decision.candidate_id)
+                    if selected is None:
+                        object_results.append(ObjectGroundingResult(
+                            status=GroundingStatus.AMBIGUOUS,
+                            role="filter_field",
+                            phrase=member_mention,
+                            candidate_ids=proven_ids,
+                            method="runtime_value_search_field_ambiguous",
+                        ))
+                        return self._clarification(
+                            GroundingStatus.AMBIGUOUS,
+                            object_results,
+                            member_results,
+                            clarification_question(
+                                ClarificationReason.FILTER_FIELD_AMBIGUOUS
+                            ),
+                            [],
+                            reason=ClarificationReason.FILTER_FIELD_AMBIGUOUS,
+                            delta=delta,
+                        )
+                    runtime_literal_field = ObjectGrounder._resolved(
+                        "filter_field",
+                        member_mention,
+                        selected,
+                        "runtime_value_search_bounded_role",
+                    )
+                if runtime_literal_field is not None:
+                    proven_field = runtime_literal_field.canonical_object
+                    proven_member = MemberGrounder.resolve(
+                        proven_field,
+                        member_mention,
+                        ColumnMembersResult(
+                            semantic_model_key=self.catalog.semantic_model_key,
+                            table_name=proven_field.table_name,
+                            field_name=proven_field.canonical_name,
+                            values=[member_mention],
+                            truncated=True,
+                            source_mode="real",
+                        ),
+                    )
+                # An explicit field was named but runtime ValueSearch proved no
+                # usable field for this literal: no runtime field is bound here
+                # and the lexical authority below decides.
             if (
                 not field_mention
                 and runtime_literal_field is None
@@ -3413,6 +3545,51 @@ class SemanticGroundingService:
             eligible_ids=tuple(candidate.object_id for candidate in candidates),
             language_hints=language_hints,
         )
+
+    def _runtime_member_field_scope(
+        self,
+        proven_ids: tuple[str, ...],
+        measure_tables: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        """Prefer runtime-proven fields reachable from the grounded measures.
+
+        Reachability comes from active runtime relationships, never from a name
+        guess.  It only narrows a set that ValueSearch already proved; when no
+        proven field is reachable the complete proven set stays intact so the
+        bounded role decision can still decide.
+        """
+
+        if self.catalog.context is None or not measure_tables:
+            return proven_ids
+        object_tables = {
+            item.object_id: item.table_name
+            for item in self.catalog.context.columns
+        }
+        related: dict[str, set[str]] = {}
+        for relationship in self.catalog.context.relationships:
+            if not relationship.is_active:
+                continue
+            from_table = object_tables.get(relationship.from_object_id)
+            to_table = object_tables.get(relationship.to_object_id)
+            if from_table is None or to_table is None:
+                continue
+            related.setdefault(from_table, set()).add(to_table)
+            related.setdefault(to_table, set()).add(from_table)
+        reachable = set(measure_tables)
+        pending = list(measure_tables)
+        while pending:
+            table = pending.pop()
+            for neighbour in related.get(table, ()):
+                if neighbour not in reachable:
+                    reachable.add(neighbour)
+                    pending.append(neighbour)
+        scoped = tuple(
+            object_id
+            for object_id in proven_ids
+            if (item := self.catalog.get(object_id)) is not None
+            and item.table_name in reachable
+        )
+        return scoped or proven_ids
 
     async def _resolve_unique_runtime_literal_member_field(
         self,

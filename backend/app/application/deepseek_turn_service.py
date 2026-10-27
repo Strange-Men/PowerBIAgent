@@ -20,6 +20,24 @@ from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 from backend.app.application.turn_pipeline import TurnPipeline
+from backend.app.core.turn_diagnostics import (
+    ANSWER_GENERATION as _DIAG_ANSWER,
+    COVERAGE as _DIAG_COVERAGE,
+    DAX_BUILD as _DIAG_DAX,
+    GROUNDING as _DIAG_GROUNDING,
+    MEMBER_DISCOVERY as _DIAG_MEMBER,
+    PLAN_VALIDATION as _DIAG_PLAN,
+    PRESENTATION as _DIAG_PRESENTATION,
+    RESULT_INSPECTION as _DIAG_INSPECT,
+    STATE_TRANSITION as _DIAG_STATE,
+    TERMINAL as _DIAG_TERMINAL,
+    TOOL_EXECUTION as _DIAG_TOOL,
+    UNDERSTANDING as _DIAG_UNDERSTANDING,
+    VERIFIED_FACTS as _DIAG_FACTS,
+    mark_stage as _diag_mark,
+    record_build_failure as _diag_build_failure,
+    record_failure_stage as _diag_failure,
+)
 from backend.app.config.settings import Settings
 from backend.app.harness.errors import (
     ToolExecutionError,
@@ -170,6 +188,7 @@ from backend.app.report.resources import (
     ReportRepository,
 )
 from backend.app.presentation.builder import StructuredPresentationBuilder
+from backend.app.presentation.locale import current_locale
 from backend.app.presentation.recipe import PresentationRecipe
 from backend.app.presentation.localization import (
     BoundedLLMDisplayTranslator,
@@ -204,6 +223,43 @@ from backend.app.schemas.report_context import (
 def _utcnow() -> datetime:
     """Return an aware UTC timestamp at the point the evidence is acquired."""
     return datetime.now(timezone.utc)
+
+
+def apply_measure_display_names(display_bindings, measure_names, phrases):
+    """Label every measure with the phrase that actually denotes it.
+
+    A fallback binding keeps the current-turn phrase for its own canonical
+    measure instead of reusing one phrase for the whole set, and two distinct
+    canonical measures may never end up sharing one user-facing label: the
+    later one falls back to its canonical name, deterministically.
+    """
+
+    for field, binding in list(display_bindings.items()):
+        if (
+            binding.canonical_name in measure_names
+            and binding.source.value == "fallback"
+        ):
+            display_bindings[field] = binding.model_copy(
+                update={"display_name": (
+                    phrases.get(binding.canonical_name)
+                    or binding.canonical_name
+                    or binding.display_name
+                )}
+            )
+    label_owner: dict[str, str] = {}
+    for field, binding in list(display_bindings.items()):
+        if binding.canonical_name not in measure_names:
+            continue
+        name = binding.display_name or binding.canonical_name
+        owner = label_owner.get(name)
+        if owner is None or owner == binding.canonical_name:
+            label_owner[name] = binding.canonical_name
+            continue
+        display_bindings[field] = binding.model_copy(
+            update={"display_name": binding.canonical_name}
+        )
+        label_owner[binding.canonical_name] = binding.canonical_name
+    return display_bindings
 
 
 class LLMTurnService:
@@ -615,6 +671,11 @@ class LLMTurnService:
             )
 
         capability = classify_capability(message)
+        _diag_mark(_DIAG_UNDERSTANDING, detail="semantic_frame",
+                   relation=semantic_frame.relation.value,
+                   query_shape=(semantic_frame.query_shape.value
+                                if semantic_frame.query_shape else None),
+                   changed_slots=tuple(semantic_frame.changed_slots))
         semantic_audit: dict[str, Any] = {
             "request_id": effective_req_id,
             "conversation_id": effective_conv_id,
@@ -808,6 +869,9 @@ class LLMTurnService:
                     intent=intent.intent.value,
                     response_type="clarification",
                     clarification_question=self.pipeline.REPORT_TEMPLATE_REQUIRED_MESSAGE,
+                    clarification_reason=(
+                        ClarificationReason.REPORT_TEMPLATE_REQUIRED.value
+                    ),
                     trace=trace,
                     trace_id=trace_id,
                     is_mock=False,
@@ -891,6 +955,7 @@ class LLMTurnService:
             )
 
         controller.record_tool_execution_succeeded()
+        _diag_mark(_DIAG_TOOL, detail="schema_fetch")
 
         # ── 8. SemanticFrame → non-canonical Grounding carrier ──
         try:
@@ -940,6 +1005,9 @@ class LLMTurnService:
                 intent=intent.intent.value,
                 response_type="clarification",
                 clarification_question="请明确要使用的报表模板。",
+                clarification_reason=(
+                    ClarificationReason.REPORT_TEMPLATE_REQUIRED.value
+                ),
                 trace=trace,
                 trace_id=trace_id,
                 is_mock=False,
@@ -969,6 +1037,7 @@ class LLMTurnService:
         # ── 8.1 Business Semantic Grounding ──
         # SemanticFrame only carries literal language mentions; canonical
         # slots come from the runtime catalog/members and state transition.
+        _diag_mark(_DIAG_GROUNDING, detail="semantic_grounding")
         catalog = None
         user_facing_filter_values: dict[tuple[str, str], str] = {}
         user_facing_measure_labels: dict[str, str] = {}
@@ -1191,6 +1260,11 @@ class LLMTurnService:
                         intent=intent.intent.value,
                         response_type="clarification",
                         clarification_question=grounding.clarification_question,
+                        clarification_reason=(
+                            grounding.clarification_reason.value
+                            if grounding.clarification_reason is not None
+                            else None
+                        ),
                         trace=trace,
                         trace_id=trace_id,
                         is_mock=False,
@@ -1252,6 +1326,11 @@ class LLMTurnService:
                         intent=intent.intent.value,
                         response_type="clarification",
                         clarification_question=clarification_merge.clarification_question,
+                        clarification_reason=(
+                            clarification_merge.clarification_reason.value
+                            if clarification_merge.clarification_reason is not None
+                            else None
+                        ),
                         trace=trace,
                         trace_id=trace_id,
                         is_mock=False,
@@ -1310,7 +1389,12 @@ class LLMTurnService:
                         intent=intent.intent.value,
                         response_type="clarification",
                         clarification_question=(
-                            "请说明这是一个独立问题，还是要修改上一轮条件。"
+                            clarification_question(
+                                ClarificationReason.TURN_RELATION_REQUIRED
+                            )
+                        ),
+                        clarification_reason=(
+                            ClarificationReason.TURN_RELATION_REQUIRED.value
                         ),
                         trace=trace,
                         trace_id=trace_id,
@@ -1324,6 +1408,7 @@ class LLMTurnService:
                         },
                     )
                 with measure_performance("query_plan"):
+                    _diag_mark(_DIAG_STATE, detail="state_transition")
                     transition = StateTransitionService().merge(
                         query_plan,
                         transition_delta,
@@ -1486,6 +1571,7 @@ class LLMTurnService:
                     clarification_question=clarification_question(
                         e.clarification_reason
                     ),
+                    clarification_reason=e.clarification_reason.value,
                     trace=trace,
                     trace_id=trace_id,
                     is_mock=False,
@@ -1500,6 +1586,9 @@ class LLMTurnService:
                 )
 
         # QueryPlan 验证
+        _diag_mark(_DIAG_PLAN, detail="query_plan_validation",
+                   query_shape=(query_plan.query_shape.value
+                                if query_plan.query_shape else None))
         plan_validation = request_validator.validate_query_plan(
             query_plan,
             schema,
@@ -1524,6 +1613,7 @@ class LLMTurnService:
         trace.record("query_plan_validated", trace_id=trace_id, request_id=effective_req_id)
 
         # ── 9. DAX 生成与验证 ──
+        _diag_mark(_DIAG_DAX, detail="dax_generation")
         try:
             with measure_performance("dax_build"):
                 dax_request = DeterministicDAXBuilder().build(
@@ -1591,6 +1681,7 @@ class LLMTurnService:
                      data_summary={"is_read_only": safety_result.is_valid})
 
         # ── 10. 通过 ToolGateway 执行 DAX 查询 ──
+        _diag_mark(_DIAG_TOOL, detail="dax_execution")
         fixture_key = "data_question" if intent.intent == IntentType.DATA_QUESTION else "report_generation"
         # Fixture 选择只属于 Mock Adapter；Real Adapter 只接收标准 DAXRequest。
         if self.powerbi.is_mock:
@@ -1645,6 +1736,7 @@ class LLMTurnService:
 
         controller.record_tool_execution_succeeded()
         controller.transition(TurnState.TOOL_EXECUTED)
+        _diag_mark(_DIAG_INSPECT, detail="result_validation")
 
         result_validation = request_validator.validate_query_result(
             query_result,
@@ -1702,6 +1794,7 @@ class LLMTurnService:
         verified_facts: VerifiedFactSet | None = None
         data_availability: DataAvailabilityContext | None = None
         if not self.powerbi.is_mock:
+            _diag_mark(_DIAG_FACTS, detail="verified_fact_set")
             try:
                 verified_facts = VerifiedFactSetBuilder().build(
                     query_plan, query_result
@@ -1747,6 +1840,7 @@ class LLMTurnService:
             )
 
         # ── 11. 生成 Answer 或 ReportSpec ──
+        _diag_mark(_DIAG_ANSWER, detail="answer_generation")
         answer_text: Optional[str] = None
         report_data: Optional[dict[str, Any]] = None
         response_type: str = ""
@@ -1799,7 +1893,7 @@ class LLMTurnService:
                         try:
                             resolved = await localization.resolve_fields(
                                 presentation_fields,
-                                locale="zh-CN",
+                                locale=current_locale().value,
                                 table_hints=query_plan.dimension_tables,
                             )
                         except Exception as exc:
@@ -1813,7 +1907,7 @@ class LLMTurnService:
                                 catalog
                             ).resolve_fields(
                                 presentation_fields,
-                                locale="zh-CN",
+                                locale=current_locale().value,
                                 table_hints=query_plan.dimension_tables,
                             )
                         display_bindings = dict(
@@ -1844,7 +1938,7 @@ class LLMTurnService:
                                 translator=display_translator,
                             ).resolve_member_labels(
                                 field_values,
-                                locale="zh-CN",
+                                locale=current_locale().value,
                                 table_hints=query_plan.dimension_tables,
                             )
                         except Exception:
@@ -1859,15 +1953,11 @@ class LLMTurnService:
                             **user_facing_filter_values,
                         }
                         if semantic_frame.measure_mentions:
-                            original_measure = semantic_frame.measure_mentions[0]
-                            for field, binding in list(display_bindings.items()):
-                                if (
-                                    binding.canonical_name in query_plan.measures
-                                    and binding.source.value == "fallback"
-                                ):
-                                    display_bindings[field] = binding.model_copy(
-                                        update={"display_name": original_measure}
-                                    )
+                            display_bindings = apply_measure_display_names(
+                                display_bindings,
+                                query_plan.measures,
+                                user_facing_measure_labels,
+                            )
                         trace.record(
                             "presentation_localization_resolved",
                             trace_id=trace_id,
@@ -1887,7 +1977,7 @@ class LLMTurnService:
                         query_plan,
                         display_bindings=display_bindings,
                         model_display_name=schema.name,
-                        locale="zh-CN",
+                        locale=current_locale().value,
                     )
                     semantic_audit["effective_query_scope"] = effective_scope
                     semantic_audit["requested_query_scope"] = effective_scope
@@ -2293,6 +2383,11 @@ class LLMTurnService:
                         or clarification_question(
                             ClarificationReason.INCOMPLETE_TIME_RANGE
                         )
+                    ),
+                    clarification_reason=(
+                        time_grounding.clarification_reason.value
+                        if time_grounding.clarification_reason is not None
+                        else ClarificationReason.INCOMPLETE_TIME_RANGE.value
                     ),
                     trace=trace,
                     trace_id=trace_id,
@@ -3185,6 +3280,11 @@ class LLMTurnService:
                     error_type=error_type,
                     data_summary={"reason": reason, "stage": stage})
 
+        # FIRST-WRONG-LAYER: fixed-vocabulary stage + public error code only;
+        # the free-text reason is never persisted by diagnostics.
+        _diag_failure(stage, error_type=error_type,
+                      terminal_state=terminal_state.value)
+
         return self._build_result(
             request_id, conversation_id, terminal_state.value,
             intent=memory.current_intent or "",
@@ -3213,12 +3313,23 @@ class LLMTurnService:
         answer_text: Optional[str] = None,
         report_data: Optional[dict[str, Any]] = None,
         clarification_question: Optional[str] = None,
+        clarification_reason: Optional[str] = None,
         unsupported_reason: Optional[str] = None,
         execution_audit: Optional[dict[str, Any]] = None,
         presentation: Optional[PresentationEnvelope] = None,
         presentation_recipe: PresentationRecipe | None = None,
     ) -> dict[str, Any]:
         """构建统一结果字典 — 委托给共享 TurnPipeline"""
+        if error_type:
+            # Records the internal stage when a terminal failure bypassed
+            # ``_fail_result`` and would otherwise collapse to INTERNAL_FAILURE.
+            _diag_build_failure(error_type=error_type, failure_stage=failure_stage)
+        if clarification_reason is not None:
+            # A deterministic clarification is a defined outcome, not a crash;
+            # its stable reason code is the only thing recorded.
+            _diag_mark(_DIAG_TERMINAL, status="clarification",
+                       error_type=getattr(clarification_reason, "value",
+                                          clarification_reason))
         usage: Optional[LLMUsageSummary] = None
         if collector is not None:
             usage = collector.summary()
@@ -3251,6 +3362,7 @@ class LLMTurnService:
             answer_text=answer_text,
             report_data=report_data,
             clarification_question=clarification_question,
+            clarification_reason=clarification_reason,
             unsupported_reason=unsupported_reason,
             usage=usage,
             execution_audit=execution_audit,

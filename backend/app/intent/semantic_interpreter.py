@@ -20,6 +20,7 @@ from backend.app.intent.language_cues import (
     has_reset_cue,
     has_time_language,
     has_trend_cue,
+    is_material_literal,
     uncovered_content,
 )
 from backend.app.intent.models import (
@@ -433,7 +434,7 @@ class LLMSemanticInterpreter:
                 frame = self._normalize_shape(frame, user_input)
                 self._validate_structure(frame)
                 self._validate_evidence(frame, user_input)
-                self._validate_coverage(frame, user_input)
+                frame = self._validate_coverage(frame, user_input)
                 return frame
             except LLMValidationError as exc:
                 # One bounded semantic repair may correct a structurally valid
@@ -1121,16 +1122,40 @@ class LLMSemanticInterpreter:
         )
 
     @staticmethod
-    def _validate_coverage(frame: SemanticFrame, user_input: str) -> None:
-        """Deterministic lexical coverage; never a second probabilistic veto.
+    def _validate_coverage(frame: SemanticFrame, user_input: str) -> SemanticFrame:
+        """Deterministic coverage over material language evidence only.
 
         Slot values are removed from the current message, then a small
-        language-level framing vocabulary.  Any remaining business-looking
-        literal was omitted by the frame and must go through the bounded repair.
+        language-level framing vocabulary.  Only a material omission (digits,
+        a proper-named spelling, a quoted literal, a CJK business term, or an
+        explicit measurement noun) requests the bounded repair.  Generic
+        English residual nouns continue to runtime candidate
+        retrieval/resolution instead of becoming a fatal unresolved mention.
         """
 
         if frame.mode is SemanticInterpretationMode.GENERAL:
-            return
+            return frame
+        # A generic framing noun cannot veto an otherwise complete frame.  The
+        # semantic model may have listed one in unresolved_mentions; only
+        # material current-message evidence may keep that veto.
+        kept_unresolved = tuple(
+            item
+            for item in frame.unresolved_mentions
+            if is_material_literal(item, user_input)
+        )
+        if len(kept_unresolved) != len(frame.unresolved_mentions):
+            kept_spans = tuple(
+                span
+                for span in frame.evidence_spans
+                if span.slot != "unresolved"
+                or is_material_literal(span.text, user_input)
+            )
+            frame = frame.model_copy(
+                update={
+                    "unresolved_mentions": kept_unresolved,
+                    "evidence_spans": kept_spans,
+                }
+            )
         if frame.mode is SemanticInterpretationMode.REPORT and not any((
             frame.measure_mentions,
             frame.dimension_mentions,
@@ -1145,7 +1170,7 @@ class LLMSemanticInterpreter:
         )):
             # The selected template owns a fixed report query scope; a pure
             # output request carries no business literal to cover.
-            return
+            return frame
         covered: list[str] = [
             *frame.measure_mentions,
             *frame.dimension_mentions,
@@ -1182,10 +1207,10 @@ class LLMSemanticInterpreter:
                     covered.append(match.group(0))
         residual = uncovered_content(user_input, tuple(covered))
         if residual is None:
-            return
+            return frame
         normalized_input = unicodedata.normalize("NFKC", user_input).casefold()
         if residual not in normalized_input:
-            return
+            return frame
         raise SemanticInterpretationError(
             "semantic_coverage_incomplete",
             repair_detail={"missing_span": residual},

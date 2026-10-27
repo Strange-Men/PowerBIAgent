@@ -75,6 +75,60 @@ describe('AssistantMessage dynamic rendering', () => {
     expect(screen.getByRole('img', { name: '销售额随月份变化' })).toBeInTheDocument()
   })
 
+  it('draws real points when numeric cells arrive as wire strings', () => {
+    // The server sends Decimal/date cells as JSON strings; chart geometry must
+    // still produce a real series instead of an empty polyline.
+    render(
+      <AssistantMessage
+        message={{
+          id: 'structured-line-wire', role: 'assistant', kind: 'answer', content: '趋势如下。',
+          presentation: {
+            version: 1,
+            datasets: [{
+              result_id: 'wire-trend', verified_fact_set_id: 'facts-wire', semantic_model_key: 'fabric-model', source_mode: 'real',
+              columns: ['YearMonth', 'Total Sales'],
+              rows: [
+                ['2011-01-01T00:00:00', '1234.56'],
+                ['2011-02-01T00:00:00', '2345.67'],
+                ['2011-03-01T00:00:00', '3456.78'],
+              ],
+              row_count: 3, truncated: false,
+            }],
+            blocks: [{ type: 'chart', data_reference: 'wire-trend', visual_type: 'line', title: '销售趋势', x_field: 'YearMonth', y_field: 'Total Sales' }],
+          },
+        }}
+      />,
+    )
+    const polyline = document.querySelector('polyline')
+    expect(polyline).not.toBeNull()
+    expect(polyline?.getAttribute('points')?.trim()).not.toBe('')
+    expect((polyline?.getAttribute('points') ?? '').split(' ')).toHaveLength(3)
+    expect(screen.getByRole('img', { name: 'Total Sales随YearMonth变化' })).toBeInTheDocument()
+  })
+
+  it('draws real bars when numeric cells arrive as wire strings', () => {
+    render(
+      <AssistantMessage
+        message={{
+          id: 'structured-bar-wire', role: 'assistant', kind: 'answer', content: '对比如下。',
+          presentation: {
+            version: 1,
+            datasets: [{
+              result_id: 'wire-bar', verified_fact_set_id: 'facts-bar', semantic_model_key: 'fabric-model', source_mode: 'real',
+              columns: ['Country', 'Total Sales'],
+              rows: [['United Kingdom', '3053493.32'], ['EIRE', '627346.75'], ['France', '80338.53']],
+              row_count: 3, truncated: false,
+            }],
+            blocks: [{ type: 'chart', data_reference: 'wire-bar', visual_type: 'bar', title: '国家对比', x_field: 'Country', y_field: 'Total Sales' }],
+          },
+        }}
+      />,
+    )
+    const rows = document.querySelectorAll('.bar-row')
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toHaveTextContent('United Kingdom')
+  })
+
   it('preserves one backend canonical order for ranking table and chart', () => {
     render(
       <AssistantMessage

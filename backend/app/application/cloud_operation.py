@@ -85,11 +85,41 @@ def trace_failure(operation, error, failure, status):
     if stage not in {'catalog_rest','resource_verify','iq_resolve','iq_schema','iq_execute','llm','persistence','presentation','internal'}: stage='internal'
     if provider not in {'microsoft_rest','fabric_iq','llm','persistence','presentation','internal'}: provider='internal'
     scope = current_operation()
+    exception_class = _root_exception_class(error)
     diagnostic={
         'request_id': scope.request_id if scope else uuid4().hex,
         'operation': operation if operation in allowed else 'resource_mutation',
         'stage': stage, 'failure_code': failure.code.value,
         'retryable': failure.retryable, 'provider': provider,
+        'exception_class': exception_class,
         'http_status_category': f'{status // 100}xx'}
+    _record_turn_diagnostic(error, failure_code=failure.code.value)
     logging.getLogger('powerbiagent.cloud').warning('cloud_failure %s',json.dumps(diagnostic,separators=(',',':')),
         extra={'cloud_failure':diagnostic})
+
+
+def _root_exception_class(error: BaseException) -> str:
+    """Deepest non-HTTP exception class in the chain; class name only."""
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+    origin = error
+    for _ in range(8):
+        if origin.__context__ is None:
+            break
+        origin = origin.__context__
+    if isinstance(origin, StarletteHTTPException) and not isinstance(error, StarletteHTTPException):
+        return type(error).__name__
+    return type(origin).__name__
+
+
+def _record_turn_diagnostic(error: BaseException, *, failure_code: str) -> None:
+    """Attach the exception class to an active FIRST-WRONG-LAYER recorder."""
+    from backend.app.core.turn_diagnostics import current_diagnostics
+    recorder = current_diagnostics()
+    if recorder is None:
+        return
+    try:
+        recorder.fail(error)
+        if failure_code and recorder.failure_code is None:
+            recorder.failure_code = failure_code
+    except Exception:
+        pass

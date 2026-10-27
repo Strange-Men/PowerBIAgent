@@ -481,8 +481,8 @@ class VerifiedFactSetBuilder:
 
 class FactBoundedAnswerBuilder:
     def build(self, plan, result, facts, **kwargs):
-        from backend.app.presentation.locale import presentation_locale
-        with presentation_locale(kwargs.get("locale", "zh-CN")) as selected:
+        from backend.app.presentation.locale import current_locale, presentation_locale
+        with presentation_locale(kwargs.get("locale", current_locale().value)) as selected:
             kwargs["locale"]=selected.value
             return self._build(plan, result, facts, **kwargs)
 
@@ -1036,9 +1036,13 @@ class FactOutputValidator:
     _COMPARISON = ("同比", "环比", "百分点", "较上期", "比去年", "比上月", "year over year", "month over month", "percentage points", "yoy", "mom")
     _AVAILABILITY = ("可观测到", "数据截至", "更新到", "更新至", "observable", "refreshed through", "updated through")
 
-    def validate_answer(self, answer, facts, *, locale="zh-CN"):
-        from backend.app.presentation.locale import presentation_locale
-        with presentation_locale(locale):
+    def validate_answer(self, answer, facts, *, locale: str | None = None):
+        from backend.app.presentation.locale import current_locale, presentation_locale
+        # Validate under the same locale the answer was produced under.  A
+        # hard-coded default recomputed the deterministic scope prefix in the
+        # wrong language, so every localized scope-bearing answer mismatched.
+        # An explicit caller override still wins.
+        with presentation_locale(locale or current_locale().value):
             return self._validate_answer(answer, facts)
 
     def _validate_answer(

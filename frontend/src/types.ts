@@ -155,6 +155,7 @@ export interface ChatResponse {
   report: ReportResource | null
   presentation?: PresentationEnvelope | null
   clarification_question: string | null
+  clarification_reason?: string | null
   unsupported_reason: string | null
   error_type: string | null
   failure?: FailureInfo | null
@@ -289,6 +290,7 @@ export interface ConversationHistoryItem {
   answer: string | null
   report: ReportResource | null
   clarification_question: string | null
+  clarification_reason?: string | null
   unsupported_reason: string | null
   error_type: string | null
   failure?: FailureInfo | null

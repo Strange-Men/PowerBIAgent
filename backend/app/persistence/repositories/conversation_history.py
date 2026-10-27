@@ -293,14 +293,17 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 ResultSnapshotModel.conversation_id == conversation_id,
             ]
             if after is not None:
+                # Canonical transcript order is oldest -> newest, so a page
+                # walks *forward* from the cursor.  ``id`` is the stable
+                # tie-break when two turns share a timestamp.
                 stored_time = func.julianday(ResultSnapshotModel.created_at)
                 cursor_time = func.julianday(after.created_at)
                 conditions.append(
                     or_(
-                        stored_time < cursor_time,
+                        stored_time > cursor_time,
                         and_(
                             stored_time == cursor_time,
-                            ResultSnapshotModel.id < after.row_id,
+                            ResultSnapshotModel.id > after.row_id,
                         ),
                     )
                 )
@@ -308,8 +311,8 @@ class SQLiteConversationHistoryRepository(ConversationHistoryRepository):
                 select(ResultSnapshotModel).where(ResultSnapshotModel.owner_id == self._owner_id)
                 .where(and_(*conditions))
                 .order_by(
-                    func.julianday(ResultSnapshotModel.created_at).desc(),
-                    ResultSnapshotModel.id.desc(),
+                    func.julianday(ResultSnapshotModel.created_at).asc(),
+                    ResultSnapshotModel.id.asc(),
                 )
                 .limit(limit + 1)
             )

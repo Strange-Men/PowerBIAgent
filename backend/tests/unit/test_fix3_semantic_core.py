@@ -251,17 +251,17 @@ async def test_explicit_qualified_date_survives_year_only_language_hint(explicit
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('semantic_choice,hits,expected', [
-    ('Item', ['Item'], 'RESOLVED'),
-    (None, ['Item'], 'UNRESOLVED'),
-    ('Other', ['Item'], 'UNRESOLVED'),
-    ('Item', ['Item', 'Other'], 'AMBIGUOUS'),
-    ('Item', [], 'UNRESOLVED'),
+@pytest.mark.parametrize('semantic_choice,hits,expected,expected_method,expected_order', [
+    (None, ['Item'], 'RESOLVED', 'runtime_value_search_unique_field', ['runtime']),
+    ('Other', ['Item'], 'RESOLVED', 'runtime_value_search_unique_field', ['runtime']),
+    ('Item', ['Item', 'Other'], 'RESOLVED', 'runtime_value_search_bounded_role', ['runtime', 'catalog']),
+    (None, ['Item', 'Other'], 'AMBIGUOUS', None, ['runtime', 'catalog']),
+    (None, [], 'UNRESOLVED', None, ['runtime']),
 ])
-async def test_fieldless_member_combines_independent_catalog_semantics_and_exact_existence(
-        semantic_choice, hits, expected):
+async def test_fieldless_member_uses_runtime_existence_before_catalog_semantics(
+        semantic_choice, hits, expected, expected_method, expected_order):
+    """FIX5: ValueSearch proves the field set; semantics may only choose inside it."""
     from backend.app.schemas.data_contracts import ColumnSchema, MeasureSchema
-    from backend.app.query_plan.grounding import ObjectGroundingResult
     current = schema()
     current.tables[0].columns.extend(ColumnSchema(name=n, data_type='string') for n in ('Item', 'Other'))
     current.tables[0].measures.append(MeasureSchema(name='Units', data_type='Decimal'))
@@ -314,14 +314,20 @@ async def test_fieldless_member_combines_independent_catalog_semantics_and_exact
         member_discovery=discovery).ground_frame('Amount and Units for item ZX19',
             SemanticFrame(mode='data', query_shape='filtered_aggregation',
                 measure_mentions=['Amount', 'Units'], member_mentions=['ZX19']), None, no_scan)
-    assert order == ['catalog', 'runtime']
+    assert order == expected_order
     assert outcome.status.value == expected
     if expected == 'RESOLVED':
         assert outcome.delta.measures == ['Amount', 'Units']
         assert outcome.delta.filters[0].field == 'Item'
         assert outcome.delta.filters[0].value == 'ZX19'
+        field_result = next(item for item in outcome.object_results
+            if item.role == 'filter_field')
+        assert field_result.method == expected_method
     else:
         assert not outcome.delta.filters
+        assert outcome.clarification_reason is (
+            ClarificationReason.FILTER_FIELD_AMBIGUOUS
+            if expected == 'AMBIGUOUS' else ClarificationReason.MEMBER_NO_MATCH)
 
 
 @pytest.mark.asyncio
@@ -343,8 +349,18 @@ async def test_model_wide_candidates_never_claim_exhaustive_field_authority(cand
         'Amount for ZX19',SemanticFrame(mode='data',query_shape='filtered_aggregation',
             measure_mentions=['Amount'],member_mentions=['ZX19']),None,no_scan)
     assert calls == ['ZX19']
-    assert outcome.status in {GroundingStatus.UNRESOLVED,GroundingStatus.AMBIGUOUS}
-    assert outcome.delta is None or not outcome.delta.filters
+    if not candidates:
+        assert outcome.status is GroundingStatus.UNRESOLVED
+        assert outcome.clarification_reason is ClarificationReason.MEMBER_NO_MATCH
+        assert outcome.delta is None or not outcome.delta.filters
+    elif len(candidates) == 1:
+        # A single exact runtime hit is existence evidence for that field only;
+        # no other field is scanned or declared absent.
+        assert outcome.status is GroundingStatus.RESOLVED
+        assert outcome.delta.filters[0].field == 'Item'
+    else:
+        assert outcome.status in {GroundingStatus.UNRESOLVED,GroundingStatus.AMBIGUOUS}
+        assert outcome.delta is None or not outcome.delta.filters
 
 
 @pytest.mark.parametrize('bad', [None,'model','partial','unknown','fuzzy'])

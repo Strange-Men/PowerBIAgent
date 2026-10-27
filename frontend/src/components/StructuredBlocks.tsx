@@ -45,6 +45,19 @@ function datasetFor(
   return datasets.find((item) => item.result_id === block.data_reference)
 }
 
+/** Chart geometry needs a number; the wire may carry it as a numeric string. */
+function numericCell(value: PresentationCell): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string') {
+    const text = value.trim()
+    // Only the proven plain numeric text form; no grouping, currency or locale.
+    if (!/^-?(?:\d+)(?:\.\d+)?$/.test(text)) return null
+    const parsed = Number(text)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
 function numericSeries(
   dataset: PresentationDataset,
   xField: string,
@@ -53,15 +66,16 @@ function numericSeries(
   const xIndex = dataset.columns.indexOf(xField)
   const yIndex = dataset.columns.indexOf(yField)
   if (xIndex < 0 || yIndex < 0) return []
-  return dataset.rows.flatMap((row, rowIndex) =>
-    typeof row[yIndex] === 'number'
-      ? [{
+  return dataset.rows.flatMap((row, rowIndex) => {
+    const value = numericCell(row[yIndex])
+    return value === null
+      ? []
+      : [{
           label: formattedValue(dataset, rowIndex, xIndex),
-          value: row[yIndex] as number,
+          value,
           displayValue: formattedValue(dataset, rowIndex, yIndex),
         }]
-      : [],
-  )
+  })
 }
 
 function BarChart({ dataset, block }: {

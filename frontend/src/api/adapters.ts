@@ -1,4 +1,4 @@
-import { tr } from '../i18n'
+import { i18n, normalizeLocale, tr } from '../i18n'
 import type {
   AssistantMessage,
   ChatResponse,
@@ -9,6 +9,27 @@ import { publicFailureMessage } from '../failure'
 
 const emptyText = () => tr('errors:noMatchingDataTryChangingYourQuestionOrFilters')
 const errorText = () => tr('errors:thisRequestCouldNotBeCompletedCheckYourQuestion')
+
+/** Stable backend reason code selects the user-facing locale string.
+ * The backend question text stays a fallback for legacy snapshots only.
+ */
+const clarificationKeys: Record<string, string> = {
+  turn_relation_required: 'turnRelationRequired',
+  report_template_required: 'reportTemplateRequired',
+}
+
+function clarificationText(response: ChatResponse): string | null {
+  const reason = response.clarification_reason?.trim()
+  if (reason && /^[a-z_]{1,64}$/.test(reason)) {
+    const text = i18n.getResource(
+      normalizeLocale(i18n.language),
+      'errors',
+      clarificationKeys[reason] ?? `clarification_${reason}`,
+    )
+    if (typeof text === 'string' && text) return text
+  }
+  return response.clarification_question
+}
 
 function friendlyBusinessError(response: ChatResponse): string {
   if (response.failure) return publicFailureMessage(response.failure)
@@ -44,9 +65,10 @@ function contentForResponse(response: ChatResponse): {
   if (
     (response.response_type === 'clarification' ||
       response.terminal_state.includes('clarification')) &&
-    response.clarification_question
+    (response.clarification_question || response.clarification_reason)
   ) {
-    return { kind: 'clarification', content: response.clarification_question }
+    const text = clarificationText(response)
+    if (text) return { kind: 'clarification', content: text }
   }
   if (
     (response.response_type === 'unsupported' ||
@@ -91,6 +113,7 @@ export function historyItemToMessage(item: ConversationHistoryItem): AssistantMe
     report: item.report,
     presentation: item.presentation,
     clarification_question: item.clarification_question,
+    clarification_reason: item.clarification_reason,
     unsupported_reason: item.unsupported_reason,
     error_type: item.error_type,
     failure: item.failure,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from backend.app.presentation.locale import current_locale
 from backend.app.presentation.messages import message
 
 import re
@@ -48,8 +49,9 @@ class StructuredPresentationBuilder:
         *,
         display_bindings: dict[str, DisplayLocalization] | None = None,
         display_values: dict[tuple[str, str], str] | None = None,
-        locale: str = "zh-CN",
+        locale: str | None = None,
     ) -> PresentationEnvelope:
+        locale = locale or current_locale().value
         cls._validate_authority(result, facts)
         dataset = cls._project_verified_dataset(
             plan,
@@ -98,7 +100,8 @@ class StructuredPresentationBuilder:
         )
 
     @staticmethod
-    def build_report(report_id: str, *, locale: str = "zh-CN") -> PresentationEnvelope:
+    def build_report(report_id: str, *, locale: str | None = None) -> PresentationEnvelope:
+        locale = locale or current_locale().value
         return PresentationEnvelope(
             blocks=[
                 TextPresentationBlock(

@@ -84,6 +84,10 @@ class TurnResultSnapshot(BaseModel):
 
     # ── clarification 响应 ──
     clarification_question: Optional[str] = Field(default=None, description="澄清问题")
+    clarification_reason: Optional[str] = Field(
+        default=None,
+        description="稳定的澄清原因码；前端按当前 locale 展示，问题文本仅为 fallback",
+    )
 
     # ── unsupported 响应 ──
     unsupported_reason: Optional[str] = Field(default=None, description="拒绝原因")

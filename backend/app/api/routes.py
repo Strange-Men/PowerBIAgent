@@ -68,6 +68,7 @@ from backend.app.api.schemas import (
     ReportResponse,
 )
 from backend.app.config.settings import LLMMode, PowerBIMode, Settings
+from backend.app.config.runtime_build import runtime_build_identity
 from backend.app.llm.base import (
     LLMAuthenticationError,
     LLMConfigurationError,
@@ -594,6 +595,7 @@ async def health(
         ),
         real_mode_reasons=settings.local_real_configuration_reasons,
         harness_mode=settings.harness_mode.value,
+        runtime_build_id=runtime_build_identity().build_id,
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
 
@@ -966,6 +968,7 @@ async def chat(
         report=report_response,
         presentation=result.get("presentation"),
         clarification_question=result.get("clarification_question"),
+        clarification_reason=result.get("clarification_reason"),
         unsupported_reason=result.get("unsupported_reason"),
         error_type=result.get("error_type"),
         failure=result.get("failure"),
